@@ -1,0 +1,47 @@
+#!/bin/sh
+# Fake agy for offline tests. Reads the prompt from stdin and decides
+# behavior from prompt content (role markers) + env knobs. Mirrors real agy
+# quirks: prompt on stdin, exit 0 even on timeout.
+prompt=$(cat)
+
+case "$prompt" in
+  *FAKE:TIMEOUT*) echo "Error: timed out waiting for response"; exit 0 ;;
+esac
+
+# Prosecutor role (prompt carries the refute charter).
+case "$prompt" in
+  *"You are a prosecutor"*)
+    verdict="${FAKE_PROSECUTOR_VERDICT:-ship}"
+    if [ -n "$FAKE_STATE_DIR" ]; then
+      # block-then-ship: first call blocks, later calls ship.
+      count_file="$FAKE_STATE_DIR/prosecutions"
+      n=$(cat "$count_file" 2>/dev/null || echo 0)
+      echo $((n + 1)) > "$count_file"
+      if [ "$n" -eq 0 ] && [ "$verdict" = "block-then-ship" ]; then verdict=block; else
+        [ "$verdict" = "block-then-ship" ] && verdict=ship
+      fi
+    fi
+    if [ "$verdict" = "block" ]; then
+      echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "block"}'
+    else
+      echo '{"findings": [], "verdict": "ship"}'
+    fi
+    exit 0 ;;
+esac
+
+# Builder role (prompt names the ticket protocol).
+case "$prompt" in
+  *"TICKET-DONE or TICKET-BLOCKED"*)
+    mode="${FAKE_BUILDER_MODE:-good}"
+    tid=$(echo "$prompt" | sed -n 's/.*[Tt]icket \([A-Za-z0-9_-]*\).*/\1/p' | head -1)
+    case "$mode" in
+      blocked) echo "TICKET-BLOCKED: cannot proceed"; exit 0 ;;
+      bad) echo "wrong stuff" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
+      noop) echo "TICKET-DONE"; exit 0 ;;
+      *) echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
+    esac ;;
+esac
+
+# Probe behavior: echo sentinel back.
+echo "$prompt" | grep -o 'PONG-[A-Za-z0-9]*' || echo "OK"
+exit 0
