@@ -95,11 +95,28 @@ test('regenPrompt: fences untrusted prior-failure (gate output) as data', () => 
 
 // --- gate sandboxing (review: CRITICAL) ---
 
-test('sandboxProfile: denies network + writes outside the worktree', () => {
+test('sandboxProfile: denies network, allows cwd, but denies .git writes (persistence escape)', () => {
   const prof = sandboxProfile('/work/tree');
   assert.match(prof, /\(deny network\*\)/);
   assert.match(prof, /\(deny file-write\*\)/);
   assert.match(prof, /\(subpath "\/work\/tree"\)/);
+  // the .git deny must come AFTER the cwd allow (last match wins in Seatbelt)
+  const allowIdx = prof.indexOf('(allow file-write*');
+  const gitDenyIdx = prof.indexOf('/work/tree/.git');
+  assert.ok(gitDenyIdx > allowIdx, '.git deny must override the cwd allow');
+  assert.match(prof, /\(deny file-write\* \(subpath "\/work\/tree\/\.git"\)\)/);
+});
+
+test('runGate: sandboxed gate cannot write into .git (no hook/config persistence)', { skip: !gateSandboxEnabled() }, () => {
+  const wt = mkdtempSync(join(tmpdir(), 'agb-gitdeny-'));
+  try {
+    mkdirSync(join(wt, '.git', 'hooks'), { recursive: true });
+    const r = runGate('test', 'echo payload > .git/hooks/pre-push', wt, { sandbox: true });
+    assert.equal(r.ok, false, 'writing a git hook must be denied');
+    assert.equal(existsSync(join(wt, '.git', 'hooks', 'pre-push')), false);
+  } finally {
+    rmSync(wt, { recursive: true, force: true });
+  }
 });
 
 test('runGate: sandboxed gate blocks a write outside the worktree on darwin', { skip: !gateSandboxEnabled() }, () => {
@@ -150,6 +167,27 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
     assert.ok(holder.token && holder.token !== 'old', 'fresh lock carries a new ownership token');
     release();
     assert.equal(existsSync(join(repo, '.booster', 'run.lock.d')), false, 'lock dir removed on release');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('acquireRepoLock: exactly one of many concurrent reclaimers wins a stale lock', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-lock5-'));
+  try {
+    // Plant a stale lock (dead pid).
+    mkdirSync(join(repo, '.booster', 'run.lock.d'), { recursive: true });
+    writeFileSync(
+      join(repo, '.booster', 'run.lock.d', 'meta.json'),
+      JSON.stringify({ pid: 2 ** 22, runId: 'dead', token: 'old', startedAt: 'x' })
+    );
+    // Many reclaimers race in the same tick.
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, i) => Promise.resolve().then(() => acquireRepoLock(repo, { runId: `R${i}` })))
+    );
+    const winners = attempts.filter((a) => a.status === 'fulfilled');
+    assert.equal(winners.length, 1, 'exactly one reclaimer may acquire the lock');
+    winners[0].value(); // release
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

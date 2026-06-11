@@ -126,6 +126,20 @@ test('runPlan: post-merge gate failure reverts cleanly, repo not left mid-merge'
   }
 });
 
+test('runPlan: refuses to run when the repo is on a non-base branch', async () => {
+  const repo = makeRepo();
+  try {
+    execFileSync('git', ['checkout', '-qb', 'feature-x'], { cwd: repo });
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({ repo, base: 'main', gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, quiet)),
+      /is on 'feature-x', not the plan's base 'main'/
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: refuses a dirty repo (data-loss guard) unless AGB_ALLOW_DIRTY=1', async () => {
   const repo = makeRepo();
   try {
