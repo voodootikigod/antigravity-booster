@@ -4,6 +4,11 @@
 # quirks: prompt on stdin, exit 0 even on timeout.
 prompt=$(cat)
 
+# Global failure injection (any role): simulate a model/transport error.
+case "${FAKE_AGY_MODE:-}" in
+  fail) echo "boom: simulated agy failure" >&2; exit 1 ;;
+esac
+
 case "$prompt" in
   *FAKE:TIMEOUT*) echo "Error: timed out waiting for response"; exit 0 ;;
 esac

@@ -74,6 +74,19 @@ test('reviewFleet: empty diff returns clean without any model call', async () =>
   assert.equal(r.requests, 0);
 });
 
+test('reviewFleet: model failures do NOT fake convergence (round-3 HIGH)', async () => {
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+  process.env.FAKE_AGY_MODE = 'fail'; // every lens call errors
+  try {
+    const r = await reviewFleet({ diff: 'diff --git a/x b/x\n+code', lenses: ['correctness'], dryRounds: 2, maxRounds: 3 });
+    assert.equal(r.converged, false, 'all-errored rounds must not report convergence');
+    assert.ok(r.errors.length > 0, 'errors surfaced, not swallowed');
+    assert.equal(r.rounds, 3, 'retries to maxRounds rather than approving early');
+  } finally {
+    delete process.env.AGB_AGY_BIN; delete process.env.FAKE_AGY_MODE;
+  }
+});
+
 // --- preflight ---
 
 test('forecastOverlaps: detects unordered scope collisions, ignores edge-ordered pairs', () => {
@@ -88,6 +101,22 @@ test('forecastOverlaps: detects unordered scope collisions, ignores edge-ordered
   // Same pair but serialized by an edge → not a conflict
   const ordered = [{ ...tickets[0], edges: [{ to: 'B' }] }, tickets[1], tickets[2]];
   assert.equal(forecastOverlaps(ordered).length, 0);
+});
+
+test('forecastOverlaps: transitively-ordered tickets sharing scope are NOT flagged', () => {
+  // T1 -> T2 -> T3; T1 and T3 share a file but can never run concurrently.
+  const tickets = [
+    { id: 'T1', title: 't1', scope: ['src/main.js'], edges: [{ to: 'T2' }] },
+    { id: 'T2', title: 't2', scope: ['src/other.js'], edges: [{ to: 'T3' }] },
+    { id: 'T3', title: 't3', scope: ['src/main.js'] },
+  ];
+  assert.equal(forecastOverlaps(tickets).length, 0, 'transitive ordering must exempt the pair');
+  // But two truly-parallel tickets sharing scope are still flagged.
+  const parallel = [
+    { id: 'A', title: 'a', scope: ['src/main.js'] },
+    { id: 'B', title: 'b', scope: ['src/main.js'] },
+  ];
+  assert.equal(forecastOverlaps(parallel).length, 1);
 });
 
 test('preflight: ok when scopes disjoint and coldstart returns no gaps', async () => {
