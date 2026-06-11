@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'; // eslint-disable-line
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -121,6 +121,22 @@ test('runPlan: post-merge gate failure reverts cleanly, repo not left mid-merge'
     assert.equal(status.trim(), '', 'working tree clean after run');
     assert.throws(() => execFileSync('git', ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], { cwd: repo, stdio: 'ignore' }), 'no merge in progress');
     assert.ok(report);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: refuses a dirty repo (data-loss guard) unless AGB_ALLOW_DIRTY=1', async () => {
+  const repo = makeRepo();
+  try {
+    writeFileSync(join(repo, 'README.md'), 'uncommitted edit\n'); // dirty tracked file
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, quiet)),
+      /uncommitted changes/
+    );
+    // the uncommitted edit is untouched
+    assert.match(readFileSync(join(repo, 'README.md'), 'utf8'), /uncommitted edit/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

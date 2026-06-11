@@ -14,7 +14,7 @@ import { prosecute } from '../lib/prosecute.mjs';
 import { RunStatus, renderStatus } from '../lib/status.mjs';
 import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
-  isMidMerge, abortAnyMerge,
+  isMidMerge, abortAnyMerge, isDirty,
 } from '../lib/worktrees.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
@@ -182,6 +182,24 @@ test('worktrees: create → edit → commit → diff → merge lifecycle', () =>
 
     mergeWorktree(dir, wt, 'T9', 'main');
     assert.equal(readFileSync(join(dir, 'feature.txt'), 'utf8'), 'new\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createWorktree: reclaims a leftover branch from a prior run (no crash)', () => {
+  const { dir, g } = makeRepo();
+  try {
+    const wt1 = createWorktree(dir, 'T5', 'main');
+    writeFileSync(join(wt1, 'a.txt'), '1\n');
+    commitAll(wt1, 'T5: a');
+    // Simulate a crashed run: worktree dir gone but branch agb/t5 dangling.
+    rmSync(wt1, { recursive: true, force: true });
+    g('worktree', 'prune');
+    assert.match(g('branch', '--list', 'agb/t5'), /agb\/t5/);
+    // Re-run must not crash on "branch already exists".
+    const wt2 = createWorktree(dir, 'T5', 'main');
+    assert.ok(existsSync(wt2));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

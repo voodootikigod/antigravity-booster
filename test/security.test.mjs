@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { isAgyTimeout } from '../lib/agy.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 import { prosecutionPrompt } from '../lib/charters.mjs';
-import { sandboxProfile, gateSandboxEnabled, gateSandboxAvailable, runGate } from '../lib/gates.mjs';
+import { sandboxProfile, gateSandboxEnabled, runGate } from '../lib/gates.mjs';
 import { regenPrompt } from '../lib/charters.mjs';
 import { acquireRepoLock } from '../lib/lock.mjs';
 
@@ -150,6 +150,19 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
     assert.ok(holder.token && holder.token !== 'old', 'fresh lock carries a new ownership token');
     release();
     assert.equal(existsSync(join(repo, '.booster', 'run.lock.d')), false, 'lock dir removed on release');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('acquireRepoLock: an unreadable/half-written meta is treated as held, not reclaimed', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-lock4-'));
+  try {
+    // Holder created the dir but has not written meta yet (mid-acquire).
+    mkdirSync(join(repo, '.booster', 'run.lock.d'), { recursive: true });
+    assert.throws(() => acquireRepoLock(repo, { runId: 'B' }), /held|meta not yet written/i);
+    // dir must still exist — we must NOT have deleted the holder's dir
+    assert.ok(existsSync(join(repo, '.booster', 'run.lock.d')));
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
