@@ -27,18 +27,92 @@ disciplined fleet:
 - **Two-strike regeneration.** A flailing worker is never coached; the
   ticket re-runs fresh with dead-ends appended, then fails to escalation.
 
+## Requirements
+
+- **Node ≥ 18** (zero runtime dependencies beyond the sibling
+  [`@aidlc/core`](../aidlc) checkout — see `package.json`).
+- **`agy` CLI** on PATH with an active Antigravity session
+  (`curl -fsSL https://antigravity.google/cli/install.sh | bash`).
+- **macOS** for sandboxed gates (Seatbelt). On Linux/Windows, gates
+  **fail closed** by design; run inside a disposable container and set
+  `AGB_SANDBOX_GATES=0` to acknowledge the container is your isolation
+  boundary.
+- A **target git repository** that is on the plan's base branch with a
+  clean working tree (the run refuses otherwise — merges and rollbacks
+  act on the checked-out branch).
+
 ## Install
 
 ```sh
 npm install && npm link     # provides `agb`
-./install.sh                # links ADLC skills into ~/.gemini/skills
+./install.sh                # links ADLC skills into ~/.gemini/skills (idempotent)
 export AIDLC_PROVIDER=agy   # optional: run aidlc gate tools on Antigravity quota
 ```
 
-## Use
+## Quickstart
+
+1. Write a plan (start from
+   [templates/plan.example.json](templates/plan.example.json)):
+
+   ```json
+   {
+     "repo": "/abs/path/to/target-repo",
+     "base": "main",
+     "gate": { "build": "npm run typecheck", "test": "npm test" },
+     "tickets": [
+       {
+         "id": "T1",
+         "title": "math utilities",
+         "body": "Full self-contained instruction text. The builder sees ONLY this plus the repo — name files, acceptance criteria, and edge cases explicitly.",
+         "scope": ["lib/math.mjs", "test/math.test.mjs"],
+         "rails": ["lib/contracts/**"],
+         "edges": [{ "to": "T3" }],
+         "tier": "cheap",
+         "pool_hint": "gemini"
+       }
+     ]
+   }
+   ```
+
+   Field rules (enforced by `agb validate`): `body` non-empty (it becomes
+   the builder's entire specification); `scope` a non-empty glob list
+   (out-of-scope changes fail the strike); `rails` are read-only globs
+   enforced mechanically even inside scope; `edges` are
+   this-ticket-blocks-`to` dependencies; `tier` ∈ cheap|mid|frontier and
+   `pool_hint` ∈ gemini|claude|auto must be routable (e.g. `cheap`+`claude`
+   is rejected — the cheap tier has no Claude-family model).
+
+2. Validate, forecast, run:
+
+   ```sh
+   agb validate plan.json     # schema + DAG + routability; exit 0/2
+   agb preflight plan.json    # scope-overlap forecast + coldstart probe; exit 0/2
+   agb run plan.json          # build → gate → prosecute → merge; exit 0/2
+   ```
+
+3. Watch and read results:
+
+   ```sh
+   agb status /path/to/target-repo    # live dashboard from .booster/run.json
+   ```
+
+   Per-ticket transcripts land in `.booster/logs/<run-id>/`, the final
+   report (merged/failed/per-pool request counts) in
+   `.booster/report.json` and on stdout. Exit codes everywhere:
+   **0** all merged, **2** gate failure / findings / failed tickets,
+   **1** usage or internal error.
+
+Each ticket builds in its own worktree under `.worktrees/`, gates run
+sandboxed in the worktree, a cross-family prosecutor reviews the diff
+(critical/high findings trigger one fix round), then merges are sequential
+rebase-first with a post-merge gate on main — a failed post-merge gate
+reverts main to the exact pre-merge SHA. Two strikes per ticket, then it
+fails and blocks its dependents.
+
+## All commands
 
 ```sh
-agb validate plan.json         # check the ticket DAG
+agb validate plan.json         # check schema, DAG, routability
 agb preflight plan.json        # plan gates: scope-overlap forecast + coldstart
 agb run plan.json              # build → gate → prosecute → merge; exit 0/2
 agb sweep sweep.json           # same operation × many targets (cheap tier)
@@ -46,31 +120,68 @@ agb review /repo [ref]         # read-only lens fleet, loop-until-dry; exit 0/2
 agb brains                     # list Antigravity GUI plan artifacts
 agb import-brain <id> /repo    # GUI plan → plan.json (frontier conversion)
 agb status /path/repo          # live dashboard (.booster/run.json)
-agb probe 2,4,8                # re-measure pool concurrency ceilings
+agb probe 2,4,8 [model]        # measure pool width/latency, append docs/calibration
 ```
 
 Workload modes map: greenfield/big-feature → `run` (ticket DAG);
 fan-out sweeps → `sweep`; research/review fleets → `review`. Hybrid GUI
 pipeline: plan in the Antigravity desktop app → `import-brain` →
 `preflight` → `run`. Loop-until-dry prosecution: set
-`"prosecution": {"dryPasses": 2}` in the plan.
+`"prosecution": {"dryPasses": 2}` in the plan to require that many
+consecutive clean prosecution passes before merge.
 
-Plan format: aidlc ticket schema (`id`, `title`, `body`, `scope`, `rails`,
-`edges`, plus booster's `tier` and `pool_hint`) — see
-[SPEC.md](SPEC.md) and `skills/adlc-self-orchestrate/SKILL.md` for a full
-example and the decomposition doctrine (foundation first, single writer per
-partition, self-contained tickets).
+Sweep spec (`agb sweep`) — one operation fanned across targets, each
+becoming a generated cheap-tier ticket with a disjoint scope:
+
+```json
+{
+  "repo": "/abs/path",
+  "gate": { "test": "npm test" },
+  "operation": "Add JSDoc to every exported function in {target}.",
+  "targetGlob": "src/**/*.mjs",
+  "scopePerTarget": ["{target}"]
+}
+```
+
+(`targets: []` instead of `targetGlob` for an explicit list; `{target}`
+and `{i}` substitute into `operation` and `scopePerTarget`.)
 
 Recursive mode: inside any agy session, the `adlc-self-orchestrate` skill
-teaches the agent to decompose work and drive `agb` itself.
+teaches the agent to decompose work and drive `agb` itself. See
+[SPEC.md](SPEC.md) and `skills/adlc-self-orchestrate/SKILL.md` for the
+decomposition doctrine (foundation first, single writer per partition,
+self-contained tickets).
+
+## Environment knobs
+
+| Variable | Default | Effect |
+|---|---|---|
+| `AGB_BUILD_TIMEOUT` | `5m` | Per-builder agy timeout (agy hard-caps ~5m anyway; a timeout consumes a strike) |
+| `AGB_SANDBOX_GATES` | sandbox on (darwin) | `0` runs gates unsandboxed — only inside a disposable container; non-darwin fails closed without it |
+| `AGB_ALLOW_DIRTY` | refuse dirty repo | `1` skips the clean-tree guard — merge rollback uses `git reset --hard`, uncommitted work WILL be lost |
+| `AGB_AGY_BIN` | `agy` | Alternate agy binary (tests point this at a fake) |
+| `AGB_CALIBRATION_DIR` | `docs/calibration/` in this checkout | Where `agb probe` appends its measurement artifact |
+| `AIDLC_PROVIDER=agy` | — | Run aidlc gate tools (parallax, premortem, …) on Antigravity quota |
+
+## Testing
+
+```sh
+npm test    # 57 node:test cases, fully offline (fake agy fixture)
+```
+
+Sandbox-specific security tests are darwin-gated; scheduler tests run
+gates unsandboxed so the suite is green on any platform.
 
 ## Layout
 
 ```
-bin/agb.mjs        CLI (run | validate | status | probe)
+bin/agb.mjs        CLI (run | sweep | review | preflight | brains |
+                   import-brain | status | probe | validate)
 lib/               scheduler, pools, agy wrapper, worktrees, gates,
-                   charters, prosecution, status
+                   charters, prosecution, review, sweep, preflight,
+                   brain import, status, repo lock
 skills/            adlc-doctrine, adlc-prosecutor, adlc-self-orchestrate
+templates/         plan.example.json (schema by example)
 docs/research/     agy CLI + Antigravity 2.0 platform findings
 docs/calibration/  probed latency/concurrency/sandbox facts
 ```
