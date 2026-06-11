@@ -1,0 +1,50 @@
+{
+  "repo": "/abs/path/to/target-repo",
+  "base": "main",
+  "gate": {
+    "test": "npm test"
+  },
+  "tickets": [
+    {
+      "id": "T1",
+      "title": "math utilities",
+      "body": "Create lib/math.mjs exporting two pure functions: add(a, b) returning the sum, and multiply(a, b) returning the product. Both must throw a TypeError when either argument is not a finite number. Create test/math.test.mjs using node:test + node:assert/strict covering: happy path for both functions, and the TypeError cases. Acceptance: `npm test` exits 0 and the new tests actually assert behavior (no empty tests).",
+      "scope": [
+        "lib/math.mjs",
+        "test/math.test.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T3"
+        }
+      ],
+      "tier": "cheap",
+      "pool_hint": "gemini"
+    },
+    {
+      "id": "T2",
+      "title": "slugify",
+      "body": "Create lib/strings.mjs exporting slugify(input) that lowercases, trims, replaces runs of non-alphanumeric characters with single hyphens, and strips leading/trailing hyphens. It must throw a TypeError on non-string input. Create test/strings.test.mjs using node:test + node:assert/strict covering: basic phrase, unicode/punctuation collapse, leading/trailing junk, and the TypeError case. Acceptance: `npm test` exits 0.",
+      "scope": [
+        "lib/strings.mjs",
+        "test/strings.test.mjs"
+      ],
+      "tier": "mid",
+      "pool_hint": "claude"
+    },
+    {
+      "id": "T3",
+      "title": "mean via math utils",
+      "body": "Create lib/stats.mjs exporting mean(numbers) that returns the arithmetic mean of a non-empty array of finite numbers, computed by importing and using add() from ./math.mjs (do not reimplement summation inline). Throw a RangeError on an empty array and a TypeError on non-array or non-finite elements. Create test/stats.test.mjs using node:test + node:assert/strict covering: happy path, single element, RangeError and TypeError cases. lib/math.mjs already exists on main — read it, never modify it. Acceptance: `npm test` exits 0.",
+      "scope": [
+        "lib/stats.mjs",
+        "test/stats.test.mjs"
+      ],
+      "rails": [
+        "lib/math.mjs"
+      ],
+      "tier": "cheap",
+      "pool_hint": "gemini"
+    }
+  ]
+}
