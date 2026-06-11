@@ -8,6 +8,13 @@ case "$prompt" in
   *FAKE:TIMEOUT*) echo "Error: timed out waiting for response"; exit 0 ;;
 esac
 
+# Brain-plan conversion role.
+case "$prompt" in
+  *"Convert this Antigravity implementation plan"*)
+    echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
+    exit 0 ;;
+esac
+
 # Prosecutor role (prompt carries the refute charter).
 case "$prompt" in
   *"You are a prosecutor"*)

@@ -38,11 +38,22 @@ export AIDLC_PROVIDER=agy   # optional: run aidlc gate tools on Antigravity quot
 ## Use
 
 ```sh
-agb validate plan.json   # check the ticket DAG
-agb run plan.json        # build → gate → prosecute → merge; exit 0/2
-agb status /path/repo    # live dashboard (.booster/run.json)
-agb probe 2,4,8          # re-measure pool concurrency ceilings
+agb validate plan.json         # check the ticket DAG
+agb preflight plan.json        # plan gates: scope-overlap forecast + coldstart
+agb run plan.json              # build → gate → prosecute → merge; exit 0/2
+agb sweep sweep.json           # same operation × many targets (cheap tier)
+agb review /repo [ref]         # read-only lens fleet, loop-until-dry; exit 0/2
+agb brains                     # list Antigravity GUI plan artifacts
+agb import-brain <id> /repo    # GUI plan → plan.json (frontier conversion)
+agb status /path/repo          # live dashboard (.booster/run.json)
+agb probe 2,4,8                # re-measure pool concurrency ceilings
 ```
+
+Workload modes map: greenfield/big-feature → `run` (ticket DAG);
+fan-out sweeps → `sweep`; research/review fleets → `review`. Hybrid GUI
+pipeline: plan in the Antigravity desktop app → `import-brain` →
+`preflight` → `run`. Loop-until-dry prosecution: set
+`"prosecution": {"dryPasses": 2}` in the plan.
 
 Plan format: aidlc ticket schema (`id`, `title`, `body`, `scope`, `rails`,
 `edges`, plus booster's `tier` and `pool_hint`) — see

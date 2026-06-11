@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 // agb — Antigravity Booster orchestrator.
 //
-//   agb run <plan.json>     execute a ticket DAG (build → gate → prosecute → merge)
-//   agb status [repo]       render the live dashboard for a repo's current run
-//   agb probe [widths]      measure pool concurrency/latency, print JSON lines
-//   agb validate <plan>     validate a plan file without running anything
+//   agb run <plan.json>          execute a ticket DAG (build → gate → prosecute → merge)
+//   agb sweep <sweep.json>       same operation × many targets, then run
+//   agb review [repo] [ref]      read-only lens fleet over a diff, loop-until-dry
+//   agb preflight <plan.json>    plan-time gates: scope overlap + coldstart
+//   agb brains                   list Antigravity GUI plan artifacts
+//   agb import-brain <id> <repo> convert a GUI plan into plan.json (stdout)
+//   agb status [repo]            render the live dashboard for a repo's current run
+//   agb probe [widths]           measure pool concurrency/latency, print JSON lines
+//   agb validate <plan>          validate a plan file without running anything
 //
-// Exit codes: 0 = success / all merged, 2 = gate failure (some tickets
-// failed), 1 = usage or internal error.
+// Exit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal
+// error.
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -15,6 +20,11 @@ import { validateTicket, topoSort } from '@aidlc/core/tickets';
 import { runPlan } from '../lib/scheduler.mjs';
 import { renderStatus } from '../lib/status.mjs';
 import { runAgy } from '../lib/agy.mjs';
+import { sweepToPlan } from '../lib/sweep.mjs';
+import { reviewFleet, reviewDiff } from '../lib/review.mjs';
+import { preflight } from '../lib/preflight.mjs';
+import { listBrains, brainToPlan } from '../lib/brain.mjs';
+import { PoolSet } from '../lib/pools.mjs';
 
 const [cmd, ...rest] = process.argv.slice(2);
 
@@ -43,6 +53,53 @@ try {
     const report = await runPlan(plan);
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
+  } else if (cmd === 'sweep') {
+    const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
+    if (spec.repo) spec.repo = resolve(spec.repo);
+    const plan = sweepToPlan(spec);
+    const errors = plan.tickets.flatMap(validateTicket);
+    if (!plan.gate || (!plan.gate.build && !plan.gate.test)) errors.push('sweep.gate must declare build/test');
+    if (errors.length) {
+      console.error('sweep invalid:\n  ' + errors.join('\n  '));
+      process.exit(1);
+    }
+    console.error(`sweep: ${plan.tickets.length} targets`);
+    const report = await runPlan(plan);
+    console.log(JSON.stringify(report, null, 2));
+    process.exit(Object.keys(report.failed).length ? 2 : 0);
+  } else if (cmd === 'review') {
+    const repo = resolve(rest[0] ?? '.');
+    const ref = rest[1]; // e.g. main...HEAD, a SHA range; default: uncommitted vs HEAD
+    const diff = reviewDiff(repo, ref);
+    if (!diff.trim()) {
+      console.error('review: empty diff — nothing to prosecute');
+      process.exit(0);
+    }
+    const result = await reviewFleet({ diff, pools: new PoolSet(), log: (m) => console.error(m) });
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
+    const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
+    process.exit(blocking.length || !result.converged ? 2 : 0);
+  } else if (cmd === 'preflight') {
+    const { plan, errors } = loadPlan(rest[0] ?? 'plan.json');
+    if (errors.length) {
+      console.error('plan invalid:\n  ' + errors.join('\n  '));
+      process.exit(1);
+    }
+    const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart') });
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(result.ok ? 0 : 2);
+  } else if (cmd === 'brains') {
+    for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);
+  } else if (cmd === 'import-brain') {
+    const [id, repo] = rest;
+    if (!id || !repo) {
+      console.error('usage: agb import-brain <conversation-id-or-prefix> <repo-path>');
+      process.exit(1);
+    }
+    const plan = await brainToPlan(id, { repo: resolve(repo) });
+    console.log(JSON.stringify(plan, null, 2));
+    console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
   } else if (cmd === 'status') {
     console.log(renderStatus(resolve(rest[0] ?? '.')));
   } else if (cmd === 'validate') {
@@ -71,7 +128,7 @@ try {
       }));
     }
   } else {
-    console.error('usage: agb run <plan.json> | agb status [repo] | agb validate <plan.json> | agb probe [widths] [model]');
+    console.error('usage: agb run|sweep|review|preflight|brains|import-brain|status|validate|probe — see header of bin/agb.mjs');
     process.exit(1);
   }
 } catch (err) {
