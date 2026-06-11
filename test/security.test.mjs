@@ -119,6 +119,27 @@ test('runGate: sandboxed gate cannot write into .git (no hook/config persistence
   }
 });
 
+test('sandboxProfile: denies node_modules writes (post-revert persistence)', () => {
+  const prof = sandboxProfile('/work/tree');
+  assert.match(prof, /\(deny file-write\* \(subpath "\/work\/tree\/node_modules"\)\)/);
+});
+
+test('runGate: sandboxed gate cannot overwrite node_modules (gitignored persistence)', { skip: !gateSandboxEnabled() }, () => {
+  const wt = mkdtempSync(join(tmpdir(), 'agb-nm-'));
+  try {
+    mkdirSync(join(wt, 'node_modules', 'lodash'), { recursive: true });
+    writeFileSync(join(wt, 'node_modules', 'lodash', 'index.js'), 'module.exports = {}\n');
+    const r = runGate('test', 'echo "backdoor" > node_modules/lodash/index.js', wt, { sandbox: true });
+    assert.equal(r.ok, false, 'overwriting a dependency must be denied');
+    assert.match(readFileSync(join(wt, 'node_modules', 'lodash', 'index.js'), 'utf8'), /module\.exports/);
+    // a normal in-repo write still works
+    const ok = runGate('test', 'echo hi > out.txt', wt, { sandbox: true });
+    assert.equal(ok.ok, true);
+  } finally {
+    rmSync(wt, { recursive: true, force: true });
+  }
+});
+
 test('runGate: sandboxed gate blocks a write outside the worktree on darwin', { skip: !gateSandboxEnabled() }, () => {
   const wt = mkdtempSync(join(tmpdir(), 'agb-gate-wt-'));
   // home is NOT in the sandbox's writable set (temp dirs are scratch, allowed).
