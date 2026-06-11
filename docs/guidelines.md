@@ -1,0 +1,146 @@
+# ADLC & Architectural Guidelines
+
+This document details the architectural principles, behavioral guidelines, and core doctrines that govern the operation of Antigravity Booster (`agb`).
+
+## Table of Contents
+1. [Architectural Philosophy](#architectural-philosophy)
+2. [ADLC Doctrine (P0-P7)](#adlc-doctrine-p0-p7)
+3. [Execution Gates](#execution-gates)
+4. [Cross-Model Prosecution](#cross-model-prosecution)
+5. [Self-Orchestration Guidelines](#self-orchestration-guidelines)
+6. [Design Tradeoffs](#design-tradeoffs)
+
+---
+
+## Architectural Philosophy
+
+The design of Antigravity Booster rests on a central premise:
+
+> **Control flow belongs to code; judgment belongs to models.**
+
+In conventional agent frameworks, models are often asked to determine execution pathways—deciding when a build has succeeded, whether to run a test, or which step to run next. This approach introduces non-determinism into the infrastructure loop. 
+
+`agb` uses a **deterministic engine written in Node ESM** to manage the execution state machine:
+1. **The Scheduler** manages the ticket dependency DAG, allocates worker worktrees, and schedules tasks.
+2. **Semaphores** throttle calls based on the target API's quota pools.
+3. **The Models** are restricted to bounded execution contexts: building a single ticket's scope, or prosecuting a diff against a specific checklist.
+
+---
+
+## ADLC Doctrine (P0-P7)
+
+The Agentic Software Development Lifecycle (ADLC) enforces strict operating guidelines for agents working inside `agb`. These rules exist to address common model failure modes (such as hallucinating test results, expanding scope, or wasting quota).
+
+### 1. Evidence or it didn't happen
+- **"I fixed it" is a claim.** A command executed with quoted output showing the success is **evidence**. 
+- Agents must never report a task as complete without running the verification commands and showing the terminal output.
+
+### 2. Scope discipline
+- Agents must strictly modify files matching the ticket's `scope` glob list. Any modification outside scope will fail the ticket validation mechanically.
+- Files matching the `rails` glob list are read-only. Modifying a rail results in a failed build. If a rail requires modification, the agent must halt and report `TICKET-BLOCKED`.
+- **Zero test deletion:** Agents are forbidden from deleting, disabling, or weakening tests to get a gate to pass. Suppressing existing assertions will fail prosecution.
+
+### 3. Quota discipline
+- Quota is a finite resource. Agents must not repeatedly re-read the same files in a single session.
+- Diffs must be kept minimal and surgical. Under no circumstances should an agent rewrite an entire file to change only a few lines.
+
+### 4. Completion protocol
+- A builder agent must end its output with either `TICKET-DONE` (when all gates are green and verified) or `TICKET-BLOCKED: <reason>`. 
+- No other text counts as completion.
+
+---
+
+## Execution Gates
+
+`agb` enforces deterministic execution gates at two stages of a ticket's life.
+
+```mermaid
+sequenceDiagram
+    participant WT as Worker Worktree
+    participant PT as Prosecution
+    participant Main as Main Branch
+    
+    WT->>WT: Run Builder Model
+    WT->>WT: Execute Sandboxed Build & Test Gates
+    alt Gates Fail
+        WT->>WT: Strike 1 (Regenerate or Fail)
+    else Gates Pass
+        WT->>PT: Dispatch Prosecutor Model
+        alt Findings Found (Critical/High)
+            PT->>WT: Feedback loop (1 fix attempt)
+        else Prosecution Passes
+            PT->>Main: Acquire Merge Lock
+            Main->>Main: Rebase & Merge
+            Main->>Main: Run Post-Merge Build & Test Gates
+            alt Post-Merge Gate Fails
+                Main->>Main: Revert to pre-merge HEAD SHA
+            else Post-Merge Gate Passes
+                Main->>Main: Release Lock & Mark Merged
+            end
+        end
+    end
+```
+
+### Sandboxed Gates
+To protect the host machine from unverified execution paths, all gate scripts run sandboxed using macOS Seatbelt.
+- If running on macOS, sandboxing is enabled by default.
+- On other systems, gates fail closed unless running inside an isolated container with `AGB_SANDBOX_GATES=0`.
+- The sandbox allows network access and standard build utilities (e.g., `git`, `npm`, `node`) but prevents unauthorized system interference.
+
+### Pre-Merge Gates
+Before a ticket is submitted for prosecution, its build and test scripts must pass in its isolated worktree (e.g. `.worktrees/agb-T1`). If the gate fails, a strike is logged against the ticket.
+
+### Post-Merge Gates
+To prevent integration errors when combining parallel changes:
+1. The engine acquires a repository-wide merge lock.
+2. The ticket's branch is merged sequentially into the base branch (`main`).
+3. The build and test gates are executed again on `main`.
+4. If the gate fails, the scheduler performs an automatic rollback (`git reset --hard`) to restore `main` to its exact pre-merge SHA, and the ticket is marked as failed.
+
+---
+
+## Cross-Model Prosecution
+
+Standard code reviews done by the same model family that generated the code often miss structural issues due to family-specific blind spots. To bypass this, `agb` mandates **Cross-Model Prosecution**.
+
+- **Alternating Families:** If a Gemini model builds the code, a Claude model must prosecute it, and vice versa.
+- **Refute Charter:** The prosecutor is instructed to *refute* the change rather than write a generic review. It is rewarded for finding real, reproducible bugs or specification violations.
+- **Verdict Contract:** The prosecutor must output a strict JSON verdict:
+  ```json
+  {
+    "findings": [
+      {
+        "file": "lib/math.mjs",
+        "severity": "critical",
+        "message": "Division by zero throws unhandled exception instead of returning NaN as requested in T1."
+      }
+    ],
+    "verdict": "reject"
+  }
+  ```
+- **Severity Enforcement:** Only `critical` and `high` severity findings block a merge. Medium or low findings are flagged but do not halt progression.
+- **Fix Loop:** If a prosecution fails, the builder gets **one** attempt to fix the identified findings in its worktree. If the code fails prosecution a second time, the ticket is failed.
+
+---
+
+## Self-Orchestration Guidelines
+
+When utilizing `agb` to build large projects recursively (L3/L4), follow these decomposition guidelines:
+
+1. **Foundation First:** Identify shared files, schemas, and contracts. Build, test, and merge this foundation to `main` before fanning out. Parallel builders must consume this foundation as read-only `rails`—they should never invent types or schemas concurrently.
+2. **Partition Scopes:** Ensure no two concurrent tickets share files in their `scope` configuration. If they share files, they must be sequenced sequentially (via `edges` dependencies) or consolidated.
+3. **Explicit Specs:** A ticket's `body` must contain the entire requirement set. Do not rely on "context" or high-level goals. Specify file names, parameter types, edge cases, and expected gate commands explicitly.
+4. **Supervise, Don't Coach:** If a ticket fails twice, the scheduler halts. Do not attempt to force the agent to retry the same code. A two-strike failure is a sign of an ambiguous spec. Rewrite the ticket's `body` to be smaller or more explicit, adjust the rails, and re-run.
+
+---
+
+## Design Tradeoffs
+
+### Rebase Without Re-Prosecution
+When a ticket branch is rebased onto an updated base branch before merging, the combined diff is validated by the post-merge gate (build + tests) but is **not** re-run through cross-model prosecution. This avoids doubling the prosecution quota. The post-merge gate acts as the safety net for behavioural regressions.
+
+### File-Based Repository Lock
+`agb` implements a zero-dependency, file-based repository lock (via atomic `mkdir` and rename). While an OS-level lock (`flock`) is stronger, the file-based lock allows the tool to run dependency-free across node platforms while maintaining local concurrency safety.
+
+### Untracked-File Window During Post-Merge Gates
+Because post-merge gates can take several minutes to run, any untracked file created by a developer in the main repository checkout during this window will be deleted by `git clean -fd` if the post-merge gate fails and triggers a rollback. Developers should avoid editing the target repository directory while an `agb` run is active.
