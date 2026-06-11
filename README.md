@@ -43,10 +43,32 @@ disciplined fleet:
 
 ## Install
 
+You can run `antigravity-booster` directly using `npx`, or install it globally/locally via `npm`.
+
+### Option A: Zero-Install (npx)
+Perfect for quick runs or ephemeral environments. This automatically downloads the package and installs the ADLC skills into your `~/.gemini/skills` directory:
 ```sh
-npm install && npm link     # provides `agb`
-./install.sh                # links ADLC skills into ~/.gemini/skills (idempotent)
-export AIDLC_PROVIDER=agy   # optional: run aidlc gate tools on Antigravity quota
+npx antigravity-booster bootstrap
+```
+
+### Option B: Global Installation
+To install the `agb` CLI command globally:
+```sh
+npm install -g antigravity-booster
+agb bootstrap
+```
+
+### Option C: Development/Source Installation
+If you cloned the repository locally and want to link the CLI and symlink the skills:
+```sh
+npm install && npm link
+agb bootstrap
+```
+
+### Integration Configuration (Optional)
+To route general `aidlc` tools through your Antigravity session and quota:
+```sh
+export AIDLC_PROVIDER=agy
 ```
 
 ## Quickstart
@@ -148,7 +170,7 @@ and `{i}` substitute into `operation` and `scopePerTarget`.)
 
 Recursive mode: inside any agy session, the `adlc-self-orchestrate` skill
 teaches the agent to decompose work and drive `agb` itself. See
-[SPEC.md](SPEC.md) and `skills/adlc-self-orchestrate/SKILL.md` for the
+[docs/guidelines.md](docs/guidelines.md) and `skills/adlc-self-orchestrate/SKILL.md` for the
 decomposition doctrine (foundation first, single writer per partition,
 self-contained tickets).
 
