@@ -10,6 +10,7 @@
 //   agb status [repo]            render the live dashboard for a repo's current run
 //   agb probe [widths]           measure pool concurrency/latency, print JSON lines
 //   agb validate <plan>          validate a plan file without running anything
+//   agb bootstrap                wire ADLC skills into ~/.gemini/skills (aliases: setup, install)
 //
 // Exit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal
 // error.
@@ -27,6 +28,7 @@ import { reviewFleet, reviewDiff } from '../lib/review.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { PoolSet } from '../lib/pools.mjs';
+import { bootstrap } from '../lib/bootstrap.mjs';
 
 const [cmd, ...rest] = process.argv.slice(2);
 
@@ -143,6 +145,9 @@ try {
       process.exit(2);
     }
     console.log('plan valid');
+  } else if (cmd === 'bootstrap' || cmd === 'setup' || cmd === 'install' || (cmd === 'skills' && ['install', 'setup', 'bootstrap'].includes(rest[0]))) {
+    const force = rest.includes('--force') || rest.includes('-f');
+    bootstrap({ force });
   } else if (cmd === 'probe') {
     const widths = (rest[0] ?? '2,4,8').split(',').map(Number);
     const model = rest[1] ?? 'Gemini 3.5 Flash (Low)';
@@ -193,7 +198,7 @@ try {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
   } else {
-    console.error('usage: agb run|sweep|review|preflight|brains|import-brain|status|validate|probe — see header of bin/agb.mjs');
+    console.error('usage: agb bootstrap|run|sweep|review|preflight|brains|import-brain|status|validate|probe — see header of bin/agb.mjs');
     process.exit(1);
   }
 } catch (err) {

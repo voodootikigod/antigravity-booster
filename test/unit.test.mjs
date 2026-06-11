@@ -16,6 +16,7 @@ import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
   isMidMerge, abortAnyMerge,
 } from '../lib/worktrees.mjs';
+import { bootstrap } from '../lib/bootstrap.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
@@ -311,3 +312,18 @@ test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('bootstrap: installs skills into custom destination directory', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  try {
+    bootstrap({ destination: destDir });
+    // Verify that the skills folders are created
+    assert.ok(existsSync(join(destDir, 'adlc-doctrine')));
+    assert.ok(existsSync(join(destDir, 'adlc-prosecutor')));
+    assert.ok(existsSync(join(destDir, 'adlc-self-orchestrate')));
+    assert.ok(existsSync(join(destDir, 'release')));
+  } finally {
+    rmSync(destDir, { recursive: true, force: true });
+  }
+});
+
