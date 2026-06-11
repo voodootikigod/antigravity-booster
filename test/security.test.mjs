@@ -107,11 +107,11 @@ test('sandboxProfile: denies network, allows cwd, but denies .git writes (persis
   assert.match(prof, /\(deny file-write\* \(subpath "\/work\/tree\/\.git"\)\)/);
 });
 
-test('runGate: sandboxed gate cannot write into .git (no hook/config persistence)', { skip: !gateSandboxEnabled() }, () => {
+test('runGate: sandboxed gate cannot write into .git (no hook/config persistence)', { skip: !gateSandboxEnabled() }, async () => {
   const wt = mkdtempSync(join(tmpdir(), 'agb-gitdeny-'));
   try {
     mkdirSync(join(wt, '.git', 'hooks'), { recursive: true });
-    const r = runGate('test', 'echo payload > .git/hooks/pre-push', wt, { sandbox: true });
+    const r = await runGate('test', 'echo payload > .git/hooks/pre-push', wt, { sandbox: true });
     assert.equal(r.ok, false, 'writing a git hook must be denied');
     assert.equal(existsSync(join(wt, '.git', 'hooks', 'pre-push')), false);
   } finally {
@@ -124,34 +124,34 @@ test('sandboxProfile: denies node_modules writes (post-revert persistence)', () 
   assert.match(prof, /\(deny file-write\* \(subpath "\/work\/tree\/node_modules"\)\)/);
 });
 
-test('runGate: sandboxed gate cannot overwrite node_modules (gitignored persistence)', { skip: !gateSandboxEnabled() }, () => {
+test('runGate: sandboxed gate cannot overwrite node_modules (gitignored persistence)', { skip: !gateSandboxEnabled() }, async () => {
   const wt = mkdtempSync(join(tmpdir(), 'agb-nm-'));
   try {
     mkdirSync(join(wt, 'node_modules', 'lodash'), { recursive: true });
     writeFileSync(join(wt, 'node_modules', 'lodash', 'index.js'), 'module.exports = {}\n');
-    const r = runGate('test', 'echo "backdoor" > node_modules/lodash/index.js', wt, { sandbox: true });
+    const r = await runGate('test', 'echo "backdoor" > node_modules/lodash/index.js', wt, { sandbox: true });
     assert.equal(r.ok, false, 'overwriting a dependency must be denied');
     assert.match(readFileSync(join(wt, 'node_modules', 'lodash', 'index.js'), 'utf8'), /module\.exports/);
     // a normal in-repo write still works
-    const ok = runGate('test', 'echo hi > out.txt', wt, { sandbox: true });
+    const ok = await runGate('test', 'echo hi > out.txt', wt, { sandbox: true });
     assert.equal(ok.ok, true);
   } finally {
     rmSync(wt, { recursive: true, force: true });
   }
 });
 
-test('runGate: sandboxed gate blocks a write outside the worktree on darwin', { skip: !gateSandboxEnabled() }, () => {
+test('runGate: sandboxed gate blocks a write outside the worktree on darwin', { skip: !gateSandboxEnabled() }, async () => {
   const wt = mkdtempSync(join(tmpdir(), 'agb-gate-wt-'));
   // home is NOT in the sandbox's writable set (temp dirs are scratch, allowed).
   const outside = join(homedir(), `.agb-escape-${process.pid}.txt`);
   try {
     // A malicious "test script" tries to write outside the worktree.
-    const r = runGate('test', `touch ${JSON.stringify(outside)}`, wt, { sandbox: true });
+    const r = await runGate('test', `touch ${JSON.stringify(outside)}`, wt, { sandbox: true });
     assert.equal(r.sandboxed, true);
     assert.equal(r.ok, false, 'write outside worktree must be denied by the sandbox');
     assert.equal(existsSync(outside), false, 'escape file must not exist');
     // A write INSIDE the worktree is allowed.
-    const inok = runGate('test', 'touch allowed.txt', wt, { sandbox: true });
+    const inok = await runGate('test', 'touch allowed.txt', wt, { sandbox: true });
     assert.equal(inok.ok, true);
     assert.ok(existsSync(join(wt, 'allowed.txt')));
   } finally {
@@ -245,7 +245,7 @@ test('acquireRepoLock: release only removes a lock carrying OUR token (TOCTOU gu
 
 // --- gate fail-closed on non-darwin (round-3 CRITICAL) ---
 
-test('runGate: fails closed when sandbox requested but unavailable, unless explicitly disabled', () => {
+test('runGate: fails closed when sandbox requested but unavailable, unless explicitly disabled', async () => {
   const wt = mkdtempSync(join(tmpdir(), 'agb-failclosed-'));
   try {
     const fakeLinux = { ...process.env, AGB_SANDBOX_GATES: undefined };
@@ -254,14 +254,14 @@ test('runGate: fails closed when sandbox requested but unavailable, unless expli
     // where sandbox-exec is absent. We can't change os.platform() here, so
     // assert the contract via gateSandboxAvailable on this host.
     if (!gateSandboxEnabled()) {
-      const r = runGate('test', 'echo hi', wt, { sandbox: true, env: { AGB_SANDBOX_GATES: 'unset' } });
+      const r = await runGate('test', 'echo hi', wt, { sandbox: true, env: { AGB_SANDBOX_GATES: 'unset' } });
       assert.equal(r.ok, false, 'must refuse rather than run unsandboxed');
       assert.match(r.output, /sandbox/i);
-      const allowed = runGate('test', 'echo hi', wt, { sandbox: true, env: { AGB_SANDBOX_GATES: '0' } });
+      const allowed = await runGate('test', 'echo hi', wt, { sandbox: true, env: { AGB_SANDBOX_GATES: '0' } });
       assert.equal(allowed.ok, true, 'explicit opt-out runs unsandboxed');
     } else {
       // On darwin sandbox is available, so a requested gate runs sandboxed.
-      const r = runGate('test', 'echo hi', wt, { sandbox: true });
+      const r = await runGate('test', 'echo hi', wt, { sandbox: true });
       assert.equal(r.ok, true);
       assert.equal(r.sandboxed, true);
     }

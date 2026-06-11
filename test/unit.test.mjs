@@ -7,14 +7,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { poolOf, familyOf, runAgy } from '../lib/agy.mjs';
-import { PoolSet, DEFAULT_CAPS } from '../lib/pools.mjs';
+import { PoolSet } from '../lib/pools.mjs';
 import { builderAgentsMd, prosecutionPrompt } from '../lib/charters.mjs';
-import { runGates } from '../lib/gates.mjs';
+import { runGate, runGates } from '../lib/gates.mjs';
 import { prosecute } from '../lib/prosecute.mjs';
 import { RunStatus, renderStatus } from '../lib/status.mjs';
 import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
-  isMidMerge, abortAnyMerge, isDirty,
+  isMidMerge, abortAnyMerge,
 } from '../lib/worktrees.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
@@ -59,13 +59,19 @@ test('PoolSet: caps enforced, waiters released, requests counted', async () => {
   assert.equal(pools.snapshot().requests['gemini-flash'], 3);
 });
 
-test('PoolSet.route: prefers free pool, honors pool_hint', () => {
+test('PoolSet.route: reservation spreads concurrent dispatches across pools', () => {
   const pools = new PoolSet();
+  // First mid ticket → claude (all reserved 0, claude is first candidate).
   assert.equal(pools.route('mid'), 'Claude Sonnet 4.6 (Thinking)');
-  assert.equal(pools.route('mid', 'gemini'), 'Gemini 3.1 Pro (Low)');
-  // saturate claude → mid routing falls through to gemini-pro
-  pools.inFlight.claude = DEFAULT_CAPS.claude;
+  // Second mid ticket (no slot acquired yet — the bug case) must NOT pick
+  // claude again; reservation pushes it to the idle gemini-pro pool.
   assert.equal(pools.route('mid'), 'Gemini 3.1 Pro (Low)');
+  // pool_hint still constrains family.
+  assert.equal(pools.route('mid', 'gemini'), 'Gemini 3.1 Pro (Low)');
+  // unroute frees the assignment so the pool rebalances.
+  pools.unroute('Gemini 3.1 Pro (Low)');
+  pools.unroute('Gemini 3.1 Pro (Low)');
+  assert.equal(pools.reserved['gemini-pro'], 0);
 });
 
 test('PoolSet.prosecutorFor: always a different family', () => {
@@ -95,11 +101,29 @@ test('prosecutionPrompt: refute charter + JSON contract + diff embedded', () => 
 
 // --- gates ---
 
-test('runGates: ordered, stops at first failure, captures output', () => {
-  const pass = runGates({ a: 'true', b: 'echo hi' }, '/tmp');
+test('runGate: async — does NOT block the event loop (throughput)', async () => {
+  // While a ~400ms gate runs, the event loop must stay live so other tickets'
+  // agy streams keep progressing. Proof: a timer set just before the gate
+  // fires DURING the gate, and two gates overlap rather than summing.
+  let timerFiredDuringGate = false;
+  const t = setTimeout(() => { timerFiredDuringGate = true; }, 50);
+  const t0 = Date.now();
+  const [a, b] = await Promise.all([
+    runGate('g1', 'sleep 0.4', '/tmp'),
+    runGate('g2', 'sleep 0.4', '/tmp'),
+  ]);
+  const wall = Date.now() - t0;
+  clearTimeout(t);
+  assert.equal(a.ok, true); assert.equal(b.ok, true);
+  assert.ok(timerFiredDuringGate, 'a timer fired while a gate ran — event loop not blocked');
+  assert.ok(wall < 700, `two 0.4s gates overlapped (${wall}ms < 700ms); execSync would serialize to ~800ms`);
+});
+
+test('runGates: ordered, stops at first failure, captures output', async () => {
+  const pass = await runGates({ a: 'true', b: 'echo hi' }, '/tmp');
   assert.equal(pass.ok, true);
   assert.equal(pass.results.length, 2);
-  const fail = runGates({ a: 'true', b: 'echo nope && false', c: 'true' }, '/tmp');
+  const fail = await runGates({ a: 'true', b: 'echo nope && false', c: 'true' }, '/tmp');
   assert.equal(fail.ok, false);
   assert.equal(fail.results.length, 2, 'c must not run after b fails');
   assert.match(fail.results[1].output, /nope/);
