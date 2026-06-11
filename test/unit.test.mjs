@@ -147,6 +147,7 @@ test('RunStatus: atomic write + dashboard render', () => {
     assert.match(rendered, /run-test/);
     assert.match(rendered, /T1/);
     assert.match(rendered, /DONE/);
+    assert.match(rendered, /merged 1\s+failed 0/, 'failed count from object keys, not undefined');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

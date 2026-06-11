@@ -53,6 +53,20 @@ prosecution, gate-shaped lifecycle from ideation to validation.
 | A8 | All lib code covered by node:test (no live agy in default test run) | `npm test` green offline |
 | A9 | install.sh wires skills into ~/.gemini/skills idempotently | run twice, second run no-ops |
 
+## Known design tradeoffs
+
+- **Rebase without re-prosecution** (adversarial-review, accepted): when a
+  ticket branch is rebased onto an advanced base before merge, the combined
+  diff is verified by the deterministic post-merge gate (build + tests) but
+  is NOT re-run through cross-model prosecution. Full re-prosecution per merge
+  would roughly double prosecution quota; the post-merge gate catches
+  behavioral regressions, and clean-but-semantically-drifted rebases are the
+  same residual risk any merge queue carries. Raise `prosecution.dryPasses`
+  or add a dedicated re-prosecute step if a project needs it.
+- **File-based repo lock** is best-effort zero-dep (atomic mkdir + atomic
+  rename reclaim); a flock(2) OS lock would be strictly stronger but needs a
+  native binding.
+
 ## Non-goals (phase 1)
 
 GUI automation, Linux sandbox, omagy interop, model-router float math
