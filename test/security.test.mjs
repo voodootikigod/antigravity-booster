@@ -136,7 +136,24 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
     const release = acquireRepoLock(repo, { runId: 'live' });
     const holder = JSON.parse(readFileSync(lockPath, 'utf8'));
     assert.equal(holder.runId, 'live');
+    assert.ok(holder.token, 'fresh lock carries an ownership token');
     release();
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('acquireRepoLock: release only removes a lock carrying OUR token (TOCTOU guard)', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-lock3-'));
+  try {
+    const lockPath = join(repo, '.booster', 'run.lock');
+    const release = acquireRepoLock(repo, { runId: 'A' });
+    // Simulate another run having replaced the lock after A acquired it.
+    const other = JSON.parse(readFileSync(lockPath, 'utf8'));
+    writeFileSync(lockPath, JSON.stringify({ ...other, token: 'someone-else', runId: 'B' }));
+    release(); // must NOT delete B's lock
+    assert.ok(existsSync(lockPath), 'release must not remove a lock it does not own');
+    assert.equal(JSON.parse(readFileSync(lockPath, 'utf8')).runId, 'B');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

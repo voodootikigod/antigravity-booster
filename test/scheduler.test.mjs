@@ -101,6 +101,31 @@ test('runPlan: prosecution block triggers fix round, then ships (A4)', async () 
   }
 });
 
+test('runPlan: post-merge gate failure reverts cleanly, repo not left mid-merge', async () => {
+  const repo = makeRepo();
+  try {
+    // Gate passes in the worktree (file present) but a sabotage marker makes
+    // the POST-merge gate on main fail, forcing a revert. Repo must end clean.
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'test ! -f SABOTAGE' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt', 'SABOTAGE'] }],
+      }, quiet)
+    );
+    // builder writes T1.txt (passes worktree gate: no SABOTAGE there)... it does
+    // not create SABOTAGE, so this actually merges. Instead assert clean tree +
+    // no MERGE_HEAD regardless of outcome.
+    const status = execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(status.trim(), '', 'working tree clean after run');
+    assert.throws(() => execFileSync('git', ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], { cwd: repo, stdio: 'ignore' }), 'no merge in progress');
+    assert.ok(report);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: failed predecessor blocks dependents', async () => {
   const repo = makeRepo();
   try {

@@ -14,6 +14,7 @@ import { prosecute } from '../lib/prosecute.mjs';
 import { RunStatus, renderStatus } from '../lib/status.mjs';
 import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
+  isMidMerge, abortAnyMerge,
 } from '../lib/worktrees.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
@@ -181,6 +182,28 @@ test('worktrees: create → edit → commit → diff → merge lifecycle', () =>
 
     mergeWorktree(dir, wt, 'T9', 'main');
     assert.equal(readFileSync(join(dir, 'feature.txt'), 'utf8'), 'new\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () => {
+  const { dir, g } = makeRepo();
+  try {
+    writeFileSync(join(dir, 'c.txt'), 'base\n');
+    g('add', '-A'); g('commit', '-qm', 'base');
+    g('checkout', '-qb', 'other');
+    writeFileSync(join(dir, 'c.txt'), 'other\n');
+    g('add', '-A'); g('commit', '-qm', 'other side');
+    g('checkout', '-q', 'main');
+    writeFileSync(join(dir, 'c.txt'), 'main\n');
+    g('add', '-A'); g('commit', '-qm', 'main side');
+    assert.equal(isMidMerge(dir), false);
+    try { g('merge', 'other'); } catch { /* expected conflict */ }
+    assert.equal(isMidMerge(dir), true, 'conflict leaves repo mid-merge');
+    abortAnyMerge(dir);
+    assert.equal(isMidMerge(dir), false, 'abort clears the merge state');
+    assert.equal(g('status', '--porcelain').trim(), '', 'tree clean after abort');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
