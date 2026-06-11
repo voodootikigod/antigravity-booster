@@ -50,6 +50,20 @@ case "$prompt" in
       blocked) echo "TICKET-BLOCKED: cannot proceed"; exit 0 ;;
       bad) echo "wrong stuff" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
       noop) echo "TICKET-DONE"; exit 0 ;;
+      # sabotage: in-scope marker that passes the worktree gate but makes a
+      # `.git`-directory-aware post-merge gate fail on main (revert-path test).
+      sabotage) echo "did the work" > "${tid:-out}.txt"; echo sabotage > SABOTAGE; echo "TICKET-DONE"; exit 0 ;;
+      # rail: edits a read-only rail file that sits INSIDE the declared scope.
+      rail) echo "did the work" > "${tid:-out}.txt"; echo edited > RAIL.txt; echo "TICKET-DONE"; exit 0 ;;
+      # rail-then-good: strike 1 violates the rail, strike 2 behaves —
+      # proves the strike-2 worktree was reset (needs FAKE_STATE_DIR).
+      rail-then-good)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        echo "did the work" > "${tid:-out}.txt"
+        [ "$n" -eq 0 ] && echo edited > RAIL.txt
+        echo "TICKET-DONE"; exit 0 ;;
       *) echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
     esac ;;
 esac

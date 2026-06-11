@@ -18,6 +18,53 @@ import {
 } from '../lib/worktrees.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
+const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
+
+// --- agb validate (plan-shape gate) ---
+
+test('agb validate: rejects duplicate ids, unknown edges, missing body, empty scope, unroutable tier/hint', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-validate-'));
+  try {
+    const bad = join(dir, 'bad.json');
+    writeFileSync(bad, JSON.stringify({
+      repo: dir,
+      gate: { test: 'true' },
+      tickets: [
+        { id: 'T1', title: 'a', body: 'x', scope: ['a.txt'], edges: [{ to: 'T9' }] },
+        { id: 'T1', title: 'dup', body: 'y', scope: ['b.txt'] },
+        { id: 'T2', title: 'no body', scope: ['c.txt'] },
+        { id: 'T3', title: 'no scope', body: 'z', scope: [] },
+        { id: 'T4', title: 'unroutable', body: 'w', scope: ['d.txt'], tier: 'cheap', pool_hint: 'claude' },
+        { id: 'T5', title: 'bad tier', body: 'v', scope: ['e.txt'], tier: 'mega' },
+      ],
+    }));
+    let out = '';
+    try {
+      execFileSync(process.execPath, [AGB_BIN, 'validate', bad], { encoding: 'utf8', stdio: 'pipe' });
+      assert.fail('validate must exit non-zero');
+    } catch (err) {
+      assert.equal(err.status, 2);
+      out = String(err.stderr);
+    }
+    assert.match(out, /duplicate ticket id: T1/);
+    assert.match(out, /edge to unknown ticket 'T9'/);
+    assert.match(out, /T2: body .* is required/);
+    assert.match(out, /T3: scope must be a non-empty array/);
+    assert.match(out, /T4: no model candidates for tier 'cheap' with pool_hint 'claude'/);
+    assert.match(out, /T5: unknown tier 'mega'/);
+
+    const good = join(dir, 'good.json');
+    writeFileSync(good, JSON.stringify({
+      repo: dir,
+      gate: { test: 'true' },
+      tickets: [{ id: 'T1', title: 'a', body: 'do the thing', scope: ['a.txt'], tier: 'mid', pool_hint: 'auto' }],
+    }));
+    const ok = execFileSync(process.execPath, [AGB_BIN, 'validate', good], { encoding: 'utf8', stdio: 'pipe' });
+    assert.match(ok, /plan valid/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 // --- agy wrapper ---
 
@@ -155,6 +202,19 @@ test('prosecute: high finding forces block; empty diff blocks without a model ca
   } finally {
     delete process.env.AGB_AGY_BIN; delete process.env.FAKE_PROSECUTOR_VERDICT;
   }
+});
+
+test('prosecute: oversized diff blocks without a model call — never ship on a partial view', async () => {
+  // No AGB_AGY_BIN set: any model call would fail loudly, proving the
+  // over-limit branch returns before spawning a prosecutor.
+  const v = await prosecute({
+    ticket: { id: 'T1', body: 'spec' },
+    diff: 'x'.repeat(120_001),
+    model: 'x-no-such-model',
+  });
+  assert.equal(v.verdict, 'block');
+  assert.equal(v.findings[0].severity, 'critical');
+  assert.match(v.findings[0].claim, /too large to prosecute/);
 });
 
 // --- status ---

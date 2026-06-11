@@ -50,7 +50,7 @@ prosecution, gate-shaped lifecycle from ideation to validation.
 | A5 | Merge gate: typecheck/tests green before sequential merge; failed gate → ticket marked failed, no merge | smoke run shows a red ticket not merged |
 | A6 | `agb status` renders live run state from .booster/run.json | run during smoke; shows workers, phases, models, request counts |
 | A7 | Request accounting: run report totals agy calls per pool | .booster/report.json after smoke run |
-| A8 | All lib code covered by node:test (no live agy in default test run) | `npm test` green offline |
+| A8 | All lib code covered by node:test (no live agy in default test run) | `npm test` green offline on any platform (sandbox-specific tests are darwin-gated; scheduler tests run gates unsandboxed) |
 | A9 | install.sh wires skills into ~/.gemini/skills idempotently | run twice, second run no-ops |
 
 ## Known design tradeoffs
@@ -66,6 +66,14 @@ prosecution, gate-shaped lifecycle from ideation to validation.
 - **File-based repo lock** is best-effort zero-dep (atomic mkdir + atomic
   rename reclaim); a flock(2) OS lock would be strictly stronger but needs a
   native binding.
+- **Untracked-file window during post-merge gates** (adversarial-review,
+  accepted): the dirty-repo check is point-in-time (re-checked under the
+  merge lock), but a post-merge gate can run for minutes; an untracked file
+  the user creates in the main checkout *during* that window is deleted by
+  the revert path's `git clean -fd` if the gate fails. Don't hand-edit the
+  checkout while a run is live (the run lock signals this); a pre-merge
+  untracked-file snapshot would close the window at the cost of extra git
+  calls per merge.
 
 ## Non-goals (phase 1)
 
@@ -75,42 +83,62 @@ GUI automation, Linux sandbox, omagy interop, model-router float math
 ## Components
 
 ```
-bin/agb.mjs          CLI: run | probe | status | plan (phase 2)
+bin/agb.mjs          CLI: run | sweep | review | preflight | brains |
+                     import-brain | status | probe | validate
 lib/agy.mjs          spawn wrapper: model, sandbox, timeout, sentinel check,
                      request ledger
-lib/pools.mjs        pool map (model → quota pool), per-pool semaphores
-lib/dag.mjs          tickets.json validation + topological ready-set
+lib/pools.mjs        pool map (model → quota pool), per-pool semaphores,
+                     tier routing
+lib/scheduler.mjs    DAG ready-set dispatch + builder lifecycle: AGENTS.md
+                     authoring, spawn, two-strike regeneration, scope/rails
+                     enforcement, sequential merge
 lib/worktrees.mjs    create/init/remove per ~/.claude/rules worktrees.md
-lib/workers.mjs      builder lifecycle: AGENTS.md authoring, spawn, flail
-                     timeout, two-strike regeneration
 lib/prosecute.mjs    cross-model refute pass + verifier, verdict JSON
-lib/gates.mjs        build/test gate runner, deterministic exit codes
+lib/gates.mjs        build/test gate runner (sandboxed), deterministic exit codes
+lib/charters.mjs     builder/prosecutor charter rendering (AGENTS.md, prompts)
 lib/status.mjs       run.json writer + terminal dashboard
-skills/              adlc-builder, adlc-prosecutor, adlc-integrator,
-                     adlc-self-orchestrate (L3)
-templates/           AGENTS.md ticket template, tickets.json schema+example
+lib/lock.mjs         per-repo run lock (atomic mkdir + rename reclaim)
+lib/sweep.mjs        sweep.json → plan (same op × many targets)
+lib/preflight.mjs    plan-time gates: scope overlap + coldstart
+lib/review.mjs       read-only lens fleet over a diff, loop-until-dry
+lib/brain.mjs        Antigravity GUI plan artifact → plan.json (L4)
+skills/              adlc-doctrine (builder+integrator charters),
+                     adlc-prosecutor, adlc-self-orchestrate (L3)
+templates/           plan.example.json (schema by example)
 install.sh           symlink skills → ~/.gemini/skills, check agy present
 ```
 
-## tickets.json schema (v1)
+## plan.json schema (v1 — the aidlc ticket schema + tier/pool_hint)
 
 ```json
 {
   "repo": "/abs/path",
+  "base": "main",
   "gate": { "build": "npm run typecheck", "test": "npm test" },
   "tickets": [
     {
       "id": "T1",
       "title": "...",
-      "spec": "full self-contained instruction text",
+      "body": "full self-contained instruction text (required, non-empty)",
       "scope": ["src/foo/**"],
-      "deps": [],
+      "rails": ["src/contracts/**"],
+      "edges": [{ "to": "T3" }],
       "tier": "cheap|mid|frontier",
       "pool_hint": "gemini|claude|auto"
     }
   ]
 }
 ```
+
+Field notes: `body` (not `spec`) carries the instruction text and is
+required — `agb validate` rejects a missing/empty body because the builder
+charter would render an empty specification. Dependencies are `edges`
+(`{to}` objects, this-ticket-blocks-`to`), not a `deps` list. `scope` must
+be a non-empty glob list (empty scope would disable the out-of-scope
+check); `rails` are read-only globs enforced mechanically after every
+strike, independent of scope. `tier`+`pool_hint` must be routable (e.g.
+`cheap`+`claude` is rejected at validate time — the cheap tier has no
+Claude-family candidate).
 
 Builder model chosen by tier within the least-loaded allowed pool;
 prosecutor model chosen from the *other* family, mid tier by default.

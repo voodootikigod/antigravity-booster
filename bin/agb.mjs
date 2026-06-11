@@ -14,9 +14,11 @@
 // Exit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal
 // error.
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validateTicket, topoSort } from '@aidlc/core/tickets';
+import { tierCandidates, TIER_CANDIDATES } from '../lib/pools.mjs';
 import { runPlan } from '../lib/scheduler.mjs';
 import { renderStatus } from '../lib/status.mjs';
 import { runAgy } from '../lib/agy.mjs';
@@ -37,6 +39,38 @@ function loadPlan(path) {
   }
   for (const t of plan.tickets ?? []) errors.push(...validateTicket(t));
   if (!plan.tickets?.length) errors.push('plan.tickets is empty');
+  // Cross-ticket + routability checks validateTicket cannot do alone.
+  // Without them `agb validate` blesses plans that crash or corrupt
+  // `agb run`: duplicate ids share a worktree/branch, an edge to an unknown
+  // id throws mid-run, and an unroutable tier/pool_hint combination (e.g.
+  // cheap+claude) used to make the ticket silently vanish from the report.
+  const ids = new Set();
+  for (const t of plan.tickets ?? []) {
+    if (!t.id) continue; // validateTicket already reported the missing id
+    if (ids.has(t.id)) errors.push(`duplicate ticket id: ${t.id}`);
+    ids.add(t.id);
+  }
+  for (const t of plan.tickets ?? []) {
+    for (const e of t.edges ?? []) {
+      if (!ids.has(e.to)) errors.push(`${t.id}: edge to unknown ticket '${e.to}'`);
+    }
+    if (typeof t.body !== 'string' || !t.body.trim()) {
+      errors.push(`${t.id}: body (full self-contained spec text) is required — ` +
+        `without it the builder charter renders an empty specification`);
+    }
+    if (!Array.isArray(t.scope) || !t.scope.length) {
+      errors.push(`${t.id}: scope must be a non-empty array of globs — ` +
+        `an empty scope disables the out-of-scope check entirely`);
+    }
+    if (t.tier !== undefined && !TIER_CANDIDATES[t.tier]) {
+      errors.push(`${t.id}: unknown tier '${t.tier}' (cheap|mid|frontier)`);
+    }
+    if (t.pool_hint !== undefined && !['gemini', 'claude', 'auto'].includes(t.pool_hint)) {
+      errors.push(`${t.id}: unknown pool_hint '${t.pool_hint}' (gemini|claude|auto)`);
+    } else if (!tierCandidates(t.tier ?? 'mid', t.pool_hint).length) {
+      errors.push(`${t.id}: no model candidates for tier '${t.tier ?? 'mid'}' with pool_hint '${t.pool_hint}'`);
+    }
+  }
   const { cycle } = topoSort(plan.tickets ?? []);
   if (cycle) errors.push(`cycle in ticket DAG: ${cycle.join(', ')}`);
   if (plan.repo) plan.repo = resolve(plan.repo);
@@ -112,6 +146,7 @@ try {
   } else if (cmd === 'probe') {
     const widths = (rest[0] ?? '2,4,8').split(',').map(Number);
     const model = rest[1] ?? 'Gemini 3.5 Flash (Low)';
+    const rows = [];
     for (const n of widths) {
       const t0 = Date.now();
       const results = await Promise.all(
@@ -122,10 +157,40 @@ try {
         )
       );
       const lats = results.map((r) => r.ms).sort((a, b) => a - b);
-      console.log(JSON.stringify({
+      const row = {
         model, width: n, ok: results.filter((r) => r.ok).length,
         wall_ms: Date.now() - t0, median_ms: lats[Math.floor(lats.length / 2)], max_ms: lats.at(-1),
-      }));
+      };
+      rows.push(row);
+      console.log(JSON.stringify(row));
+    }
+    // SPEC A2: probe WRITES the calibration artifact (previously stdout-only
+    // and the docs were hand-transcribed — adversarial-review LOW). The write
+    // is best-effort: a read-only install prefix or full-garbage run must not
+    // turn a successful measurement into exit 1. AGB_CALIBRATION_DIR
+    // overrides the default (this checkout's docs/calibration/).
+    if (rows.some((r) => r.ok > 0)) {
+      try {
+        const day = new Date().toISOString().slice(0, 10);
+        const calDir = process.env.AGB_CALIBRATION_DIR ??
+          fileURLToPath(new URL('../docs/calibration/', import.meta.url));
+        const calFile = join(calDir, `probe-${day}.md`);
+        const table = [
+          `## ${model} — probed ${new Date().toISOString()}`,
+          '',
+          '| width | ok | wall ms | median ms | max ms |',
+          '|---|---|---|---|---|',
+          ...rows.map((r) => `| ${r.width} | ${r.ok}/${r.width} | ${r.wall_ms} | ${r.median_ms} | ${r.max_ms} |`),
+          '',
+        ].join('\n');
+        mkdirSync(calDir, { recursive: true });
+        appendFileSync(calFile, (existsSync(calFile) ? '\n' : `# Pool probe — ${day}\n\n`) + table);
+        console.error(`probe: appended ${rows.length} row(s) to ${calFile}`);
+      } catch (err) {
+        console.error(`probe: could not write calibration artifact (${err.message}) — rows above are still valid`);
+      }
+    } else {
+      console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
   } else {
     console.error('usage: agb run|sweep|review|preflight|brains|import-brain|status|validate|probe — see header of bin/agb.mjs');

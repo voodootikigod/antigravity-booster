@@ -33,7 +33,10 @@ const quiet = { log: () => {} };
 test('runPlan: 3-ticket DAG builds in parallel, prosecutes, merges all', async () => {
   const repo = makeRepo();
   try {
-    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+    // AGB_SANDBOX_GATES=0: gate sandboxing is darwin-only and fails closed
+    // elsewhere; its behavior is covered by the security suite. Without this
+    // the scheduler suite is red on Linux (SPEC A8: npm test green offline).
+    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' }, () =>
       runPlan({
         repo,
         gate: { test: 'true' },
@@ -64,7 +67,7 @@ test('runPlan: 3-ticket DAG builds in parallel, prosecutes, merges all', async (
 test('runPlan: red gate → two strikes → ticket failed, nothing merged', async () => {
   const repo = makeRepo();
   try {
-    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'bad' }, () =>
+    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'bad', AGB_SANDBOX_GATES: '0' }, () =>
       runPlan({
         repo,
         gate: { test: 'grep -q "did the work" T1.txt' },
@@ -84,7 +87,7 @@ test('runPlan: prosecution block triggers fix round, then ships (A4)', async () 
   const state = mkdtempSync(join(tmpdir(), 'agb-state-'));
   try {
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, FAKE_PROSECUTOR_VERDICT: 'block-then-ship', FAKE_STATE_DIR: state },
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_PROSECUTOR_VERDICT: 'block-then-ship', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () =>
         runPlan({
           repo,
@@ -101,26 +104,144 @@ test('runPlan: prosecution block triggers fix round, then ships (A4)', async () 
   }
 });
 
-test('runPlan: post-merge gate failure reverts cleanly, repo not left mid-merge', async () => {
+test('runPlan: post-merge gate failure reverts main to the pre-run SHA (data-loss guard)', async () => {
   const repo = makeRepo();
   try {
-    // Gate passes in the worktree (file present) but a sabotage marker makes
-    // the POST-merge gate on main fail, forcing a revert. Repo must end clean.
+    // Pre-seed the entries ensureGitignore would otherwise commit at run
+    // start, so the pre-run SHA is exactly what the revert must restore.
+    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'gitignore'], { cwd: repo });
+    const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    // `.git` is a FILE inside a linked worktree but a DIRECTORY on main, so
+    // this gate passes in the builder worktree and fails on main once the
+    // sabotage builder's SABOTAGE marker merges — genuinely exercising the
+    // revert path (the previous version of this test admitted it never did).
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'sabotage', AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
-        gate: { test: 'test ! -f SABOTAGE' },
+        gate: { test: 'test ! -d .git || test ! -f SABOTAGE' },
         tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt', 'SABOTAGE'] }],
       }, quiet)
     );
-    // builder writes T1.txt (passes worktree gate: no SABOTAGE there)... it does
-    // not create SABOTAGE, so this actually merges. Instead assert clean tree +
-    // no MERGE_HEAD regardless of outcome.
+    assert.equal(report.merged.length, 0, 'nothing merged');
+    assert.match(report.failed.T1, /post-merge gate/);
+    const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.equal(headAfter, headBefore, 'HEAD restored to exactly the pre-run SHA');
+    assert.equal(existsSync(join(repo, 'SABOTAGE')), false, 'sabotage payload not on main');
+    assert.equal(existsSync(join(repo, 'T1.txt')), false, 'no partial merge remnants');
     const status = execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' });
-    assert.equal(status.trim(), '', 'working tree clean after run');
+    assert.equal(status.trim(), '', 'working tree clean after revert');
     assert.throws(() => execFileSync('git', ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD'], { cwd: repo, stdio: 'ignore' }), 'no merge in progress');
-    assert.ok(report);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: editing a rail inside the declared scope fails the ticket', async () => {
+  const repo = makeRepo();
+  try {
+    // Seed the rail file on main so the builder's write is an edit.
+    writeFileSync(join(repo, 'RAIL.txt'), 'frozen contract\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add rail'], { cwd: repo });
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'rail', AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        // Rail sits INSIDE scope: the scope check alone would pass this.
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt', 'RAIL.txt'], rails: ['RAIL.txt'] }],
+      }, quiet)
+    );
+    assert.equal(report.merged.length, 0);
+    assert.match(report.failed.T1, /rail violation/);
+    assert.equal(readFileSync(join(repo, 'RAIL.txt'), 'utf8'), 'frozen contract\n', 'rail untouched on main');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: rail strike resets the worktree — strike 2 is judged on its own diff', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-rail-state-'));
+  try {
+    writeFileSync(join(repo, 'RAIL.txt'), 'frozen contract\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add rail'], { cwd: repo });
+    // Strike 1 edits the rail (strike fails, worktree reset to base);
+    // strike 2 does clean in-scope work. Without the reset, the cumulative
+    // diff would still name RAIL.txt and strike 2 would auto-fail.
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'rail-then-good', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt', 'RAIL.txt'], rails: ['RAIL.txt'] }],
+      }, quiet)
+    );
+    assert.deepEqual(Object.keys(report.failed), [], 'strike 2 merges clean');
+    assert.deepEqual(report.merged, ['T1']);
+    assert.equal(readFileSync(join(repo, 'RAIL.txt'), 'utf8'), 'frozen contract\n', 'rail untouched on main');
+    assert.ok(existsSync(join(repo, 'T1.txt')), 'strike-2 work merged');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: unroutable tier/pool_hint fails the ticket — never a silent drop with exit 0', async () => {
+  const repo = makeRepo();
+  try {
+    // cheap tier has no Claude-family candidate: route() throws. The ticket
+    // must land in `failed` (and block dependents) rather than vanish from
+    // the report entirely.
+    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' }, () =>
+      runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [
+          { id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], tier: 'cheap', pool_hint: 'claude', edges: [{ to: 'T2' }] },
+          { id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'] },
+        ],
+      }, quiet)
+    );
+    assert.match(report.failed.T1, /no candidates/);
+    assert.match(report.failed.T2, /blocked by failed predecessor/);
+    assert.equal(report.merged.length, 0);
+    const accounted = [...report.merged, ...Object.keys(report.failed)].sort();
+    assert.deepEqual(accounted, ['T1', 'T2'], 'every ticket appears in merged ∪ failed');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: duplicate ids and unknown edge targets are rejected before touching the repo', async () => {
+  const repo = makeRepo();
+  try {
+    const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
+          tickets: [
+            { id: 'T1', title: 'a', body: 'x', scope: ['a.txt'] },
+            { id: 'T1', title: 'b', body: 'y', scope: ['b.txt'] },
+          ],
+        }, quiet)),
+      /duplicate ticket id: T1/
+    );
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
+          tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a.txt'], edges: [{ to: 'T9' }] }],
+        }, quiet)),
+      /edge to unknown ticket 'T9'/
+    );
+    const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.equal(headAfter, headBefore, 'repo untouched (no gitignore commit, no lock side effects)');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
