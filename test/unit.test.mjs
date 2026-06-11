@@ -167,10 +167,10 @@ test('worktrees: create → edit → commit → diff → merge lifecycle', () =>
   const { dir, g } = makeRepo();
   try {
     ensureGitignore(dir);
-    ensureGitignore(dir); // idempotent
+    ensureGitignore(dir); // idempotent — second call must not commit again
     const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
     assert.equal(gi.match(/\.worktrees\//g).length, 1);
-    g('add', '-A'); g('commit', '-qm', 'gitignore');
+    assert.match(g('log', '--oneline', '-1'), /gitignore agb working dirs/);
 
     const wt = createWorktree(dir, 'T9', 'main');
     writeFileSync(join(wt, 'feature.txt'), 'new\n');
