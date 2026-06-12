@@ -130,13 +130,16 @@ test('preflight: ok when scopes disjoint and coldstart returns no gaps', async (
       ],
     };
     const r = await preflight(plan);
-    // fake-agy answers coldstart prompts with "OK" fallback → unparseable → error gap
-    // so use skipColdstart for the deterministic half...
-    const det = await preflight(plan, { skipColdstart: true });
-    assert.equal(det.ok, true);
-    assert.equal(r.gaps.length, 2, 'unparseable coldstart output must surface as gaps, not pass silently');
+    assert.equal(r.ok, true);
+    assert.equal(r.gaps.length, 0);
+    // Unparseable coldstart output must surface as gaps, not pass silently.
+    process.env.FAKE_COLDSTART_MODE = 'garbage';
+    const bad = await preflight(plan);
+    assert.equal(bad.ok, false);
+    assert.equal(bad.gaps.length, 2);
   } finally {
     delete process.env.AGB_AGY_BIN;
+    delete process.env.FAKE_COLDSTART_MODE;
   }
 });
 
@@ -175,5 +178,19 @@ test('brain: readBrain throws on unknown id', () => {
     assert.throws(() => readBrain('zzz', brainDir));
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
+  }
+});
+
+test('brain: readBrain can read directly from a local spec file path', () => {
+  const tmpFile = join(tmpdir(), `agb-spec-${Date.now()}.md`);
+  writeFileSync(tmpFile, '# My Spec\nSome description of the task\n');
+  try {
+    const b = readBrain(tmpFile);
+    assert.equal(b.id, tmpFile);
+    assert.equal(b.title, 'My Spec');
+    assert.match(b.implementationPlan, /Some description/);
+    assert.equal(b.task, null);
+  } finally {
+    rmSync(tmpFile, { force: true });
   }
 });
