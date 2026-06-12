@@ -17,6 +17,16 @@ Single bounded tasks: just do them.
 
 ## Procedure
 
+0. **Prefer compiling an existing plan.** Planning belongs to Antigravity's
+   plan phase, not to you ad hoc: if this work was planned in a planning
+   conversation (this session or the desktop app), a brain artifact
+   (`implementation_plan.md`) already exists. Compile it instead of
+   decomposing by hand — `npx agb brains` to find it, then
+   `npx agb plan <id> <repo>`, which converts, gates (overlap, coldstart,
+   parallax, premortem), and writes a provenance-stamped `plan.json`.
+   If gates report blocking findings, refine the plan (the markdown, not
+   the JSON) and recompile. Steps 1–3 below are the fallback for when no
+   brain artifact exists.
 1. **Foundation first.** Identify shared surface (schemas, types, shared
    utilities). Build and commit it to main BEFORE the fan-out — parallel
    workers consume the foundation, never invent it. Foundation paths go

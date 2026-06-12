@@ -4,9 +4,14 @@
 //   agb run <plan.json>          execute a ticket DAG (build → gate → prosecute → merge)
 //   agb sweep <sweep.json>       same operation × many targets, then run
 //   agb review [repo] [ref]      read-only lens fleet over a diff, loop-until-dry
+//   agb plan <id | spec.md> <repo> compile an Antigravity brain plan or spec file into plan.json
+//                                (convert → validate → overlap/coldstart/parallax
+//                                gates with feedback loop → advisory premortem;
+//                                flags: --out <file> --force --no-coldstart
+//                                --no-parallax --no-premortem)
 //   agb preflight <plan.json>    plan-time gates: scope overlap + coldstart
-//   agb brains                   list Antigravity GUI plan artifacts
-//   agb import-brain <id> <repo> convert a GUI plan into plan.json (stdout)
+//   agb brains                   list Antigravity plan artifacts (GUI + agy sessions)
+//   agb import-brain <id> <repo> DEPRECATED: raw one-shot conversion (use agb plan)
 //   agb status [repo]            render the live dashboard for a repo's current run
 //   agb probe [widths]           measure pool concurrency/latency, print JSON lines
 //   agb validate <plan>          validate a plan file without running anything
@@ -15,11 +20,10 @@
 // Exit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal
 // error.
 
-import { readFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { validateTicket, topoSort } from '@aidlc/core/tickets';
-import { tierCandidates, TIER_CANDIDATES } from '../lib/pools.mjs';
+import { validateTicket } from '@aidlc/core/tickets';
 import { runPlan } from '../lib/scheduler.mjs';
 import { renderStatus } from '../lib/status.mjs';
 import { runAgy } from '../lib/agy.mjs';
@@ -27,6 +31,7 @@ import { sweepToPlan } from '../lib/sweep.mjs';
 import { reviewFleet, reviewDiff } from '../lib/review.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
+import { validatePlan, compilePlan } from '../lib/plan.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 
@@ -34,47 +39,10 @@ const [cmd, ...rest] = process.argv.slice(2);
 
 function loadPlan(path) {
   const plan = JSON.parse(readFileSync(path, 'utf8'));
-  const errors = [];
-  if (!plan.repo) errors.push('plan.repo is required (absolute path to target repo)');
-  if (!plan.gate || (!plan.gate.build && !plan.gate.test)) {
-    errors.push('plan.gate must declare at least one of build/test commands');
-  }
-  for (const t of plan.tickets ?? []) errors.push(...validateTicket(t));
-  if (!plan.tickets?.length) errors.push('plan.tickets is empty');
-  // Cross-ticket + routability checks validateTicket cannot do alone.
-  // Without them `agb validate` blesses plans that crash or corrupt
-  // `agb run`: duplicate ids share a worktree/branch, an edge to an unknown
-  // id throws mid-run, and an unroutable tier/pool_hint combination (e.g.
-  // cheap+claude) used to make the ticket silently vanish from the report.
-  const ids = new Set();
-  for (const t of plan.tickets ?? []) {
-    if (!t.id) continue; // validateTicket already reported the missing id
-    if (ids.has(t.id)) errors.push(`duplicate ticket id: ${t.id}`);
-    ids.add(t.id);
-  }
-  for (const t of plan.tickets ?? []) {
-    for (const e of t.edges ?? []) {
-      if (!ids.has(e.to)) errors.push(`${t.id}: edge to unknown ticket '${e.to}'`);
-    }
-    if (typeof t.body !== 'string' || !t.body.trim()) {
-      errors.push(`${t.id}: body (full self-contained spec text) is required — ` +
-        `without it the builder charter renders an empty specification`);
-    }
-    if (!Array.isArray(t.scope) || !t.scope.length) {
-      errors.push(`${t.id}: scope must be a non-empty array of globs — ` +
-        `an empty scope disables the out-of-scope check entirely`);
-    }
-    if (t.tier !== undefined && !TIER_CANDIDATES[t.tier]) {
-      errors.push(`${t.id}: unknown tier '${t.tier}' (cheap|mid|frontier)`);
-    }
-    if (t.pool_hint !== undefined && !['gemini', 'claude', 'auto'].includes(t.pool_hint)) {
-      errors.push(`${t.id}: unknown pool_hint '${t.pool_hint}' (gemini|claude|auto)`);
-    } else if (!tierCandidates(t.tier ?? 'mid', t.pool_hint).length) {
-      errors.push(`${t.id}: no model candidates for tier '${t.tier ?? 'mid'}' with pool_hint '${t.pool_hint}'`);
-    }
-  }
-  const { cycle } = topoSort(plan.tickets ?? []);
-  if (cycle) errors.push(`cycle in ticket DAG: ${cycle.join(', ')}`);
+  // Cross-ticket + routability checks live in lib/plan.mjs (shared with the
+  // plan compiler). Without them `agb validate` blesses plans that crash or
+  // corrupt `agb run`.
+  const errors = validatePlan(plan);
   if (plan.repo) plan.repo = resolve(plan.repo);
   return { plan, errors };
 }
@@ -125,6 +93,56 @@ try {
     const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart') });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
+  } else if (cmd === 'plan') {
+    // The plan itself is authored in Antigravity (GUI plan mode or an agy
+    // planning session) — this command only compiles that artifact.
+    const positional = [];
+    let out = 'plan.json';
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--out') out = rest[++i];
+      else if (!rest[i].startsWith('--')) positional.push(rest[i]);
+    }
+    const [id, repo] = positional;
+    if (!id || !repo || !out) {
+      console.error('usage: agb plan <brain-id-or-prefix | spec.md> <repo-path> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]');
+      process.exit(1);
+    }
+    if (existsSync(out) && !rest.includes('--force')) {
+      console.error(`plan: ${out} already exists — pass --force to overwrite ` +
+        `(compiled plans are disposable, hand-written ones may not be)`);
+      process.exit(1);
+    }
+    const result = await compilePlan(id, {
+      repo: resolve(repo),
+      pools: new PoolSet(),
+      log: (m) => console.error(m),
+      coldstart: !rest.includes('--no-coldstart'),
+      parallax: !rest.includes('--no-parallax'),
+      premortem: !rest.includes('--no-premortem'),
+    });
+    console.log(JSON.stringify(result.report, null, 2));
+    if (!result.ok) {
+      console.error(`plan: NOT compiled — ${result.report.blocking.length} blocking finding(s):`);
+      for (const b of result.report.blocking) console.error(`  - ${b}`);
+      if (result.brain.sourceType === 'local-spec') {
+        console.error(`plan: the fix surface is the plan, not JSON — edit ${result.brain.id} and re-run 'agb plan'`);
+      } else {
+        console.error(`plan: the fix surface is the plan, not JSON — refine it in Antigravity (brain ${result.brain.id}) and re-run 'agb plan'`);
+      }
+      process.exit(2);
+    }
+    writeFileSync(out, JSON.stringify(result.plan, null, 2) + '\n');
+    if (result.brain.sourceType === 'local-spec') {
+      console.error(`plan: ${result.plan.tickets.length} ticket(s) compiled from spec '${result.brain.title}' → ${out}`);
+    } else {
+      console.error(`plan: ${result.plan.tickets.length} ticket(s) compiled from brain '${result.brain.title}' → ${out}`);
+    }
+    const causes = result.report.premortem?.causes ?? [];
+    if (causes.length) {
+      console.error(`plan: premortem flagged ${causes.length} risk(s) (advisory — full detail in the report above):`);
+      for (const c of causes) console.error(`  - [${c.likelihood ?? '?'}] ${c.cause}`);
+    }
+    console.error(`next: agb run ${out}`);
   } else if (cmd === 'brains') {
     for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);
   } else if (cmd === 'import-brain') {
@@ -133,6 +151,7 @@ try {
       console.error('usage: agb import-brain <conversation-id-or-prefix> <repo-path>');
       process.exit(1);
     }
+    console.error('import-brain is deprecated — use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)');
     const plan = await brainToPlan(id, { repo: resolve(repo) });
     console.log(JSON.stringify(plan, null, 2));
     console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
@@ -198,7 +217,7 @@ try {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
   } else {
-    console.error('usage: agb bootstrap|run|sweep|review|preflight|brains|import-brain|status|validate|probe — see header of bin/agb.mjs');
+    console.error('usage: agb bootstrap|plan|run|sweep|review|preflight|brains|status|validate|probe — see header of bin/agb.mjs');
     process.exit(1);
   }
 } catch (err) {
