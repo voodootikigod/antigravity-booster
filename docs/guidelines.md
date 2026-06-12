@@ -4,11 +4,12 @@ This document details the architectural principles, behavioral guidelines, and c
 
 ## Table of Contents
 1. [Architectural Philosophy](#architectural-philosophy)
-2. [ADLC Doctrine (P0-P7)](#adlc-doctrine-p0-p7)
-3. [Execution Gates](#execution-gates)
-4. [Cross-Model Prosecution](#cross-model-prosecution)
-5. [Self-Orchestration Guidelines](#self-orchestration-guidelines)
-6. [Design Tradeoffs](#design-tradeoffs)
+2. [The Plan Phase](#the-plan-phase)
+3. [ADLC Doctrine (P0-P7)](#adlc-doctrine-p0-p7)
+4. [Execution Gates](#execution-gates)
+5. [Cross-Model Prosecution](#cross-model-prosecution)
+6. [Self-Orchestration Guidelines](#self-orchestration-guidelines)
+7. [Design Tradeoffs](#design-tradeoffs)
 
 ---
 
@@ -24,6 +25,28 @@ In conventional agent frameworks, models are often asked to determine execution 
 1. **The Scheduler** manages the ticket dependency DAG, allocates worker worktrees, and schedules tasks.
 2. **Semaphores** throttle calls based on the target API's quota pools.
 3. **The Models** are restricted to bounded execution contexts: building a single ticket's scope, or prosecuting a diff against a specific checklist.
+
+---
+
+## The Plan Phase
+
+**Planning belongs to Antigravity; compilation and gating belong to `agb`.**
+
+Antigravity's plan phase already works well — both the desktop app's plan mode and planning conversations in `agy` sessions produce a reviewed, human-readable `implementation_plan.md` brain artifact. `agb` deliberately does not author plans, run planning interviews, or generate PRDs. Building a second planner would duplicate what the platform does well and dilute `agb`'s gate-shaped identity. Specs authored elsewhere enter the same pipeline via a raw file path — the gates, not the authoring surface, are the contract.
+
+Instead, the boundary is a compiler boundary:
+
+| Artifact | Role | Owner |
+| :--- | :--- | :--- |
+| `implementation_plan.md` (brain) | **Source.** Authored and reviewed by the human in Antigravity. | Antigravity plan phase |
+| `plan.json` | **Compiled output.** Gated, provenance-stamped, executable ticket DAG. | `agb plan` |
+
+Consequences of this boundary:
+
+1. **The fix surface is always the plan.** When `agb plan` reports blocking findings it cannot resolve by re-conversion (underspecified tickets, ambiguous inter-ticket contracts), the remediation is to refine the plan in Antigravity and recompile — never to hand-edit the compiled JSON.
+2. **The plan is a gated artifact like any other.** ADLC requires every artifact to pass gates before tokens are spent downstream. `agb plan` runs structural validation, scope-overlap forecasting, coldstart (per-ticket executability), parallax edge interrogation (per-edge contract ambiguity, ADLC D3), and an advisory premortem (ADLC C2) — closing what was previously the only ungated phase in the pipeline.
+3. **Failures feed back before humans see them.** Conversion defects loop back into the converter model with compiler feedback; the human re-engages only at the markdown level, with measured findings, not raw invalid JSON.
+4. **One plan format, two authoring surfaces.** Because the desktop app and `agy` share one harness and one brain directory, headless (CLI-only) workflows use the exact same pipeline: plan in an agy session, then `agb plan`.
 
 ---
 

@@ -13,10 +13,81 @@ case "$prompt" in
   *FAKE:TIMEOUT*) echo "Error: timed out waiting for response"; exit 0 ;;
 esac
 
-# Brain-plan conversion role.
+# Brain-plan conversion role. FAKE_BRAIN_MODE:
+#   good (default)      — one valid ticket
+#   edges               — two valid tickets joined by an edge (parallax fodder)
+#   invalid-then-good   — first call structurally broken (empty body + scope
+#                         overlap), later calls valid ONLY if the prompt
+#                         carries compiler feedback (needs FAKE_STATE_DIR)
 case "$prompt" in
   *"Convert this Antigravity implementation plan"*)
-    echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
+    mode="${FAKE_BRAIN_MODE:-good}"
+    if [ "$mode" = "invalid-then-good" ] && [ -n "$FAKE_STATE_DIR" ]; then
+      cf="$FAKE_STATE_DIR/conversions"
+      n=$(cat "$cf" 2>/dev/null || echo 0)
+      echo $((n + 1)) > "$cf"
+      if [ "$n" -eq 0 ]; then
+        echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "a", "body": "", "scope": ["src/x.mjs"], "edges": []}, {"id": "T2", "title": "b", "body": "do b fully specified", "scope": ["src/x.mjs"], "edges": []}]}'
+        exit 0
+      fi
+      # The retry must carry the compiler feedback block; without it stay broken.
+      case "$prompt" in
+        *"Compiler feedback"*) mode=good ;;
+        *) echo '{"repo": "/r", "tickets": []}'; exit 0 ;;
+      esac
+    fi
+    if [ "$mode" = "edges" ]; then
+      echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "edges": [{"to": "T2"}], "tier": "mid", "pool_hint": "auto"}, {"id": "T2", "title": "widget step 2", "body": "do step 2 fully specified", "scope": ["src/widget2/**"], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
+    else
+      echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
+    fi
+    exit 0 ;;
+esac
+
+# Coldstart plan gate. FAKE_COLDSTART_MODE: clean (default) | gap |
+# gap-once (first call gaps, later calls clean; needs FAKE_STATE_DIR) |
+# garbage (unparseable output).
+case "$prompt" in
+  *"cold-start check"*)
+    case "${FAKE_COLDSTART_MODE:-clean}" in
+      gap) echo '{"gaps": ["acceptance criteria undefined"]}' ;;
+      gap-once)
+        cf="$FAKE_STATE_DIR/coldstarts"
+        n=$(cat "$cf" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$cf"
+        if [ "$n" -eq 0 ]; then echo '{"gaps": ["acceptance criteria undefined"]}'; else echo '{"gaps": []}'; fi ;;
+      garbage) echo "OK" ;;
+      *) echo '{"gaps": []}' ;;
+    esac
+    exit 0 ;;
+esac
+
+# Parallax reader role (per-edge contract authoring).
+case "$prompt" in
+  *"Author the contract"*)
+    echo '{"contract": "lib/widget.mjs exports buildWidget(spec) returning a Widget"}'
+    exit 0 ;;
+esac
+
+# Parallax judge role. FAKE_PARALLAX_VERDICT: converged (default) | divergent.
+case "$prompt" in
+  *"independent readings"*)
+    if [ "${FAKE_PARALLAX_VERDICT:-converged}" = "divergent" ]; then
+      echo '{"divergent": true, "divergences": ["export name disagrees: buildWidget vs makeWidget"]}'
+    else
+      echo '{"divergent": false, "divergences": []}'
+    fi
+    exit 0 ;;
+esac
+
+# Premortem role. FAKE_PREMORTEM_MODE: causes (default) | garbage.
+case "$prompt" in
+  *"Write the postmortem"*)
+    if [ "${FAKE_PREMORTEM_MODE:-causes}" = "garbage" ]; then
+      echo "no json here"
+    else
+      echo '{"causes": [{"cause": "T1 body omits the widget schema, builders will invent one", "likelihood": "high", "mitigation": "name the schema file in the plan"}]}'
+    fi
     exit 0 ;;
 esac
 
