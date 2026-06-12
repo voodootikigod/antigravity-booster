@@ -66,15 +66,53 @@ agb bootstrap
 ```
 
 ### Integration Configuration (Optional)
-To route general `aidlc` tools through your Antigravity session and quota:
+To route general `@adlc` tools through your Antigravity session and quota:
 ```sh
-export AIDLC_PROVIDER=agy
+export ADLC_PROVIDER=agy
 ```
 
 ## Quickstart
 
-1. Write a plan (start from
-   [templates/plan.example.json](templates/plan.example.json)):
+**Plan in Antigravity, execute with agb.** Planning stays exactly where it
+already works: Antigravity's plan phase — the desktop app's plan mode or a
+planning conversation in an `agy` session. Both write the same brain
+artifact (`implementation_plan.md` under `~/.gemini/antigravity/brain/`).
+`agb` does **not** replace or supplement that phase; it consumes the
+artifact it produces. Think of `implementation_plan.md` as source and
+`plan.json` as a compiled artifact — `agb plan` is the compiler.
+
+1. Plan as usual in Antigravity (GUI plan mode or an agy session), then
+   compile the plan into an executable ticket DAG:
+
+   ```sh
+   agb brains                       # list plan artifacts, newest first
+   agb plan <brain-id> /abs/repo    # compile → gate → plan.json; exit 0/2
+   ```
+
+   The compiler converts the plan with a frontier model, then loops it
+   through plan gates, feeding every failure back into a re-conversion
+   instead of dumping invalid JSON on you:
+
+   - **structural** (free, deterministic): schema, DAG cycles, tier/pool
+     routability, scope-overlap forecast between parallel tickets;
+   - **coldstart** (cheap tier): each ticket must be executable by a fresh
+     agent from its body alone;
+   - **parallax** (ADLC D3, cheap tier): per DAG edge, N fresh contexts
+     independently author the implied contract — measured divergence is
+     contract ambiguity and blocks the compile;
+   - **premortem** (ADLC C2, frontier, advisory): "this run failed three
+     months ago — write the postmortem"; risks are reported, never veto.
+
+   Findings that survive the feedback loop are reported with the
+   remediation pointing at the *plan*: refine it in Antigravity and re-run
+   `agb plan`. The compiled `plan.json` carries a `source` provenance stamp
+   naming the brain conversation it came from. Flags: `--out <file>`,
+   `--force`, `--no-coldstart`, `--no-parallax`, `--no-premortem`.
+
+   <details>
+   <summary>Escape hatch: hand-writing plan.json (no brain artifact)</summary>
+
+   Start from [templates/plan.example.json](templates/plan.example.json):
 
    ```json
    {
@@ -104,11 +142,17 @@ export AIDLC_PROVIDER=agy
    `pool_hint` ∈ gemini|claude|auto must be routable (e.g. `cheap`+`claude`
    is rejected — the cheap tier has no Claude-family model).
 
-2. Validate, forecast, run:
+   Hand-written plans skip the compile gates, so run them yourself:
 
    ```sh
    agb validate plan.json     # schema + DAG + routability; exit 0/2
    agb preflight plan.json    # scope-overlap forecast + coldstart probe; exit 0/2
+   ```
+   </details>
+
+2. Run it:
+
+   ```sh
    agb run plan.json          # build → gate → prosecute → merge; exit 0/2
    ```
 
@@ -134,21 +178,21 @@ fails and blocks its dependents.
 ## All commands
 
 ```sh
+agb brains                     # list Antigravity plan artifacts (GUI + agy)
+agb plan <brain-id> /repo      # compile a brain plan: convert → gates → plan.json
 agb validate plan.json         # check schema, DAG, routability
 agb preflight plan.json        # plan gates: scope-overlap forecast + coldstart
 agb run plan.json              # build → gate → prosecute → merge; exit 0/2
 agb sweep sweep.json           # same operation × many targets (cheap tier)
 agb review /repo [ref]         # read-only lens fleet, loop-until-dry; exit 0/2
-agb brains                     # list Antigravity GUI plan artifacts
-agb import-brain <id> /repo    # GUI plan → plan.json (frontier conversion)
 agb status /path/repo          # live dashboard (.booster/run.json)
 agb probe 2,4,8 [model]        # measure pool width/latency, append docs/calibration
+agb import-brain <id> /repo    # DEPRECATED: raw one-shot conversion (use agb plan)
 ```
 
-Workload modes map: greenfield/big-feature → `run` (ticket DAG);
-fan-out sweeps → `sweep`; research/review fleets → `review`. Hybrid GUI
-pipeline: plan in the Antigravity desktop app → `import-brain` →
-`preflight` → `run`. Loop-until-dry prosecution: set
+Workload modes map: greenfield/big-feature → plan in Antigravity →
+`plan` → `run` (ticket DAG); fan-out sweeps → `sweep`; research/review
+fleets → `review`. Loop-until-dry prosecution: set
 `"prosecution": {"dryPasses": 2}` in the plan to require that many
 consecutive clean prosecution passes before merge.
 
@@ -182,13 +226,14 @@ self-contained tickets).
 | `AGB_SANDBOX_GATES` | sandbox on (darwin) | `0` runs gates unsandboxed — only inside a disposable container; non-darwin fails closed without it |
 | `AGB_ALLOW_DIRTY` | refuse dirty repo | `1` skips the clean-tree guard — merge rollback uses `git reset --hard`, uncommitted work WILL be lost |
 | `AGB_AGY_BIN` | `agy` | Alternate agy binary (tests point this at a fake) |
+| `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains`/`agb plan` look for Antigravity plan artifacts |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` in this checkout | Where `agb probe` appends its measurement artifact |
-| `AIDLC_PROVIDER=agy` | — | Run aidlc gate tools (parallax, premortem, …) on Antigravity quota |
+| `ADLC_PROVIDER=agy` | — | Run `@adlc` gate tools (parallax, premortem, …) on Antigravity quota |
 
 ## Testing
 
 ```sh
-npm test    # 57 node:test cases, fully offline (fake agy fixture)
+npm test    # 70 node:test cases, fully offline (fake agy fixture)
 ```
 
 Sandbox-specific security tests are darwin-gated; scheduler tests run
@@ -197,10 +242,11 @@ gates unsandboxed so the suite is green on any platform.
 ## Layout
 
 ```
-bin/agb.mjs        CLI (run | sweep | review | preflight | brains |
-                   import-brain | status | probe | validate)
+bin/agb.mjs        CLI (plan | run | sweep | review | preflight | brains |
+                   status | probe | validate)
 lib/               scheduler, pools, agy wrapper, worktrees, gates,
                    charters, prosecution, review, sweep, preflight,
+                   plan compiler (validate/parallax/premortem),
                    brain import, status, repo lock
 skills/            adlc-doctrine, adlc-prosecutor, adlc-self-orchestrate
 templates/         plan.example.json (schema by example)

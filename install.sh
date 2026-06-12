@@ -27,4 +27,4 @@ done
 
 echo
 echo "agb CLI: run 'npm install' here, then 'npm link' (or call bin/agb.mjs directly)."
-echo "aidlc tools on Antigravity quota: export AIDLC_PROVIDER=agy"
+echo "adlc tools on Antigravity quota: export ADLC_PROVIDER=agy"

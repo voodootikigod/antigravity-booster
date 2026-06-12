@@ -3,17 +3,44 @@
 This guide details how to configure and run Antigravity Booster (`agb`) to manage agentic workflows.
 
 ## Table of Contents
-1. [Command Reference](#command-reference)
-2. [Plan Schema (plan.json)](#plan-schema-planjson)
-3. [Sweep Schema (sweep.json)](#sweep-schema-sweepjson)
-4. [Environment Variables](#environment-variables)
-5. [Operational Best Practices](#operational-best-practices)
+1. [Where Planning Happens](#where-planning-happens)
+2. [Command Reference](#command-reference)
+3. [Plan Schema (plan.json)](#plan-schema-planjson)
+4. [Sweep Schema (sweep.json)](#sweep-schema-sweepjson)
+5. [Environment Variables](#environment-variables)
+6. [Operational Best Practices](#operational-best-practices)
+
+---
+
+## Where Planning Happens
+
+**Planning happens in Antigravity, exactly as it already does.** `agb` does not replace or supplement Antigravity's plan phase. Use the planning surface you already use — the desktop app's plan mode or a planning conversation in an `agy` session. Both write the same brain artifact (`implementation_plan.md` under `~/.gemini/antigravity/brain/<conversation>/`), and that artifact is the **source of truth** for the plan.
+
+`agb` enters only after the plan exists: `agb plan` compiles the brain artifact into an executable `plan.json` ticket DAG and runs plan-time gates over the result. When a gate finds a problem it cannot fix by re-converting, the remediation is always the same: **go back to the plan in Antigravity, refine it there, and re-run `agb plan`** — never hand-patch the compiled JSON. Hand-writing `plan.json` remains supported as an escape hatch for work that has no brain artifact, but it skips the compile gates (run `agb validate` and `agb preflight` yourself).
 
 ---
 
 ## Command Reference
 
 `agb` is a command-line interface with several subcommands designed for verification, execution, review, and status tracking.
+
+### `agb plan <brain-id> <repo> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]`
+Compiles an Antigravity plan artifact into a gated, executable `plan.json`.
+- Finds the brain conversation by ID or prefix (`agb brains` lists candidates).
+- Converts the plan to a ticket DAG with a frontier model, then loops it through plan gates, feeding each round of failures back into a re-conversion (bounded; deterministic failures retry up to 3 conversions, LLM-gate findings get one feedback round):
+  - **Structural** (deterministic, free): schema, duplicate IDs, DAG cycles, tier/pool routability, and a scope-overlap forecast between parallel tickets.
+  - **Coldstart** (cheap tier, per ticket): a fresh context lists everything missing to execute the ticket from its `body` alone. Gaps block.
+  - **Parallax** (cheap tier, per DAG edge — ADLC D3): N fresh contexts independently author the contract the dependent ticket may rely on; a judge diffs the readings. Measured divergence is contract ambiguity and blocks.
+  - **Premortem** (frontier, once, advisory — ADLC C2): "this run failed three months ago; write the postmortem." Causes are reported but never block.
+- On success, writes `plan.json` (refuses to overwrite an existing file without `--force`) stamped with `source` provenance naming the brain conversation.
+- On blocking findings, exits `2` and prints the findings with remediation pointing at the plan in Antigravity.
+- **Exit codes:** `0` compiled and written; `2` blocking findings; `1` usage/internal error.
+
+### `agb brains`
+Lists Antigravity plan artifacts (from the desktop app or agy sessions), newest first.
+- Shows the conversation ID, date, and plan title for anything containing `implementation_plan.md` or `task.md`.
+
+### `agb validate <plan.json>`
 
 ### `agb validate <plan.json>`
 Validates a plan file before running.
@@ -50,13 +77,8 @@ Deploys a read-only fleet of models to audit changes.
 - Iteratively reviews the code and loops until dry (runs until no new critical/high findings are generated).
 - **Exit codes:** `0` if no critical/high issues are found; `2` if findings block approval.
 
-### `agb brains`
-Lists plan artifacts synced from the Antigravity desktop GUI app.
-- Used for L4 hybrid operation, showing what GUI plans are available to import.
-
-### `agb import-brain <id> <repo>`
-Converts a GUI-generated plan into a standardized `plan.json`.
-- Takes a brain artifact ID and imports it as a ticket DAG targeting `<repo>`, converting high-level tasks into structured `agb` tickets.
+### `agb import-brain <id> <repo>` (deprecated)
+Raw one-shot conversion of a brain artifact to `plan.json` on stdout, with no plan gates, no feedback loop, and no provenance. Use `agb plan` instead.
 
 ### `agb status <repo>`
 Displays a live dashboard of an ongoing run.
@@ -73,7 +95,7 @@ Measures pool latency and width limits.
 
 ## Plan Schema (plan.json)
 
-The `plan.json` file describes the target repository, validation commands, and the list of tickets to be run.
+The `plan.json` file describes the target repository, validation commands, and the list of tickets to be run. It is normally **compiler output** (`agb plan` produces it from an Antigravity brain artifact, including a `source` provenance field); hand-write it only when no brain artifact exists.
 
 ```json
 {
@@ -119,6 +141,7 @@ The `plan.json` file describes the target repository, validation commands, and t
 | `base` | String | Target branch to branch off of and merge back into (typically `main`). |
 | `gate` | Object | Verification scripts: `build` (compilation/linting) and `test` (test suites). |
 | `prosecution` | Object | *Optional*. Configures prosecution rules. `dryPasses` is the number of consecutive clean reviews required before merge. |
+| `source` | Object | *Optional; written by `agb plan`.* Provenance of the compiled plan: `{"type": "antigravity-brain", "id": "<conversation>", "title": "..."}`. |
 | `tickets` | Array | A DAG of self-contained tasks. |
 
 ### Ticket Field Definitions
@@ -172,8 +195,9 @@ Modify these flags in your shell to adjust how `agb` runs:
 | `AGB_SANDBOX_GATES` | `1` (on macOS) | Enforces macOS Seatbelt sandboxing for all gate scripts. Set to `0` to disable sandboxing (e.g., when running inside Docker containers on Linux). |
 | `AGB_ALLOW_DIRTY` | `0` | Set to `1` to bypass the clean git directory check. *Caution: Rollbacks use git resets, which will discard uncommitted changes.* |
 | `AGB_AGY_BIN` | `agy` | Custom path to the Antigravity CLI binary. Used mainly for testing with mock wrappers. |
+| `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains` and `agb plan` look for Antigravity plan artifacts. |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` | Target directory where `agb probe` writes result reports. |
-| `AIDLC_PROVIDER` | — | Set to `agy` to route general aidlc package execution through Antigravity CLI credentials. |
+| `ADLC_PROVIDER` | — | Set to `agy` to route general `@adlc` package execution through Antigravity CLI credentials. |
 
 ---
 
