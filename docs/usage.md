@@ -16,7 +16,7 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 
 **Planning happens in Antigravity, exactly as it already does.** `agb` does not replace or supplement Antigravity's plan phase. Use the planning surface you already use — the desktop app's plan mode or a planning conversation in an `agy` session. Both write the same brain artifact (`implementation_plan.md` under `~/.gemini/antigravity/brain/<conversation>/`), and that artifact is the **source of truth** for the plan.
 
-`agb` enters only after the plan exists: `agb plan` compiles the brain artifact into an executable `plan.json` ticket DAG and runs plan-time gates over the result. When a gate finds a problem it cannot fix by re-converting, the remediation is always the same: **go back to the plan in Antigravity, refine it there, and re-run `agb plan`** — never hand-patch the compiled JSON. Hand-writing `plan.json` remains supported as an escape hatch for work that has no brain artifact, but it skips the compile gates (run `agb validate` and `agb preflight` yourself).
+`agb` enters only after the plan exists: `agb plan` compiles the brain artifact or local raw spec file into an executable `plan.json` ticket DAG and runs plan-time gates over the result. When a gate finds a problem it cannot fix by re-converting, the remediation is always the same: **go back to the plan in Antigravity or edit your local raw spec file, refine it there, and re-run `agb plan`** — never hand-patch the compiled JSON. Hand-writing `plan.json` remains supported as an escape hatch for work that has no brain artifact, but it skips the compile gates (run `agb validate` and `agb preflight` yourself).
 
 ---
 
@@ -24,16 +24,16 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 
 `agb` is a command-line interface with several subcommands designed for verification, execution, review, and status tracking.
 
-### `agb plan <brain-id> <repo> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]`
-Compiles an Antigravity plan artifact into a gated, executable `plan.json`.
-- Finds the brain conversation by ID or prefix (`agb brains` lists candidates).
+### `agb plan <brain-id | spec.md> <repo> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]`
+Compiles an Antigravity plan artifact (GUI brain or agy session) or a raw local markdown spec file path into a gated, executable `plan.json`.
+- Finds the brain conversation by ID/prefix or loads the local spec file path directly.
 - Converts the plan to a ticket DAG with a frontier model, then loops it through plan gates, feeding each round of failures back into a re-conversion (bounded; deterministic failures retry up to 3 conversions, LLM-gate findings get one feedback round):
   - **Structural** (deterministic, free): schema, duplicate IDs, DAG cycles, tier/pool routability, and a scope-overlap forecast between parallel tickets.
   - **Coldstart** (cheap tier, per ticket): a fresh context lists everything missing to execute the ticket from its `body` alone. Gaps block.
   - **Parallax** (cheap tier, per DAG edge — ADLC D3): N fresh contexts independently author the contract the dependent ticket may rely on; a judge diffs the readings. Measured divergence is contract ambiguity and blocks.
   - **Premortem** (frontier, once, advisory — ADLC C2): "this run failed three months ago; write the postmortem." Causes are reported but never block.
 - On success, writes `plan.json` (refuses to overwrite an existing file without `--force`) stamped with `source` provenance naming the brain conversation.
-- On blocking findings, exits `2` and prints the findings with remediation pointing at the plan in Antigravity.
+- On blocking findings, exits `2` and prints the findings with remediation pointing at the plan in Antigravity or the local spec file.
 - **Exit codes:** `0` compiled and written; `2` blocking findings; `1` usage/internal error.
 
 ### `agb brains`

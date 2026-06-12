@@ -89,10 +89,13 @@ artifact (`implementation_plan.md` under `~/.gemini/antigravity/brain/`).
 artifact it produces. Think of `implementation_plan.md` as source and
 `plan.json` as a compiled artifact — `agb plan` is the compiler.
 
-1. Plan as usual in Antigravity (GUI plan mode or an agy session), then
-   compile the plan into an executable ticket DAG:
+1. Compile a plan (from either a local raw Markdown spec file path, OR a GUI plan/agy conversation brain ID) into an executable ticket DAG:
 
    ```sh
+   # Option A: Compile from a local markdown spec file path:
+   agb plan spec.md /abs/repo
+
+   # Option B: Compile from a GUI plan / agy session brain ID:
    agb brains                       # list plan artifacts, newest first
    agb plan <brain-id> /abs/repo    # compile → gate → plan.json; exit 0/2
    ```
@@ -111,11 +114,10 @@ artifact it produces. Think of `implementation_plan.md` as source and
    - **premortem** (ADLC C2, frontier, advisory): "this run failed three
      months ago — write the postmortem"; risks are reported, never veto.
 
-   Findings that survive the feedback loop are reported with the
-   remediation pointing at the *plan*: refine it in Antigravity and re-run
-   `agb plan`. The compiled `plan.json` carries a `source` provenance stamp
-   naming the brain conversation it came from. Flags: `--out <file>`,
-   `--force`, `--no-coldstart`, `--no-parallax`, `--no-premortem`.
+    Findings that survive the feedback loop are reported with the
+    remediation pointing at the *plan* (refine the plan in Antigravity or edit your local raw spec file, and re-run `agb plan`). The compiled `plan.json` carries a `source` provenance stamp
+    naming the brain conversation or spec file it came from. Flags: `--out <file>`,
+    `--force`, `--no-coldstart`, `--no-parallax`, `--no-premortem`.
 
    <details>
    <summary>Escape hatch: hand-writing plan.json (no brain artifact)</summary>
@@ -187,7 +189,7 @@ fails and blocks its dependents.
 
 ```sh
 agb brains                     # list Antigravity plan artifacts (GUI + agy)
-agb plan <brain-id> /repo      # compile a brain plan: convert → gates → plan.json
+agb plan <brain-id | spec.md> /repo # compile a plan (GUI brain or raw Markdown file): convert → gates → plan.json
 agb validate plan.json         # check schema, DAG, routability
 agb preflight plan.json        # plan gates: scope-overlap forecast + coldstart
 agb run plan.json              # build → gate → prosecute → merge; exit 0/2
