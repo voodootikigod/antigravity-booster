@@ -1,7 +1,7 @@
 # antigravity-booster
 
 Make Google Antigravity 2.0 (`agy` CLI + GUI) effective for large parallel
-build-outs. Implements the [ADLC](../aidlc/ADLC.md) on Antigravity:
+build-outs. Implements the [ADLC](../adlc/ADLC.md) on Antigravity:
 deterministic orchestration, quota-pool-aware scheduling, cross-model
 prosecution, and gate-shaped validation — ideation to merge.
 
@@ -38,7 +38,7 @@ disciplined fleet:
 ## Requirements
 
 - **Node ≥ 18** (zero runtime dependencies beyond the sibling
-  [`@aidlc/core`](../aidlc) checkout — see `package.json`).
+  [`@adlc/core`](../adlc) checkout — see `package.json`).
 - **`agy` CLI** on PATH with an active Antigravity session
   (`curl -fsSL https://antigravity.google/cli/install.sh | bash`).
 - **macOS** for sandboxed gates (Seatbelt). On Linux/Windows, gates

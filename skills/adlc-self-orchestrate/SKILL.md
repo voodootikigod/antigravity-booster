@@ -31,7 +31,7 @@ Single bounded tasks: just do them.
    utilities). Build and commit it to main BEFORE the fan-out — parallel
    workers consume the foundation, never invent it. Foundation paths go
    into every ticket's `rails` (read-only).
-2. **Decompose into tickets** (aidlc schema). Each ticket must be
+2. **Decompose into tickets** (adlc schema). Each ticket must be
    executable by a fresh agent from its `body` alone — full file paths,
    exact acceptance criteria, named gate commands. Partition scopes so no
    two tickets share files; shared needs = a foundation item or an edge.
