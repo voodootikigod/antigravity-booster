@@ -8,6 +8,7 @@ Welcome to the documentation for **antigravity-booster** (`agb`). This tool impl
 | :--- | :--- |
 | 🚀 **[CLI Usage & Configuration](usage.md)** | Full guide to commands, schemas (`plan.json` and `sweep.json`), environment variables, and running runs. |
 | 🛡️ **[Guidelines & Doctrine](guidelines.md)** | Core principles, the ADLC doctrine (P0-P7), cross-model prosecution flow, sandboxing, and execution gates. |
+| 📖 **[Execution Example](execution-example.md)** | Step-by-step example showing how to decompose a spec into a plan.json DAG and run it with agb. |
 | 📊 **[Calibration Probes](calibration/probes-2026-06-11.md)** | Empirical measurements of latency, concurrency curves, and Seatbelt sandbox safety profiles. |
 | 🔍 **[Research & Platform Discovery](research/)** | Analysis of the Antigravity CLI and GUI limits, capabilities, and platform quirks. |
 
@@ -19,8 +20,8 @@ Antigravity Booster is organized in a 4-layered architecture:
 
 ```mermaid
 graph TD
-    subgraph L4 [L4: Hybrid GUI Plan Ingestion]
-        Plan[GUI Brain Artifact / plan.json]
+    subgraph L4 [L4: Plan Compiler]
+        Plan[Antigravity brain artifact → agb plan → plan.json]
     end
     subgraph L3 [L3: Recursive Orchestration]
         SelfOrch[adlc-self-orchestrate Skill]
@@ -44,15 +45,23 @@ graph TD
 - **L1 Config**: Skills, charters, and `AGENTS.md` templates installed into `~/.gemini/` that improve any standalone `agy` session.
 - **L2 Engine**: The `agb` CLI and scheduler that orchestrates worktrees, runs sandboxed verification, manages concurrency, and drives cross-family model reviews.
 - **L3 Recursive**: Agent skills that teach a top-level agent how to decompose tasks and drive the `agb` fleet.
-- **L4 Hybrid**: Exposes tools to convert high-level plans generated in the Antigravity GUI desktop app into a ticket DAG.
+- **L4 Hybrid**: The plan compiler (`agb plan`). Planning happens in Antigravity exactly as it already does (GUI plan mode or an agy planning session — `agb` does not replace or supplement that phase); the compiler converts the resulting brain artifact into a gated, provenance-stamped ticket DAG.
 
 ## Quick Reference
 
+- **To compile a plan made in Antigravity:**
+  ```bash
+  agb brains                     # list plan artifacts
+  agb plan <brain-id> /repo      # convert → gates → plan.json
+  ```
 - **To run a ticket plan:**
+  ```bash
+  agb run plan.json
+  ```
+- **To check a hand-written plan (escape hatch — `agb plan` does this for you):**
   ```bash
   agb validate plan.json
   agb preflight plan.json
-  agb run plan.json
   ```
 - **To inspect a live run:**
   ```bash

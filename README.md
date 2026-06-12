@@ -5,6 +5,14 @@ build-outs. Implements the [ADLC](../aidlc/ADLC.md) on Antigravity:
 deterministic orchestration, quota-pool-aware scheduling, cross-model
 prosecution, and gate-shaped validation — ideation to merge.
 
+## Documentation
+
+Full guides, specifications, and walkthroughs are available:
+- 🚀 **[CLI Usage & Configuration](docs/usage.md)**
+- 🛡️ **[Guidelines & Doctrine](docs/guidelines.md)**
+- 📖 **[Concrete Execution Walkthrough](docs/execution-example.md)** — A complete, step-by-step example showing how to decompose a specification (like `do-better`) into a `plan.json` DAG and run it with `agb`.
+- 📊 **[Calibration Probes](docs/calibration/probes-2026-06-11.md)**
+
 ## Why
 
 Antigravity gives generous (not infinite — see
