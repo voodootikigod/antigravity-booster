@@ -7,7 +7,7 @@
     "agb": "bin/agb.mjs"
   },
   "dependencies": {
-    "@aidlc/core": "file:../aidlc/packages/core"
+    "@adlc/core": "file:../adlc/packages/core"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"
