@@ -41,7 +41,15 @@ Use this command to release a new version of `antigravity-booster`.
    ```
    Output must not contain "Your branch is behind". If it does, abort and tell the user to pull first.
 
-   d. No `file:` dependencies in `package.json`:
+   d. `repository.url` is set in `package.json`:
+   ```bash
+   node -e "const p=JSON.parse(require('fs').readFileSync('package.json','utf8')); process.exit(p.repository?.url ? 0 : 1)"
+   ```
+   Must exit 0. If missing, abort and print:
+   > `repository.url` is required for `--provenance` publishing. Add it to `package.json`:
+   > `"repository": { "type": "git", "url": "https://github.com/ORG/REPO.git" }`
+
+   e. No `file:` dependencies in `package.json`:
    ```bash
    grep -c '"file:' package.json
    ```
@@ -49,7 +57,7 @@ Use this command to release a new version of `antigravity-booster`.
    > `file:` dependencies cannot be published to npm. Replace them with registry versions before releasing.
    > Found: (list each `file:` dep and its key)
 
-   e. Tests pass:
+   f. Tests pass:
    ```bash
    npm test
    ```
