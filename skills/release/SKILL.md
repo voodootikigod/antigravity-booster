@@ -20,20 +20,57 @@ Use this command to release a new version of `antigravity-booster`.
 
 1. **Determine the new version.** Read the current version from `package.json`. Apply the requested semver bump (default "minor") to compute the new version number.
 
-2. **Verify preconditions:**
-   - Working tree is clean (`git status --porcelain` is empty)
-   - On the `main` branch
-   - Up to date with remote (`git pull --dry-run` shows no changes)
+2. **Verify preconditions — all must pass before any changes are made:**
 
-3. **Bump version in package.json:**
-   - Update the `"version"` field in `package.json`
+   a. Working tree is clean:
+   ```bash
+   git status --porcelain
+   ```
+   Must be empty. If not, abort and tell the user to commit or stash changes first.
+
+   b. On the `main` branch:
+   ```bash
+   git branch --show-current
+   ```
+   Must return `main`. If not, abort.
+
+   c. Up to date with remote:
+   ```bash
+   git fetch origin
+   git status -uno
+   ```
+   Output must not contain "Your branch is behind". If it does, abort and tell the user to pull first.
+
+   d. No `file:` dependencies in `package.json`:
+   ```bash
+   grep -c '"file:' package.json
+   ```
+   Must return `0`. If any `file:` deps are found, abort and print:
+   > `file:` dependencies cannot be published to npm. Replace them with registry versions before releasing.
+   > Found: (list each `file:` dep and its key)
+
+   e. Tests pass:
+   ```bash
+   npm test
+   ```
+   Must exit 0. If tests fail, abort — do not proceed.
+
+3. **Bump version:**
+   ```bash
+   npm version <patch|minor|major> --no-git-tag-version
+   ```
+   This atomically updates the `"version"` field in both `package.json` and `package-lock.json`.
 
 4. **Commit the version bump:**
    ```bash
-   git commit -am "chore: bump version to X.Y.Z"
+   git add package.json package-lock.json
+   git commit -m "chore: bump version to X.Y.Z"
    ```
 
 5. **Create the version tag:** `vX.Y.Z`
+   ```bash
+   git tag vX.Y.Z
+   ```
 
 6. **Push commit and tag:**
    ```bash
@@ -41,7 +78,18 @@ Use this command to release a new version of `antigravity-booster`.
    git push origin vX.Y.Z
    ```
 
-7. **Confirm completion.** Print a summary of:
-   - Previous version → new version
-   - Tag created
-   - Remind the user that the GitHub Actions publish workflow will handle the npmjs release automatically.
+7. **Confirm completion.** Print a summary:
+   ```
+   Released: X.Y.Z (was A.B.C)
+   Tag:      vX.Y.Z pushed to origin
+
+   GitHub Actions will publish to npm automatically on tag push.
+   The publish job uses --provenance --access public.
+
+   If the publish job fails with an auth error, the NPM_TOKEN secret
+   is missing or expired. To fix:
+     1. Generate a token at https://www.npmjs.com/settings/~/tokens
+     2. Add it as NPM_TOKEN in the repo's Settings → Secrets → Actions
+   To eliminate token management entirely, configure OIDC trusted
+   publishing for antigravity-booster on npmjs.com and remove NPM_TOKEN.
+   ```
