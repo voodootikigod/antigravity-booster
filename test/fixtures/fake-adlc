@@ -1,10 +1,44 @@
 #!/bin/sh
 # Fake adlc for offline tests. Implements just enough of `hollow-test`,
-# `rails-guard`, `model-router`, `merge-forecast`, and `flail-detector` — the
-# subcommands lib/prosecute.mjs, lib/scheduler.mjs, and lib/plan.mjs call —
-# for deterministic, fully-offline tests that don't depend on a
-# globally-installed adlc CLI.
+# `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`, and
+# `consensus-fix` — the subcommands lib/prosecute.mjs, lib/scheduler.mjs, and
+# lib/plan.mjs call — for deterministic, fully-offline tests that don't
+# depend on a globally-installed adlc CLI (or a real LLM provider).
 #
+# consensus-fix: canned, controllable convergence. FAKE_CONSENSUS_FIX_MODE:
+#   converge (default) — writes "FIXED-BY-CONSENSUS\n" to the FIRST --files
+#                         entry (proving --apply's file-write path is
+#                         exercised), reports applied:true, survivors:1,
+#                         exit 0. Records the invocation (--test-cmd and
+#                         --files) to FAKE_STATE_DIR.
+#   no-survivors        — no file changes, applied:false, survivors:0, exit 2.
+#   all-divergent        — no file changes, applied:false, allDivergent:true, exit 2.
+#   fail                 — operational error (e.g. "no LLM provider"), exit 1.
+if [ "$1" = "consensus-fix" ]; then
+  shift
+  testcmd=""
+  files=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --test-cmd) testcmd="$2"; shift 2 ;;
+      --files) files="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'test-cmd=%s files=%s\n' "$testcmd" "$files" >> "$FAKE_STATE_DIR/consensus-fix-invocations"
+  fi
+  firstfile=$(echo "$files" | cut -d, -f1)
+  case "${FAKE_CONSENSUS_FIX_MODE:-converge}" in
+    fail) echo "not json"; exit 1 ;;
+    no-survivors) echo '{"survivors":[],"discarded":[],"failed":[{}],"allDivergent":false,"applied":false}'; exit 2 ;;
+    all-divergent) echo '{"survivors":[],"discarded":[],"failed":[],"allDivergent":true,"applied":false}'; exit 2 ;;
+    *)
+      [ -n "$firstfile" ] && printf 'FIXED-BY-CONSENSUS\n' > "$firstfile"
+      echo '{"survivors":[{}],"discarded":[],"failed":[],"allDivergent":false,"applied":true}'
+      exit 0 ;;
+  esac
+fi
 # flail-detector: real behavior, not canned — greps the given log file for
 # the literal marker "FLAIL-REPEATED-ERROR" (>= 2 occurrences = a
 # repeated-error signal) or "FLAIL-SCOPE-VIOLATION" (>= 1 = a scope-violation
