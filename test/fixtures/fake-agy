@@ -29,6 +29,14 @@ fi
 
 prompt=$(cat)
 
+# Reveal the env this invocation actually received (scheduler tests verify
+# ADLC_P4_ENFORCEMENT/ADLC_TICKET were passed to THIS spawn, not leaked
+# globally). Every non-plugin invocation gets a line, harmless when the vars
+# are unset (prosecutor/reader calls never set them).
+if [ -n "$FAKE_STATE_DIR" ]; then
+  printf 'ADLC_P4_ENFORCEMENT=%s ADLC_TICKET=%s\n' "${ADLC_P4_ENFORCEMENT:-}" "${ADLC_TICKET:-}" >> "$FAKE_STATE_DIR/agy-env-seen"
+fi
+
 # Global failure injection (any role): simulate a model/transport error.
 case "${FAKE_AGY_MODE:-}" in
   fail) echo "boom: simulated agy failure" >&2; exit 1 ;;
@@ -151,6 +159,12 @@ case "$prompt" in
       sabotage) echo "did the work" > "${tid:-out}.txt"; echo sabotage > SABOTAGE; echo "TICKET-DONE"; exit 0 ;;
       # rail: edits a read-only rail file that sits INSIDE the declared scope.
       rail) echo "did the work" > "${tid:-out}.txt"; echo edited > RAIL.txt; echo "TICKET-DONE"; exit 0 ;;
+      # echo-adlc: copies cwd's .adlc/tickets.json (if any) to FAKE_STATE_DIR
+      # so a test can verify the scheduler materialized it into the worktree
+      # BEFORE the build ran (the worktree itself is deleted post-merge).
+      echo-adlc)
+        [ -f .adlc/tickets.json ] && cp .adlc/tickets.json "$FAKE_STATE_DIR/adlc-tickets-seen.json"
+        echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
       # rail-then-good: strike 1 violates the rail, strike 2 behaves —
       # proves the strike-2 worktree was reset (needs FAKE_STATE_DIR).
       rail-then-good)

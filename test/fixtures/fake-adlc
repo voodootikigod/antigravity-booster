@@ -1,12 +1,53 @@
 #!/bin/sh
-# Fake adlc for offline tests of the evidence-backed prosecution gate.
-# Only implements `hollow-test`, the one subcommand lib/prosecute.mjs calls.
+# Fake adlc for offline tests. Implements just enough of `hollow-test` and
+# `rails-guard` — the two subcommands lib/prosecute.mjs and lib/scheduler.mjs
+# call — for deterministic, fully-offline tests that don't depend on a
+# globally-installed adlc CLI.
 #
-# FAKE_HOLLOW_TEST_MODE:
-#   clean (default) — all mutants killed, exit 0
-#   survivors        — some mutants survive, exit 2 (real hollow-test's
-#                       gate-fail exit code)
-#   fail              — operational error (unparseable output), exit 1
+# rails-guard: real behavior, not canned — shells out to `git diff
+# --name-only` in cwd against --base and checks each changed file against
+# every --rails glob (exact match or simple trailing-** prefix match, enough
+# for these tests' fixtures). FAKE_STATE_DIR, if set, records the exact
+# invocation args for tests that assert on them (AC2).
+if [ "$1" = "rails-guard" ]; then
+  shift
+  base=""
+  rails=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) base="$2"; shift 2 ;;
+      --rails) rails="$rails
+$2"; shift 2 ;;
+      --json) shift ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'base=%s rails=%s\n' "$base" "$(echo "$rails" | tr '\n' ',')" >> "$FAKE_STATE_DIR/rails-guard-invocations"
+  fi
+  changed=$(git diff --name-only "$base" 2>/dev/null)
+  violations=""
+  echo "$rails" | while IFS= read -r glob; do
+    [ -z "$glob" ] && continue
+    prefix=$(echo "$glob" | sed 's/\*\*.*$//')
+    echo "$changed" | while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      case "$f" in
+        "$glob") echo "$f" ;;
+        "$prefix"*) [ -n "$prefix" ] && echo "$f" ;;
+      esac
+    done
+  done > "${TMPDIR:-/tmp}/fake-adlc-violations.$$"
+  violations=$(sort -u "${TMPDIR:-/tmp}/fake-adlc-violations.$$")
+  rm -f "${TMPDIR:-/tmp}/fake-adlc-violations.$$"
+  if [ -z "$violations" ]; then
+    echo '{"tool":"rails-guard","passed":true,"violations":[]}'
+    exit 0
+  fi
+  json_violations=$(echo "$violations" | awk 'BEGIN{first=1} {if(!first) printf ","; printf "{\"file\":\"%s\",\"type\":\"rail-edit\"}", $0; first=0}')
+  echo "{\"tool\":\"rails-guard\",\"passed\":false,\"violations\":[$json_violations]}"
+  exit 2
+fi
 if [ "$1" = "hollow-test" ]; then
   case "${FAKE_HOLLOW_TEST_MODE:-clean}" in
     survivors)
