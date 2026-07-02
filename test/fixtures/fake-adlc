@@ -1,0 +1,24 @@
+#!/bin/sh
+# Fake adlc for offline tests of the evidence-backed prosecution gate.
+# Only implements `hollow-test`, the one subcommand lib/prosecute.mjs calls.
+#
+# FAKE_HOLLOW_TEST_MODE:
+#   clean (default) — all mutants killed, exit 0
+#   survivors        — some mutants survive, exit 2 (real hollow-test's
+#                       gate-fail exit code)
+#   fail              — operational error (unparseable output), exit 1
+if [ "$1" = "hollow-test" ]; then
+  case "${FAKE_HOLLOW_TEST_MODE:-clean}" in
+    survivors)
+      echo '{"tool":"hollow-test","summary":{"total":2,"killed":1,"survived":1},"mutants":[{"file":"lib/x.mjs","line":1,"operator":"null-return","status":"survived","original":"return x;","mutated":"return null;"},{"file":"lib/x.mjs","line":2,"operator":"null-return","status":"killed","original":"return y;","mutated":"return null;"}]}'
+      exit 2 ;;
+    fail)
+      echo "boom: simulated operational failure (dirty tree)" >&2
+      exit 1 ;;
+    *)
+      echo '{"tool":"hollow-test","summary":{"total":2,"killed":2,"survived":0},"mutants":[]}'
+      exit 0 ;;
+  esac
+fi
+echo "fake-adlc: unimplemented subcommand '$1'" >&2
+exit 1
