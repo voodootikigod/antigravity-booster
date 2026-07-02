@@ -1,0 +1,296 @@
+{
+  "tickets": [
+    {
+      "id": "T-A",
+      "title": "Retire vendored skill duplication — install the adlc-antigravity plugin instead of hand-vendored skill copies",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream A.\n\nPROBLEM: skills/adlc-doctrine/, skills/adlc-prosecutor/, skills/adlc-self-orchestrate/ in this repo are unowned forks of ../adlc/plugins/adlc-antigravity/skills/ and have already drifted (confirmed wording diff in adlc-doctrine/SKILL.md).\n\nTASKS:\n1. Delete skills/adlc-doctrine/, skills/adlc-prosecutor/, skills/adlc-self-orchestrate/. Keep skills/release/ (booster-specific, not ADLC doctrine).\n2. Rewrite lib/bootstrap.mjs (agb bootstrap) to stop copying/symlinking those three directories. Instead shell out to `agy plugin install <path-to-adlc-antigravity>`, resolving the plugin path via an ADLC_ANTIGRAVITY_PLUGIN_PATH env var or a relative ../adlc/plugins/adlc-antigravity convention (mirroring how package.json already resolves @adlc/core via file:../adlc/packages/core). After install, verify via `agy plugin list` showing adlc-antigravity.\n3. Update README.md Install section: agb bootstrap now installs the plugin, not booster-owned skill copies. Remove language implying booster ships its own doctrine content.\n4. Rewrite the bootstrap tests in test/*.test.mjs that currently assert on skill-copy behavior (e.g. \"bootstrap: installs skills into custom destination directory\") to assert agy plugin install was invoked with the right path, and that failure (plugin path not found, or agy too old for plugin install) produces a clear, non-silent error.\n\nACCEPTANCE CRITERIA (verification method required for each — spec-lint will reject vacuous ones):\n- AC1: `grep -r adlc-doctrine skills/` returns nothing (directories deleted). VERIFY: run the grep, assert empty output.\n- AC2: agb bootstrap on a machine with ../adlc checked out results in agy plugin list showing adlc-antigravity. VERIFY: run agb bootstrap against a scratch target with ../adlc present, then agy plugin list, assert the plugin name appears in output.\n- AC3: agb bootstrap on a machine without ../adlc checked out fails loudly with an actionable message, not a silent no-op. VERIFY: run agb bootstrap with ADLC_ANTIGRAVITY_PLUGIN_PATH unset and no ../adlc sibling present (simulate via a temp HOME/cwd), assert non-zero exit and a message naming the missing path.\n- AC4: `npm test` (existing 74 tests, updated bootstrap tests included) exits 0.\n\nOUT OF SCOPE: any change to lib/scheduler.mjs, lib/prosecute.mjs, lib/plan.mjs (rails below) — this ticket is install/bootstrap only.",
+      "scope": [
+        "skills/adlc-doctrine/**",
+        "skills/adlc-prosecutor/**",
+        "skills/adlc-self-orchestrate/**",
+        "lib/bootstrap.mjs",
+        "README.md",
+        "test/bootstrap.test.mjs"
+      ],
+      "rails": [
+        "lib/scheduler.mjs",
+        "lib/prosecute.mjs",
+        "lib/plan.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-B",
+          "contract": "lib/bootstrap.mjs installs the plugin as the source of the rails-guard hook before B wires it into every worktree"
+        },
+        {
+          "to": "T-C",
+          "contract": "plugin is the installed CLI source before C's bridge module targets adlc CLI conventions"
+        },
+        {
+          "to": "T-D",
+          "contract": "adlc CLI availability confirmed via the plugin install path before D wires hollow-test/behavior-diff calls"
+        },
+        {
+          "to": "T-E",
+          "contract": "plugin is the installed source (not a vendored copy) before E dogfoods the rails-guard hook on this repo"
+        },
+        {
+          "to": "T-F1",
+          "contract": "adlc CLI availability confirmed before F1 wires model-router"
+        },
+        {
+          "to": "T-F2",
+          "contract": "adlc CLI availability confirmed before F2 wires merge-forecast"
+        },
+        {
+          "to": "T-F3",
+          "contract": "adlc CLI availability confirmed before F3 wires flail-detector"
+        },
+        {
+          "to": "T-F4",
+          "contract": "adlc CLI availability confirmed before F4 wires consensus-fix"
+        },
+        {
+          "to": "T-F5",
+          "contract": "adlc CLI availability confirmed before F5 wires gate-manifest"
+        },
+        {
+          "to": "T-F6",
+          "contract": "adlc CLI availability confirmed before F6 wires review-calibration"
+        }
+      ],
+      "duration": 1,
+      "category": "chore",
+      "budget": "mid"
+    },
+    {
+      "id": "T-C",
+      "title": "Bridge plan.json and .adlc/tickets.json — formal projection module with round-trip test",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream C.\n\nPROBLEM: agb plan produces plan.json (booster-only, carries tier/pool_hint fields the CLI schema doesn't have). The plugin, the adlc CLI's 20 tools, and /adlc-init all operate on .adlc/tickets.json. These are two unrelated ticket universes today.\n\nTASKS:\n1. Create lib/adlc-bridge.mjs exporting planToAdlcTickets(plan) (pure projection: id, title, scope, rails, edges — do not invent new fields) and writeAdlcTickets(repo, tickets).\n2. Wire agb plan's existing gate pipeline (structural validate → overlap → coldstart → parallax → premortem) to also write .adlc/tickets.json into the target repo as its final step.\n3. Document in docs/guidelines.md (\"The Plan Phase\" section) that plan.json remains the execution artifact and .adlc/tickets.json is a generated projection consumed by the plugin/CLI — not a second source of truth a human edits.\n4. Add a round-trip test: compile a brain → plan.json → project to .adlc/tickets.json → run `adlc coldstart` against the projection and confirm it doesn't error on well-formed booster tickets.\n\nACCEPTANCE CRITERIA:\n- AC1: agb plan <brain-id> /abs/repo leaves both plan.json and .adlc/tickets.json in a consistent state (same ticket ids/scope/rails/edges, projected). VERIFY: run agb plan against a fixture brain, diff the ticket id sets between the two files, assert equality.\n- AC2: `adlc coldstart .adlc/tickets.json` (or the coldstart CLI invocation used by this repo) succeeds against a plan booster just compiled. VERIFY: run it in the test, assert exit 0.\n- AC3: lib/adlc-bridge.mjs has isolated unit tests independent of the scheduler, ≥80% coverage per the coding-style testing bar. VERIFY: node --test test/adlc-bridge.test.mjs, check coverage output.\n\nNote this repo's own .gitignore convention (already set up in this session via /adlc-init) tracks .adlc/tickets.json and ignores the rest of .adlc/*; the plugin's own docs and the ../adlc repo's own dogfooding (confirmed: .adlc/tickets.json is git-tracked there, not ignored) both agree — do not relitigate that choice in this ticket.",
+      "scope": [
+        "lib/adlc-bridge.mjs",
+        "lib/plan.mjs",
+        "docs/guidelines.md",
+        "test/adlc-bridge.test.mjs"
+      ],
+      "rails": [
+        "lib/scheduler.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-B",
+          "contract": "lib/adlc-bridge.mjs (planTicketToAdlcTicket projection) exists before B's scheduler wires ADLC_TICKET per-worktree using it"
+        },
+        {
+          "to": "T-E",
+          "contract": "docs/guidelines.md: C lands its Plan Phase section before E adds its ADLC_P4_ENFORCEMENT section"
+        }
+      ],
+      "duration": 2,
+      "category": "infra",
+      "budget": "mid"
+    },
+    {
+      "id": "T-B",
+      "title": "Live rail enforcement in the scheduler — wire the plugin's PreToolUse hook into every worktree, replace post-hoc glob diff with adlc rails-guard",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream B.\n\nPROBLEM: lib/scheduler.mjs only discovers a rail violation after a builder has finished and its full diff is available — the builder has already spent its quota, and shell writes aren't even caught by the in-session hook, only by the CI gate. Booster's worktree-per-ticket model is exactly the shape the plugin's hook was designed for.\n\nRESOLVED AMBIGUITY (coldstart audit, this session): \"ensure agy inside that worktree has the plugin active\" does NOT mean per-worktree plugin installation. agy plugin installs are user-level (~/.gemini, per handoff.md §2.2's own table describing how booster's current bootstrap vendors skills) and every worktree spawned by the scheduler shares the same $HOME as the parent process — a single global install performed once by T-A's bootstrap already covers every worktree. What genuinely IS per-worktree/per-build is the STATE the hook reads: ADLC_P4_ENFORCEMENT, ADLC_TICKET (or .adlc/current-ticket.json), and the target repo's own .adlc/tickets.json. \"Ensure the plugin is active\" in task 1 means: verify (not reinstall) the global plugin presence, then set the per-worktree env/state before invoking agy --print in that worktree's cwd. Do not add per-worktree plugin provisioning code — that would be solving a problem that doesn't exist.\n\nTASKS:\n1. When runPlan (lib/scheduler.mjs) creates a worktree for a ticket (lib/worktrees.mjs), verify the adlc-antigravity plugin is present (agy plugin list) and set ADLC_P4_ENFORCEMENT=1 for the duration of the builder's agy --print invocation in that worktree, with ADLC_TICKET (or .adlc/current-ticket.json) pointing at the ticket currently being built. This requires the target repo to be ADLC-initialized (.adlc/ present) — if it is not, see task 4.\n2. Use lib/adlc-bridge.mjs's planTicketToAdlcTicket (landed in T-C) to materialize the current ticket into the plugin's expected shape before setting ADLC_TICKET. Do not invent new fields.\n3. Keep the existing post-hoc scope/rail diff check in scheduler.mjs as the fast-fail confirmation (belt to the hook's suspenders), but change it to call `adlc rails-guard` (diff-based) directly instead of the current bespoke @adlc/core glob comparison, so booster and the plugin share one enforcement engine.\n4. When enforcement is unavailable (target repo isn't ADLC-initialized, or adlc/plugin isn't present), booster must fail closed and say so in the ticket log — not silently degrade to prompt-only discipline.\n\nACCEPTANCE CRITERIA:\n- AC1: A planted rail violation (builder prompt instructed to edit a frozen rail path) is denied during the build, not just failed after. VERIFY: live smoke ticket mirroring the plugin's own \"Write to a frozen rail → DENIED\" verification; assert the builder's edit attempt is denied and the ticket log shows the denial, not a post-hoc failure.\n- AC2: The post-hoc check calls adlc rails-guard. VERIFY: a test that stubs the CLI invocation and asserts it's invoked with the correct diff/base-ref args.\n- AC3: Running the scheduler against a non-ADLC-initialized target repo produces a clear warning in the run report, not silent success. VERIFY: run the scheduler against a fixture repo with no .adlc/, assert the run report contains an explicit enforcement-unavailable warning.",
+      "scope": [
+        "lib/scheduler.mjs",
+        "lib/worktrees.mjs",
+        "test/scheduler.test.mjs",
+        "test/worktrees.test.mjs"
+      ],
+      "rails": [
+        "lib/prosecute.mjs",
+        "lib/review.mjs",
+        "skills/"
+      ],
+      "edges": [
+        {
+          "to": "T-F3",
+          "contract": "lib/scheduler.mjs: B lands rail-enforcement wiring before F3 replaces the two-strike trigger in the same file"
+        }
+      ],
+      "duration": 3,
+      "category": "infra",
+      "budget": "frontier"
+    },
+    {
+      "id": "T-D",
+      "title": "Evidence-backed prosecution — wire adlc hollow-test / behavior-diff into lib/prosecute.mjs as hard preconditions",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream D.\n\nPROBLEM: lib/prosecute.mjs asks a model to self-report a verdict. The plugin's prosecutor agent instead runs machine-checkable gates (adlc hollow-test, adlc behavior-diff) and backs its verdict with their output. Booster's current approach is exactly the \"tests that pass without testing anything\" failure mode applied to the reviewer itself.\n\nTASKS:\n1. Before dispatching the cross-model prosecution prompt in lib/prosecute.mjs, run `adlc hollow-test --test-cmd \"<ticket's gate command>\"` against the ticket's worktree. Attach its structured result (survivors, if any) to the prosecution prompt as evidence the model must address.\n2. If adlc hollow-test reports exit 2 (mutation survivors), treat this as an automatic prosecution hit (reject) independent of the model's verdict — do not let the model overrule a hard mutation-testing signal.\n3. Where the ticket's change touches an HTTP/API surface, run adlc behavior-diff and attach the snapshot comparison the same way.\n4. Keep the existing cross-model dispatch (Gemini⇄Claude family alternation) — the CLI gates are additive evidence, not a replacement for cross-model review.\n5. Record every prosecution's gate evidence via adlc gate-manifest (coordinate with T-F5 if it has landed; if not, note the manifest call as a TODO hook point, do not block this ticket on F5).\n\nACCEPTANCE CRITERIA:\n- AC1: A ticket whose tests pass but whose mutation-tested lines survive is rejected even if the LLM verdict says \"ship\". VERIFY: planted-hollow-test fixture (a test that asserts nothing meaningful about a changed line), run prosecute against it, assert the verdict is reject and cites the hollow-test evidence.\n- AC2: Prosecution prompts in the log show the hollow-test evidence block, not just the diff. VERIFY: inspect the generated prompt text in a test, assert it contains the hollow-test result section.\n- AC3: Existing cross-model prosecution tests still pass; new tests cover the hard-reject-on-survivors path. VERIFY: npm test exits 0.",
+      "scope": [
+        "lib/prosecute.mjs",
+        "lib/charters.mjs",
+        "test/prosecute.test.mjs"
+      ],
+      "rails": [
+        "lib/scheduler.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-F5",
+          "contract": "lib/prosecute.mjs: D lands hollow-test/behavior-diff wiring before F5 adds gate-manifest recording touching the same file"
+        }
+      ],
+      "duration": 2,
+      "category": "feature",
+      "budget": "frontier"
+    },
+    {
+      "id": "T-E",
+      "title": "Booster dogfoods the ADLC on itself — .adlc/ workspace, frozen rails, CI rails-guard, real build/test gate",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream E.\n\nPROBLEM: Booster asks every target repo it orchestrates to be ADLC-shaped but is not itself ADLC-initialized. This is a credibility gap as much as a technical one.\n\nNOTE: this repo's .adlc/ workspace and .gitignore stanza (.adlc/* tracked exception !.adlc/tickets.json) were already scaffolded via /adlc-init earlier in this session — task 1 is largely done; verify it, don't redo it blindly.\n\nTASKS:\n1. Verify .adlc/ scaffold and .gitignore stanza (done this session) match the plugin's own convention.\n2. Add .github/workflows/adlc-rails-guard.yml from ../adlc/docs/ci/rails-guard.yml, make it a required check. Read the security limitation in that template first — it does not protect rails introduced for the first time in the same PR; freeze any new rails in a merged commit before the PR that needs them protected.\n3. RESOLVED AMBIGUITY (coldstart audit, this session): enabling GitHub branch-protection rules (required reviewers, required status checks) is a repo-admin action outside a coding agent's reach — it happens in GitHub repo settings or via `gh api` with admin scope, not in a git diff a PR can carry. This ticket's code deliverable is limited to: add a CODEOWNERS file listing the repo owner (derive from `git remote -v` / `gh repo view --json owner`, e.g. the GitHub org/user this repo pushes to) as owner of .github/workflows/**, and add a section to docs/guidelines.md titled \"CI self-protection (manual step)\" documenting that a human with repo admin access must additionally enable \"Require review from Code Owners\" in branch protection settings for this to be enforced — link the exact GitHub Settings > Branches path. Do not attempt to call the GitHub API to change branch protection settings as part of this ticket's automated work.\n4. Decide and freeze booster's own rails: lib/lock.mjs (merge-lock correctness, hardened over 7 adversarial-review rounds — regressions here are the highest-blast-radius bug class in this repo), lib/gates.mjs (sandbox enforcement), and handoff.md itself once this ticket set is authored (prevents silent scope drift mid-execution). Add these as a ticket's declared \"rails\" going forward (this ticket set — .adlc/tickets.json — already exists as of this session; a follow-up entry should declare these paths as rails for future tickets touching adjacent files).\n5. Add agb's own build/test to CI (currently only publish.yml exists). Gate on the existing 74 unit/integration tests (`npm test`) — this is the prerequisite for the rails-guard CI gate to mean anything; a rails-clean PR that doesn't build is not \"safe.\"\n\nEXPLICITLY DEFERRED (not silently dropped — noted here per handoff.md §5 Workstream F items 7-8): adlc lesson-foundry / rejection-mining (needs volume from gate-manifest history to pay off) and adlc skill-rot (applies to the plugin's doctrine skills once T-A lands, not to booster's own files) are out of scope for this ticket and not ticketed elsewhere in this pass.\n\nACCEPTANCE CRITERIA:\n- AC1: .adlc/ exists in this repo with ADLC_P4_ENFORCEMENT documented in docs/guidelines.md. VERIFY: file exists; grep docs/guidelines.md for ADLC_P4_ENFORCEMENT.\n- AC2: A PR that edits a frozen rail (e.g. lib/lock.mjs without going through the documented ticket process) fails CI. VERIFY: open a scratch PR/branch editing lib/lock.mjs outside ticket scope, confirm the rails-guard workflow run fails.\n- AC3: .github/workflows/ includes a real test/build gate, not just publish. VERIFY: workflow file exists and runs `npm test`; a PR with a failing test shows a red check.\n- AC4: CODEOWNERS exists and names an owner for .github/workflows/**; docs/guidelines.md has a \"CI self-protection (manual step)\" section naming the required manual branch-protection step. VERIFY: grep both files for the expected content; this ticket does not call the GitHub API to enable branch protection itself.",
+      "scope": [
+        ".adlc/**",
+        ".github/workflows/adlc-rails-guard.yml",
+        ".github/workflows/ci.yml",
+        "docs/guidelines.md",
+        ".gitignore",
+        "CODEOWNERS"
+      ],
+      "rails": [
+        "lib/lock.mjs",
+        "lib/gates.mjs",
+        "lib/scheduler.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-F1",
+          "contract": "docs/guidelines.md: E lands its section before F1 adds the model-router section"
+        }
+      ],
+      "duration": 2,
+      "category": "infra",
+      "budget": "mid"
+    },
+    {
+      "id": "T-F1",
+      "title": "[Workstream F] Wire adlc model-router into tier assignment (lib/plan.mjs / lib/pools.mjs)",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 1 (highest payoff-order item).\n\nBooster's tier heuristics (which pool/model a ticket routes to) are currently bespoke, hand-rolled in lib/pools.mjs. Replace or cross-check against adlc model-router's frontier/direct/ladder strategy assignment.\n\nACCEPTANCE CRITERIA:\n- AC1: lib/plan.mjs's tier-assignment step calls adlc model-router (or cross-checks its output) instead of relying solely on lib/pools.mjs heuristics. VERIFY: a test stubs the CLI, asserts it's invoked with the ticket set, and asserts the resulting tier assignment reflects its output.\n- AC2: Before/after behavior documented in docs/guidelines.md. VERIFY: grep for a \"model-router\" section.\n- AC3: npm test exits 0, no regression to existing plan.mjs tests.",
+      "scope": [
+        "lib/plan.mjs",
+        "lib/pools.mjs",
+        "docs/guidelines.md",
+        "test/plan-model-router.test.mjs"
+      ],
+      "rails": [
+        "lib/scheduler.mjs",
+        "lib/prosecute.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-F2",
+          "contract": "docs/guidelines.md: F1 lands its section before F2 adds the merge-forecast section"
+        }
+      ],
+      "duration": 1,
+      "category": "feature",
+      "budget": "cheap"
+    },
+    {
+      "id": "T-F2",
+      "title": "[Workstream F] Wire adlc merge-forecast into agb plan's fan-out-width decision",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 2.\n\nBooster already does transitive scope-overlap forecasting in lib/preflight.mjs; adlc merge-forecast estimates dependency pressure and merge backpressure specifically — likely complementary, not redundant. Evaluate whether it should gate plan.json's concurrency cap.\n\nACCEPTANCE CRITERIA:\n- AC1: agb plan's gate pipeline runs adlc merge-forecast against the compiled ticket set and either gates or annotates plan.json's concurrency cap with its output. VERIFY: a test stubs the CLI, asserts invocation, and asserts the concurrency cap reflects (or is annotated by) its output.\n- AC2: Documented in docs/guidelines.md whether merge-forecast is complementary to or replaces lib/preflight.mjs's existing forecasting, with the reasoning. VERIFY: grep for a \"merge-forecast\" section explaining the relationship.\n- AC3: npm test exits 0.",
+      "scope": [
+        "lib/plan.mjs",
+        "lib/preflight.mjs",
+        "docs/guidelines.md",
+        "test/plan-merge-forecast.test.mjs"
+      ],
+      "rails": [
+        "lib/scheduler.mjs",
+        "lib/prosecute.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-F6",
+          "contract": "docs/guidelines.md: F2 lands its section before F6 adds the review-calibration section"
+        }
+      ],
+      "duration": 1,
+      "category": "feature",
+      "budget": "cheap"
+    },
+    {
+      "id": "T-F3",
+      "title": "[Workstream F] Replace two-strike regeneration trigger with adlc flail-detector",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 3.\n\nBooster's bespoke \"two-strike regeneration\" trigger (a failed-gate counter) in lib/scheduler.mjs should be replaced with adlc flail-detector's principled detection of repeated errors, scope violations, edit churn, and oversized logs.\n\nCOORDINATION NOTE: this ticket touches lib/scheduler.mjs, the same file T-B modifies. Land after T-B merges to avoid a large merge conflict; this is a sequencing note, not a DAG edge, since flail-detector and rail-enforcement wiring touch different functions in the same file.\n\nACCEPTANCE CRITERIA:\n- AC1: The two-strike counter is replaced (or backed) by adlc flail-detector's signal on the builder's log. VERIFY: a test feeds a fixture log with repeated errors/scope violations to flail-detector and asserts the scheduler's regeneration trigger fires on its verdict, not just a raw failure count.\n- AC2: A false-trigger fixture (single transient failure, no flail pattern) does NOT trigger regeneration. VERIFY: test asserts no regeneration for a one-off failure.\n- AC3: npm test exits 0.",
+      "scope": [
+        "lib/scheduler.mjs",
+        "test/scheduler-flail.test.mjs"
+      ],
+      "rails": [
+        "lib/prosecute.mjs",
+        "lib/plan.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-F4",
+          "contract": "lib/scheduler.mjs: F3 lands flail-detector wiring before F4 adds consensus-fix fan-out in the same file"
+        }
+      ],
+      "duration": 2,
+      "category": "feature",
+      "budget": "mid"
+    },
+    {
+      "id": "T-F4",
+      "title": "[Workstream F] Fan out candidate fixes via adlc consensus-fix instead of single-attempt regeneration",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 4.\n\nThe one-shot fix-round after a failed prosecution (lib/scheduler.mjs's current single-attempt fix loop) should fan out multiple candidate fixes via adlc consensus-fix and pick the gated consensus winner instead of trusting one regeneration.\n\nACCEPTANCE CRITERIA:\n- AC1: On a failed prosecution, the scheduler invokes adlc consensus-fix (fan-out candidates) rather than a single regeneration attempt. VERIFY: a test stubs the CLI, asserts invocation with the failing test command and changed files, and asserts the winning candidate is applied.\n- AC2: If consensus-fix itself fails to converge (no winner), the scheduler falls back to the existing single-attempt path with a logged reason, not a silent hang. VERIFY: test simulates a no-consensus result, asserts fallback behavior and log entry.\n- AC3: npm test exits 0.",
+      "scope": [
+        "lib/scheduler.mjs",
+        "test/scheduler-consensus-fix.test.mjs"
+      ],
+      "rails": [
+        "lib/prosecute.mjs",
+        "lib/plan.mjs"
+      ],
+      "edges": [
+        {
+          "to": "T-F5",
+          "contract": "lib/scheduler.mjs: F4 lands consensus-fix wiring before F5 adds gate-manifest recording in the same file"
+        }
+      ],
+      "duration": 2,
+      "category": "feature",
+      "budget": "mid"
+    },
+    {
+      "id": "T-F5",
+      "title": "[Workstream F] Record every gate as append-only evidence via adlc gate-manifest",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 5.\n\nEvery gate a run already produces (pre-merge build, prosecution verdict, post-merge build, rollback) should be recorded as append-only, attestable evidence via adlc gate-manifest, not just .booster/report.json log lines. This is the audit trail T-E's CI gate and T-D's prosecution both want to point at.\n\nACCEPTANCE CRITERIA:\n- AC1: Each gate outcome in a scheduler run is recorded via adlc gate-manifest record. VERIFY: a test stubs the CLI, asserts a record call per gate transition (build pass/fail, prosecution verdict, rollback) with the correct gate name and evidence payload.\n- AC2: adlc gate-manifest show / verify can reconstruct a run's gate history from the manifest alone. VERIFY: run a fixture scheduler pass, then adlc gate-manifest show, assert it lists the expected gate sequence.\n- AC3: npm test exits 0.",
+      "scope": [
+        "lib/scheduler.mjs",
+        "lib/prosecute.mjs",
+        "test/gate-manifest.test.mjs"
+      ],
+      "rails": [
+        "lib/plan.mjs",
+        "lib/lock.mjs"
+      ],
+      "edges": [],
+      "duration": 1,
+      "category": "feature",
+      "budget": "cheap"
+    },
+    {
+      "id": "T-F6",
+      "title": "[Workstream F] agb review self-measures recall via adlc review-calibration",
+      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 6.\n\nagb review (the read-only loop-until-dry lens fleet in lib/review.mjs) should periodically self-measure recall using adlc review-calibration — does the review fleet actually catch planted mutants? — closing the loop on booster's own reviewer quality the way hollow-test closes it for a single ticket's tests.\n\nACCEPTANCE CRITERIA:\n- AC1: lib/review.mjs gains a calibration mode that invokes adlc review-calibration against a mutant-seeded fixture and reports recall. VERIFY: a test stubs the CLI, asserts invocation with the review command template, and asserts the recall score is surfaced in the review run's output.\n- AC2: Documented in docs/guidelines.md as an opt-in periodic check, not part of every agb review invocation (cost). VERIFY: grep for a \"review-calibration\" section noting opt-in behavior.\n- AC3: npm test exits 0.",
+      "scope": [
+        "lib/review.mjs",
+        "docs/guidelines.md",
+        "test/review-calibration.test.mjs"
+      ],
+      "rails": [
+        "lib/scheduler.mjs",
+        "lib/prosecute.mjs"
+      ],
+      "edges": [],
+      "duration": 1,
+      "category": "feature",
+      "budget": "cheap"
+    }
+  ]
+}

@@ -2,3 +2,5 @@
 node_modules/
 .booster/
 .claude/
+.adlc/*
+!.adlc/tickets.json
