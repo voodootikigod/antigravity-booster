@@ -88,6 +88,38 @@ test('runAgy: detects exit-0 print-timeout as failure', async () => {
   assert.equal(r.error, 'print-timeout');
 });
 
+test('runAgy: --sandbox is passed only when sandbox:true; omitted by default', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'agb-agy-argv-'));
+  const prevState = process.env.FAKE_STATE_DIR;
+  process.env.FAKE_STATE_DIR = state;
+  try {
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY });
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY, sandbox: true });
+    const [defaultCall, sandboxedCall] = readFileSync(join(state, 'agy-argv-seen'), 'utf8').trim().split('\n');
+    assert.ok(!defaultCall.includes('--sandbox'), 'sandbox defaults to false — no --sandbox flag');
+    assert.ok(sandboxedCall.includes('--sandbox'), 'sandbox:true passes --sandbox');
+  } finally {
+    if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runAgy: env option is scoped to this spawn only — process.env is never mutated', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'agb-agy-env-'));
+  try {
+    assert.equal(process.env.ADLC_TICKET, undefined);
+    await runAgy({
+      model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY,
+      env: { FAKE_STATE_DIR: state, ADLC_P4_ENFORCEMENT: '1', ADLC_TICKET: 'T9' },
+    });
+    const envSeen = readFileSync(join(state, 'agy-env-seen'), 'utf8');
+    assert.match(envSeen, /ADLC_P4_ENFORCEMENT=1 ADLC_TICKET=T9/, 'the spawned process saw the merged env');
+    assert.equal(process.env.ADLC_TICKET, undefined, 'the parent process env is untouched after the call');
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
 // --- pools ---
 
 test('PoolSet: caps enforced, waiters released, requests counted', async () => {

@@ -35,6 +35,7 @@ prompt=$(cat)
 # are unset (prosecutor/reader calls never set them).
 if [ -n "$FAKE_STATE_DIR" ]; then
   printf 'ADLC_P4_ENFORCEMENT=%s ADLC_TICKET=%s\n' "${ADLC_P4_ENFORCEMENT:-}" "${ADLC_TICKET:-}" >> "$FAKE_STATE_DIR/agy-env-seen"
+  printf '%s\n' "$*" >> "$FAKE_STATE_DIR/agy-argv-seen"
 fi
 
 # Global failure injection (any role): simulate a model/transport error.
