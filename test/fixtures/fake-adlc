@@ -1,10 +1,40 @@
 #!/bin/sh
 # Fake adlc for offline tests. Implements just enough of `hollow-test`,
-# `rails-guard`, `model-router`, and `merge-forecast` — the subcommands
-# lib/prosecute.mjs, lib/scheduler.mjs, and lib/plan.mjs call — for
-# deterministic, fully-offline tests that don't depend on a
+# `rails-guard`, `model-router`, `merge-forecast`, and `flail-detector` — the
+# subcommands lib/prosecute.mjs, lib/scheduler.mjs, and lib/plan.mjs call —
+# for deterministic, fully-offline tests that don't depend on a
 # globally-installed adlc CLI.
 #
+# flail-detector: real behavior, not canned — greps the given log file for
+# the literal marker "FLAIL-REPEATED-ERROR" (>= 2 occurrences = a
+# repeated-error signal) or "FLAIL-SCOPE-VIOLATION" (>= 1 = a scope-violation
+# signal). Fixture logs plant these markers directly; anything else in the
+# log is ignored. Records each invocation's log-file argument to
+# FAKE_STATE_DIR for tests that assert on it.
+if [ "$1" = "flail-detector" ]; then
+  logfile="$2"
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'logfile=%s\n' "$logfile" >> "$FAKE_STATE_DIR/flail-detector-invocations"
+  fi
+  if [ ! -f "$logfile" ]; then
+    echo "flail-detector: log file not found: $logfile" >&2
+    exit 1
+  fi
+  # grep -c always prints a count (even "0"), but exits 1 on no match — do
+  # not `|| echo 0` here, that would append a second "0" to the same
+  # captured output on a no-match case and break the numeric comparison.
+  repeated=$(grep -c 'FLAIL-REPEATED-ERROR' "$logfile" 2>/dev/null)
+  scopeviol=$(grep -c 'FLAIL-SCOPE-VIOLATION' "$logfile" 2>/dev/null)
+  signals=""
+  [ "$repeated" -ge 2 ] && signals="${signals}{\"type\":\"repeated-error\"},"
+  [ "$scopeviol" -ge 1 ] && signals="${signals}{\"type\":\"scope-violation\"},"
+  if [ -n "$signals" ]; then
+    echo "{\"verdict\":\"flail\",\"signals\":[${signals%,}]}"
+    exit 2
+  fi
+  echo '{"verdict":"clean","signals":[]}'
+  exit 0
+fi
 # merge-forecast: canned, controllable width. FAKE_MERGE_FORECAST_MODE:
 #   default   — recommendedWidth=3, certifiedWidth=3, no gateFailures,
 #               records the invocation (--tickets path) to FAKE_STATE_DIR.

@@ -166,6 +166,28 @@ case "$prompt" in
       echo-adlc)
         [ -f .adlc/tickets.json ] && cp .adlc/tickets.json "$FAKE_STATE_DIR/adlc-tickets-seen.json"
         echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
+      # flail-then-good: every strike blocks, printing the FLAIL-REPEATED-ERROR
+      # marker twice in its own output. If a real agy repeated the same error
+      # on strike 1, the accumulated log has the marker twice after strike 1
+      # alone — enough for the fake flail-detector's repeated-error signal.
+      # Proves the scheduler skips strike 2 entirely: FAKE_STATE_DIR/builds
+      # must show exactly 1 build attempt, not 2.
+      flail-then-good)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        echo "FLAIL-REPEATED-ERROR: cannot resolve import"
+        echo "FLAIL-REPEATED-ERROR: cannot resolve import"
+        echo "TICKET-BLOCKED: stuck"; exit 0 ;;
+      # transient-then-good: strike 1 blocks with NO flail marker (a genuine
+      # one-off), strike 2 behaves — proves a clean verdict does not cut the
+      # normal retry short.
+      transient-then-good)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        if [ "$n" -eq 0 ]; then echo "TICKET-BLOCKED: transient hiccup"; exit 0; fi
+        echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
       # rail-then-good: strike 1 violates the rail, strike 2 behaves —
       # proves the strike-2 worktree was reset (needs FAKE_STATE_DIR).
       rail-then-good)
