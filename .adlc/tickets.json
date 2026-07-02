@@ -1,33 +1,6 @@
 {
   "tickets": [
     {
-      "id": "T-E",
-      "title": "Booster dogfoods the ADLC on itself — .adlc/ workspace, frozen rails, CI rails-guard, real build/test gate",
-      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream E.\n\nPROBLEM: Booster asks every target repo it orchestrates to be ADLC-shaped but is not itself ADLC-initialized. This is a credibility gap as much as a technical one.\n\nNOTE: this repo's .adlc/ workspace and .gitignore stanza (.adlc/* tracked exception !.adlc/tickets.json) were already scaffolded via /adlc-init earlier in this session — task 1 is largely done; verify it, don't redo it blindly.\n\nTASKS:\n1. Verify .adlc/ scaffold and .gitignore stanza (done this session) match the plugin's own convention.\n2. Add .github/workflows/adlc-rails-guard.yml from ../adlc/docs/ci/rails-guard.yml, make it a required check. Read the security limitation in that template first — it does not protect rails introduced for the first time in the same PR; freeze any new rails in a merged commit before the PR that needs them protected.\n3. RESOLVED AMBIGUITY (coldstart audit, this session): enabling GitHub branch-protection rules (required reviewers, required status checks) is a repo-admin action outside a coding agent's reach — it happens in GitHub repo settings or via `gh api` with admin scope, not in a git diff a PR can carry. This ticket's code deliverable is limited to: add a CODEOWNERS file listing the repo owner (derive from `git remote -v` / `gh repo view --json owner`, e.g. the GitHub org/user this repo pushes to) as owner of .github/workflows/**, and add a section to docs/guidelines.md titled \"CI self-protection (manual step)\" documenting that a human with repo admin access must additionally enable \"Require review from Code Owners\" in branch protection settings for this to be enforced — link the exact GitHub Settings > Branches path. Do not attempt to call the GitHub API to change branch protection settings as part of this ticket's automated work.\n4. Decide and freeze booster's own rails: lib/lock.mjs (merge-lock correctness, hardened over 7 adversarial-review rounds — regressions here are the highest-blast-radius bug class in this repo), lib/gates.mjs (sandbox enforcement), and handoff.md itself once this ticket set is authored (prevents silent scope drift mid-execution). Add these as a ticket's declared \"rails\" going forward (this ticket set — .adlc/tickets.json — already exists as of this session; a follow-up entry should declare these paths as rails for future tickets touching adjacent files).\n5. Add agb's own build/test to CI (currently only publish.yml exists). Gate on the existing 74 unit/integration tests (`npm test`) — this is the prerequisite for the rails-guard CI gate to mean anything; a rails-clean PR that doesn't build is not \"safe.\"\n\nEXPLICITLY DEFERRED (not silently dropped — noted here per handoff.md §5 Workstream F items 7-8): adlc lesson-foundry / rejection-mining (needs volume from gate-manifest history to pay off) and adlc skill-rot (applies to the plugin's doctrine skills once T-A lands, not to booster's own files) are out of scope for this ticket and not ticketed elsewhere in this pass.\n\nACCEPTANCE CRITERIA:\n- AC1: .adlc/ exists in this repo with ADLC_P4_ENFORCEMENT documented in docs/guidelines.md. VERIFY: file exists; grep docs/guidelines.md for ADLC_P4_ENFORCEMENT.\n- AC2: A PR that edits a frozen rail (e.g. lib/lock.mjs without going through the documented ticket process) fails CI. VERIFY: open a scratch PR/branch editing lib/lock.mjs outside ticket scope, confirm the rails-guard workflow run fails.\n- AC3: .github/workflows/ includes a real test/build gate, not just publish. VERIFY: workflow file exists and runs `npm test`; a PR with a failing test shows a red check.\n- AC4: CODEOWNERS exists and names an owner for .github/workflows/**; docs/guidelines.md has a \"CI self-protection (manual step)\" section naming the required manual branch-protection step. VERIFY: grep both files for the expected content; this ticket does not call the GitHub API to enable branch protection itself.",
-      "scope": [
-        ".adlc/**",
-        ".github/workflows/adlc-rails-guard.yml",
-        ".github/workflows/ci.yml",
-        "docs/guidelines.md",
-        ".gitignore",
-        "CODEOWNERS"
-      ],
-      "rails": [
-        "lib/lock.mjs",
-        "lib/gates.mjs",
-        "lib/scheduler.mjs"
-      ],
-      "edges": [
-        {
-          "to": "T-F1",
-          "contract": "docs/guidelines.md: E lands its section before F1 adds the model-router section"
-        }
-      ],
-      "duration": 2,
-      "category": "infra",
-      "budget": "mid"
-    },
-    {
       "id": "T-F1",
       "title": "[Workstream F] Wire adlc model-router into tier assignment (lib/plan.mjs / lib/pools.mjs)",
       "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 1 (highest payoff-order item).\n\nBooster's tier heuristics (which pool/model a ticket routes to) are currently bespoke, hand-rolled in lib/pools.mjs. Replace or cross-check against adlc model-router's frontier/direct/ladder strategy assignment.\n\nACCEPTANCE CRITERIA:\n- AC1: lib/plan.mjs's tier-assignment step calls adlc model-router (or cross-checks its output) instead of relying solely on lib/pools.mjs heuristics. VERIFY: a test stubs the CLI, asserts it's invoked with the ticket set, and asserts the resulting tier assignment reflects its output.\n- AC2: Before/after behavior documented in docs/guidelines.md. VERIFY: grep for a \"model-router\" section.\n- AC3: npm test exits 0, no regression to existing plan.mjs tests.",

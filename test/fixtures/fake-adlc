@@ -1,14 +1,39 @@
 #!/bin/sh
-# Fake adlc for offline tests. Implements just enough of `hollow-test` and
-# `rails-guard` — the two subcommands lib/prosecute.mjs and lib/scheduler.mjs
-# call — for deterministic, fully-offline tests that don't depend on a
-# globally-installed adlc CLI.
+# Fake adlc for offline tests. Implements just enough of `hollow-test`,
+# `rails-guard`, and `model-router` — the subcommands lib/prosecute.mjs,
+# lib/scheduler.mjs, and lib/plan.mjs call — for deterministic, fully-offline
+# tests that don't depend on a globally-installed adlc CLI.
 #
-# rails-guard: real behavior, not canned — shells out to `git diff
-# --name-only` in cwd against --base and checks each changed file against
-# every --rails glob (exact match or simple trailing-** prefix match, enough
-# for these tests' fixtures). FAKE_STATE_DIR, if set, records the exact
-# invocation args for tests that assert on them (AC2).
+# model-router: canned, controllable assignments. FAKE_MODEL_ROUTER_MODE:
+#   default   — echoes back --tickets' own ticket ids, each assigned
+#               tier "frontier" (a value that could not be the ticket's own
+#               pre-existing tier in these tests, so applying it is
+#               observable) and records the invocation to FAKE_STATE_DIR.
+#   p3        — same, plus a non-empty p3Findings array (advisory).
+#   fail      — operational error, exit 1, unparseable stdout.
+if [ "$1" = "model-router" ]; then
+  shift
+  ticketspath=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tickets) ticketspath="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'tickets=%s\n' "$ticketspath" >> "$FAKE_STATE_DIR/model-router-invocations"
+  fi
+  case "${FAKE_MODEL_ROUTER_MODE:-default}" in
+    fail) echo "not json" ; exit 1 ;;
+    *)
+      ids=$(node -e "const t=require('$ticketspath'); console.log(t.tickets.map(x=>x.id).join('\n'))" 2>/dev/null)
+      assignments=$(echo "$ids" | awk 'BEGIN{first=1} NF{if(!first) printf ","; printf "{\"id\":\"%s\",\"tier\":\"frontier\",\"mode\":\"direct\",\"railDensity\":1,\"float\":0,\"reason\":\"fake\"}", $0; first=0}')
+      p3="[]"
+      [ "${FAKE_MODEL_ROUTER_MODE:-}" = "p3" ] && p3='[{"id":"fake","message":"fake P3 finding"}]'
+      echo "{\"assignments\":[$assignments],\"p3Findings\":$p3}"
+      exit 0 ;;
+  esac
+fi
 if [ "$1" = "rails-guard" ]; then
   shift
   base=""

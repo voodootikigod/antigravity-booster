@@ -276,7 +276,9 @@ function makeRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-repo-'));
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' });
   g('init', '-q', '-b', 'main');
-  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  // Throwaway test repos must not depend on the developer's own commit-signing
+  // setup (GPG/SSH agent) — disable it locally, never touch global config.
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'commit.gpgsign', 'false');
   writeFileSync(join(dir, 'README.md'), 'hello\n');
   g('add', '-A'); g('commit', '-qm', 'init');
   return { dir, g };
