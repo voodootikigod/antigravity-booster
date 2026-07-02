@@ -183,6 +183,14 @@ Every gate transition a scheduler run produces — the worktree build, the prose
 
 `lib/worktrees.mjs`'s `ensureGitignore` now also ignores `.adlc/*` (except `tickets.json`) in every target repo it runs against — without this, `.adlc/manifest.jsonl` written mid-run would make `isDirty(repo)` see the target repo as dirty, tripping the merge-time dirty-tree guard on a run that otherwise succeeded. This mirrors the exception this repo's own `.gitignore` already uses.
 
+## Review Self-Calibration (ADLC review-calibration) — opt-in, not automatic
+
+`lib/review.mjs`'s `reviewCalibration()` closes the "who reviews the reviewer" loop for `agb review` the way `adlc hollow-test` closes it for a single ticket's tests: it runs `adlc review-calibration --review-cmd <cmd> --json` (ADLC C8), which plants real mutants into a real commit and measures whether the review fleet's own findings actually catch them (recall), not just whether the fleet ran and said something.
+
+**This is deliberately opt-in and periodic, NOT part of every `agb review` invocation.** review-calibration plants mutants into a real commit and runs a full reviewer pass per plant — real quota cost, multiplied by however many plants are requested. `reviewCalibration()` is exported for a human or a future scheduled job to call explicitly (e.g. weekly), not wired into `bin/agb.mjs`'s `review` command's default path — CLI wiring is a natural follow-up, intentionally out of this ticket's scope.
+
+`reviewCmd` carries a `{base}` placeholder review-calibration substitutes with the commit ref under test; the natural choice re-uses the very fleet being measured: `agb review <repo> {base}` (JSON findings on stdout, the shape review-calibration's scorer expects). Like every other CLI integration here, it's additive evidence: an unavailable/failing calibration run (`adlc` missing, dirty tree, no LLM judge configured) degrades to `{ ok: false, error }` rather than throwing, and a below-threshold recall is still a valid, surfaced result (`{ ok: true, recall, ... }`) — only a genuinely unparseable/absent result is an operational error.
+
 ## CI Self-Protection (Manual Step)
 
 This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, and `.github/workflows/adlc-rails-guard.yml` (copied from `../adlc/docs/ci/rails-guard.yml`) is the CI backstop behind the in-session hook. **`.adlc/config.json` does not exist yet in this repo — creating it is itself a manual step, not something this ticket sets up.**

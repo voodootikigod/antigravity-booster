@@ -1,11 +1,39 @@
 #!/bin/sh
 # Fake adlc for offline tests. Implements just enough of `hollow-test`,
 # `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`,
-# `consensus-fix`, and `gate-manifest record` — the subcommands
-# lib/prosecute.mjs, lib/scheduler.mjs, and lib/plan.mjs call — for
-# deterministic, fully-offline tests that don't depend on a
-# globally-installed adlc CLI (or a real LLM provider).
+# `consensus-fix`, `gate-manifest record`, and `review-calibration` — the
+# subcommands lib/prosecute.mjs, lib/scheduler.mjs, lib/plan.mjs, and
+# lib/review.mjs call — for deterministic, fully-offline tests that don't
+# depend on a globally-installed adlc CLI (or a real LLM provider).
 #
+# review-calibration: canned, controllable recall. FAKE_REVIEW_CALIBRATION_MODE:
+#   pass (default) — recall=0.75, passes the gate, exit 0. Records the
+#                     invocation (--review-cmd, --plants, --min-recall) to
+#                     FAKE_STATE_DIR.
+#   below-threshold — recall=0.2, gate fails, exit 2 (still valid JSON).
+#   fail            — operational error (e.g. dirty tree), exit 1.
+if [ "$1" = "review-calibration" ]; then
+  shift
+  reviewcmd=""
+  plants=""
+  minrecall=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --review-cmd) reviewcmd="$2"; shift 2 ;;
+      --plants) plants="$2"; shift 2 ;;
+      --min-recall) minrecall="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'review-cmd=%s plants=%s min-recall=%s\n' "$reviewcmd" "$plants" "$minrecall" >> "$FAKE_STATE_DIR/review-calibration-invocations"
+  fi
+  case "${FAKE_REVIEW_CALIBRATION_MODE:-pass}" in
+    fail) echo "boom: dirty tree" >&2; exit 1 ;;
+    below-threshold) echo '{"recall":0.2,"precision":null,"plants":8,"caught":2,"minRecall":0.5}'; exit 2 ;;
+    *) echo '{"recall":0.75,"precision":null,"plants":8,"caught":6,"minRecall":0.5}'; exit 0 ;;
+  esac
+fi
 # gate-manifest record <gate> --ticket <id> [--data '<json>']: records the
 # exact invocation (gate name, ticket, data) to FAKE_STATE_DIR for tests that
 # assert on it. FAKE_GATE_MANIFEST_MODE:
