@@ -51,6 +51,26 @@ test('applyModelRouterTiers: sets each ticket\'s tier from the router\'s assignm
   }
 });
 
+test('applyModelRouterTiers: passes --floor through to the CLI when supplied; omits it otherwise', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-mr-repo-'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-mr-floor-state-'));
+  try {
+    const ticketsPath = join(repo, 'tickets.json');
+    writeFileSync(ticketsPath, JSON.stringify({ tickets: [{ id: 'T1' }] }));
+    const plan = { tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a'] }] };
+    await withFakes({ FAKE_STATE_DIR: state }, async () => {
+      await applyModelRouterTiers(plan, ticketsPath, { floor: 0.4 });
+      await applyModelRouterTiers(plan, ticketsPath);
+    });
+    const [withFloor, withoutFloor] = readFileSync(join(state, 'model-router-invocations'), 'utf8').trim().split('\n');
+    assert.match(withFloor, /floor=0\.4/);
+    assert.match(withoutFloor, /floor=$/, '--floor is omitted, not sent as an empty/undefined value, when not supplied');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
 test('applyModelRouterTiers: an operational failure leaves every ticket\'s existing tier untouched', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-mr-repo-'));
   try {
