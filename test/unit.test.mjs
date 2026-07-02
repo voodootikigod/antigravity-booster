@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { poolOf, familyOf, runAgy } from '../lib/agy.mjs';
@@ -16,7 +16,7 @@ import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
   isMidMerge, abortAnyMerge,
 } from '../lib/worktrees.mjs';
-import { bootstrap } from '../lib/bootstrap.mjs';
+import { bootstrap, resolvePluginPath } from '../lib/bootstrap.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
@@ -314,6 +314,28 @@ test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () 
 });
 
 const FAKE_PLUGIN = fileURLToPath(new URL('./fixtures/fake-adlc-antigravity-plugin', import.meta.url));
+
+test('resolvePluginPath: honors ADLC_ANTIGRAVITY_PLUGIN_PATH when set', () => {
+  const prev = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = '/tmp/some-plugin-checkout';
+  try {
+    assert.equal(resolvePluginPath(), resolve('/tmp/some-plugin-checkout'));
+  } finally {
+    if (prev === undefined) delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+    else process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = prev;
+  }
+});
+
+test('resolvePluginPath: defaults to the ../adlc/plugins/adlc-antigravity sibling convention when unset', () => {
+  const prev = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  try {
+    const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+    assert.equal(resolvePluginPath(), resolve(repoRoot, '../adlc/plugins/adlc-antigravity'));
+  } finally {
+    if (prev !== undefined) process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = prev;
+  }
+});
 
 test('bootstrap: installs the adlc-antigravity plugin via `agy plugin install`, then links booster-owned skills', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
