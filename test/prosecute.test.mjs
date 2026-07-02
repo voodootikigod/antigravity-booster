@@ -123,16 +123,26 @@ test('prosecute: backward compatible — omitting worktree/testCmd skips hollow-
   });
 });
 
-test('prosecute: an unavailable hollow-test (operational error) does not itself block — model verdict still decides', async () => {
-  await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship', FAKE_HOLLOW_TEST_MODE: 'fail' }, async () => {
-    const v = await prosecute({
-      ticket: { id: 'T1', body: 'spec' },
-      diff: 'real diff',
-      model: 'Claude Sonnet 4.6 (Thinking)',
-      worktree: '/tmp',
-      testCmd: 'npm test',
+test('prosecute: an unavailable hollow-test (operational error) does not itself block — model verdict still decides, and the prompt says so explicitly', async () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-log-'));
+  const logFile = join(logDir, 'prosecution.log');
+  try {
+    await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship', FAKE_HOLLOW_TEST_MODE: 'fail' }, async () => {
+      const v = await prosecute({
+        ticket: { id: 'T1', body: 'spec' },
+        diff: 'real diff',
+        model: 'Claude Sonnet 4.6 (Thinking)',
+        worktree: '/tmp',
+        testCmd: 'npm test',
+        logFile,
+      });
+      assert.equal(v.verdict, 'ship');
+      assert.equal(v.hollowTest.ok, false);
     });
-    assert.equal(v.verdict, 'ship');
-    assert.equal(v.hollowTest.ok, false);
-  });
+    const logged = readFileSync(logFile, 'utf8');
+    assert.match(logged, /Unavailable for this prosecution:/, 'the unavailable-evidence branch renders its lead-in text, not a blank/null section');
+    assert.match(logged, /is not itself a finding/, 'the unavailable-evidence branch renders its full explanatory text');
+  } finally {
+    rmSync(logDir, { recursive: true, force: true });
+  }
 });
