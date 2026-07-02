@@ -1,52 +1,6 @@
 {
   "tickets": [
     {
-      "id": "T-F2",
-      "title": "[Workstream F] Wire adlc merge-forecast into agb plan's fan-out-width decision",
-      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 2.\n\nBooster already does transitive scope-overlap forecasting in lib/preflight.mjs; adlc merge-forecast estimates dependency pressure and merge backpressure specifically — likely complementary, not redundant. Evaluate whether it should gate plan.json's concurrency cap.\n\nACCEPTANCE CRITERIA:\n- AC1: agb plan's gate pipeline runs adlc merge-forecast against the compiled ticket set and either gates or annotates plan.json's concurrency cap with its output. VERIFY: a test stubs the CLI, asserts invocation, and asserts the concurrency cap reflects (or is annotated by) its output.\n- AC2: Documented in docs/guidelines.md whether merge-forecast is complementary to or replaces lib/preflight.mjs's existing forecasting, with the reasoning. VERIFY: grep for a \"merge-forecast\" section explaining the relationship.\n- AC3: npm test exits 0.",
-      "scope": [
-        "lib/plan.mjs",
-        "lib/preflight.mjs",
-        "docs/guidelines.md",
-        "test/plan-merge-forecast.test.mjs"
-      ],
-      "rails": [
-        "lib/scheduler.mjs",
-        "lib/prosecute.mjs"
-      ],
-      "edges": [
-        {
-          "to": "T-F6",
-          "contract": "docs/guidelines.md: F2 lands its section before F6 adds the review-calibration section"
-        }
-      ],
-      "duration": 1,
-      "category": "feature",
-      "budget": "cheap"
-    },
-    {
-      "id": "T-F3",
-      "title": "[Workstream F] Replace two-strike regeneration trigger with adlc flail-detector",
-      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 3.\n\nBooster's bespoke \"two-strike regeneration\" trigger (a failed-gate counter) in lib/scheduler.mjs should be replaced with adlc flail-detector's principled detection of repeated errors, scope violations, edit churn, and oversized logs.\n\nCOORDINATION NOTE: this ticket touches lib/scheduler.mjs, the same file T-B modifies. Land after T-B merges to avoid a large merge conflict; this is a sequencing note, not a DAG edge, since flail-detector and rail-enforcement wiring touch different functions in the same file.\n\nACCEPTANCE CRITERIA:\n- AC1: The two-strike counter is replaced (or backed) by adlc flail-detector's signal on the builder's log. VERIFY: a test feeds a fixture log with repeated errors/scope violations to flail-detector and asserts the scheduler's regeneration trigger fires on its verdict, not just a raw failure count.\n- AC2: A false-trigger fixture (single transient failure, no flail pattern) does NOT trigger regeneration. VERIFY: test asserts no regeneration for a one-off failure.\n- AC3: npm test exits 0.",
-      "scope": [
-        "lib/scheduler.mjs",
-        "test/scheduler-flail.test.mjs"
-      ],
-      "rails": [
-        "lib/prosecute.mjs",
-        "lib/lock.mjs"
-      ],
-      "edges": [
-        {
-          "to": "T-F4",
-          "contract": "lib/scheduler.mjs: F3 lands flail-detector wiring before F4 adds consensus-fix fan-out in the same file"
-        }
-      ],
-      "duration": 2,
-      "category": "feature",
-      "budget": "mid"
-    },
-    {
       "id": "T-F4",
       "title": "[Workstream F] Fan out candidate fixes via adlc consensus-fix instead of single-attempt regeneration",
       "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 4.\n\nThe one-shot fix-round after a failed prosecution (lib/scheduler.mjs's current single-attempt fix loop) should fan out multiple candidate fixes via adlc consensus-fix and pick the gated consensus winner instead of trusting one regeneration.\n\nACCEPTANCE CRITERIA:\n- AC1: On a failed prosecution, the scheduler invokes adlc consensus-fix (fan-out candidates) rather than a single regeneration attempt. VERIFY: a test stubs the CLI, asserts invocation with the failing test command and changed files, and asserts the winning candidate is applied.\n- AC2: If consensus-fix itself fails to converge (no winner), the scheduler falls back to the existing single-attempt path with a logged reason, not a silent hang. VERIFY: test simulates a no-consensus result, asserts fallback behavior and log entry.\n- AC3: npm test exits 0.",
