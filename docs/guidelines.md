@@ -177,6 +177,12 @@ Once per `runPlan` call, the scheduler checks whether live in-session rail enfor
 
 When either precondition fails, the run does not abort — it degrades to the post-hoc check alone and says so explicitly via `report.enforcementAvailable` / `report.enforcementReason` (never a silent no-op). The post-hoc check (`lib/scheduler.mjs`'s `checkRailsGuard`) calls `adlc rails-guard --rails <globs> --base <ref>` directly — the same engine the plugin's hook uses — instead of a bespoke glob comparison, and works regardless of whether the target repo is ADLC-initialized (it takes `--rails` flags straight from the ticket, not `--tickets`).
 
+## Gate Evidence (ADLC gate-manifest)
+
+Every gate transition a scheduler run produces — the worktree build, the prosecution verdict, the post-merge build, a rollback — is recorded as append-only, hash-chained evidence via `adlc gate-manifest record <gate> --ticket <id> --data '<json>'` (`lib/scheduler.mjs`'s `recordGate`), not just a `.booster/report.json` log line. `adlc gate-manifest show` / `verify` reconstruct a run's full gate history from `<repo>/.adlc/manifest.jsonl` alone. Best-effort, like the other CLI integrations: a recording failure (`adlc` missing, `.adlc` unwritable) is caught and ignored — a broken audit trail must not itself fail a build/merge that otherwise succeeded.
+
+`lib/worktrees.mjs`'s `ensureGitignore` now also ignores `.adlc/*` (except `tickets.json`) in every target repo it runs against — without this, `.adlc/manifest.jsonl` written mid-run would make `isDirty(repo)` see the target repo as dirty, tripping the merge-time dirty-tree guard on a run that otherwise succeeded. This mirrors the exception this repo's own `.gitignore` already uses.
+
 ## CI Self-Protection (Manual Step)
 
 This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, and `.github/workflows/adlc-rails-guard.yml` (copied from `../adlc/docs/ci/rails-guard.yml`) is the CI backstop behind the in-session hook. **`.adlc/config.json` does not exist yet in this repo — creating it is itself a manual step, not something this ticket sets up.**

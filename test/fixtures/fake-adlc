@@ -1,10 +1,38 @@
 #!/bin/sh
 # Fake adlc for offline tests. Implements just enough of `hollow-test`,
-# `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`, and
-# `consensus-fix` — the subcommands lib/prosecute.mjs, lib/scheduler.mjs, and
-# lib/plan.mjs call — for deterministic, fully-offline tests that don't
-# depend on a globally-installed adlc CLI (or a real LLM provider).
+# `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`,
+# `consensus-fix`, and `gate-manifest record` — the subcommands
+# lib/prosecute.mjs, lib/scheduler.mjs, and lib/plan.mjs call — for
+# deterministic, fully-offline tests that don't depend on a
+# globally-installed adlc CLI (or a real LLM provider).
 #
+# gate-manifest record <gate> --ticket <id> [--data '<json>']: records the
+# exact invocation (gate name, ticket, data) to FAKE_STATE_DIR for tests that
+# assert on it. FAKE_GATE_MANIFEST_MODE:
+#   default — exit 0.
+#   fail    — operational error, exit 1 (adlc missing / .adlc unwritable).
+if [ "$1" = "gate-manifest" ] && [ "$2" = "record" ]; then
+  gatename="$3"
+  shift 3
+  ticket=""
+  data=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ticket) ticket="$2"; shift 2 ;;
+      --data) data="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ "${FAKE_GATE_MANIFEST_MODE:-}" = "fail" ]; then
+    echo "gate-manifest: simulated recording failure" >&2
+    exit 1
+  fi
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'gate=%s ticket=%s data=%s\n' "$gatename" "$ticket" "$data" >> "$FAKE_STATE_DIR/gate-manifest-invocations"
+  fi
+  echo "recorded: gate=$gatename ticket=$ticket"
+  exit 0
+fi
 # consensus-fix: canned, controllable convergence. FAKE_CONSENSUS_FIX_MODE:
 #   converge (default) — writes "FIXED-BY-CONSENSUS\n" to the FIRST --files
 #                         entry (proving --apply's file-write path is

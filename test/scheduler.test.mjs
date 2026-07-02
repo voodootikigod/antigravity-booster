@@ -112,7 +112,7 @@ test('runPlan: post-merge gate failure reverts main to the pre-run SHA (data-los
   try {
     // Pre-seed the entries ensureGitignore would otherwise commit at run
     // start, so the pre-run SHA is exactly what the revert must restore.
-    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n');
+    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n');
     execFileSync('git', ['add', '-A'], { cwd: repo });
     execFileSync('git', ['commit', '-qm', 'gitignore'], { cwd: repo });
     const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
