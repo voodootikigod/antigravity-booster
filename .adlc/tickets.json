@@ -1,69 +1,6 @@
 {
   "tickets": [
     {
-      "id": "T-A",
-      "title": "Retire vendored skill duplication — install the adlc-antigravity plugin instead of hand-vendored skill copies",
-      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream A.\n\nPROBLEM: skills/adlc-doctrine/, skills/adlc-prosecutor/, skills/adlc-self-orchestrate/ in this repo are unowned forks of ../adlc/plugins/adlc-antigravity/skills/ and have already drifted (confirmed wording diff in adlc-doctrine/SKILL.md).\n\nTASKS:\n1. Delete skills/adlc-doctrine/, skills/adlc-prosecutor/, skills/adlc-self-orchestrate/. Keep skills/release/ (booster-specific, not ADLC doctrine).\n2. Rewrite lib/bootstrap.mjs (agb bootstrap) to stop copying/symlinking those three directories. Instead shell out to `agy plugin install <path-to-adlc-antigravity>`, resolving the plugin path via an ADLC_ANTIGRAVITY_PLUGIN_PATH env var or a relative ../adlc/plugins/adlc-antigravity convention (mirroring how package.json already resolves @adlc/core via file:../adlc/packages/core). After install, verify via `agy plugin list` showing adlc-antigravity.\n3. Update README.md Install section: agb bootstrap now installs the plugin, not booster-owned skill copies. Remove language implying booster ships its own doctrine content.\n4. Rewrite the bootstrap tests in test/*.test.mjs that currently assert on skill-copy behavior (e.g. \"bootstrap: installs skills into custom destination directory\") to assert agy plugin install was invoked with the right path, and that failure (plugin path not found, or agy too old for plugin install) produces a clear, non-silent error.\n\nACCEPTANCE CRITERIA (verification method required for each — spec-lint will reject vacuous ones):\n- AC1: `grep -r adlc-doctrine skills/` returns nothing (directories deleted). VERIFY: run the grep, assert empty output.\n- AC2: agb bootstrap on a machine with ../adlc checked out results in agy plugin list showing adlc-antigravity. VERIFY: run agb bootstrap against a scratch target with ../adlc present, then agy plugin list, assert the plugin name appears in output.\n- AC3: agb bootstrap on a machine without ../adlc checked out fails loudly with an actionable message, not a silent no-op. VERIFY: run agb bootstrap with ADLC_ANTIGRAVITY_PLUGIN_PATH unset and no ../adlc sibling present (simulate via a temp HOME/cwd), assert non-zero exit and a message naming the missing path.\n- AC4: `npm test` (existing 74 tests, updated bootstrap tests included) exits 0.\n\nOUT OF SCOPE: any change to lib/scheduler.mjs, lib/prosecute.mjs, lib/plan.mjs (rails below) — this ticket is install/bootstrap only.",
-      "scope": [
-        "skills/adlc-doctrine/**",
-        "skills/adlc-prosecutor/**",
-        "skills/adlc-self-orchestrate/**",
-        "lib/bootstrap.mjs",
-        "README.md",
-        "test/bootstrap.test.mjs"
-      ],
-      "rails": [
-        "lib/scheduler.mjs",
-        "lib/prosecute.mjs",
-        "lib/plan.mjs"
-      ],
-      "edges": [
-        {
-          "to": "T-B",
-          "contract": "lib/bootstrap.mjs installs the plugin as the source of the rails-guard hook before B wires it into every worktree"
-        },
-        {
-          "to": "T-C",
-          "contract": "plugin is the installed CLI source before C's bridge module targets adlc CLI conventions"
-        },
-        {
-          "to": "T-D",
-          "contract": "adlc CLI availability confirmed via the plugin install path before D wires hollow-test/behavior-diff calls"
-        },
-        {
-          "to": "T-E",
-          "contract": "plugin is the installed source (not a vendored copy) before E dogfoods the rails-guard hook on this repo"
-        },
-        {
-          "to": "T-F1",
-          "contract": "adlc CLI availability confirmed before F1 wires model-router"
-        },
-        {
-          "to": "T-F2",
-          "contract": "adlc CLI availability confirmed before F2 wires merge-forecast"
-        },
-        {
-          "to": "T-F3",
-          "contract": "adlc CLI availability confirmed before F3 wires flail-detector"
-        },
-        {
-          "to": "T-F4",
-          "contract": "adlc CLI availability confirmed before F4 wires consensus-fix"
-        },
-        {
-          "to": "T-F5",
-          "contract": "adlc CLI availability confirmed before F5 wires gate-manifest"
-        },
-        {
-          "to": "T-F6",
-          "contract": "adlc CLI availability confirmed before F6 wires review-calibration"
-        }
-      ],
-      "duration": 1,
-      "category": "chore",
-      "budget": "mid"
-    },
-    {
       "id": "T-C",
       "title": "Bridge plan.json and .adlc/tickets.json — formal projection module with round-trip test",
       "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream C.\n\nPROBLEM: agb plan produces plan.json (booster-only, carries tier/pool_hint fields the CLI schema doesn't have). The plugin, the adlc CLI's 20 tools, and /adlc-init all operate on .adlc/tickets.json. These are two unrelated ticket universes today.\n\nTASKS:\n1. Create lib/adlc-bridge.mjs exporting planToAdlcTickets(plan) (pure projection: id, title, scope, rails, edges — do not invent new fields) and writeAdlcTickets(repo, tickets).\n2. Wire agb plan's existing gate pipeline (structural validate → overlap → coldstart → parallax → premortem) to also write .adlc/tickets.json into the target repo as its final step.\n3. Document in docs/guidelines.md (\"The Plan Phase\" section) that plan.json remains the execution artifact and .adlc/tickets.json is a generated projection consumed by the plugin/CLI — not a second source of truth a human edits.\n4. Add a round-trip test: compile a brain → plan.json → project to .adlc/tickets.json → run `adlc coldstart` against the projection and confirm it doesn't error on well-formed booster tickets.\n\nACCEPTANCE CRITERIA:\n- AC1: agb plan <brain-id> /abs/repo leaves both plan.json and .adlc/tickets.json in a consistent state (same ticket ids/scope/rails/edges, projected). VERIFY: run agb plan against a fixture brain, diff the ticket id sets between the two files, assert equality.\n- AC2: `adlc coldstart .adlc/tickets.json` (or the coldstart CLI invocation used by this repo) succeeds against a plan booster just compiled. VERIFY: run it in the test, assert exit 0.\n- AC3: lib/adlc-bridge.mjs has isolated unit tests independent of the scheduler, ≥80% coverage per the coding-style testing bar. VERIFY: node --test test/adlc-bridge.test.mjs, check coverage output.\n\nNote this repo's own .gitignore convention (already set up in this session via /adlc-init) tracks .adlc/tickets.json and ignores the rest of .adlc/*; the plugin's own docs and the ../adlc repo's own dogfooding (confirmed: .adlc/tickets.json is git-tracked there, not ignored) both agree — do not relitigate that choice in this ticket.",
@@ -222,7 +159,7 @@
       ],
       "rails": [
         "lib/prosecute.mjs",
-        "lib/plan.mjs"
+        "lib/lock.mjs"
       ],
       "edges": [
         {
@@ -244,7 +181,7 @@
       ],
       "rails": [
         "lib/prosecute.mjs",
-        "lib/plan.mjs"
+        "lib/lock.mjs"
       ],
       "edges": [
         {
@@ -266,8 +203,8 @@
         "test/gate-manifest.test.mjs"
       ],
       "rails": [
-        "lib/plan.mjs",
-        "lib/lock.mjs"
+        "lib/lock.mjs",
+        "lib/gates.mjs"
       ],
       "edges": [],
       "duration": 1,
