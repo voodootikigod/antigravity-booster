@@ -1,22 +1,3 @@
 {
-  "tickets": [
-    {
-      "id": "T-F6",
-      "title": "[Workstream F] agb review self-measures recall via adlc review-calibration",
-      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 6.\n\nagb review (the read-only loop-until-dry lens fleet in lib/review.mjs) should periodically self-measure recall using adlc review-calibration — does the review fleet actually catch planted mutants? — closing the loop on booster's own reviewer quality the way hollow-test closes it for a single ticket's tests.\n\nACCEPTANCE CRITERIA:\n- AC1: lib/review.mjs gains a calibration mode that invokes adlc review-calibration against a mutant-seeded fixture and reports recall. VERIFY: a test stubs the CLI, asserts invocation with the review command template, and asserts the recall score is surfaced in the review run's output.\n- AC2: Documented in docs/guidelines.md as an opt-in periodic check, not part of every agb review invocation (cost). VERIFY: grep for a \"review-calibration\" section noting opt-in behavior.\n- AC3: npm test exits 0.",
-      "scope": [
-        "lib/review.mjs",
-        "docs/guidelines.md",
-        "test/review-calibration.test.mjs"
-      ],
-      "rails": [
-        "lib/scheduler.mjs",
-        "lib/prosecute.mjs"
-      ],
-      "edges": [],
-      "duration": 1,
-      "category": "feature",
-      "budget": "cheap"
-    }
-  ]
+  "tickets": []
 }
