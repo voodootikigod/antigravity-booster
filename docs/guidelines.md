@@ -168,3 +168,25 @@ When a ticket branch is rebased onto an updated base branch before merging, the 
 
 ### Untracked-File Window During Post-Merge Gates
 Because post-merge gates can take several minutes to run, any untracked file created by a developer in the main repository checkout during this window will be deleted by `git clean -fd` if the post-merge gate fails and triggers a rollback. Developers should avoid editing the target repository directory while an `agb` run is active.
+
+## Live Rail Enforcement (ADLC P3)
+
+Once per `runPlan` call, the scheduler checks whether live in-session rail enforcement can be turned on for the run: the target repo must be ADLC-initialized (`.adlc/` present) and the `adlc-antigravity` plugin must be installed (`agy plugin list` reports it). When both hold, every builder worktree gets its own `.adlc/tickets.json` (a pure projection of that one ticket, via `lib/adlc-bridge.mjs`) and the builder's `agy --print` invocation is spawned with `ADLC_P4_ENFORCEMENT=1` and `ADLC_TICKET=<id>` set **for that spawn only** — `runAgy`'s `env` option merges onto `process.env`, it never mutates it, so concurrent tickets building in the same booster process never see each other's active-ticket signal.
+
+When either precondition fails, the run does not abort — it degrades to the post-hoc check alone and says so explicitly via `report.enforcementAvailable` / `report.enforcementReason` (never a silent no-op). The post-hoc check (`lib/scheduler.mjs`'s `checkRailsGuard`) calls `adlc rails-guard --rails <globs> --base <ref>` directly — the same engine the plugin's hook uses — instead of a bespoke glob comparison, and works regardless of whether the target repo is ADLC-initialized (it takes `--rails` flags straight from the ticket, not `--tickets`).
+
+## CI Self-Protection (Manual Step)
+
+This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, and `.github/workflows/adlc-rails-guard.yml` (copied from `../adlc/docs/ci/rails-guard.yml`) is the CI backstop behind the in-session hook. **`.adlc/config.json` does not exist yet in this repo — creating it is itself a manual step, not something this ticket sets up.**
+
+The upstream template's own comments are explicit that `acknowledgedNewRailBypass: true` requires "an interactive TUI confirmation" or an explicit `--acknowledge-new-rail-bypass` flag — a deliberate human acknowledgment of the template's stated security limitation (it does not protect rails introduced for the first time in the same PR), not something a coding agent should self-attest while authoring the config file. Until a human creates `.adlc/config.json` themselves, the rails-guard workflow runs in **bootstrap mode** (it detects the base branch has no `.adlc/config.json` at all and passes automatically) — it is present and structurally correct, but not yet the live gate it will become.
+
+A human completing that bootstrap should, in the same reviewed commit or a follow-up:
+
+1. Create `.adlc/config.json` with `acknowledgedNewRailBypass: true` and `securityMode: "unsigned-fallback"` (or `"signed"`, if this repo sets up a dedicated signed runner pool) — after actually reading the security limitation, not by copying this paragraph.
+2. **Enable "Require review from Code Owners"** in this repo's branch protection settings (GitHub Settings → Branches). `CODEOWNERS` already names `.github/workflows/**` — but a PR could otherwise remove its own gate, and only a human, admin-level setting closes that.
+3. **Set `trustedCodeownersAttested: true`** in `.adlc/config.json`, through a reviewed commit, only after confirming the CODEOWNERS entry names trusted owners — the workflow's own bootstrap check deliberately fails closed on this flag rather than have a PR self-attest its own reviewer trust.
+
+### Frozen rails going forward
+
+`lib/lock.mjs` (merge-lock correctness, hardened over 7 adversarial-review rounds — regressions here are the highest-blast-radius bug class in this repo) and `lib/gates.mjs` (sandbox enforcement) are this repo's own candidate frozen rails. Any future ticket whose scope sits adjacent to either file must declare it in that ticket's `rails` array — this is policy, not a mechanically-enforced constraint today, since rails are declared per-ticket in `.adlc/tickets.json`, not repo-wide.

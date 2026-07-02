@@ -4,3 +4,4 @@ node_modules/
 .claude/
 .adlc/*
 !.adlc/tickets.json
+!.adlc/config.json
