@@ -1,9 +1,37 @@
 #!/bin/sh
 # Fake adlc for offline tests. Implements just enough of `hollow-test`,
-# `rails-guard`, and `model-router` — the subcommands lib/prosecute.mjs,
-# lib/scheduler.mjs, and lib/plan.mjs call — for deterministic, fully-offline
-# tests that don't depend on a globally-installed adlc CLI.
+# `rails-guard`, `model-router`, and `merge-forecast` — the subcommands
+# lib/prosecute.mjs, lib/scheduler.mjs, and lib/plan.mjs call — for
+# deterministic, fully-offline tests that don't depend on a
+# globally-installed adlc CLI.
 #
+# merge-forecast: canned, controllable width. FAKE_MERGE_FORECAST_MODE:
+#   default   — recommendedWidth=3, certifiedWidth=3, no gateFailures,
+#               records the invocation (--tickets path) to FAKE_STATE_DIR.
+#   veto       — same, plus a non-empty gateFailures array (advisory).
+#   fail       — operational error, exit 1, unparseable stdout.
+if [ "$1" = "merge-forecast" ]; then
+  shift
+  ticketspath=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tickets) ticketspath="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'tickets=%s\n' "$ticketspath" >> "$FAKE_STATE_DIR/merge-forecast-invocations"
+  fi
+  case "${FAKE_MERGE_FORECAST_MODE:-default}" in
+    fail) echo "not json"; exit 1 ;;
+    veto)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"warnings":[],"gateFailures":["1 high-risk pair(s) would run concurrently: T1-T2"]}'
+      exit 2 ;;
+    *)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"warnings":[],"gateFailures":[]}'
+      exit 0 ;;
+  esac
+fi
 # model-router: canned, controllable assignments. FAKE_MODEL_ROUTER_MODE:
 #   default   — echoes back --tickets' own ticket ids, each assigned
 #               tier "frontier" (a value that could not be the ticket's own

@@ -1,30 +1,6 @@
 {
   "tickets": [
     {
-      "id": "T-F1",
-      "title": "[Workstream F] Wire adlc model-router into tier assignment (lib/plan.mjs / lib/pools.mjs)",
-      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 1 (highest payoff-order item).\n\nBooster's tier heuristics (which pool/model a ticket routes to) are currently bespoke, hand-rolled in lib/pools.mjs. Replace or cross-check against adlc model-router's frontier/direct/ladder strategy assignment.\n\nACCEPTANCE CRITERIA:\n- AC1: lib/plan.mjs's tier-assignment step calls adlc model-router (or cross-checks its output) instead of relying solely on lib/pools.mjs heuristics. VERIFY: a test stubs the CLI, asserts it's invoked with the ticket set, and asserts the resulting tier assignment reflects its output.\n- AC2: Before/after behavior documented in docs/guidelines.md. VERIFY: grep for a \"model-router\" section.\n- AC3: npm test exits 0, no regression to existing plan.mjs tests.",
-      "scope": [
-        "lib/plan.mjs",
-        "lib/pools.mjs",
-        "docs/guidelines.md",
-        "test/plan-model-router.test.mjs"
-      ],
-      "rails": [
-        "lib/scheduler.mjs",
-        "lib/prosecute.mjs"
-      ],
-      "edges": [
-        {
-          "to": "T-F2",
-          "contract": "docs/guidelines.md: F1 lands its section before F2 adds the merge-forecast section"
-        }
-      ],
-      "duration": 1,
-      "category": "feature",
-      "budget": "cheap"
-    },
-    {
       "id": "T-F2",
       "title": "[Workstream F] Wire adlc merge-forecast into agb plan's fan-out-width decision",
       "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 2.\n\nBooster already does transitive scope-overlap forecasting in lib/preflight.mjs; adlc merge-forecast estimates dependency pressure and merge backpressure specifically — likely complementary, not redundant. Evaluate whether it should gate plan.json's concurrency cap.\n\nACCEPTANCE CRITERIA:\n- AC1: agb plan's gate pipeline runs adlc merge-forecast against the compiled ticket set and either gates or annotates plan.json's concurrency cap with its output. VERIFY: a test stubs the CLI, asserts invocation, and asserts the concurrency cap reflects (or is annotated by) its output.\n- AC2: Documented in docs/guidelines.md whether merge-forecast is complementary to or replaces lib/preflight.mjs's existing forecasting, with the reasoning. VERIFY: grep for a \"merge-forecast\" section explaining the relationship.\n- AC3: npm test exits 0.",
