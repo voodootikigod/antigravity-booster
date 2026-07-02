@@ -2,6 +2,31 @@
 # Fake agy for offline tests. Reads the prompt from stdin and decides
 # behavior from prompt content (role markers) + env knobs. Mirrors real agy
 # quirks: prompt on stdin, exit 0 even on timeout.
+
+# Plugin subcommands are argv-based (no stdin payload) — handle them before
+# the unconditional `cat` below, which would otherwise block callers that
+# invoke this fixture with stdio:'inherit' and no stdin to pipe.
+if [ "$1" = "plugin" ]; then
+  case "$2" in
+    install)
+      case "${FAKE_AGY_PLUGIN_MODE:-ok}" in
+        fail) echo "boom: simulated plugin install failure" >&2; exit 1 ;;
+        *)
+          if [ -n "$FAKE_STATE_DIR" ]; then
+            echo "$3" >> "$FAKE_STATE_DIR/plugin-installs"
+          fi
+          echo "installed plugin from $3"
+          exit 0 ;;
+      esac ;;
+    list)
+      case "${FAKE_AGY_PLUGIN_LIST_MODE:-has-adlc}" in
+        empty) echo "" ;;
+        *) echo "adlc-antigravity" ;;
+      esac
+      exit 0 ;;
+  esac
+fi
+
 prompt=$(cat)
 
 # Global failure injection (any role): simulate a model/transport error.

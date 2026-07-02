@@ -313,15 +313,67 @@ test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () 
   }
 });
 
-test('bootstrap: installs skills into custom destination directory', () => {
+const FAKE_PLUGIN = fileURLToPath(new URL('./fixtures/fake-adlc-antigravity-plugin', import.meta.url));
+
+test('bootstrap: installs the adlc-antigravity plugin via `agy plugin install`, then links booster-owned skills', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
   try {
-    bootstrap({ destination: destDir });
-    // Verify that the skills folders are created
-    assert.ok(existsSync(join(destDir, 'adlc-doctrine')));
-    assert.ok(existsSync(join(destDir, 'adlc-prosecutor')));
-    assert.ok(existsSync(join(destDir, 'adlc-self-orchestrate')));
+    bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
+    // Vendored ADLC-doctrine skill copies are gone from this repo — bootstrap
+    // must not (and now cannot) install skills/adlc-doctrine etc.
+    assert.ok(!existsSync(join(process.cwd(), 'skills', 'adlc-doctrine')));
+    // Booster-owned skills (not ADLC doctrine) are still linked/copied.
     assert.ok(existsSync(join(destDir, 'release')));
+    assert.ok(!existsSync(join(destDir, 'adlc-doctrine')));
+    assert.ok(!existsSync(join(destDir, 'adlc-prosecutor')));
+    assert.ok(!existsSync(join(destDir, 'adlc-self-orchestrate')));
+  } finally {
+    rmSync(destDir, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap: agy plugin install invoked with the resolved plugin path', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-state-'));
+  const prevState = process.env.FAKE_STATE_DIR;
+  process.env.FAKE_STATE_DIR = stateDir;
+  try {
+    bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
+    const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim();
+    assert.equal(installs, FAKE_PLUGIN, 'agy plugin install received the resolved plugin path');
+  } finally {
+    if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
+    rmSync(destDir, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exist — no silent no-op', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const missingPluginPath = join(destDir, 'does-not-exist');
+  try {
+    assert.throws(() => {
+      execFileSync(process.execPath, [
+        '-e',
+        `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
+          `bootstrap({ destination: '${destDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
+      ], { stdio: 'pipe' });
+    }, /Command failed/, 'process.exit(1) surfaces as a non-zero exit, not a silent no-op');
+  } finally {
+    rmSync(destDir, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap: fails loudly when `agy plugin install` itself fails (e.g. agy too old for plugin install)', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  try {
+    assert.throws(() => {
+      execFileSync(process.execPath, [
+        '-e',
+        `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
+          `bootstrap({ destination: '${destDir}', pluginPath: '${FAKE_PLUGIN}', agyBin: '${FAKE_AGY}' }))`,
+      ], { stdio: 'pipe', env: { ...process.env, FAKE_AGY_PLUGIN_MODE: 'fail' } });
+    }, /Command failed/, 'a failing `agy plugin install` surfaces as a non-zero exit, not a silent no-op');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
   }
