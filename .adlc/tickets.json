@@ -1,28 +1,6 @@
 {
   "tickets": [
     {
-      "id": "T-F4",
-      "title": "[Workstream F] Fan out candidate fixes via adlc consensus-fix instead of single-attempt regeneration",
-      "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 4.\n\nThe one-shot fix-round after a failed prosecution (lib/scheduler.mjs's current single-attempt fix loop) should fan out multiple candidate fixes via adlc consensus-fix and pick the gated consensus winner instead of trusting one regeneration.\n\nACCEPTANCE CRITERIA:\n- AC1: On a failed prosecution, the scheduler invokes adlc consensus-fix (fan-out candidates) rather than a single regeneration attempt. VERIFY: a test stubs the CLI, asserts invocation with the failing test command and changed files, and asserts the winning candidate is applied.\n- AC2: If consensus-fix itself fails to converge (no winner), the scheduler falls back to the existing single-attempt path with a logged reason, not a silent hang. VERIFY: test simulates a no-consensus result, asserts fallback behavior and log entry.\n- AC3: npm test exits 0.",
-      "scope": [
-        "lib/scheduler.mjs",
-        "test/scheduler-consensus-fix.test.mjs"
-      ],
-      "rails": [
-        "lib/prosecute.mjs",
-        "lib/lock.mjs"
-      ],
-      "edges": [
-        {
-          "to": "T-F5",
-          "contract": "lib/scheduler.mjs: F4 lands consensus-fix wiring before F5 adds gate-manifest recording in the same file"
-        }
-      ],
-      "duration": 2,
-      "category": "feature",
-      "budget": "mid"
-    },
-    {
       "id": "T-F5",
       "title": "[Workstream F] Record every gate as append-only evidence via adlc gate-manifest",
       "body": "handoff.md (this repo, root) is the authoritative design for this ticket. Read it in full before starting — do not re-derive the target integration model, gap analysis, or sequencing. Treat its numbered tasks and acceptance criteria as the contract; this ticket body summarizes and adds verification commands, it does not replace it. Implements handoff.md §5 Workstream F, task 5.\n\nEvery gate a run already produces (pre-merge build, prosecution verdict, post-merge build, rollback) should be recorded as append-only, attestable evidence via adlc gate-manifest, not just .booster/report.json log lines. This is the audit trail T-E's CI gate and T-D's prosecution both want to point at.\n\nACCEPTANCE CRITERIA:\n- AC1: Each gate outcome in a scheduler run is recorded via adlc gate-manifest record. VERIFY: a test stubs the CLI, asserts a record call per gate transition (build pass/fail, prosecution verdict, rollback) with the correct gate name and evidence payload.\n- AC2: adlc gate-manifest show / verify can reconstruct a run's gate history from the manifest alone. VERIFY: run a fixture scheduler pass, then adlc gate-manifest show, assert it lists the expected gate sequence.\n- AC3: npm test exits 0.",
