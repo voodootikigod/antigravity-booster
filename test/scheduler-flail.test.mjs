@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runPlan } from '../lib/scheduler.mjs';
+import { runPlan, checkFlailDetector } from '../lib/scheduler.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
@@ -101,4 +101,10 @@ test('runPlan: flail-detector being unavailable (adlc missing) does not itself b
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
   }
+});
+
+test('checkFlailDetector: a missing log file is never treated as a flail — nothing to detect yet', async () => {
+  const result = await checkFlailDetector({ logFile: '/nonexistent/path/to.log', scope: [] });
+  assert.equal(result.detected, false);
+  assert.deepEqual(result.signals, []);
 });
