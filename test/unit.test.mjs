@@ -73,7 +73,18 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.equal(poolOf('Gemini 3.5 Flash (Low)'), 'gemini-flash');
   assert.equal(poolOf('Claude Opus 4.6 (Thinking)'), 'claude');
   assert.equal(familyOf('Gemini 3.1 Pro (High)'), 'gemini');
-  assert.throws(() => poolOf('GPT-9'));
+  // test fuzzy/prefix fallback matching
+  assert.equal(poolOf('gemini-1.5-flash-custom'), 'gemini-flash');
+  assert.equal(poolOf('custom-gemini-model'), 'gemini-pro');
+  assert.equal(poolOf('claude-3-7-sonnet'), 'claude');
+  assert.equal(poolOf('claude-custom'), 'claude');
+  assert.equal(poolOf('custom-sonnet'), 'claude');
+  assert.equal(poolOf('custom-opus'), 'claude');
+  assert.equal(poolOf('GPT-9'), 'gpt-oss');
+  assert.throws(() => poolOf('unknown-custom-model'));
+  assert.throws(() => poolOf(undefined), /unknown model: undefined/);
+  assert.throws(() => poolOf(null), /unknown model: null/);
+  assert.throws(() => poolOf(123), /unknown model: 123/);
 });
 
 test('runAgy: success round-trip via fake binary', async () => {
@@ -203,10 +214,34 @@ test('runGates: ordered, stops at first failure, captures output', async () => {
   const pass = await runGates({ a: 'true', b: 'echo hi' }, '/tmp');
   assert.equal(pass.ok, true);
   assert.equal(pass.results.length, 2);
+  assert.equal(pass.results[0].sandboxed, false);
   const fail = await runGates({ a: 'true', b: 'echo nope && false', c: 'true' }, '/tmp');
   assert.equal(fail.ok, false);
   assert.equal(fail.results.length, 2, 'c must not run after b fails');
   assert.match(fail.results[1].output, /nope/);
+});
+
+test('runGate / runGates: forwards custom environment variables', async () => {
+  const customEnv = { ...process.env, TEST_VAR_ENV: 'custom-val-123' };
+  const r = await runGate('test-env', 'echo $TEST_VAR_ENV', '/tmp', { env: customEnv });
+  assert.equal(r.ok, true);
+  assert.match(r.output, /custom-val-123/);
+
+  const rs = await runGates({ printEnv: 'echo $TEST_VAR_ENV' }, '/tmp', { env: customEnv });
+  assert.equal(rs.ok, true);
+  assert.match(rs.results[0].output, /custom-val-123/);
+});
+
+test('runGate / runGates: merges custom environment variables onto process.env', async () => {
+  process.env.TEST_VAR_PROCESS = 'process-val';
+  try {
+    const customEnv = { TEST_VAR_CUSTOM: 'custom-val' };
+    const r = await runGate('test-env-merge', 'echo "P:$TEST_VAR_PROCESS C:$TEST_VAR_CUSTOM"', '/tmp', { env: customEnv });
+    assert.equal(r.ok, true);
+    assert.match(r.output, /P:process-val C:custom-val/);
+  } finally {
+    delete process.env.TEST_VAR_PROCESS;
+  }
 });
 
 // --- prosecution ---
