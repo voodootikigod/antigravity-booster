@@ -203,10 +203,22 @@ test('runGates: ordered, stops at first failure, captures output', async () => {
   const pass = await runGates({ a: 'true', b: 'echo hi' }, '/tmp');
   assert.equal(pass.ok, true);
   assert.equal(pass.results.length, 2);
+  assert.equal(pass.results[0].sandboxed, false);
   const fail = await runGates({ a: 'true', b: 'echo nope && false', c: 'true' }, '/tmp');
   assert.equal(fail.ok, false);
   assert.equal(fail.results.length, 2, 'c must not run after b fails');
   assert.match(fail.results[1].output, /nope/);
+});
+
+test('runGate / runGates: forwards custom environment variables', async () => {
+  const customEnv = { ...process.env, TEST_VAR_ENV: 'custom-val-123' };
+  const r = await runGate('test-env', 'echo $TEST_VAR_ENV', '/tmp', { env: customEnv });
+  assert.equal(r.ok, true);
+  assert.match(r.output, /custom-val-123/);
+
+  const rs = await runGates({ printEnv: 'echo $TEST_VAR_ENV' }, '/tmp', { env: customEnv });
+  assert.equal(rs.ok, true);
+  assert.match(rs.results[0].output, /custom-val-123/);
 });
 
 // --- prosecution ---
