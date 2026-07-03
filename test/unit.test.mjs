@@ -73,7 +73,15 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.equal(poolOf('Gemini 3.5 Flash (Low)'), 'gemini-flash');
   assert.equal(poolOf('Claude Opus 4.6 (Thinking)'), 'claude');
   assert.equal(familyOf('Gemini 3.1 Pro (High)'), 'gemini');
-  assert.throws(() => poolOf('GPT-9'));
+  // test fuzzy/prefix fallback matching
+  assert.equal(poolOf('gemini-1.5-flash-custom'), 'gemini-flash');
+  assert.equal(poolOf('custom-gemini-model'), 'gemini-pro');
+  assert.equal(poolOf('claude-3-7-sonnet'), 'claude');
+  assert.equal(poolOf('claude-custom'), 'claude');
+  assert.equal(poolOf('custom-sonnet'), 'claude');
+  assert.equal(poolOf('custom-opus'), 'claude');
+  assert.equal(poolOf('GPT-9'), 'gpt-oss');
+  assert.throws(() => poolOf('unknown-custom-model'));
 });
 
 test('runAgy: success round-trip via fake binary', async () => {
