@@ -1,0 +1,38 @@
+# AGENTS.md
+
+Guidance for any coding agent (or human) working in this repository.
+
+## The ADLC is a requirement, not a suggestion
+
+**This repository is developed under the Agentic Development Lifecycle (ADLC), and following it is mandatory for every change — no exceptions for "small" fixes, docs-only edits, or agent-authored work.** `antigravity-booster` (`agb`) exists to *impose* the ADLC on other repositories; a change here that skips its own doctrine undermines the tool's entire premise. If you are an agent reading this file, treat the phases and gates below as hard constraints on how you work, not background context.
+
+This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, `.adlc/config.json` is the bootstrapped trust root, `CODEOWNERS` + branch protection (`require_code_owner_reviews`, `enforce_admins`) protect `.github/workflows/**`, and `.github/workflows/adlc-rails-guard.yml` + `ci.yml` enforce this in CI, not just locally. See [docs/guidelines.md](docs/guidelines.md) for the full doctrine.
+
+### What "follow the ADLC" means concretely, for every change
+
+1. **P0 — Ticket first.** Non-trivial work starts as a ticket in `.adlc/tickets.json` (`id`, `title`, `body` — a fresh agent must be able to execute it from `body` alone — `scope`, `rails`, `edges`). Don't start editing code with no ticket and no plan.
+2. **P1/P2 — Interrogate and decompose before building.** Use `adlc spec-lint`, `premortem`, `parallax`, `coldstart` (all support `--prompt-only` — if your harness has no configured LLM provider, answer the printed prompt yourself as the model rather than needing an API key) to stress-test a spec or ticket set before spending build effort on it. `adlc model-router` and `adlc merge-forecast` inform tier/fan-out decisions.
+3. **P3 — Rails are frozen, mechanically, not by request.** A ticket's `rails` array names paths that must not be edited while that ticket is in flight. `lib/lock.mjs` and `lib/gates.mjs` are this repo's own standing candidate rails (merge-lock correctness, hardened over 7 adversarial-review rounds; sandbox enforcement) — treat them as read-only unless a ticket's scope explicitly covers them. Verify with `adlc rails-guard --base <ref> --rails <globs>` before claiming a rail is untouched.
+4. **P4 — Build under supervision, don't loop on a failing approach.** If you hit the same failure twice, that's `adlc flail-detector`'s signal to stop and reconsider the ticket/spec, not to keep regenerating the same fix.
+5. **P5 — Prosecute before you claim done.** "I fixed it" is a claim; a command run with output shown is evidence. Before saying a change is complete:
+   - Run `npm test` and show the output (127 tests as of this writing — check the current count, don't assume it's stale).
+   - For anything touching `lib/`, consider `adlc hollow-test --test-cmd "npm test" --base main` — this repo's own hollow-test gate has caught real undertested branches every time it's been run; a mutation survivor is a real gap, not noise (one exception: `maxBuffer` off-by-one mutants on arbitrary internal thresholds are an accepted equivalent-mutant class, documented where they occur).
+   - Record gate evidence via `adlc gate-manifest record <gate> --ticket <id>` for anything that should be part of the audit trail (`adlc gate-manifest verify` reconstructs history from `.adlc/manifest.jsonl` alone).
+6. **P6 — Merge is a human decision.** Never merge or push to `main` without the user's explicit go-ahead. `main` has branch protection (Code Owner review required, `enforce_admins: true`) — respect it; do not disable or route around it without the user explicitly naming that specific action (see "Security self-attestation" below).
+
+### Security self-attestation requires explicit, specific confirmation
+
+`.adlc/config.json`'s `acknowledgedNewRailBypass` and `trustedCodeownersAttested` flags exist specifically so a human — not an agent — attests to having read a documented security limitation. **Never write or modify these fields based on a general instruction** ("make CI pass," "do the steps," "fix it"). If a task seems to require it, stop and ask the user to confirm the *exact* field and value before touching the file. This has come up multiple times in this repo's history and the answer is always: surface it, don't infer it.
+
+### Rules that are stricter here than they'd be elsewhere
+
+- **No vendored copies of ADLC doctrine.** `skills/adlc-doctrine/`, `skills/adlc-prosecutor/`, `skills/adlc-self-orchestrate/` were deleted on purpose (see PR #4) — that doctrine now comes from the `adlc-antigravity` plugin (`agb bootstrap` installs it via `agy plugin install`), not a local fork. Don't recreate them.
+- **`.adlc/tickets.json` reflects active work, not history.** Remove a ticket once it ships and merges — don't leave completed tickets accumulating rails that block future work (the in-session rails-guard hook unions rails across *every* ticket in the file, so a stale completed ticket's rail declaration can block a legitimate, unrelated later change).
+- **CLI integrations degrade, never crash.** Every `adlc <tool>` call this codebase makes (`lib/prosecute.mjs`, `lib/scheduler.mjs`, `lib/plan.mjs`, `lib/preflight.mjs`, `lib/review.mjs`) treats an unavailable/failing tool as `{ ok: false, error }`, not a thrown exception — match that pattern in anything new. A broken audit trail must never fail an otherwise-successful build.
+- **Test fixture repos must not depend on the developer's machine.** `test/fixtures/fake-agy` and `test/fixtures/fake-adlc` exist so the suite runs fully offline; a real external dependency (a signing agent, a globally-installed binary, a sibling checkout) breaking the suite is a bug in the fixture, not something to work around ad hoc. See `commit.gpgsign` disabled in throwaway fixture repos as the precedent.
+
+## Project-specific facts (see [README.md](README.md) and [docs/](docs/) for full detail)
+
+- `antigravity-booster` orchestrates Google Antigravity (`agy` CLI) for large parallel build-outs: deterministic scheduler, quota-pool-aware dispatch, cross-model prosecution, ADLC-shaped gates.
+- `@adlc/core` is a real npm registry dependency (`^1.0.2`) — do not reintroduce a `file:../adlc/packages/core` sibling-checkout dependency. The `adlc-antigravity` *plugin* is a separate, unpublished (`private: true`) package that genuinely does need the sibling `../adlc` checkout convention (`ADLC_ANTIGRAVITY_PLUGIN_PATH` overrides it) — don't conflate the two.
+- Full doctrine: [docs/guidelines.md](docs/guidelines.md). CLI reference: [docs/usage.md](docs/usage.md). Worked example: [docs/execution-example.md](docs/execution-example.md).
