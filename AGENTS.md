@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for Claude Code (or any agent/human) working in this repository.
+Guidance for any coding agent (or human) working in this repository.
 
 ## The ADLC is a requirement, not a suggestion
 
@@ -11,7 +11,7 @@ This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticke
 ### What "follow the ADLC" means concretely, for every change
 
 1. **P0 — Ticket first.** Non-trivial work starts as a ticket in `.adlc/tickets.json` (`id`, `title`, `body` — a fresh agent must be able to execute it from `body` alone — `scope`, `rails`, `edges`). Don't start editing code with no ticket and no plan.
-2. **P1/P2 — Interrogate and decompose before building.** Use `adlc spec-lint`, `premortem`, `parallax`, `coldstart` (all support `--prompt-only` — inside Claude Code you *are* the model, so answer the printed prompt yourself rather than needing an API key) to stress-test a spec or ticket set before spending build effort on it. `adlc model-router` and `adlc merge-forecast` inform tier/fan-out decisions.
+2. **P1/P2 — Interrogate and decompose before building.** Use `adlc spec-lint`, `premortem`, `parallax`, `coldstart` (all support `--prompt-only` — if your harness has no configured LLM provider, answer the printed prompt yourself as the model rather than needing an API key) to stress-test a spec or ticket set before spending build effort on it. `adlc model-router` and `adlc merge-forecast` inform tier/fan-out decisions.
 3. **P3 — Rails are frozen, mechanically, not by request.** A ticket's `rails` array names paths that must not be edited while that ticket is in flight. `lib/lock.mjs` and `lib/gates.mjs` are this repo's own standing candidate rails (merge-lock correctness, hardened over 7 adversarial-review rounds; sandbox enforcement) — treat them as read-only unless a ticket's scope explicitly covers them. Verify with `adlc rails-guard --base <ref> --rails <globs>` before claiming a rail is untouched.
 4. **P4 — Build under supervision, don't loop on a failing approach.** If you hit the same failure twice, that's `adlc flail-detector`'s signal to stop and reconsider the ticket/spec, not to keep regenerating the same fix.
 5. **P5 — Prosecute before you claim done.** "I fixed it" is a claim; a command run with output shown is evidence. Before saying a change is complete:

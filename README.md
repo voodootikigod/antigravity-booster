@@ -8,7 +8,7 @@ prosecution, and gate-shaped validation — ideation to merge.
 ## Documentation
 
 Full guides, specifications, and walkthroughs are available:
-- 🤖 **[CLAUDE.md](CLAUDE.md)** — required reading for any agent (or human) working *on* this repo: the ADLC is mandatory here, not optional.
+- 🤖 **[AGENTS.md](AGENTS.md)** — required reading for any agent (or human) working *on* this repo: the ADLC is mandatory here, not optional.
 - 🚀 **[CLI Usage & Configuration](docs/usage.md)**
 - 🛡️ **[Guidelines & Doctrine](docs/guidelines.md)**
 - 📖 **[Concrete Execution Walkthrough](docs/execution-example.md)** — A complete, step-by-step example showing how to decompose a specification (like `do-better`) into a `plan.json` DAG and run it with `agb`.
@@ -46,7 +46,7 @@ disciplined fleet:
   imposes on target repos: `.adlc/tickets.json` is the tracked ticket
   contract, `.adlc/config.json` is the bootstrapped trust root, and
   `.github/workflows/adlc-rails-guard.yml` enforces frozen rails in CI, not
-  just locally. See [CLAUDE.md](CLAUDE.md).
+  just locally. See [AGENTS.md](AGENTS.md).
 
 ## Requirements
 
