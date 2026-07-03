@@ -5,3 +5,4 @@ node_modules/
 .adlc/*
 !.adlc/tickets.json
 !.adlc/config.json
+plan.json
