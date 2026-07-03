@@ -229,6 +229,18 @@ test('runGate / runGates: forwards custom environment variables', async () => {
   assert.match(rs.results[0].output, /custom-val-123/);
 });
 
+test('runGate / runGates: merges custom environment variables onto process.env', async () => {
+  process.env.TEST_VAR_PROCESS = 'process-val';
+  try {
+    const customEnv = { TEST_VAR_CUSTOM: 'custom-val' };
+    const r = await runGate('test-env-merge', 'echo "P:$TEST_VAR_PROCESS C:$TEST_VAR_CUSTOM"', '/tmp', { env: customEnv });
+    assert.equal(r.ok, true);
+    assert.match(r.output, /P:process-val C:custom-val/);
+  } finally {
+    delete process.env.TEST_VAR_PROCESS;
+  }
+});
+
 // --- prosecution ---
 
 test('prosecute: ship verdict on clean JSON', async () => {
