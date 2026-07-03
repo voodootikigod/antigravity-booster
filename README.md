@@ -288,3 +288,4 @@ docs/calibration/  probed latency/concurrency/sandbox facts
   concurrent Gemini load. Claude models have the lowest fixed overhead.
 
 Calibration: [docs/calibration/probes-2026-06-11.md](docs/calibration/probes-2026-06-11.md).
+
