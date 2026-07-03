@@ -18,6 +18,13 @@ jobs:
         with:
           node-version: 18
 
+      - name: Install the ADLC toolkit
+        # A handful of tests exercise the real adlc CLI directly (e.g. a
+        # live `adlc coldstart` smoke check, mechanical rails-guard wiring)
+        # rather than the fake-adlc fixture — same pinned version as
+        # adlc-rails-guard.yml.
+        run: npm install -g --ignore-scripts @adlc/cli@1.1.0
+
       - name: Install dependencies
         run: npm install
 
