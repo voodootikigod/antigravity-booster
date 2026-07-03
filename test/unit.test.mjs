@@ -82,6 +82,9 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.equal(poolOf('custom-opus'), 'claude');
   assert.equal(poolOf('GPT-9'), 'gpt-oss');
   assert.throws(() => poolOf('unknown-custom-model'));
+  assert.throws(() => poolOf(undefined), /unknown model: undefined/);
+  assert.throws(() => poolOf(null), /unknown model: null/);
+  assert.throws(() => poolOf(123), /unknown model: 123/);
 });
 
 test('runAgy: success round-trip via fake binary', async () => {
