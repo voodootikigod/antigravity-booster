@@ -37,8 +37,7 @@ disciplined fleet:
 
 ## Requirements
 
-- **Node ≥ 18** (zero runtime dependencies beyond the sibling
-  [`@adlc/core`](../adlc) checkout — see `package.json`).
+- **Node ≥ 18** (one runtime dependency, [`@adlc/core`](https://www.npmjs.com/package/@adlc/core) from the npm registry — see `package.json`).
 - **`agy` CLI** on PATH with an active Antigravity session
   (`curl -fsSL https://antigravity.google/cli/install.sh | bash`).
 - **macOS** for sandboxed gates (Seatbelt). On Linux/Windows, gates
@@ -57,11 +56,13 @@ You can run `antigravity-booster` directly using `npx`, or install it globally/l
 plugin (via `agy plugin install`) — the source of the ADLC doctrine,
 prosecutor, and self-orchestrate skills, plus the rails-guard hook. Booster
 does not vendor its own copies of that doctrine; it depends on the plugin
-the same way `package.json` depends on `@adlc/core` — as a sibling `../adlc`
-checkout by default (override with `ADLC_ANTIGRAVITY_PLUGIN_PATH` if it lives
-elsewhere). `agy plugin install` requires an `agy` CLI recent enough to
-support plugin installation; bootstrap fails loudly, not silently, if the
-plugin path is missing or the install itself fails.
+as a sibling `../adlc` checkout by default (override with
+`ADLC_ANTIGRAVITY_PLUGIN_PATH` if it lives elsewhere) — the plugin itself is
+unpublished (`private: true`), unlike `@adlc/core`, which resolves from the
+npm registry like any other dependency. `agy plugin install` requires an
+`agy` CLI recent enough to support plugin installation; bootstrap fails
+loudly, not silently, if the plugin path is missing or the install itself
+fails.
 
 ### Option A: Zero-Install (npx)
 Perfect for quick runs or ephemeral environments. This automatically downloads the package, installs the adlc-antigravity plugin, and links booster's own skills:
@@ -77,7 +78,7 @@ agb bootstrap
 ```
 
 ### Option C: Development/Source Installation
-If you cloned the repository locally (with `../adlc` checked out as a sibling) and want to link the CLI and symlink booster's own skills:
+If you cloned the repository locally and want to link the CLI and symlink booster's own skills (checkout `../adlc` as a sibling first if you also want `agb bootstrap` to install the adlc-antigravity plugin from source):
 ```sh
 npm install && npm link
 agb bootstrap

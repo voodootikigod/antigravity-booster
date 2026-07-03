@@ -1,13 +1,13 @@
 {
   "name": "antigravity-booster",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "ADLC-shaped parallel orchestration for Google Antigravity (agy CLI): quota-pool-aware scheduling, worktree fleets, cross-model prosecution, deterministic gates",
   "bin": {
     "agb": "bin/agb.mjs"
   },
   "dependencies": {
-    "@adlc/core": "file:../adlc/packages/core"
+    "@adlc/core": "^1.0.2"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs"
@@ -15,5 +15,9 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/voodootikigod/antigravity-booster.git"
+  }
 }

@@ -12,29 +12,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      # antigravity-booster depends on @adlc/core via file:../adlc/packages/core
-      # (see package.json) — a sibling checkout, not an npm registry package.
-      # Check out both repos under a shared parent so that relative path
-      # resolves the same way it does in local development.
-      - name: Checkout antigravity-booster
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          path: antigravity-booster
-
-      - name: Checkout adlc (sibling dependency for @adlc/core)
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          repository: voodootikigod/adlc
-          path: adlc
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 18
 
       - name: Install dependencies
-        working-directory: antigravity-booster
         run: npm install
 
       - name: Run tests
-        working-directory: antigravity-booster
         run: npm test
