@@ -24,6 +24,12 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 
 `agb` is a command-line interface with several subcommands designed for verification, execution, review, and status tracking.
 
+### `agb bootstrap` (aliases: `setup`, `install`)
+Installs the `adlc-antigravity` plugin (via `agy plugin install`) and links booster's own skills into `~/.gemini/skills`.
+- Resolves the plugin path via `ADLC_ANTIGRAVITY_PLUGIN_PATH`, or the `../adlc/plugins/adlc-antigravity` sibling-checkout convention by default. The plugin is unpublished (`private: true`) — unlike `@adlc/core`, which is a normal npm registry dependency.
+- Fails loudly, not silently, if `agy` isn't found, the plugin path is missing, or `agy plugin install` itself fails.
+- `--force` overwrites an existing (non-symlinked) skill install.
+
 ### `agb plan <brain-id | spec.md> <repo> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]`
 Compiles an Antigravity plan artifact (GUI brain or agy session) or a raw local markdown spec file path into a gated, executable `plan.json`.
 - Finds the brain conversation by ID/prefix or loads the local spec file path directly.
@@ -32,7 +38,7 @@ Compiles an Antigravity plan artifact (GUI brain or agy session) or a raw local 
   - **Coldstart** (cheap tier, per ticket): a fresh context lists everything missing to execute the ticket from its `body` alone. Gaps block.
   - **Parallax** (cheap tier, per DAG edge — ADLC D3): N fresh contexts independently author the contract the dependent ticket may rely on; a judge diffs the readings. Measured divergence is contract ambiguity and blocks.
   - **Premortem** (frontier, once, advisory — ADLC C2): "this run failed three months ago; write the postmortem." Causes are reported but never block.
-- On success, writes `plan.json` (refuses to overwrite an existing file without `--force`) stamped with `source` provenance naming the brain conversation.
+- On success, writes `plan.json` (refuses to overwrite an existing file without `--force`) stamped with `source` provenance naming the brain conversation, projects the ticket set into `.adlc/tickets.json`, runs `adlc model-router` to assign each ticket's deterministic tier (overwriting whatever the conversion's own free-form output guessed), and `adlc merge-forecast` to annotate `plan.concurrencyCap`. Both are additive evidence — an unavailable `adlc` CLI logs a warning and leaves the existing tier/no cap in place, it does not fail an otherwise-successful compile.
 - On blocking findings, exits `2` and prints the findings with remediation pointing at the plan in Antigravity or the local spec file.
 - **Exit codes:** `0` compiled and written; `2` blocking findings; `1` usage/internal error.
 
@@ -195,6 +201,8 @@ Modify these flags in your shell to adjust how `agb` runs:
 | `AGB_SANDBOX_GATES` | `1` (on macOS) | Enforces macOS Seatbelt sandboxing for all gate scripts. Set to `0` to disable sandboxing (e.g., when running inside Docker containers on Linux). |
 | `AGB_ALLOW_DIRTY` | `0` | Set to `1` to bypass the clean git directory check. *Caution: Rollbacks use git resets, which will discard uncommitted changes.* |
 | `AGB_AGY_BIN` | `agy` | Custom path to the Antigravity CLI binary. Used mainly for testing with mock wrappers. |
+| `AGB_ADLC_BIN` | `adlc` | Custom path to the adlc CLI binary. Used by every `adlc <tool>` integration (rails-guard, model-router, merge-forecast, flail-detector, consensus-fix, gate-manifest, review-calibration) and for testing with mock wrappers. |
+| `ADLC_ANTIGRAVITY_PLUGIN_PATH` | `../adlc/plugins/adlc-antigravity` | Where `agb bootstrap` finds the (unpublished) adlc-antigravity plugin to install. |
 | `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains` and `agb plan` look for Antigravity plan artifacts. |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` | Target directory where `agb probe` writes result reports. |
 | `ADLC_PROVIDER` | — | Set to `agy` to route general `@adlc` package execution through Antigravity CLI credentials. |
@@ -214,6 +222,7 @@ Because of the platform's ~5-minute hard timeout on print-mode calls:
 - Use the `cheap` tier (Gemini Flash) for tasks that are well-covered by deterministic testing gates. Save `mid` and `frontier` tiers for logic involving complex integration contracts.
 
 ### Handling Blocked Tickets
-- When a ticket fails twice, `agb` flags it as failed and halts its dependent tickets.
-- Do not try to run the plan again without modifying the ticket. A ticket failing twice indicates that the requirements in the `body` are either ambiguous, conflicting with a read-only rail, or too large.
+- A ticket can exhaust its strikes two ways: it fails twice, or `adlc flail-detector` diagnoses a genuine flail pattern (repeated errors, scope violations, edit churn, an oversized log) in the accumulated log after strike one and skips the second strike entirely rather than wasting it on a dead end. Either way, `agb` flags the ticket as failed and halts its dependent tickets.
+- Do not try to run the plan again without modifying the ticket. A blocked ticket indicates that the requirements in the `body` are either ambiguous, conflicting with a read-only rail, or too large.
 - Edit the `body` to be more explicit, split the scope, or fix the underlying API contracts, and run again.
+- Check `.adlc/manifest.jsonl` (`adlc gate-manifest show`) for the exact gate sequence that led to the failure — build/prosecution/rollback outcomes are recorded there as append-only evidence, not just in `.booster/report.json`.

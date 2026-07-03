@@ -8,6 +8,7 @@ prosecution, and gate-shaped validation — ideation to merge.
 ## Documentation
 
 Full guides, specifications, and walkthroughs are available:
+- 🤖 **[CLAUDE.md](CLAUDE.md)** — required reading for any agent (or human) working *on* this repo: the ADLC is mandatory here, not optional.
 - 🚀 **[CLI Usage & Configuration](docs/usage.md)**
 - 🛡️ **[Guidelines & Doctrine](docs/guidelines.md)**
 - 📖 **[Concrete Execution Walkthrough](docs/execution-example.md)** — A complete, step-by-step example showing how to decompose a specification (like `do-better`) into a `plan.json` DAG and run it with `agb`.
@@ -28,12 +29,24 @@ disciplined fleet:
   and Claude pools throttle and meter independently (verified by probe) —
   the scheduler holds a semaphore per pool and routes tiers across them.
 - **Cross-model prosecution.** Gemini-built diffs are prosecuted by Claude
-  and vice versa, with a refute charter and a JSON verdict contract.
-  Critical/high findings block the merge and trigger one fix round.
+  and vice versa, with a refute charter and a JSON verdict contract, backed
+  by `adlc hollow-test` mutation evidence the model's own verdict can't
+  overrule. Critical/high findings block the merge.
 - **Deterministic gates.** Build/test commands gate every ticket in its
   worktree and again post-merge on main (failed post-merge gate = revert).
-- **Two-strike regeneration.** A flailing worker is never coached; the
-  ticket re-runs fresh with dead-ends appended, then fails to escalation.
+- **Two-strike regeneration, informed by `adlc flail-detector`.** A flailing
+  worker is never coached — but "flailing" is a diagnosed signal (repeated
+  errors, scope violations, edit churn, oversized logs), not a bare failure
+  count. A genuine flail pattern skips the second strike; a clean one-off
+  failure still gets its normal retry with dead-ends appended.
+- **Consensus-fix over single-shot regeneration.** A blocked prosecution
+  fans out candidate fixes via `adlc consensus-fix` and applies the first
+  gated winner before falling back to a single-attempt fix round.
+- **Self-hosted ADLC gates.** This repo dogfoods the same doctrine it
+  imposes on target repos: `.adlc/tickets.json` is the tracked ticket
+  contract, `.adlc/config.json` is the bootstrapped trust root, and
+  `.github/workflows/adlc-rails-guard.yml` enforces frozen rails in CI, not
+  just locally. See [CLAUDE.md](CLAUDE.md).
 
 ## Requirements
 
@@ -130,6 +143,15 @@ artifact it produces. Think of `implementation_plan.md` as source and
     naming the brain conversation or spec file it came from. Flags: `--out <file>`,
     `--force`, `--no-coldstart`, `--no-parallax`, `--no-premortem`.
 
+    On a successful compile, the gate pipeline also projects the ticket set
+    into `.adlc/tickets.json` (so the `adlc` CLI and the adlc-antigravity
+    plugin's rails-guard hook can resolve the same active tickets), runs
+    `adlc model-router` to assign each ticket's deterministic tier
+    (replacing the brain conversion's own free-form guess), and `adlc
+    merge-forecast` to annotate `plan.concurrencyCap`. All three are
+    additive evidence — an unavailable `adlc` CLI degrades gracefully, it
+    never fails an otherwise-successful compile.
+
    <details>
    <summary>Escape hatch: hand-writing plan.json (no brain artifact)</summary>
 
@@ -199,6 +221,7 @@ fails and blocks its dependents.
 ## All commands
 
 ```sh
+agb bootstrap                  # install the adlc-antigravity plugin + link booster's own skills
 agb brains                     # list Antigravity plan artifacts (GUI + agy)
 agb plan <brain-id | spec.md> /repo # compile a plan (GUI brain or raw Markdown file): convert → gates → plan.json
 agb validate plan.json         # check schema, DAG, routability
@@ -248,6 +271,8 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 | `AGB_SANDBOX_GATES` | sandbox on (darwin) | `0` runs gates unsandboxed — only inside a disposable container; non-darwin fails closed without it |
 | `AGB_ALLOW_DIRTY` | refuse dirty repo | `1` skips the clean-tree guard — merge rollback uses `git reset --hard`, uncommitted work WILL be lost |
 | `AGB_AGY_BIN` | `agy` | Alternate agy binary (tests point this at a fake) |
+| `AGB_ADLC_BIN` | `adlc` | Alternate adlc CLI binary (tests point this at a fake) — used by every `adlc <tool>` integration: `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`, `consensus-fix`, `gate-manifest`, `review-calibration` |
+| `ADLC_ANTIGRAVITY_PLUGIN_PATH` | `../adlc/plugins/adlc-antigravity` | Where `agb bootstrap` finds the (unpublished) adlc-antigravity plugin to install |
 | `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains`/`agb plan` look for Antigravity plan artifacts |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` in this checkout | Where `agb probe` appends its measurement artifact |
 | `ADLC_PROVIDER=agy` | — | Run `@adlc` gate tools (parallax, premortem, …) on Antigravity quota |
@@ -255,7 +280,7 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 ## Testing
 
 ```sh
-npm test    # 77 node:test cases, fully offline (fake agy fixture)
+npm test    # 127 node:test cases, fully offline (fake-agy + fake-adlc fixtures)
 ```
 
 Sandbox-specific security tests are darwin-gated; scheduler tests run
@@ -264,16 +289,21 @@ gates unsandboxed so the suite is green on any platform.
 ## Layout
 
 ```
-bin/agb.mjs        CLI (plan | run | sweep | review | preflight | brains |
-                   status | probe | validate)
+bin/agb.mjs        CLI (bootstrap | plan | run | sweep | review | preflight |
+                   brains | status | probe | validate)
 lib/               scheduler, pools, agy wrapper, worktrees, gates,
                    charters, prosecution, review, sweep, preflight,
                    plan compiler (validate/parallax/premortem),
-                   brain import, status, repo lock
+                   adlc-bridge (plan.json ⇄ .adlc/tickets.json projection),
+                   brain import, bootstrap, status, repo lock
 skills/            release (booster-specific; ADLC doctrine/prosecutor/
                    self-orchestrate skills come from the adlc-antigravity
                    plugin, installed by `agb bootstrap`, not vendored here)
 templates/         plan.example.json (schema by example)
+.adlc/             this repo's own ADLC workspace (tickets.json tracked,
+                   config.json tracked, everything else gitignored)
+.github/workflows/ ci.yml (npm test) + adlc-rails-guard.yml (CI rail-freeze
+                   backstop, dogfooding the same doctrine this tool imposes)
 docs/research/     agy CLI + Antigravity 2.0 platform findings
 docs/calibration/  probed latency/concurrency/sandbox facts
 ```

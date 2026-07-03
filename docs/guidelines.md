@@ -10,6 +10,10 @@ This document details the architectural principles, behavioral guidelines, and c
 5. [Cross-Model Prosecution](#cross-model-prosecution)
 6. [Self-Orchestration Guidelines](#self-orchestration-guidelines)
 7. [Design Tradeoffs](#design-tradeoffs)
+8. [Live Rail Enforcement (ADLC P3)](#live-rail-enforcement-adlc-p3)
+9. [Gate Evidence (ADLC gate-manifest)](#gate-evidence-adlc-gate-manifest)
+10. [Review Self-Calibration (ADLC review-calibration)](#review-self-calibration-adlc-review-calibration--opt-in-not-automatic)
+11. [CI Self-Protection](#ci-self-protection)
 
 ---
 
@@ -83,23 +87,32 @@ The Agentic Software Development Lifecycle (ADLC) enforces strict operating guid
 ```mermaid
 sequenceDiagram
     participant WT as Worker Worktree
+    participant FD as flail-detector
     participant PT as Prosecution
     participant Main as Main Branch
-    
+
     WT->>WT: Run Builder Model
-    WT->>WT: Execute Sandboxed Build & Test Gates
-    alt Gates Fail
-        WT->>WT: Strike 1 (Regenerate or Fail)
+    WT->>WT: Execute Sandboxed Build & Test Gates (recorded: gate-manifest)
+    alt Gates Fail (strike 1)
+        WT->>FD: Check accumulated log
+        alt Flail pattern detected
+            FD->>WT: Fail now — do not spend strike 2
+        else Clean (no pattern yet)
+            WT->>WT: Strike 2 (Regenerate)
+        end
     else Gates Pass
-        WT->>PT: Dispatch Prosecutor Model
-        alt Findings Found (Critical/High)
-            PT->>WT: Feedback loop (1 fix attempt)
+        WT->>PT: Dispatch Prosecutor Model (hollow-test evidence attached)
+        alt Mutation survivor OR Findings (Critical/High)
+            PT->>WT: adlc consensus-fix (fan out candidates, apply winner, re-verify)
+            alt No converging candidate
+                PT->>WT: Fall back — 1 single-attempt fix round
+            end
         else Prosecution Passes
             PT->>Main: Acquire Merge Lock
             Main->>Main: Rebase & Merge
-            Main->>Main: Run Post-Merge Build & Test Gates
+            Main->>Main: Run Post-Merge Build & Test Gates (recorded: gate-manifest)
             alt Post-Merge Gate Fails
-                Main->>Main: Revert to pre-merge HEAD SHA
+                Main->>Main: Revert to pre-merge HEAD SHA (recorded: rollback)
             else Post-Merge Gate Passes
                 Main->>Main: Release Lock & Mark Merged
             end
@@ -114,7 +127,7 @@ To protect the host machine from unverified execution paths, all gate scripts ru
 - The sandbox allows network access and standard build utilities (e.g., `git`, `npm`, `node`) but prevents unauthorized system interference.
 
 ### Pre-Merge Gates
-Before a ticket is submitted for prosecution, its build and test scripts must pass in its isolated worktree (e.g. `.worktrees/agb-T1`). If the gate fails, a strike is logged against the ticket.
+Before a ticket is submitted for prosecution, its build and test scripts must pass in its isolated worktree (e.g. `.worktrees/agb-T1`). If the gate fails, a strike is logged against the ticket, and the outcome (pass/fail, strike count) is recorded via `adlc gate-manifest`. Between strikes, `adlc flail-detector` checks the accumulated log for a genuine flail pattern before a second strike is attempted — see [Self-Orchestration Guidelines](#self-orchestration-guidelines).
 
 ### Post-Merge Gates
 To prevent integration errors when combining parallel changes:
@@ -145,7 +158,8 @@ Standard code reviews done by the same model family that generated the code ofte
   }
   ```
 - **Severity Enforcement:** Only `critical` and `high` severity findings block a merge. Medium or low findings are flagged but do not halt progression.
-- **Fix Loop:** If a prosecution fails, the builder gets **one** attempt to fix the identified findings in its worktree. If the code fails prosecution a second time, the ticket is failed.
+- **Fix Loop:** If a prosecution fails, the scheduler first tries `adlc consensus-fix` — fan out N candidate fixes gated against the failing test (and, if configured, the full rail suite) — and applies the first winner, re-verifying it with a fresh gate + prosecution pass before merging. Only if consensus-fix doesn't converge (no survivors, all-divergent, or the tool itself unavailable) does the builder fall back to **one** single-attempt fix round in its worktree. If the code fails prosecution again after that, the ticket is failed.
+- **Evidence, not self-report:** Before dispatching the prosecution prompt, `adlc hollow-test` mutates the changed lines and confirms the gate command actually catches every mutant. A mutation survivor is an automatic block the model's own verdict cannot overrule — the same "hollow test" doctrine (§1 above) applied to the reviewer's own evidence, not just the builder's tests.
 
 ---
 
@@ -156,7 +170,7 @@ When utilizing `agb` to build large projects recursively (L3/L4), follow these d
 1. **Foundation First:** Identify shared files, schemas, and contracts. Build, test, and merge this foundation to `main` before fanning out. Parallel builders must consume this foundation as read-only `rails`—they should never invent types or schemas concurrently.
 2. **Partition Scopes:** Ensure no two concurrent tickets share files in their `scope` configuration. If they share files, they must be sequenced sequentially (via `edges` dependencies) or consolidated.
 3. **Explicit Specs:** A ticket's `body` must contain the entire requirement set. Do not rely on "context" or high-level goals. Specify file names, parameter types, edge cases, and expected gate commands explicitly.
-4. **Supervise, Don't Coach:** If a ticket fails twice, the scheduler halts. Do not attempt to force the agent to retry the same code. A two-strike failure is a sign of an ambiguous spec. Rewrite the ticket's `body` to be smaller or more explicit, adjust the rails, and re-run.
+4. **Supervise, Don't Coach:** If a ticket exhausts its strikes, the scheduler halts. Do not attempt to force the agent to retry the same code. A repeated failure is a sign of an ambiguous spec, diagnosed mechanically (`adlc flail-detector` — repeated errors, scope violations, edit churn, or an oversized log — can end a ticket after strike one, without wasting a second attempt on a dead end). On a blocked prosecution specifically, the scheduler tries `adlc consensus-fix` (fan out candidate fixes, apply the first gated winner) before falling back to a single-attempt regeneration. If a ticket still fails after all of that, rewrite the ticket's `body` to be smaller or more explicit, adjust the rails, and re-run — don't just retry.
 
 ---
 
@@ -191,17 +205,14 @@ Every gate transition a scheduler run produces — the worktree build, the prose
 
 `reviewCmd` carries a `{base}` placeholder review-calibration substitutes with the commit ref under test; the natural choice re-uses the very fleet being measured: `agb review <repo> {base}` (JSON findings on stdout, the shape review-calibration's scorer expects). Like every other CLI integration here, it's additive evidence: an unavailable/failing calibration run (`adlc` missing, dirty tree, no LLM judge configured) degrades to `{ ok: false, error }` rather than throwing, and a below-threshold recall is still a valid, surfaced result (`{ ok: true, recall, ... }`) — only a genuinely unparseable/absent result is an operational error.
 
-## CI Self-Protection (Manual Step)
+## CI Self-Protection
 
-This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, and `.github/workflows/adlc-rails-guard.yml` (copied from `../adlc/docs/ci/rails-guard.yml`) is the CI backstop behind the in-session hook. **`.adlc/config.json` does not exist yet in this repo — creating it is itself a manual step, not something this ticket sets up.**
+This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, `.adlc/config.json` is the bootstrapped trust root, and `.github/workflows/adlc-rails-guard.yml` (copied from `../adlc/docs/ci/rails-guard.yml`) is the CI backstop behind the in-session hook. **The bootstrap is complete** — `.adlc/config.json` carries `acknowledgedNewRailBypass: true`, `securityMode: "unsigned-fallback"`, and `trustedCodeownersAttested: true`; branch protection on `main` enforces `require_code_owner_reviews: true` and `enforce_admins: true`; `CODEOWNERS` names `@voodootikigod` on `.github/workflows/**`. The rails-guard workflow runs as the live gate it was designed to be, not bootstrap mode.
 
-The upstream template's own comments are explicit that `acknowledgedNewRailBypass: true` requires "an interactive TUI confirmation" or an explicit `--acknowledge-new-rail-bypass` flag — a deliberate human acknowledgment of the template's stated security limitation (it does not protect rails introduced for the first time in the same PR), not something a coding agent should self-attest while authoring the config file. Until a human creates `.adlc/config.json` themselves, the rails-guard workflow runs in **bootstrap mode** (it detects the base branch has no `.adlc/config.json` at all and passes automatically) — it is present and structurally correct, but not yet the live gate it will become.
+Two things worth understanding about how that landed, since they're not obvious from the config alone:
 
-A human completing that bootstrap should, in the same reviewed commit or a follow-up:
-
-1. Create `.adlc/config.json` with `acknowledgedNewRailBypass: true` and `securityMode: "unsigned-fallback"` (or `"signed"`, if this repo sets up a dedicated signed runner pool) — after actually reading the security limitation, not by copying this paragraph.
-2. **Enable "Require review from Code Owners"** in this repo's branch protection settings (GitHub Settings → Branches). `CODEOWNERS` already names `.github/workflows/**` — but a PR could otherwise remove its own gate, and only a human, admin-level setting closes that.
-3. **Set `trustedCodeownersAttested: true`** in `.adlc/config.json`, through a reviewed commit, only after confirming the CODEOWNERS entry names trusted owners — the workflow's own bootstrap check deliberately fails closed on this flag rather than have a PR self-attest its own reviewer trust.
+- **The security-attestation fields (`acknowledgedNewRailBypass`, `trustedCodeownersAttested`) were never self-authored by an agent.** Each required an explicit, specific human confirmation of the exact JSON content before being committed — a general instruction like "make CI pass" was correctly treated as insufficient authorization, twice, by the harness's own safety classifier. If you're extending this config in the future, expect (and preserve) that same bar: name the exact field and value, don't infer consent from a broader task.
+- **`trustedCodeownersAttested: true` could not be introduced through a normal PR.** The workflow's own check requires the flag to already be `true` on the base branch before it will accept a PR's diff — specifically so a PR can't attest its own trustworthiness. Landing it required a brief, explicit "protected-base admin ceremony": temporarily disable `enforce_admins`, push the already-reviewed commit directly to `main`, immediately restore `enforce_admins`, then verify with a disposable PR (closed without merging) that the gate now genuinely passes. If this ever needs to happen again (e.g. rotating to a new CODEOWNERS owner), that's the pattern — verify the exact branch-protection snapshot before and after, and don't skip the restoration step.
 
 ### Frozen rails going forward
 
