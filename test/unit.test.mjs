@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { poolOf, familyOf, runAgy } from '../lib/agy.mjs';
@@ -16,7 +16,7 @@ import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
   isMidMerge, abortAnyMerge,
 } from '../lib/worktrees.mjs';
-import { bootstrap } from '../lib/bootstrap.mjs';
+import { bootstrap, resolvePluginPath } from '../lib/bootstrap.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
@@ -86,6 +86,38 @@ test('runAgy: detects exit-0 print-timeout as failure', async () => {
   const r = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'FAKE:TIMEOUT', bin: FAKE_AGY });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'print-timeout');
+});
+
+test('runAgy: --sandbox is passed only when sandbox:true; omitted by default', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'agb-agy-argv-'));
+  const prevState = process.env.FAKE_STATE_DIR;
+  process.env.FAKE_STATE_DIR = state;
+  try {
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY });
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY, sandbox: true });
+    const [defaultCall, sandboxedCall] = readFileSync(join(state, 'agy-argv-seen'), 'utf8').trim().split('\n');
+    assert.ok(!defaultCall.includes('--sandbox'), 'sandbox defaults to false — no --sandbox flag');
+    assert.ok(sandboxedCall.includes('--sandbox'), 'sandbox:true passes --sandbox');
+  } finally {
+    if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runAgy: env option is scoped to this spawn only — process.env is never mutated', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'agb-agy-env-'));
+  try {
+    assert.equal(process.env.ADLC_TICKET, undefined);
+    await runAgy({
+      model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY,
+      env: { FAKE_STATE_DIR: state, ADLC_P4_ENFORCEMENT: '1', ADLC_TICKET: 'T9' },
+    });
+    const envSeen = readFileSync(join(state, 'agy-env-seen'), 'utf8');
+    assert.match(envSeen, /ADLC_P4_ENFORCEMENT=1 ADLC_TICKET=T9/, 'the spawned process saw the merged env');
+    assert.equal(process.env.ADLC_TICKET, undefined, 'the parent process env is untouched after the call');
+  } finally {
+    rmSync(state, { recursive: true, force: true });
+  }
 });
 
 // --- pools ---
@@ -244,7 +276,9 @@ function makeRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-repo-'));
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' });
   g('init', '-q', '-b', 'main');
-  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  // Throwaway test repos must not depend on the developer's own commit-signing
+  // setup (GPG/SSH agent) — disable it locally, never touch global config.
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'commit.gpgsign', 'false');
   writeFileSync(join(dir, 'README.md'), 'hello\n');
   g('add', '-A'); g('commit', '-qm', 'init');
   return { dir, g };
@@ -313,15 +347,89 @@ test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () 
   }
 });
 
-test('bootstrap: installs skills into custom destination directory', () => {
+const FAKE_PLUGIN = fileURLToPath(new URL('./fixtures/fake-adlc-antigravity-plugin', import.meta.url));
+
+test('resolvePluginPath: honors ADLC_ANTIGRAVITY_PLUGIN_PATH when set', () => {
+  const prev = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = '/tmp/some-plugin-checkout';
+  try {
+    assert.equal(resolvePluginPath(), resolve('/tmp/some-plugin-checkout'));
+  } finally {
+    if (prev === undefined) delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+    else process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = prev;
+  }
+});
+
+test('resolvePluginPath: defaults to the ../adlc/plugins/adlc-antigravity sibling convention when unset', () => {
+  const prev = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  try {
+    const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+    assert.equal(resolvePluginPath(), resolve(repoRoot, '../adlc/plugins/adlc-antigravity'));
+  } finally {
+    if (prev !== undefined) process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = prev;
+  }
+});
+
+test('bootstrap: installs the adlc-antigravity plugin via `agy plugin install`, then links booster-owned skills', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
   try {
-    bootstrap({ destination: destDir });
-    // Verify that the skills folders are created
-    assert.ok(existsSync(join(destDir, 'adlc-doctrine')));
-    assert.ok(existsSync(join(destDir, 'adlc-prosecutor')));
-    assert.ok(existsSync(join(destDir, 'adlc-self-orchestrate')));
+    bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
+    // Vendored ADLC-doctrine skill copies are gone from this repo — bootstrap
+    // must not (and now cannot) install skills/adlc-doctrine etc.
+    assert.ok(!existsSync(join(process.cwd(), 'skills', 'adlc-doctrine')));
+    // Booster-owned skills (not ADLC doctrine) are still linked/copied.
     assert.ok(existsSync(join(destDir, 'release')));
+    assert.ok(!existsSync(join(destDir, 'adlc-doctrine')));
+    assert.ok(!existsSync(join(destDir, 'adlc-prosecutor')));
+    assert.ok(!existsSync(join(destDir, 'adlc-self-orchestrate')));
+  } finally {
+    rmSync(destDir, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap: agy plugin install invoked with the resolved plugin path', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-state-'));
+  const prevState = process.env.FAKE_STATE_DIR;
+  process.env.FAKE_STATE_DIR = stateDir;
+  try {
+    bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
+    const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim();
+    assert.equal(installs, FAKE_PLUGIN, 'agy plugin install received the resolved plugin path');
+  } finally {
+    if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
+    rmSync(destDir, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exist — no silent no-op', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const missingPluginPath = join(destDir, 'does-not-exist');
+  try {
+    assert.throws(() => {
+      execFileSync(process.execPath, [
+        '-e',
+        `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
+          `bootstrap({ destination: '${destDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
+      ], { stdio: 'pipe' });
+    }, /Command failed/, 'process.exit(1) surfaces as a non-zero exit, not a silent no-op');
+  } finally {
+    rmSync(destDir, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap: fails loudly when `agy plugin install` itself fails (e.g. agy too old for plugin install)', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  try {
+    assert.throws(() => {
+      execFileSync(process.execPath, [
+        '-e',
+        `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
+          `bootstrap({ destination: '${destDir}', pluginPath: '${FAKE_PLUGIN}', agyBin: '${FAKE_AGY}' }))`,
+      ], { stdio: 'pipe', env: { ...process.env, FAKE_AGY_PLUGIN_MODE: 'fail' } });
+    }, /Command failed/, 'a failing `agy plugin install` surfaces as a non-zero exit, not a silent no-op');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
   }

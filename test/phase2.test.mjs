@@ -38,7 +38,7 @@ test('expandTargets: resolves glob via git ls-files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-sweep-'));
   try {
     const g = (...a) => execFileSync('git', a, { cwd: dir });
-    g('init', '-q'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+    g('init', '-q'); g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'commit.gpgsign', 'false');
     mkdirSync(join(dir, 'src'));
     writeFileSync(join(dir, 'src', 'a.mjs'), '');
     writeFileSync(join(dir, 'src', 'b.mjs'), '');

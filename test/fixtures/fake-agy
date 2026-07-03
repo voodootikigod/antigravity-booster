@@ -2,7 +2,41 @@
 # Fake agy for offline tests. Reads the prompt from stdin and decides
 # behavior from prompt content (role markers) + env knobs. Mirrors real agy
 # quirks: prompt on stdin, exit 0 even on timeout.
+
+# Plugin subcommands are argv-based (no stdin payload) — handle them before
+# the unconditional `cat` below, which would otherwise block callers that
+# invoke this fixture with stdio:'inherit' and no stdin to pipe.
+if [ "$1" = "plugin" ]; then
+  case "$2" in
+    install)
+      case "${FAKE_AGY_PLUGIN_MODE:-ok}" in
+        fail) echo "boom: simulated plugin install failure" >&2; exit 1 ;;
+        *)
+          if [ -n "$FAKE_STATE_DIR" ]; then
+            echo "$3" >> "$FAKE_STATE_DIR/plugin-installs"
+          fi
+          echo "installed plugin from $3"
+          exit 0 ;;
+      esac ;;
+    list)
+      case "${FAKE_AGY_PLUGIN_LIST_MODE:-has-adlc}" in
+        empty) echo "" ;;
+        *) echo "adlc-antigravity" ;;
+      esac
+      exit 0 ;;
+  esac
+fi
+
 prompt=$(cat)
+
+# Reveal the env this invocation actually received (scheduler tests verify
+# ADLC_P4_ENFORCEMENT/ADLC_TICKET were passed to THIS spawn, not leaked
+# globally). Every non-plugin invocation gets a line, harmless when the vars
+# are unset (prosecutor/reader calls never set them).
+if [ -n "$FAKE_STATE_DIR" ]; then
+  printf 'ADLC_P4_ENFORCEMENT=%s ADLC_TICKET=%s\n' "${ADLC_P4_ENFORCEMENT:-}" "${ADLC_TICKET:-}" >> "$FAKE_STATE_DIR/agy-env-seen"
+  printf '%s\n' "$*" >> "$FAKE_STATE_DIR/agy-argv-seen"
+fi
 
 # Global failure injection (any role): simulate a model/transport error.
 case "${FAKE_AGY_MODE:-}" in
@@ -126,6 +160,34 @@ case "$prompt" in
       sabotage) echo "did the work" > "${tid:-out}.txt"; echo sabotage > SABOTAGE; echo "TICKET-DONE"; exit 0 ;;
       # rail: edits a read-only rail file that sits INSIDE the declared scope.
       rail) echo "did the work" > "${tid:-out}.txt"; echo edited > RAIL.txt; echo "TICKET-DONE"; exit 0 ;;
+      # echo-adlc: copies cwd's .adlc/tickets.json (if any) to FAKE_STATE_DIR
+      # so a test can verify the scheduler materialized it into the worktree
+      # BEFORE the build ran (the worktree itself is deleted post-merge).
+      echo-adlc)
+        [ -f .adlc/tickets.json ] && cp .adlc/tickets.json "$FAKE_STATE_DIR/adlc-tickets-seen.json"
+        echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
+      # flail-then-good: every strike blocks, printing the FLAIL-REPEATED-ERROR
+      # marker twice in its own output. If a real agy repeated the same error
+      # on strike 1, the accumulated log has the marker twice after strike 1
+      # alone — enough for the fake flail-detector's repeated-error signal.
+      # Proves the scheduler skips strike 2 entirely: FAKE_STATE_DIR/builds
+      # must show exactly 1 build attempt, not 2.
+      flail-then-good)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        echo "FLAIL-REPEATED-ERROR: cannot resolve import"
+        echo "FLAIL-REPEATED-ERROR: cannot resolve import"
+        echo "TICKET-BLOCKED: stuck"; exit 0 ;;
+      # transient-then-good: strike 1 blocks with NO flail marker (a genuine
+      # one-off), strike 2 behaves — proves a clean verdict does not cut the
+      # normal retry short.
+      transient-then-good)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        if [ "$n" -eq 0 ]; then echo "TICKET-BLOCKED: transient hiccup"; exit 0; fi
+        echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
       # rail-then-good: strike 1 violates the rail, strike 2 behaves —
       # proves the strike-2 worktree was reset (needs FAKE_STATE_DIR).
       rail-then-good)

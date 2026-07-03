@@ -1,0 +1,240 @@
+#!/bin/sh
+# Fake adlc for offline tests. Implements just enough of `hollow-test`,
+# `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`,
+# `consensus-fix`, `gate-manifest record`, and `review-calibration` — the
+# subcommands lib/prosecute.mjs, lib/scheduler.mjs, lib/plan.mjs, and
+# lib/review.mjs call — for deterministic, fully-offline tests that don't
+# depend on a globally-installed adlc CLI (or a real LLM provider).
+#
+# review-calibration: canned, controllable recall. FAKE_REVIEW_CALIBRATION_MODE:
+#   pass (default) — recall=0.75, passes the gate, exit 0. Records the
+#                     invocation (--review-cmd, --plants, --min-recall) to
+#                     FAKE_STATE_DIR.
+#   below-threshold — recall=0.2, gate fails, exit 2 (still valid JSON).
+#   fail            — operational error (e.g. dirty tree), exit 1.
+if [ "$1" = "review-calibration" ]; then
+  shift
+  reviewcmd=""
+  plants=""
+  minrecall=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --review-cmd) reviewcmd="$2"; shift 2 ;;
+      --plants) plants="$2"; shift 2 ;;
+      --min-recall) minrecall="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'review-cmd=%s plants=%s min-recall=%s\n' "$reviewcmd" "$plants" "$minrecall" >> "$FAKE_STATE_DIR/review-calibration-invocations"
+  fi
+  case "${FAKE_REVIEW_CALIBRATION_MODE:-pass}" in
+    fail) echo "boom: dirty tree" >&2; exit 1 ;;
+    below-threshold) echo '{"recall":0.2,"precision":null,"plants":8,"caught":2,"minRecall":0.5}'; exit 2 ;;
+    *) echo '{"recall":0.75,"precision":null,"plants":8,"caught":6,"minRecall":0.5}'; exit 0 ;;
+  esac
+fi
+# gate-manifest record <gate> --ticket <id> [--data '<json>']: records the
+# exact invocation (gate name, ticket, data) to FAKE_STATE_DIR for tests that
+# assert on it. FAKE_GATE_MANIFEST_MODE:
+#   default — exit 0.
+#   fail    — operational error, exit 1 (adlc missing / .adlc unwritable).
+if [ "$1" = "gate-manifest" ] && [ "$2" = "record" ]; then
+  gatename="$3"
+  shift 3
+  ticket=""
+  data=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ticket) ticket="$2"; shift 2 ;;
+      --data) data="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ "${FAKE_GATE_MANIFEST_MODE:-}" = "fail" ]; then
+    echo "gate-manifest: simulated recording failure" >&2
+    exit 1
+  fi
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'gate=%s ticket=%s data=%s\n' "$gatename" "$ticket" "$data" >> "$FAKE_STATE_DIR/gate-manifest-invocations"
+  fi
+  echo "recorded: gate=$gatename ticket=$ticket"
+  exit 0
+fi
+# consensus-fix: canned, controllable convergence. FAKE_CONSENSUS_FIX_MODE:
+#   converge (default) — writes "FIXED-BY-CONSENSUS\n" to the FIRST --files
+#                         entry (proving --apply's file-write path is
+#                         exercised), reports applied:true, survivors:1,
+#                         exit 0. Records the invocation (--test-cmd and
+#                         --files) to FAKE_STATE_DIR.
+#   no-survivors        — no file changes, applied:false, survivors:0, exit 2.
+#   all-divergent        — no file changes, applied:false, allDivergent:true, exit 2.
+#   fail                 — operational error (e.g. "no LLM provider"), exit 1.
+if [ "$1" = "consensus-fix" ]; then
+  shift
+  testcmd=""
+  files=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --test-cmd) testcmd="$2"; shift 2 ;;
+      --files) files="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'test-cmd=%s files=%s\n' "$testcmd" "$files" >> "$FAKE_STATE_DIR/consensus-fix-invocations"
+  fi
+  firstfile=$(echo "$files" | cut -d, -f1)
+  case "${FAKE_CONSENSUS_FIX_MODE:-converge}" in
+    fail) echo "not json"; exit 1 ;;
+    no-survivors) echo '{"survivors":[],"discarded":[],"failed":[{}],"allDivergent":false,"applied":false}'; exit 2 ;;
+    all-divergent) echo '{"survivors":[],"discarded":[],"failed":[],"allDivergent":true,"applied":false}'; exit 2 ;;
+    *)
+      [ -n "$firstfile" ] && printf 'FIXED-BY-CONSENSUS\n' > "$firstfile"
+      echo '{"survivors":[{}],"discarded":[],"failed":[],"allDivergent":false,"applied":true}'
+      exit 0 ;;
+  esac
+fi
+# flail-detector: real behavior, not canned — greps the given log file for
+# the literal marker "FLAIL-REPEATED-ERROR" (>= 2 occurrences = a
+# repeated-error signal) or "FLAIL-SCOPE-VIOLATION" (>= 1 = a scope-violation
+# signal). Fixture logs plant these markers directly; anything else in the
+# log is ignored. Records each invocation's log-file argument to
+# FAKE_STATE_DIR for tests that assert on it.
+if [ "$1" = "flail-detector" ]; then
+  logfile="$2"
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'logfile=%s\n' "$logfile" >> "$FAKE_STATE_DIR/flail-detector-invocations"
+  fi
+  if [ ! -f "$logfile" ]; then
+    echo "flail-detector: log file not found: $logfile" >&2
+    exit 1
+  fi
+  # grep -c always prints a count (even "0"), but exits 1 on no match — do
+  # not `|| echo 0` here, that would append a second "0" to the same
+  # captured output on a no-match case and break the numeric comparison.
+  repeated=$(grep -c 'FLAIL-REPEATED-ERROR' "$logfile" 2>/dev/null)
+  scopeviol=$(grep -c 'FLAIL-SCOPE-VIOLATION' "$logfile" 2>/dev/null)
+  signals=""
+  [ "$repeated" -ge 2 ] && signals="${signals}{\"type\":\"repeated-error\"},"
+  [ "$scopeviol" -ge 1 ] && signals="${signals}{\"type\":\"scope-violation\"},"
+  if [ -n "$signals" ]; then
+    echo "{\"verdict\":\"flail\",\"signals\":[${signals%,}]}"
+    exit 2
+  fi
+  echo '{"verdict":"clean","signals":[]}'
+  exit 0
+fi
+# merge-forecast: canned, controllable width. FAKE_MERGE_FORECAST_MODE:
+#   default   — recommendedWidth=3, certifiedWidth=3, no gateFailures,
+#               records the invocation (--tickets path) to FAKE_STATE_DIR.
+#   veto       — same, plus a non-empty gateFailures array (advisory).
+#   fail       — operational error, exit 1, unparseable stdout.
+if [ "$1" = "merge-forecast" ]; then
+  shift
+  ticketspath=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tickets) ticketspath="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'tickets=%s\n' "$ticketspath" >> "$FAKE_STATE_DIR/merge-forecast-invocations"
+  fi
+  case "${FAKE_MERGE_FORECAST_MODE:-default}" in
+    fail) echo "not json"; exit 1 ;;
+    veto)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"warnings":[],"gateFailures":["1 high-risk pair(s) would run concurrently: T1-T2"]}'
+      exit 2 ;;
+    *)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"warnings":[],"gateFailures":[]}'
+      exit 0 ;;
+  esac
+fi
+# model-router: canned, controllable assignments. FAKE_MODEL_ROUTER_MODE:
+#   default   — echoes back --tickets' own ticket ids, each assigned
+#               tier "frontier" (a value that could not be the ticket's own
+#               pre-existing tier in these tests, so applying it is
+#               observable) and records the invocation to FAKE_STATE_DIR.
+#   p3        — same, plus a non-empty p3Findings array (advisory).
+#   fail      — operational error, exit 1, unparseable stdout.
+if [ "$1" = "model-router" ]; then
+  shift
+  ticketspath=""
+  floor=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --tickets) ticketspath="$2"; shift 2 ;;
+      --floor) floor="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'tickets=%s floor=%s\n' "$ticketspath" "$floor" >> "$FAKE_STATE_DIR/model-router-invocations"
+  fi
+  case "${FAKE_MODEL_ROUTER_MODE:-default}" in
+    fail) echo "not json" ; exit 1 ;;
+    *)
+      ids=$(node -e "const t=require('$ticketspath'); console.log(t.tickets.map(x=>x.id).join('\n'))" 2>/dev/null)
+      assignments=$(echo "$ids" | awk 'BEGIN{first=1} NF{if(!first) printf ","; printf "{\"id\":\"%s\",\"tier\":\"frontier\",\"mode\":\"direct\",\"railDensity\":1,\"float\":0,\"reason\":\"fake\"}", $0; first=0}')
+      p3="[]"
+      [ "${FAKE_MODEL_ROUTER_MODE:-}" = "p3" ] && p3='[{"id":"fake","message":"fake P3 finding"}]'
+      echo "{\"assignments\":[$assignments],\"p3Findings\":$p3}"
+      exit 0 ;;
+  esac
+fi
+if [ "$1" = "rails-guard" ]; then
+  shift
+  base=""
+  rails=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) base="$2"; shift 2 ;;
+      --rails) rails="$rails
+$2"; shift 2 ;;
+      --json) shift ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'base=%s rails=%s\n' "$base" "$(echo "$rails" | tr '\n' ',')" >> "$FAKE_STATE_DIR/rails-guard-invocations"
+  fi
+  changed=$(git diff --name-only "$base" 2>/dev/null)
+  violations=""
+  echo "$rails" | while IFS= read -r glob; do
+    [ -z "$glob" ] && continue
+    prefix=$(echo "$glob" | sed 's/\*\*.*$//')
+    echo "$changed" | while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      case "$f" in
+        "$glob") echo "$f" ;;
+        "$prefix"*) [ -n "$prefix" ] && echo "$f" ;;
+      esac
+    done
+  done > "${TMPDIR:-/tmp}/fake-adlc-violations.$$"
+  violations=$(sort -u "${TMPDIR:-/tmp}/fake-adlc-violations.$$")
+  rm -f "${TMPDIR:-/tmp}/fake-adlc-violations.$$"
+  if [ -z "$violations" ]; then
+    echo '{"tool":"rails-guard","passed":true,"violations":[]}'
+    exit 0
+  fi
+  json_violations=$(echo "$violations" | awk 'BEGIN{first=1} {if(!first) printf ","; printf "{\"file\":\"%s\",\"type\":\"rail-edit\"}", $0; first=0}')
+  echo "{\"tool\":\"rails-guard\",\"passed\":false,\"violations\":[$json_violations]}"
+  exit 2
+fi
+if [ "$1" = "hollow-test" ]; then
+  case "${FAKE_HOLLOW_TEST_MODE:-clean}" in
+    survivors)
+      echo '{"tool":"hollow-test","summary":{"total":2,"killed":1,"survived":1},"mutants":[{"file":"lib/x.mjs","line":1,"operator":"null-return","status":"survived","original":"return x;","mutated":"return null;"},{"file":"lib/x.mjs","line":2,"operator":"null-return","status":"killed","original":"return y;","mutated":"return null;"}]}'
+      exit 2 ;;
+    fail)
+      echo "boom: simulated operational failure (dirty tree)" >&2
+      exit 1 ;;
+    *)
+      echo '{"tool":"hollow-test","summary":{"total":2,"killed":2,"survived":0},"mutants":[]}'
+      exit 0 ;;
+  esac
+fi
+echo "fake-adlc: unimplemented subcommand '$1'" >&2
+exit 1

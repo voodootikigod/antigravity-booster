@@ -37,8 +37,7 @@ disciplined fleet:
 
 ## Requirements
 
-- **Node ≥ 18** (zero runtime dependencies beyond the sibling
-  [`@adlc/core`](../adlc) checkout — see `package.json`).
+- **Node ≥ 18** (one runtime dependency, [`@adlc/core`](https://www.npmjs.com/package/@adlc/core) from the npm registry — see `package.json`).
 - **`agy` CLI** on PATH with an active Antigravity session
   (`curl -fsSL https://antigravity.google/cli/install.sh | bash`).
 - **macOS** for sandboxed gates (Seatbelt). On Linux/Windows, gates
@@ -53,8 +52,20 @@ disciplined fleet:
 
 You can run `antigravity-booster` directly using `npx`, or install it globally/locally via `npm`.
 
+`agb bootstrap` installs the [`adlc-antigravity`](../adlc/plugins/adlc-antigravity)
+plugin (via `agy plugin install`) — the source of the ADLC doctrine,
+prosecutor, and self-orchestrate skills, plus the rails-guard hook. Booster
+does not vendor its own copies of that doctrine; it depends on the plugin
+as a sibling `../adlc` checkout by default (override with
+`ADLC_ANTIGRAVITY_PLUGIN_PATH` if it lives elsewhere) — the plugin itself is
+unpublished (`private: true`), unlike `@adlc/core`, which resolves from the
+npm registry like any other dependency. `agy plugin install` requires an
+`agy` CLI recent enough to support plugin installation; bootstrap fails
+loudly, not silently, if the plugin path is missing or the install itself
+fails.
+
 ### Option A: Zero-Install (npx)
-Perfect for quick runs or ephemeral environments. This automatically downloads the package and installs the ADLC skills into your `~/.gemini/skills` directory:
+Perfect for quick runs or ephemeral environments. This automatically downloads the package, installs the adlc-antigravity plugin, and links booster's own skills:
 ```sh
 npx antigravity-booster bootstrap
 ```
@@ -67,7 +78,7 @@ agb bootstrap
 ```
 
 ### Option C: Development/Source Installation
-If you cloned the repository locally and want to link the CLI and symlink the skills:
+If you cloned the repository locally and want to link the CLI and symlink booster's own skills (checkout `../adlc` as a sibling first if you also want `agb bootstrap` to install the adlc-antigravity plugin from source):
 ```sh
 npm install && npm link
 agb bootstrap
@@ -223,10 +234,11 @@ becoming a generated cheap-tier ticket with a disjoint scope:
 and `{i}` substitute into `operation` and `scopePerTarget`.)
 
 Recursive mode: inside any agy session, the `adlc-self-orchestrate` skill
-teaches the agent to decompose work and drive `agb` itself. See
-[docs/guidelines.md](docs/guidelines.md) and `skills/adlc-self-orchestrate/SKILL.md` for the
-decomposition doctrine (foundation first, single writer per partition,
-self-contained tickets).
+(installed by `agb bootstrap` via the adlc-antigravity plugin, not vendored
+in this repo) teaches the agent to decompose work and drive `agb` itself.
+See [docs/guidelines.md](docs/guidelines.md) and the plugin's
+`skills/adlc-self-orchestrate/SKILL.md` for the decomposition doctrine
+(foundation first, single writer per partition, self-contained tickets).
 
 ## Environment knobs
 
@@ -243,7 +255,7 @@ self-contained tickets).
 ## Testing
 
 ```sh
-npm test    # 70 node:test cases, fully offline (fake agy fixture)
+npm test    # 77 node:test cases, fully offline (fake agy fixture)
 ```
 
 Sandbox-specific security tests are darwin-gated; scheduler tests run
@@ -258,7 +270,9 @@ lib/               scheduler, pools, agy wrapper, worktrees, gates,
                    charters, prosecution, review, sweep, preflight,
                    plan compiler (validate/parallax/premortem),
                    brain import, status, repo lock
-skills/            adlc-doctrine, adlc-prosecutor, adlc-self-orchestrate
+skills/            release (booster-specific; ADLC doctrine/prosecutor/
+                   self-orchestrate skills come from the adlc-antigravity
+                   plugin, installed by `agb bootstrap`, not vendored here)
 templates/         plan.example.json (schema by example)
 docs/research/     agy CLI + Antigravity 2.0 platform findings
 docs/calibration/  probed latency/concurrency/sandbox facts

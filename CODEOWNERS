@@ -1,0 +1,6 @@
+# Protects the ADLC rails-guard CI gate from being disarmed by a PR that
+# also removes/edits its own workflow file. Self-protection requirement per
+# ../adlc/docs/ci/rails-guard.yml. Review before enabling branch protection
+# ("Require review from Code Owners") — a manual, repo-admin step this file
+# alone does not perform.
+.github/workflows/** @voodootikigod

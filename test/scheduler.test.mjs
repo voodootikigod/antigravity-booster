@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'; // eslint-disable-line
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'; // eslint-disable-line
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,12 +9,15 @@ import { fileURLToPath } from 'node:url';
 import { runPlan } from '../lib/scheduler.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
+const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
 
 function makeRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-sched-'));
   const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' });
   g('init', '-q', '-b', 'main');
-  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  // Throwaway test repos must not depend on the developer's own commit-signing
+  // setup (GPG/SSH agent) — disable it locally, never touch global config.
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't'); g('config', 'commit.gpgsign', 'false');
   writeFileSync(join(dir, 'README.md'), 'hello\n');
   g('add', '-A'); g('commit', '-qm', 'init');
   return dir;
@@ -109,7 +112,7 @@ test('runPlan: post-merge gate failure reverts main to the pre-run SHA (data-los
   try {
     // Pre-seed the entries ensureGitignore would otherwise commit at run
     // start, so the pre-run SHA is exactly what the revert must restore.
-    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n');
+    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n');
     execFileSync('git', ['add', '-A'], { cwd: repo });
     execFileSync('git', ['commit', '-qm', 'gitignore'], { cwd: repo });
     const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
@@ -147,7 +150,7 @@ test('runPlan: editing a rail inside the declared scope fails the ticket', async
     execFileSync('git', ['add', '-A'], { cwd: repo });
     execFileSync('git', ['commit', '-qm', 'add rail'], { cwd: repo });
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'rail', AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_BUILDER_MODE: 'rail', AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -174,7 +177,7 @@ test('runPlan: rail strike resets the worktree — strike 2 is judged on its own
     // strike 2 does clean in-scope work. Without the reset, the cumulative
     // diff would still name RAIL.txt and strike 2 would auto-fail.
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'rail-then-good', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_BUILDER_MODE: 'rail-then-good', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -295,5 +298,98 @@ test('runPlan: failed predecessor blocks dependents', async () => {
     assert.match(report.failed.T2, /blocked by failed predecessor/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// --- Live rail enforcement (T-B): .adlc/-initialized target + plugin present ---
+
+test('runPlan: AC3 — a non-ADLC-initialized target repo produces a clear, non-silent warning in the run report', async () => {
+  const repo = makeRepo(); // makeRepo() never creates .adlc/
+  try {
+    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' }, () =>
+      runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    assert.equal(report.merged.length, 1, 'the build still succeeds — enforcement-unavailable degrades, it does not block the run');
+    assert.equal(report.enforcementAvailable, false);
+    assert.match(report.enforcementReason, /not ADLC-initialized/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin present sets ADLC_P4_ENFORCEMENT/ADLC_TICKET on the builder spawn and materializes .adlc/tickets.json into the worktree', async () => {
+  const repo = makeRepo();
+  mkdirSync(join(repo, '.adlc'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-enforce-state-'));
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] }],
+      }, quiet)
+    );
+    assert.equal(report.merged.length, 1);
+    assert.equal(report.enforcementAvailable, true, report.enforcementReason);
+
+    const envSeen = readFileSync(join(state, 'agy-env-seen'), 'utf8');
+    assert.match(envSeen, /ADLC_P4_ENFORCEMENT=1 ADLC_TICKET=T1/, 'the builder spawn received the live-enforcement env, scoped to this ticket');
+
+    const materialized = JSON.parse(readFileSync(join(state, 'adlc-tickets-seen.json'), 'utf8'));
+    assert.equal(materialized.tickets.length, 1);
+    assert.equal(materialized.tickets[0].id, 'T1');
+    assert.deepEqual(materialized.tickets[0].rails, ['RAIL.txt'], 'the worktree\'s .adlc/tickets.json carries this ticket\'s declared rails, projected — not invented');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: AC1 (mechanical) — enforcement stays unavailable when .adlc/ exists but the plugin is not installed', async () => {
+  const repo = makeRepo();
+  mkdirSync(join(repo, '.adlc'));
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_AGY_PLUGIN_LIST_MODE: 'empty', AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    assert.equal(report.merged.length, 1, 'the build still succeeds — degrades, does not block');
+    assert.equal(report.enforcementAvailable, false);
+    assert.match(report.enforcementReason, /plugin not installed/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: AC2 — the post-hoc rail check invokes adlc rails-guard with the correct base ref and rail globs', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-railsguard-state-'));
+  try {
+    writeFileSync(join(repo, 'RAIL.txt'), 'frozen contract\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add rail'], { cwd: repo });
+    await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] }],
+      }, quiet)
+    );
+    const invocations = readFileSync(join(state, 'rails-guard-invocations'), 'utf8');
+    assert.match(invocations, /base=main/, 'invoked with the plan\'s base ref');
+    assert.match(invocations, /RAIL\.txt/, 'invoked with the ticket\'s declared rail glob');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
   }
 });
