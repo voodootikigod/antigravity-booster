@@ -1,4 +1,5 @@
 {
   "acknowledgedNewRailBypass": true,
-  "securityMode": "unsigned-fallback"
+  "securityMode": "unsigned-fallback",
+  "trustedCodeownersAttested": true
 }
