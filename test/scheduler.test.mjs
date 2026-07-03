@@ -271,10 +271,25 @@ test('runPlan: refuses a dirty repo (data-loss guard) unless AGB_ALLOW_DIRTY=1',
     await assert.rejects(
       withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
         runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, quiet)),
-      /uncommitted changes/
+      /uncommitted changes — commit or stash first.*Set AGB_ALLOW_DIRTY=1 to override/
     );
     // the uncommitted edit is untouched
     assert.match(readFileSync(join(repo, 'README.md'), 'utf8'), /uncommitted edit/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: warns if dirty repo and AGB_ALLOW_DIRTY=1', async () => {
+  const repo = makeRepo();
+  try {
+    writeFileSync(join(repo, 'README.md'), 'uncommitted edit\n'); // dirty tracked file
+    const logs = [];
+    const captureLogger = { log: (msg) => logs.push(msg) };
+    await withEnv({ AGB_AGY_BIN: FAKE_AGY, AGB_ALLOW_DIRTY: '1' }, () =>
+      runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, captureLogger)
+    );
+    assert.ok(logs.some((l) => l.includes('WARNING') && l.includes('AGB_ALLOW_DIRTY=1') && l.includes('git reset --hard')), 'warning should be printed');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
