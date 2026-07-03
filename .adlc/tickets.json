@@ -1,3 +1,16 @@
 {
-  "tickets": []
+  "tickets": [
+    {
+      "id": "DOC-UPDATE",
+      "title": "Improve DX for Installation and Usage Docs",
+      "body": "Update README.md and docs/usage.md to streamline the 'how to install' and 'how to use' sections. Ensure the text flows well for new developers. Also, create docs/fumadocs-plan.md outlining a strategy to migrate all docs to Fumadocs.",
+      "scope": [
+        "README.md",
+        "docs/usage.md",
+        "docs/fumadocs-plan.md"
+      ],
+      "rails": [],
+      "edges": []
+    }
+  ]
 }
