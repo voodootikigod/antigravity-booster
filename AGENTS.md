@@ -34,5 +34,5 @@ This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticke
 ## Project-specific facts (see [README.md](README.md) and [docs/](docs/) for full detail)
 
 - `antigravity-booster` orchestrates Google Antigravity (`agy` CLI) for large parallel build-outs: deterministic scheduler, quota-pool-aware dispatch, cross-model prosecution, ADLC-shaped gates.
-- `@adlc/core` is a real npm registry dependency (`^1.0.2`) — do not reintroduce a `file:../adlc/packages/core` sibling-checkout dependency. The `adlc-antigravity` *plugin* is a separate, unpublished (`private: true`) package that genuinely does need the sibling `../adlc` checkout convention (`ADLC_ANTIGRAVITY_PLUGIN_PATH` overrides it) — don't conflate the two.
+- `@adlc/core` is a real npm registry dependency (`^1.0.2`) — do not reintroduce a `file:../adlc/packages/core` sibling-checkout dependency. The `adlc-antigravity` *plugin* is also being transitioned to a published npm package; `agb bootstrap` will automatically resolve it, falling back to an auto-cloned repository cache if a local sibling is not found.
 - Full doctrine: [docs/guidelines.md](docs/guidelines.md). CLI reference: [docs/usage.md](docs/usage.md). Worked example: [docs/execution-example.md](docs/execution-example.md).

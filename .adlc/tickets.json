@@ -11,6 +11,17 @@
       ],
       "rails": [],
       "edges": []
+    },
+    {
+      "id": "BOOTSTRAP-AUTO-CLONE",
+      "title": "Resolve adlc plugin via npm node_modules",
+      "body": "Update `lib/bootstrap.mjs` to seamlessly install the `adlc-antigravity` plugin. Resolve `@adlc/antigravity-plugin` from `node_modules` using `require.resolve`. If it fails, fallback to the local sibling directory `../adlc/plugins/adlc-antigravity`. Add it to `dependencies` in `package.json`.",
+      "scope": [
+        "lib/bootstrap.mjs",
+        "package.json"
+      ],
+      "rails": [],
+      "edges": []
     }
   ]
 }
