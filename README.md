@@ -48,37 +48,54 @@ disciplined fleet:
   `.github/workflows/adlc-rails-guard.yml` enforces frozen rails in CI, not
   just locally. See [AGENTS.md](AGENTS.md).
 
-## 🚀 Installation & Setup
+## Requirements
 
-You can run `antigravity-booster` directly using `npx` (zero-install), or install it globally/locally via `npm`.
+- **Node ≥ 18** (one runtime dependency, [`@adlc/core`](https://www.npmjs.com/package/@adlc/core) from the npm registry — see `package.json`).
+- **`agy` CLI** on PATH with an active Antigravity session
+  (`curl -fsSL https://antigravity.google/cli/install.sh | bash`).
+- **macOS** for sandboxed gates (Seatbelt). On Linux/Windows, gates
+  **fail closed** by design; run inside a disposable container and set
+  `AGB_SANDBOX_GATES=0` to acknowledge the container is your isolation
+  boundary.
+- A **target git repository** that is on the plan's base branch with a
+  clean working tree (the run refuses otherwise — merges and rollbacks
+  act on the checked-out branch).
 
-Before starting, ensure you have:
-- **Node >= 18** (one runtime dependency, `@adlc/core`).
-- **Antigravity CLI (`agy`)** on PATH with an active session (`curl -fsSL https://antigravity.google/cli/install.sh | bash`).
-- **macOS** for sandboxed gates (Seatbelt). On Linux/Windows, gates fail closed by design; run inside a disposable container and set `AGB_SANDBOX_GATES=0`.
-- A **target git repository** on the plan's base branch with a clean working tree.
+## Install
 
-### Option A: Zero-Install (Recommended)
-Perfect for quick runs or ephemeral environments. This automatically downloads the package, installs the required `adlc-antigravity` plugin, and links booster's own skills:
+You can run `antigravity-booster` directly using `npx`, or install it globally/locally via `npm`.
+
+`agb bootstrap` installs the [`adlc-antigravity`](../adlc/plugins/adlc-antigravity)
+plugin (via `agy plugin install`) — the source of the ADLC doctrine,
+prosecutor, and self-orchestrate skills, plus the rails-guard hook. Booster
+does not vendor its own copies of that doctrine; it depends on the plugin
+as a sibling `../adlc` checkout by default (override with
+`ADLC_ANTIGRAVITY_PLUGIN_PATH` if it lives elsewhere) — the plugin itself is
+unpublished (`private: true`), unlike `@adlc/core`, which resolves from the
+npm registry like any other dependency. `agy plugin install` requires an
+`agy` CLI recent enough to support plugin installation; bootstrap fails
+loudly, not silently, if the plugin path is missing or the install itself
+fails.
+
+### Option A: Zero-Install (npx)
+Perfect for quick runs or ephemeral environments. This automatically downloads the package, installs the adlc-antigravity plugin, and links booster's own skills:
 ```sh
 npx antigravity-booster bootstrap
 ```
 
 ### Option B: Global Installation
-To install the `agb` CLI command globally, making it available anywhere:
+To install the `agb` CLI command globally:
 ```sh
 npm install -g antigravity-booster
 agb bootstrap
 ```
 
-### Option C: Source Installation
-If you cloned the repository locally and want to link the CLI for development:
+### Option C: Development/Source Installation
+If you cloned the repository locally and want to link the CLI and symlink booster's own skills (checkout `../adlc` as a sibling first if you also want `agb bootstrap` to install the adlc-antigravity plugin from source):
 ```sh
 npm install && npm link
 agb bootstrap
 ```
-
-> **Note on `agb bootstrap`**: This command is required. It installs the `adlc-antigravity` plugin (via `agy plugin install`), which contains the ADLC doctrine, prosecutor, and self-orchestrate skills. Booster depends on this plugin as a sibling `../adlc` checkout by default (override with `ADLC_ANTIGRAVITY_PLUGIN_PATH`).
 
 ### Integration Configuration (Optional)
 To route general `@adlc` tools through your Antigravity session and quota:
