@@ -18,12 +18,6 @@ if [ "$1" = "plugin" ]; then
           echo "installed plugin from $3"
           exit 0 ;;
       esac ;;
-    list)
-      case "${FAKE_AGY_PLUGIN_LIST_MODE:-has-adlc}" in
-        empty) echo "" ;;
-        *) echo "adlc-antigravity" ;;
-      esac
-      exit 0 ;;
   esac
 fi
 
