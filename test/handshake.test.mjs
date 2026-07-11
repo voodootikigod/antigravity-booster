@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readPluginContract, SUPPORTED_PLUGIN_CONTRACT } from '../lib/adlc-bridge.mjs';
-import { runPlan } from '../lib/scheduler.mjs';
+import { runPlan, checkEnforcementAvailable } from '../lib/scheduler.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 
 // B12: the booster verifies the INSTALLED adlc-antigravity plugin speaks the
@@ -24,9 +24,25 @@ import { bootstrap } from '../lib/bootstrap.mjs';
 const FIX = (name) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
 const FAKE_AGY = FIX('fake-agy');
 const PLUGIN_COMPATIBLE = FIX('plugin-compatible');
-const PLUGIN_INCOMPATIBLE = FIX('plugin-incompatible');
+const PLUGIN_INCOMPATIBLE = FIX('plugin-incompatible'); // adlcContract 2 (> supported)
+const PLUGIN_INCOMPATIBLE_OLD = FIX('plugin-incompatible-old'); // adlcContract 0 (< supported)
 const PLUGIN_MISSING_FIELD = FIX('plugin-missing-field');
 const PLUGIN_MALFORMED = FIX('plugin-malformed');
+
+// Synchronous env swap for the sync checkEnforcementAvailable unit tests.
+function withEnvSync(env, fn) {
+  const saved = {};
+  for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; process.env[k] = v; }
+  try { return fn(); } finally {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
+  }
+}
+
+function makeMinimalAdlcRepo() {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-enforce-'));
+  mkdirSync(join(dir, '.adlc'));
+  return dir;
+}
 
 function makeAdlcRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-handshake-'));
@@ -91,6 +107,74 @@ test('readPluginContract: AGB_PLUGIN_DIR overrides the default base dir', () =>
   withEnv({ AGB_PLUGIN_DIR: PLUGIN_INCOMPATIBLE }, async () => {
     assert.equal(readPluginContract().status, 'incompatible');
   }));
+
+// --- checkEnforcementAvailable: the run-level decision (lib/scheduler.mjs) ---
+
+test('checkEnforcementAvailable: compatible contract → available:true, no abort', () => {
+  const repo = makeMinimalAdlcRepo();
+  try {
+    const r = withEnvSync({ AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE }, () => checkEnforcementAvailable(repo));
+    assert.deepEqual(r, { available: true, reason: null });
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('checkEnforcementAvailable: incompatible NEWER plugin → abort, available:false, "upgrade booster"', () => {
+  const repo = makeMinimalAdlcRepo();
+  try {
+    const r = withEnvSync({ AGB_PLUGIN_DIR: PLUGIN_INCOMPATIBLE }, () => checkEnforcementAvailable(repo));
+    assert.equal(r.available, false, 'an incompatible contract is never "available"');
+    assert.equal(r.abort, true, 'incompatible signals a loud abort, not a silent degrade');
+    assert.match(r.reason, /adlcContract 2/);
+    // contract 2 > supported 1 → the booster is behind → tell the user to upgrade IT.
+    assert.match(r.reason, /Upgrade antigravity-booster/);
+    assert.doesNotMatch(r.reason, /Upgrade the adlc-antigravity plugin/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('checkEnforcementAvailable: incompatible OLDER plugin → abort, "upgrade the plugin" (opposite remedy)', () => {
+  const repo = makeMinimalAdlcRepo();
+  try {
+    const r = withEnvSync({ AGB_PLUGIN_DIR: PLUGIN_INCOMPATIBLE_OLD }, () => checkEnforcementAvailable(repo));
+    assert.equal(r.available, false);
+    assert.equal(r.abort, true);
+    // contract 0 < supported 1 → the plugin is behind → tell the user to upgrade IT
+    // (the comparison direction is load-bearing, not cosmetic).
+    assert.match(r.reason, /Upgrade the adlc-antigravity plugin/);
+    assert.doesNotMatch(r.reason, /Upgrade antigravity-booster/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('checkEnforcementAvailable: missing field → degrade (available:false, no abort)', () => {
+  const repo = makeMinimalAdlcRepo();
+  try {
+    const r = withEnvSync({ AGB_PLUGIN_DIR: PLUGIN_MISSING_FIELD }, () => checkEnforcementAvailable(repo));
+    assert.equal(r.available, false);
+    assert.notEqual(r.abort, true, 'an older plugin degrades, it does not abort');
+    assert.match(r.reason, /adlcContract/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('checkEnforcementAvailable: non-ADLC repo returns before ever reading a manifest', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-noadlc-')); // no .adlc/
+  try {
+    // Point AGB_PLUGIN_DIR at an INCOMPATIBLE manifest to prove it is never read
+    // here — the .adlc/ guard short-circuits first, so no abort.
+    const r = withEnvSync({ AGB_PLUGIN_DIR: PLUGIN_INCOMPATIBLE }, () => checkEnforcementAvailable(repo));
+    assert.equal(r.available, false);
+    assert.notEqual(r.abort, true);
+    assert.match(r.reason, /not ADLC-initialized/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
 
 // --- runPlan: compatible plugin → live enforcement available, run proceeds ---
 
@@ -187,16 +271,24 @@ test('handshake: warns (does not silently proceed) when enforcement degrades on 
 
 // --- bootstrap: the second call site aborts on incompatible, degrades otherwise ---
 
-test('bootstrap: incompatible installed plugin contract aborts loudly (non-zero exit)', () => {
+test('bootstrap: incompatible installed plugin contract aborts loudly (exit 1)', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-handshake-bootstrap-'));
   try {
-    assert.throws(() => {
+    let thrown;
+    try {
       execFileSync(process.execPath, [
         '-e',
         `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
           `bootstrap({ destination: '${destDir}', pluginPath: '${PLUGIN_INCOMPATIBLE}', agyBin: '${FAKE_AGY}' }))`,
       ], { stdio: 'pipe' });
-    }, /Command failed/, 'an incompatible plugin contract surfaces as a non-zero exit, not a silent install');
+    } catch (err) {
+      thrown = err;
+    }
+    assert.ok(thrown, 'an incompatible plugin contract must not install silently');
+    // Exit 1 specifically — the booster's actionable-failure code, distinct
+    // from an internal crash. Asserting the value (not merely non-zero) keeps
+    // the abort's exit code load-bearing.
+    assert.equal(thrown.status, 1, 'aborts with exit 1');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
   }
