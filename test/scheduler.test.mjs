@@ -33,6 +33,33 @@ function withEnv(env, fn) {
 
 const quiet = { log: () => {} };
 
+// Local port of the adlc-antigravity plugin's tickets validation rules
+// (plugins/adlc-antigravity/core-inline.mjs loadTickets) — replicated here, NOT
+// imported, so the suite stays fully offline with no sibling-checkout dependency
+// (AGENTS.md). The load-bearing rule for B11 is the dangling-edge check: an edge
+// whose target id is absent from the file is an error, and the plugin's
+// railPreconditions fails CLOSED on ANY such error — denying every structured
+// write for the whole build, not just rail paths. Returns the plugin's error list.
+function pluginValidationErrors(data) {
+  const tickets = data.tickets ?? [];
+  const errors = [];
+  const seen = new Set();
+  for (const t of tickets) {
+    if (!t.id || typeof t.id !== 'string') errors.push('missing string id');
+    else {
+      if (seen.has(t.id)) errors.push(`duplicate ticket id: ${t.id}`);
+      seen.add(t.id);
+    }
+    if (!t.title || typeof t.title !== 'string') errors.push(`${t.id ?? '?'}: missing string title`);
+  }
+  for (const t of tickets) {
+    for (const e of t.edges ?? []) {
+      if (e.to && !seen.has(e.to)) errors.push(`${t.id}: edge to unknown ticket ${e.to}`);
+    }
+  }
+  return errors;
+}
+
 test('runPlan: 3-ticket DAG builds in parallel, prosecutes, merges all', async () => {
   const repo = makeRepo();
   try {
@@ -359,6 +386,48 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
     assert.equal(materialized.tickets.length, 1);
     assert.equal(materialized.tickets[0].id, 'T1');
     assert.deepEqual(materialized.tickets[0].rails, ['RAIL.txt'], 'the worktree\'s .adlc/tickets.json carries this ticket\'s declared rails, projected — not invented');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes an edge-free single-ticket .adlc/tickets.json the plugin validator accepts', async () => {
+  const repo = makeRepo();
+  mkdirSync(join(repo, '.adlc'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-b11-state-'));
+  try {
+    // T1 is foundational — it has an OUTGOING edge to T2 (T2 depends on it).
+    // Its per-worktree single-ticket projection MUST NOT carry that edge: T2 is
+    // absent from a single-ticket file, so a preserved edge dangles and the
+    // plugin denies EVERY write for the whole build (B11). T2 is unroutable so
+    // it fails at route() before its builder runs — leaving T1's projection as
+    // the captured adlc-tickets-seen.json (echo-adlc writes to a shared path).
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [
+          { id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'], edges: [{ to: 'T2', contract: 'shared lane' }] },
+          { id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'], tier: 'cheap', pool_hint: 'claude' },
+        ],
+      }, quiet)
+    );
+    assert.ok(report.merged.includes('T1'), `T1 should build and merge — ${report.enforcementReason ?? ''} ${JSON.stringify(report.failed)}`);
+    assert.equal(report.enforcementAvailable, true, report.enforcementReason);
+
+    const materialized = JSON.parse(readFileSync(join(state, 'adlc-tickets-seen.json'), 'utf8'));
+    // The single-ticket projection carries exactly the active ticket and its
+    // declared rails (rail resolution still works)...
+    assert.equal(materialized.tickets.length, 1);
+    assert.equal(materialized.tickets[0].id, 'T1');
+    assert.deepEqual(materialized.tickets[0].rails, ['RAIL.txt'], 'rails still projected — rail resolution intact');
+    // ...but NO edges, so nothing dangles.
+    assert.deepEqual(materialized.tickets[0].edges ?? [], [], 'single-ticket projection strips outgoing edges');
+    // The plugin's own validation rules accept it — railPreconditions would NOT
+    // fail closed, so live enforcement gates rails instead of denying everything.
+    assert.deepEqual(pluginValidationErrors(materialized), [], 'plugin validator accepts the edge-free single-ticket projection');
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
