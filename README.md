@@ -256,6 +256,7 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 | `AGB_AGY_BIN` | `agy` | Alternate agy binary (tests point this at a fake) |
 | `AGB_ADLC_BIN` | `adlc` | Alternate adlc CLI binary (tests point this at a fake) — used by every `adlc <tool>` integration: `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`, `consensus-fix`, `gate-manifest`, `review-calibration` |
 | `ADLC_ANTIGRAVITY_PLUGIN_PATH` | `../adlc/plugins/adlc-antigravity` | Where `agb bootstrap` finds the (unpublished) adlc-antigravity plugin to install |
+| `AGB_PLUGIN_DIR` | `~/.gemini/config/plugins/adlc-antigravity` | Installed adlc-antigravity plugin dir; its `plugin.json` `adlcContract` is handshake-checked against the booster's supported contract (incompatible → abort before any repo mutation; missing/unreadable → warn + degrade). Tests point this at a fixture |
 | `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains`/`agb plan` look for Antigravity plan artifacts |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` in this checkout | Where `agb probe` appends its measurement artifact |
 | `ADLC_PROVIDER=agy` | — | Run `@adlc` gate tools (parallax, premortem, …) on Antigravity quota |

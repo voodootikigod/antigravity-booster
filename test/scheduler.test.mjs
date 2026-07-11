@@ -10,6 +10,13 @@ import { runPlan } from '../lib/scheduler.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
+// B12: the live-enforcement check now handshakes the installed plugin manifest's
+// adlcContract instead of matching a name in `agy plugin list`. Tests that create
+// .adlc/ and expect enforcement AVAILABLE must point AGB_PLUGIN_DIR at a
+// contract-compatible fixture; the absent-manifest fixture drives the degraded
+// path deterministically (never reading the dev machine's real ~/.gemini install).
+const PLUGIN_COMPATIBLE = fileURLToPath(new URL('./fixtures/plugin-compatible', import.meta.url));
+const PLUGIN_ABSENT = fileURLToPath(new URL('./fixtures/plugin-does-not-exist', import.meta.url));
 
 function makeRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-sched-'));
@@ -369,7 +376,7 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
   const state = mkdtempSync(join(tmpdir(), 'agb-enforce-state-'));
   try {
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -404,7 +411,7 @@ test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes 
     // it fails at route() before its builder runs — leaving T1's projection as
     // the captured adlc-tickets-seen.json (echo-adlc writes to a shared path).
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -434,12 +441,14 @@ test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes 
   }
 });
 
-test('runPlan: AC1 (mechanical) — enforcement stays unavailable when .adlc/ exists but the plugin is not installed', async () => {
+test('runPlan: AC1 (mechanical) — enforcement stays unavailable when .adlc/ exists but the plugin manifest is absent (not installed)', async () => {
   const repo = makeRepo();
   mkdirSync(join(repo, '.adlc'));
   try {
+    // No installed plugin manifest at AGB_PLUGIN_DIR → B12 treats it as an
+    // absent/older plugin and degrades (warn), rather than aborting.
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, FAKE_AGY_PLUGIN_LIST_MODE: 'empty', AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_ABSENT, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -448,7 +457,7 @@ test('runPlan: AC1 (mechanical) — enforcement stays unavailable when .adlc/ ex
     );
     assert.equal(report.merged.length, 1, 'the build still succeeds — degrades, does not block');
     assert.equal(report.enforcementAvailable, false);
-    assert.match(report.enforcementReason, /plugin not installed/);
+    assert.match(report.enforcementReason, /manifest unreadable|not installed/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
