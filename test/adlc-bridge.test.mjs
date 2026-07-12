@@ -6,8 +6,34 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { planToAdlcTickets, writeAdlcTickets } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
+
+// Local port of the adlc-antigravity plugin's tickets validation rules
+// (plugins/adlc-antigravity/core-inline.mjs loadTickets) — replicated, NOT
+// imported, so the suite stays fully offline (AGENTS.md: no sibling-checkout
+// dependency). The B11-relevant rule is the dangling-edge check: an edge whose
+// target id is absent from the file is an error, and the plugin's
+// railPreconditions fails CLOSED on ANY error — denying every write.
+function pluginValidationErrors(data) {
+  const tickets = data.tickets ?? [];
+  const errors = [];
+  const seen = new Set();
+  for (const t of tickets) {
+    if (!t.id || typeof t.id !== 'string') errors.push('missing string id');
+    else {
+      if (seen.has(t.id)) errors.push(`duplicate ticket id: ${t.id}`);
+      seen.add(t.id);
+    }
+    if (!t.title || typeof t.title !== 'string') errors.push(`${t.id ?? '?'}: missing string title`);
+  }
+  for (const t of tickets) {
+    for (const e of t.edges ?? []) {
+      if (e.to && !seen.has(e.to)) errors.push(`${t.id}: edge to unknown ticket ${e.to}`);
+    }
+  }
+  return errors;
+}
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 
@@ -69,6 +95,66 @@ test('planToAdlcTickets: projects id/title/body/scope/rails/edges, invents no ne
 test('planToAdlcTickets: empty ticket list projects to an empty array', () => {
   assert.deepEqual(planToAdlcTickets({ tickets: [] }), []);
   assert.deepEqual(planToAdlcTickets({}), []);
+});
+
+// --- planTicketToRailTicket: single-ticket rail-enforcement projection (B11) ---
+
+test('planTicketToRailTicket: strips edges so a single-ticket file has none dangling (B11)', () => {
+  const foundational = {
+    id: 'T1', title: 'Widget', body: 'do the widget', scope: ['src/widget/**'],
+    rails: ['src/widget/schema.json'],
+    edges: [{ to: 'T2', contract: 'exports buildWidget(spec)' }],
+    tier: 'mid', pool_hint: 'auto', duration: 2,
+  };
+  const rail = planTicketToRailTicket(foundational);
+  // Keeps exactly what rail resolution + the plugin validator need: id, title,
+  // scope, rails. Drops edges (the bug), body/duration, and booster-only fields.
+  assert.deepEqual(rail, {
+    id: 'T1', title: 'Widget', scope: ['src/widget/**'], rails: ['src/widget/schema.json'],
+  });
+  // The written single-ticket file passes the plugin's own validation — the
+  // dangling-edge error that would fail railPreconditions CLOSED is gone.
+  assert.deepEqual(pluginValidationErrors({ tickets: [rail] }), []);
+});
+
+test('planTicketToRailTicket: the UNSTRIPPED whole-plan projection of the same ticket WOULD dangle (characterizes the bug)', () => {
+  const foundational = {
+    id: 'T1', title: 'Widget', body: 'x', scope: ['a'], rails: ['r'],
+    edges: [{ to: 'T2', contract: 'shared lane' }],
+  };
+  // planTicketToAdlcTicket (whole-plan projection) keeps the edge — as a lone
+  // ticket it dangles and the plugin fails closed. This is precisely why the
+  // single-ticket path must NOT reuse it.
+  const wholePlanProjection = planToAdlcTickets({ tickets: [foundational] });
+  assert.deepEqual(
+    pluginValidationErrors({ tickets: wholePlanProjection }),
+    ['T1: edge to unknown ticket T2'],
+  );
+  // ...and the rail projection of the same ticket is clean.
+  assert.deepEqual(pluginValidationErrors({ tickets: [planTicketToRailTicket(foundational)] }), []);
+});
+
+test('planTicketToRailTicket: defaults absent scope/rails to [] and never invents fields', () => {
+  assert.deepEqual(
+    planTicketToRailTicket({ id: 'T9', title: 'bare', body: 'b' }),
+    { id: 'T9', title: 'bare', scope: [], rails: [] },
+  );
+});
+
+// --- planToAdlcTickets: whole-plan projection STILL carries edges (AC2) ---
+
+test('planToAdlcTickets: whole-plan projection keeps edges (full DAG for the adlc CLI) — unchanged by B11', () => {
+  const plan = {
+    tickets: [
+      { id: 'T1', title: 'a', body: 'x', scope: ['a'], edges: [{ to: 'T2', contract: 'c' }] },
+      { id: 'T2', title: 'b', body: 'y', scope: ['b'] },
+    ],
+  };
+  const projected = planToAdlcTickets(plan);
+  assert.deepEqual(projected[0].edges, [{ to: 'T2', contract: 'c' }], 'edges preserved in the full-set projection');
+  // The full set is internally consistent — every edge target present — so it
+  // validates as a whole even though a single-ticket slice of it would not.
+  assert.deepEqual(pluginValidationErrors({ tickets: projected }), []);
 });
 
 // --- writeAdlcTickets: filesystem write ---
