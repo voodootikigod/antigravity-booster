@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -395,14 +395,52 @@ test('resolvePluginPath: honors ADLC_ANTIGRAVITY_PLUGIN_PATH when set', () => {
   }
 });
 
-test('resolvePluginPath: defaults to the ../adlc/plugins/adlc-antigravity sibling convention when unset', () => {
+test('resolvePluginPath: resolves the @adlc/antigravity npm package from node_modules when env unset', () => {
+  // The published plugin (@adlc/antigravity) is a declared dependency, so with
+  // no env override the primary node_modules resolution wins over the sibling
+  // fallback. Assert against independent signal (not resolvePluginPath's own
+  // resolution expression): the returned dir lives under node_modules/@adlc/
+  // antigravity AND holds the plugin manifest agy plugin install consumes.
   const prev = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
   delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
   try {
-    const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-    assert.equal(resolvePluginPath(), resolve(repoRoot, '../adlc/plugins/adlc-antigravity'));
+    const got = resolvePluginPath();
+    assert.ok(got.includes(join('node_modules', '@adlc', 'antigravity')),
+      `expected a node_modules path, got ${got}`);
+    assert.ok(existsSync(join(got, 'plugin.json')), 'resolved dir holds the plugin manifest');
   } finally {
     if (prev !== undefined) process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = prev;
+  }
+});
+
+test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibling convention when the npm package is unresolvable', () => {
+  // The node_modules resolution above can't exercise the final fallback branch
+  // while @adlc/antigravity is installed. Copy bootstrap.mjs + its only local
+  // import into an isolated temp dir that has NO node_modules ancestor, so
+  // require.resolve('@adlc/antigravity') genuinely throws and the catch returns
+  // the sibling default computed from the (copied) module's own location.
+  const isoRoot = mkdtempSync(join(tmpdir(), 'agb-resolve-fallback-'));
+  const libDir = join(isoRoot, 'lib');
+  mkdirSync(libDir);
+  const libSrc = fileURLToPath(new URL('../lib', import.meta.url));
+  for (const f of ['bootstrap.mjs', 'adlc-bridge.mjs']) {
+    writeFileSync(join(libDir, f), readFileSync(join(libSrc, f)));
+  }
+  // repoRoot inside resolvePluginPath is `new URL('..', import.meta.url)` of the
+  // copied bootstrap.mjs, i.e. isoRoot; the fallback resolves the sibling from there.
+  const expected = resolve(isoRoot, '../adlc/plugins/adlc-antigravity');
+  try {
+    const out = execFileSync(process.execPath, [
+      '-e',
+      `import('${new URL('file://' + join(libDir, 'bootstrap.mjs'))}')` +
+        `.then(({ resolvePluginPath }) => { process.stdout.write(resolvePluginPath()); })`,
+    ], {
+      stdio: 'pipe',
+      env: { ...process.env, ADLC_ANTIGRAVITY_PLUGIN_PATH: '', NODE_PATH: '' },
+    }).toString().trim();
+    assert.equal(out, expected, 'unresolvable npm package falls back to the sibling checkout');
+  } finally {
+    rmSync(isoRoot, { recursive: true, force: true });
   }
 });
 
