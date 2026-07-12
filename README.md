@@ -264,7 +264,7 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 ## Testing
 
 ```sh
-npm test    # 127 node:test cases, fully offline (fake-agy + fake-adlc fixtures)
+npm test    # 153 node:test cases, fully offline (fake-agy + fake-adlc fixtures)
 ```
 
 Sandbox-specific security tests are darwin-gated; scheduler tests run

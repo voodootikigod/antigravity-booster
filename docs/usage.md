@@ -203,6 +203,7 @@ Modify these flags in your shell to adjust how `agb` runs:
 | `AGB_AGY_BIN` | `agy` | Custom path to the Antigravity CLI binary. Used mainly for testing with mock wrappers. |
 | `AGB_ADLC_BIN` | `adlc` | Custom path to the adlc CLI binary. Used by every `adlc <tool>` integration (rails-guard, model-router, merge-forecast, flail-detector, consensus-fix, gate-manifest, review-calibration) and for testing with mock wrappers. |
 | `ADLC_ANTIGRAVITY_PLUGIN_PATH` | `../adlc/plugins/adlc-antigravity` | Where `agb bootstrap` finds the (unpublished) adlc-antigravity plugin to install. |
+| `AGB_PLUGIN_DIR` | `~/.gemini/config/plugins/adlc-antigravity` | Installed adlc-antigravity plugin directory; its `plugin.json` `adlcContract` field is handshake-checked against the booster's supported contract before enabling live rail enforcement. Incompatible → the run aborts before any repo mutation; missing/unreadable → warns and degrades. Tests point this at a fixture directory. |
 | `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains` and `agb plan` look for Antigravity plan artifacts. |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` | Target directory where `agb probe` writes result reports. |
 | `ADLC_PROVIDER` | — | Set to `agy` to route general `@adlc` package execution through Antigravity CLI credentials. |
