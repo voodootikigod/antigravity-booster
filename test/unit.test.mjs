@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { poolOf, familyOf, runAgy } from '../lib/agy.mjs';
 import { PoolSet } from '../lib/pools.mjs';
@@ -432,7 +432,7 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
   try {
     const out = execFileSync(process.execPath, [
       '-e',
-      `import('${new URL('file://' + join(libDir, 'bootstrap.mjs'))}')` +
+      `import('${pathToFileURL(join(libDir, 'bootstrap.mjs'))}')` +
         `.then(({ resolvePluginPath }) => { process.stdout.write(resolvePluginPath()); })`,
     ], {
       stdio: 'pipe',
