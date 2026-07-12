@@ -7,9 +7,8 @@ sources).
 ## Invocation
 
 - `agy --print --model "<name>"` reads the prompt from **stdin**, prints the
-  final response to stdout, exit 0 on success. Errors print
-  `Error: timed out waiting for response` (still exit 0 — **do not trust the
-  exit code alone**; verify output content).
+  final response to stdout, exit 0 on success. As of v1.1.1, errors return a non-zero
+  exit code and stderr on server-side failure.
 - `--print-timeout` default 5m; accepts Go durations (`80s`, `10m`).
 - Model names are the exact strings from `agy models`:
   - `Gemini 3.5 Flash (Low|Medium|High)`
@@ -59,7 +58,18 @@ needed for the common path.
 
 - `agy inspect` requires a TTY (bubbletea error when piped) — unusable from
   scripts.
-- Exit code 0 even on print-timeout. Always assert on output content
+- Prior to v1.1.1, exit code 0 was returned even on print-timeout. Always assert on output content
   (sentinel markers).
 - The same `~/.gemini/GEMINI.md` is read by legacy Gemini CLI — config
   conflict reports exist [web].
+
+## v1.1.1 Delta
+agy 1.1.1 introduces significant changes:
+- **Exit codes:** Returns non-zero exit code and stderr on server-side failure.
+- **Client auto-retries:** Client-side auto-retries on transient errors.
+- **Session flags:** `--conversation` / `--continue` resume previous conversations.
+- **Agents:** `--agent` + `agent(s)` subcommand for selecting specialized agents.
+- **Mode:** `--mode (plan/accept-edits)` to set the execution mode.
+- **Project scoping:** `--project` / `--new-project` and `--add-dir` to manage workspace context.
+- **Permissions:** `--dangerously-skip-permissions` to auto-approve tool permissions, and `permission.allow` write allowlisting.
+- **Plugin management:** `plugin validate` subcommand and `agy changelog`.
