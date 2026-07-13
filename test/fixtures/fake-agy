@@ -21,7 +21,18 @@ if [ "$1" = "plugin" ]; then
   esac
 fi
 
-prompt=$(cat)
+prompt=""
+for i in $(seq 1 $#); do
+  eval arg=\$$i
+  if [ "$arg" = "--print" ]; then
+    next=$((i+1))
+    eval prompt=\$$next
+    break
+  fi
+done
+if [ -z "$prompt" ]; then
+  prompt=$(cat)
+fi
 
 # Reveal the env this invocation actually received (scheduler tests verify
 # ADLC_P4_ENFORCEMENT/ADLC_TICKET were passed to THIS spawn, not leaked
