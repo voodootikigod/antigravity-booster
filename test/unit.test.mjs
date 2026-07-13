@@ -97,6 +97,65 @@ test('runAgy: detects exit-0 print-timeout as failure', async () => {
   const r = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'FAKE:TIMEOUT', bin: FAKE_AGY });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'print-timeout');
+  assert.equal(r.kind, 'timeout');
+});
+
+test('runAgy: classifies and logs failures correctly', async () => {
+  const logFile = join(tmpdir(), `agb-test-agy-log-${Date.now()}.log`);
+  try {
+    const parseLogBlocks = (content) => {
+      return content.split('\n===\n').filter(Boolean).map(block => {
+        const pIdx = block.indexOf('\n---PROMPT---\n');
+        const oIdx = block.indexOf('\n---OUTPUT---\n');
+        if (pIdx === -1 || oIdx === -1) return null;
+        return {
+          header: JSON.parse(block.slice(0, pIdx)),
+          prompt: block.slice(pIdx + 14, oIdx),
+          output: block.slice(oIdx + 14)
+        };
+      }).filter(Boolean);
+    };
+
+    // 1. Timeout
+    writeFileSync(logFile, '');
+    const rTimeout = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nFAKE:TIMEOUT\nmulti', bin: FAKE_AGY, logFile, env: { FAKE_AGY_MODE: 'timeout' } });
+    assert.equal(rTimeout.ok, false);
+    assert.equal(rTimeout.kind, 'timeout');
+    let logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].header.kind, 'timeout');
+    assert.equal(logs[0].prompt, 'multi\nFAKE:TIMEOUT\nmulti');
+    assert.match(logs[0].output, /timed out/);
+
+    // 2. Empty
+    writeFileSync(logFile, '');
+    const rEmpty = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nprompt', bin: FAKE_AGY, logFile, env: { FAKE_AGY_MODE: 'empty' } });
+    assert.equal(rEmpty.ok, false);
+    assert.equal(rEmpty.kind, 'empty');
+    logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs[0].header.kind, 'empty');
+    assert.equal(logs[0].output, '');
+
+    // 3. Server
+    writeFileSync(logFile, '');
+    const rServer = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nprompt', bin: FAKE_AGY, logFile, env: { FAKE_AGY_MODE: 'server' } });
+    assert.equal(rServer.ok, false);
+    assert.equal(rServer.kind, 'server');
+    logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs[0].header.kind, 'server');
+    assert.match(logs[0].header.error, /exit 1/);
+
+    // 4. Spawn
+    writeFileSync(logFile, '');
+    const rSpawn = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nprompt', bin: '/does-not-exist/non-existent-binary', logFile });
+    assert.equal(rSpawn.ok, false);
+    assert.equal(rSpawn.kind, 'spawn');
+    logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs[0].header.kind, 'spawn');
+    assert.match(logs[0].header.error, /ENOENT/);
+  } finally {
+    try { rmSync(logFile); } catch {}
+  }
 });
 
 test('runAgy: --sandbox is passed only when sandbox:true; omitted by default', async () => {

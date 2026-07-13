@@ -46,6 +46,9 @@ fi
 # Global failure injection (any role): simulate a model/transport error.
 case "${FAKE_AGY_MODE:-}" in
   fail) echo "boom: simulated agy failure" >&2; exit 1 ;;
+  timeout) echo "Error: timed out waiting for response"; exit 0 ;;
+  empty) exit 0 ;;
+  server) echo "simulated server-side error" >&2; exit 1 ;;
 esac
 
 case "$prompt" in
