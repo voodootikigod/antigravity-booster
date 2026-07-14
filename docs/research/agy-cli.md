@@ -59,7 +59,16 @@ needed for the common path.
 
 - `agy inspect` requires a TTY (bubbletea error when piped) — unusable from
   scripts.
-- Exit code 0 even on print-timeout. Always assert on output content
-  (sentinel markers).
 - The same `~/.gemini/GEMINI.md` is read by legacy Gemini CLI — config
   conflict reports exist [web].
+
+## v1.1.1 Delta
+
+- **Exit codes:** In 1.1.1, `agy --print` now properly returns a non-zero exit code and writes to stderr on server-side failures or timeouts.
+- **Client auto-retries:** The client now has built-in auto-retries for transient errors, changing the latency profile for intermittent failures.
+- **Session flags:** Introduced `--project`/`--new-project` for scoping runs.
+- **Mode flag:** `--mode (plan|accept-edits)` allows explicit setting of agent execution mode.
+- **Agent subcommand:** `--agent` flag and `agy agents` command manage agent-specific configs.
+- **Directory addition:** `--add-dir` allows mounting additional directories into the workspace context.
+- **Permissions:** `--dangerously-skip-permissions` can auto-approve tools, while `permissions.allow` in `settings.json` allowlists commands for write actions.
+- **Tools:** Added `agy changelog` and plugin management (`agy plugin validate`, etc.).
