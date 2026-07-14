@@ -50,49 +50,27 @@ disciplined fleet:
 
 ## 🚀 Installation & Setup
 
-You can run `antigravity-booster` directly using `npx` (zero-install), or install it globally/locally via `npm`.
+Before starting, ensure you have **Node >= 18**, the **Antigravity CLI (`agy`)** installed and authenticated on your `PATH`, and a clean target git repository. 
 
-Before starting, ensure you have:
-- **Node >= 18** (one runtime dependency, `@adlc/core`).
-- **Antigravity CLI (`agy`)** on PATH with an active session (`curl -fsSL https://antigravity.google/cli/install.sh | bash`).
-- **macOS** for sandboxed gates (Seatbelt). On Linux/Windows, gates fail closed by design; run inside a disposable container and set `AGB_SANDBOX_GATES=0`.
-- A **target git repository** on the plan's base branch with a clean working tree.
+*(Note: Gates use macOS Seatbelt by default. On Linux/Windows, run inside a disposable container and set `AGB_SANDBOX_GATES=0`.)*
 
-### Option A: Zero-Install (Recommended)
-Perfect for quick runs or ephemeral environments. This automatically downloads the package and links booster's own skills. Currently, you must also provide the `adlc-antigravity` plugin locally (e.g. clone it and set `ADLC_ANTIGRAVITY_PLUGIN_PATH`), until it is published to npm:
-```sh
-npx antigravity-booster bootstrap
-```
+### 1. Install & Bootstrap
+We recommend installing `agb` globally. The `bootstrap` command is mandatory as it installs the `adlc-antigravity` plugin and links the booster's skills.
 
-### Option B: Global Installation
-To install the `agb` CLI command globally, making it available anywhere:
 ```sh
 npm install -g antigravity-booster
 agb bootstrap
 ```
+*(Alternatively, use zero-install with `npx antigravity-booster bootstrap`, or `npm link` from source.)*
 
-### Option C: Source Installation
-If you cloned the repository locally and want to link the CLI for development:
+> **Note**: Until the `@adlc/antigravity` plugin is published to npm, you must have it cloned locally. It expects the sibling path `../adlc/plugins/adlc-antigravity` by default (override with `ADLC_ANTIGRAVITY_PLUGIN_PATH`).
+
+### 2. Verify Setup
+Run the diagnostic tool to ensure your dependencies and quota are ready:
 ```sh
-npm install && npm link
-agb bootstrap
+agb doctor
 ```
-
-> **Note on `agb bootstrap`**: This command is required. It installs the `adlc-antigravity` plugin (via `agy plugin install`), which contains the ADLC doctrine, prosecutor, and self-orchestrate skills. Booster depends on this plugin as a sibling `../adlc` checkout by default (override with `ADLC_ANTIGRAVITY_PLUGIN_PATH`).
-
-### Integration Configuration (Optional)
-To route general `@adlc` tools through your Antigravity session and quota:
-```sh
-export ADLC_PROVIDER=agy
-```
-
-## Verify your setup
-
-You can verify that your environment is configured correctly by running:
-```sh
-npx agb doctor
-```
-This will run a diagnostic check and suggest fixes for any missing dependencies.
+*(Optional: `export ADLC_PROVIDER=agy` to route general `@adlc` tools through Antigravity).*
 
 ## Quickstart
 **Plan in Antigravity, execute with agb.** Planning stays exactly where it
