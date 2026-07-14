@@ -146,3 +146,27 @@ test('prosecute: an unavailable hollow-test (operational error) does not itself 
     rmSync(logDir, { recursive: true, force: true });
   }
 });
+
+test('prosecute: passes the project option to runAgy', async () => {
+  const logDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-log-'));
+  const logFile = join(logDir, 'prosecution.log');
+  const prevState = process.env.FAKE_STATE_DIR;
+  process.env.FAKE_STATE_DIR = logDir;
+  try {
+    await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship' }, async () => {
+      await prosecute({
+        ticket: { id: 'T1', body: 'spec' },
+        diff: 'real diff',
+        model: 'Claude Sonnet 4.6 (Thinking)',
+        logFile,
+        project: 'test-prosecute-proj',
+      });
+    });
+    const argvSeen = readFileSync(join(logDir, 'agy-argv-seen'), 'utf8');
+    assert.match(argvSeen, /--project test-prosecute-proj/, 'prosecute passes the project flag to agy');
+  } finally {
+    if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
+    rmSync(logDir, { recursive: true, force: true });
+  }
+});
+

@@ -1,37 +1,16 @@
 {
   "tickets": [
     {
-      "id": "DOC-UPDATE",
-      "title": "Improve DX for Installation and Usage Docs",
-      "body": "Update README.md and docs/usage.md to streamline the 'how to install' and 'how to use' sections. Ensure the text flows well for new developers. Also, create docs/fumadocs-plan.md outlining a strategy to migrate all docs to Fumadocs.",
+      "id": "ISSUE-25",
+      "title": "[P2] feat: warm second strikes via agy --conversation resume (probe first)",
+      "body": "Second strikes currently restart cold with dead-ends appended to the prompt (lib/scheduler.mjs strike loop around :431-451). agy 1.1.1 supports resuming a conversation by ID (--conversation <id>, -c/--continue), which would let a retry keep the failed worker's context instead of re-deriving it.\n\nTask:\n1. Probe first (timebox it): determine whether a print-mode run's conversation ID is obtainable via a robust, race-free programmatic method (e.g. stdout/stderr on exit, or the resume-command line agy prints on session exit). Scanning ~/.gemini state is race-prone and does NOT qualify as obtainable. If the ID is not obtainable in --print mode, document the finding in docs/research/agy-cli.md, make NO changes to lib/scheduler.mjs or lib/agy.mjs, and consider this ticket fully complete (satisfying downstream edges).\n2. If obtainable, implement the following: runAgy accepts conversation (adds --conversation <id>) and returns conversationId when discoverable.\n3. Scheduler: on a clean one-off failure (defined as any failure that is not a flail, including rail violations), strike 2 resumes the strike-1 conversation with the dead-end note as the new message. The dead-end note should be wrapped with a clear boundary, e.g., 'Your previous attempt failed:\\n' + lastFailure. If a specific invocation occasionally fails to retrieve a conversation ID, fallback to the existing fresh-restart path. For flails, the existing behavior remains: abort the strike loop entirely and do not run strike 2.\n\nAcceptance criteria:\n- Probe findings recorded in docs/research/agy-cli.md either way.\n- If implemented: fake-agy extended to echo or log the passed --conversation flag to FAKE_STATE_DIR so tests can assert it; tests: strike-2-resumes on clean failure, flail verdict aborts and skips strike 2 entirely.\n- npm test green.",
       "scope": [
-        "README.md",
-        "docs/usage.md",
-        "docs/fumadocs-plan.md"
-      ],
-      "rails": [],
-      "edges": []
-    },
-    {
-      "id": "BOOTSTRAP-AUTO-CLONE",
-      "title": "Resolve adlc plugin via npm node_modules",
-      "body": "Update `lib/bootstrap.mjs` to seamlessly install the `adlc-antigravity` plugin. Resolve `@adlc/antigravity-plugin` from `node_modules` using `require.resolve`. If it fails, fallback to the local sibling directory `../adlc/plugins/adlc-antigravity`. Add it to `dependencies` in `package.json`.",
-      "scope": [
-        "lib/bootstrap.mjs",
-        "package.json"
-      ],
-      "rails": [],
-      "edges": []
-    },
-    {
-      "id": "B11",
-      "title": "Strip edges from per-worktree single-ticket .adlc/tickets.json projection (rail enforcement deny-all)",
-      "body": "GitHub issue: https://github.com/voodootikigod/antigravity-booster/issues/11\n\n=== BUG (P0, latent correctness in live rail enforcement) ===\nThe scheduler materializes each worktree's .adlc/tickets.json as a SINGLE-ticket file: lib/scheduler.mjs (search `writeAdlcTickets(worktree, [planTicketToAdlcTicket(t)])`, ~line 339). planTicketToAdlcTicket (lib/adlc-bridge.mjs ~lines 26-31) preserves `edges` verbatim. For any plan ticket with an outgoing edge (a foundational ticket others depend on), the projected single-ticket file contains an edge whose target is ABSENT from the file. The adlc-antigravity plugin's loadTickets (core-inline.mjs) reports 'edge to unknown ticket <id>'; its railPreconditions treats ANY validation error as tamper and fails closed -> the rails-guard hook denies EVERY structured write (Edit/Write/create_file) for the whole build, not just rail paths. Only leaf tickets (no outgoing edges) enforce correctly, which is why it has been invisible. The only existing test on this path (test/scheduler.test.mjs ~line 339) uses an edge-less ticket.\n\n=== TASK ===\nStrip `edges` in the per-worktree single-ticket projection. Rail enforcement only needs id + rails (plus whatever fields the plugin validator requires — check core-inline.mjs validateTicket in the sibling ../adlc/plugins/adlc-antigravity/ checkout for the accepted shape). Do NOT change the repo-level full-set projection written at plan-compile time (lib/adlc-bridge.mjs writeAdlcTickets consumers in lib/plan.mjs) — that file carries the whole DAG and is consumed by the adlc CLI. Implement as an explicit single-ticket variant or an option on the projection helper so the two call sites cannot silently swap.\n\n=== ACCEPTANCE CRITERIA ===\n- AC1: New regression test: a plan ticket WITH outgoing edges, projected into a worktree, produces a .adlc/tickets.json with NO edges field (or empty edges) such that a validator applying the plugin's rules (dangling-edge = error) accepts it. The test MUST fail on current main before the fix. VERIFY: run the new test against unfixed code (git stash the fix) and see it fail; then pass with the fix.\n- AC2: Repo-level full-set projection unchanged: existing round-trip test in test/adlc-bridge.test.mjs (validates against the real `adlc coldstart` CLI, ~lines 103-138) still green, and full-set projections still carry edges.\n- AC3: Full suite green: npm test (127+ tests), fully offline.\n\nCoordination: pairs with adlc repo issue #142 which locks the same contract from the plugin side; the contract decision is: plugin STAYS fail-closed on dangling edges, booster projects edge-free single-ticket files.",
-      "scope": [
-        "lib/adlc-bridge.mjs",
+        "docs/research/agy-cli.md",
+        "lib/agy.mjs",
         "lib/scheduler.mjs",
-        "test/adlc-bridge.test.mjs",
-        "test/scheduler.test.mjs"
+        "test/unit.test.mjs",
+        "test/scheduler.test.mjs",
+        "test/fixtures/fake-agy"
       ],
       "rails": [
         "lib/lock.mjs",
@@ -39,45 +18,86 @@
       ],
       "edges": [
         {
-          "to": "B12",
-          "contract": "lib/scheduler.mjs + lib/adlc-bridge.mjs shared lane; B12 rebases on B11"
+          "to": "ISSUE-26",
+          "contract": "agy CLI execution lane"
         }
       ],
       "tier": "mid",
       "pool_hint": "auto"
     },
     {
-      "id": "B12",
-      "title": "Plugin contract-version handshake replacing the substring check",
-      "body": "GitHub issue: https://github.com/voodootikigod/antigravity-booster/issues/12\n\n=== PROBLEM (P0, silent version-skew failure mode) ===\nThe booster's only compatibility check on the installed adlc-antigravity plugin is a substring match: stdout.includes('adlc-antigravity') on `agy plugin list` output (lib/scheduler.mjs ~line 185 in checkEnforcementAvailable, and lib/bootstrap.mjs ~line 64). Nothing verifies the installed plugin speaks the same tickets-schema / hook-payload contract the booster projects. Drift fails silently; worst case is enforcement silently not doing what the booster assumes.\n\n=== TASK ===\n1. Booster declares a supported plugin contract (integer or semver range) as a constant in lib/adlc-bridge.mjs (it owns the projected schema).\n2. Read the installed plugin manifest at ~/.gemini/config/plugins/adlc-antigravity/plugin.json (make the base dir overridable via env for tests, consistent with existing AGB_* knobs; add the knob to README's env table) and extract its `adlcContract` field (being added by adlc repo issue #143; plugin.json may not carry it yet).\n3. checkEnforcementAvailable (lib/scheduler.mjs) and agb bootstrap (lib/bootstrap.mjs): incompatible contract -> abort the run loudly at start BEFORE lock/worktrees with an actionable message (upgrade plugin / upgrade booster). Missing field or unreadable manifest (older plugin) -> warn + degrade exactly as today's enforcement-unavailable path. Never crash: match the repo rule 'CLI integrations degrade, never crash' ({ok:false,error}).\n\n=== ACCEPTANCE CRITERIA ===\n- AC1: Substring check gone from both call sites; manifest-based check in place. VERIFY: grep shows no includes('adlc-antigravity') in lib/scheduler.mjs or lib/bootstrap.mjs used as the compatibility decision.\n- AC2: Tests cover: compatible / incompatible / missing-field / unreadable-manifest, in a NEW test file test/handshake.test.mjs via a fixture plugin dir under test/fixtures/ (do NOT touch test/unit.test.mjs — it is in ticket B13's scope). Incompatible aborts before any repo mutation (no lock dir, no .gitignore commit, no worktrees in the fixture target repo).\n- AC3: npm test green.\n\nCoordination: soft-depends on adlc repo issue #143 (plugin exposes adlcContract). Land the tolerant reader (missing field = warn+degrade) regardless of #143's merge timing. BLOCKED-BY B11 only via shared files (same lane): build on top of B11's branch or rebase after it merges.",
+      "id": "ISSUE-26",
+      "title": "[P2] feat: per-run agy project isolation (--project/--new-project, probe first)",
+      "body": "agy 1.0.12+ supports --project <id> / --new-project. Booster workers currently run without either, so every fleet invocation lands in agy's default project.\n\nTask:\n1. Probe first: semantics of --new-project in --print mode — does it create-and-use per invocation, and does --project <name-or-id> accept a name and create-if-missing? Record findings in docs/research/agy-cli.md.\n2. Implement per-run isolation. Assume --project accepts a string name and creates if missing. All agy invocations inside the scheduler run (runPlan) share one project named agb-<runId> (builders, prosecutors, fix rounds). Pass the project ID to the external adlc CLI process during fix rounds via the AGY_PROJECT environment variable in runConsensusFix. Do NOT programmatically write to ~/.gemini/config/projects/.\n3. runAgy gains a project option. bin/agb.mjs parses any CLI --project flags and passes them to the library functions, including for 'agb sweep' (which should forward it to sweepToPlan/runPlan). scheduler, review, prosecute, plan, sweep, preflight, and brainToPlan pass the project ID through. For standalone invocations where the project option is omitted, generate a command-specific project ID as a default inside the respective library modules (e.g. lib/review.mjs, lib/plan.mjs, lib/preflight.mjs, and brainToPlan in lib/brain.mjs), formatted like 'agb-review-' + Date.now(), 'agb-plan-' + Date.now(), 'agb-preflight-' + Date.now(), or 'agb-brain-' + Date.now().\n\nAcceptance criteria:\n- Probe findings documented.\n- Update direct runAgy calls in test/unit.test.mjs to pass a mock project flag (e.g. 'mock-project'). Also, update the 'runAgy: --project is passed when project is provided...' test to simply assert that --project is passed when a project is provided, as it will now be mandatory for prompt commands.\n- fake-agy asserts the project flag is passed by every invocation path regardless of the prompt (except for administrative/metadata subcommands like 'models', '--version', or 'plugin install', which do not use projects), and exits non-zero if missing.\n- npm test green.",
       "scope": [
-        "lib/adlc-bridge.mjs",
+        "bin/agb.mjs",
+        "docs/research/agy-cli.md",
+        "lib/agy.mjs",
         "lib/scheduler.mjs",
-        "lib/bootstrap.mjs",
+        "lib/sweep.mjs",
+        "lib/plan.mjs",
+        "lib/review.mjs",
+        "lib/preflight.mjs",
+        "lib/prosecute.mjs",
+        "lib/brain.mjs",
+        "test/unit.test.mjs",
         "test/scheduler.test.mjs",
-        "test/adlc-bridge.test.mjs",
-        "test/fixtures/**",
-        "README.md",
-        "test/handshake.test.mjs"
+        "test/scheduler-consensus-fix.test.mjs",
+        "test/review.test.mjs",
+        "test/prosecute.test.mjs",
+        "test/plan.test.mjs",
+        "test/fixtures/fake-agy"
       ],
       "rails": [
         "lib/lock.mjs",
         "lib/gates.mjs"
       ],
-      "edges": [],
+      "edges": [
+        {
+          "to": "ISSUE-23",
+          "contract": "lib/agy.mjs log framing happens after project isolation"
+        }
+      ],
       "tier": "mid",
       "pool_hint": "auto"
     },
     {
-      "id": "B13",
-      "title": "Re-run calibration probes on agy 1.1.1 / engine 2.2.1 and refresh stale doctrine",
-      "body": "GitHub issue: https://github.com/voodootikigod/antigravity-booster/issues/13\n\n=== PROBLEM (P0, scheduler facts are stale) ===\nAll calibration facts were probed 2026-06-11 on agy 1.0.7 (docs/research/agy-cli.md line 1, docs/calibration/probes-2026-06-11.md). Installed CLI is now 1.1.1; engine 2.2.1 (2026-06-25). Changes plausibly invalidating probed numbers: engine 2.2.1 fixed a subagent deadlock and sandbox-blocking-builtin-skills (both plausibly implicated in the probed ~5m print-mode hard ceiling); agy 1.0.16 added client-side auto-retries on transient errors (changes latency distributions and failure semantics); agy 1.1.1 made print mode return non-zero exit + stderr on server-side failure (probes can now detect failure reliably). GPT-OSS pool cap in lib/pools.mjs (width 2) was set without a full probe.\n\n=== TASK (consumes REAL Antigravity quota — keep probe widths modest, this is measurement not stress-testing) ===\n1. Run `agb probe 2,4 <model>` for one representative model per pool (Gemini 3.5 Flash (Medium), Gemini 3.1 Pro (Low), Claude Sonnet 4.6 (Thinking), GPT-OSS 120B (Medium)); extend to width 8 ONLY for gemini-flash where the historical degradation claim lives. The probe command appends its artifact to docs/calibration/ automatically.\n2. Probe whether the ~5m print ceiling still holds: one prompt designed to exceed 5m with --print-timeout 10m (e.g. instruct a long multi-step generation); record actual wall time and how it terminated.\n3. Update lib/pools.mjs POOL_CAPS if measurements moved (or add a dated comment explaining why unchanged).\n4. Update stale doctrine text: lib/agy.mjs header comment lines 3-5 ('exits 0 even on print-timeout' is no longer the whole story — 1.1.1 returns non-zero + stderr on server-side failure); add a 'v1.1.1 delta' section to docs/research/agy-cli.md covering: exit codes, --conversation/--continue resume, --agent + agent(s) subcommand, --mode (plan/accept-edits), --project/--new-project, --add-dir, --dangerously-skip-permissions, client auto-retries, permission.allow write allowlisting, agy changelog + plugin validate subcommands.\n\n=== ACCEPTANCE CRITERIA ===\n- AC1: New docs/calibration/probes-<today>.md committed with raw measurements (widths, latencies, failures) for all four pools.\n- AC2: lib/pools.mjs POOL_CAPS matches the new measurements or carries a dated comment justifying no change.\n- AC3: No doc or code comment left claiming agy exit codes are always 0 on failure: grep -ri 'exit 0' lib/ docs/ and reconcile each hit with the 1.1.1 reality.\n- AC4: npm test green (POOL_CAPS changes may require updating pool tests).",
+      "id": "ISSUE-23",
+      "title": "[P2] feat: append-only events.jsonl + JSONL transcripts (stable observability contract)",
+      "body": "Two observability gaps block a rich dashboard:\n1. No event history. run.json is a snapshot; past transitions are lost. All transitions already funnel through status.ticket() / status.pools() (lib/scheduler.mjs:284-297).\n2. Transcripts use custom framing. .booster/logs/<runId>/<ticketId>.log is a JSON header line + \\n---PROMPT---\\n...\\n---OUTPUT---\\n...\\n===\\n, appended across strikes. Tailing requires a bespoke parser.\n\nTask:\n1. <repo>/.booster/logs/<runId>/events.jsonl: append one JSON line per transition from the same call sites. Schema: { ts, runId, type: 'phase'|'pool'|'strike', ticket?, from?, to?, detail?, pools? }. ts is an ISO-8601 string (new Date().toISOString()). \n   - type: 'strike' is triggered inside lib/scheduler.mjs when runAgy for a builder model completes. ticket is ticketId. detail is an object { ok: boolean, error?: string }. The 'detail.ok' field represents the overall success of the strike (i.e., also passing scope, rail, and test gate checks). The 'error' field is omitted if successful. from/to are omitted.\n   - type: 'pool' is triggered on pool changes (any change in active request counts or caps of any pool). Log the initial pool state post-instantiation (e.g. immediately after 'status' is instantiated, call 'status.pools(poolSet.snapshot())'), and log subsequent changes. ticket/from/to/detail are omitted. pools contains a shallow clone of current pool limits using the existing keys (e.g., {'gemini-flash': {cap: 2, active: 1}}).\n   - type: 'phase' is triggered on phase updates in status.ticket(id, patch) when patch.phase is present. ticket is ticketId. from/to are the phase strings. For the initial transition (e.g. to 'pending'), the 'from' field is omitted. pools and detail are completely omitted. A transition is logged even if it's updated to the same phase.\n   - type: 'report' is explicitly omitted from this schema.\n   Append-only via appendFileSync.\n2. Normalize per-ticket transcripts to JSONL: one record per agy invocation { ts, model, strike, ms, ok, kind?, error, prompt, output } (ts is ISO-8601). Name the file <ticketId>.jsonl. Optional/nullable fields like 'kind' and 'error' are omitted on success. Prosecutor logs remain separate as <ticketId>.prosecution.jsonl but share this exact JSONL schema. The calling code in lib/scheduler.mjs and lib/prosecute.mjs MUST be updated to pass a path ending in '.jsonl' for both files. For prosecutor invocations, the 'strike' field in the JSONL should be explicitly set to 0. Since 'adlc flail-detector' relies on the legacy format, update checkFlailDetector (or its caller in lib/scheduler.mjs) to translate the JSONL file back to the legacy multiline format in a temporary file (or passed via stdin) before invoking 'adlc'. When reconstructing the legacy header line, optional fields omitted in the JSONL file must be mapped to `null`. Retrieve and pass the worktree path from the scheduler context as the `cwd` key in the header line during this reconstruction (if checkFlailDetector is called outside the scheduler context like in unit tests, default cwd to `process.cwd()`).\n3. Inside lib/agy.mjs, update runAgy signature to accept 'strike' in its options object so it can include it in the jsonl. Inside runAgy, default strike to `options.strike ?? 0`. Modify buildOnce signature in lib/scheduler.mjs to accept strike and pass it to runAgy.\n4. Document both schemas in docs/usage.md.\n\nAcceptance criteria:\n- Every phase transition appears in events.jsonl in order; test replays a run and reconstructs final state.\n- Transcript files parse with JSON.parse per line.\n- Schemas documented; npm test green.",
       "scope": [
-        "docs/calibration/**",
-        "docs/research/agy-cli.md",
-        "lib/pools.mjs",
+        "lib/status.mjs",
         "lib/agy.mjs",
-        "test/unit.test.mjs"
+        "lib/scheduler.mjs",
+        "docs/usage.md",
+        "test/status.test.mjs",
+        "test/unit.test.mjs",
+        "test/scheduler.test.mjs",
+        "test/scheduler-flail.test.mjs"
+      ],
+      "rails": [
+        "lib/lock.mjs",
+        "lib/gates.mjs"
+      ],
+      "edges": [
+        {
+          "to": "ISSUE-24",
+          "contract": "events.jsonl read contract"
+        }
+      ],
+      "tier": "mid",
+      "pool_hint": "auto"
+    },
+    {
+      "id": "ISSUE-24",
+      "title": "[P2] feat: full-screen node TUI dashboard reading run.json + events.jsonl",
+      "body": "With atomic run.json snapshots + events.jsonl, a full-screen dashboard needs zero scheduler coupling. Per project direction, this should be Node/npm-centric.\nrun.json is located at <repo>/.booster/run.json and its schema contains {runId, repo, tickets, pools, done, report}. Read runId from run.json to resolve events.jsonl at <repo>/.booster/logs/<runId>/events.jsonl and transcripts at <repo>/.booster/logs/<runId>/<ticketId>.jsonl.\nIn run.json, the 'tickets' object contains tickets mapping by id, each with properties for 'phase', 'strikes' (number or array), and 'model'. Render 'strikes' as the array length if it is an array, or the number directly (if missing, null, or undefined, render 0). 'pools' is structured as { inFlight: { [poolId]: number }, caps: { [poolId]: number } } in run.json. If `pools`, `pools.inFlight`, or `pools.caps` are missing or null in `run.json`, default them to an empty object `{}`. Render pool gauges sorted alphabetically by poolId, with one pool per line (e.g. 'gemini-flash: 2/4' where 2 is inFlight and 4 is cap). Determine the full list of pool IDs by taking the union of the keys from both `pools.inFlight` and `pools.caps`; if a pool's `inFlight` or `cap` is missing, default it to `0`. If the number of pool gauges exceeds the vertical height of the top half pane, truncate the list and display a '...' indicator on its own line at the bottom of the top half pane (replacing the last visible pool gauge if necessary to fit).\nTranscripts contain JSONL objects like { ts, model, strike, ms, ok, kind?, error, prompt, output }. The `ts` field in transcripts and events.jsonl is an ISO 8601 datetime string. Skip invalid or malformed JSON lines in events.jsonl and transcript files silently. The transcript pane should visually render the prompt and output fields for the selected ticket (if prompt or output are missing, null, or undefined, render them as empty strings). Sort multiple entries chronologically. Prefix EVERY transcript entry with a header/delimiter matching '\\n--- Strike {strike} ---\\n' using the strike number from that entry. Label prompts by placing '[PROMPT]' on its own line followed by the prompt content on subsequent lines, and do the same for '[OUTPUT]'. If the transcript file is missing or empty, display '(No transcript available)'.\nevents.jsonl contains lines of JSON objects {ts, runId, type, ticket?, from?, to?, detail?, pools?}. The event timeline pane should display all events for the entire run, sorted chronologically (newest at the bottom). Prepend the formatted timestamp `[HH:MM:SS]` (in the local timezone) to the event text. Skip/ignore unknown event types. Format events by type: phase = '[HH:MM:SS] [phase] {ticket} transitioned to {to}', pool = '[HH:MM:SS] [pool] limits updated'. For strike events, if `detail` or `detail.ok` are missing or null, fallback the status to 'unknown'; otherwise render 'ok' or 'error' (resulting in '[HH:MM:SS] [strike] {ticket} strike completed (ok|error|unknown)'). For phase and strike events, if the 'ticket' or 'to' fields are missing or null, fallback to the string 'unknown'.\n\nTask:\nImplement Option 1: zero-dep ANSI TUI inside agb (agb tui [repo], AND auto-upgrade of status --watch [repo] when stdout is a TTY. The pre-existing `renderStatus(repo: string): string` and `watchStatus(repo: string, intervalMs?: number): Promise<number>` functions are exported from `lib/status.mjs`. If stdout is not a TTY, both `agb tui [repo]` and `status --watch [repo]` must fallback to printing the snapshot text via `renderStatus` ONCE and exit 0 immediately without polling or launching the TUI). The <repo> argument defaults to the current working directory. Use a polling interval (e.g. 100ms) or fs.watch to update the TUI from the files. Intercept Ctrl+C (SIGINT) to clean up terminal raw mode/alt-screen and exit with code 130.\nThe 80 columns by 24 lines terminal size check must be evaluated both immediately at startup and dynamically on resize (SIGWINCH). Prioritize the startup size check: if the terminal is below the minimum at startup, exit immediately without launching the TUI (do not print 'waiting for run.json...' or poll), print the snapshot text via `renderStatus`, and exit with code 0. If invoked via 'agb tui' and it falls below minimum size dynamically, print snapshot text via `renderStatus` and exit with 0. If invoked via 'status --watch' and it falls below minimum size dynamically, fall back to the standard `watchStatus` polling loop permanently (do not re-enter TUI even if resized).\nIf run.json is missing or malformed at startup (and terminal size is >= 80x24), do NOT enter alt-screen mode; print 'waiting for run.json...' once in normal scrollback mode and keep polling until a valid run.json is found, then enter alt-screen mode.\nAlt-screen layout: top/bottom split with the top half height as Math.floor(H / 2) and bottom half height as Math.ceil(H / 2). The top half is split 70% width for the ticket table, 30% for pool gauges. Render a header row for the ticket table: 'ID' (left aligned, width 20), 'Phase' (left aligned, width 15), 'Strikes' (right aligned, width 10), 'Model' (left aligned, remainder). The columns should be separated by a single space character (` `). If a cell value exceeds its column width, truncate it with an ellipsis '...'; the truncation MUST fit exactly within the column width (e.g. `value.slice(0, width - 3) + '...'`) to preserve column alignment. Highlight the selected ticket with an ANSI inverse video (`\\x1b[7m`) background. The ticket table viewport MUST scroll dynamically to keep the selected ticket in view. Render a header row for the pool gauges: 'Pools' (left aligned), starting on the first line. The bottom half is for the event timeline and transcript. Keys: ↑/↓ select ticket, [ and ] to scroll the event timeline line-by-line (`[` scrolls up/backwards in time, `]` scrolls down/forwards in time), enter toggle transcript pane (defaults to OFF at startup; when toggled off, the event timeline expands to fill the entire bottom half; when toggled on, they split the bottom half horizontally or vertically as you see fit), PageUp/PageDown to scroll the transcript pane by the height of the pane (minus 1 line), Home/End to jump to the absolute top/bottom of the event timeline, q quit. The event timeline should auto-scroll to the bottom when new events are appended, unless the user has manually scrolled up. If they manually scroll up, maintain their position; auto-scrolling is re-enabled if they scroll back to the absolute bottom manually (using `]`) or if they explicitly press `End`. The transcript scroll position resets to the top when switching selected tickets.\nIf the run is completed (done === true): if `report` is present, 'agb tui' remains interactive until 'q' is pressed, but 'status --watch' in TUI mode automatically exits. When exiting a completed run via 'q' or automatically, exit with code 2 if Object.keys(report.failed || {}).length > 0, otherwise 0. If `report` is missing or null when `done` is true, do not automatically exit (treat as live); if 'q' is pressed in this state, exit with code 0. If live, 'q' exits with 0. The tickets in the table should be ordered alphabetically by ticket ID. The first ticket is selected by default. If `tickets` is empty, no ticket is selected, vertical navigation keys (↑/↓) do nothing, and the transcript pane displays `(No tickets available)`.\nThis data is low-frequency JSON — no framework needed; ~400 lines of ANSI + a render loop.\nReader-only (never writes .booster/), degrades gracefully when events.jsonl is absent (event timeline pane shows 'events.jsonl not found'). \nThe TUI MUST dynamically recalculate layout dimensions and redraw when resized to a size that remains at or above 80x24.\n\nAcceptance criteria:\n- Live run renders all panes; 'done' shows final report state (TUI remains interactive in alt-screen mode).\n- Render functions pure and unit-tested (state → string frame); no test needs a TTY.\n- Core package still has exactly two runtime dependencies (@adlc/core and @adlc/antigravity).",
+      "scope": [
+        "bin/agb.mjs",
+        "lib/status.mjs",
+        "lib/tui.mjs",
+        "test/status.test.mjs",
+        "test/tui.test.mjs"
       ],
       "rails": [
         "lib/lock.mjs",

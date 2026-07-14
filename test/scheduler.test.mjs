@@ -479,3 +479,26 @@ test('runPlan: AC2 — the post-hoc rail check invokes adlc rails-guard with the
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('runPlan: passes the run project flag to builders and prosecutors', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-sched-state-'));
+  try {
+    await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    const argvSeen = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+    const matches = argvSeen.match(/--project/g) || [];
+    assert.equal(matches.length, 2, 'should invoke agy with project flag twice (builder + prosecutor)');
+    assert.match(argvSeen, /--project agb-run-[a-z0-9]+/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+

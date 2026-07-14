@@ -34,6 +34,37 @@ if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "models" ] && [ "$1"
   prompt=$(cat)
 fi
 
+is_expected=""
+case "$prompt" in
+  *"TICKET-DONE or TICKET-BLOCKED"*)
+    if echo "$prompt" | grep -q "Fix every finding"; then
+      is_expected="fix"
+    else
+      is_expected="build"
+    fi
+    ;;
+  *"You are a prosecutor"*)
+    if echo "$prompt" | grep -q "exactly one lens"; then
+      is_expected="review"
+    else
+      is_expected="prosecute"
+    fi
+    ;;
+esac
+
+if [ -n "$is_expected" ]; then
+  has_project=0
+  for arg in "$@"; do
+    if [ "$arg" = "--project" ]; then
+      has_project=1
+    fi
+  done
+  if [ "$has_project" -eq 0 ]; then
+    echo "Error: --project flag missing for $is_expected path" >&2
+    exit 33
+  fi
+fi
+
 # Reveal the env this invocation actually received (scheduler tests verify
 # ADLC_P4_ENFORCEMENT/ADLC_TICKET were passed to THIS spawn, not leaked
 # globally). Every non-plugin invocation gets a line, harmless when the vars

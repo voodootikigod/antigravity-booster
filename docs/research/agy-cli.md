@@ -72,3 +72,9 @@ needed for the common path.
 - **Directory addition:** `--add-dir` allows mounting additional directories into the workspace context.
 - **Permissions:** `--dangerously-skip-permissions` can auto-approve tools, while `permissions.allow` in `settings.json` allowlists commands for write actions.
 - **Tools:** Added `agy changelog` and plugin management (`agy plugin validate`, etc.).
+
+## Project Scoping and Isolation Probing (verified locally, v1.1.2)
+
+- **`--new-project` in `--print` mode:** Creates a new session-specific project context for the invocation. However, because `--print` mode runs non-interactively and exits, the project creation does not persist a JSON project file in `~/.gemini/config/projects/` or a SQLite database in `~/.gemini/antigravity-cli/conversations/`. It behaves ephemerally.
+- **`--project <name-or-id>`:** Accepts a string name directly, implicitly creating/resolving the project for the session if it doesn't already exist. In `--print` mode it runs without writing project config files to `~/.gemini/config/projects/` or creating SQLite databases unless the session is interactive.
+

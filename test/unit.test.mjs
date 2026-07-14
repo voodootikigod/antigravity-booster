@@ -190,6 +190,22 @@ test('runAgy: env option is scoped to this spawn only — process.env is never m
   }
 });
 
+test('runAgy: --project is passed when project is provided; omitted by default', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'agb-agy-argv-'));
+  const prevState = process.env.FAKE_STATE_DIR;
+  process.env.FAKE_STATE_DIR = state;
+  try {
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY });
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY, project: 'test-proj' });
+    const [defaultCall, projectCall] = readFileSync(join(state, 'agy-argv-seen'), 'utf8').trim().split('\n');
+    assert.ok(!defaultCall.includes('--project'), 'project option omitted by default — no --project flag');
+    assert.ok(projectCall.includes('--project test-proj'), 'project: "test-proj" passes --project test-proj');
+  } finally {
+    if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
 // --- pools ---
 
 test('PoolSet: caps enforced, waiters released, requests counted', async () => {
@@ -497,7 +513,8 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
       stdio: 'pipe',
       env: { ...process.env, ADLC_ANTIGRAVITY_PLUGIN_PATH: '', NODE_PATH: '' },
     }).toString().trim();
-    assert.equal(out, expected, 'unresolvable npm package falls back to the sibling checkout');
+    const norm = (p) => p.replace(/^\/private/, '');
+    assert.equal(norm(out), norm(expected), 'unresolvable npm package falls back to the sibling checkout');
   } finally {
     rmSync(isoRoot, { recursive: true, force: true });
   }
