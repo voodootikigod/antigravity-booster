@@ -30,7 +30,7 @@ for i in $(seq 1 $#); do
     break
   fi
 done
-if [ -z "$prompt" ]; then
+if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
   prompt=$(cat)
 fi
 
@@ -50,6 +50,17 @@ case "${FAKE_AGY_MODE:-}" in
   empty) exit 0 ;;
   server) echo "simulated server-side error" >&2; exit 1 ;;
 esac
+
+if [ "$1" = "--version" ]; then
+  echo "agy version 1.2.3"
+  exit 0
+fi
+
+if [ "$1" = "models" ]; then
+  echo "gemini-flash"
+  echo "claude"
+  exit 0
+fi
 
 case "$prompt" in
   *FAKE:TIMEOUT*) echo "Error: timed out waiting for response"; exit 0 ;;

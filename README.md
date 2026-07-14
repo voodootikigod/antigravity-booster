@@ -86,8 +86,15 @@ To route general `@adlc` tools through your Antigravity session and quota:
 export ADLC_PROVIDER=agy
 ```
 
-## Quickstart
+## Verify your setup
 
+You can verify that your environment is configured correctly by running:
+```sh
+npx agb doctor
+```
+This will run a diagnostic check and suggest fixes for any missing dependencies.
+
+## Quickstart
 **Plan in Antigravity, execute with agb.** Planning stays exactly where it
 already works: Antigravity's plan phase — the desktop app's plan mode or a
 planning conversation in an `agy` session. Both write the same brain
