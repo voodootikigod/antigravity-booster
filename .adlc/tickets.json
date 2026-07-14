@@ -1,25 +1,3 @@
 {
-  "tickets": [
-    {
-      "id": "W2-17",
-      "title": "[P1] fix: real --help/-h/help (exit 0, stdout) + per-command help",
-      "body": "Introduce a structured COMMANDS table (name, args, one-liner, extended help, flags) in bin/agb.mjs as the single source for dispatch + help. `agb`, `agb --help`, `agb -h`, `agb help` -> full usage on stdout, exit 0. `agb help <cmd>` and `agb <cmd> --help` -> per-command help, exit 0. Unknown command -> short usage + 'unknown command X' on stderr, exit 1.",
-      "scope": [
-          "bin/agb.mjs",
-          "test/cli.test.mjs"
-      ],
-      "rails": ["lib/lock.mjs", "lib/gates.mjs"],
-      "edges": []
-    },
-    {
-      "id": "W2-19",
-      "title": "[P2] chore: reconcile or delete install.sh",
-      "body": "Delete install.sh. one install story, owned by lib/bootstrap.mjs.",
-      "scope": [
-          "install.sh"
-      ],
-      "rails": ["lib/lock.mjs", "lib/gates.mjs"],
-      "edges": []
-    }
-  ]
+  "tickets": []
 }
