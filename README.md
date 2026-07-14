@@ -59,7 +59,7 @@ Before starting, ensure you have:
 - A **target git repository** on the plan's base branch with a clean working tree.
 
 ### Option A: Zero-Install (Recommended)
-Perfect for quick runs or ephemeral environments. This automatically downloads the package, installs the required `adlc-antigravity` plugin, and links booster's own skills:
+Perfect for quick runs or ephemeral environments. This automatically downloads the package and links booster's own skills. Currently, you must also provide the `adlc-antigravity` plugin locally (e.g. clone it and set `ADLC_ANTIGRAVITY_PLUGIN_PATH`), until it is published to npm:
 ```sh
 npx antigravity-booster bootstrap
 ```
