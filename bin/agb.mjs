@@ -1,26 +1,6 @@
 #!/usr/bin/env node
 // agb — Antigravity Booster orchestrator.
-//
-//   agb run <plan.json>          execute a ticket DAG (build → gate → prosecute → merge)
-//   agb sweep <sweep.json>       same operation × many targets, then run
-//   agb review [repo] [ref]      read-only lens fleet over a diff, loop-until-dry
-//   agb plan <id | spec.md> <repo> compile an Antigravity brain plan or spec file into plan.json
-//                                (convert → validate → overlap/coldstart/parallax
-//                                gates with feedback loop → advisory premortem;
-//                                flags: --out <file> --force --no-coldstart
-//                                --no-parallax --no-premortem)
-//   agb preflight <plan.json>    plan-time gates: scope overlap + coldstart
-//   agb doctor                   verify your environment and tools
-//   agb brains                   list Antigravity plan artifacts (GUI + agy sessions)
-//   agb import-brain <id> <repo> DEPRECATED: raw one-shot conversion (use agb plan)
-//   agb status [repo]            render the live dashboard for a repo's current run
-//                                (flags: --watch [--interval <ms>])
-//   agb probe [widths]           measure pool concurrency/latency, print JSON lines
-//   agb validate <plan>          validate a plan file without running anything
-//   agb bootstrap                wire ADLC skills into ~/.gemini/skills (aliases: setup, install)
-//
-// Exit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal
-// error.
+// agb — Antigravity Booster orchestrator.
 
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
@@ -39,6 +19,70 @@ import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 
 const [cmd, ...rest] = process.argv.slice(2);
+
+const COMMANDS = {
+  run: { args: '<plan.json>', desc: 'execute a ticket DAG (build → gate → prosecute → merge)' },
+  sweep: { args: '<sweep.json>', desc: 'same operation × many targets, then run' },
+  review: { args: '[repo] [ref]', desc: 'read-only lens fleet over a diff, loop-until-dry' },
+  plan: {
+    args: '<id | spec.md> <repo>',
+    desc: 'compile an Antigravity brain plan or spec file into plan.json',
+    extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
+    flags: '--out <file> --force --no-coldstart --no-parallax --no-premortem'
+  },
+  preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart' },
+  doctor: { args: '', desc: 'verify your environment and tools' },
+  brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
+  'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
+  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
+  probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
+  validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
+  bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' }
+};
+
+function printUsage() {
+  console.log('agb — Antigravity Booster orchestrator.\\n');
+  for (const [name, c] of Object.entries(COMMANDS)) {
+    const cmdStr = `  agb ${name} ${c.args}`.padEnd(45);
+    console.log(`${cmdStr} ${c.desc}`);
+    if (c.extended) console.log(`                                              ${c.extended}`);
+    if (c.flags) console.log(`                                              (flags: ${c.flags})`);
+  }
+  console.log('\\nExit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.');
+}
+
+function printCmdUsage(name) {
+  const c = COMMANDS[name];
+  console.log(`agb ${name} ${c.args}`);
+  console.log(`  ${c.desc}`);
+  if (c.extended) console.log(`  ${c.extended}`);
+  if (c.flags) console.log(`  Flags: ${c.flags}`);
+}
+
+if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
+  const target = rest[0];
+  if (cmd === 'help' && target && COMMANDS[target]) {
+    printCmdUsage(target);
+  } else {
+    printUsage();
+  }
+  process.exit(0);
+}
+
+if (rest.includes('--help') || rest.includes('-h')) {
+  const name = (cmd === 'setup' || cmd === 'install' || cmd === 'skills') ? 'bootstrap' : cmd;
+  if (COMMANDS[name]) {
+    printCmdUsage(name);
+    process.exit(0);
+  }
+}
+
+if (!COMMANDS[cmd] && cmd !== 'setup' && cmd !== 'install' && cmd !== 'skills') {
+  console.error(`agb: unknown command '${cmd}'\\n`);
+  console.error(`Usage: agb <command> ...`);
+  console.error(`Run 'agb --help' for a list of commands.`);
+  process.exit(1);
+}
 
 function loadPlan(path) {
   const plan = JSON.parse(readFileSync(path, 'utf8'));
@@ -234,7 +278,9 @@ try {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
   } else {
-    console.error('usage: agb bootstrap|plan|run|sweep|review|preflight|brains|status|validate|probe — see header of bin/agb.mjs');
+    console.error(`agb: unknown command '${cmd}'\\n`);
+    console.error(`Usage: agb <command> ...`);
+    console.error(`Run 'agb --help' for a list of commands.`);
     process.exit(1);
   }
 } catch (err) {
