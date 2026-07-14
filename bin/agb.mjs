@@ -38,7 +38,17 @@ import { PoolSet } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 
-const [cmd, ...rest] = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+let project;
+const filteredArgs = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === '--project') {
+    project = rawArgs[++i];
+  } else {
+    filteredArgs.push(rawArgs[i]);
+  }
+}
+const [cmd, ...rest] = filteredArgs;
 
 function loadPlan(path) {
   const plan = JSON.parse(readFileSync(path, 'utf8'));
@@ -57,13 +67,13 @@ try {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const report = await runPlan(plan);
+    const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === 'sweep') {
     const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
     if (spec.repo) spec.repo = resolve(spec.repo);
-    const plan = sweepToPlan(spec);
+    const plan = sweepToPlan(spec, { project });
     const errors = plan.tickets.flatMap(validateTicket);
     if (!plan.gate || (!plan.gate.build && !plan.gate.test)) errors.push('sweep.gate must declare build/test');
     if (errors.length) {
@@ -71,7 +81,7 @@ try {
       process.exit(1);
     }
     console.error(`sweep: ${plan.tickets.length} targets`);
-    const report = await runPlan(plan);
+    const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === 'review') {
@@ -82,7 +92,7 @@ try {
       console.error('review: empty diff — nothing to prosecute');
       process.exit(0);
     }
-    const result = await reviewFleet({ diff, pools: new PoolSet(), log: (m) => console.error(m) });
+    const result = await reviewFleet({ diff, pools: new PoolSet(), log: (m) => console.error(m), project });
     console.log(JSON.stringify(result, null, 2));
     if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
     const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
@@ -93,7 +103,7 @@ try {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart') });
+    const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart'), project });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
@@ -122,6 +132,7 @@ try {
       coldstart: !rest.includes('--no-coldstart'),
       parallax: !rest.includes('--no-parallax'),
       premortem: !rest.includes('--no-premortem'),
+      project,
     });
     console.log(JSON.stringify(result.report, null, 2));
     if (!result.ok) {
@@ -155,7 +166,7 @@ try {
       process.exit(1);
     }
     console.error('import-brain is deprecated — use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)');
-    const plan = await brainToPlan(id, { repo: resolve(repo) });
+    const plan = await brainToPlan(id, { repo: resolve(repo), project });
     console.log(JSON.stringify(plan, null, 2));
     console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
   } else if (cmd === 'status') {

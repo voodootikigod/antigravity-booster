@@ -546,7 +546,7 @@ test('bootstrap: agy plugin install invoked with the resolved plugin path', () =
   try {
     bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
     const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim();
-    assert.equal(installs, FAKE_PLUGIN, 'agy plugin install received the resolved plugin path');
+    assert.equal(installs, '.', 'agy plugin install received "." since it runs with cwd set to the resolved plugin path');
   } finally {
     if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
     rmSync(destDir, { recursive: true, force: true });
