@@ -22,80 +22,37 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 
 ## Command Reference
 
-`agb` is a command-line interface with several subcommands designed for verification, execution, review, and status tracking.
+`agb` provides subcommands grouped into four main workflows: Setup, Planning, Execution, and Monitoring.
 
-### `agb bootstrap` (aliases: `setup`, `install`)
-Installs the `adlc-antigravity` plugin (via `agy plugin install`) and links booster's own skills into `~/.gemini/skills`.
-- Resolves the plugin path via `ADLC_ANTIGRAVITY_PLUGIN_PATH`, or the `../adlc/plugins/adlc-antigravity` sibling-checkout convention by default. The plugin is unpublished (`private: true`) — unlike `@adlc/core`, which is a normal npm registry dependency.
-- Fails loudly, not silently, if `agy` isn't found, the plugin path is missing, or `agy plugin install` itself fails.
-- `--force` overwrites an existing (non-symlinked) skill install.
+### 🛠️ Setup & Diagnostics
+- **`agb bootstrap`** (aliases: `setup`, `install`)  
+  Installs the required `adlc-antigravity` plugin and links booster's skills. Use `--force` to overwrite existing skills. Fails loudly if `agy` is missing.
+- **`agb probe <concurrencies> [model]`**  
+  Measures pool latency and width limits (e.g., `agb probe 2,4,8`). Appends results to the calibration directory.
 
-### `agb plan <brain-id | spec.md> <repo> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]`
-Compiles an Antigravity plan artifact (GUI brain or agy session) or a raw local markdown spec file path into a gated, executable `plan.json`.
-- Finds the brain conversation by ID/prefix or loads the local spec file path directly.
-- Converts the plan to a ticket DAG with a frontier model, then loops it through plan gates, feeding each round of failures back into a re-conversion (bounded; deterministic failures retry up to 3 conversions, LLM-gate findings get one feedback round):
-  - **Structural** (deterministic, free): schema, duplicate IDs, DAG cycles, tier/pool routability, and a scope-overlap forecast between parallel tickets.
-  - **Coldstart** (cheap tier, per ticket): a fresh context lists everything missing to execute the ticket from its `body` alone. Gaps block.
-  - **Parallax** (cheap tier, per DAG edge — ADLC D3): N fresh contexts independently author the contract the dependent ticket may rely on; a judge diffs the readings. Measured divergence is contract ambiguity and blocks.
-  - **Premortem** (frontier, once, advisory — ADLC C2): "this run failed three months ago; write the postmortem." Causes are reported but never block.
-- On success, writes `plan.json` (refuses to overwrite an existing file without `--force`) stamped with `source` provenance naming the brain conversation, projects the ticket set into `.adlc/tickets.json`, runs `adlc model-router` to assign each ticket's deterministic tier (overwriting whatever the conversion's own free-form output guessed), and `adlc merge-forecast` to annotate `plan.concurrencyCap`. Both are additive evidence — an unavailable `adlc` CLI logs a warning and leaves the existing tier/no cap in place, it does not fail an otherwise-successful compile.
-- On blocking findings, exits `2` and prints the findings with remediation pointing at the plan in Antigravity or the local spec file.
-- **Exit codes:** `0` compiled and written; `2` blocking findings; `1` usage/internal error.
+### 🧠 Planning & Validation
+- **`agb brains`**  
+  Lists your Antigravity plan artifacts (from the GUI or `agy` sessions), newest first.
+- **`agb plan <brain-id | spec.md> <repo> [--out plan.json]`**  
+  Compiles a plan artifact into an executable `plan.json` ticket DAG. Runs deterministic gates (structural, coldstart, parallax, premortem) to catch errors early.
+- **`agb validate <plan.json>`**  
+  Checks JSON schema conformity, validates DAG structure (no cycles), and verifies model routability.
+- **`agb preflight <plan.json>`**  
+  Forecasts scope overlaps between parallel tickets and runs coldstart latency checks.
 
-### `agb brains`
-Lists Antigravity plan artifacts (from the desktop app or agy sessions), newest first.
-- Shows the conversation ID, date, and plan title for anything containing `implementation_plan.md` or `task.md`.
+### 🚀 Execution
+- **`agb run <plan.json>`**  
+  Executes the ticket DAG. Dispatches workers in isolated worktrees, runs sandboxed L2 gates, orchestrates cross-model prosecution, and sequentially rebases/merges passing work. Reverts if the post-merge gate fails.
+- **`agb sweep <sweep.json>`**  
+  Runs a fan-out sweep. Applies a single instruction across dozens of targets concurrently (e.g., "Add JSDoc to every file").
+- **`agb review <repo> [ref]`**  
+  Deploys a read-only fleet of models to audit changes. Loops until dry (no new critical/high findings).
 
-### `agb validate <plan.json>`
+### 📊 Monitoring
+- **`agb status <repo>`**  
+  Displays a live dashboard of an ongoing run (shows active workers, queues, and request counts).
 
-### `agb validate <plan.json>`
-Validates a plan file before running.
-- Checks JSON schema conformity.
-- Validates that the dependency structure is a directed acyclic graph (DAG) (i.e., no cycles).
-- Validates model routability (checks that the requested `tier` and `pool_hint` mapping can be routed to an actual model pool).
-- **Exit codes:** `0` if valid; `2` if validation fails.
-
-### `agb preflight <plan.json>`
-Performs preflight checks to forecast conflicts and verify environment readiness.
-- Predicts scope overlaps between independent parallel branches.
-- Executes coldstart latency checks for all configured model pools.
-- **Exit codes:** `0` if successful; `2` if check fails.
-
-### `agb run <plan.json>`
-Executes a ticket DAG from `plan.json`.
-- Dispatches workers in separate git worktrees under `.worktrees/`.
-- Executes sandboxed build and test commands (L2 gates).
-- Runs cross-model prosecution reviews on generated diffs.
-- Sequentially rebases and merges passing work to the target base branch on `main`.
-- Reverts to the previous HEAD if the post-merge gate fails.
-- **Exit codes:** `0` if all tickets are merged successfully; `2` if gates fail, critical bugs are found, or tickets exhaust their retry limits.
-
-### `agb sweep <sweep.json>`
-Runs a fan-out sweep across many targets.
-- Used when you need to apply the exact same instruction (e.g., "Add JSDoc to every file") across dozens of files.
-- Automatically generates cheap-tier tickets for each target with disjoint file scopes.
-- Executes them concurrently, observing pool concurrency limits.
-- **Exit codes:** `0` if all sweep targets are processed and merged; `2` if any fail.
-
-### `agb review <repo> [ref]`
-Deploys a read-only fleet of models to audit changes.
-- Analyzes the diff in a repository at a given reference (defaults to HEAD).
-- Iteratively reviews the code and loops until dry (runs until no new critical/high findings are generated).
-- **Exit codes:** `0` if no critical/high issues are found; `2` if findings block approval.
-
-### `agb import-brain <id> <repo>` (deprecated)
-Raw one-shot conversion of a brain artifact to `plan.json` on stdout, with no plan gates, no feedback loop, and no provenance. Use `agb plan` instead.
-
-### `agb status <repo>`
-Displays a live dashboard of an ongoing run.
-- Reads state from `.booster/run.json` inside the target repository.
-- Shows active workers, active phases, models in use, current queues, and accumulated request counts per pool.
-
-### `agb probe <concurrencies> [model]`
-Measures pool latency and width limits.
-- Examples: `agb probe 2,4,8` or `agb probe 4 gemini-3.5-flash-low`.
-- Tests concurrency thresholds by firing parallel sentinel prompts and verifying outputs and times.
-- Appends results as an updated markdown file in the calibration directory.
+*(Note: `agb import-brain` is deprecated. Use `agb plan` instead.)*
 
 ---
 

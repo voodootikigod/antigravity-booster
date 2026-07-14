@@ -1,71 +1,46 @@
-# Fumadocs Migration Plan for Antigravity Booster
+# Fumadocs Migration Plan
 
-This document outlines the plan to migrate the existing markdown documentation into a robust, interactive, and highly polished developer portal using [Fumadocs](https://fumadocs.dev/).
+This document outlines the strategy for migrating the `antigravity-booster` documentation from flat Markdown files to a structured, interactive documentation site powered by [Fumadocs](https://fumadocs.vercel.app/).
 
-## 🎯 Objectives
-1. **Elevate the Developer Experience (DX):** Create a beautiful, easy-to-navigate documentation website.
-2. **Focus on Onboarding:** Highlight "How to Install", "How to Use", and "Quickstart" so developers can get up and running instantly.
-3. **Organize Deep-Dives:** Structure the ADLC doctrine, architecture tradeoffs, and research calibration into an intuitive sidebar hierarchy.
-4. **Adhere to ADLC:** Execute this migration via strict tickets in `.adlc/tickets.json`.
+## Why Fumadocs?
+- **Next.js App Router Support:** Modern, fast, and highly customizable.
+- **MDX Support:** Allows embedding interactive React components in our documentation (e.g., interactive CLI explorers, live configuration testers).
+- **Built-in Search:** Powerful text search out of the box.
+- **Great DX and UX:** Superior navigation, TOC generation, and dark mode support.
 
-## 📂 Proposed Content Structure
+## Migration Strategy
 
-Fumadocs uses file-system-based routing with MDX. We will map the current flat structure to a hierarchical one:
+### Phase 1: Setup and Foundation
+1. **Initialize Next.js App:**
+   - Create a `website` directory at the root of the repository.
+   - Run `npx create-next-app` inside `website` and follow the Fumadocs setup guide to integrate `fumadocs-ui` and `fumadocs-core`.
+2. **Establish Information Architecture (IA):**
+   - **Getting Started:** Installation, Quickstart, ADLC Core Concepts.
+   - **Core Guides:** Execution Walkthroughs, Configuration.
+   - **Reference:** CLI Command Reference, API Reference, Error Codes.
+   - **Internal Doctrine:** AGENTS.md, Guidelines, Research.
 
-```text
-website/content/docs/
-├── index.mdx                  # Overview & Features (from README.md)
-├── getting-started/
-│   ├── install.mdx            # Expanded "How to Install"
-│   └── quickstart.mdx         # End-to-end "How to Use" & Walkthrough
-├── reference/
-│   ├── cli.mdx                # Command Reference (from docs/usage.md)
-│   ├── plan-schema.mdx        # plan.json & sweep.json schemas
-│   └── env-vars.mdx           # Environment Variables
-├── architecture/
-│   ├── adlc-doctrine.mdx      # ADLC P0-P7 (from docs/guidelines.md)
-│   ├── execution-gates.mdx    # Gates & Cross-Model Prosecution
-│   └── design-tradeoffs.mdx   # Design tradeoffs & repo locks
-└── research/
-    ├── platform-findings.mdx  # agy CLI findings (from docs/research)
-    └── calibration.mdx        # Probes & Limits (from docs/calibration)
-```
+### Phase 2: Content Porting
+1. **Migrate Existing Markdown:**
+   - Port `README.md` (Installation and Quickstart) into the *Getting Started* section.
+   - Port `docs/usage.md` into the *Reference / CLI Reference* section.
+   - Port `docs/guidelines.md` and `AGENTS.md` into the *Internal Doctrine* section.
+   - Port `docs/execution-example.md` into the *Core Guides* section.
+2. **Refactor Content:**
+   - Utilize Fumadocs UI components like Callouts, Tabs (e.g., for showing `npm` vs `npx` install instructions), and Steps.
+   - Ensure links between pages are updated to relative routes within the Fumadocs structure.
 
-## 🛠️ Step-by-Step Implementation
+### Phase 3: CI/CD Integration
+1. **Automated Deployments:**
+   - Configure a GitHub Actions workflow to build and deploy the `website` directory to Vercel or GitHub Pages on pushes to `main`.
+2. **Linting and Validation:**
+   - Add a step in the CI pipeline to run `npm run build` inside `website` to catch broken links and MDX syntax errors before merging PRs.
 
-### Phase 1: Fumadocs Setup & Scaffolding
-- Initialize a new Fumadocs Next.js application in a `website/` (or `docs-site/`) subdirectory.
-- Configure Tailwind CSS with a sleek, dark-mode-first aesthetic matching the Antigravity brand.
-- Setup the basic navigation and layout structure.
+### Phase 4: Deprecation of Legacy Docs
+1. **Update Repository Root Docs:**
+   - Replace the heavy content in the root `README.md` with a clean, concise summary of the project and a direct link to the new Fumadocs documentation site.
+   - Remove the `docs/` directory from the repository root (excluding items that must remain, like `AGENTS.md` if mandated by ADLC).
 
-### Phase 2: Content Migration & MDX Enhancements
-- Port existing markdown content into the `website/content/docs` structure.
-- **Enhance "How to Install":** Add Fumadocs `<Tabs>` to show different install methods (npx, global, source) clearly.
-- **Enhance "How to Use":** Add interactive code blocks, `<Callout>` components for warnings (like sandbox requirements), and Mermaid.js diagrams for the execution flow.
-- Add `<Steps>` component for the Quickstart walkthrough.
-
-### Phase 3: CI/CD & Deployment
-- Set up a GitHub Actions workflow to build and deploy the `website/` directory to GitHub Pages or Vercel on push to `main`.
-
-## 🎫 ADLC Tickets
-
-To execute this, the following tickets should be added to `.adlc/tickets.json`:
-
-1. **`DOC-1`: Setup Fumadocs framework**
-   - **Body:** Initialize Fumadocs in `website/` using Next.js. Configure `fumadocs-ui`, layout, and basic theme. Set up the `content/docs` structure.
-   - **Scope:** `website/**`
-
-2. **`DOC-2`: Migrate Onboarding Docs**
-   - **Body:** Create `getting-started/install.mdx` and `getting-started/quickstart.mdx` using MDX components (Tabs, Steps).
-   - **Scope:** `website/content/docs/getting-started/**`
-   - **Edges:** Depends on `DOC-1`
-
-3. **`DOC-3`: Migrate Reference & Architecture Docs**
-   - **Body:** Migrate `docs/usage.md` and `docs/guidelines.md` into MDX pages under `reference/` and `architecture/`. Add Mermaid diagrams for the Execution Gates.
-   - **Scope:** `website/content/docs/reference/**`, `website/content/docs/architecture/**`
-   - **Edges:** Depends on `DOC-1`
-
-4. **`DOC-4`: Deployment Configuration**
-   - **Body:** Add a GitHub Actions workflow `.github/workflows/docs.yml` to build and deploy the Next.js static export.
-   - **Scope:** `.github/workflows/docs.yml`, `website/next.config.mjs`
-   - **Edges:** Depends on `DOC-1`
+## Next Steps
+- Open a ticket to initialize the Next.js/Fumadocs skeleton in the `website/` directory.
+- Define the `meta.json` structure to reflect the proposed IA.
