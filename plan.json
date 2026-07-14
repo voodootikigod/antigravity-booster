@@ -1,4 +1,9 @@
 {
+  "repo": "/Users/voodootikigod/Projects/antigravity-booster",
+  "base": "main",
+  "gate": {
+    "test": "npm test"
+  },
   "tickets": [
     {
       "id": "ISSUE-26",
