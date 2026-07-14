@@ -14,6 +14,7 @@
 //   agb brains                   list Antigravity plan artifacts (GUI + agy sessions)
 //   agb import-brain <id> <repo> DEPRECATED: raw one-shot conversion (use agb plan)
 //   agb status [repo]            render the live dashboard for a repo's current run
+//                                (flags: --watch [--interval <ms>])
 //   agb probe [widths]           measure pool concurrency/latency, print JSON lines
 //   agb validate <plan>          validate a plan file without running anything
 //   agb bootstrap                wire ADLC skills into ~/.gemini/skills (aliases: setup, install)
@@ -158,7 +159,19 @@ try {
     console.log(JSON.stringify(plan, null, 2));
     console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
   } else if (cmd === 'status') {
-    console.log(renderStatus(resolve(rest[0] ?? '.')));
+    const isWatch = rest.includes('--watch');
+    let intervalMs = 1000;
+    const iIdx = rest.indexOf('--interval');
+    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
+    const positional = rest.filter((r, i) => !r.startsWith('--') && rest[i - 1] !== '--interval');
+    
+    if (isWatch) {
+      const { watchStatus } = await import('../lib/status.mjs');
+      const code = await watchStatus(resolve(positional[0] ?? '.'), intervalMs);
+      process.exitCode = code;
+    } else {
+      console.log(renderStatus(resolve(positional[0] ?? '.')));
+    }
   } else if (cmd === 'doctor') {
     process.exitCode = await runDoctor();
   } else if (cmd === 'validate') {
