@@ -21,7 +21,18 @@ if [ "$1" = "plugin" ]; then
   esac
 fi
 
-prompt=$(cat)
+prompt=""
+for i in $(seq 1 $#); do
+  eval arg=\$$i
+  if [ "$arg" = "--print" ]; then
+    next=$((i+1))
+    eval prompt=\$$next
+    break
+  fi
+done
+if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
+  prompt=$(cat)
+fi
 
 # Reveal the env this invocation actually received (scheduler tests verify
 # ADLC_P4_ENFORCEMENT/ADLC_TICKET were passed to THIS spawn, not leaked
@@ -35,7 +46,21 @@ fi
 # Global failure injection (any role): simulate a model/transport error.
 case "${FAKE_AGY_MODE:-}" in
   fail) echo "boom: simulated agy failure" >&2; exit 1 ;;
+  timeout) echo "Error: timed out waiting for response"; exit 0 ;;
+  empty) exit 0 ;;
+  server) echo "simulated server-side error" >&2; exit 1 ;;
 esac
+
+if [ "$1" = "--version" ]; then
+  echo "agy version 1.2.3"
+  exit 0
+fi
+
+if [ "$1" = "models" ]; then
+  echo "gemini-flash"
+  echo "claude"
+  exit 0
+fi
 
 case "$prompt" in
   *FAKE:TIMEOUT*) echo "Error: timed out waiting for response"; exit 0 ;;

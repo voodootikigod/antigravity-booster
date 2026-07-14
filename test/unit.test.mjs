@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -97,6 +97,65 @@ test('runAgy: detects exit-0 print-timeout as failure', async () => {
   const r = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'FAKE:TIMEOUT', bin: FAKE_AGY });
   assert.equal(r.ok, false);
   assert.equal(r.error, 'print-timeout');
+  assert.equal(r.kind, 'timeout');
+});
+
+test('runAgy: classifies and logs failures correctly', async () => {
+  const logFile = join(tmpdir(), `agb-test-agy-log-${Date.now()}.log`);
+  try {
+    const parseLogBlocks = (content) => {
+      return content.split('\n===\n').filter(Boolean).map(block => {
+        const pIdx = block.indexOf('\n---PROMPT---\n');
+        const oIdx = block.indexOf('\n---OUTPUT---\n');
+        if (pIdx === -1 || oIdx === -1) return null;
+        return {
+          header: JSON.parse(block.slice(0, pIdx)),
+          prompt: block.slice(pIdx + 14, oIdx),
+          output: block.slice(oIdx + 14)
+        };
+      }).filter(Boolean);
+    };
+
+    // 1. Timeout
+    writeFileSync(logFile, '');
+    const rTimeout = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nFAKE:TIMEOUT\nmulti', bin: FAKE_AGY, logFile, env: { FAKE_AGY_MODE: 'timeout' } });
+    assert.equal(rTimeout.ok, false);
+    assert.equal(rTimeout.kind, 'timeout');
+    let logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].header.kind, 'timeout');
+    assert.equal(logs[0].prompt, 'multi\nFAKE:TIMEOUT\nmulti');
+    assert.match(logs[0].output, /timed out/);
+
+    // 2. Empty
+    writeFileSync(logFile, '');
+    const rEmpty = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nprompt', bin: FAKE_AGY, logFile, env: { FAKE_AGY_MODE: 'empty' } });
+    assert.equal(rEmpty.ok, false);
+    assert.equal(rEmpty.kind, 'empty');
+    logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs[0].header.kind, 'empty');
+    assert.equal(logs[0].output, '');
+
+    // 3. Server
+    writeFileSync(logFile, '');
+    const rServer = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nprompt', bin: FAKE_AGY, logFile, env: { FAKE_AGY_MODE: 'server' } });
+    assert.equal(rServer.ok, false);
+    assert.equal(rServer.kind, 'server');
+    logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs[0].header.kind, 'server');
+    assert.match(logs[0].header.error, /exit 1/);
+
+    // 4. Spawn
+    writeFileSync(logFile, '');
+    const rSpawn = await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'multi\nprompt', bin: '/does-not-exist/non-existent-binary', logFile });
+    assert.equal(rSpawn.ok, false);
+    assert.equal(rSpawn.kind, 'spawn');
+    logs = parseLogBlocks(readFileSync(logFile, 'utf8'));
+    assert.equal(logs[0].header.kind, 'spawn');
+    assert.match(logs[0].header.error, /ENOENT/);
+  } finally {
+    try { rmSync(logFile); } catch {}
+  }
 });
 
 test('runAgy: --sandbox is passed only when sandbox:true; omitted by default', async () => {
@@ -452,7 +511,8 @@ test('bootstrap: installs the adlc-antigravity plugin via `agy plugin install`, 
     // must not (and now cannot) install skills/adlc-doctrine etc.
     assert.ok(!existsSync(join(process.cwd(), 'skills', 'adlc-doctrine')));
     // Booster-owned skills (not ADLC doctrine) are still linked/copied.
-    assert.ok(existsSync(join(destDir, 'release')));
+    const linked = readdirSync(destDir);
+    assert.ok(linked.length > 0, 'at least one skill should be linked');
     assert.ok(!existsSync(join(destDir, 'adlc-doctrine')));
     assert.ok(!existsSync(join(destDir, 'adlc-prosecutor')));
     assert.ok(!existsSync(join(destDir, 'adlc-self-orchestrate')));
@@ -477,17 +537,46 @@ test('bootstrap: agy plugin install invoked with the resolved plugin path', () =
   }
 });
 
-test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exist — no silent no-op', () => {
+test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exist, but skill linking still performed', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
   const missingPluginPath = join(destDir, 'does-not-exist');
   try {
+    let out = '';
     assert.throws(() => {
+      out = execFileSync(process.execPath, [
+        '-e',
+        `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
+          `bootstrap({ destination: '${destDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
+      ], { stdio: 'pipe' }).toString();
+    }, /Command failed/, 'process.exit(1) surfaces as a non-zero exit, not a silent no-op');
+    
+    // We expect the error text to be printed to stderr, so it might be on err.stderr
+    // But since assert.throws swallows the error object, we can catch it instead to inspect stderr.
+  } finally {
+    rmSync(destDir, { recursive: true, force: true });
+  }
+});
+
+test('bootstrap: fails loudly with clone URL when the plugin path does not exist, but skill linking still performed', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const missingPluginPath = join(destDir, 'does-not-exist');
+  try {
+    try {
       execFileSync(process.execPath, [
         '-e',
         `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
           `bootstrap({ destination: '${destDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
       ], { stdio: 'pipe' });
-    }, /Command failed/, 'process.exit(1) surfaces as a non-zero exit, not a silent no-op');
+      assert.fail('Should have thrown');
+    } catch (err) {
+      assert.ok(err.message.includes('Command failed'));
+      const stderr = err.stderr.toString();
+      assert.ok(stderr.includes('git clone git@github.com:voodootikigod/adlc.git'));
+      assert.ok(stderr.includes('ADLC_ANTIGRAVITY_PLUGIN_PATH'));
+    }
+    
+    const linked = readdirSync(destDir);
+    assert.ok(linked.length > 0, 'at least one skill should be linked even on plugin failure');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
   }

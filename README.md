@@ -59,7 +59,7 @@ Before starting, ensure you have:
 - A **target git repository** on the plan's base branch with a clean working tree.
 
 ### Option A: Zero-Install (Recommended)
-Perfect for quick runs or ephemeral environments. This automatically downloads the package, installs the required `adlc-antigravity` plugin, and links booster's own skills:
+Perfect for quick runs or ephemeral environments. This automatically downloads the package and links booster's own skills. Currently, you must also provide the `adlc-antigravity` plugin locally (e.g. clone it and set `ADLC_ANTIGRAVITY_PLUGIN_PATH`), until it is published to npm:
 ```sh
 npx antigravity-booster bootstrap
 ```
@@ -86,8 +86,15 @@ To route general `@adlc` tools through your Antigravity session and quota:
 export ADLC_PROVIDER=agy
 ```
 
-## Quickstart
+## Verify your setup
 
+You can verify that your environment is configured correctly by running:
+```sh
+npx agb doctor
+```
+This will run a diagnostic check and suggest fixes for any missing dependencies.
+
+## Quickstart
 **Plan in Antigravity, execute with agb.** Planning stays exactly where it
 already works: Antigravity's plan phase — the desktop app's plan mode or a
 planning conversation in an `agy` session. Both write the same brain
