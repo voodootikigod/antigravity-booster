@@ -48,21 +48,14 @@ const quiet = { log: () => {} };
 // railPreconditions fails CLOSED on ANY such error — denying every structured
 // write for the whole build, not just rail paths. Returns the plugin's error list.
 function pluginValidationErrors(data) {
-  const tickets = data.tickets ?? [];
+  if (!Array.isArray(data?.tickets)) return ['Root must be { tickets: [] }'];
+  if (data.tickets.length !== 1) return ['Tickets array must have exactly one element'];
+  const t = data.tickets[0];
+  if (!t.id || typeof t.id !== 'string') return ['Ticket missing string id'];
+  if (!t.title || typeof t.title !== 'string') return ['Ticket missing string title'];
   const errors = [];
-  const seen = new Set();
-  for (const t of tickets) {
-    if (!t.id || typeof t.id !== 'string') errors.push('missing string id');
-    else {
-      if (seen.has(t.id)) errors.push(`duplicate ticket id: ${t.id}`);
-      seen.add(t.id);
-    }
-    if (!t.title || typeof t.title !== 'string') errors.push(`${t.id ?? '?'}: missing string title`);
-  }
-  for (const t of tickets) {
-    for (const e of t.edges ?? []) {
-      if (e.to && !seen.has(e.to)) errors.push(`${t.id}: edge to unknown ticket ${e.to}`);
-    }
+  for (const e of t.edges ?? []) {
+    if (!data.tickets.some((x) => x.id === e.to)) errors.push(`Dangling edge to ${e.to}`);
   }
   return errors;
 }
