@@ -170,10 +170,10 @@ artifact it produces. Think of `implementation_plan.md` as source and
 3. Watch and read results:
 
    ```sh
-   agb status /path/to/target-repo    # live dashboard from .booster/run.json
+   agb status /path/to/target-repo    # live full-screen TUI dashboard (from events.jsonl)
    ```
 
-   Per-ticket transcripts land in `.booster/logs/<run-id>/`, the final
+   Per-ticket transcripts land in `.booster/logs/<run-id>/<ticketId>.jsonl`, the final
    report (merged/failed/per-pool request counts) in
    `.booster/report.json` and on stdout. Exit codes everywhere:
    **0** all merged, **2** gate failure / findings / failed tickets,
@@ -197,7 +197,7 @@ agb preflight plan.json        # plan gates: scope-overlap forecast + coldstart
 agb run plan.json              # build → gate → prosecute → merge; exit 0/2
 agb sweep sweep.json           # same operation × many targets (cheap tier)
 agb review /repo [ref]         # read-only lens fleet, loop-until-dry; exit 0/2
-agb status /path/repo          # live dashboard (.booster/run.json)
+agb status /path/repo          # live full-screen TUI dashboard (events.jsonl)
 agb probe 2,4,8 [model]        # measure pool width/latency, append docs/calibration
 agb import-brain <id> /repo    # DEPRECATED: raw one-shot conversion (use agb plan)
 ```

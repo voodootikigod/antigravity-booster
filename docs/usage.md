@@ -42,7 +42,7 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 
 ### 🚀 Execution
 - **`agb run <plan.json>`**  
-  Executes the ticket DAG. Dispatches workers in isolated worktrees, runs sandboxed L2 gates, orchestrates cross-model prosecution, and sequentially rebases/merges passing work. Reverts if the post-merge gate fails.
+  Executes the ticket DAG. Dispatches workers in isolated worktrees, assigns each worker a dedicated project isolation boundary (e.g. `--project "agb-<runId>-<ticketId>"`), runs sandboxed L2 gates, orchestrates cross-model prosecution, and sequentially rebases/merges passing work. Reverts if the post-merge gate fails.
 - **`agb sweep <sweep.json>`**  
   Runs a fan-out sweep. Applies a single instruction across dozens of targets concurrently (e.g., "Add JSDoc to every file").
 - **`agb review <repo> [ref]`**  
