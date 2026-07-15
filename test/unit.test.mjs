@@ -417,6 +417,45 @@ test('worktrees: create → edit → commit → diff → merge lifecycle', () =>
   }
 });
 
+// Two tickets touching one file is the expected case in a parallel orchestrator,
+// not an exotic one. The guard has two jobs: escalate (throw), and leave the
+// worktree usable (rebase --abort). A worktree stranded mid-rebase would let the
+// next operation commit conflict markers into base, so both are asserted.
+test('mergeWorktree: a rebase conflict throws and leaves no rebase in progress', () => {
+  const { dir, g } = makeRepo();
+  try {
+    writeFileSync(join(dir, 'shared.txt'), 'base\n');
+    g('add', '-A'); g('commit', '-qm', 'add shared');
+
+    // Ticket branches off, edits the shared file.
+    const wt = createWorktree(dir, 'T7', 'main');
+    writeFileSync(join(wt, 'shared.txt'), 'ticket side\n');
+    assert.equal(commitAll(wt, 'T7: edit shared'), true);
+
+    // main moves underneath it, editing the same line differently.
+    writeFileSync(join(dir, 'shared.txt'), 'main side\n');
+    g('add', '-A'); g('commit', '-qm', 'main edits shared');
+
+    assert.throws(
+      () => mergeWorktree(dir, wt, 'T7', 'main'),
+      /rebase conflict for T7/,
+      'a conflict must escalate, not merge silently'
+    );
+
+    // rebase --abort ran: git reports no rebase in progress and the worktree is
+    // back on its own branch with its own content, not a half-applied state.
+    const rebaseDir = execFileSync('git', ['rev-parse', '--git-path', 'rebase-merge'], { cwd: wt, encoding: 'utf8' }).trim();
+    const rebaseApply = execFileSync('git', ['rev-parse', '--git-path', 'rebase-apply'], { cwd: wt, encoding: 'utf8' }).trim();
+    assert.equal(existsSync(join(wt, rebaseDir)) || existsSync(join(wt, rebaseApply)), false, 'worktree left mid-rebase');
+    assert.equal(readFileSync(join(wt, 'shared.txt'), 'utf8'), 'ticket side\n', 'worktree content restored');
+
+    // base is untouched — the conflicting ticket did not land.
+    assert.equal(readFileSync(join(dir, 'shared.txt'), 'utf8'), 'main side\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('createWorktree: reclaims a leftover branch from a prior run (no crash)', () => {
   const { dir, g } = makeRepo();
   try {
