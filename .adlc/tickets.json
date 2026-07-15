@@ -57,6 +57,16 @@
       ],
       "rails": [],
       "edges": []
+    },
+    {
+      "id": "T5",
+      "title": "[P2] test: fix CI failure by setting git author identity in test repo",
+      "body": "Configure user.name and user.email in the temporary git repository created in test/unit.test.mjs during the 'compilePlan and runPlan' test to prevent git commit failures in CI environments.",
+      "scope": [
+        "test/unit.test.mjs"
+      ],
+      "rails": [],
+      "edges": []
     }
   ]
 }
