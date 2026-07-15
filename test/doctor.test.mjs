@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir } from '../lib/doctor.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { writeFileSync, chmodSync, rmSync, mkdirSync } from 'fs';
+import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
 
 test('checkNodeVersion: passes on v18+', async () => {
   const res = await checkNodeVersion();
@@ -42,6 +42,34 @@ test('checkSandbox: bypassed via env', async () => {
 test('checkSandbox: fails on unsupported platform without bypass', async () => {
   const res = await checkSandbox({ env: {}, platform: 'win32' });
   assert.equal(res.level, 'fail');
+});
+
+test('checkSandbox: linux passes if bwrap is present', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-test-'));
+  try {
+    writeFileSync(join(dir, 'which'), '#!/bin/sh\nexit 0');
+    chmodSync(join(dir, 'which'), 0o755);
+    writeFileSync(join(dir, 'bwrap'), '#!/bin/sh\nexit 0');
+    chmodSync(join(dir, 'bwrap'), 0o755);
+    const res = await checkSandbox({ env: { PATH: dir }, platform: 'linux' });
+    assert.equal(res.level, 'pass');
+    assert.equal(res.detail, 'bwrap available');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkSandbox: linux fails if bwrap is missing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-nobwrap-test-'));
+  try {
+    writeFileSync(join(dir, 'which'), '#!/bin/sh\nif [ "$1" = "bwrap" ]; then exit 1; fi\nexit 0');
+    chmodSync(join(dir, 'which'), 0o755);
+    const res = await checkSandbox({ env: { PATH: dir }, platform: 'linux' });
+    assert.equal(res.level, 'fail');
+    assert.ok(res.detail.includes('bwrap missing'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('checkBrainDir: passes when dir exists', async () => {

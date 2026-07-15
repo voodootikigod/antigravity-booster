@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { isAgyTimeout } from '../lib/agy.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 import { prosecutionPrompt } from '../lib/charters.mjs';
-import { sandboxProfile, gateSandboxEnabled, runGate } from '../lib/gates.mjs';
+import { sandboxProfile, gateSandboxEnabled, gateSandboxAvailable, runGate, linuxBwrapArgs } from '../lib/gates.mjs';
 import { regenPrompt } from '../lib/charters.mjs';
 import { acquireRepoLock } from '../lib/lock.mjs';
 import { RunStatus } from '../lib/status.mjs';
@@ -471,5 +471,46 @@ test('runGate: fails closed when sandbox requested but unavailable, unless expli
     }
   } finally {
     rmSync(wt, { recursive: true, force: true });
+  }
+});
+
+test('gateSandboxAvailable: returns true on darwin and linux', () => {
+  const origPlatform = process.platform;
+  try {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    assert.equal(gateSandboxAvailable(), true);
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    assert.equal(gateSandboxAvailable(), true);
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    assert.equal(gateSandboxAvailable(), false);
+  } finally {
+    Object.defineProperty(process, 'platform', { value: origPlatform });
+  }
+});
+
+test('linuxBwrapArgs: binds temp dir properly', () => {
+  const cwd = '/tmp/cwd';
+  const args = linuxBwrapArgs(cwd, 'echo hi');
+  assert.ok(args.includes('/tmp'));
+});
+
+test('runGate: captures unprivileged namespaces bwrap failure on linux', async () => {
+  const origPlatform = process.platform;
+  try {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const wt = mkdtempSync(join(tmpdir(), 'agb-fail-namespace-'));
+    const fakeBwrapDir = mkdtempSync(join(tmpdir(), 'agb-fakebwrap-'));
+    writeFileSync(join(fakeBwrapDir, 'bwrap'), '#!/bin/sh\necho "bwrap: unprivileged user namespaces are not available"\nexit 1');
+    chmodSync(join(fakeBwrapDir, 'bwrap'), 0o755);
+    try {
+      const r = await runGate('test', 'echo hi', wt, { sandbox: true, env: { PATH: fakeBwrapDir + ':' + process.env.PATH, AGB_SANDBOX_GATES: '1' } });
+      assert.equal(r.ok, false);
+      assert.ok(r.output.includes('Your Linux distribution might restrict unprivileged user namespaces'));
+    } finally {
+      rmSync(wt, { recursive: true, force: true });
+      rmSync(fakeBwrapDir, { recursive: true, force: true });
+    }
+  } finally {
+    Object.defineProperty(process, 'platform', { value: origPlatform });
   }
 });
