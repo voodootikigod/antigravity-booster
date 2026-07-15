@@ -1,25 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { watchStatus } from '../lib/status.mjs';
+import { watchStatus, RunStatus } from '../lib/status.mjs';
 
 test('watchStatus: exits with 0 on clean completion', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-watch-'));
-  const bdir = join(dir, '.booster');
-  mkdirSync(bdir, { recursive: true });
+  const s = new RunStatus(dir, 'test-run-123');
+  s.flush(); // ensure run.json exists
   
-  const path = join(bdir, 'run.json');
-  
-  // Start watcher first
+  // Start watcher
   const watchP = watchStatus(dir, 100);
   
   // Write a done state
-  writeFileSync(path, JSON.stringify({
-    done: true,
-    report: { failed: {}, merged: ['T1'] }
-  }));
+  s.report({ failed: {}, merged: ['T1'], requests: {} });
+  await s.writePromise;
   
   try {
     const code = await watchP;
@@ -31,19 +27,15 @@ test('watchStatus: exits with 0 on clean completion', async () => {
 
 test('watchStatus: exits with 2 on failure completion', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-watch-'));
-  const bdir = join(dir, '.booster');
-  mkdirSync(bdir, { recursive: true });
-  
-  const path = join(bdir, 'run.json');
+  const s = new RunStatus(dir, 'test-run-456');
+  s.flush(); // ensure run.json exists
   
   // Start watcher
   const watchP = watchStatus(dir, 100);
   
   // Write a failed state
-  writeFileSync(path, JSON.stringify({
-    done: true,
-    report: { failed: { T1: 'reason' }, merged: [] }
-  }));
+  s.report({ failed: { T1: 'reason' }, merged: [], requests: {} });
+  await s.writePromise;
   
   try {
     const code = await watchP;
