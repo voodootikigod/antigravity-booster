@@ -154,20 +154,6 @@
       ],
       "rails": [],
       "edges": []
-    },
-    {
-      "id": "SANDBOX-LINUX",
-      "title": "Evaluate Linux sandbox functionality for Ubuntu",
-      "body": "Evaluate ways to bring the macOS sandbox functionality to Ubuntu Linux. Research mechanisms like AppArmor, seccomp, bwrap (Bubblewrap), or Firejail that provide analogous capabilities to the macOS sandbox profile. The goal is to achieve similar operational ease and security benefits for the Antigravity toolkit. Document the findings, trade-offs, and a proposed implementation plan in docs/research/linux-sandbox.md.\n\nImplementation Decisions:\n- Adopt `bubblewrap` (`bwrap`) as the Linux sandbox engine.\n- Fail closed if `bwrap` is missing on Linux (instruct user to `apt install bubblewrap` or use `AGB_SANDBOX_GATES=0`).\n- Catch execution failures specific to unprivileged user namespaces and provide actionable errors with fixes.\n- Install `bubblewrap` in Ubuntu CI (`.github/workflows/ci.yml`) and enable `test/security.test.mjs` on Linux.",
-      "scope": [
-        "docs/research/linux-sandbox.md",
-        "lib/gates.mjs",
-        "lib/doctor.mjs",
-        "test/security.test.mjs",
-        ".github/workflows/ci.yml"
-      ],
-      "rails": [],
-      "edges": []
     }
   ]
 }
