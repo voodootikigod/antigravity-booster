@@ -100,6 +100,15 @@
         "test/doctor.test.mjs"
       ],
       "rails": [],
+    },
+    {
+      "id": "T-FIX-DOCTOR-AUTH",
+      "title": "fix: agb doctor checkAgyAuth timeout",
+      "body": "Fix `checkAgyAuth` in `lib/doctor.mjs` to not time out or hang indefinitely when `agy models` is run without a TTY. Use `script` wrapper on Unix systems and increase timeout to 15000ms.",
+      "scope": [
+        "lib/doctor.mjs"
+      ],
+      "rails": [],
       "edges": []
     }
   ]
