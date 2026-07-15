@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync, realpathSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { isAgyTimeout } from '../lib/agy.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 import { prosecutionPrompt } from '../lib/charters.mjs';
-import { sandboxProfile, gateSandboxEnabled, runGate } from '../lib/gates.mjs';
+import { sandboxProfile, gateSandboxEnabled, gateSandboxAvailable, runGate, linuxBwrapArgs } from '../lib/gates.mjs';
 import { regenPrompt } from '../lib/charters.mjs';
 import { acquireRepoLock } from '../lib/lock.mjs';
 import { RunStatus } from '../lib/status.mjs';
@@ -471,5 +471,80 @@ test('runGate: fails closed when sandbox requested but unavailable, unless expli
     }
   } finally {
     rmSync(wt, { recursive: true, force: true });
+  }
+});
+
+test('gateSandboxAvailable: returns true on darwin and boolean on linux', () => {
+  const origPlatform = process.platform;
+  try {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    assert.equal(gateSandboxAvailable(), true);
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    assert.equal(typeof gateSandboxAvailable(), 'boolean');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    assert.equal(gateSandboxAvailable(), false);
+  } finally {
+    Object.defineProperty(process, 'platform', { value: origPlatform });
+  }
+});
+
+test('linuxBwrapArgs: binds temp dir properly and asserts security args', () => {
+  const canonical = (p) => { try { return realpathSync(p); } catch { return p; } };
+  const cwd = '/tmp/cwd';
+  const realCwd = canonical(cwd);
+  const emptyRo = join(canonical(tmpdir()), 'agb-empty-ro');
+
+  // Case 1: node_modules and .git don't exist
+  const argsMissing = linuxBwrapArgs(cwd, 'echo hi', emptyRo);
+  assert.ok(argsMissing.includes('/tmp'));
+  assert.ok(argsMissing.includes('--unshare-net'));
+  assert.ok(argsMissing.includes('--die-with-parent'));
+  assert.ok(argsMissing.includes('--unshare-pid'));
+  
+  // Verify array order: the ro binds for .git and node_modules MUST come AFTER the rw bind for realCwd.
+  const bindCwdIdx = argsMissing.findIndex((v, i) => v === '--bind' && argsMissing[i+1] === realCwd && argsMissing[i+2] === realCwd);
+  const gitBindIdx = argsMissing.findIndex((v, i) => v === '--ro-bind' && argsMissing[i+1] === emptyRo && argsMissing[i+2] === join(realCwd, '.git'));
+  const nmBindIdx = argsMissing.findIndex((v, i) => v === '--ro-bind' && argsMissing[i+1] === emptyRo && argsMissing[i+2] === join(realCwd, 'node_modules'));
+  
+  assert.ok(bindCwdIdx !== -1, 'must have rw bind for cwd');
+  assert.ok(gitBindIdx > bindCwdIdx, '.git ro-bind must come after cwd rw bind');
+  assert.ok(nmBindIdx > bindCwdIdx, 'node_modules ro-bind must come after cwd rw bind');
+  
+  // Case 2: node_modules and .git exist
+  const existingDir = mkdtempSync(join(tmpdir(), 'agb-existing-test-'));
+  try {
+    const realExisting = canonical(existingDir);
+    mkdirSync(join(realExisting, '.git'));
+    mkdirSync(join(realExisting, 'node_modules'));
+    const argsExisting = linuxBwrapArgs(realExisting, 'echo hi');
+    
+    const gitBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, '.git') && argsExisting[i+2] === join(realExisting, '.git'));
+    const nmBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, 'node_modules') && argsExisting[i+2] === join(realExisting, 'node_modules'));
+    
+    assert.ok(gitBindExistIdx > -1, 'must bind .git directly if it exists');
+    assert.ok(nmBindExistIdx > -1, 'must bind node_modules directly if it exists');
+  } finally {
+    rmSync(existingDir, { recursive: true, force: true });
+  }
+});
+
+test('runGate: captures unprivileged namespaces bwrap failure on linux', async () => {
+  const origPlatform = process.platform;
+  try {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const wt = mkdtempSync(join(tmpdir(), 'agb-fail-namespace-'));
+    const fakeBwrapDir = mkdtempSync(join(tmpdir(), 'agb-fakebwrap-'));
+    writeFileSync(join(fakeBwrapDir, 'bwrap'), '#!/bin/sh\necho "bwrap: unprivileged user namespaces are not available"\nexit 1');
+    chmodSync(join(fakeBwrapDir, 'bwrap'), 0o755);
+    try {
+      const r = await runGate('test', 'echo hi', wt, { sandbox: true, env: { PATH: fakeBwrapDir + ':' + process.env.PATH, AGB_SANDBOX_GATES: '1' } });
+      assert.equal(r.ok, false);
+      assert.ok(r.output.includes('Your Linux distribution might restrict unprivileged user namespaces'));
+    } finally {
+      rmSync(wt, { recursive: true, force: true });
+      rmSync(fakeBwrapDir, { recursive: true, force: true });
+    }
+  } finally {
+    Object.defineProperty(process, 'platform', { value: origPlatform });
   }
 });
