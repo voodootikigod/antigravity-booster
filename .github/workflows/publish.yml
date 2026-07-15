@@ -75,6 +75,9 @@ jobs:
           fi
           echo "Publishing version $PKG_VERSION"
 
+      - name: Install the ADLC toolkit
+        run: npm install -g --ignore-scripts @adlc/cli@1.1.0
+
       - name: Install
         # ci, not install: the published artifact must be built from the
         # locked dependency tree, and a drifted lockfile should fail the
