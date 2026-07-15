@@ -90,6 +90,17 @@
       ],
       "rails": [],
       "edges": []
+    },
+    {
+      "id": "T-FIX-DOCTOR",
+      "title": "fix: agb doctor checkPlugin logic",
+      "body": "Fix `checkPlugin` in `lib/doctor.mjs` to correctly pass an object to `readPluginContract` (`{ dir: pluginPath }`) and check the `status` field instead of `adlcContract`.\nAdd missing tests to `test/doctor.test.mjs`.",
+      "scope": [
+        "lib/doctor.mjs",
+        "test/doctor.test.mjs"
+      ],
+      "rails": [],
+      "edges": []
     }
   ]
 }
