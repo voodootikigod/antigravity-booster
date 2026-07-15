@@ -92,9 +92,15 @@ test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
   const repo = 'tmp-cli-repo';
   rmSync(repo, { recursive: true, force: true });
   mkdirSync(repo);
-  execFileSync('git', ['init', '-b', 'main'], { cwd: repo });
-  execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repo });
-  
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+  g('init', '-b', 'main');
+  // Throwaway test repos must not depend on the developer's (or CI runner's)
+  // identity / commit-signing setup — set local config only.
+  g('config', 'user.email', 't@t');
+  g('config', 'user.name', 't');
+  g('config', 'commit.gpgsign', 'false');
+  g('commit', '--allow-empty', '-m', 'init');
+
   const plan = {
     repo: resolve(repo),
     tickets: [
@@ -103,15 +109,15 @@ test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
     gate: { build: 'true', test: 'true' }
   };
   writeFileSync(`${repo}/plan.json`, JSON.stringify(plan));
-  
+
   // Fake agy script that succeeds
   const fakeAgy = resolve('test/fixtures/fake-agy');
   const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_ADLC_BIN: resolve('test/fixtures/fake-adlc'), PATH: process.env.PATH, AGB_ALLOW_DIRTY: '1', AGB_SANDBOX_GATES: '0' };
-  
+
   // success
   const out = execFileSync(process.execPath, [AGB_BIN, 'run', 'plan.json'], { cwd: repo, env, encoding: 'utf8' });
   assert(out.includes('"merged": [\n    "T1"\n  ]'));
-  
+
   rmSync(repo, { recursive: true, force: true });
 });
 
