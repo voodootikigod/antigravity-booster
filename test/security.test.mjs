@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir, homedir, platform } from 'node:os';
 import { join } from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { isAgyTimeout } from '../lib/agy.mjs';
@@ -252,6 +252,11 @@ test('RunStatus: tightens permissions on state left world-readable by an older r
     chmodSync(join(repo, '.booster', 'logs'), 0o755);
     writeFileSync(join(repo, '.booster', 'report.json'), '{"stale":true}', { mode: 0o644 });
     chmodSync(join(repo, '.booster', 'report.json'), 0o644);
+    // A run killed between writeFileSync(tmp) and renameSync leaves this behind.
+    // It is a fixed path, so the next write to it ignores mode and the rename
+    // would carry 0644 onto run.json.
+    writeFileSync(join(repo, '.booster', 'run.json.tmp'), '{"crashed":true}', { mode: 0o644 });
+    chmodSync(join(repo, '.booster', 'run.json.tmp'), 0o644);
 
     const s = new RunStatus(repo, 'run-upgrade');
     s.ticket('T1', { phase: 'building' });
@@ -273,6 +278,55 @@ test('RunStatus: tightens permissions on state left world-readable by an older r
     ]) {
       assert.equal(mode(p), 0o600, `${p} must be tightened, not left as the older run created it`);
     }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// A security control that cannot apply must say so rather than shrug. The
+// owner-path tests can never reach this arm: they chmod paths they own, so it
+// always succeeds. A real EPERM needs a path we cannot chmod — normally one
+// owned by another uid, which a test has no way to create. macOS's user
+// immutable flag produces the same EPERM from chmod against a path we do own,
+// so the failure arm is exercised for real rather than mocked. Darwin-only;
+// the CI macOS leg runs it.
+test('RunStatus: refuses to write run state it cannot make owner-only', { skip: platform() !== 'darwin' && 'chflags is macOS-only' }, () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-fail-'));
+  const booster = join(repo, '.booster');
+  try {
+    mkdirSync(booster, { recursive: true });
+    execFileSync('chflags', ['uchg', booster]);
+
+    const s = new RunStatus(repo, 'run-eperm');
+    assert.throws(
+      () => s.ticket('T1', { phase: 'building', detail: 'quotes a .env' }),
+      /cannot make .* owner-only \(EPERM\)/,
+      'a chmod that cannot apply must fail the run, not be swallowed'
+    );
+  } finally {
+    try { execFileSync('chflags', ['nouchg', booster]); } catch { /* never created */ }
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// A crashed run leaves .booster/run.json.tmp behind at whatever mode it had.
+// The next flush writes to that existing path (mode ignored) and renames it onto
+// run.json. This must be asserted after exactly ONE flush: the stale tmp is
+// consumed by the rename, so a second flush creates a fresh 0600 tmp and hides
+// the leak. The upgrade test above flushes twice and cannot see this.
+test('RunStatus: a stale 0644 run.json.tmp does not carry its mode onto run.json', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-tmp-'));
+  try {
+    mkdirSync(join(repo, '.booster'), { recursive: true });
+    const tmp = join(repo, '.booster', 'run.json.tmp');
+    writeFileSync(tmp, '{"crashed":true}');
+    chmodSync(tmp, 0o644);
+
+    const s = new RunStatus(repo, 'run-stale-tmp');
+    s.ticket('T1', { phase: 'building' }); // exactly one flush
+
+    const mode = statSync(join(repo, '.booster', 'run.json')).mode & 0o777;
+    assert.equal(mode, 0o600, 'run.json must not inherit the stale temp file mode');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
