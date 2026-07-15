@@ -1,6 +1,6 @@
 # Executing a Specification with agb: A Concrete Example
 
-This guide explains how to translate a high-level specification (like the `do-better` specification at `../do-better-agb/spec.md`) into an executable `plan.json` and run it to "done" using `agb`.
+This guide explains how to translate a high-level specification — any Markdown spec file with acceptance criteria, e.g. `spec.md` in your own repo — into an executable `plan.json` and run it to "done" using `agb`.
 
 ---
 

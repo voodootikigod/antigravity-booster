@@ -1,7 +1,8 @@
 # antigravity-booster
 
 Make Google Antigravity 2.0 (`agy` CLI + GUI) effective for large parallel
-build-outs. Implements the [ADLC](../adlc/ADLC.md) on Antigravity:
+build-outs. Implements the Agentic Development Lifecycle
+([ADLC](https://github.com/voodootikigod/adlc/blob/main/ADLC.md)) on Antigravity:
 deterministic orchestration, quota-pool-aware scheduling, cross-model
 prosecution, and gate-shaped validation for accurate ideation to merge.
 
@@ -168,7 +169,9 @@ artifact it produces. Think of `implementation_plan.md` as source and
 3. Watch and read results:
 
    ```sh
-   agb status /path/to/target-repo    # live full-screen TUI dashboard (from events.jsonl)
+   agb status /path/to/target-repo           # one-shot snapshot of the current run
+   agb status /path/to/target-repo --watch   # refresh in place (--interval <ms>)
+   agb tui /path/to/target-repo              # full-screen dashboard (q to quit)
    ```
 
    Per-ticket transcripts land in `.booster/logs/<run-id>/<ticketId>.jsonl`, the final
@@ -195,7 +198,9 @@ agb preflight plan.json        # plan gates: scope-overlap forecast + coldstart
 agb run plan.json              # build → gate → prosecute → merge; exit 0/2
 agb sweep sweep.json           # same operation × many targets (cheap tier)
 agb review /repo [ref]         # read-only lens fleet, loop-until-dry; exit 0/2
-agb status /path/repo          # live full-screen TUI dashboard (events.jsonl)
+agb doctor                     # verify your environment and tools
+agb status /path/repo          # one-shot run snapshot (--watch [--interval <ms>] [--ui])
+agb tui /path/repo             # full-screen dashboard, live from events.jsonl (q to quit)
 agb probe 2,4,8 [model]        # measure pool width/latency, append docs/calibration
 agb import-brain <id> /repo    # DEPRECATED: raw one-shot conversion (use agb plan)
 ```
@@ -238,7 +243,7 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 | `AGB_ALLOW_DIRTY` | refuse dirty repo | `1` skips the clean-tree guard — merge rollback uses `git reset --hard`, uncommitted work WILL be lost |
 | `AGB_AGY_BIN` | `agy` | Alternate agy binary (tests point this at a fake) |
 | `AGB_ADLC_BIN` | `adlc` | Alternate adlc CLI binary (tests point this at a fake) — used by every `adlc <tool>` integration: `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`, `consensus-fix`, `gate-manifest`, `review-calibration` |
-| `ADLC_ANTIGRAVITY_PLUGIN_PATH` | `../adlc/plugins/adlc-antigravity` | Where `agb bootstrap` finds the (unpublished) adlc-antigravity plugin to install |
+| `ADLC_ANTIGRAVITY_PLUGIN_PATH` | resolved from `node_modules` | Override where `agb bootstrap` finds the `@adlc/antigravity` plugin to install. Defaults to the installed npm package; falls back to a sibling `../adlc/plugins/adlc-antigravity` checkout |
 | `AGB_PLUGIN_DIR` | `~/.gemini/config/plugins/adlc-antigravity` | Installed adlc-antigravity plugin dir; its `plugin.json` `adlcContract` is handshake-checked against the booster's supported contract (incompatible → abort before any repo mutation; missing/unreadable → warn + degrade). Tests point this at a fixture |
 | `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains`/`agb plan` look for Antigravity plan artifacts |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` in this checkout | Where `agb probe` appends its measurement artifact |
@@ -247,7 +252,7 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 ## Testing
 
 ```sh
-npm test    # 153 node:test cases, fully offline (fake-agy + fake-adlc fixtures)
+npm test    # node:test suite, fully offline (fake-agy + fake-adlc fixtures)
 ```
 
 Sandbox-specific security tests are darwin-gated; scheduler tests run
