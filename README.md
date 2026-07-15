@@ -3,7 +3,7 @@
 Make Google Antigravity 2.0 (`agy` CLI + GUI) effective for large parallel
 build-outs. Implements the [ADLC](../adlc/ADLC.md) on Antigravity:
 deterministic orchestration, quota-pool-aware scheduling, cross-model
-prosecution, and gate-shaped validation — ideation to merge.
+prosecution, and gate-shaped validation for accurate ideation to merge.
 
 ## Documentation
 
@@ -62,8 +62,6 @@ npm install -g antigravity-booster
 agb bootstrap
 ```
 *(Alternatively, use zero-install with `npx antigravity-booster bootstrap`, or `npm link` from source.)*
-
-> **Note**: Until the `@adlc/antigravity` plugin is published to npm, you must have it cloned locally. It expects the sibling path `../adlc/plugins/adlc-antigravity` by default (override with `ADLC_ANTIGRAVITY_PLUGIN_PATH`).
 
 ### 2. Verify Setup
 Run the diagnostic tool to ensure your dependencies and quota are ready:

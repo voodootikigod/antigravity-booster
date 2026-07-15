@@ -47,6 +47,16 @@
           "to": "T2"
         }
       ]
+    },
+    {
+      "id": "T4",
+      "title": "[P2] docs: remove unpublished adlc-antigravity note",
+      "body": "Update README.md to remove the note claiming that @adlc/antigravity is not published to npm, as it is now published as of 1.4.1.",
+      "scope": [
+        "README.md"
+      ],
+      "rails": [],
+      "edges": []
     }
   ]
 }
