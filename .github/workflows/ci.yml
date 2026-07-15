@@ -44,3 +44,25 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  coverage:
+    # Thresholds are a ratchet against regression, not a target: they sit just
+    # under the current numbers. Raise them when coverage improves; do not lower
+    # them to make a red build green. Node 22 only — --test-coverage-* landed
+    # there, so this cannot run on the Node 18 floor.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install the ADLC toolkit
+        run: npm install -g --ignore-scripts @adlc/cli@1.1.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check coverage
+        run: npm run coverage:check

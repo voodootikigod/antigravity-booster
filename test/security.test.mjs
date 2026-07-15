@@ -13,6 +13,7 @@ import { sandboxProfile, gateSandboxEnabled, runGate } from '../lib/gates.mjs';
 import { regenPrompt } from '../lib/charters.mjs';
 import { acquireRepoLock } from '../lib/lock.mjs';
 import { RunStatus } from '../lib/status.mjs';
+import { validatePlan } from '../lib/plan.mjs';
 
 // --- agy timeout anchoring (review: false-positive timeout) ---
 
@@ -193,6 +194,24 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
     assert.equal(existsSync(join(repo, '.booster', 'run.lock.d')), false, 'lock dir removed on release');
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// The ticket id becomes both a worktree directory (.worktrees/agb-<id>) and a
+// git branch (agb/<id>). A traversal id was rejected only because git refuses
+// '..' in a ref name — incidental protection that would evaporate if the branch
+// scheme ever changed independently of the path scheme. validatePlan owns it now.
+test('validatePlan: rejects ticket ids that could escape the worktree path', () => {
+  const base = { repo: '/tmp/x', gate: { test: 'true' } };
+  const ticket = (id) => ({ id, title: 't', body: 'b', scope: ['*'], rails: [], edges: [] });
+
+  for (const bad of ['../../../../tmp/pwned', '..', '.hidden', 'a/b', 'a\\b', 'a b', '', 'a;rm -rf /']) {
+    const errors = validatePlan({ ...base, tickets: [ticket(bad)] });
+    assert.ok(errors.length > 0, `id ${JSON.stringify(bad)} must be rejected`);
+  }
+  for (const good of ['T1', 'B11', 'DOC-UPDATE', 'BOOTSTRAP-AUTO-CLONE', 'ISSUE-26', 'a.b_c']) {
+    const errors = validatePlan({ ...base, tickets: [ticket(good)] });
+    assert.deepEqual(errors, [], `id ${JSON.stringify(good)} must be accepted`);
   }
 });
 
