@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +12,9 @@ import { builderAgentsMd, prosecutionPrompt } from '../lib/charters.mjs';
 import { runGate, runGates } from '../lib/gates.mjs';
 import { prosecute } from '../lib/prosecute.mjs';
 import { RunStatus, renderStatus } from '../lib/status.mjs';
+import { reviewFleet } from '../lib/review.mjs';
+import { compilePlan } from '../lib/plan.mjs';
+import { runPlan } from '../lib/scheduler.mjs';
 import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
   isMidMerge, abortAnyMerge,
@@ -611,3 +614,49 @@ test('bootstrap: fails loudly when `agy plugin install` itself fails (e.g. agy t
   }
 });
 
+
+test('prosecute and reviewFleet: pass project option through to runAgy', async () => {
+  const state = join(tmpdir(), `agb-test-proj-${Date.now()}`);
+  mkdirSync(state, { recursive: true });
+  process.env.FAKE_STATE_DIR = state;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+
+  await prosecute({ ticket: {id:'T1'}, diff: 'a', model: 'x', project: 'proj-prosecute' });
+  let argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-prosecute'), 'prosecute passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+
+  await reviewFleet({ diff: 'a', context: '', project: 'proj-review' });
+  argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-review'), 'reviewFleet passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+});
+
+test('compilePlan and runPlan: pass project option through to runAgy', async () => {
+  const state = join(tmpdir(), `agb-test-proj-plan-${Date.now()}`);
+  mkdirSync(state, { recursive: true });
+  process.env.FAKE_STATE_DIR = state;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+  process.env.FAKE_BRAIN_MODE = 'edges';
+  process.env.AGB_ALLOW_DIRTY = '1';
+  const repo = join(tmpdir(), `agb-test-plan-${Date.now()}`);
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(join(repo, '.adlc'), { recursive: true });
+  writeFileSync(join(repo, '.adlc/config.json'), JSON.stringify({}));
+  execSync('git init -b main', { cwd: repo });
+  execSync('git add .', { cwd: repo });
+  execSync('git commit --allow-empty -m "initial"', { cwd: repo });
+
+  const specFile = join(tmpdir(), `agb-test-spec-${Date.now()}.json`);
+  writeFileSync(specFile, JSON.stringify({ tickets: [] }));
+  await compilePlan(specFile, { repo, coldstart: true, parallax: true, premortem: true, project: 'proj-compile' });
+  let argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-compile'), 'compilePlan passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+
+  const plan = { repo, base: 'main', gate: { test: 'true' }, tickets: [{id:'T1', title:'a', body:'a', scope:[], edges:[]}] };
+  await runPlan(plan, { project: 'proj-run' });
+  argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-run'), 'runPlan passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+});
