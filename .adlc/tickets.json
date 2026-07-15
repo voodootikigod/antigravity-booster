@@ -1,47 +1,52 @@
-[
-  {
-    "id": "ISSUE-23",
-    "title": "[P2] feat: append-only events.jsonl + JSONL transcripts",
-    "body": "**Priority:** P2\n**Lane:** observability.\n\n## Context\n\nWe need atomic event logs for the dashboard.\n\n## Task\n\n1. Modify `RunStatus` constructor in `lib/status.mjs` to accept `(repo, runId)`. Update `lib/scheduler.mjs` to pass `runId`.\n2. Add an `appendEvent(event)` internal function to `RunStatus`. Use a singleton write queue wrapping `await fs.promises.appendFile`. Stringify the event payload synchronously before appending it to the async queue, so rapid mutations to `pools` don't overwrite states. Add a `.catch()` block within the `this.writePromise` chain so that a single write failure doesn't halt the entire run.\n3. Modify `status.ticket()` and `status.pools()` to immediately append an event after mutating state. `from` is the `phase` value before the update. `to` maps to `patch.phase`. `detail`, `model`, `strikes` map exactly to `patch`. The `pools` field should just be the raw `this.state.pools` map.\n4. Rename `status.finish` to `status.report(summary)`. It continues to write the summary JSON to `.booster/report.json` as `finish` did, but it now also appends a `report` event.\n5. Add `status.strike(ticketId, { model, error, strikes })`. It updates state (store `error` directly on the ticket, set `strikes` to the argument, initialize if missing) and flushes to `run.json`, then appends a `strike` event.\n6. `.booster/logs/<runId>/events.jsonl` Schema: `{ ts, runId, type: 'phase'|'pool'|'strike'|'report', ticket?, from?, to?, detail?, pools?, model?, error?, done?, report? }`. `ts` is an ISO 8601 string.\n7. Normalize per-ticket transcripts to JSONL: one record per agy invocation `{ ts, model, strike, ms, ok, role, error, prompt, output, cwd }`. `role` is mandatory (e.g. 'builder' or 'prosecutor'). Both builder and prosecutor MUST append to `<ticketId>.jsonl` using `fs.promises.appendFile`. `runAgy` should always write JSONL to `logFile` regardless of the file extension (remove the legacy write branch). `runId` is NOT passed to `runAgy` or `prosecute()`; they receive the exact `logFile` path. In `lib/scheduler.mjs`, change the prosecutor log path passed to `prosecute()` from `<ticketId>.prosecution.jsonl` to `<ticketId>.jsonl`.\n8. In `lib/scheduler.mjs` (`checkFlailDetector`), deserialize the JSONL transcript back to raw legacy text using the `role` field to map back correctly. Write it to a temporary file using `crypto.randomUUID()` in `os.tmpdir()` for a unique filename, pass that temp file path to `adlc flail-detector`, and then delete it.\n9. Update `docs/usage.md` with semantic descriptions for all fields across `events.jsonl` and `<ticketId>.jsonl`.\n\n## Acceptance criteria\n\n- [ ] Replay test dynamically generates events and recreates `run.json` state (merge tickets with `Object.assign`, replace pools).\n- [ ] Transcripts parse as JSONL.\n- [ ] `test/prosecute.test.mjs` expects JSONL.\n- [ ] `fake-adlc` keeps working.",
-    "scope": [
-      "lib/status.mjs",
-      "lib/agy.mjs",
-      "lib/scheduler.mjs",
-      "docs/usage.md",
-      "test/unit.test.mjs",
-      "test/fixtures/fake-agy",
-      "test/prosecute.test.mjs",
-      "lib/prosecute.mjs",
-      "test/fixtures/fake-adlc",
-      "test/fixtures/fake-adlc/bin/adlc"
-    ],
-    "rails": [
-      "lib/lock.mjs",
-      "lib/gates.mjs",
-      "bin/agb.mjs"
-    ],
-    "edges": []
-  },
-  {
-    "id": "ISSUE-24",
-    "title": "[P2] feat: full-screen node TUI dashboard",
-    "body": "**Priority:** P2\n**Lane:** dashboard. **Depends on:** events.jsonl issue.\n\n## Task\n\nImplement zero-dep ANSI TUI inside agb. Use raw ANSI escape sequences to manually place text. DO NOT use blessed or any external dependencies (it is not in package.json).\n- Export an asynchronous `launchTUI(repo, isWatch)` returning `Promise<number | string | undefined>` which resolves to the appropriate exit code or string as handled by `bin/agb.mjs`.\n- Preserve the existing `--ui` flag behavior in `bin/agb.mjs`.\n- Read `.booster/run.json` relative to `repo`. Schema: `runId` at root; `tickets` mapping ticket ID to `{ phase, strikes, model, detail }`; `pools` mapping name to `{ inFlight, cap, requests }`; `done` and `report` at root.\n- TUI layout: 50/50 horizontal width split ratio for the Table vs Gauges vertical panes, and 50/50 horizontal width split ratio for the Timeline vs Transcript tail vertical panes.\n- Ticket table: ID (10 chars), Phase (10 chars), Strikes (3 chars), Model (15 chars). Details maps to `ticket.detail`. Sort alphabetically by ID. Use inverted colors (`{ bg: 'white', fg: 'black' }`) for the selected ticket.\n- Gauges: Sort alphabetically. `[PoolName] [###---] inFlight/cap (requests)`.\n- Timeline: `[ts] {ticketId} strike N: OK` or `[ts] {ticketId} strike N: FAILED - <error>`. `[ts]` is `HH:MM:SS` local time.\n- Transcript tail from `.booster/logs/<runId>/<ticketId>.jsonl`: print `[ts] strike N: <output>`. Truncate output to 1000 characters and append `...` only if exceeded. Strip ANSI sequences via regex before truncating. If file missing, center `Waiting for transcript...` horizontally and vertically.\n- Tail `events.jsonl` using `fs.watch` and `fs.createReadStream` tracking the byte offset. Buffer incoming stream chunks until a newline (`\\n`) is encountered, or use the `readline` module, before attempting to parse the JSON.\n- Explicitly call `watcher.close()` and `stream.destroy()` on the active transcript file before opening a new one during navigation.\n- Wait for `q` to quit (resolving Promise with undefined). Restore raw mode on exit.\n\n## Acceptance criteria\n\n- [ ] Live run renders all panes.\n- [ ] Pure render functions unit-tested.\n- [ ] Exactly one runtime dependency (`blessed`, wait no, zero dependencies).",
-    "scope": [
-      "lib/tui.mjs",
-      "test/tui.test.mjs"
-    ],
-    "rails": [
-      "bin/agb.mjs",
-      "lib/scheduler.mjs",
-      "lib/lock.mjs",
-      "lib/gates.mjs",
-      "lib/agy.mjs",
-      "lib/status.mjs"
-    ],
-    "edges": [
-      {
-        "to": "ISSUE-23"
-      }
-    ]
-  }
-]
+{
+  "tickets": [
+    {
+      "id": "T1",
+      "title": "[P2] feat: append-only events.jsonl for RunStatus",
+      "body": "Implement atomic event logs for the dashboard.\n\n1. Modify `RunStatus` constructor in `lib/status.mjs` to accept `(repo, runId)`. Update `lib/scheduler.mjs` to pass `runId`.\n2. Add an `appendEvent(event)` internal function to `RunStatus`. Use a singleton write queue wrapping `await fs.promises.appendFile`. Stringify the event payload synchronously before appending it to the async queue, so rapid mutations to `pools` don't overwrite states. Add a `.catch()` block within the `this.writePromise` chain so that a single write failure doesn't halt the entire run.\n3. Modify `status.ticket()` and `status.pools()` to immediately append an event after mutating state. `from` is the `phase` value before the update. `to` maps to `patch.phase`. `detail`, `model`, `strikes` map exactly to `patch`. The `pools` field should just be the raw `this.state.pools` map.\n4. Rename `status.finish` to `status.report(summary)`. It continues to write the summary JSON to `.booster/report.json`, but it now also appends a `report` event.\n5. Add `status.strike(ticketId, { model, error, strikes })`. It updates state (store `error` directly on the ticket, set `strikes` to the argument, initialize if missing) and flushes to `run.json`, then appends a `strike` event.\n6. `.booster/logs/<runId>/events.jsonl` Schema: `{ ts, runId, type: 'phase'|'pool'|'strike'|'report', ticket?, from?, to?, detail?, pools?, model?, error?, done?, report? }`. `ts` is an ISO 8601 string.\n\nAcceptance criteria:\n- Replay test dynamically generates events and recreates `run.json` state (merge tickets with `Object.assign`, replace pools).",
+      "scope": [
+        "lib/status.mjs",
+        "lib/scheduler.mjs",
+        "test/unit.test.mjs"
+      ],
+      "rails": [],
+      "edges": []
+    },
+    {
+      "id": "T2",
+      "title": "[P2] feat: normalize transcripts to JSONL",
+      "body": "Normalize per-ticket transcripts to JSONL and update consumers.\n\n1. Normalize per-ticket transcripts to JSONL: one record per agy invocation `{ ts, model, strike, ms, ok, role, error, prompt, output, cwd }`. `role` is mandatory (e.g. 'builder' or 'prosecutor').\n2. In `lib/agy.mjs` and `lib/prosecute.mjs`, both builder and prosecutor MUST append to `<ticketId>.jsonl` using `fs.promises.appendFile`.\n3. `runAgy` should always write JSONL to `logFile` regardless of the file extension (remove the legacy write branch). `runId` is NOT passed to `runAgy` or `prosecute()`; they receive the exact `logFile` path.\n4. In `lib/scheduler.mjs`, change the prosecutor log path passed to `prosecute()` from `<ticketId>.prosecution.jsonl` to `<ticketId>.jsonl`.\n5. In `lib/scheduler.mjs` (`checkFlailDetector`), deserialize the JSONL transcript back to raw legacy text using the `role` field to map back correctly. Write it to a temporary file using `crypto.randomUUID()` in `os.tmpdir()` for a unique filename, pass that temp file path to `adlc flail-detector`, and then delete it.\n6. Update `docs/usage.md` with semantic descriptions for all fields across `events.jsonl` and `<ticketId>.jsonl`.\n\nAcceptance criteria:\n- Transcripts parse as JSONL.\n- `test/prosecute.test.mjs` expects JSONL.\n- `fake-adlc` keeps working.",
+      "scope": [
+        "lib/agy.mjs",
+        "lib/scheduler.mjs",
+        "lib/prosecute.mjs",
+        "docs/usage.md",
+        "test/fixtures/fake-agy",
+        "test/prosecute.test.mjs",
+        "test/fixtures/fake-adlc",
+        "test/fixtures/fake-adlc/bin/adlc"
+      ],
+      "rails": [],
+      "edges": [
+        {
+          "to": "T1"
+        }
+      ]
+    },
+    {
+      "id": "T3",
+      "title": "[P2] feat: full-screen node TUI dashboard",
+      "body": "Implement zero-dep ANSI TUI inside agb. Use raw ANSI escape sequences to manually place text. DO NOT use blessed or any external dependencies (it is not in package.json).\n\n1. Export an asynchronous `launchTUI(repo, isWatch)` returning `Promise<number | string | undefined>` which resolves to the appropriate exit code or string as handled by `bin/agb.mjs`.\n2. Preserve the existing `--ui` flag behavior as expected by `bin/agb.mjs`.\n3. Read `.booster/run.json` relative to `repo`. Schema: `runId` at root; `tickets` mapping ticket ID to `{ phase, strikes, model, detail }`; `pools` mapping name to `{ inFlight, cap, requests }`; `done` and `report` at root.\n4. TUI layout: 50/50 horizontal width split ratio for the Table vs Gauges vertical panes, and 50/50 horizontal width split ratio for the Timeline vs Transcript tail vertical panes.\n5. Ticket table: ID (10 chars), Phase (10 chars), Strikes (3 chars), Model (15 chars). Details maps to `ticket.detail`. Sort alphabetically by ID. Use inverted colors (`{ bg: 'white', fg: 'black' }`) for the selected ticket.\n6. Gauges: Sort alphabetically. `[PoolName] [###---] inFlight/cap (requests)`.\n7. Timeline: `[ts] {ticketId} strike N: OK` or `[ts] {ticketId} strike N: FAILED - <error>`. `[ts]` is `HH:MM:SS` local time.\n8. Transcript tail from `.booster/logs/<runId>/<ticketId>.jsonl`: print `[ts] strike N: <output>`. Truncate output to 1000 characters and append `...` only if exceeded. Strip ANSI sequences via regex before truncating. If file missing, center `Waiting for transcript...` horizontally and vertically.\n9. Tail `events.jsonl` using `fs.watch` and `fs.createReadStream` tracking the byte offset. Buffer incoming stream chunks until a newline (`\\n`) is encountered, or use the `readline` module, before attempting to parse the JSON.\n10. Explicitly call `watcher.close()` and `stream.destroy()` on the active transcript file before opening a new one during navigation.\n11. Wait for `q` to quit (resolving Promise with undefined). Restore raw mode on exit.\n\nAcceptance criteria:\n- Live run renders all panes.\n- Pure render functions unit-tested.\n- Exactly zero dependencies.",
+      "scope": [
+        "lib/tui.mjs",
+        "test/tui.test.mjs"
+      ],
+      "rails": [],
+      "edges": [
+        {
+          "to": "T2"
+        }
+      ]
+    }
+  ]
+}

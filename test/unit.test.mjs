@@ -644,6 +644,7 @@ test('compilePlan and runPlan: pass project option through to runAgy', async () 
   mkdirSync(join(repo, '.adlc'), { recursive: true });
   writeFileSync(join(repo, '.adlc/config.json'), JSON.stringify({}));
   execSync('git init -b main', { cwd: repo });
+  execSync('git config commit.gpgsign false', { cwd: repo });
   execSync('git add .', { cwd: repo });
   execSync('git commit --allow-empty -m "initial"', { cwd: repo });
 
