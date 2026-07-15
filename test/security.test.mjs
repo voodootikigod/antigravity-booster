@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { isAgyTimeout } from '../lib/agy.mjs';
 import { PoolSet } from '../lib/pools.mjs';
@@ -193,22 +195,50 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
   }
 });
 
-test('acquireRepoLock: exactly one of many concurrent reclaimers wins a stale lock', async () => {
+// Reclaiming a stale lock is the one path where two runs can both decide the
+// holder is dead and race to replace it. acquireRepoLock is wholly synchronous,
+// so same-process "concurrency" (Promise.resolve().then(...)) cannot reach that
+// race: the first callback runs to completion and installs a LIVE pid, and every
+// later one takes the ordinary isAlive rejection without touching the atomic
+// rename. Real OS processes are the only way to interleave inside it.
+test('acquireRepoLock: exactly one of many concurrent processes reclaims a stale lock', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-lock5-'));
   try {
-    // Plant a stale lock (dead pid).
+    // Plant a stale lock (a pid that is definitively not running).
     mkdirSync(join(repo, '.booster', 'run.lock.d'), { recursive: true });
     writeFileSync(
       join(repo, '.booster', 'run.lock.d', 'meta.json'),
       JSON.stringify({ pid: 2 ** 22, runId: 'dead', token: 'old', startedAt: 'x' })
     );
-    // Many reclaimers race in the same tick.
-    const attempts = await Promise.allSettled(
-      Array.from({ length: 8 }, (_, i) => Promise.resolve().then(() => acquireRepoLock(repo, { runId: `R${i}` })))
+
+    const lockModule = fileURLToPath(new URL('../lib/lock.mjs', import.meta.url));
+    const child = join(repo, 'reclaimer.mjs');
+    writeFileSync(child, `
+import { acquireRepoLock } from ${JSON.stringify(lockModule)};
+const [repo, startAt] = process.argv.slice(2);
+while (Date.now() < Number(startAt)) { /* spin so all reclaimers enter together */ }
+try {
+  acquireRepoLock(repo, { runId: 'R' + process.pid });
+  process.stdout.write('WIN');
+  // Hold it: a winner that released immediately would let a slower process
+  // acquire cleanly and register as a second winner, hiding a real race.
+  setTimeout(() => {}, 750);
+} catch {
+  process.stdout.write('LOSE');
+}
+`);
+
+    const startAt = Date.now() + 500;
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => new Promise((res) => {
+        execFile(process.execPath, [child, repo, String(startAt)], { encoding: 'utf8' },
+          (_e, stdout) => res(stdout.trim()));
+      }))
     );
-    const winners = attempts.filter((a) => a.status === 'fulfilled');
-    assert.equal(winners.length, 1, 'exactly one reclaimer may acquire the lock');
-    winners[0].value(); // release
+
+    const wins = results.filter((r) => r === 'WIN').length;
+    assert.equal(wins, 1, `exactly one process may reclaim a stale lock — got ${JSON.stringify(results)}`);
+    assert.equal(results.filter((r) => r === 'LOSE').length, 7);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
