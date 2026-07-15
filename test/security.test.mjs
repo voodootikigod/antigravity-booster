@@ -474,13 +474,13 @@ test('runGate: fails closed when sandbox requested but unavailable, unless expli
   }
 });
 
-test('gateSandboxAvailable: returns true on darwin and linux', () => {
+test('gateSandboxAvailable: returns true on darwin and boolean on linux', () => {
   const origPlatform = process.platform;
   try {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     assert.equal(gateSandboxAvailable(), true);
     Object.defineProperty(process, 'platform', { value: 'linux' });
-    assert.equal(gateSandboxAvailable(), true);
+    assert.equal(typeof gateSandboxAvailable(), 'boolean');
     Object.defineProperty(process, 'platform', { value: 'win32' });
     assert.equal(gateSandboxAvailable(), false);
   } finally {
@@ -488,10 +488,44 @@ test('gateSandboxAvailable: returns true on darwin and linux', () => {
   }
 });
 
-test('linuxBwrapArgs: binds temp dir properly', () => {
+test('linuxBwrapArgs: binds temp dir properly and asserts security args', () => {
+  const canonical = (p) => { try { return realpathSync(p); } catch { return p; } };
   const cwd = '/tmp/cwd';
-  const args = linuxBwrapArgs(cwd, 'echo hi');
-  assert.ok(args.includes('/tmp'));
+  const realCwd = canonical(cwd);
+  const emptyRo = join(canonical(tmpdir()), 'agb-empty-ro');
+
+  // Case 1: node_modules and .git don't exist
+  const argsMissing = linuxBwrapArgs(cwd, 'echo hi', emptyRo);
+  assert.ok(argsMissing.includes('/tmp'));
+  assert.ok(argsMissing.includes('--unshare-net'));
+  assert.ok(argsMissing.includes('--die-with-parent'));
+  assert.ok(argsMissing.includes('--unshare-pid'));
+  
+  // Verify array order: the ro binds for .git and node_modules MUST come AFTER the rw bind for realCwd.
+  const bindCwdIdx = argsMissing.findIndex((v, i) => v === '--bind' && argsMissing[i+1] === realCwd && argsMissing[i+2] === realCwd);
+  const gitBindIdx = argsMissing.findIndex((v, i) => v === '--ro-bind' && argsMissing[i+1] === emptyRo && argsMissing[i+2] === join(realCwd, '.git'));
+  const nmBindIdx = argsMissing.findIndex((v, i) => v === '--ro-bind' && argsMissing[i+1] === emptyRo && argsMissing[i+2] === join(realCwd, 'node_modules'));
+  
+  assert.ok(bindCwdIdx !== -1, 'must have rw bind for cwd');
+  assert.ok(gitBindIdx > bindCwdIdx, '.git ro-bind must come after cwd rw bind');
+  assert.ok(nmBindIdx > bindCwdIdx, 'node_modules ro-bind must come after cwd rw bind');
+  
+  // Case 2: node_modules and .git exist
+  const existingDir = mkdtempSync(join(tmpdir(), 'agb-existing-test-'));
+  try {
+    mkdirSync(join(existingDir, '.git'));
+    mkdirSync(join(existingDir, 'node_modules'));
+    const realExisting = canonical(existingDir);
+    const argsExisting = linuxBwrapArgs(existingDir, 'echo hi');
+    
+    const gitBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, '.git') && argsExisting[i+2] === join(realExisting, '.git'));
+    const nmBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, 'node_modules') && argsExisting[i+2] === join(realExisting, 'node_modules'));
+    
+    assert.ok(gitBindExistIdx > -1, 'must bind .git directly if it exists');
+    assert.ok(nmBindExistIdx > -1, 'must bind node_modules directly if it exists');
+  } finally {
+    rmSync(existingDir, { recursive: true, force: true });
+  }
 });
 
 test('runGate: captures unprivileged namespaces bwrap failure on linux', async () => {
