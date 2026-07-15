@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -218,9 +218,66 @@ test('validatePlan: rejects ticket ids that could escape the worktree path', () 
   }
 });
 
+// createWorktree lowercases the id into both the worktree dir and the branch,
+// then force-removes whatever it finds there. Two ids differing only in case are
+// distinct to a plan and identical on disk, so dispatching the second deletes the
+// first's live worktree and uncommitted builder output — silently, because the
+// ids "passed validation".
+test('validatePlan: rejects ticket ids that collide once lowercased into a worktree', () => {
+  const base = { repo: '/tmp/x', gate: { test: 'true' } };
+  const ticket = (id) => ({ id, title: 't', body: 'b', scope: [`${id}.txt`], rails: [], edges: [] });
+
+  const errors = validatePlan({ ...base, tickets: [ticket('Api-1'), ticket('api-1')] });
+  assert.ok(
+    errors.some((e) => /collides with 'Api-1'/.test(e)),
+    `case-variant ids must be rejected — got ${JSON.stringify(errors)}`
+  );
+
+  // Distinct ids that merely share a prefix must still be accepted.
+  assert.deepEqual(validatePlan({ ...base, tickets: [ticket('T1'), ticket('T2')] }), []);
+});
+
 // Run state and transcripts quote whatever the builder read in the worktree —
 // a .env, a config file, debug output — so they are secret-bearing by default.
 // On a shared box or a CI runner, 0644 hands those to every local account.
+// The upgrade path is the only one that can fail, and a fresh mkdtemp cannot
+// model it: Node applies `mode` only when it creates a path, so on a repo that
+// ran a pre-hardening build .booster/ and report.json already exist and the mode
+// is silently ignored. Pre-create them exactly as an older run left them.
+test('RunStatus: tightens permissions on state left world-readable by an older run', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-upgrade-'));
+  try {
+    mkdirSync(join(repo, '.booster', 'logs'), { recursive: true, mode: 0o755 });
+    chmodSync(join(repo, '.booster'), 0o755);
+    chmodSync(join(repo, '.booster', 'logs'), 0o755);
+    writeFileSync(join(repo, '.booster', 'report.json'), '{"stale":true}', { mode: 0o644 });
+    chmodSync(join(repo, '.booster', 'report.json'), 0o644);
+
+    const s = new RunStatus(repo, 'run-upgrade');
+    s.ticket('T1', { phase: 'building' });
+    s.report({ merged: ['T1'], failed: {} });
+    await s.writePromise;
+
+    const mode = (p) => statSync(p).mode & 0o777;
+    for (const p of [
+      join(repo, '.booster'),
+      join(repo, '.booster', 'logs'),
+      join(repo, '.booster', 'logs', 'run-upgrade'),
+    ]) {
+      assert.equal(mode(p), 0o700, `${p} must be tightened, not left as the older run created it`);
+    }
+    for (const p of [
+      join(repo, '.booster', 'report.json'),
+      join(repo, '.booster', 'run.json'),
+      join(repo, '.booster', 'logs', 'run-upgrade', 'events.jsonl'),
+    ]) {
+      assert.equal(mode(p), 0o600, `${p} must be tightened, not left as the older run created it`);
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('RunStatus: run state is written owner-only, never world-readable', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-perm-'));
   try {
