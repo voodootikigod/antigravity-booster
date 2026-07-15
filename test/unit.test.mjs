@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +12,9 @@ import { builderAgentsMd, prosecutionPrompt } from '../lib/charters.mjs';
 import { runGate, runGates } from '../lib/gates.mjs';
 import { prosecute } from '../lib/prosecute.mjs';
 import { RunStatus, renderStatus } from '../lib/status.mjs';
+import { reviewFleet } from '../lib/review.mjs';
+import { compilePlan } from '../lib/plan.mjs';
+import { runPlan } from '../lib/scheduler.mjs';
 import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
   isMidMerge, abortAnyMerge,
@@ -101,18 +104,14 @@ test('runAgy: detects exit-0 print-timeout as failure', async () => {
 });
 
 test('runAgy: classifies and logs failures correctly', async () => {
-  const logFile = join(tmpdir(), `agb-test-agy-log-${Date.now()}.log`);
+  const logFile = join(tmpdir(), `agb-test-agy-log-${Date.now()}.jsonl`);
   try {
     const parseLogBlocks = (content) => {
-      return content.split('\n===\n').filter(Boolean).map(block => {
-        const pIdx = block.indexOf('\n---PROMPT---\n');
-        const oIdx = block.indexOf('\n---OUTPUT---\n');
-        if (pIdx === -1 || oIdx === -1) return null;
-        return {
-          header: JSON.parse(block.slice(0, pIdx)),
-          prompt: block.slice(pIdx + 14, oIdx),
-          output: block.slice(oIdx + 14)
-        };
+      return content.trim().split('\n').filter(Boolean).map(line => {
+        try {
+          const o = JSON.parse(line);
+          return { header: o, prompt: o.prompt, output: o.output };
+        } catch { return null; }
       }).filter(Boolean);
     };
 
@@ -190,6 +189,22 @@ test('runAgy: env option is scoped to this spawn only — process.env is never m
   }
 });
 
+test('runAgy: --project is passed when project is provided; omitted by default', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'agb-agy-argv-'));
+  const prevState = process.env.FAKE_STATE_DIR;
+  process.env.FAKE_STATE_DIR = state;
+  try {
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY });
+    await runAgy({ model: 'Gemini 3.5 Flash (Low)', prompt: 'x', bin: FAKE_AGY, project: 'test-proj' });
+    const [defaultCall, projectCall] = readFileSync(join(state, 'agy-argv-seen'), 'utf8').trim().split('\n');
+    assert.ok(!defaultCall.includes('--project'), 'project option omitted by default — no --project flag');
+    assert.ok(projectCall.includes('--project test-proj'), 'project: "test-proj" passes --project test-proj');
+  } finally {
+    if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
 // --- pools ---
 
 test('PoolSet: caps enforced, waiters released, requests counted', async () => {
@@ -212,12 +227,13 @@ test('PoolSet: caps enforced, waiters released, requests counted', async () => {
 test('PoolSet.route: reservation spreads concurrent dispatches across pools', () => {
   const pools = new PoolSet();
   // First mid ticket → claude (all reserved 0, claude is first candidate).
-  assert.equal(pools.route('mid'), 'Claude Sonnet 4.6 (Thinking)');
+  // First mid ticket -> Gemini 3.5 Flash (High)
+  assert.equal(pools.route('mid'), 'Gemini 3.5 Flash (High)');
   // Second mid ticket (no slot acquired yet — the bug case) must NOT pick
   // claude again; reservation pushes it to the idle gemini-pro pool.
   assert.equal(pools.route('mid'), 'Gemini 3.1 Pro (Low)');
-  // pool_hint still constrains family.
-  assert.equal(pools.route('mid', 'gemini'), 'Gemini 3.1 Pro (Low)');
+  // pool_hint still constrains family (but both are gemini now, so it falls back to load ratio: 1/8 < 1/4)
+  assert.equal(pools.route('mid', 'gemini'), 'Gemini 3.5 Flash (High)');
   // unroute frees the assignment so the pool rebalances.
   pools.unroute('Gemini 3.1 Pro (Low)');
   pools.unroute('Gemini 3.1 Pro (Low)');
@@ -226,8 +242,8 @@ test('PoolSet.route: reservation spreads concurrent dispatches across pools', ()
 
 test('PoolSet.prosecutorFor: always a different family', () => {
   const pools = new PoolSet();
-  assert.equal(familyOf(pools.prosecutorFor('Gemini 3.5 Flash (Low)')), 'claude');
-  assert.equal(familyOf(pools.prosecutorFor('Claude Sonnet 4.6 (Thinking)')), 'gemini');
+  assert.equal(familyOf(pools.prosecutorFor('Gemini 3.5 Flash (Low)')), 'gpt-oss');
+  assert.equal(familyOf(pools.prosecutorFor('GPT-OSS 120B (Medium)')), 'gemini');
 });
 
 // --- charters ---
@@ -309,7 +325,7 @@ test('prosecute: ship verdict on clean JSON', async () => {
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.FAKE_PROSECUTOR_VERDICT = 'ship';
   try {
-    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Claude Sonnet 4.6 (Thinking)' });
+    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Gemini 3.5 Flash (High)' });
     assert.equal(v.verdict, 'ship');
     assert.equal(v.findings.length, 0);
   } finally {
@@ -321,7 +337,7 @@ test('prosecute: high finding forces block; empty diff blocks without a model ca
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.FAKE_PROSECUTOR_VERDICT = 'block';
   try {
-    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Claude Sonnet 4.6 (Thinking)' });
+    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Gemini 3.5 Flash (High)' });
     assert.equal(v.verdict, 'block');
     assert.equal(v.findings[0].severity, 'high');
     const empty = await prosecute({ ticket: { id: 'T1', body: 's' }, diff: '  ', model: 'x-no-such-model' });
@@ -346,12 +362,65 @@ test('prosecute: oversized diff blocks without a model call — never ship on a 
 
 // --- status ---
 
+// The test below renders the dashboard and matches /T1/, but s.report() also
+// carries 'T1', so that assertion passes even when the ticket table is empty —
+// RunStatus.ticket() could record nothing at all and the suite stayed green.
+// These pin the recording itself: state, and the phase transition in the event
+// log the TUI reads.
+test('RunStatus.ticket: records ticket state and emits phase transitions', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-status-rec-'));
+  try {
+    const s = new RunStatus(dir, 'run-rec');
+    s.ticket('T1', { phase: 'building', model: 'Gemini 3.5 Flash (High)', detail: 'first' });
+    s.ticket('T1', { phase: 'merged' });
+    await s.writePromise;
+
+    const run = JSON.parse(readFileSync(join(dir, '.booster', 'run.json'), 'utf8'));
+    assert.deepEqual(Object.keys(run.tickets), ['T1'], 'the ticket must be recorded in run state');
+    assert.equal(run.tickets.T1.phase, 'merged', 'the latest phase wins');
+    assert.equal(run.tickets.T1.model, 'Gemini 3.5 Flash (High)', 'earlier fields survive a later patch');
+
+    const events = readFileSync(join(dir, '.booster', 'logs', 'run-rec', 'events.jsonl'), 'utf8')
+      .trim().split('\n').map((l) => JSON.parse(l));
+    const phases = events.filter((e) => e.type === 'phase');
+    assert.equal(phases.length, 2, 'one phase event per ticket() call');
+    assert.equal(phases[0].to, 'building');
+    assert.equal(phases[0].from, undefined, 'no from on the first transition');
+    assert.equal(phases[1].from, 'building', 'the transition records where it came from');
+    assert.equal(phases[1].to, 'merged');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('RunStatus.ticket: __proto__/constructor ids cannot corrupt the ticket map', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-status-proto-'));
+  try {
+    const s = new RunStatus(dir, 'run-proto');
+    s.ticket('__proto__', { phase: 'pwned' });
+    s.ticket('constructor', { phase: 'pwned' });
+    s.ticket('T1', { phase: 'building' });
+    await s.writePromise;
+
+    assert.equal({}.phase, undefined, 'Object.prototype must not be reachable for pollution');
+    assert.equal(Object.getPrototypeOf(s.state.tickets), Object.prototype, 'the ticket map prototype must be intact');
+    assert.deepEqual(Object.keys(s.state.tickets), ['T1'], 'poisoned ids are dropped, real ones still land');
+
+    const events = readFileSync(join(dir, '.booster', 'logs', 'run-proto', 'events.jsonl'), 'utf8')
+      .trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(events.filter((e) => e.type === 'phase').map((e) => e.ticket), ['T1'],
+      'a rejected id must not reach the event log either');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('RunStatus: atomic write + dashboard render', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-status-'));
   try {
     const s = new RunStatus(dir, 'run-test');
-    s.ticket('T1', { phase: 'building', model: 'Claude Sonnet 4.6 (Thinking)' });
-    s.finish({ merged: ['T1'], failed: {}, requests: { claude: 2 } });
+    s.ticket('T1', { phase: 'building', model: 'Gemini 3.5 Flash (High)' });
+    s.report({ merged: ['T1'], failed: {}, requests: { claude: 2 } });
     assert.ok(existsSync(join(dir, '.booster', 'run.json')));
     assert.ok(existsSync(join(dir, '.booster', 'report.json')));
     const rendered = renderStatus(dir);
@@ -396,6 +465,45 @@ test('worktrees: create → edit → commit → diff → merge lifecycle', () =>
 
     mergeWorktree(dir, wt, 'T9', 'main');
     assert.equal(readFileSync(join(dir, 'feature.txt'), 'utf8'), 'new\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Two tickets touching one file is the expected case in a parallel orchestrator,
+// not an exotic one. The guard has two jobs: escalate (throw), and leave the
+// worktree usable (rebase --abort). A worktree stranded mid-rebase would let the
+// next operation commit conflict markers into base, so both are asserted.
+test('mergeWorktree: a rebase conflict throws and leaves no rebase in progress', () => {
+  const { dir, g } = makeRepo();
+  try {
+    writeFileSync(join(dir, 'shared.txt'), 'base\n');
+    g('add', '-A'); g('commit', '-qm', 'add shared');
+
+    // Ticket branches off, edits the shared file.
+    const wt = createWorktree(dir, 'T7', 'main');
+    writeFileSync(join(wt, 'shared.txt'), 'ticket side\n');
+    assert.equal(commitAll(wt, 'T7: edit shared'), true);
+
+    // main moves underneath it, editing the same line differently.
+    writeFileSync(join(dir, 'shared.txt'), 'main side\n');
+    g('add', '-A'); g('commit', '-qm', 'main edits shared');
+
+    assert.throws(
+      () => mergeWorktree(dir, wt, 'T7', 'main'),
+      /rebase conflict for T7/,
+      'a conflict must escalate, not merge silently'
+    );
+
+    // rebase --abort ran: git reports no rebase in progress and the worktree is
+    // back on its own branch with its own content, not a half-applied state.
+    const rebaseDir = execFileSync('git', ['rev-parse', '--git-path', 'rebase-merge'], { cwd: wt, encoding: 'utf8' }).trim();
+    const rebaseApply = execFileSync('git', ['rev-parse', '--git-path', 'rebase-apply'], { cwd: wt, encoding: 'utf8' }).trim();
+    assert.equal(existsSync(join(wt, rebaseDir)) || existsSync(join(wt, rebaseApply)), false, 'worktree left mid-rebase');
+    assert.equal(readFileSync(join(wt, 'shared.txt'), 'utf8'), 'ticket side\n', 'worktree content restored');
+
+    // base is untouched — the conflicting ticket did not land.
+    assert.equal(readFileSync(join(dir, 'shared.txt'), 'utf8'), 'main side\n');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -497,7 +605,8 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
       stdio: 'pipe',
       env: { ...process.env, ADLC_ANTIGRAVITY_PLUGIN_PATH: '', NODE_PATH: '' },
     }).toString().trim();
-    assert.equal(out, expected, 'unresolvable npm package falls back to the sibling checkout');
+    const norm = (p) => p.replace(/^\/private/, '');
+    assert.equal(norm(out), norm(expected), 'unresolvable npm package falls back to the sibling checkout');
   } finally {
     rmSync(isoRoot, { recursive: true, force: true });
   }
@@ -529,7 +638,7 @@ test('bootstrap: agy plugin install invoked with the resolved plugin path', () =
   try {
     bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
     const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim();
-    assert.equal(installs, FAKE_PLUGIN, 'agy plugin install received the resolved plugin path');
+    assert.equal(installs, '.', 'agy plugin install received "." since it runs with cwd set to the resolved plugin path');
   } finally {
     if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
     rmSync(destDir, { recursive: true, force: true });
@@ -597,3 +706,52 @@ test('bootstrap: fails loudly when `agy plugin install` itself fails (e.g. agy t
   }
 });
 
+
+test('prosecute and reviewFleet: pass project option through to runAgy', async () => {
+  const state = join(tmpdir(), `agb-test-proj-${Date.now()}`);
+  mkdirSync(state, { recursive: true });
+  process.env.FAKE_STATE_DIR = state;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+
+  await prosecute({ ticket: {id:'T1'}, diff: 'a', model: 'x', project: 'proj-prosecute' });
+  let argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-prosecute'), 'prosecute passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+
+  await reviewFleet({ diff: 'a', context: '', project: 'proj-review' });
+  argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-review'), 'reviewFleet passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+});
+
+test('compilePlan and runPlan: pass project option through to runAgy', async () => {
+  const state = join(tmpdir(), `agb-test-proj-plan-${Date.now()}`);
+  mkdirSync(state, { recursive: true });
+  process.env.FAKE_STATE_DIR = state;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+  process.env.FAKE_BRAIN_MODE = 'edges';
+  process.env.AGB_ALLOW_DIRTY = '1';
+  const repo = join(tmpdir(), `agb-test-plan-${Date.now()}`);
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(join(repo, '.adlc'), { recursive: true });
+  writeFileSync(join(repo, '.adlc/config.json'), JSON.stringify({}));
+  execSync('git init -b main', { cwd: repo });
+  execSync('git config commit.gpgsign false', { cwd: repo });
+  execSync('git config user.name "Test User"', { cwd: repo });
+  execSync('git config user.email "test@example.com"', { cwd: repo });
+  execSync('git add .', { cwd: repo });
+  execSync('git commit --allow-empty -m "initial"', { cwd: repo });
+
+  const specFile = join(tmpdir(), `agb-test-spec-${Date.now()}.json`);
+  writeFileSync(specFile, JSON.stringify({ tickets: [] }));
+  await compilePlan(specFile, { repo, coldstart: true, parallax: true, premortem: true, project: 'proj-compile' });
+  let argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-compile'), 'compilePlan passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+
+  const plan = { repo, base: 'main', gate: { test: 'true' }, tickets: [{id:'T1', title:'a', body:'a', scope:[], edges:[]}] };
+  await runPlan(plan, { project: 'proj-run' });
+  argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+  assert.ok(argv.includes('--project proj-run'), 'runPlan passes project');
+  rmSync(join(state, 'agy-argv-seen'));
+});

@@ -1,10 +1,19 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
+
+// Scratch lives outside the checkout so a test run never dirties the working
+// tree, and is torn down in `after` so it survives an assertion failing early.
+// realpathSync resolves macOS's /var -> /private/var symlink, which git
+// canonicalises and would otherwise mismatch paths reported back to us.
+const TMP = realpathSync(mkdtempSync(join(tmpdir(), 'agb-cli-test-')));
+after(() => rmSync(TMP, { recursive: true, force: true }));
 
 test('agb COMMANDS table covers all dispatched commands', () => {
   const code = readFileSync(AGB_BIN, 'utf8');
@@ -13,12 +22,21 @@ test('agb COMMANDS table covers all dispatched commands', () => {
   const tableEnd = code.indexOf('};', tableStart);
   assert(tableStart !== -1 && tableEnd !== -1, 'COMMANDS table not found');
   const tableStr = code.slice(tableStart, tableEnd + 2);
-  
+
   const declaredCmds = [...tableStr.matchAll(/(\w+|'[^']+'):/g)].map(m => m[1].replace(/'/g, ''));
-  
+
+  // Aliases and flags are not commands and have no table row of their own.
   for (const cmd of cmdMatches) {
-    if (['setup', 'install', 'skills', 'help', '--help', '-h'].includes(cmd)) continue;
+    if (['setup', 'install', 'skills', 'help', '--help', '-h', 'version', '--version', '-v'].includes(cmd)) continue;
     assert(declaredCmds.includes(cmd), `Command ${cmd} is dispatched but not in COMMANDS table`);
+  }
+});
+
+test('agb --version prints the package version', () => {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+  for (const flag of ['--version', '-v', 'version']) {
+    const stdout = execFileSync(process.execPath, [AGB_BIN, flag], { encoding: 'utf8' }).trim();
+    assert.equal(stdout, pkg.version, `agb ${flag} must report the manifest version`);
   }
 });
 
@@ -53,16 +71,18 @@ test('agb help <cmd> exits 0 and prints per-cmd usage', () => {
 
 test('agb validate exits 0 on valid plan', () => {
   const plan = { repo: '.', tickets: [{id: 'T1', title: 't', body: 'b', scope: ['*'], rails: [], edges: []}], gate: { build: 'true' } };
-  writeFileSync('tmp-valid.json', JSON.stringify(plan));
-  execFileSync(process.execPath, [AGB_BIN, 'validate', 'tmp-valid.json']);
+  const planFile = join(TMP, 'valid.json');
+  writeFileSync(planFile, JSON.stringify(plan));
+  execFileSync(process.execPath, [AGB_BIN, 'validate', planFile]);
 });
 
 test('agb validate exits 2 on invalid plan', () => {
   let threw = false;
   const plan = { tickets: [{ id: '1' }, { id: '1' }] }; // duplicate id
-  writeFileSync('tmp-invalid.json', JSON.stringify(plan));
+  const planFile = join(TMP, 'invalid.json');
+  writeFileSync(planFile, JSON.stringify(plan));
   try {
-    execFileSync(process.execPath, [AGB_BIN, 'validate', 'tmp-invalid.json']);
+    execFileSync(process.execPath, [AGB_BIN, 'validate', planFile]);
   } catch (err) {
     threw = true;
     assert.strictEqual(err.status, 2);
@@ -70,11 +90,8 @@ test('agb validate exits 2 on invalid plan', () => {
   assert(threw);
 });
 
-import { join } from 'node:path';
-import { rmSync, mkdirSync, cpSync } from 'node:fs';
-
 test('agb plan --out overwrite refusal', () => {
-  const tmp = 'tmp-plan-out.json';
+  const tmp = join(TMP, 'plan-out.json');
   writeFileSync(tmp, '{"exists":true}');
   let threw = false;
   try {
@@ -85,11 +102,10 @@ test('agb plan --out overwrite refusal', () => {
     assert(err.stderr.includes('already exists — pass --force to overwrite'));
   }
   assert(threw);
-  rmSync(tmp, { force: true });
 });
 
 test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
-  const repo = 'tmp-cli-repo';
+  const repo = join(TMP, 'cli-repo');
   rmSync(repo, { recursive: true, force: true });
   mkdirSync(repo);
   const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
@@ -102,32 +118,28 @@ test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
   g('commit', '--allow-empty', '-m', 'init');
 
   const plan = {
-    repo: resolve(repo),
+    repo,
     tickets: [
       { id: 'T1', title: 'test', body: 't', scope: ['*'], rails: [], edges: [] }
     ],
     gate: { build: 'true', test: 'true' }
   };
-  writeFileSync(`${repo}/plan.json`, JSON.stringify(plan));
+  writeFileSync(join(repo, 'plan.json'), JSON.stringify(plan));
 
   // Fake agy script that succeeds
-  const fakeAgy = resolve('test/fixtures/fake-agy');
-  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_ADLC_BIN: resolve('test/fixtures/fake-adlc'), PATH: process.env.PATH, AGB_ALLOW_DIRTY: '1', AGB_SANDBOX_GATES: '0' };
+  const fakeAgy = fileURLToPath(new URL('fixtures/fake-agy', import.meta.url));
+  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_ADLC_BIN: fileURLToPath(new URL('fixtures/fake-adlc', import.meta.url)), PATH: process.env.PATH, AGB_ALLOW_DIRTY: '1', AGB_SANDBOX_GATES: '0' };
 
   // success
   const out = execFileSync(process.execPath, [AGB_BIN, 'run', 'plan.json'], { cwd: repo, env, encoding: 'utf8' });
   assert(out.includes('"merged": [\n    "T1"\n  ]'));
-
-  rmSync(repo, { recursive: true, force: true });
 });
 
-import { resolve } from 'node:path';
-
 test('agb status against a synthetic .booster/run.json', () => {
-  const repo = 'tmp-status-repo';
+  const repo = join(TMP, 'status-repo');
   rmSync(repo, { recursive: true, force: true });
   mkdirSync(join(repo, '.booster'), { recursive: true });
-  
+
   const runState = {
     started: new Date().toISOString(),
     status: 'RUNNING',
@@ -137,10 +149,8 @@ test('agb status against a synthetic .booster/run.json', () => {
     edges: []
   };
   writeFileSync(join(repo, '.booster/run.json'), JSON.stringify(runState));
-  
+
   const out = execFileSync(process.execPath, [AGB_BIN, 'status', repo], { encoding: 'utf8' });
   assert(out.includes('T1'));
   assert(out.includes('merged'));
-  
-  rmSync(repo, { recursive: true, force: true });
 });

@@ -42,7 +42,7 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 
 ### 🚀 Execution
 - **`agb run <plan.json>`**  
-  Executes the ticket DAG. Dispatches workers in isolated worktrees, runs sandboxed L2 gates, orchestrates cross-model prosecution, and sequentially rebases/merges passing work. Reverts if the post-merge gate fails.
+  Executes the ticket DAG. Dispatches workers in isolated worktrees, assigns each worker a dedicated project isolation boundary (e.g. `--project "agb-<runId>-<ticketId>"`), runs sandboxed L2 gates, orchestrates cross-model prosecution, and sequentially rebases/merges passing work. Reverts if the post-merge gate fails.
 - **`agb sweep <sweep.json>`**  
   Runs a fan-out sweep. Applies a single instruction across dozens of targets concurrently (e.g., "Add JSDoc to every file").
 - **`agb review <repo> [ref]`**  
@@ -52,7 +52,35 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 - **`agb status <repo>`**  
   Displays a live dashboard of an ongoing run (shows active workers, queues, and request counts).
 
+### 📝 Log Schemas
+
+**`events.jsonl` (Global Run Events)**  
+Located at `.booster/logs/<runId>/events.jsonl`. Appended atomically during the run.
+- `ts`: ISO 8601 timestamp.
+- `runId`: The unique run identifier.
+- `type`: Event type (`phase`, `pool`, `strike`, or `report`).
+- `ticket`: The ticket ID (for phase and strike events).
+- `from`, `to`: The phase transition for the ticket.
+- `detail`: Optional detail string about the phase.
+- `pools`: The active state of all quota pools (for pool events).
+- `model`, `error`, `strikes`: Information about a strike (for strike events).
+- `done`, `report`: Final run summary (for report events).
+
+**`<ticketId>.jsonl` (Per-Ticket Transcript)**  
+Located at `.booster/logs/<runId>/<ticketId>.jsonl`.
+- `ts`: ISO 8601 timestamp.
+- `role`: Role of the agent (`builder` or `prosecutor`).
+- `model`: Model name used.
+- `strike`: The current strike number (for builders) or 0 (for prosecutors).
+- `ms`: Execution time in milliseconds.
+- `ok`: Boolean indicating if the model call succeeded (no crash/timeout).
+- `error`, `kind`: Error message and type (e.g., `timeout`, `server`, `spawn`) if `ok` is false.
+- `prompt`: The full text of the prompt sent to the model.
+- `output`: The raw text output received from the model.
+- `cwd`: The working directory the model executed in.
+
 *(Note: `agb import-brain` is deprecated. Use `agb plan` instead.)*
+
 
 ---
 
@@ -159,7 +187,7 @@ Modify these flags in your shell to adjust how `agb` runs:
 | `AGB_ALLOW_DIRTY` | `0` | Set to `1` to bypass the clean git directory check. *Caution: Rollbacks use git resets, which will discard uncommitted changes.* |
 | `AGB_AGY_BIN` | `agy` | Custom path to the Antigravity CLI binary. Used mainly for testing with mock wrappers. |
 | `AGB_ADLC_BIN` | `adlc` | Custom path to the adlc CLI binary. Used by every `adlc <tool>` integration (rails-guard, model-router, merge-forecast, flail-detector, consensus-fix, gate-manifest, review-calibration) and for testing with mock wrappers. |
-| `ADLC_ANTIGRAVITY_PLUGIN_PATH` | `../adlc/plugins/adlc-antigravity` | Where `agb bootstrap` finds the (unpublished) adlc-antigravity plugin to install. |
+| `ADLC_ANTIGRAVITY_PLUGIN_PATH` | resolved from `node_modules` | Override where `agb bootstrap` finds the `@adlc/antigravity` plugin to install. Defaults to the installed npm package; falls back to a sibling `../adlc/plugins/adlc-antigravity` checkout. |
 | `AGB_PLUGIN_DIR` | `~/.gemini/config/plugins/adlc-antigravity` | Installed adlc-antigravity plugin directory; its `plugin.json` `adlcContract` field is handshake-checked against the booster's supported contract before enabling live rail enforcement. Incompatible → the run aborts before any repo mutation; missing/unreadable → warns and degrades. Tests point this at a fixture directory. |
 | `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains` and `agb plan` look for Antigravity plan artifacts. |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` | Target directory where `agb probe` writes result reports. |

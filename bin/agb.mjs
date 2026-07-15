@@ -18,7 +18,17 @@ import { PoolSet } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 
-const [cmd, ...rest] = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+let project;
+const filteredArgs = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === '--project') {
+    project = rawArgs[++i];
+  } else {
+    filteredArgs.push(rawArgs[i]);
+  }
+}
+const [cmd, ...rest] = filteredArgs;
 
 const COMMANDS = {
   run: { args: '<plan.json>', desc: 'execute a ticket DAG (build → gate → prosecute → merge)' },
@@ -34,7 +44,8 @@ const COMMANDS = {
   doctor: { args: '', desc: 'verify your environment and tools' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
-  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
+  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>] [--ui]' },
+  tui: { args: '[repo]', desc: 'full-screen dashboard for a repo\'s current run (q to quit)', extended: 'falls back to a one-shot status render when stdout is not a TTY' },
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' }
@@ -57,6 +68,14 @@ function printCmdUsage(name) {
   console.log(`  ${c.desc}`);
   if (c.extended) console.log(`  ${c.extended}`);
   if (c.flags) console.log(`  Flags: ${c.flags}`);
+}
+
+// Read from the manifest rather than a second hardcoded copy that can drift
+// out of step with the published version.
+if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+  console.log(pkg.version);
+  process.exit(0);
 }
 
 if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
@@ -101,13 +120,13 @@ try {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const report = await runPlan(plan);
+    const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === 'sweep') {
     const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
     if (spec.repo) spec.repo = resolve(spec.repo);
-    const plan = sweepToPlan(spec);
+    const plan = sweepToPlan(spec, { project });
     const errors = plan.tickets.flatMap(validateTicket);
     if (!plan.gate || (!plan.gate.build && !plan.gate.test)) errors.push('sweep.gate must declare build/test');
     if (errors.length) {
@@ -115,7 +134,7 @@ try {
       process.exit(1);
     }
     console.error(`sweep: ${plan.tickets.length} targets`);
-    const report = await runPlan(plan);
+    const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === 'review') {
@@ -126,7 +145,7 @@ try {
       console.error('review: empty diff — nothing to prosecute');
       process.exit(0);
     }
-    const result = await reviewFleet({ diff, pools: new PoolSet(), log: (m) => console.error(m) });
+    const result = await reviewFleet({ diff, pools: new PoolSet(), log: (m) => console.error(m), project });
     console.log(JSON.stringify(result, null, 2));
     if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
     const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
@@ -137,7 +156,7 @@ try {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart') });
+    const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart'), project });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
@@ -166,6 +185,7 @@ try {
       coldstart: !rest.includes('--no-coldstart'),
       parallax: !rest.includes('--no-parallax'),
       premortem: !rest.includes('--no-premortem'),
+      project,
     });
     console.log(JSON.stringify(result.report, null, 2));
     if (!result.ok) {
@@ -199,7 +219,7 @@ try {
       process.exit(1);
     }
     console.error('import-brain is deprecated — use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)');
-    const plan = await brainToPlan(id, { repo: resolve(repo) });
+    const plan = await brainToPlan(id, { repo: resolve(repo), project });
     console.log(JSON.stringify(plan, null, 2));
     console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
   } else if (cmd === 'status') {
@@ -210,6 +230,13 @@ try {
     const positional = rest.filter((r, i) => !r.startsWith('--') && rest[i - 1] !== '--interval');
     
     if (isWatch) {
+      if (process.stdout.isTTY && rest.includes('--ui')) {
+        const { launchTUI } = await import('../lib/tui.mjs');
+        const code = await launchTUI(resolve(positional[0] ?? '.'), true, intervalMs);
+        if (code !== 'fallback') {
+          process.exit(code);
+        }
+      }
       const { watchStatus } = await import('../lib/status.mjs');
       const code = await watchStatus(resolve(positional[0] ?? '.'), intervalMs);
       process.exitCode = code;
@@ -276,6 +303,16 @@ try {
       }
     } else {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
+    }
+  } else if (cmd === 'tui') {
+    const repo = resolve(rest[0] ?? '.');
+    if (!process.stdout.isTTY) {
+      console.log(renderStatus(repo));
+      process.exitCode = 0;
+    } else {
+      const { launchTUI } = await import('../lib/tui.mjs');
+      const code = await launchTUI(repo, false);
+      process.exitCode = code === 'fallback' ? 0 : code;
     }
   } else {
     console.error(`agb: unknown command '${cmd}'\\n`);

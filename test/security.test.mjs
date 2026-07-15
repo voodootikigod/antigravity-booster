@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { isAgyTimeout } from '../lib/agy.mjs';
 import { PoolSet } from '../lib/pools.mjs';
@@ -10,6 +12,8 @@ import { prosecutionPrompt } from '../lib/charters.mjs';
 import { sandboxProfile, gateSandboxEnabled, runGate } from '../lib/gates.mjs';
 import { regenPrompt } from '../lib/charters.mjs';
 import { acquireRepoLock } from '../lib/lock.mjs';
+import { RunStatus } from '../lib/status.mjs';
+import { validatePlan } from '../lib/plan.mjs';
 
 // --- agy timeout anchoring (review: false-positive timeout) ---
 
@@ -193,22 +197,222 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
   }
 });
 
-test('acquireRepoLock: exactly one of many concurrent reclaimers wins a stale lock', async () => {
+// The ticket id becomes both a worktree directory (.worktrees/agb-<id>) and a
+// git branch (agb/<id>). A traversal id was rejected only because git refuses
+// '..' in a ref name — incidental protection that would evaporate if the branch
+// scheme ever changed independently of the path scheme. validatePlan owns it now.
+test('validatePlan: rejects ticket ids that could escape the worktree path', () => {
+  const base = { repo: '/tmp/x', gate: { test: 'true' } };
+  const ticket = (id) => ({ id, title: 't', body: 'b', scope: ['*'], rails: [], edges: [] });
+
+  for (const bad of ['../../../../tmp/pwned', '..', '.hidden', 'a/b', 'a\\b', 'a b', '', 'a;rm -rf /']) {
+    const errors = validatePlan({ ...base, tickets: [ticket(bad)] });
+    assert.ok(errors.length > 0, `id ${JSON.stringify(bad)} must be rejected`);
+  }
+  // Digit-leading ids across the whole 0-9 range: the pattern must not quietly
+  // narrow to a subset of digits.
+  for (const good of ['T1', 'B11', 'DOC-UPDATE', 'BOOTSTRAP-AUTO-CLONE', 'ISSUE-26', 'a.b_c',
+    '0-first', '2ND-PASS', '9lives', '42']) {
+    const errors = validatePlan({ ...base, tickets: [ticket(good)] });
+    assert.deepEqual(errors, [], `id ${JSON.stringify(good)} must be accepted`);
+  }
+});
+
+// createWorktree lowercases the id into both the worktree dir and the branch,
+// then force-removes whatever it finds there. Two ids differing only in case are
+// distinct to a plan and identical on disk, so dispatching the second deletes the
+// first's live worktree and uncommitted builder output — silently, because the
+// ids "passed validation".
+test('validatePlan: rejects ticket ids that collide once lowercased into a worktree', () => {
+  const base = { repo: '/tmp/x', gate: { test: 'true' } };
+  const ticket = (id) => ({ id, title: 't', body: 'b', scope: [`${id}.txt`], rails: [], edges: [] });
+
+  const errors = validatePlan({ ...base, tickets: [ticket('Api-1'), ticket('api-1')] });
+  assert.ok(
+    errors.some((e) => /collides with 'Api-1'/.test(e)),
+    `case-variant ids must be rejected — got ${JSON.stringify(errors)}`
+  );
+
+  // Distinct ids that merely share a prefix must still be accepted.
+  assert.deepEqual(validatePlan({ ...base, tickets: [ticket('T1'), ticket('T2')] }), []);
+});
+
+// Run state and transcripts quote whatever the builder read in the worktree —
+// a .env, a config file, debug output — so they are secret-bearing by default.
+// On a shared box or a CI runner, 0644 hands those to every local account.
+// The upgrade path is the only one that can fail, and a fresh mkdtemp cannot
+// model it: Node applies `mode` only when it creates a path, so on a repo that
+// ran a pre-hardening build .booster/ and report.json already exist and the mode
+// is silently ignored. Pre-create them exactly as an older run left them.
+test('RunStatus: tightens permissions on state left world-readable by an older run', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-upgrade-'));
+  try {
+    mkdirSync(join(repo, '.booster', 'logs'), { recursive: true, mode: 0o755 });
+    chmodSync(join(repo, '.booster'), 0o755);
+    chmodSync(join(repo, '.booster', 'logs'), 0o755);
+    writeFileSync(join(repo, '.booster', 'report.json'), '{"stale":true}', { mode: 0o644 });
+    chmodSync(join(repo, '.booster', 'report.json'), 0o644);
+    // A run killed between writeFileSync(tmp) and renameSync leaves this behind.
+    // It is a fixed path, so the next write to it ignores mode and the rename
+    // would carry 0644 onto run.json.
+    writeFileSync(join(repo, '.booster', 'run.json.tmp'), '{"crashed":true}', { mode: 0o644 });
+    chmodSync(join(repo, '.booster', 'run.json.tmp'), 0o644);
+
+    const s = new RunStatus(repo, 'run-upgrade');
+    s.ticket('T1', { phase: 'building' });
+    s.report({ merged: ['T1'], failed: {} });
+    await s.writePromise;
+
+    const mode = (p) => statSync(p).mode & 0o777;
+    for (const p of [
+      join(repo, '.booster'),
+      join(repo, '.booster', 'logs'),
+      join(repo, '.booster', 'logs', 'run-upgrade'),
+    ]) {
+      assert.equal(mode(p), 0o700, `${p} must be tightened, not left as the older run created it`);
+    }
+    for (const p of [
+      join(repo, '.booster', 'report.json'),
+      join(repo, '.booster', 'run.json'),
+      join(repo, '.booster', 'logs', 'run-upgrade', 'events.jsonl'),
+    ]) {
+      assert.equal(mode(p), 0o600, `${p} must be tightened, not left as the older run created it`);
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// NOTE — deliberately untested: the warn arm of ownerOnlyDir (chmod fails but
+// writes still succeed) is the vfat/CIFS/bind-mount case, and there is no
+// portable way to produce it. chflags uchg makes the directory immutable, so
+// writes fail too and it models a different failure. It is defence-in-depth
+// rather than the load-bearing control: file contents are owner-only via
+// writeOwnerOnly's unlink-then-create regardless of the directory's mode, so a
+// 0755 .booster/ exposes run-id filenames, not run state. See the ticket for
+// the seam that would make it testable.
+
+// A crashed run leaves .booster/run.json.tmp behind at whatever mode it had.
+// The next flush writes to that existing path (mode ignored) and renames it onto
+// run.json. This must be asserted after exactly ONE flush: the stale tmp is
+// consumed by the rename, so a second flush creates a fresh 0600 tmp and hides
+// the leak. The upgrade test above flushes twice and cannot see this.
+test('RunStatus: a stale 0644 run.json.tmp does not carry its mode onto run.json', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-tmp-'));
+  try {
+    mkdirSync(join(repo, '.booster'), { recursive: true });
+    const tmp = join(repo, '.booster', 'run.json.tmp');
+    writeFileSync(tmp, '{"crashed":true}');
+    chmodSync(tmp, 0o644);
+
+    const s = new RunStatus(repo, 'run-stale-tmp');
+    s.ticket('T1', { phase: 'building' }); // exactly one flush
+
+    const mode = statSync(join(repo, '.booster', 'run.json')).mode & 0o777;
+    assert.equal(mode, 0o600, 'run.json must not inherit the stale temp file mode');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('RunStatus: run state is written owner-only, never world-readable', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-'));
+  try {
+    const s = new RunStatus(repo, 'run-perms');
+    s.ticket('T1', { phase: 'building', detail: 'contents of .env: SECRET=hunter2' });
+    s.report({ merged: ['T1'], failed: {} });
+    await s.writePromise;
+
+    const mode = (p) => statSync(p).mode & 0o777;
+    const runJson = join(repo, '.booster', 'run.json');
+    const reportJson = join(repo, '.booster', 'report.json');
+    const logDir = join(repo, '.booster', 'logs', 'run-perms');
+    const events = join(logDir, 'events.jsonl');
+
+    assert.equal(mode(runJson), 0o600, 'run.json must be owner-only');
+    assert.equal(mode(reportJson), 0o600, 'report.json must be owner-only');
+    assert.equal(mode(events), 0o600, 'events.jsonl must be owner-only');
+    assert.equal(mode(logDir), 0o700, 'the run log dir must be owner-only');
+
+    // Guard the specific bit that leaks: group/other readability.
+    for (const p of [runJson, reportJson, events, logDir]) {
+      assert.equal(mode(p) & 0o077, 0, `${p} is readable beyond its owner`);
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// Reclaiming a stale lock is the one path where two runs can both decide the
+// holder is dead and race to replace it. acquireRepoLock is wholly synchronous,
+// so same-process "concurrency" (Promise.resolve().then(...)) cannot reach that
+// race: the first callback runs to completion and installs a LIVE pid, and every
+// later one takes the ordinary isAlive rejection without touching the atomic
+// rename. Real OS processes are the only way to interleave inside it.
+test('acquireRepoLock: exactly one of many concurrent processes reclaims a stale lock', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-lock5-'));
   try {
-    // Plant a stale lock (dead pid).
+    // Plant a stale lock (a pid that is definitively not running).
     mkdirSync(join(repo, '.booster', 'run.lock.d'), { recursive: true });
     writeFileSync(
       join(repo, '.booster', 'run.lock.d', 'meta.json'),
       JSON.stringify({ pid: 2 ** 22, runId: 'dead', token: 'old', startedAt: 'x' })
     );
-    // Many reclaimers race in the same tick.
-    const attempts = await Promise.allSettled(
-      Array.from({ length: 8 }, (_, i) => Promise.resolve().then(() => acquireRepoLock(repo, { runId: `R${i}` })))
-    );
-    const winners = attempts.filter((a) => a.status === 'fulfilled');
-    assert.equal(winners.length, 1, 'exactly one reclaimer may acquire the lock');
-    winners[0].value(); // release
+
+    const lockModule = fileURLToPath(new URL('../lib/lock.mjs', import.meta.url));
+    const child = join(repo, 'reclaimer.mjs');
+    // A wall-clock start time is not a barrier: the suite runs test files
+    // concurrently, so process spawn can drift past any fixed deadline, and a
+    // straggler that starts after the winner exits acquires cleanly and looks
+    // like a second winner. Each child instead announces readiness and blocks
+    // until released, which takes spawn latency out of the race entirely.
+    writeFileSync(child, `
+import { acquireRepoLock } from ${JSON.stringify(lockModule)};
+import { writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+const [dir] = process.argv.slice(2);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = async (f) => { while (!existsSync(join(dir, f))) await sleep(5); };
+
+writeFileSync(join(dir, 'ready.' + process.pid), '');
+await wait('go');
+let won = false;
+try { acquireRepoLock(dir, { runId: 'R' + process.pid }); won = true; } catch { /* lost */ }
+writeFileSync(join(dir, 'result.' + process.pid), won ? 'WIN' : 'LOSE');
+// A winner must hold until the parent has every result. Exiting on a timer
+// races sibling startup: release early and a straggler acquires cleanly,
+// which reads as a second winner. This waits for the parent instead.
+if (won) await wait('done');
+`);
+
+    const N = 8;
+    const count = (prefix) => readdirSync(repo).filter((f) => f.startsWith(prefix)).length;
+    const until = async (fn, what) => {
+      const deadline = Date.now() + 60_000;
+      while (!fn()) {
+        if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+
+    const running = Array.from({ length: N }, () => new Promise((res, rej) => {
+      execFile(process.execPath, [child, repo], { encoding: 'utf8' }, (e) => (e ? rej(e) : res()));
+    }));
+
+    // Release the barrier only once every child is parked at it, so process
+    // spawn latency is outside the race window entirely.
+    await until(() => count('ready.') === N, 'reclaimers to reach the barrier');
+    writeFileSync(join(repo, 'go'), '');
+    await until(() => count('result.') === N, 'reclaimers to report');
+
+    const results = readdirSync(repo).filter((f) => f.startsWith('result.'))
+      .map((f) => readFileSync(join(repo, f), 'utf8'));
+    writeFileSync(join(repo, 'done'), '');
+    await Promise.all(running);
+
+    const wins = results.filter((r) => r === 'WIN').length;
+    assert.equal(wins, 1, `exactly one process may reclaim a stale lock — got ${JSON.stringify(results)}`);
+    assert.equal(results.filter((r) => r === 'LOSE').length, 7);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

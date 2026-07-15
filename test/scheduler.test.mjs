@@ -94,6 +94,38 @@ test('runPlan: 3-ticket DAG builds in parallel, prosecutes, merges all', async (
   }
 });
 
+// The DAG's whole promise is that declaration order does not decide execution
+// order — dependencies do. dispatch() iterates the tickets array, so a plan whose
+// array order already matches the dependency order is satisfied by the iteration
+// alone and proves nothing. Here the array is declared in the *wrong* order
+// (dependent first), so array order and the DAG disagree: only a working
+// predecessor gate can produce the asserted result.
+test('runPlan: a dependent declared first still merges after its predecessor', async () => {
+  const repo = makeRepo();
+  try {
+    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' }, () =>
+      runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [
+          // LAST in dependency order, FIRST in the array.
+          { id: 'DEPENDENT', title: 'dependent', body: 'write DEPENDENT.txt', scope: ['DEPENDENT.txt'] },
+          // BLOCKER blocks DEPENDENT, so BLOCKER must merge first despite being second.
+          { id: 'BLOCKER', title: 'blocker', body: 'write BLOCKER.txt', scope: ['BLOCKER.txt'], edges: [{ to: 'DEPENDENT' }] },
+        ],
+      }, quiet)
+    );
+    assert.deepEqual(Object.keys(report.failed), [], 'both tickets should merge');
+    assert.equal(report.merged.length, 2);
+    assert.ok(
+      report.merged.indexOf('BLOCKER') < report.merged.indexOf('DEPENDENT'),
+      `predecessor must merge first regardless of array order — got ${JSON.stringify(report.merged)}`
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: red gate → two strikes → ticket failed, nothing merged', async () => {
   const repo = makeRepo();
   try {
@@ -479,3 +511,26 @@ test('runPlan: AC2 — the post-hoc rail check invokes adlc rails-guard with the
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('runPlan: passes the run project flag to builders and prosecutors', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-sched-state-'));
+  try {
+    await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    const argvSeen = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
+    const matches = argvSeen.match(/--project/g) || [];
+    assert.equal(matches.length, 2, 'should invoke agy with project flag twice (builder + prosecutor)');
+    assert.match(argvSeen, /--project agb-run-[a-z0-9]+/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+

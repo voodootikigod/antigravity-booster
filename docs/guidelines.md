@@ -213,7 +213,7 @@ Every gate transition a scheduler run produces — the worktree build, the prose
 
 ## CI Self-Protection
 
-This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, `.adlc/config.json` is the bootstrapped trust root, and `.github/workflows/adlc-rails-guard.yml` (copied from `../adlc/docs/ci/rails-guard.yml`) is the CI backstop behind the in-session hook. **The bootstrap is complete** — `.adlc/config.json` carries `acknowledgedNewRailBypass: true`, `securityMode: "unsigned-fallback"`, and `trustedCodeownersAttested: true`; branch protection on `main` enforces `require_code_owner_reviews: true` and `enforce_admins: true`; `CODEOWNERS` names `@voodootikigod` on `.github/workflows/**`. The rails-guard workflow runs as the live gate it was designed to be, not bootstrap mode.
+This repo dogfoods the ADLC on itself: `.adlc/tickets.json` is the tracked ticket contract, `.adlc/config.json` is the bootstrapped trust root, and `.github/workflows/adlc-rails-guard.yml` (copied from the ADLC toolkit's [`docs/ci/rails-guard.yml`](https://github.com/voodootikigod/adlc/blob/main/docs/ci/rails-guard.yml) template) is the CI backstop behind the in-session hook. **The bootstrap is complete** — `.adlc/config.json` carries `acknowledgedNewRailBypass: true`, `securityMode: "unsigned-fallback"`, and `trustedCodeownersAttested: true`; branch protection on `main` enforces `require_code_owner_reviews: true` and `enforce_admins: true`; `CODEOWNERS` names `@voodootikigod` on `.github/workflows/**`. The rails-guard workflow runs as the live gate it was designed to be, not bootstrap mode.
 
 Two things worth understanding about how that landed, since they're not obvious from the config alone:
 

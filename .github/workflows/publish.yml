@@ -76,7 +76,10 @@ jobs:
           echo "Publishing version $PKG_VERSION"
 
       - name: Install
-        run: npm install
+        # ci, not install: the published artifact must be built from the
+        # locked dependency tree, and a drifted lockfile should fail the
+        # release rather than resolve something nobody reviewed.
+        run: npm ci
 
       - name: Test
         run: npm test

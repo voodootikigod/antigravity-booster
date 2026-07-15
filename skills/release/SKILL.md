@@ -69,22 +69,36 @@ Use this command to release a new version of `antigravity-booster`.
    ```
    This atomically updates the `"version"` field in both `package.json` and `package-lock.json`.
 
-4. **Commit the version bump:**
+4. **Commit the bump on a release branch.** `main` is protected by the
+   `main-protection` ruleset (1 approving review + code-owner review), and its
+   only bypass is `pull_request` mode — so a direct `git push origin main` is
+   rejected for everyone, including admins. The bump has to land via a PR.
    ```bash
-   git add package.json package-lock.json
+   git checkout -b release/vX.Y.Z
+   git add package.json package-lock.json CHANGELOG.md
    git commit -m "chore: bump version to X.Y.Z"
+   git push -u origin release/vX.Y.Z
+   gh pr create --title "chore: release X.Y.Z" --body "Version bump + changelog for X.Y.Z."
    ```
+   Also move the `## [Unreleased]` entries in `CHANGELOG.md` under a new
+   `## [X.Y.Z] — YYYY-MM-DD` heading in this commit.
 
-5. **Create the version tag:** `vX.Y.Z`
+5. **Get the PR reviewed and merged.** Wait for CI and an approval, then merge.
+   Do not tag before it lands: `publish.yml` refuses to publish a tag that is not
+   an ancestor of `main`, so a tag on an unmerged commit fails the release.
+
+6. **Tag the merged commit on main and push the tag:**
    ```bash
+   git checkout main && git pull origin main
+   # Confirm you are tagging the bump you just merged.
+   node -p "require('./package.json').version"   # must equal X.Y.Z
    git tag vX.Y.Z
-   ```
-
-6. **Push commit and tag:**
-   ```bash
-   git push origin main
    git push origin vX.Y.Z
    ```
+   Tag creation is restricted by the `release tags` ruleset (`refs/tags/v*`), which
+   grants an always-bypass to the maintainer role — so this push succeeds for a
+   maintainer and is refused for everyone else. That tag push is what triggers
+   the publish.
 
 7. **Confirm completion.** Print a summary:
    ```

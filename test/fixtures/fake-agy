@@ -34,6 +34,37 @@ if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "models" ] && [ "$1"
   prompt=$(cat)
 fi
 
+is_expected=""
+case "$prompt" in
+  *"TICKET-DONE or TICKET-BLOCKED"*)
+    if echo "$prompt" | grep -q "Fix every finding"; then
+      is_expected="fix"
+    else
+      is_expected="build"
+    fi
+    ;;
+  *"You are a prosecutor"*)
+    if echo "$prompt" | grep -q "exactly one lens"; then
+      is_expected="review"
+    else
+      is_expected="prosecute"
+    fi
+    ;;
+esac
+
+if [ -n "$is_expected" ]; then
+  has_project=0
+  for arg in "$@"; do
+    if [ "$arg" = "--project" ]; then
+      has_project=1
+    fi
+  done
+  if [ "$has_project" -eq 0 ]; then
+    echo "Error: --project flag missing for $is_expected path" >&2
+    exit 33
+  fi
+fi
+
 # Reveal the env this invocation actually received (scheduler tests verify
 # ADLC_P4_ENFORCEMENT/ADLC_TICKET were passed to THIS spawn, not leaked
 # globally). Every non-plugin invocation gets a line, harmless when the vars
@@ -157,11 +188,21 @@ case "$prompt" in
         [ "$verdict" = "block-then-ship" ] && verdict=ship
       fi
     fi
-    if [ "$verdict" = "block" ]; then
-      echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "block"}'
-    else
-      echo '{"findings": [], "verdict": "ship"}'
-    fi
+    # ship-with-high / ship-with-low decouple the two signals the real gate
+    # reads: the model's stated verdict, and the severity of its findings. The
+    # block/ship modes move them together, so they cannot tell which one decides.
+    case "$verdict" in
+      block)
+        echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "block"}' ;;
+      ship-with-high)
+        echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "ship"}' ;;
+      ship-with-critical)
+        echo '{"findings": [{"severity": "critical", "charge": "security", "file": "out.txt", "claim": "rce", "evidence": "diff"}], "verdict": "ship"}' ;;
+      ship-with-low)
+        echo '{"findings": [{"severity": "low", "charge": "style", "file": "out.txt", "claim": "nit", "evidence": "diff"}], "verdict": "ship"}' ;;
+      *)
+        echo '{"findings": [], "verdict": "ship"}' ;;
+    esac
     exit 0 ;;
 esac
 

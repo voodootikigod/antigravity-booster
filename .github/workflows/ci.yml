@@ -10,13 +10,25 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # The macOS leg is not redundant: gate sandboxing is implemented with
+    # sandbox-exec and is therefore darwin-only (lib/gates.mjs), so the
+    # sandbox tests in test/security.test.mjs skip on Linux. Without a macOS
+    # runner the sandbox — the boundary that stops an untrusted worktree
+    # script from reaching the host — is never exercised in CI at all.
+    # Node 18 is the engines floor, 20 is what publish.yml runs, 22 is current.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node-version: [18, 20, 22]
+    name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 18
+          node-version: ${{ matrix.node-version }}
 
       - name: Install the ADLC toolkit
         # A handful of tests exercise the real adlc CLI directly (e.g. a
@@ -26,7 +38,31 @@ jobs:
         run: npm install -g --ignore-scripts @adlc/cli@1.1.0
 
       - name: Install dependencies
-        run: npm install
+        # ci, not install: fail on a lockfile that has drifted from
+        # package.json rather than silently resolving something else.
+        run: npm ci
 
       - name: Run tests
         run: npm test
+
+  coverage:
+    # Thresholds are a ratchet against regression, not a target: they sit just
+    # under the current numbers. Raise them when coverage improves; do not lower
+    # them to make a red build green. Node 22 only — --test-coverage-* landed
+    # there, so this cannot run on the Node 18 floor.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install the ADLC toolkit
+        run: npm install -g --ignore-scripts @adlc/cli@1.1.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check coverage
+        run: npm run coverage:check
