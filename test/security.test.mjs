@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -245,28 +245,54 @@ test('acquireRepoLock: exactly one of many concurrent processes reclaims a stale
 
     const lockModule = fileURLToPath(new URL('../lib/lock.mjs', import.meta.url));
     const child = join(repo, 'reclaimer.mjs');
+    // A wall-clock start time is not a barrier: the suite runs test files
+    // concurrently, so process spawn can drift past any fixed deadline, and a
+    // straggler that starts after the winner exits acquires cleanly and looks
+    // like a second winner. Each child instead announces readiness and blocks
+    // until released, which takes spawn latency out of the race entirely.
     writeFileSync(child, `
 import { acquireRepoLock } from ${JSON.stringify(lockModule)};
-const [repo, startAt] = process.argv.slice(2);
-while (Date.now() < Number(startAt)) { /* spin so all reclaimers enter together */ }
-try {
-  acquireRepoLock(repo, { runId: 'R' + process.pid });
-  process.stdout.write('WIN');
-  // Hold it: a winner that released immediately would let a slower process
-  // acquire cleanly and register as a second winner, hiding a real race.
-  setTimeout(() => {}, 750);
-} catch {
-  process.stdout.write('LOSE');
-}
+import { writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+const [dir] = process.argv.slice(2);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = async (f) => { while (!existsSync(join(dir, f))) await sleep(5); };
+
+writeFileSync(join(dir, 'ready.' + process.pid), '');
+await wait('go');
+let won = false;
+try { acquireRepoLock(dir, { runId: 'R' + process.pid }); won = true; } catch { /* lost */ }
+writeFileSync(join(dir, 'result.' + process.pid), won ? 'WIN' : 'LOSE');
+// A winner must hold until the parent has every result. Exiting on a timer
+// races sibling startup: release early and a straggler acquires cleanly,
+// which reads as a second winner. This waits for the parent instead.
+if (won) await wait('done');
 `);
 
-    const startAt = Date.now() + 500;
-    const results = await Promise.all(
-      Array.from({ length: 8 }, () => new Promise((res) => {
-        execFile(process.execPath, [child, repo, String(startAt)], { encoding: 'utf8' },
-          (_e, stdout) => res(stdout.trim()));
-      }))
-    );
+    const N = 8;
+    const count = (prefix) => readdirSync(repo).filter((f) => f.startsWith(prefix)).length;
+    const until = async (fn, what) => {
+      const deadline = Date.now() + 60_000;
+      while (!fn()) {
+        if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+
+    const running = Array.from({ length: N }, () => new Promise((res, rej) => {
+      execFile(process.execPath, [child, repo], { encoding: 'utf8' }, (e) => (e ? rej(e) : res()));
+    }));
+
+    // Release the barrier only once every child is parked at it, so process
+    // spawn latency is outside the race window entirely.
+    await until(() => count('ready.') === N, 'reclaimers to reach the barrier');
+    writeFileSync(join(repo, 'go'), '');
+    await until(() => count('result.') === N, 'reclaimers to report');
+
+    const results = readdirSync(repo).filter((f) => f.startsWith('result.'))
+      .map((f) => readFileSync(join(repo, f), 'utf8'));
+    writeFileSync(join(repo, 'done'), '');
+    await Promise.all(running);
 
     const wins = results.filter((r) => r === 'WIN').length;
     assert.equal(wins, 1, `exactly one process may reclaim a stale lock — got ${JSON.stringify(results)}`);
