@@ -513,10 +513,10 @@ test('linuxBwrapArgs: binds temp dir properly and asserts security args', () => 
   // Case 2: node_modules and .git exist
   const existingDir = mkdtempSync(join(tmpdir(), 'agb-existing-test-'));
   try {
-    mkdirSync(join(existingDir, '.git'));
-    mkdirSync(join(existingDir, 'node_modules'));
     const realExisting = canonical(existingDir);
-    const argsExisting = linuxBwrapArgs(existingDir, 'echo hi');
+    mkdirSync(join(realExisting, '.git'));
+    mkdirSync(join(realExisting, 'node_modules'));
+    const argsExisting = linuxBwrapArgs(realExisting, 'echo hi');
     
     const gitBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, '.git') && argsExisting[i+2] === join(realExisting, '.git'));
     const nmBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, 'node_modules') && argsExisting[i+2] === join(realExisting, 'node_modules'));
