@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -12,6 +12,7 @@ import { prosecutionPrompt } from '../lib/charters.mjs';
 import { sandboxProfile, gateSandboxEnabled, runGate } from '../lib/gates.mjs';
 import { regenPrompt } from '../lib/charters.mjs';
 import { acquireRepoLock } from '../lib/lock.mjs';
+import { RunStatus } from '../lib/status.mjs';
 
 // --- agy timeout anchoring (review: false-positive timeout) ---
 
@@ -190,6 +191,37 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
     assert.ok(holder.token && holder.token !== 'old', 'fresh lock carries a new ownership token');
     release();
     assert.equal(existsSync(join(repo, '.booster', 'run.lock.d')), false, 'lock dir removed on release');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// Run state and transcripts quote whatever the builder read in the worktree —
+// a .env, a config file, debug output — so they are secret-bearing by default.
+// On a shared box or a CI runner, 0644 hands those to every local account.
+test('RunStatus: run state is written owner-only, never world-readable', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-'));
+  try {
+    const s = new RunStatus(repo, 'run-perms');
+    s.ticket('T1', { phase: 'building', detail: 'contents of .env: SECRET=hunter2' });
+    s.report({ merged: ['T1'], failed: {} });
+    await s.writePromise;
+
+    const mode = (p) => statSync(p).mode & 0o777;
+    const runJson = join(repo, '.booster', 'run.json');
+    const reportJson = join(repo, '.booster', 'report.json');
+    const logDir = join(repo, '.booster', 'logs', 'run-perms');
+    const events = join(logDir, 'events.jsonl');
+
+    assert.equal(mode(runJson), 0o600, 'run.json must be owner-only');
+    assert.equal(mode(reportJson), 0o600, 'report.json must be owner-only');
+    assert.equal(mode(events), 0o600, 'events.jsonl must be owner-only');
+    assert.equal(mode(logDir), 0o700, 'the run log dir must be owner-only');
+
+    // Guard the specific bit that leaks: group/other readability.
+    for (const p of [runJson, reportJson, events, logDir]) {
+      assert.equal(mode(p) & 0o077, 0, `${p} is readable beyond its owner`);
+    }
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
