@@ -177,6 +177,13 @@ try {
     const positional = rest.filter((r, i) => !r.startsWith('--') && rest[i - 1] !== '--interval');
     
     if (isWatch) {
+      if (process.stdout.isTTY && rest.includes('--ui')) {
+        const { launchTUI } = await import('../lib/tui.mjs');
+        const code = await launchTUI(resolve(positional[0] ?? '.'), true, intervalMs);
+        if (code !== 'fallback') {
+          process.exit(code);
+        }
+      }
       const { watchStatus } = await import('../lib/status.mjs');
       const code = await watchStatus(resolve(positional[0] ?? '.'), intervalMs);
       process.exitCode = code;
@@ -243,6 +250,16 @@ try {
       }
     } else {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
+    }
+  } else if (cmd === 'tui') {
+    const repo = resolve(rest[0] ?? '.');
+    if (!process.stdout.isTTY) {
+      console.log(renderStatus(repo));
+      process.exitCode = 0;
+    } else {
+      const { launchTUI } = await import('../lib/tui.mjs');
+      const code = await launchTUI(repo, false);
+      process.exitCode = code === 'fallback' ? 0 : code;
     }
   } else {
     console.error('usage: agb bootstrap|plan|run|sweep|review|preflight|brains|status|validate|probe — see header of bin/agb.mjs');

@@ -1,0 +1,18 @@
+round 1: 6 new finding(s), 6 total, 0 lens error(s)
+round 2: 8 new finding(s), 14 total, 0 lens error(s)
+LENS ERRORS DETECTED: [
+  {
+    "lens": "contracts",
+    "model": "Gemini 3.1 Pro (High)",
+    "error": "unparseable"
+  }
+]
+round 3: 6 new finding(s), 20 total, 1 lens error(s)
+LENS ERRORS DETECTED: [
+  {
+    "lens": "contracts",
+    "model": "Gemini 3.1 Pro (High)",
+    "error": "unparseable"
+  }
+]
+round 4: 5 new finding(s), 25 total, 1 lens error(s)

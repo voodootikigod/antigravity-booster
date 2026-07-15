@@ -101,18 +101,14 @@ test('runAgy: detects exit-0 print-timeout as failure', async () => {
 });
 
 test('runAgy: classifies and logs failures correctly', async () => {
-  const logFile = join(tmpdir(), `agb-test-agy-log-${Date.now()}.log`);
+  const logFile = join(tmpdir(), `agb-test-agy-log-${Date.now()}.jsonl`);
   try {
     const parseLogBlocks = (content) => {
-      return content.split('\n===\n').filter(Boolean).map(block => {
-        const pIdx = block.indexOf('\n---PROMPT---\n');
-        const oIdx = block.indexOf('\n---OUTPUT---\n');
-        if (pIdx === -1 || oIdx === -1) return null;
-        return {
-          header: JSON.parse(block.slice(0, pIdx)),
-          prompt: block.slice(pIdx + 14, oIdx),
-          output: block.slice(oIdx + 14)
-        };
+      return content.trim().split('\n').filter(Boolean).map(line => {
+        try {
+          const o = JSON.parse(line);
+          return { header: o, prompt: o.prompt, output: o.output };
+        } catch { return null; }
       }).filter(Boolean);
     };
 
@@ -228,12 +224,13 @@ test('PoolSet: caps enforced, waiters released, requests counted', async () => {
 test('PoolSet.route: reservation spreads concurrent dispatches across pools', () => {
   const pools = new PoolSet();
   // First mid ticket → claude (all reserved 0, claude is first candidate).
-  assert.equal(pools.route('mid'), 'Claude Sonnet 4.6 (Thinking)');
+  // First mid ticket -> Gemini 3.5 Flash (High)
+  assert.equal(pools.route('mid'), 'Gemini 3.5 Flash (High)');
   // Second mid ticket (no slot acquired yet — the bug case) must NOT pick
   // claude again; reservation pushes it to the idle gemini-pro pool.
   assert.equal(pools.route('mid'), 'Gemini 3.1 Pro (Low)');
-  // pool_hint still constrains family.
-  assert.equal(pools.route('mid', 'gemini'), 'Gemini 3.1 Pro (Low)');
+  // pool_hint still constrains family (but both are gemini now, so it falls back to load ratio: 1/8 < 1/4)
+  assert.equal(pools.route('mid', 'gemini'), 'Gemini 3.5 Flash (High)');
   // unroute frees the assignment so the pool rebalances.
   pools.unroute('Gemini 3.1 Pro (Low)');
   pools.unroute('Gemini 3.1 Pro (Low)');
@@ -242,8 +239,8 @@ test('PoolSet.route: reservation spreads concurrent dispatches across pools', ()
 
 test('PoolSet.prosecutorFor: always a different family', () => {
   const pools = new PoolSet();
-  assert.equal(familyOf(pools.prosecutorFor('Gemini 3.5 Flash (Low)')), 'claude');
-  assert.equal(familyOf(pools.prosecutorFor('Claude Sonnet 4.6 (Thinking)')), 'gemini');
+  assert.equal(familyOf(pools.prosecutorFor('Gemini 3.5 Flash (Low)')), 'gpt-oss');
+  assert.equal(familyOf(pools.prosecutorFor('GPT-OSS 120B (Medium)')), 'gemini');
 });
 
 // --- charters ---
@@ -325,7 +322,7 @@ test('prosecute: ship verdict on clean JSON', async () => {
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.FAKE_PROSECUTOR_VERDICT = 'ship';
   try {
-    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Claude Sonnet 4.6 (Thinking)' });
+    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Gemini 3.5 Flash (High)' });
     assert.equal(v.verdict, 'ship');
     assert.equal(v.findings.length, 0);
   } finally {
@@ -337,7 +334,7 @@ test('prosecute: high finding forces block; empty diff blocks without a model ca
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.FAKE_PROSECUTOR_VERDICT = 'block';
   try {
-    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Claude Sonnet 4.6 (Thinking)' });
+    const v = await prosecute({ ticket: { id: 'T1', body: 'spec' }, diff: 'real diff', model: 'Gemini 3.5 Flash (High)' });
     assert.equal(v.verdict, 'block');
     assert.equal(v.findings[0].severity, 'high');
     const empty = await prosecute({ ticket: { id: 'T1', body: 's' }, diff: '  ', model: 'x-no-such-model' });
@@ -366,7 +363,7 @@ test('RunStatus: atomic write + dashboard render', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-status-'));
   try {
     const s = new RunStatus(dir, 'run-test');
-    s.ticket('T1', { phase: 'building', model: 'Claude Sonnet 4.6 (Thinking)' });
+    s.ticket('T1', { phase: 'building', model: 'Gemini 3.5 Flash (High)' });
     s.finish({ merged: ['T1'], failed: {}, requests: { claude: 2 } });
     assert.ok(existsSync(join(dir, '.booster', 'run.json')));
     assert.ok(existsSync(join(dir, '.booster', 'report.json')));
