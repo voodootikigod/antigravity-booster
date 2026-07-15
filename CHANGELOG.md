@@ -9,6 +9,8 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-15
+
 ### Added
 
 - `agb tui` — full-screen, zero-dependency dashboard reading live from
