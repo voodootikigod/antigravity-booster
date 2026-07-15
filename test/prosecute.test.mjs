@@ -163,6 +163,13 @@ test('prosecute: AC2 — the prosecution prompt embeds the hollow-test evidence 
     const logged = readFileSync(logFile, 'utf8');
     assert.match(logged, /Mutation-testing evidence \(adlc hollow-test\) — SURVIVORS FOUND/);
     assert.match(logged, /1\/2 injected mutant\(s\) SURVIVED/);
+
+    // The transcript is JSONL, one record per agy call. role and strike are what
+    // let a reader (and checkFlailDetector) tell a prosecution apart from a
+    // builder attempt; a prosecution is never a builder strike.
+    const record = JSON.parse(logged.trim().split('\n')[0]);
+    assert.equal(record.role, 'prosecutor');
+    assert.equal(record.strike, 0, 'prosecution must not be recorded as a builder strike');
   } finally {
     rmSync(logDir, { recursive: true, force: true });
   }

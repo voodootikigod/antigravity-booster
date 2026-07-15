@@ -209,7 +209,10 @@ test('validatePlan: rejects ticket ids that could escape the worktree path', () 
     const errors = validatePlan({ ...base, tickets: [ticket(bad)] });
     assert.ok(errors.length > 0, `id ${JSON.stringify(bad)} must be rejected`);
   }
-  for (const good of ['T1', 'B11', 'DOC-UPDATE', 'BOOTSTRAP-AUTO-CLONE', 'ISSUE-26', 'a.b_c']) {
+  // Digit-leading ids across the whole 0-9 range: the pattern must not quietly
+  // narrow to a subset of digits.
+  for (const good of ['T1', 'B11', 'DOC-UPDATE', 'BOOTSTRAP-AUTO-CLONE', 'ISSUE-26', 'a.b_c',
+    '0-first', '2ND-PASS', '9lives', '42']) {
     const errors = validatePlan({ ...base, tickets: [ticket(good)] });
     assert.deepEqual(errors, [], `id ${JSON.stringify(good)} must be accepted`);
   }

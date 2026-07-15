@@ -362,6 +362,59 @@ test('prosecute: oversized diff blocks without a model call — never ship on a 
 
 // --- status ---
 
+// The test below renders the dashboard and matches /T1/, but s.report() also
+// carries 'T1', so that assertion passes even when the ticket table is empty —
+// RunStatus.ticket() could record nothing at all and the suite stayed green.
+// These pin the recording itself: state, and the phase transition in the event
+// log the TUI reads.
+test('RunStatus.ticket: records ticket state and emits phase transitions', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-status-rec-'));
+  try {
+    const s = new RunStatus(dir, 'run-rec');
+    s.ticket('T1', { phase: 'building', model: 'Gemini 3.5 Flash (High)', detail: 'first' });
+    s.ticket('T1', { phase: 'merged' });
+    await s.writePromise;
+
+    const run = JSON.parse(readFileSync(join(dir, '.booster', 'run.json'), 'utf8'));
+    assert.deepEqual(Object.keys(run.tickets), ['T1'], 'the ticket must be recorded in run state');
+    assert.equal(run.tickets.T1.phase, 'merged', 'the latest phase wins');
+    assert.equal(run.tickets.T1.model, 'Gemini 3.5 Flash (High)', 'earlier fields survive a later patch');
+
+    const events = readFileSync(join(dir, '.booster', 'logs', 'run-rec', 'events.jsonl'), 'utf8')
+      .trim().split('\n').map((l) => JSON.parse(l));
+    const phases = events.filter((e) => e.type === 'phase');
+    assert.equal(phases.length, 2, 'one phase event per ticket() call');
+    assert.equal(phases[0].to, 'building');
+    assert.equal(phases[0].from, undefined, 'no from on the first transition');
+    assert.equal(phases[1].from, 'building', 'the transition records where it came from');
+    assert.equal(phases[1].to, 'merged');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('RunStatus.ticket: __proto__/constructor ids cannot corrupt the ticket map', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-status-proto-'));
+  try {
+    const s = new RunStatus(dir, 'run-proto');
+    s.ticket('__proto__', { phase: 'pwned' });
+    s.ticket('constructor', { phase: 'pwned' });
+    s.ticket('T1', { phase: 'building' });
+    await s.writePromise;
+
+    assert.equal({}.phase, undefined, 'Object.prototype must not be reachable for pollution');
+    assert.equal(Object.getPrototypeOf(s.state.tickets), Object.prototype, 'the ticket map prototype must be intact');
+    assert.deepEqual(Object.keys(s.state.tickets), ['T1'], 'poisoned ids are dropped, real ones still land');
+
+    const events = readFileSync(join(dir, '.booster', 'logs', 'run-proto', 'events.jsonl'), 'utf8')
+      .trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(events.filter((e) => e.type === 'phase').map((e) => e.ticket), ['T1'],
+      'a rejected id must not reach the event log either');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('RunStatus: atomic write + dashboard render', () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-status-'));
   try {
