@@ -518,6 +518,12 @@ test('linuxBwrapArgs: binds temp dir properly and asserts security args', () => 
     mkdirSync(join(realExisting, 'node_modules'));
     const argsExisting = linuxBwrapArgs(realExisting, 'echo hi');
     
+    console.log('macOS debug:');
+    console.log('existingDir:', existingDir);
+    console.log('realExisting:', realExisting);
+    console.log('git exists?:', existsSync(join(realExisting, '.git')));
+    console.log('argsExisting:', argsExisting);
+    
     const gitBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, '.git') && argsExisting[i+2] === join(realExisting, '.git'));
     const nmBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, 'node_modules') && argsExisting[i+2] === join(realExisting, 'node_modules'));
     
