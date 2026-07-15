@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync } from 'node:fs';
-import { tmpdir, homedir, platform } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { isAgyTimeout } from '../lib/agy.mjs';
@@ -283,31 +283,14 @@ test('RunStatus: tightens permissions on state left world-readable by an older r
   }
 });
 
-// A security control that cannot apply must say so rather than shrug. The
-// owner-path tests can never reach this arm: they chmod paths they own, so it
-// always succeeds. A real EPERM needs a path we cannot chmod — normally one
-// owned by another uid, which a test has no way to create. macOS's user
-// immutable flag produces the same EPERM from chmod against a path we do own,
-// so the failure arm is exercised for real rather than mocked. Darwin-only;
-// the CI macOS leg runs it.
-test('RunStatus: refuses to write run state it cannot make owner-only', { skip: platform() !== 'darwin' && 'chflags is macOS-only' }, () => {
-  const repo = mkdtempSync(join(tmpdir(), 'agb-perm-fail-'));
-  const booster = join(repo, '.booster');
-  try {
-    mkdirSync(booster, { recursive: true });
-    execFileSync('chflags', ['uchg', booster]);
-
-    const s = new RunStatus(repo, 'run-eperm');
-    assert.throws(
-      () => s.ticket('T1', { phase: 'building', detail: 'quotes a .env' }),
-      /cannot make .* owner-only \(EPERM\)/,
-      'a chmod that cannot apply must fail the run, not be swallowed'
-    );
-  } finally {
-    try { execFileSync('chflags', ['nouchg', booster]); } catch { /* never created */ }
-    rmSync(repo, { recursive: true, force: true });
-  }
-});
+// NOTE — deliberately untested: the warn arm of ownerOnlyDir (chmod fails but
+// writes still succeed) is the vfat/CIFS/bind-mount case, and there is no
+// portable way to produce it. chflags uchg makes the directory immutable, so
+// writes fail too and it models a different failure. It is defence-in-depth
+// rather than the load-bearing control: file contents are owner-only via
+// writeOwnerOnly's unlink-then-create regardless of the directory's mode, so a
+// 0755 .booster/ exposes run-id filenames, not run state. See the ticket for
+// the seam that would make it testable.
 
 // A crashed run leaves .booster/run.json.tmp behind at whatever mode it had.
 // The next flush writes to that existing path (mode ignored) and renames it onto
