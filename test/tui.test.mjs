@@ -1,6 +1,40 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { padTruncate, renderTuiState } from '../lib/tui.mjs';
+import { stripAnsi, padTruncate, renderTuiState } from '../lib/tui.mjs';
+
+// The transcript pane renders agent output, which is untrusted. A surviving
+// escape or control byte would let that output drive the user's real terminal,
+// so assert on the raw codepoints rather than on any particular regex shape.
+const CONTROL_FREE = (s) => ![...s].some((ch) => {
+  const c = ch.codePointAt(0);
+  return c === 0x1b || c === 0x9b || c < 0x20 || (c >= 0x7f && c <= 0x9f);
+});
+
+test('tui: stripAnsi leaves no escape byte for the terminal to act on', () => {
+  const hostile = [
+    '(0',                  // charset select
+    '#8',                  // DEC alignment test
+    '=',                   // application keypad
+    '7',                   // save cursor
+    '[31mred[0m',    // CSI colour
+    '[?1049h',             // CSI alt-screen switch
+    ']0;Title',      // OSC window title (BEL-terminated)
+    ']0;Title\\',    // OSC window title (ST-terminated)
+    'P+q544e\\',     // DCS
+    '31m'                  // 8-bit CSI
+  ];
+  for (const input of hostile) {
+    assert.ok(CONTROL_FREE(stripAnsi(input)), `control byte survived: ${JSON.stringify(input)}`);
+  }
+});
+
+test('tui: stripAnsi preserves printable text and removes colour codes', () => {
+  assert.equal(stripAnsi('safe text'), 'safe text');
+  assert.equal(stripAnsi('[31mred[0m'), 'red');
+  assert.equal(stripAnsi('[?1049h'), '');
+  assert.equal(stripAnsi(']0;Title'), '');
+  assert.equal(stripAnsi(null), '');
+});
 
 test('tui: padTruncate formats text properly', () => {
   assert.equal(padTruncate('hello', 10), 'hello     ');
@@ -30,7 +64,7 @@ test('tui: renderTuiState renders a basic state', () => {
     timelineScrollTop: -1,
     transcriptScrollTop: 0
   };
-  
+
   const frame = renderTuiState(state, 80, 24);
   assert.ok(frame.includes('T-1'));
   assert.ok(frame.includes('pool-1: 1/10'));
@@ -55,7 +89,7 @@ test('tui: renderTuiState shows transcript when showTranscript is true', () => {
     timelineScrollTop: -1,
     transcriptScrollTop: 0
   };
-  
+
   const frame = renderTuiState(state, 80, 24);
   assert.ok(frame.includes('[PROMPT]'));
   assert.ok(frame.includes('Hello'));
@@ -76,7 +110,7 @@ test('tui: renderTuiState events rendering', () => {
     timelineScrollTop: -1,
     transcriptScrollTop: 0
   };
-  
+
   const frame = renderTuiState(state, 80, 24);
   assert.ok(frame.includes('[phase] T-1 transitioned to building'));
 });
