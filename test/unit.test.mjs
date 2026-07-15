@@ -367,7 +367,7 @@ test('RunStatus: atomic write + dashboard render', () => {
   try {
     const s = new RunStatus(dir, 'run-test');
     s.ticket('T1', { phase: 'building', model: 'Gemini 3.5 Flash (High)' });
-    s.finish({ merged: ['T1'], failed: {}, requests: { claude: 2 } });
+    s.report({ merged: ['T1'], failed: {}, requests: { claude: 2 } });
     assert.ok(existsSync(join(dir, '.booster', 'run.json')));
     assert.ok(existsSync(join(dir, '.booster', 'report.json')));
     const rendered = renderStatus(dir);
