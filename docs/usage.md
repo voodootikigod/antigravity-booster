@@ -52,7 +52,35 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 - **`agb status <repo>`**  
   Displays a live dashboard of an ongoing run (shows active workers, queues, and request counts).
 
+### 📝 Log Schemas
+
+**`events.jsonl` (Global Run Events)**  
+Located at `.booster/logs/<runId>/events.jsonl`. Appended atomically during the run.
+- `ts`: ISO 8601 timestamp.
+- `runId`: The unique run identifier.
+- `type`: Event type (`phase`, `pool`, `strike`, or `report`).
+- `ticket`: The ticket ID (for phase and strike events).
+- `from`, `to`: The phase transition for the ticket.
+- `detail`: Optional detail string about the phase.
+- `pools`: The active state of all quota pools (for pool events).
+- `model`, `error`, `strikes`: Information about a strike (for strike events).
+- `done`, `report`: Final run summary (for report events).
+
+**`<ticketId>.jsonl` (Per-Ticket Transcript)**  
+Located at `.booster/logs/<runId>/<ticketId>.jsonl`.
+- `ts`: ISO 8601 timestamp.
+- `role`: Role of the agent (`builder` or `prosecutor`).
+- `model`: Model name used.
+- `strike`: The current strike number (for builders) or 0 (for prosecutors).
+- `ms`: Execution time in milliseconds.
+- `ok`: Boolean indicating if the model call succeeded (no crash/timeout).
+- `error`, `kind`: Error message and type (e.g., `timeout`, `server`, `spawn`) if `ok` is false.
+- `prompt`: The full text of the prompt sent to the model.
+- `output`: The raw text output received from the model.
+- `cwd`: The working directory the model executed in.
+
 *(Note: `agb import-brain` is deprecated. Use `agb plan` instead.)*
+
 
 ---
 
