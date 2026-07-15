@@ -188,11 +188,21 @@ case "$prompt" in
         [ "$verdict" = "block-then-ship" ] && verdict=ship
       fi
     fi
-    if [ "$verdict" = "block" ]; then
-      echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "block"}'
-    else
-      echo '{"findings": [], "verdict": "ship"}'
-    fi
+    # ship-with-high / ship-with-low decouple the two signals the real gate
+    # reads: the model's stated verdict, and the severity of its findings. The
+    # block/ship modes move them together, so they cannot tell which one decides.
+    case "$verdict" in
+      block)
+        echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "block"}' ;;
+      ship-with-high)
+        echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "ship"}' ;;
+      ship-with-critical)
+        echo '{"findings": [{"severity": "critical", "charge": "security", "file": "out.txt", "claim": "rce", "evidence": "diff"}], "verdict": "ship"}' ;;
+      ship-with-low)
+        echo '{"findings": [{"severity": "low", "charge": "style", "file": "out.txt", "claim": "nit", "evidence": "diff"}], "verdict": "ship"}' ;;
+      *)
+        echo '{"findings": [], "verdict": "ship"}' ;;
+    esac
     exit 0 ;;
 esac
 

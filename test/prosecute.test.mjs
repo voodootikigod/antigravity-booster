@@ -93,6 +93,59 @@ test('prosecute: clean hollow-test + ship verdict still ships', async () => {
   });
 });
 
+// The gate's core promise: the JSON contract decides, not the model's opinion.
+// A model that reports a high-severity finding and then says "ship" anyway must
+// not be able to talk its way past the merge. Kept separate from the hollow-test
+// cases above so this asserts the severity path specifically — with hollow-test
+// clean, `modelBlocking` is the only thing that can produce a block.
+test('prosecute: a high-severity finding blocks even when the model votes ship', async () => {
+  await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship-with-high', FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+    const v = await prosecute({
+      ticket: { id: 'T1', body: 'spec' },
+      diff: 'real diff',
+      model: 'Claude Sonnet 4.6 (Thinking)',
+      worktree: '/tmp',
+      testCmd: 'npm test',
+    });
+    assert.equal(v.hollowTest.survived, 0, 'hollow-test is clean, so severity is the only possible cause of a block');
+    assert.equal(v.verdict, 'block', 'a high-severity finding is not overrulable by the model\'s ship verdict');
+    assert.equal(blockingFindings(v.findings).length, 1);
+  });
+});
+
+test('prosecute: a critical-severity finding blocks even when the model votes ship', async () => {
+  await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship-with-critical', FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+    const v = await prosecute({
+      ticket: { id: 'T1', body: 'spec' },
+      diff: 'real diff',
+      model: 'Claude Sonnet 4.6 (Thinking)',
+      worktree: '/tmp',
+      testCmd: 'npm test',
+    });
+    assert.equal(v.hollowTest.survived, 0);
+    assert.equal(v.verdict, 'block');
+    assert.equal(blockingFindings(v.findings)[0].severity, 'critical');
+  });
+});
+
+// The other half of the contract: severity is a threshold, not "any finding".
+// Without this, `findings.length > 0` would pass the test above while blocking
+// every cosmetic nit and making the gate useless.
+test('prosecute: a low-severity finding does not block a ship verdict', async () => {
+  await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship-with-low', FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+    const v = await prosecute({
+      ticket: { id: 'T1', body: 'spec' },
+      diff: 'real diff',
+      model: 'Claude Sonnet 4.6 (Thinking)',
+      worktree: '/tmp',
+      testCmd: 'npm test',
+    });
+    assert.equal(v.findings.length, 1, 'the low finding is still reported');
+    assert.equal(blockingFindings(v.findings).length, 0, 'but it is not merge-gating');
+    assert.equal(v.verdict, 'ship');
+  });
+});
+
 test('prosecute: AC2 — the prosecution prompt embeds the hollow-test evidence block, not just the diff', async () => {
   const logDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-log-'));
   const logFile = join(logDir, 'prosecution.log');
