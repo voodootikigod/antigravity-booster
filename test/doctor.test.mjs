@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin } from '../lib/doctor.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
@@ -79,6 +79,53 @@ test('checkBrainDir: passes when dir exists', async () => {
     const res = await checkBrainDir({ env: { AGB_BRAIN_DIR: d } });
     assert.equal(res.level, 'pass');
   } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkPlugin: warns when legacy version (missing-field)', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-plugin-legacy-'));
+  const orig = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  try {
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ version: "1.0.0" }));
+    process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = d;
+    const res = await checkPlugin({ env: process.env });
+    assert.equal(res.level, 'warn');
+    assert.equal(res.detail, 'installed (legacy version)');
+  } finally {
+    if (orig !== undefined) process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = orig;
+    else delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkPlugin: passes when compatible', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-plugin-compatible-'));
+  const orig = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  try {
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ adlcContract: 1 }));
+    process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = d;
+    const res = await checkPlugin({ env: process.env });
+    assert.equal(res.level, 'pass');
+  } finally {
+    if (orig !== undefined) process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = orig;
+    else delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkPlugin: fails when incompatible', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-plugin-incompat-'));
+  const orig = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  try {
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ adlcContract: 999 }));
+    process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = d;
+    const res = await checkPlugin({ env: process.env });
+    assert.equal(res.level, 'fail');
+    assert.ok(res.detail.includes('unsupported contract'));
+  } finally {
+    if (orig !== undefined) process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = orig;
+    else delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
     rmSync(d, { recursive: true, force: true });
   }
 });
