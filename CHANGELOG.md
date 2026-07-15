@@ -9,6 +9,12 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-15
+
+### Fixed
+
+- **CI / Publish Workflow:** Add missing `adlc` CLI installation to the publish workflow, resolving `ENOENT` test failures during `npm publish`.
+
 ## [0.4.0] — 2026-07-15
 
 ### Added
@@ -61,7 +67,9 @@ than a sibling checkout.
 First public release: ticket-DAG scheduler, quota-pool-aware dispatch, worktree
 fleets, cross-model prosecution, and deterministic gates.
 
-[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/voodootikigod/antigravity-booster/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/voodootikigod/antigravity-booster/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/voodootikigod/antigravity-booster/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/voodootikigod/antigravity-booster/releases/tag/v0.2.0
