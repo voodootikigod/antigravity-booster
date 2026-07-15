@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, writeFileSync, readFileSync, statSync, readdirSync, chmodSync, realpathSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -517,12 +517,6 @@ test('linuxBwrapArgs: binds temp dir properly and asserts security args', () => 
     mkdirSync(join(realExisting, '.git'));
     mkdirSync(join(realExisting, 'node_modules'));
     const argsExisting = linuxBwrapArgs(realExisting, 'echo hi');
-    
-    console.log('macOS debug:');
-    console.log('existingDir:', existingDir);
-    console.log('realExisting:', realExisting);
-    console.log('git exists?:', existsSync(join(realExisting, '.git')));
-    console.log('argsExisting:', argsExisting);
     
     const gitBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, '.git') && argsExisting[i+2] === join(realExisting, '.git'));
     const nmBindExistIdx = argsExisting.findIndex((v, i) => v === '--ro-bind' && argsExisting[i+1] === join(realExisting, 'node_modules') && argsExisting[i+2] === join(realExisting, 'node_modules'));
