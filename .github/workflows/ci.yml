@@ -10,11 +10,9 @@ permissions:
 
 jobs:
   test:
-    # The macOS leg is not redundant: gate sandboxing is implemented with
-    # sandbox-exec and is therefore darwin-only (lib/gates.mjs), so the
-    # sandbox tests in test/security.test.mjs skip on Linux. Without a macOS
-    # runner the sandbox — the boundary that stops an untrusted worktree
-    # script from reaching the host — is never exercised in CI at all.
+    # Gate sandboxing is supported on macOS (sandbox-exec) and Linux (bubblewrap).
+    # We test on both platforms to ensure the sandbox boundary — which stops an
+    # untrusted worktree script from reaching the host — is fully exercised.
     # Node 18 is the engines floor, 20 is what publish.yml runs, 22 is current.
     runs-on: ${{ matrix.os }}
     strategy:
@@ -25,6 +23,10 @@ jobs:
     name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Bubblewrap (Linux Sandbox)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:

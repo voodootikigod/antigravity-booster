@@ -40,7 +40,7 @@ test('checkSandbox: bypassed via env', async () => {
 });
 
 test('checkSandbox: fails on unsupported platform without bypass', async () => {
-  const res = await checkSandbox({ env: {}, platform: 'linux' });
+  const res = await checkSandbox({ env: {}, platform: 'win32' });
   assert.equal(res.level, 'fail');
 });
 
