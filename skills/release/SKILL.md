@@ -91,13 +91,15 @@ Use this command to release a new version of `antigravity-booster`.
    Released: X.Y.Z (was A.B.C)
    Tag:      vX.Y.Z pushed to origin
 
-   GitHub Actions will publish to npm automatically on tag push.
-   The publish job uses --provenance --access public.
+   GitHub Actions will publish to npm on tag push, but the job waits for
+   approval first: it runs under the `npm-publish` protected environment,
+   which requires a reviewer. Approve it under the repo's Actions tab.
 
-   If the publish job fails with an auth error, the NPM_TOKEN secret
-   is missing or expired. To fix:
-     1. Generate a token at https://www.npmjs.com/settings/~/tokens
-     2. Add it as NPM_TOKEN in the repo's Settings → Secrets → Actions
-   To eliminate token management entirely, configure OIDC trusted
-   publishing for antigravity-booster on npmjs.com and remove NPM_TOKEN.
+   The publish job verifies the tag is an ancestor of main and that it
+   matches package.json's version, then publishes with --provenance
+   --access public via npm OIDC trusted publishing (no NPM_TOKEN).
+
+   If the publish job fails with ENEEDAUTH, trusted publishing is not
+   configured for antigravity-booster on npmjs.com. See
+   docs/github-rulesets/README.md § "npm trusted publishing (OIDC)".
    ```
