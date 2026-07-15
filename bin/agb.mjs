@@ -70,6 +70,14 @@ function printCmdUsage(name) {
   if (c.flags) console.log(`  Flags: ${c.flags}`);
 }
 
+// Read from the manifest rather than a second hardcoded copy that can drift
+// out of step with the published version.
+if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+  console.log(pkg.version);
+  process.exit(0);
+}
+
 if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
   const target = rest[0];
   if (cmd === 'help' && target && COMMANDS[target]) {

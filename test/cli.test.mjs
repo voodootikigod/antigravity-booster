@@ -25,9 +25,18 @@ test('agb COMMANDS table covers all dispatched commands', () => {
 
   const declaredCmds = [...tableStr.matchAll(/(\w+|'[^']+'):/g)].map(m => m[1].replace(/'/g, ''));
 
+  // Aliases and flags are not commands and have no table row of their own.
   for (const cmd of cmdMatches) {
-    if (['setup', 'install', 'skills', 'help', '--help', '-h'].includes(cmd)) continue;
+    if (['setup', 'install', 'skills', 'help', '--help', '-h', 'version', '--version', '-v'].includes(cmd)) continue;
     assert(declaredCmds.includes(cmd), `Command ${cmd} is dispatched but not in COMMANDS table`);
+  }
+});
+
+test('agb --version prints the package version', () => {
+  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+  for (const flag of ['--version', '-v', 'version']) {
+    const stdout = execFileSync(process.execPath, [AGB_BIN, flag], { encoding: 'utf8' }).trim();
+    assert.equal(stdout, pkg.version, `agb ${flag} must report the manifest version`);
   }
 });
 

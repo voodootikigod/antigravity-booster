@@ -289,4 +289,19 @@ docs/calibration/  probed latency/concurrency/sandbox facts
 - Gemini Flash pool degrades past width 8; Claude pool is unaffected by
   concurrent Gemini load. Claude models have the lowest fixed overhead.
 
-Calibration: [docs/calibration/probes-2026-06-11.md](docs/calibration/probes-2026-06-11.md).
+Calibration: [probes-2026-07-14.md](docs/calibration/probes-2026-07-14.md)
+(earlier: [probes-2026-06-11.md](docs/calibration/probes-2026-06-11.md)).
+
+## Stability
+
+Pre-1.0 and versioned with semver's pre-1.0 latitude: **minor versions may carry
+breaking changes**, patch versions will not. Pin a minor (`~0.3.0`) if you need
+the CLI surface, the `plan.json` schema, or the `.booster/` artifact layout to
+hold still. Breaking changes are called out in [CHANGELOG.md](CHANGELOG.md).
+
+Only the latest published version receives fixes, including security fixes.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security issues: [SECURITY.md](SECURITY.md)
+— please do not open a public issue for a vulnerability.
