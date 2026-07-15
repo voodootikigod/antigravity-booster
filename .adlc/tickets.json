@@ -1,23 +1,5 @@
 [
   {
-    "id": "ISSUE-25",
-    "title": "[P2] feat: warm second strikes via agy --conversation resume (probe first)",
-    "body": "**Priority:** P2 — quota efficiency + better second strikes\n**Lane:** `lib/agy.mjs` + `lib/scheduler.mjs` strike loop — conflicts with failure-classification and project-isolation issues; sequence within the lane.\n\n## Context\n\nSecond strikes currently restart cold with dead-ends appended to the prompt (`lib/scheduler.mjs` strike loop around `:431-451`). agy 1.1.1 supports resuming a conversation by ID (`--conversation <id>`, `-c`/`--continue`), which would let a retry keep the failed worker's context (files read, approach tried) instead of re-deriving it — cheaper and better-informed. It is also the only credible path past the ~5m print-mode ceiling for long tickets (chained continues).\n\n## Task\n\n1. **Probe first (timebox it):** determine whether a print-mode run's conversation ID is obtainable programmatically (stdout/stderr on exit, `~/.gemini` state, or the resume-command line agy prints on session exit — 1.1.1 explicitly made that line copy-paste friendly). If the ID is not obtainable in `--print` mode, document the finding in `docs/research/agy-cli.md` and close this issue as blocked-upstream.\n2. If obtainable: `runAgy` accepts `conversation` (adds `--conversation <id>`) and returns `conversationId` when discoverable.\n3. Scheduler: on a clean one-off failure (NOT a diagnosed flail — `adlc flail-detector` verdict already gates this at `lib/scheduler.mjs:65-73`), strike 2 resumes the strike-1 conversation with the dead-end note as the new message. Flails keep the existing fresh-restart path — never coach a flailing worker.\n\n## Acceptance criteria\n\n- [ ] Probe findings recorded in `docs/research/agy-cli.md` either way.\n- [ ] If implemented: fake-agy extended to echo `--conversation`; tests: strike-2-resumes on clean failure, strike-2-fresh on flail verdict.\n- [ ] `npm test` green.",
-    "scope": [
-      "lib/agy.mjs",
-      "lib/scheduler.mjs",
-      "docs/research/agy-cli.md",
-      "test/unit.test.mjs",
-      "test/fixtures/fake-agy"
-    ],
-    "rails": [
-      "lib/lock.mjs",
-      "lib/gates.mjs",
-      "lib/status.mjs"
-    ],
-    "edges": []
-  },
-  {
     "id": "ISSUE-26",
     "title": "[P2] feat: per-run agy project isolation (--project/--new-project, probe first)",
     "body": "**Priority:** P2 — hygiene + prerequisite for conversation features\n**Lane:** `lib/agy.mjs` + `lib/scheduler.mjs` — conflicts with failure-classification and warm-resume issues; sequence within the lane (after them).\n\n## Context\n\nagy 1.0.12+ supports `--project <id>` / `--new-project`. Booster workers currently run without either, so every fleet invocation lands in agy's default project (\"CLI Project\" as of 1.1.1), polluting the user's interactive conversation history with dozens of headless worker sessions per run — and making programmatic conversation lookup (for warm resume) unreliable.\n\n## Task\n\n1. **Probe first:** semantics of `--new-project` in `--print` mode — does it create-and-use per invocation (would spam projects), and does `--project <name-or-id>` accept a name, create-if-missing, or require an existing ID? Record findings in `docs/research/agy-cli.md`.\n2. Implement per-run isolation with whatever the probe supports — target: all agy invocations for a run share one project named `agb-<runId>` (builders, prosecutors, fix rounds, review fleets).\n3. `runAgy` gains a `project` option; scheduler/review/prosecute/plan pass it through.\n\n## Acceptance criteria\n\n- [ ] Probe findings documented.\n- [ ] fake-agy asserts the project flag is passed by every invocation path (build/prosecute/fix/review).\n- [ ] `npm test` green.",
