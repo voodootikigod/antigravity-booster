@@ -9,6 +9,15 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-07-16
+
+### Fixed
+
+- **agb doctor:** `checkAgyAuth` no longer hangs when no TTY is attached. The
+  `agy models` invocation is now wrapped with `script` on macOS and Linux to
+  allocate a PTY, so background telemetry cannot block it indefinitely. The
+  check timeout also rises from 5s to 15s to tolerate slow network responses.
+
 ## [0.4.2] — 2026-07-15
 
 ### Fixed
@@ -73,7 +82,8 @@ than a sibling checkout.
 First public release: ticket-DAG scheduler, quota-pool-aware dispatch, worktree
 fleets, cross-model prosecution, and deterministic gates.
 
-[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/voodootikigod/antigravity-booster/compare/v0.3.1...v0.4.0
