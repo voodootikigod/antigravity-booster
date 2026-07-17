@@ -219,6 +219,29 @@ test('tui: renderTuiState never exceeds the viewport width on CJK and emoji outp
   }
 });
 
+// T-TUI-STRIKES: the Strikes column rendered blank because padTruncate stripAnsi's
+// its numeric argument to ''. These pin the count so that regression can't return.
+test('tui: renders the strikes count, not a blank column', () => {
+  const mk = (strikes) => renderTuiState({
+    run: { tickets: { 'T-1': { phase: 'building', strikes, model: 'm' } }, pools: {} },
+    events: [], transcript: [], selectedTicketIndex: 0, ticketScrollTop: 0,
+    showTranscript: false, timelineScrollTop: -1, transcriptScrollTop: 0,
+  }, 80, 24);
+  // Line 0 is the header; line 1 is the first ticket row. The strikes cell is a
+  // right-aligned number immediately before the single-space-separated model.
+  const row = (frame) => stripAnsi(frame.split('\n')[1].split('│')[0]);
+  assert.match(row(mk(3)), /\b3 m/, 'strikes: 3 renders 3, not blank');
+  assert.match(row(mk([1, 2])), /\b2 m/, 'array strikes render their length, 2');
+  assert.doesNotMatch(row(mk(3)), /^\S+ +building +m/, 'the strikes cell is not blank');
+  // A ticket with no strikes field defaults to 0, and 0 must be shown, not blank.
+  const noStrikes = renderTuiState({
+    run: { tickets: { 'T-1': { phase: 'building', model: 'm' } }, pools: {} },
+    events: [], transcript: [], selectedTicketIndex: 0, ticketScrollTop: 0,
+    showTranscript: false, timelineScrollTop: -1, transcriptScrollTop: 0,
+  }, 80, 24);
+  assert.match(row(noStrikes), /\b0 m/, 'a missing strikes field renders 0, not blank');
+});
+
 test('tui: padTruncate never emits a lone surrogate', () => {
   for (const len of [1, 2, 3, 4, 5, 10, 20]) {
     const out = padTruncate('🎉'.repeat(30), len);
