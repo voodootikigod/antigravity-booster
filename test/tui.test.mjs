@@ -4,7 +4,9 @@ import { stripAnsi, padTruncate, renderTuiState, launchTUI } from '../lib/tui.mj
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // The transcript pane renders agent output, which is untrusted. A surviving
 // escape or control byte would let that output drive the user's real terminal,
@@ -120,6 +122,32 @@ test('tui: renderTuiState events rendering', () => {
 });
 
 // --- T-TUI-RENDER: pi-tui rendering layer ---
+
+// The other renderTuiState tests are substring spot-checks: they confirm a value
+// appears somewhere in the frame but pin nothing about pane widths, column sizes,
+// or heights. This golden fixture pins the EXACT frame, so any drift in the
+// layout math (column widths, the 50/70 splits, pane heights) is caught. The
+// fixture was generated from the known-good renderer and is the authoritative
+// layout contract now that T3's prose is retired. To intentionally change the
+// layout, regenerate it — do not hand-edit.
+test('tui: renderTuiState reproduces the golden layout exactly', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const golden = JSON.parse(readFileSync(join(here, 'fixtures', 'tui-golden.json'), 'utf8'));
+  const base = { selectedTicketIndex: 0, ticketScrollTop: 0, showTranscript: false, timelineScrollTop: -1, transcriptScrollTop: 0 };
+  const states = {
+    oneTicket: { run: { tickets: { 'T-1': { phase: 'building', strikes: 0, model: 'gemini-3-pro' } }, pools: { caps: { p1: 10 }, inFlight: { p1: 3 } } }, events: [], transcript: [] },
+    manyTicketsPools: { run: { tickets: Object.fromEntries(Array.from({ length: 12 }, (_, i) => ['T-' + i, { phase: 'pending', strikes: i % 4, model: 'gemini-3-flash' }])), pools: { caps: { alpha: 4, beta: 8, gamma: 2 }, inFlight: { alpha: 1, beta: 8, gamma: 0 } } }, events: [], transcript: [] },
+    selectedSecond: { run: { tickets: { 'T-1': { phase: 'a', strikes: 0, model: 'm' }, 'T-2': { phase: 'b', strikes: 1, model: 'm2' } }, pools: {} }, events: [], transcript: [], selectedTicketIndex: 1 },
+    events: { run: { tickets: { 'T-1': { phase: 'done', strikes: [1, 2], model: 'm' } }, pools: {} }, events: [{ ts: '2026-07-16T10:00:00Z', type: 'phase', ticket: 'T-1', to: 'p0' }, { ts: '2026-07-16T10:00:01Z', type: 'strike', ticket: 'T-1', detail: { ok: true } }, { ts: '2026-07-16T10:00:02Z', type: 'strike', ticket: 'T-1', detail: { ok: false } }, { ts: '2026-07-16T10:00:03Z', type: 'pool' }], transcript: [] },
+    transcriptOpen: { run: { tickets: { 'T-1': { phase: 'building', strikes: 0, model: 'm' } }, pools: {} }, events: [{ ts: '2026-07-16T10:00:00Z', type: 'pool' }], transcript: [{ strike: 1, prompt: 'do the thing\nsecond', output: 'did it\nok' }], showTranscript: true },
+  };
+  for (const [name, s] of Object.entries(states)) {
+    for (const [w, h] of [[80, 24], [100, 30], [120, 40]]) {
+      const key = `${name}@${w}x${h}`;
+      assert.equal(renderTuiState({ ...base, ...s }, w, h), golden[key], `frame drifted: ${key}`);
+    }
+  }
+});
 
 // Any TUI that a test abandons before pressing 'q' (e.g. an assertion throws
 // first) would leave launchTUI's poll interval running and hang the whole
@@ -388,8 +416,11 @@ test('tui: bracket keys and home/end scroll the timeline', { timeout: 5000 }, as
   // Tail is pinned to the newest event until we scroll away from it.
   assert.match(term.writes.join(''), /evt59/, 'timeline starts at the tail');
   assert.match(await press(term, '['), /evt/, 'scrolling back redraws the timeline');
-  assert.match(await press(term, '\x1b[H'), /evt0/, 'home jumps to the oldest event');
-  assert.match(await press(term, '\x1b[F'), /evt59/, 'end returns to the newest');
+  assert.match(await press(term, '\x1b[H'), /evt0/, 'home (CSI H) jumps to the oldest event');
+  assert.match(await press(term, '\x1b[F'), /evt59/, 'end (CSI F) returns to the newest');
+  // The KEY_FALLBACK entries: the CSI ~ encodings parseKey does not resolve.
+  assert.match(await press(term, '\x1b[1~'), /evt0/, 'home (CSI 1~) jumps to the oldest event');
+  assert.match(await press(term, '\x1b[4~'), /evt59/, 'end (CSI 4~) returns to the newest');
 
   term.onInput('q');
   await exit;
