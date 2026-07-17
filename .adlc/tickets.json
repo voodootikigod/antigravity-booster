@@ -77,6 +77,22 @@
       ]
     },
     {
+      "id": "T-TUI-STRIKES",
+      "title": "[P3] fix: strikes column always renders blank",
+      "body": "The Strikes column in the `agb tui` ticket table is always blank. Root cause: `renderTuiState` calls `padTruncate(strikesVal, 10, 'right')` with a number (or an array), and `padTruncate`'s first line is `str = stripAnsi(str)`, which returns '' for any non-string input. So every numeric strike count renders as 10 spaces.\n\nThis is PRE-EXISTING (it predates the pi-tui rebuild in T-TUI-RENDER and was preserved byte-for-byte by that behavior-preserving refactor). It was surfaced by `adlc hollow-test`: the mutants `t.strikes ?? 0 -> ?? 1` and negating `if (Array.isArray(strikesVal))` both survive precisely because their outputs are flattened to '' by stripAnsi, so no test can distinguish them.\n\nFix: coerce the strike count to a string before it reaches padTruncate (e.g. `String(strikesVal)` at the call site), or handle numbers in padTruncate. Whichever is chosen, do NOT weaken stripAnsi's non-string guard — it is a security boundary for untrusted transcript text.\n\nAcceptance criteria:\n- A ticket with `strikes: 3` renders `3` in the Strikes column; `strikes: [1,2]` renders `2` (the array length, per the existing `Array.isArray` branch).\n- A ticket with no `strikes` field renders `0`.\n- The two named hollow-test mutants are now killed.\n- Regenerate `test/fixtures/tui-golden.json` (the golden layout fixture) since strike cells change from blank to a number, and confirm the diff is limited to strike columns.\n- `npm test` and `npm run coverage:check` pass.",
+      "scope": [
+        "lib/tui.mjs",
+        "test/tui.test.mjs",
+        "test/fixtures/tui-golden.json"
+      ],
+      "rails": [],
+      "edges": [
+        {
+          "to": "T-TUI-RENDER"
+        }
+      ]
+    },
+    {
       "id": "T4",
       "title": "[P2] docs: remove unpublished adlc-antigravity note",
       "body": "Update README.md to remove the note claiming that @adlc/antigravity is not published to npm, as it is now published as of 1.4.1.",
