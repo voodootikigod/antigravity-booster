@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { stripAnsi, padTruncate, renderTuiState, launchTUI } from '../lib/tui.mjs';
 import { visibleWidth } from '@earendil-works/pi-tui';
@@ -121,6 +121,16 @@ test('tui: renderTuiState events rendering', () => {
 
 // --- T-TUI-RENDER: pi-tui rendering layer ---
 
+// Any TUI that a test abandons before pressing 'q' (e.g. an assertion throws
+// first) would leave launchTUI's poll interval running and hang the whole
+// runner at exit. Track started terminals and force-quit any survivors after
+// the suite, so a failing test can never wedge the process.
+const LIVE_TERMS = new Set();
+after(() => {
+  for (const t of LIVE_TERMS) { try { t.onInput?.('q'); } catch {} }
+  LIVE_TERMS.clear();
+});
+
 // A Terminal stub so the render path can be asserted on without a real TTY.
 // Mirrors pi-tui's Terminal interface (see its dist/terminal.d.ts).
 class FakeTerminal {
@@ -130,8 +140,8 @@ class FakeTerminal {
     this.writes = [];
     this.kittyProtocolActive = false;
   }
-  start(onInput, onResize) { this.onInput = onInput; this.onResize = onResize; }
-  stop() {}
+  start(onInput, onResize) { this.onInput = onInput; this.onResize = onResize; LIVE_TERMS.add(this); }
+  stop() { LIVE_TERMS.delete(this); }
   async drainInput() {}
   write(data) { this.writes.push(data); }
   moveBy() {}
@@ -202,7 +212,7 @@ test('tui: padTruncate measures in terminal columns, not code units', () => {
 // The whole point of the rewrite: an idle dashboard must not repaint. The old
 // renderer wrote a full 2,123-byte frame every 100ms regardless of whether any
 // line had changed.
-test('tui: an unchanged state writes zero bytes', async () => {
+test('tui: an unchanged state writes zero bytes', { timeout: 5000 }, async () => {
   const repo = mkRepo(RUN);
   const term = new FakeTerminal();
   const exit = launchTUI(repo, false, 10, { terminal: term });
@@ -219,7 +229,7 @@ test('tui: an unchanged state writes zero bytes', async () => {
   assert.equal(idleBytes, 0, `idle wrote ${idleBytes} bytes: ${JSON.stringify(term.writes)}`);
 });
 
-test('tui: a new event repaints', async () => {
+test('tui: a new event repaints', { timeout: 5000 }, async () => {
   const repo = mkRepo(RUN);
   mkdirSync(join(repo, '.booster', 'logs', 'r1'), { recursive: true });
   const term = new FakeTerminal();
@@ -239,7 +249,7 @@ test('tui: a new event repaints', async () => {
   assert.ok(bytes > 0, 'a new event should trigger a repaint');
 });
 
-test('tui: restores the cursor on exit', async () => {
+test('tui: restores the cursor on exit', { timeout: 5000 }, async () => {
   const repo = mkRepo(RUN);
   const term = new FakeTerminal();
   const exit = launchTUI(repo, false, 10, { terminal: term });
@@ -251,7 +261,7 @@ test('tui: restores the cursor on exit', async () => {
 
 // bin/agb.mjs depends on this asymmetry at two call sites, and it is easy to
 // "tidy" into an unconditional 'fallback' during a rewrite.
-test('tui: falls back without a TTY, and the return value depends on isWatch', async () => {
+test('tui: falls back without a TTY, and the return value depends on isWatch', { timeout: 5000 }, async () => {
   const repo = mkRepo(RUN);
   const log = console.log;
   console.log = () => {};
@@ -263,7 +273,7 @@ test('tui: falls back without a TTY, and the return value depends on isWatch', a
   }
 });
 
-test('tui: q resolves the report exit code once the run is done', async () => {
+test('tui: q resolves the report exit code once the run is done', { timeout: 5000 }, async () => {
   const repo = mkRepo({ ...RUN, done: true, report: { failed: { 'T-1': 'boom' } } });
   const term = new FakeTerminal();
   const exit = launchTUI(repo, false, 10, { terminal: term });
@@ -272,19 +282,19 @@ test('tui: q resolves the report exit code once the run is done', async () => {
   assert.equal(await exit, 2, 'a failed report must exit 2');
 });
 
-test('tui: watch mode resolves 2 when the report has failures', async () => {
+test('tui: watch mode resolves 2 when the report has failures', { timeout: 5000 }, async () => {
   const repo = mkRepo({ ...RUN, done: true, report: { failed: { 'T-1': 'boom' } } });
   const term = new FakeTerminal();
   assert.equal(await launchTUI(repo, true, 10, { terminal: term }), 2);
 });
 
-test('tui: watch mode resolves 0 when the report is clean', async () => {
+test('tui: watch mode resolves 0 when the report is clean', { timeout: 5000 }, async () => {
   const repo = mkRepo({ ...RUN, done: true, report: { failed: {} } });
   const term = new FakeTerminal();
   assert.equal(await launchTUI(repo, true, 10, { terminal: term }), 0);
 });
 
-test('tui: ctrl-c resolves 130', async () => {
+test('tui: ctrl-c resolves 130', { timeout: 5000 }, async () => {
   const repo = mkRepo(RUN);
   const term = new FakeTerminal();
   const exit = launchTUI(repo, false, 10, { terminal: term });
@@ -318,7 +328,7 @@ const press = async (term, key) => {
   return term.writes.join('');
 };
 
-test('tui: up/down move the ticket selection', async () => {
+test('tui: up/down move the ticket selection', { timeout: 5000 }, async () => {
   const repo = mkRepo(MULTI);
   const term = new FakeTerminal();
   const exit = launchTUI(repo, false, 10, { terminal: term });
@@ -333,7 +343,7 @@ test('tui: up/down move the ticket selection', async () => {
   await exit;
 });
 
-test('tui: down stops at the last ticket and up stops at the first', async () => {
+test('tui: down stops at the last ticket and up stops at the first', { timeout: 5000 }, async () => {
   const repo = mkRepo(MULTI);
   const term = new FakeTerminal();
   const exit = launchTUI(repo, false, 10, { terminal: term });
@@ -348,7 +358,7 @@ test('tui: down stops at the last ticket and up stops at the first', async () =>
   await exit;
 });
 
-test('tui: enter toggles the transcript pane', async () => {
+test('tui: enter toggles the transcript pane', { timeout: 5000 }, async () => {
   const repo = mkRepo(MULTI);
   const term = new FakeTerminal();
   const exit = launchTUI(repo, false, 10, { terminal: term });
@@ -362,7 +372,7 @@ test('tui: enter toggles the transcript pane', async () => {
   await exit;
 });
 
-test('tui: bracket keys and home/end scroll the timeline', async () => {
+test('tui: bracket keys and home/end scroll the timeline', { timeout: 5000 }, async () => {
   const repo = mkRepo(MULTI);
   mkdirSync(join(repo, '.booster', 'logs', 'r1'), { recursive: true });
   writeFileSync(
@@ -385,7 +395,7 @@ test('tui: bracket keys and home/end scroll the timeline', async () => {
   await exit;
 });
 
-test('tui: pageup/pagedown scroll the transcript', async () => {
+test('tui: pageup/pagedown scroll the transcript', { timeout: 5000 }, async () => {
   const repo = mkRepo(MULTI);
   mkdirSync(join(repo, '.booster', 'logs', 'r1'), { recursive: true });
   writeFileSync(
@@ -410,7 +420,7 @@ test('tui: pageup/pagedown scroll the transcript', async () => {
   await exit;
 });
 
-test('tui: the event buffer stays bounded on a long run', async () => {
+test('tui: the event buffer stays bounded on a long run', { timeout: 5000 }, async () => {
   const repo = mkRepo(RUN);
   mkdirSync(join(repo, '.booster', 'logs', 'r1'), { recursive: true });
   const lines = Array.from({ length: 2500 }, (_, i) =>
