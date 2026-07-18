@@ -1,3 +1,9 @@
+// renderTuiState formats event timestamps with Date.toTimeString(), which is
+// local-time. Pin the suite to UTC so the golden fixture is reproducible on any
+// machine (a developer's local zone vs CI's UTC would otherwise diverge). Node
+// honours a runtime TZ change via tzset(), and this runs before any Date call.
+process.env.TZ = 'UTC';
+
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { stripAnsi, padTruncate, renderTuiState, launchTUI } from '../lib/tui.mjs';
