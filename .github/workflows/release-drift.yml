@@ -1,0 +1,50 @@
+name: Release drift
+
+# Catches a release that landed in the repo but never reached npm.
+#
+# This runs on a schedule rather than on push, deliberately. The symptom it
+# looks for — main's package.json ahead of npm — is also what a healthy release
+# looks like for the few minutes between the bump landing and the publish
+# finishing. A per-push check would go red on every good release, and a check
+# that cries wolf gets muted. Daily, with a grace window in the script, only
+# fires when a release has actually stalled.
+#
+# Both incidents it exists for were invisible for hours:
+#   v0.4.3 — publish run sat `waiting` on the approval gate; nobody was coming.
+#   v0.5.0 — bump rode in a feature PR, no tag was pushed, so there was no run
+#            to notice at all.
+
+on:
+  schedule:
+    # 14:17 UTC daily. Off the hour on purpose: scheduled workflows queue on
+    # shared runners and the top of the hour is the worst contention.
+    - cron: '17 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read   # the script reads publish-run status to classify the stall
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Full history and tags: the check asks whether v<version> exists, and
+          # a shallow clone has no tags to answer with — it would report every
+          # release as untagged.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Check for release drift
+        # No npm ci: the script imports nothing outside node: builtins, so it
+        # runs against a bare checkout. Keeping it dependency-free means the
+        # check still works when the lockfile is the thing that is broken.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/release-drift.mjs

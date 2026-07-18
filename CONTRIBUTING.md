@@ -45,6 +45,18 @@ with two, both first-party.
 - **Undocumented commands.** Every dispatched command needs a row in the
   `COMMANDS` table in `bin/agb.mjs`; a test enforces it.
 
+## Do not bump the version in your PR
+
+Leave `package.json`'s `version` alone. Releases are cut separately: a release PR
+carries the bump and nothing else, and the tag goes up immediately after it
+merges. The tag is what triggers publishing.
+
+A bump inside a feature PR lands a new version on `main` with no tag behind it,
+so nothing publishes and nothing complains — the release is stranded until
+someone notices npm is behind. That is not hypothetical: 0.5.0 shipped a day
+late for exactly this reason. `.github/workflows/release-drift.yml` now catches
+it within a day, but the cheaper fix is not to do it.
+
 ## Platform notes
 
 Gate sandboxing uses `sandbox-exec` and is macOS-only, so several security tests
