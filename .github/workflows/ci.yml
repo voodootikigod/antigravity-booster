@@ -19,7 +19,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node-version: [18, 20, 22]
+        # 18 and 20 are past EOL (2025-04-30 / 2026-04-30) and are below the
+        # >=22.19.0 floor that @earendil-works/pi-tui imposes on the TUI.
+        node-version: [22]
     name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

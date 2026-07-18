@@ -46,17 +46,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
 
       - name: Upgrade npm for OIDC trusted publishing
-        # Node 20 ships npm 10.x, which cannot use OIDC trusted publishing.
+        # Node 22 ships npm 10.x, which cannot use OIDC trusted publishing.
         # npm >= 11.5.1 is required to mint a registry token from the GitHub
         # id-token (the `id-token: write` permission above). Without this the
         # publish falls through to needing NODE_AUTH_TOKEN and fails ENEEDAUTH.
-        # Pinned to the 11.x line (NOT @latest): npm 12 dropped Node 20 support
-        # (requires node ^22.22 || ^24.15 || >=26), so `npm@latest` fails
-        # EBADENGINE on this runner. 11.x has OIDC and supports Node 20.
+        # Still pinned to the 11.x line (NOT @latest) after the Node 20 -> 22
+        # bump: npm 12 requires node ^22.22 || ^24.15 || >=26, but our engines
+        # floor is >=22.19.0, so `npm@latest` can fail EBADENGINE on a runner
+        # that legitimately satisfies engines. 11.x supports ^20.17.0 || >=22.9.0
+        # and has OIDC, so it spans the whole supported range.
         run: npm install -g npm@11
 
       - name: Verify tag matches package.json version
