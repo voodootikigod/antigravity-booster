@@ -534,3 +534,49 @@ test('runPlan: passes the run project flag to builders and prosecutors', async (
   }
 });
 
+
+// The unit tests in security.test.mjs prove assertStillHeld() works; this proves
+// the scheduler actually CALLS it. Without this test the call site is
+// unguarded — deleting the line leaves the whole suite green, which is exactly
+// the decorative-test failure CONTRIBUTING warns about.
+test('runPlan: a stolen lock aborts the merge instead of resetting a repo we no longer own (#54)', async () => {
+  const repo = makeRepo();
+  let poller;
+  try {
+    const metaPath = join(repo, '.booster', 'run.lock.d', 'meta.json');
+    // Steal the lock the instant it appears — i.e. after acquire, while the
+    // build phase is still running and well before integrate() merges. This is
+    // the observable end state of the #54 double-acquire: another run's meta is
+    // on disk while we are still going.
+    let stolen = false;
+    poller = setInterval(() => {
+      if (!stolen && existsSync(metaPath)) {
+        writeFileSync(metaPath, JSON.stringify({
+          pid: 4242, runId: 'OTHER-RUN', token: 'stolen-by-another-run', startedAt: 'x',
+        }));
+        stolen = true;
+      }
+    }, 1);
+
+    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' }, () =>
+      runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+
+    assert.ok(stolen, 'precondition: the lock must have been stolen during the run');
+    assert.deepEqual(report.merged, [], 'nothing may merge once the lock is lost');
+    assert.match(
+      String(report.failed.T1 ?? ''),
+      /no longer hold the lock/,
+      `T1 should fail with a lock-ownership abort — got: ${report.failed.T1}`
+    );
+    // The point of aborting: main must be untouched by a run that lost the lock.
+    assert.ok(!existsSync(join(repo, 'T1.txt')), 'a run that lost the lock must not land work on main');
+  } finally {
+    clearInterval(poller);
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

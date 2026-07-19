@@ -548,3 +548,80 @@ test('runGate: captures unprivileged namespaces bwrap failure on linux', async (
     Object.defineProperty(process, 'platform', { value: origPlatform });
   }
 });
+
+// --- lock ownership is re-checkable, not just checked once (issue #54) ---
+//
+// acquireRepoLock verifies our token once, at acquire time, and returns. Nothing
+// re-checks afterwards, so a process whose lock was stolen mid-run goes on to
+// run `git reset --hard` believing it still holds it. Double-acquire itself is
+// the harder problem (#54); these cover the guard that keeps a robbed holder
+// from touching the repo.
+
+test('assertStillHeld: passes while we genuinely hold the lock', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-held1-'));
+  try {
+    const release = acquireRepoLock(repo, { runId: 'R1' });
+    assert.doesNotThrow(() => release.assertStillHeld());
+    release();
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('assertStillHeld: throws when another run has replaced our lock', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-held2-'));
+  try {
+    const release = acquireRepoLock(repo, { runId: 'R1' });
+    // Simulate the double-acquire outcome: someone else's meta is now on disk.
+    writeFileSync(
+      join(repo, '.booster', 'run.lock.d', 'meta.json'),
+      JSON.stringify({ pid: process.pid, runId: 'THIEF', token: 'not-ours', startedAt: 'x' })
+    );
+    assert.throws(() => release.assertStillHeld(), /no longer hold|lost/i);
+    release();
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('assertStillHeld: throws when the lock directory has vanished', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-held3-'));
+  try {
+    const release = acquireRepoLock(repo, { runId: 'R1' });
+    rmSync(join(repo, '.booster', 'run.lock.d'), { recursive: true, force: true });
+    // An absent lock must never read as "still held" — that is the fail-open
+    // direction, and it is the one that lets a robbed run reset the repo.
+    assert.throws(() => release.assertStillHeld(), /no longer hold|lost/i);
+    release();
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('assertStillHeld: throws after we have released', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-held4-'));
+  try {
+    const release = acquireRepoLock(repo, { runId: 'R1' });
+    release();
+    assert.throws(() => release.assertStillHeld(), /no longer hold|lost|released/i);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('assertStillHeld: names the repo and the usurper so the abort is diagnosable', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-held5-'));
+  try {
+    const release = acquireRepoLock(repo, { runId: 'R1' });
+    writeFileSync(
+      join(repo, '.booster', 'run.lock.d', 'meta.json'),
+      JSON.stringify({ pid: 4242, runId: 'THIEF', token: 'not-ours', startedAt: 'x' })
+    );
+    let msg = '';
+    try { release.assertStillHeld(); } catch (e) { msg = e.message; }
+    assert.match(msg, /4242|THIEF/, `error should identify the current holder — got: ${msg}`);
+    release();
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
