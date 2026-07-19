@@ -9,6 +9,30 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-07-19
+
+### Fixed
+
+- **A run whose repo lock was stolen mid-flight now aborts instead of reverting
+  a checkout it no longer owns.** `acquireRepoLock` confirmed ownership once, at
+  acquire time, and never re-checked. Because the stale-lock reclaim path can
+  hand the lock to a second live process, the robbed run carried on and ran
+  `git reset --hard` on a repo another run had taken over — the exact corruption
+  the lock exists to prevent. Ownership is now re-verified in the merge critical
+  section, alongside the branch and dirty-tree checks that were already there,
+  and a lost lock fails the ticket rather than the repository.
+
+### Known issues
+
+- **Two concurrent runs can still acquire the same repo lock.** The reclaim path
+  moves the lock out of its canonical path before verifying it is still the
+  stale lock it read; while it is moved aside, the `mkdir` exclusion the scheme
+  relies on is void. Re-verifying immediately before that move narrows the window
+  but cannot close it — POSIX has no compare-and-swap on file content — so a real
+  fix means changing the lock primitive. The guard above bounds the damage to a
+  failed run in the meantime. Tracked in
+  [#54](https://github.com/voodootikigod/antigravity-booster/issues/54).
+
 ## [0.5.0] — 2026-07-17
 
 ### Breaking
