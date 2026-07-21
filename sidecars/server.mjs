@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { readFileSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, statSync, existsSync, openSync, readSync, closeSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,26 +10,24 @@ export function serveSidecar(repoPath, port = process.env.AGB_SIDECAR_PORT || 33
     const runJsonPath = join(repoPath, '.booster', 'run.json');
     
     const server = createServer((req, res) => {
-      // CORS headers
-      res.setHeader('Access-Control-Allow-Origin', '*');
       
       const url = new URL(req.url, 'http://localhost');
       
       if (url.pathname === '/events') {
         let offset = parseInt(url.searchParams.get('offset') || '0', 10);
         
-        let eventsPath = null;
+        let runId = null;
         if (existsSync(runJsonPath)) {
           try {
             const run = JSON.parse(readFileSync(runJsonPath, 'utf8'));
-            const runId = String(run.runId || '').replace(/[\\/\\\\]/g, '_');
+            runId = String(run.runId || '').replace(/[\\/\\\\]/g, '_');
             eventsPath = join(repoPath, '.booster', 'logs', runId, 'events.jsonl');
           } catch (e) {}
         }
 
         if (!eventsPath || !existsSync(eventsPath)) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ lines: [], newOffset: offset }));
+          return res.end(JSON.stringify({ lines: [], newOffset: offset, runId }));
         }
 
         try {
@@ -39,15 +37,27 @@ export function serveSidecar(repoPath, port = process.env.AGB_SIDECAR_PORT || 33
             offset = 0;
           }
           
-          // Very basic read all strategy for UI - optimized for small events logs
-          const content = readFileSync(eventsPath, 'utf8');
-          const lines = content.split('\\n').filter(Boolean);
-          
-          // We track offset by array length here to be simple
-          const newLines = lines.slice(offset);
+          if (stats.size > offset) {
+            const fd = openSync(eventsPath, 'r');
+            const buffer = Buffer.alloc(stats.size - offset);
+            readSync(fd, buffer, 0, buffer.length, offset);
+            closeSync(fd);
+            
+            const content = buffer.toString('utf8');
+            const lastNewline = content.lastIndexOf('\\n');
+            
+            if (lastNewline !== -1) {
+              const completeContent = content.substring(0, lastNewline);
+              const lines = completeContent.split('\\n').filter(Boolean);
+              offset += Buffer.byteLength(completeContent) + 1; // +1 for the newline
+              
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ lines, newOffset: offset, runId }));
+            }
+          }
           
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ lines: newLines, newOffset: lines.length }));
+          res.end(JSON.stringify({ lines: [], newOffset: offset, runId }));
         } catch (err) {
           res.writeHead(500);
           res.end('Error reading events');
@@ -81,8 +91,21 @@ export function serveSidecar(repoPath, port = process.env.AGB_SIDECAR_PORT || 33
     });
 
     server.listen(port, '127.0.0.1', () => {
-      console.log(`AGB Sidecar Server running at http://127.0.0.1:${port}`);
+      const actualPort = server.address().port;
+      console.log(`AGB Sidecar Server running at http://127.0.0.1:${actualPort}`);
       console.log('Use sidecar/agb.json to mount this natively in Antigravity');
+      
+      // Dynamically update the agb.json descriptor to use the bound port
+      try {
+        const agbJsonPath = join(__dirname, 'agb.json');
+        if (existsSync(agbJsonPath)) {
+          const agbJson = JSON.parse(readFileSync(agbJsonPath, 'utf8'));
+          agbJson.url = `http://127.0.0.1:${actualPort}/`;
+          writeFileSync(agbJsonPath, JSON.stringify(agbJson, null, 2));
+        }
+      } catch (e) {
+        console.warn('Could not update agb.json port configuration');
+      }
     });
     
     // Resolve when the server is ready, but keep the process alive

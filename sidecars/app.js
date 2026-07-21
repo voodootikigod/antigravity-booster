@@ -6,7 +6,8 @@ const eventsLog = document.getElementById('eventsLog');
 let state = {
   tickets: new Map(),
   pools: null,
-  done: false
+  done: false,
+  runId: null
 };
 
 // Polling interval for events.jsonl
@@ -14,9 +15,24 @@ let offset = 0;
 
 async function pollEvents() {
   try {
-    const res = await fetch('http://localhost:3333/events?offset=' + offset);
+    const res = await fetch('/events?offset=' + offset);
     if (res.ok) {
       const data = await res.json();
+      
+      // Reset state if we detect a new run ID
+      if (data.runId && state.runId !== data.runId) {
+        state.tickets.clear();
+        state.pools = null;
+        state.done = false;
+        state.runId = data.runId;
+        eventsLog.innerHTML = '';
+        offset = 0;
+        // Re-fetch with 0 offset immediately
+        if (data.newOffset > 0) {
+           return setTimeout(pollEvents, 0);
+        }
+      }
+
       if (data.lines && data.lines.length > 0) {
         data.lines.forEach(line => {
           try {
@@ -34,9 +50,8 @@ async function pollEvents() {
     console.warn('Failed to fetch events. Is agb server running?', err);
   }
   
-  if (!state.done) {
-    setTimeout(pollEvents, 500);
-  }
+  // Keep polling, but slow down when done
+  setTimeout(pollEvents, state.done ? 2000 : 500);
 }
 
 function processEvent(evt) {
@@ -97,28 +112,32 @@ function addEventLog(evt) {
 }
 
 function render() {
-  // Render pools
-  if (state.pools && state.pools.inFlight) {
-    poolStatus.innerHTML = Object.entries(state.pools.inFlight).map(([p, n]) => `
-      <div class="pool-badge">
-        <span class="pool-name">${escapeHtml(p)}</span>
-        <span class="pool-val">${escapeHtml(n)} / ${escapeHtml(state.pools.caps[p])}</span>
+  try {
+    // Render pools
+    if (state.pools && state.pools.inFlight) {
+      poolStatus.innerHTML = Object.entries(state.pools.inFlight).map(([p, n]) => `
+        <div class="pool-badge">
+          <span class="pool-name">${escapeHtml(p)}</span>
+          <span class="pool-val">${escapeHtml(n)} / ${escapeHtml(state.pools.caps?.[p] ?? '?')}</span>
+        </div>
+      `).join('');
+    }
+    
+    // Render tickets
+    ticketsGrid.innerHTML = Array.from(state.tickets.values()).map(t => `
+      <div class="ticket-card">
+        <div class="ticket-header">
+          <div class="ticket-id">${escapeHtml(t.id)}</div>
+          <div class="ticket-phase phase-${escapeHtml(t.phase)}">${escapeHtml(t.phase)}</div>
+        </div>
+        <div class="ticket-model">${escapeHtml(t.model || 'Waiting for model...')}</div>
+        ${t.strikes ? `<div class="ticket-model" style="color:var(--danger)">Strikes: ${escapeHtml(t.strikes)}</div>` : ''}
+        <div class="ticket-detail">${escapeHtml(t.error ? t.error.split('\\n')[0] : (t.detail || ''))}</div>
       </div>
     `).join('');
+  } catch (e) {
+    console.error("Render failed", e);
   }
-  
-  // Render tickets
-  ticketsGrid.innerHTML = Array.from(state.tickets.values()).map(t => `
-    <div class="ticket-card">
-      <div class="ticket-header">
-        <div class="ticket-id">${escapeHtml(t.id)}</div>
-        <div class="ticket-phase phase-${escapeHtml(t.phase)}">${escapeHtml(t.phase)}</div>
-      </div>
-      <div class="ticket-model">${escapeHtml(t.model || 'Waiting for model...')}</div>
-      ${t.strikes ? `<div class="ticket-model" style="color:var(--danger)">Strikes: ${escapeHtml(t.strikes)}</div>` : ''}
-      <div class="ticket-detail">${escapeHtml(t.error ? t.error.split('\n')[0] : (t.detail || ''))}</div>
-    </div>
-  `).join('');
 }
 
 // Start polling

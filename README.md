@@ -55,13 +55,14 @@ Before starting, ensure you have **Node >= 18**, the **Antigravity CLI (`agy`)**
 
 *(Note: Gates use macOS Seatbelt by default. On Linux/Windows, run inside a disposable container and set `AGB_SANDBOX_GATES=0`.)*
 
-We recommend installing `agb` globally. Since it is now a native Antigravity Plugin, you must then install it into `agy` to automatically wire up the Sidecar dashboard and ADLC skills:
+### 1. Install & Bootstrap
+We recommend installing `agb` globally. The `bootstrap` command is mandatory as it installs the `adlc-antigravity` plugin and links the booster's ADLC skills, as well as wiring up the new native Sidecar dashboard.
 
 ```sh
 npm install -g antigravity-booster
-agy plugin install antigravity-booster
+agb bootstrap
 ```
-*(Alternatively, use `agb bootstrap` if developing from a local source checkout.)*
+*(Alternatively, use zero-install with `npx antigravity-booster bootstrap`, or `npm link` from source.)*
 
 ### 2. Verify Setup
 Run the diagnostic tool to ensure your dependencies and quota are ready:
