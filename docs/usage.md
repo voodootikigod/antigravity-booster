@@ -26,7 +26,10 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 
 ### 🛠️ Setup & Diagnostics
 - **`agb bootstrap`** (aliases: `setup`, `install`)  
-  Installs the required `adlc-antigravity` plugin and links booster's skills. Use `--force` to overwrite existing skills. Fails loudly if `agy` is missing.
+  Installs the `@adlc/antigravity` plugin globally into your `agy` installation and links the booster's ADLC skills. Use `--force` to overwrite existing skills. Fails loudly if `agy` is missing.
+
+To register the native Sidecar dashboard with Antigravity, you must explicitly run:
+`agb sidecar <repo>`
 - **`agb probe <concurrencies> [model]`**  
   Measures pool latency and width limits (e.g., `agb probe 2,4,8`). Appends results to the calibration directory.
 
@@ -49,8 +52,18 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
   Deploys a read-only fleet of models to audit changes. Loops until dry (no new critical/high findings).
 
 ### 📊 Monitoring
-- **`agb status <repo>`**  
-  Displays a live dashboard of an ongoing run (shows active workers, queues, and request counts).
+- **`agb status <repo> [--watch]`**  
+  Displays a live summary of an ongoing run.
+- **`agb sidecar <repo>`**  
+  Spawns the local web dashboard for the repo's `.booster` data.
+
+```bash
+agb sidecar [repo-path] [--port <port>]
+```
+
+**Security**: The sidecar uses an auto-generated token to ensure that only the Antigravity UI (and your local browser) can access the private run logs.
+
+If you omit the port, it defaults to `3333` (or the `AGB_SIDECAR_PORT` environment variable).
 
 ### 📝 Log Schemas
 

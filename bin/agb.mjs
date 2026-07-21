@@ -44,11 +44,12 @@ const COMMANDS = {
   doctor: { args: '', desc: 'verify your environment and tools' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
-  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>] [--ui]' },
-  tui: { args: '[repo]', desc: 'full-screen dashboard for a repo\'s current run (q to quit)', extended: 'falls back to a one-shot status render when stdout is not a TTY' },
+  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
+  sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
-  bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' }
+  bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
+  tui: { args: '', desc: 'Removed. Use agb sidecar instead.' }
 };
 
 function printUsage() {
@@ -229,20 +230,21 @@ try {
     if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
     const positional = rest.filter((r, i) => !r.startsWith('--') && rest[i - 1] !== '--interval');
     
+    if (rest.includes('--ui')) {
+      console.error('The --ui TUI flag has been removed. Use the native sidecar dashboard instead (`agb sidecar`).');
+      process.exit(1);
+    }
+    
     if (isWatch) {
-      if (process.stdout.isTTY && rest.includes('--ui')) {
-        const { launchTUI } = await import('../lib/tui.mjs');
-        const code = await launchTUI(resolve(positional[0] ?? '.'), true, intervalMs);
-        if (code !== 'fallback') {
-          process.exit(code);
-        }
-      }
       const { watchStatus } = await import('../lib/status.mjs');
       const code = await watchStatus(resolve(positional[0] ?? '.'), intervalMs);
       process.exitCode = code;
     } else {
       console.log(renderStatus(resolve(positional[0] ?? '.')));
     }
+  } else if (cmd === 'tui') {
+    console.error('The TUI has been removed. Use the native sidecar dashboard instead (`agb sidecar`).');
+    process.exit(1);
   } else if (cmd === 'doctor') {
     process.exitCode = await runDoctor();
   } else if (cmd === 'validate') {
@@ -304,15 +306,109 @@ try {
     } else {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
-  } else if (cmd === 'tui') {
-    const repo = resolve(rest[0] ?? '.');
-    if (!process.stdout.isTTY) {
-      console.log(renderStatus(repo));
-      process.exitCode = 0;
-    } else {
-      const { launchTUI } = await import('../lib/tui.mjs');
-      const code = await launchTUI(repo, false);
-      process.exitCode = code === 'fallback' ? 0 : code;
+  } else if (cmd === 'sidecar') {
+    let portStr = process.env.AGB_SIDECAR_PORT;
+    let unsafeOpen = false;
+    const positional = [];
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--port') {
+        if (i + 1 >= rest.length || rest[i+1].startsWith('--')) {
+          console.error('agb: missing value for --port');
+          process.exit(1);
+        }
+        portStr = rest[++i];
+      } else if (rest[i].startsWith('--')) {
+        console.error(`agb: unknown flag '${rest[i]}' for sidecar`);
+        process.exit(1);
+      } else {
+        positional.push(rest[i]);
+      }
+    }
+    const repoDir = String(positional[0] || '.');
+    const repo = resolve(process.cwd(), repoDir);
+    const { serveSidecar } = await import('../sidecars/server.mjs');
+    const { randomBytes } = await import('node:crypto');
+    const { writeFileSync, mkdirSync, rmSync } = await import('node:fs');
+    const { execFileSync } = await import('node:child_process');
+    const { join } = await import('node:path');
+    const { homedir } = await import('node:os');
+    const port = portStr ? Number(portStr) : 3333;
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error(`agb: invalid port '${portStr}'`);
+      process.exit(1);
+    }
+    const token = randomBytes(16).toString('hex');
+    const server = await serveSidecar(resolve(positional[0] ?? '.'), port, token);
+    
+    const actualPort = server.address().port;
+    
+    let pluginDir;
+    let createdDir = false;
+    let wroteManifests = false;
+    try {
+      pluginDir = process.env.AGB_PLUGIN_DIR || join(homedir(), '.gemini', `agb-sidecar-plugin-${process.pid}-${actualPort}`);
+      if (!existsSync(pluginDir)) {
+        mkdirSync(pluginDir, { recursive: true, mode: 0o700 });
+        createdDir = true;
+      } else if (existsSync(join(pluginDir, 'plugin.json')) || existsSync(join(pluginDir, 'sidecars', 'agb.json'))) {
+        throw new Error(`AGB_PLUGIN_DIR (${pluginDir}) already contains plugin.json or sidecars/agb.json. To prevent data loss, agb will not overwrite an existing plugin manifest. Clear the directory or unset AGB_PLUGIN_DIR.`);
+      }
+      if (!existsSync(join(pluginDir, 'sidecars'))) {
+        mkdirSync(join(pluginDir, 'sidecars'), { recursive: true, mode: 0o700 });
+      }
+      
+      const manifest = {
+        id: 'agb-dashboard',
+        name: 'AGB Dashboard',
+        url: `http://127.0.0.1:${actualPort}/?token=${token}`,
+        icon: 'activity',
+        description: 'Visualizes parallel build-outs orchestrated by Antigravity Booster.'
+      };
+      
+      writeFileSync(join(pluginDir, 'sidecars', 'agb.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
+      const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
+      writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({
+        id: pluginId,
+        name: 'AGB Dynamic Sidecar',
+        version: '1.0.0',
+        sidecars: ['sidecars/agb.json']
+      }, null, 2) + '\n', { mode: 0o600 });
+      wroteManifests = true;
+      
+      const agyBin = process.env.AGB_AGY_BIN || 'agy';
+
+      let cleaned = false;
+      const onExitCleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        try {
+          server.close();
+          try { execFileSync(agyBin, ['plugin', 'uninstall', pluginId], { stdio: 'ignore' }); } catch(e) {}
+          if (pluginDir) {
+            if (createdDir) {
+              rmSync(pluginDir, { recursive: true, force: true });
+            } else if (wroteManifests) {
+              rmSync(join(pluginDir, 'sidecars', 'agb.json'), { force: true });
+              rmSync(join(pluginDir, 'plugin.json'), { force: true });
+            }
+          }
+        } catch (e) {}
+      };
+
+      const cleanup = (code) => {
+        onExitCleanup();
+        process.exit(code);
+      };
+
+      process.on('SIGINT', () => cleanup(130));
+      process.on('SIGTERM', () => cleanup(143));
+      process.on('exit', onExitCleanup);
+
+      execFileSync(agyBin, ['plugin', 'install', pluginDir], { stdio: 'inherit' });
+      console.log('Successfully registered the dynamic sidecar plugin with Antigravity.');
+    } catch (e) {
+      console.warn(`Warning: Could not automatically register the sidecar plugin with agy: ${e.message}`);
+      console.warn(`The dashboard will not appear. To register it manually, add this manifest to your Antigravity plugins: ${pluginDir}`);
     }
   } else {
     console.error(`agb: unknown command '${cmd}'\\n`);

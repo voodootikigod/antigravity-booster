@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Antigravity Booster Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="header-left">
+        <h1>AGB <span>Dashboard</span> <small id="repoPath" style="font-size: 0.5em; opacity: 0.7; font-weight: normal; margin-left: 10px;"></small></h1>
+        <div class="run-status" id="runStatus">
+          <span class="pulse"></span> Waiting for run...
+        </div>
+      </div>
+      <div class="header-right" id="poolStatus">
+        <!-- Pools rendered here -->
+      </div>
+    </header>
+    
+    <main class="main-content">
+      <section class="tickets-section">
+        <h2>Active Tickets</h2>
+        <div class="tickets-grid" id="ticketsGrid">
+          <!-- Tickets rendered here -->
+        </div>
+      </section>
+      
+      <section class="events-section">
+        <h2>Event Stream</h2>
+        <div class="events-log" id="eventsLog">
+          <!-- Events rendered here -->
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

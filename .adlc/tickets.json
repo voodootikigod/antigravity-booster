@@ -26,11 +26,11 @@
     {
       "id": "T1",
       "title": "[P2] feat: append-only events.jsonl for RunStatus",
-      "body": "Implement atomic event logs for the dashboard.\n\n1. Modify `RunStatus` constructor in `lib/status.mjs` to accept `(repo, runId)`. Update `lib/scheduler.mjs` to pass `runId`.\n2. Add an `appendEvent(event)` internal function to `RunStatus`. Use a singleton write queue wrapping `await fs.promises.appendFile`. Stringify the event payload synchronously before appending it to the async queue, so rapid mutations to `pools` don't overwrite states. Add a `.catch()` block within the `this.writePromise` chain so that a single write failure doesn't halt the entire run.\n3. Modify `status.ticket()` and `status.pools()` to immediately append an event after mutating state. `from` is the `phase` value before the update. `to` maps to `patch.phase`. `detail`, `model`, `strikes` map exactly to `patch`. The `pools` field should just be the raw `this.state.pools` map.\n4. Rename `status.finish` to `status.report(summary)`. It continues to write the summary JSON to `.booster/report.json`, but it now also appends a `report` event.\n5. Add `status.strike(ticketId, { model, error, strikes })`. It updates state (store `error` directly on the ticket, set `strikes` to the argument, initialize if missing) and flushes to `run.json`, then appends a `strike` event.\n6. `.booster/logs/<runId>/events.jsonl` Schema: `{ ts, runId, type: 'phase'|'pool'|'strike'|'report', ticket?, from?, to?, detail?, pools?, model?, error?, done?, report? }`. `ts` is an ISO 8601 string.\n\nAcceptance criteria:\n- Replay test dynamically generates events and recreates `run.json` state (merge tickets with `Object.assign`, replace pools).",
+      "body": "Design and implement the append-only `events.jsonl` schema for RunStatus, including the replay acceptance criterion for both `lib/status.mjs` and `sidecars/server.mjs`. Strike payloads must contain an `error` field so the UI can render them properly.",
       "scope": [
         "lib/status.mjs",
-        "lib/scheduler.mjs",
-        "test/unit.test.mjs"
+        "sidecars/server.mjs",
+        "test/events-schema.test.mjs"
       ],
       "rails": [],
       "edges": []
@@ -50,11 +50,7 @@
         "test/fixtures/fake-adlc/bin/adlc"
       ],
       "rails": [],
-      "edges": [
-        {
-          "to": "T1"
-        }
-      ]
+      "edges": [{"to": "T1"}]
     },
     {
       "id": "T4",
