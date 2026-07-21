@@ -190,7 +190,7 @@ test('sidecar: CLI launches server on custom port', async () => {
   const binPath = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
   const pluginDir = mkdtempSync(join(tmpdir(), 'agb-test-plugin-dir-'));
   const fakeAgy = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
-  const child = spawn(process.execPath, [binPath, 'sidecar', repo, '--port', '0', '--unsafe-open'], {
+  const child = spawn(process.execPath, [binPath, 'sidecar', repo, '--port', '0'], {
     stdio: 'pipe',
     env: { ...process.env, AGB_PLUGIN_DIR: pluginDir, AGB_AGY_BIN: fakeAgy, FAKE_STATE_DIR: pluginDir }
   });

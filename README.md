@@ -66,7 +66,7 @@ agb bootstrap
 Then, start the sidecar dashboard to register the UI with Antigravity:
 
 ```bash
-agb sidecar . --unsafe-open
+agb sidecar .
 ```
 *(Alternatively, use zero-install with `npx antigravity-booster bootstrap`, or `npm link` from source.)*
 
@@ -177,7 +177,7 @@ artifact it produces. Think of `implementation_plan.md` as source and
    ```sh
    agb status /path/to/target-repo           # one-shot snapshot of the current run
    agb status /path/to/target-repo --watch   # refresh in place (--interval <ms>)
-   agb sidecar /path/to/target-repo --unsafe-open  # start the local web dashboard sidecar
+   agb sidecar /path/to/target-repo  # start the local web dashboard sidecar
    ```
 
    Per-ticket transcripts land in `.booster/logs/<run-id>/<ticketId>.jsonl`, the final
@@ -206,7 +206,7 @@ agb sweep sweep.json           # same operation × many targets (cheap tier)
 agb review /repo [ref]         # read-only lens fleet, loop-until-dry; exit 0/2
 agb doctor                     # verify your environment and tools
 agb status /path/repo          # one-shot run snapshot (--watch [--interval <ms>])
-agb sidecar /repo --unsafe-open # Start the native sidecar GUI on port 3333
+agb sidecar /repo # Start the native sidecar GUI on port 3333
 agb probe 2,4,8 [model]        # measure pool width/latency, append docs/calibration
 agb import-brain <id> /repo    # DEPRECATED: raw one-shot conversion (use agb plan)
 ```

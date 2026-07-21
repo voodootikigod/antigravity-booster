@@ -45,7 +45,7 @@ const COMMANDS = {
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
   status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
-  sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '--unsafe-open [--port <port>]' },
+  sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
@@ -317,8 +317,6 @@ try {
           process.exit(1);
         }
         portStr = rest[++i];
-      } else if (rest[i] === '--unsafe-open') {
-        unsafeOpen = true;
       } else if (rest[i].startsWith('--')) {
         console.error(`agb: unknown flag '${rest[i]}' for sidecar`);
         process.exit(1);
@@ -326,22 +324,19 @@ try {
         positional.push(rest[i]);
       }
     }
-    const port = portStr ? Number(portStr) : 3333;
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-      console.error(`agb: invalid port '${portStr}'`);
-      process.exit(1);
-    }
-    if (!unsafeOpen) {
-      console.error('agb: The sidecar exposes private run logs (including model error payloads with local paths/secrets) over unauthenticated HTTP.');
-      console.error('You must pass --unsafe-open to acknowledge this risk and start the server.');
-      process.exit(1);
-    }
+    const repoDir = String(positional[0] || '.');
+    const repo = resolve(process.cwd(), repoDir);
     const { serveSidecar } = await import('../sidecars/server.mjs');
     const { randomBytes } = await import('node:crypto');
     const { writeFileSync, mkdirSync, rmSync } = await import('node:fs');
     const { execFileSync } = await import('node:child_process');
     const { join } = await import('node:path');
     const { homedir } = await import('node:os');
+    const port = portStr ? Number(portStr) : 3333;
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error(`agb: invalid port '${portStr}'`);
+      process.exit(1);
+    }
     const token = randomBytes(16).toString('hex');
     const server = await serveSidecar(resolve(positional[0] ?? '.'), port, token);
     

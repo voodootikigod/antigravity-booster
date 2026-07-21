@@ -45,13 +45,7 @@ test('agb tui exits non-zero with migration message', () => {
   assert.match(res.stderr.toString(), /TUI has been removed.*agb sidecar/);
 });
 
-test('agb sidecar without --unsafe-open exits non-zero and binds nothing', () => {
-  const repo = mkdtempSync(join(tmpdir(), 'agb-test-'));
-  const res = spawnSync(process.execPath, [AGB_BIN, 'sidecar', repo, '--port', '0']);
-  assert.notEqual(res.status, 0);
-  assert.match(res.stderr.toString(), /--unsafe-open/);
-  assert.doesNotMatch(res.stdout.toString(), /http:\/\/127\.0\.0\.1:/);
-});
+
 
 test('agb version', () => {
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));

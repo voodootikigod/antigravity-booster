@@ -29,7 +29,7 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
   Installs the `@adlc/antigravity` plugin globally into your `agy` installation and links the booster's ADLC skills. Use `--force` to overwrite existing skills. Fails loudly if `agy` is missing.
 
 To register the native Sidecar dashboard with Antigravity, you must explicitly run:
-`agb sidecar <repo> --unsafe-open`
+`agb sidecar <repo>`
 - **`agb probe <concurrencies> [model]`**  
   Measures pool latency and width limits (e.g., `agb probe 2,4,8`). Appends results to the calibration directory.
 
@@ -55,13 +55,13 @@ To register the native Sidecar dashboard with Antigravity, you must explicitly r
 - **`agb status <repo> [--watch]`**  
   Displays a live summary of an ongoing run.
 - **`agb sidecar <repo>`**  
-  Starts a local HTTP dashboard that visualizes parallel orchestration progress in real-time. This replaces the old terminal UI.
+  Spawns the local web dashboard for the repo's `.booster` data.
 
 ```bash
-agb sidecar [repo-path] [--port <port>] --unsafe-open
+agb sidecar [repo-path] [--port <port>]
 ```
 
-**Security Warning**: The sidecar serves `.booster/logs` over unauthenticated HTTP to the IPv4 loopback (`127.0.0.1`). These logs contain model stack traces and diffs that could expose local secrets or repository contents. The `--unsafe-open` flag is strictly required to acknowledge this exposure. It is intended for single-user developer workstations.
+**Security**: The sidecar uses an auto-generated token to ensure that only the Antigravity UI (and your local browser) can access the private run logs.
 
 If you omit the port, it defaults to `3333` (or the `AGB_SIDECAR_PORT` environment variable).
 
