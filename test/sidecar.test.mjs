@@ -7,11 +7,10 @@ import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-function fetchP(url, cookie) {
+function fetchP(url, headers = {}) {
   return new Promise((resolve, reject) => {
     // Disable keepAlive so the test process can exit cleanly when srv.close() is called
-    const opts = { agent: false };
-    if (cookie) opts.headers = { Cookie: cookie };
+    const opts = { agent: false, headers };
     request(url, opts, (res) => {
       let data = '';
       res.on('data', c => data += c);
@@ -157,8 +156,9 @@ test('sidecar: app.js escapes DOM nodes', () => {
     }
   };
 
-  const sandbox = new Function('document', 'setTimeout', 'fetch', 'console', appJs + '\nreturn { addEventLog, render, state };');
-  const { addEventLog, render, state } = sandbox(globalDoc, () => {}, () => {}, { error(){}, warn(){}, log(){} });
+  const globalWindow = { location: { search: '?token=test' } };
+  const sandbox = new Function('document', 'window', 'setTimeout', 'fetch', 'console', appJs + '\nreturn { addEventLog, render, state };');
+  const { addEventLog, render, state } = sandbox(globalDoc, globalWindow, () => {}, () => {}, { error(){}, warn(){}, log(){} });
   
   const payload = '<script>alert("xss")</script>';
   state.tickets.set('t1', { id: payload, phase: payload, model: payload, error: payload, detail: payload });
@@ -234,20 +234,17 @@ test('sidecar: CLI launches server on custom port', async () => {
     
     const resIndex = await fetchP(`http://127.0.0.1:${boundPort}/?token=${validToken}`);
     assert.equal(resIndex.statusCode, 200, 'Should allow authenticated index request');
-    const authCookie = (resIndex.headers['set-cookie'] || [])[0].split(';')[0];
-    assert.ok(authCookie.includes('agb_token'), 'Should set agb_token cookie');
+    assert.equal(resIndex.headers['set-cookie'], undefined, 'Should not set any cookie');
     
     const res = await fetchP(`http://127.0.0.1:${boundPort}/events`);
     assert.equal(res.statusCode, 403, 'Should reject unauthenticated request');
     
-    const resEvents = await fetchP(`http://127.0.0.1:${boundPort}/events`, authCookie);
-    assert.equal(resEvents.statusCode, 200, 'Should allow authenticated events request with cookie');
+    const authHeaders = { 'Authorization': `Bearer ${validToken}` };
+    const resEvents = await fetchP(`http://127.0.0.1:${boundPort}/events`, authHeaders);
+    assert.equal(resEvents.statusCode, 200, 'Should allow authenticated events request with Bearer token');
     
-    const resApp = await fetchP(`http://127.0.0.1:${boundPort}/app.js`, authCookie);
-    assert.equal(resApp.statusCode, 200, 'Should allow authenticated asset request with cookie');
-    
-    const resAppNoToken = await fetchP(`http://127.0.0.1:${boundPort}/app.js`);
-    assert.equal(resAppNoToken.statusCode, 403, 'Should reject unauthenticated asset request');
+    const resApp = await fetchP(`http://127.0.0.1:${boundPort}/app.js`);
+    assert.equal(resApp.statusCode, 200, 'Should allow asset request without token');
     
   } finally {
     clearTimeout(timer);

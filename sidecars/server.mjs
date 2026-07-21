@@ -24,32 +24,21 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
     const reqUrl = new URL(req.url, 'http://localhost');
     const reqToken = reqUrl.searchParams.get('token');
     
-    const cookies = req.headers.cookie || '';
-    let cookieToken = null;
-    const cookieMatch = cookies.match(/agb_token=([^;]+)/);
-    if (cookieMatch) cookieToken = cookieMatch[1];
-    
     if (token) {
-      if (reqUrl.pathname === '/' && reqToken) {
-        // Authenticating via query param on first load
-        const isValid = reqToken.length === token.length && timingSafeEqual(Buffer.from(reqToken), Buffer.from(token));
-        if (!isValid) {
+      if (reqUrl.pathname === '/') {
+        if (!reqToken || reqToken.length !== token.length || !timingSafeEqual(Buffer.from(reqToken), Buffer.from(token))) {
           res.writeHead(403);
           return res.end('Forbidden: Invalid token');
         }
-        res.setHeader('Set-Cookie', `agb_token=${reqToken}; HttpOnly; SameSite=Strict; Path=/`);
-      } else {
-        // All other requests or subsequent root requests must use the cookie
-        if (!cookieToken) {
+      } else if (reqUrl.pathname === '/events') {
+        const authHeader = req.headers.authorization || '';
+        const bearerToken = authHeader.replace(/^Bearer\s+/, '');
+        if (!bearerToken || bearerToken.length !== token.length || !timingSafeEqual(Buffer.from(bearerToken), Buffer.from(token))) {
           res.writeHead(403);
-          return res.end('Forbidden: Missing token cookie');
-        }
-        const isValid = cookieToken.length === token.length && timingSafeEqual(Buffer.from(cookieToken), Buffer.from(token));
-        if (!isValid) {
-          res.writeHead(403);
-          return res.end('Forbidden: Invalid token cookie');
+          return res.end('Forbidden: Invalid token header');
         }
       }
+      // /app.js and /style.css are served without token checks.
     }
 
     if (reqUrl.pathname === '/events') {

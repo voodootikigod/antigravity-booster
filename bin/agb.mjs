@@ -371,8 +371,9 @@ try {
       };
       
       writeFileSync(join(pluginDir, 'sidecars', 'agb.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
+      const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
       writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({
-        id: `agb-sidecar-dynamic-${process.pid}-${actualPort}`,
+        id: pluginId,
         name: 'AGB Dynamic Sidecar',
         version: '1.0.0',
         sidecars: ['sidecars/agb.json']
@@ -380,45 +381,40 @@ try {
       wroteManifests = true;
       
       const agyBin = process.env.AGB_AGY_BIN || 'agy';
+
+      let cleaned = false;
+      const onExitCleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        try {
+          server.close();
+          try { execFileSync(agyBin, ['plugin', 'uninstall', pluginId], { stdio: 'ignore' }); } catch(e) {}
+          if (pluginDir) {
+            if (createdDir) {
+              rmSync(pluginDir, { recursive: true, force: true });
+            } else if (wroteManifests) {
+              rmSync(join(pluginDir, 'sidecars', 'agb.json'), { force: true });
+              rmSync(join(pluginDir, 'plugin.json'), { force: true });
+            }
+          }
+        } catch (e) {}
+      };
+
+      const cleanup = (code) => {
+        onExitCleanup();
+        process.exit(code);
+      };
+
+      process.on('SIGINT', () => cleanup(130));
+      process.on('SIGTERM', () => cleanup(143));
+      process.on('exit', onExitCleanup);
+
       execFileSync(agyBin, ['plugin', 'install', pluginDir], { stdio: 'inherit' });
       console.log('Successfully registered the dynamic sidecar plugin with Antigravity.');
     } catch (e) {
       console.warn(`Warning: Could not automatically register the sidecar plugin with agy: ${e.message}`);
       console.warn(`The dashboard will not appear. To register it manually, add this manifest to your Antigravity plugins: ${pluginDir}`);
     }
-    
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      try {
-        server.close();
-        if (pluginDir) {
-          if (createdDir) {
-            rmSync(pluginDir, { recursive: true, force: true });
-          } else if (wroteManifests) {
-            rmSync(join(pluginDir, 'sidecars', 'agb.json'), { force: true });
-            rmSync(join(pluginDir, 'plugin.json'), { force: true });
-          }
-        }
-      } catch (e) {}
-      process.exit(0);
-    };
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
-    process.on('exit', () => {
-      if (!cleaned) {
-        try {
-          if (pluginDir) {
-            if (createdDir) rmSync(pluginDir, { recursive: true, force: true });
-            else if (wroteManifests) {
-              rmSync(join(pluginDir, 'sidecars', 'agb.json'), { force: true });
-              rmSync(join(pluginDir, 'plugin.json'), { force: true });
-            }
-          }
-        } catch(e) {}
-      }
-    });
   } else {
     console.error(`agb: unknown command '${cmd}'\\n`);
     console.error(`Usage: agb <command> ...`);

@@ -14,9 +14,16 @@ let state = {
 // Polling interval for events.jsonl
 let offset = 0;
 
+const urlParams = new URLSearchParams(window.location.search);
+const token = urlParams.get('token') || '';
+
 async function pollEvents() {
   try {
-    const res = await fetch(`/events?offset=${offset}`);
+    const res = await fetch(`/events?offset=${offset}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
     if (res.ok) {
       const data = await res.json();
       
@@ -60,7 +67,7 @@ async function pollEvents() {
       if (data.warning) {
         runStatus.innerHTML = `<span class="pulse" style="background-color: var(--color-status-failed)"></span>${data.warning}`;
         runStatus.className = 'status-badge status-failed';
-      } else if (runStatus.innerHTML.includes('Dropped oversized line')) {
+      } else if (runStatus.className.includes('status-failed') && (runStatus.innerHTML.includes('Dropped oversized line') || runStatus.innerHTML.includes('Dropped unparseable JSON line'))) {
         runStatus.innerHTML = '<span class="pulse"></span>Running...';
         runStatus.className = 'status-badge status-running';
       }
