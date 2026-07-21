@@ -1,0 +1,6 @@
+{
+  "name": "antigravity-booster",
+  "version": "0.6.0",
+  "description": "ADLC-shaped parallel orchestration for Google Antigravity (agy CLI): quota-pool-aware scheduling, worktree fleets, cross-model prosecution, deterministic gates",
+  "author": "Chris Williams <chris@voodootikigod.com>"
+}

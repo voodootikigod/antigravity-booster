@@ -1,6 +1,6 @@
 {
   "name": "antigravity-booster",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "type": "module",
   "description": "ADLC-shaped parallel orchestration for Google Antigravity (agy CLI): quota-pool-aware scheduling, worktree fleets, cross-model prosecution, deterministic gates",
   "keywords": [
@@ -22,15 +22,16 @@
     "bin/",
     "lib/",
     "skills/",
+    "sidecars/",
     "docs/",
     "templates/",
+    "plugin.json",
     "!docs/fumadocs-plan.md",
     "!docs/github-rulesets/"
   ],
   "dependencies": {
     "@adlc/antigravity": "^1.4.1",
-    "@adlc/core": "^1.4.1",
-    "@earendil-works/pi-tui": "^0.80.10"
+    "@adlc/core": "^1.4.1"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",

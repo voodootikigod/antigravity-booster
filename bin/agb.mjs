@@ -44,8 +44,8 @@ const COMMANDS = {
   doctor: { args: '', desc: 'verify your environment and tools' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
-  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>] [--ui]' },
-  tui: { args: '[repo]', desc: 'full-screen dashboard for a repo\'s current run (q to quit)', extended: 'falls back to a one-shot status render when stdout is not a TTY' },
+  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
+  sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI on port 3333' },
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' }
@@ -231,11 +231,7 @@ try {
     
     if (isWatch) {
       if (process.stdout.isTTY && rest.includes('--ui')) {
-        const { launchTUI } = await import('../lib/tui.mjs');
-        const code = await launchTUI(resolve(positional[0] ?? '.'), true, intervalMs);
-        if (code !== 'fallback') {
-          process.exit(code);
-        }
+        console.error('agb: TUI was removed. Run agb status without --ui, or mount the Antigravity Sidecar to view the dashboard.');
       }
       const { watchStatus } = await import('../lib/status.mjs');
       const code = await watchStatus(resolve(positional[0] ?? '.'), intervalMs);
@@ -304,16 +300,9 @@ try {
     } else {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
-  } else if (cmd === 'tui') {
-    const repo = resolve(rest[0] ?? '.');
-    if (!process.stdout.isTTY) {
-      console.log(renderStatus(repo));
-      process.exitCode = 0;
-    } else {
-      const { launchTUI } = await import('../lib/tui.mjs');
-      const code = await launchTUI(repo, false);
-      process.exitCode = code === 'fallback' ? 0 : code;
-    }
+  } else if (cmd === 'sidecar') {
+    const { serveSidecar } = await import('../sidecars/server.mjs');
+    await serveSidecar(resolve(rest[0] ?? '.'));
   } else {
     console.error(`agb: unknown command '${cmd}'\\n`);
     console.error(`Usage: agb <command> ...`);

@@ -1,0 +1,7 @@
+{
+  "id": "agb-dashboard",
+  "name": "AGB Dashboard",
+  "url": "http://localhost:3333/",
+  "icon": "activity",
+  "description": "Visualizes parallel build-outs orchestrated by Antigravity Booster."
+}

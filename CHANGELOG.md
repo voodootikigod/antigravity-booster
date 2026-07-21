@@ -9,6 +9,23 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-21
+
+### Breaking
+
+- **`agb tui` and `agb status --ui` have been permanently removed.** The terminal UI was limited by terminal rendering engines and could not safely run in the background. It has been completely replaced by the Antigravity Sidecar dashboard.
+
+### Added
+
+- **Native Antigravity Plugin Support:** `antigravity-booster` is now officially an Antigravity Plugin. You can install it natively via `agy plugin install antigravity-booster`.
+- **Sidecar Dashboard:** The execution dashboard has been rebuilt as an HTTP-backed web dashboard. When installed as a plugin, it automatically mounts into the Antigravity GUI. Alternatively, run `agb sidecar /path/to/repo` to serve it manually.
+- **Port Flexibility:** The Sidecar server binds to an ephemeral port in tests and allows configuration via the `AGB_SIDECAR_PORT` environment variable to prevent `EADDRINUSE` failures.
+
+### Fixed
+
+- **XSS & Path Traversal Prevention:** The new sidecar server blocks path traversal attempts from the browser, and the dashboard DOM safely escapes all inputs from model payloads to prevent Cross-Site Scripting.
+- **Improved Sidecar Log Tail:** The `events.jsonl` reader tracks true file offsets so the dashboard polls efficiently across long 20,000+ event orchestration runs.
+
 ## [0.5.1] — 2026-07-19
 
 ### Fixed

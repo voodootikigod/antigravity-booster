@@ -25,8 +25,10 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 `agb` provides subcommands grouped into four main workflows: Setup, Planning, Execution, and Monitoring.
 
 ### 🛠️ Setup & Diagnostics
+- **`agy plugin install antigravity-booster`**  
+  Installs the native plugin components (the Sidecar dashboard and ADLC skills) into your Antigravity environment.
 - **`agb bootstrap`** (aliases: `setup`, `install`)  
-  Installs the required `adlc-antigravity` plugin and links booster's skills. Use `--force` to overwrite existing skills. Fails loudly if `agy` is missing.
+  Local script used when developing from source to install the `adlc-antigravity` plugin and link the internal skills. Use `--force` to overwrite existing skills.
 - **`agb probe <concurrencies> [model]`**  
   Measures pool latency and width limits (e.g., `agb probe 2,4,8`). Appends results to the calibration directory.
 
@@ -49,8 +51,10 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
   Deploys a read-only fleet of models to audit changes. Loops until dry (no new critical/high findings).
 
 ### 📊 Monitoring
-- **`agb status <repo>`**  
-  Displays a live dashboard of an ongoing run (shows active workers, queues, and request counts).
+- **`agb status <repo> [--watch]`**  
+  Displays a live summary of an ongoing run.
+- **`agb sidecar <repo>`**  
+  Starts the web-based Sidecar dashboard server to visualize the run. Mounts natively in the Antigravity GUI when the plugin is installed.
 
 ### 📝 Log Schemas
 

@@ -55,14 +55,13 @@ Before starting, ensure you have **Node >= 18**, the **Antigravity CLI (`agy`)**
 
 *(Note: Gates use macOS Seatbelt by default. On Linux/Windows, run inside a disposable container and set `AGB_SANDBOX_GATES=0`.)*
 
-### 1. Install & Bootstrap
-We recommend installing `agb` globally. The `bootstrap` command is mandatory as it installs the `adlc-antigravity` plugin and links the booster's skills.
+We recommend installing `agb` globally. Since it is now a native Antigravity Plugin, you must then install it into `agy` to automatically wire up the Sidecar dashboard and ADLC skills:
 
 ```sh
 npm install -g antigravity-booster
-agb bootstrap
+agy plugin install antigravity-booster
 ```
-*(Alternatively, use zero-install with `npx antigravity-booster bootstrap`, or `npm link` from source.)*
+*(Alternatively, use `agb bootstrap` if developing from a local source checkout.)*
 
 ### 2. Verify Setup
 Run the diagnostic tool to ensure your dependencies and quota are ready:
@@ -171,7 +170,7 @@ artifact it produces. Think of `implementation_plan.md` as source and
    ```sh
    agb status /path/to/target-repo           # one-shot snapshot of the current run
    agb status /path/to/target-repo --watch   # refresh in place (--interval <ms>)
-   agb tui /path/to/target-repo              # full-screen dashboard (q to quit)
+   agb sidecar /path/to/target-repo          # start the local web dashboard sidecar
    ```
 
    Per-ticket transcripts land in `.booster/logs/<run-id>/<ticketId>.jsonl`, the final
@@ -199,8 +198,8 @@ agb run plan.json              # build → gate → prosecute → merge; exit 0/
 agb sweep sweep.json           # same operation × many targets (cheap tier)
 agb review /repo [ref]         # read-only lens fleet, loop-until-dry; exit 0/2
 agb doctor                     # verify your environment and tools
-agb status /path/repo          # one-shot run snapshot (--watch [--interval <ms>] [--ui])
-agb tui /path/repo             # full-screen dashboard, live from events.jsonl (q to quit)
+agb status /path/repo          # one-shot run snapshot (--watch [--interval <ms>])
+agb sidecar /path/repo         # start the local web dashboard sidecar server
 agb probe 2,4,8 [model]        # measure pool width/latency, append docs/calibration
 agb import-brain <id> /repo    # DEPRECATED: raw one-shot conversion (use agb plan)
 ```
