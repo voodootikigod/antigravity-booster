@@ -1,8 +1,8 @@
 {
   "name": "antigravity-booster",
-  "version": "0.6.0",
+  "version": "0.7.0",
+  "description": "Orchestrates Google Antigravity for large parallel build-outs",
   "type": "module",
-  "description": "ADLC-shaped parallel orchestration for Google Antigravity (agy CLI): quota-pool-aware scheduling, worktree fleets, cross-model prosecution, deterministic gates",
   "keywords": [
     "antigravity",
     "agy",

@@ -6,3 +6,4 @@ node_modules/
 !.adlc/tickets.json
 !.adlc/config.json
 plan.json
+sidecars/agb.json

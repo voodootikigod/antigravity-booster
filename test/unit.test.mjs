@@ -638,7 +638,7 @@ test('bootstrap: agy plugin install invoked with the resolved plugin path', () =
   try {
     bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
     const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim();
-    assert.equal(installs, '.', 'agy plugin install received "." since it runs with cwd set to the resolved plugin path');
+    assert.equal(installs, '.', 'agy plugin install received "." once for adlc (booster auto-install removed)');
   } finally {
     if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
     rmSync(destDir, { recursive: true, force: true });
@@ -754,4 +754,27 @@ test('compilePlan and runPlan: pass project option through to runAgy', async () 
   argv = readFileSync(join(state, 'agy-argv-seen'), 'utf8');
   assert.ok(argv.includes('--project proj-run'), 'runPlan passes project');
   rmSync(join(state, 'agy-argv-seen'));
+});
+
+test('plugin.json version matches package.json', () => {
+  const root = new URL('..', import.meta.url);
+  const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
+  const plugin = JSON.parse(readFileSync(new URL('plugin.json', root), 'utf8'));
+  assert.equal(plugin.version, pkg.version, 'plugin.json version must stay in sync with package.json for Antigravity plugin manifest');
+});
+
+
+test('bootstrap: isNpxTemp recognizes actual npx cache and ignores temp substrings in normal paths', async () => {
+  const { isNpxTemp } = await import('../lib/bootstrap.mjs');
+  
+  assert.equal(isNpxTemp('/home/user/.npm/_npx/12345/node_modules/antigravity-booster', {}), true);
+  assert.equal(isNpxTemp('/home/user/.npm/_npx/12345/node_modules/antigravity-booster', { npm_config_cache: '/home/user/.npm' }), true);
+  assert.equal(isNpxTemp('/Users/x/tmp/repo/node_modules/antigravity-booster', {}), false);
+  
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  assert.equal(isNpxTemp(join(tmpdir(), 'agb-test', 'file.mjs'), {}), true);
+  assert.equal(isNpxTemp('/tmp/npm-cache/agb/lib/bootstrap.mjs', { npm_config_cache: '/tmp/npm-cache' }), true, 'Matches npm_config_cache');
+  assert.equal(isNpxTemp('/var/folders/something/agb/lib/bootstrap.mjs', {}), true, 'macOS /var/folders is treated as temp');
+  assert.equal(isNpxTemp('/private/var/folders/something/agb/lib/bootstrap.mjs', {}), true, 'macOS /private/var/folders is treated as temp');
 });

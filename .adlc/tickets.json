@@ -24,6 +24,18 @@
       "edges": []
     },
     {
+      "id": "T1",
+      "title": "[P2] feat: append-only events.jsonl for RunStatus",
+      "body": "Design and implement the append-only `events.jsonl` schema for RunStatus, including the replay acceptance criterion for both `lib/status.mjs` and `sidecars/server.mjs`. Strike payloads must contain an `error` field so the UI can render them properly.",
+      "scope": [
+        "lib/status.mjs",
+        "sidecars/server.mjs",
+        "test/events-schema.test.mjs"
+      ],
+      "rails": [],
+      "edges": []
+    },
+    {
       "id": "T2",
       "title": "[P2] feat: normalize transcripts to JSONL",
       "body": "Normalize per-ticket transcripts to JSONL and update consumers.\n\n1. Normalize per-ticket transcripts to JSONL: one record per agy invocation `{ ts, model, strike, ms, ok, role, error, prompt, output, cwd }`. `role` is mandatory (e.g. 'builder' or 'prosecutor').\n2. In `lib/agy.mjs` and `lib/prosecute.mjs`, both builder and prosecutor MUST append to `<ticketId>.jsonl` using `fs.promises.appendFile`.\n3. `runAgy` should always write JSONL to `logFile` regardless of the file extension (remove the legacy write branch). `runId` is NOT passed to `runAgy` or `prosecute()`; they receive the exact `logFile` path.\n4. In `lib/scheduler.mjs`, change the prosecutor log path passed to `prosecute()` from `<ticketId>.prosecution.jsonl` to `<ticketId>.jsonl`.\n5. In `lib/scheduler.mjs` (`checkFlailDetector`), deserialize the JSONL transcript back to raw legacy text using the `role` field to map back correctly. Write it to a temporary file using `crypto.randomUUID()` in `os.tmpdir()` for a unique filename, pass that temp file path to `adlc flail-detector`, and then delete it.\n6. Update `docs/usage.md` with semantic descriptions for all fields across `events.jsonl` and `<ticketId>.jsonl`.\n\nAcceptance criteria:\n- Transcripts parse as JSONL.\n- `test/prosecute.test.mjs` expects JSONL.\n- `fake-adlc` keeps working.",
@@ -38,7 +50,7 @@
         "test/fixtures/fake-adlc/bin/adlc"
       ],
       "rails": [],
-      "edges": []
+      "edges": [{"to": "T1"}]
     },
     {
       "id": "T4",

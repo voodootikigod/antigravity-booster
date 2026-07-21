@@ -1,6 +1,6 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -32,7 +32,28 @@ test('agb COMMANDS table covers all dispatched commands', () => {
   }
 });
 
-test('agb --version prints the package version', () => {
+test('agb status --ui exits non-zero with migration message', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-test-'));
+  const res = spawnSync(process.execPath, [AGB_BIN, 'status', repo, '--ui']);
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr.toString(), /TUI flag has been removed.*agb sidecar/);
+});
+
+test('agb tui exits non-zero with migration message', () => {
+  const res = spawnSync(process.execPath, [AGB_BIN, 'tui']);
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr.toString(), /TUI has been removed.*agb sidecar/);
+});
+
+test('agb sidecar without --unsafe-open exits non-zero and binds nothing', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-test-'));
+  const res = spawnSync(process.execPath, [AGB_BIN, 'sidecar', repo, '--port', '0']);
+  assert.notEqual(res.status, 0);
+  assert.match(res.stderr.toString(), /--unsafe-open/);
+  assert.doesNotMatch(res.stdout.toString(), /http:\/\/127\.0\.0\.1:/);
+});
+
+test('agb version', () => {
   const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
   for (const flag of ['--version', '-v', 'version']) {
     const stdout = execFileSync(process.execPath, [AGB_BIN, flag], { encoding: 'utf8' }).trim();

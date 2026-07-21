@@ -1,114 +1,213 @@
 import { createServer } from 'node:http';
-import { readFileSync, statSync, existsSync, openSync, readSync, closeSync, writeFileSync } from 'node:fs';
+import { readFileSync, statSync, existsSync, openSync, readSync, closeSync, writeFileSync, mkdirSync, createReadStream } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function serveSidecar(repoPath, port = process.env.AGB_SIDECAR_PORT || 3333) {
-  return new Promise((resolve, reject) => {
-    const runJsonPath = join(repoPath, '.booster', 'run.json');
+export function serveSidecar(repoPath, port = 3333, token = null) {
+  const runJsonPath = join(repoPath, '.booster', 'run.json');
+
+  const handleRequest = async (req, res) => {
+    const hostHeader = req.headers.host || '';
+    let hostname = '';
+    try {
+      hostname = new URL('http://' + hostHeader).hostname;
+    } catch(e) {}
+    const allowlistHosts = ['127.0.0.1', 'localhost', '[::1]', '::1'];
     
-    const server = createServer((req, res) => {
-      
-      const url = new URL(req.url, 'http://localhost');
-      
-      if (url.pathname === '/events') {
-        let offset = parseInt(url.searchParams.get('offset') || '0', 10);
-        
-        let runId = null;
-        if (existsSync(runJsonPath)) {
-          try {
-            const run = JSON.parse(readFileSync(runJsonPath, 'utf8'));
-            runId = String(run.runId || '').replace(/[\\/\\\\]/g, '_');
-            eventsPath = join(repoPath, '.booster', 'logs', runId, 'events.jsonl');
-          } catch (e) {}
+    if (!allowlistHosts.includes(hostname)) {
+      res.writeHead(403);
+      return res.end('Forbidden');
+    }
+    const reqUrl = new URL(req.url, 'http://localhost');
+    const reqToken = reqUrl.searchParams.get('token');
+    
+    const cookies = req.headers.cookie || '';
+    let cookieToken = null;
+    const cookieMatch = cookies.match(/agb_token=([^;]+)/);
+    if (cookieMatch) cookieToken = cookieMatch[1];
+    
+    if (token) {
+      if (reqUrl.pathname === '/' && reqToken) {
+        // Authenticating via query param on first load
+        const isValid = reqToken.length === token.length && timingSafeEqual(Buffer.from(reqToken), Buffer.from(token));
+        if (!isValid) {
+          res.writeHead(403);
+          return res.end('Forbidden: Invalid token');
         }
-
-        if (!eventsPath || !existsSync(eventsPath)) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ lines: [], newOffset: offset, runId }));
+        res.setHeader('Set-Cookie', `agb_token=${reqToken}; HttpOnly; SameSite=Strict; Path=/`);
+      } else {
+        // All other requests or subsequent root requests must use the cookie
+        if (!cookieToken) {
+          res.writeHead(403);
+          return res.end('Forbidden: Missing token cookie');
         }
+        const isValid = cookieToken.length === token.length && timingSafeEqual(Buffer.from(cookieToken), Buffer.from(token));
+        if (!isValid) {
+          res.writeHead(403);
+          return res.end('Forbidden: Invalid token cookie');
+        }
+      }
+    }
 
+    if (reqUrl.pathname === '/events') {
+      let offset = Number(reqUrl.searchParams.get('offset')) || 0;
+      let runId = null;
+      let eventsPath = null;
+      if (existsSync(runJsonPath)) {
         try {
-          const stats = statSync(eventsPath);
-          if (stats.size < offset) {
-            // File truncated/restarted
-            offset = 0;
-          }
-          
-          if (stats.size > offset) {
-            const fd = openSync(eventsPath, 'r');
-            const buffer = Buffer.alloc(stats.size - offset);
-            readSync(fd, buffer, 0, buffer.length, offset);
-            closeSync(fd);
-            
-            const content = buffer.toString('utf8');
-            const lastNewline = content.lastIndexOf('\\n');
-            
-            if (lastNewline !== -1) {
-              const completeContent = content.substring(0, lastNewline);
-              const lines = completeContent.split('\\n').filter(Boolean);
-              offset += Buffer.byteLength(completeContent) + 1; // +1 for the newline
-              
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              return res.end(JSON.stringify({ lines, newOffset: offset, runId }));
-            }
-          }
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ lines: [], newOffset: offset, runId }));
-        } catch (err) {
-          res.writeHead(500);
-          res.end('Error reading events');
+          const run = JSON.parse(readFileSync(runJsonPath, 'utf8'));
+          runId = String(run.runId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+          eventsPath = join(repoPath, '.booster', 'logs', runId, 'events.jsonl');
+        } catch (e) {}
+      }
+
+      if (!eventsPath || !existsSync(eventsPath)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ lines: [], newOffset: 0, runId, repo: repoPath }));
+      }
+
+      try {
+        const stats = statSync(eventsPath);
+        if (!Number.isFinite(offset) || offset < 0) offset = 0;
+        let isReset = false;
+        if (offset > stats.size) {
+          offset = 0;
+          isReset = true;
         }
-        return;
-      }
 
-      // Static files
-      const safePath = url.pathname === '/' ? '/index.html' : url.pathname;
-      const filePath = join(__dirname, safePath);
-      
-      // Prevent path traversal
-      if (!filePath.startsWith(__dirname)) {
-        res.writeHead(403);
-        return res.end('Forbidden');
-      }
+        if (stats.size > offset) {
+          const fd = openSync(eventsPath, 'r');
+          const MAX_CHUNK = 1024 * 1024; // 1MB
+          const toRead = Math.min(stats.size - offset, MAX_CHUNK);
+          const buffer = Buffer.alloc(toRead);
+          try {
+            let totalRead = 0;
+            while (totalRead < buffer.length) {
+              const bytesRead = readSync(fd, buffer, totalRead, buffer.length - totalRead, offset + totalRead);
+              if (bytesRead === 0) break;
+              totalRead += bytesRead;
+            }
 
-      if (!existsSync(filePath)) {
-        res.writeHead(404);
-        return res.end('Not found');
+            let lastNewline = -1;
+            for (let i = totalRead - 1; i >= 0; i--) {
+              if (buffer[i] === 10) { // '\n'
+                lastNewline = i;
+                break;
+              }
+            }
+
+            if (lastNewline === -1) {
+              if (offset + toRead < stats.size) {
+                // The chunk contains no newline and we haven't reached EOF.
+                // We are stuck on an oversized line. We just return what we have and advance offset.
+                // The client will fail JSON.parse until it hits the next newline.
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                return res.end(JSON.stringify({ 
+                  lines: [buffer.toString('utf8', 0, toRead)], 
+                  newOffset: offset + toRead, 
+                  runId, 
+                  repo: repoPath, 
+                  reset: isReset, 
+                  warning: "Dropped oversized line" 
+                }));
+              }
+            }
+
+            if (lastNewline !== -1) {
+              const completeBuffer = buffer.subarray(0, lastNewline);
+              const completeContent = completeBuffer.toString('utf8');
+              let droppedCorrupt = false;
+              const lines = completeContent.split('\n').filter(Boolean).filter(line => {
+                try { JSON.parse(line); return true; } catch (e) { droppedCorrupt = true; return false; }
+              });
+              const newOffset = offset + lastNewline + 1;
+
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              const payload = { lines, newOffset, runId, repo: repoPath, reset: isReset };
+              if (droppedCorrupt) payload.warning = "Dropped unparseable JSON line";
+              return res.end(JSON.stringify(payload));
+            }
+          } finally {
+            closeSync(fd);
+          }
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ lines: [], newOffset: offset, runId, repo: repoPath, reset: isReset }));
+      } catch (err) {
+        res.writeHead(500);
+        res.end('Error reading events');
       }
-      
-      const ext = filePath.split('.').pop();
-      const mimes = { 'html': 'text/html', 'css': 'text/css', 'js': 'application/javascript' };
-      res.writeHead(200, { 'Content-Type': mimes[ext] || 'text/plain' });
-      res.end(readFileSync(filePath));
+      return;
+    }
+
+    const safePath = reqUrl.pathname === '/' ? '/index.html' : reqUrl.pathname;
+    const allowlist = ['/index.html', '/app.js', '/style.css'];
+
+    if (!allowlist.includes(safePath)) {
+      res.writeHead(403);
+      return res.end('Forbidden');
+    }
+
+    const filePath = join(__dirname, safePath);
+    if (!existsSync(filePath)) {
+      res.writeHead(404);
+      return res.end('Not found');
+    }
+
+    const ext = filePath.split('.').pop();
+    const mimes = { 'html': 'text/html', 'css': 'text/css', 'js': 'application/javascript', 'json': 'application/json' };
+    const contentType = mimes[ext] || 'text/plain';
+    
+    if (ext === 'html') {
+      const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;";
+      res.setHeader('Content-Security-Policy', csp);
+      res.setHeader('Content-Type', contentType);
+      let html = readFileSync(filePath, 'utf8');
+      // No longer inject ?token= into subresource URLs since the HttpOnly cookie handles it.
+      return res.end(html);
+    }
+    
+    res.setHeader('Content-Type', contentType);
+    const s = createReadStream(filePath);
+    s.on('error', () => {
+      if (!res.headersSent) {
+        res.writeHead(500);
+        res.end('Read error');
+      }
+    });
+    s.pipe(res);
+  };
+
+  return new Promise((resolve, reject) => {
+    let isListening = false;
+    const server = createServer(async (req, res) => {
+      try {
+        await handleRequest(req, res);
+      } catch (err) {
+        console.error('Sidecar request error:', err);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.end('Internal Server Error');
+        }
+      }
     });
 
     server.on('error', (err) => {
-      reject(new Error(`Failed to start sidecar server on port ${port}: ${err.message}`));
-    });
-
-    server.listen(port, '127.0.0.1', () => {
-      const actualPort = server.address().port;
-      console.log(`AGB Sidecar Server running at http://127.0.0.1:${actualPort}`);
-      console.log('Use sidecar/agb.json to mount this natively in Antigravity');
-      
-      // Dynamically update the agb.json descriptor to use the bound port
-      try {
-        const agbJsonPath = join(__dirname, 'agb.json');
-        if (existsSync(agbJsonPath)) {
-          const agbJson = JSON.parse(readFileSync(agbJsonPath, 'utf8'));
-          agbJson.url = `http://127.0.0.1:${actualPort}/`;
-          writeFileSync(agbJsonPath, JSON.stringify(agbJson, null, 2));
-        }
-      } catch (e) {
-        console.warn('Could not update agb.json port configuration');
+      if (!isListening) {
+        reject(new Error(`Failed to start sidecar server on port ${port}: ${err.message}`));
+      } else {
+        console.error('Sidecar server error:', err);
       }
     });
     
-    // Resolve when the server is ready, but keep the process alive
-    server.on('listening', () => resolve(server));
+    server.listen(port, '127.0.0.1', () => {
+      isListening = true;
+      console.log(`AGB Sidecar Server running at http://127.0.0.1:${server.address().port}`);
+      resolve(server);
+    });
   });
 }
