@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-07-22T18:46:54.126Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "6c1cfc72a7708392809d4fc7be908d33165d6de50ecc1d7654265addd43f8fa5",
+    "ticketHash": "ce950365a0cfd0b21c12355c07f83e442b45c36871dae856c32ee3c52691e0b7",
+    "version": 1
+  },
   "body": "lib/worktrees.mjs ensureGitignore currently writes only ['.worktrees/', '.booster/', '.adlc/*', '!.adlc/tickets.json'] into a target repo's .gitignore. The canonical ADLC stanza (written by adlc ticket store migrate and prescribed by the adlc-antigravity plugin's adlc-init) additionally negates the directory ticket store and specs: '!.adlc/tickets/', '!.adlc/tickets/**', '!.adlc/ticket-archive/', '!.adlc/ticket-archive/**', '!.adlc/specs/', and keeps '!.adlc/config.json'. Without these, a booster-bootstrapped target repo gitignores its own ticket shards and specs.\n\nUpdate the missing-lines set in ensureGitignore to the full canonical stanza (append-only: only add lines that are absent, preserve existing content, same as current behavior).\n\nAcceptance criteria:\n- Unit test asserts a fresh repo gets the full stanza and an already-complete .gitignore is left byte-identical.\n- Unit test asserts a partial stanza (e.g. legacy-only lines) gains exactly the missing negations.\n- npm test green.",
+  "completed": true,
   "edges": [],
   "id": "T-STORE-GITIGNORE",
   "rails": [],
