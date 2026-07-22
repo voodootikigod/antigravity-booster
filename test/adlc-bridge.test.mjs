@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -262,6 +262,31 @@ test('writeAdlcTickets: refuses a symlinked store path (redirected cleanup would
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
+test('writeAdlcTickets: a symlink planted AT the shard name is unlinked, not written through', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  const victimDir = mkdtempSync(join(tmpdir(), 'agb-bridge-victim-'));
+  try {
+    // Shard names are deterministic per ticket id, so a crafted repo can
+    // pre-commit a symlink where the projection will write. writeFileSync
+    // follows symlinks — the write must unlink the shard first.
+    const victim = join(victimDir, 'victim.conf');
+    writeFileSync(victim, 'precious\n');
+    const storeDir = join(repo, '.adlc', 'tickets');
+    mkdirSync(storeDir, { recursive: true });
+    writeFileSync(join(storeDir, '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
+    symlinkSync(victim, join(storeDir, ticketFilename('T1')));
+    writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]);
+    assert.equal(readFileSync(victim, 'utf8'), 'precious\n', 'symlink target untouched');
+    assert.ok(!lstatSync(join(storeDir, ticketFilename('T1'))).isSymbolicLink(), 'shard is a regular file now');
+    const { tickets: loaded, errors } = loadTickets(join(repo, '.adlc', 'tickets.json'));
+    assert.deepEqual(errors, []);
+    assert.deepEqual(loaded.map((t) => t.id), ['T1']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(victimDir, { recursive: true, force: true });
   }
 });
 

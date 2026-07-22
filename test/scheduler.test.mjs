@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ticketFilename } from '@adlc/tickets';
+
 import { runPlan } from '../lib/scheduler.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
@@ -420,6 +422,45 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
     assert.equal(materialized.tickets.length, 1);
     assert.equal(materialized.tickets[0].id, 'T1');
     assert.deepEqual(materialized.tickets[0].rails, ['RAIL.txt'], 'the worktree\'s .adlc/tickets.json carries this ticket\'s declared rails, projected — not invented');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: a repo with a COMMITTED directory store still integrates (projection discarded before rebase)', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-committed-store-'));
+  try {
+    // Commit a whole-plan directory store (the canonical migrated-repo state):
+    // T1 + T2 shards beside the manifest, un-ignored by the canonical stanza.
+    // The worktree rail projection rewrites these TRACKED files (deleting T2's
+    // shard); commitAll excludes them, so without the pre-rebase discard they
+    // sit as unstaged tracked changes and `git rebase` refuses to run.
+    const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
+    const storeDir = join(repo, '.adlc', 'tickets');
+    mkdirSync(storeDir, { recursive: true });
+    writeFileSync(join(storeDir, '.store.json'), '{\n  "format": "adlc-ticket-directory",\n  "version": 1\n}\n');
+    writeFileSync(join(storeDir, ticketFilename('T1')), JSON.stringify({ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: [], edges: [] }, null, 2) + '\n');
+    writeFileSync(join(storeDir, ticketFilename('T2')), JSON.stringify({ id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'], rails: [], edges: [] }, null, 2) + '\n');
+    g('add', '-A'); g('commit', '-qm', 'commit ticket store');
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    assert.deepEqual(Object.keys(report.failed), [], `nothing failed — ${JSON.stringify(report.failed)}`);
+    assert.equal(report.merged.length, 1);
+    // Main's committed store is untouched by the worktree's rail projection.
+    assert.ok(existsSync(join(storeDir, ticketFilename('T2'))), 'sibling shard survives on main');
+    assert.equal(g('status', '--porcelain').trim(), '', 'main tree clean after the run');
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
