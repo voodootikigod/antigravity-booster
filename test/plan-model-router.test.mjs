@@ -119,7 +119,7 @@ test('compilePlan: AC1 — a successful compile\'s tickets carry the model-route
       assert.equal(r.plan.tickets[0].tier, 'frontier');
     });
     const invocations = readFileSync(join(state, 'model-router-invocations'), 'utf8');
-    assert.match(invocations, /tickets=.*\.adlc[/\\]tickets\.json/, 'model-router was invoked against the projected .adlc/tickets.json');
+    assert.match(invocations, /tickets=.*\.adlc[/\\]tickets\b/, 'model-router was invoked against the projected ticket store');
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });

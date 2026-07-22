@@ -2,8 +2,14 @@
 node_modules/
 .booster/
 .claude/
-.adlc/*
-!.adlc/tickets.json
 !.adlc/config.json
 plan.json
 sidecars/agb.json
+
+.adlc/*
+!.adlc/tickets.json
+!.adlc/tickets/
+!.adlc/tickets/**
+!.adlc/ticket-archive/
+!.adlc/ticket-archive/**
+!.adlc/specs/

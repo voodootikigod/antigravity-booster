@@ -220,11 +220,20 @@ case "$prompt" in
       sabotage) echo "did the work" > "${tid:-out}.txt"; echo sabotage > SABOTAGE; echo "TICKET-DONE"; exit 0 ;;
       # rail: edits a read-only rail file that sits INSIDE the declared scope.
       rail) echo "did the work" > "${tid:-out}.txt"; echo edited > RAIL.txt; echo "TICKET-DONE"; exit 0 ;;
-      # echo-adlc: copies cwd's .adlc/tickets.json (if any) to FAKE_STATE_DIR
-      # so a test can verify the scheduler materialized it into the worktree
-      # BEFORE the build ran (the worktree itself is deleted post-merge).
+      # echo-adlc: snapshots cwd's ADLC ticket store (legacy tickets.json OR
+      # the .adlc/tickets/ directory store, normalized to the {tickets:[...]}
+      # envelope) to FAKE_STATE_DIR so a test can verify the scheduler
+      # materialized it into the worktree BEFORE the build ran (the worktree
+      # itself is deleted post-merge).
       echo-adlc)
-        [ -f .adlc/tickets.json ] && cp .adlc/tickets.json "$FAKE_STATE_DIR/adlc-tickets-seen.json"
+        if [ -f .adlc/tickets.json ]; then
+          cp .adlc/tickets.json "$FAKE_STATE_DIR/adlc-tickets-seen.json"
+        elif [ -f .adlc/tickets/.store.json ]; then
+          node -e "
+            const fs=require('fs'),path=require('path'),p='.adlc/tickets';
+            const tickets=fs.readdirSync(p).filter(f=>f!=='.store.json'&&f.endsWith('.json')).map(f=>JSON.parse(fs.readFileSync(path.join(p,f),'utf8')));
+            fs.writeFileSync(path.join(process.env.FAKE_STATE_DIR,'adlc-tickets-seen.json'),JSON.stringify({tickets},null,2))"
+        fi
         echo "did the work" > "${tid:-out}.txt"; echo "TICKET-DONE"; exit 0 ;;
       # flail-then-good: every strike blocks, printing the FLAIL-REPEATED-ERROR
       # marker twice in its own output. If a real agy repeated the same error

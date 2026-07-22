@@ -95,7 +95,7 @@ test('compilePlan: AC1 — a successful compile\'s plan carries a concurrencyCap
       assert.equal(r.plan.concurrencyCap, 3);
     });
     const invocations = readFileSync(join(state, 'merge-forecast-invocations'), 'utf8');
-    assert.match(invocations, /tickets=.*\.adlc[/\\]tickets\.json/, 'merge-forecast was invoked against the projected .adlc/tickets.json');
+    assert.match(invocations, /tickets=.*\.adlc[/\\]tickets\b/, 'merge-forecast was invoked against the projected ticket store');
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });

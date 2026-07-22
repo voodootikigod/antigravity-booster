@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { ticketFilename } from '@adlc/tickets';
+
 import { runPlan } from '../lib/scheduler.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
@@ -171,7 +173,9 @@ test('runPlan: post-merge gate failure reverts main to the pre-run SHA (data-los
   try {
     // Pre-seed the entries ensureGitignore would otherwise commit at run
     // start, so the pre-run SHA is exactly what the revert must restore.
-    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n');
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
     execFileSync('git', ['add', '-A'], { cwd: repo });
     execFileSync('git', ['commit', '-qm', 'gitignore'], { cwd: repo });
     const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
@@ -395,7 +399,7 @@ test('runPlan: AC3 — a non-ADLC-initialized target repo produces a clear, non-
   }
 });
 
-test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin present sets ADLC_P4_ENFORCEMENT/ADLC_TICKET on the builder spawn and materializes .adlc/tickets.json into the worktree', async () => {
+test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin present sets ADLC_P4_ENFORCEMENT/ADLC_TICKET on the builder spawn and materializes the ticket store into the worktree', async () => {
   const repo = makeRepo();
   mkdirSync(join(repo, '.adlc'));
   const state = mkdtempSync(join(tmpdir(), 'agb-enforce-state-'));
@@ -424,7 +428,114 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
   }
 });
 
-test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes an edge-free single-ticket .adlc/tickets.json the plugin validator accepts', async () => {
+test('runPlan: a repo with a COMMITTED directory store still integrates (projection discarded before rebase)', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-committed-store-'));
+  try {
+    // Commit a whole-plan directory store (the canonical migrated-repo state):
+    // T1 + T2 shards beside the manifest, un-ignored by the canonical stanza.
+    // The worktree rail projection rewrites these TRACKED files (deleting T2's
+    // shard); commitAll excludes them, so without the pre-rebase discard they
+    // sit as unstaged tracked changes and `git rebase` refuses to run.
+    const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
+    const storeDir = join(repo, '.adlc', 'tickets');
+    mkdirSync(storeDir, { recursive: true });
+    writeFileSync(join(storeDir, '.store.json'), '{\n  "format": "adlc-ticket-directory",\n  "version": 1\n}\n');
+    writeFileSync(join(storeDir, ticketFilename('T1')), JSON.stringify({ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: [], edges: [] }, null, 2) + '\n');
+    writeFileSync(join(storeDir, ticketFilename('T2')), JSON.stringify({ id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'], rails: [], edges: [] }, null, 2) + '\n');
+    g('add', '-A'); g('commit', '-qm', 'commit ticket store');
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    assert.deepEqual(Object.keys(report.failed), [], `nothing failed — ${JSON.stringify(report.failed)}`);
+    assert.equal(report.merged.length, 1);
+    // Main's committed store is untouched by the worktree's rail projection.
+    assert.ok(existsSync(join(storeDir, ticketFilename('T2'))), 'sibling shard survives on main');
+    assert.equal(g('status', '--porcelain').trim(), '', 'main tree clean after the run');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: a repo with a COMMITTED legacy tickets.json still integrates (projection discarded before rebase)', async () => {
+  const repo = makeRepo();
+  try {
+    // Same failure mode as the committed directory store, legacy backend: the
+    // worktree rail projection overwrites the TRACKED tickets.json (written in
+    // kind on legacy repos); commitAll excludes it, so without the pre-rebase
+    // discard it sits as an unstaged tracked change and `git rebase` refuses.
+    const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), JSON.stringify({
+      tickets: [
+        { id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: [], edges: [] },
+        { id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'], rails: [], edges: [] },
+      ],
+    }, null, 2) + '\n');
+    g('add', '-A'); g('commit', '-qm', 'commit legacy ticket store');
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    assert.deepEqual(Object.keys(report.failed), [], `nothing failed — ${JSON.stringify(report.failed)}`);
+    assert.equal(report.merged.length, 1);
+    const committed = JSON.parse(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'));
+    assert.equal(committed.tickets.length, 2, 'committed legacy store untouched on main');
+    assert.equal(g('status', '--porcelain').trim(), '', 'main tree clean after the run');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: the materialized ticket-store projection never enters commits or burns a strike', async () => {
+  const repo = makeRepo();
+  mkdirSync(join(repo, '.adlc'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-strike-state-'));
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] }],
+      }, quiet)
+    );
+    assert.equal(report.merged.length, 1);
+    assert.equal(report.enforcementAvailable, true, report.enforcementReason);
+    const log = execFileSync('git', ['log', '--name-only', '--format=COMMIT %s'], { cwd: repo, encoding: 'utf8' });
+    // The projection is orchestrator-authored: had it been committed, the
+    // scope check would flag it out-of-scope, charge the builder a strike for
+    // the orchestrator's own artifact, and resetToBase would delete it —
+    // leaving the retry without live rail enforcement. One strike, no .adlc
+    // paths in history.
+    assert.match(log, /T1: one \(strike 1\)/, 'merged on the first strike');
+    assert.doesNotMatch(log, /strike 2/, 'no strike was burned on the projection');
+    assert.doesNotMatch(log, /\.adlc\//, 'projection files never enter commits');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes an edge-free single-ticket store the plugin validator accepts', async () => {
   const repo = makeRepo();
   mkdirSync(join(repo, '.adlc'));
   const state = mkdtempSync(join(tmpdir(), 'agb-b11-state-'));

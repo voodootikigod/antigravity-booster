@@ -454,6 +454,13 @@ test('worktrees: create → edit → commit → diff → merge lifecycle', () =>
     ensureGitignore(dir); // idempotent — second call must not commit again
     const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
     assert.equal(gi.match(/\.worktrees\//g).length, 1);
+    // Full canonical ADLC stanza: the directory ticket store, its archive, and
+    // specs must all be un-ignored, matching `adlc ticket store migrate` and
+    // the adlc-antigravity plugin's adlc-init.
+    for (const line of ['.adlc/*', '!.adlc/tickets.json', '!.adlc/tickets/', '!.adlc/tickets/**',
+      '!.adlc/ticket-archive/', '!.adlc/ticket-archive/**', '!.adlc/specs/', '!.adlc/config.json']) {
+      assert.ok(gi.split('\n').includes(line), `canonical stanza line present: ${line}`);
+    }
     assert.match(g('log', '--oneline', '-1'), /gitignore agb working dirs/);
 
     const wt = createWorktree(dir, 'T9', 'main');

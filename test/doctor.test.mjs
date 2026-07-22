@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore } from '../lib/doctor.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
@@ -126,6 +126,74 @@ test('checkPlugin: fails when incompatible', async () => {
   } finally {
     if (orig !== undefined) process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = orig;
     else delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+// --- checkTicketStore: the repo's ADLC ticket backend ---
+// The directory store (.adlc/tickets/ + .store.json) is canonical; the single
+// tickets.json is the 1.x legacy bridge. Both present at once is a fail-closed
+// state for the adlc-antigravity plugin's reader, so doctor must FAIL on it.
+
+test('checkTicketStore: no store is a pass (created on first projection)', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-store-none-'));
+  try {
+    const res = await checkTicketStore({ cwd: d });
+    assert.equal(res.level, 'pass');
+    assert.match(res.detail, /none/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkTicketStore: reports the directory backend', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-store-dir-'));
+  try {
+    mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(d, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
+    const res = await checkTicketStore({ cwd: d });
+    assert.equal(res.level, 'pass');
+    assert.match(res.detail, /directory/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkTicketStore: reports the legacy backend', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-store-legacy-'));
+  try {
+    mkdirSync(join(d, '.adlc'), { recursive: true });
+    writeFileSync(join(d, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
+    const res = await checkTicketStore({ cwd: d });
+    assert.equal(res.level, 'pass');
+    assert.match(res.detail, /legacy/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkTicketStore: FAILS when both stores exist (plugin fails closed on this)', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-store-both-'));
+  try {
+    mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(d, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
+    writeFileSync(join(d, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
+    const res = await checkTicketStore({ cwd: d });
+    assert.equal(res.level, 'fail');
+    assert.ok(res.fix, 'both-stores failure carries fix text');
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkTicketStore: warns on an orphaned directory store (dir without .store.json)', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-store-orphan-'));
+  try {
+    mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
+    const res = await checkTicketStore({ cwd: d });
+    assert.equal(res.level, 'warn');
+    assert.match(res.detail, /orphaned/);
+  } finally {
     rmSync(d, { recursive: true, force: true });
   }
 });

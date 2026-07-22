@@ -176,7 +176,15 @@ if [ "$1" = "model-router" ]; then
   case "${FAKE_MODEL_ROUTER_MODE:-default}" in
     fail) echo "not json" ; exit 1 ;;
     *)
-      ids=$(node -e "const t=require('$ticketspath'); console.log(t.tickets.map(x=>x.id).join('\n'))" 2>/dev/null)
+      # --tickets may name the legacy tickets.json OR the directory store
+      # (one shard per ticket beside a .store.json manifest), mirroring the
+      # real adlc CLI's dual-backend reader.
+      ids=$(node -e "
+        const fs=require('fs'),path=require('path'),p='$ticketspath';
+        const tickets=fs.statSync(p).isDirectory()
+          ? fs.readdirSync(p).filter(f=>f!=='.store.json'&&f.endsWith('.json')).map(f=>JSON.parse(fs.readFileSync(path.join(p,f),'utf8')))
+          : require(p).tickets;
+        console.log(tickets.map(x=>x.id).join('\n'))" 2>/dev/null)
       assignments=$(echo "$ids" | awk 'BEGIN{first=1} NF{if(!first) printf ","; printf "{\"id\":\"%s\",\"tier\":\"frontier\",\"mode\":\"direct\",\"railDensity\":1,\"float\":0,\"reason\":\"fake\"}", $0; first=0}')
       p3="[]"
       [ "${FAKE_MODEL_ROUTER_MODE:-}" = "p3" ] && p3='[{"id":"fake","message":"fake P3 finding"}]'

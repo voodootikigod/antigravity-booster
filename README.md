@@ -44,10 +44,10 @@ disciplined fleet:
   fans out candidate fixes via `adlc consensus-fix` and applies the first
   gated winner before falling back to a single-attempt fix round.
 - **Self-hosted ADLC gates.** This repo dogfoods the same doctrine it
-  imposes on target repos: `.adlc/tickets.json` is the tracked ticket
-  contract, `.adlc/config.json` is the bootstrapped trust root, and
-  `.github/workflows/adlc-rails-guard.yml` enforces frozen rails in CI, not
-  just locally. See [AGENTS.md](AGENTS.md).
+  imposes on target repos: the `.adlc/tickets/` directory store is the
+  tracked ticket contract, `.adlc/config.json` is the bootstrapped trust
+  root, and `.github/workflows/adlc-rails-guard.yml` enforces frozen rails
+  in CI, not just locally. See [AGENTS.md](AGENTS.md).
 
 ## 🚀 Installation & Setup
 
@@ -117,8 +117,10 @@ artifact it produces. Think of `implementation_plan.md` as source and
     `--force`, `--no-coldstart`, `--no-parallax`, `--no-premortem`.
 
     On a successful compile, the gate pipeline also projects the ticket set
-    into `.adlc/tickets.json` (so the `adlc` CLI and the adlc-antigravity
-    plugin's rails-guard hook can resolve the same active tickets), runs
+    into the repo's ADLC ticket store — the `.adlc/tickets/` directory store
+    on new repos, or a legacy `.adlc/tickets.json` where one is already
+    checked in — so the `adlc` CLI and the adlc-antigravity plugin's
+    rails-guard hook can resolve the same active tickets. It then runs
     `adlc model-router` to assign each ticket's deterministic tier
     (replacing the brain conversion's own free-form guess), and `adlc
     merge-forecast` to annotate `plan.concurrencyCap`. All three are
@@ -272,14 +274,14 @@ bin/agb.mjs        CLI (bootstrap | plan | run | sweep | review | preflight |
 lib/               scheduler, pools, agy wrapper, worktrees, gates,
                    charters, prosecution, review, sweep, preflight,
                    plan compiler (validate/parallax/premortem),
-                   adlc-bridge (plan.json ⇄ .adlc/tickets.json projection),
+                   adlc-bridge (plan.json ⇄ ADLC ticket store projection),
                    brain import, bootstrap, status, repo lock
 skills/            release (booster-specific; ADLC doctrine/prosecutor/
                    self-orchestrate skills come from the adlc-antigravity
                    plugin, installed by `agb bootstrap`, not vendored here)
 templates/         plan.example.json (schema by example)
-.adlc/             this repo's own ADLC workspace (tickets.json tracked,
-                   config.json tracked, everything else gitignored)
+.adlc/             this repo's own ADLC workspace (tickets/ directory store
+                   tracked, config.json tracked, everything else gitignored)
 .github/workflows/ ci.yml (npm test) + adlc-rails-guard.yml (CI rail-freeze
                    backstop, dogfooding the same doctrine this tool imposes)
 docs/research/     agy CLI + Antigravity 2.0 platform findings
