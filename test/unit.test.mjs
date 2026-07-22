@@ -468,24 +468,24 @@ test('ensureGitignore: an already-complete .gitignore is left byte-identical (no
   }
 });
 
-test('ensureGitignore: a legacy-only partial stanza gains exactly the missing directory-store negations', () => {
+test('ensureGitignore: a legacy-only partial stanza gains EXACTLY the missing directory-store negations (no extras, no dupes)', () => {
   const { dir, g } = makeRepo();
   try {
-    const legacyOnly = '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n';
+    // Includes an unrelated pre-existing user rule to verify append-only
+    // preservation of content ensureGitignore doesn't own.
+    const legacyOnly = '*.log\n.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n';
     writeFileSync(join(dir, '.gitignore'), legacyOnly);
     g('add', '-A'); g('commit', '-qm', 'seed legacy-only gitignore');
 
     ensureGitignore(dir);
 
-    const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
-    const missing = ['!.adlc/tickets/', '!.adlc/tickets/**', '!.adlc/ticket-archive/',
+    // Exact output, not just "contains": a regression that appends an extra
+    // over-broad pattern (e.g. '.adlc/**' after the negations, which would
+    // re-ignore the ticket store) or duplicates a line must fail this.
+    const gained = ['!.adlc/tickets/', '!.adlc/tickets/**', '!.adlc/ticket-archive/',
       '!.adlc/ticket-archive/**', '!.adlc/specs/', '!.adlc/config.json'];
-    const lines = gi.split('\n');
-    for (const line of missing) assert.ok(lines.includes(line), `gained: ${line}`);
-    // Nothing already present is duplicated.
-    for (const line of legacyOnly.trim().split('\n')) {
-      assert.equal(lines.filter((l) => l === line).length, 1, `not duplicated: ${line}`);
-    }
+    const expected = legacyOnly + gained.join('\n') + '\n';
+    assert.equal(readFileSync(join(dir, '.gitignore'), 'utf8'), expected);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
