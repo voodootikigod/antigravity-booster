@@ -30,8 +30,8 @@
     "!docs/github-rulesets/"
   ],
   "dependencies": {
-    "@adlc/antigravity": "^1.5.1",
-    "@adlc/core": "^1.5.1"
+    "@adlc/antigravity": "^1.6.0",
+    "@adlc/core": "^1.6.0"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
