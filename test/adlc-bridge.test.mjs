@@ -290,6 +290,40 @@ test('writeAdlcTickets: a symlink planted AT the shard name is unlinked, not wri
   }
 });
 
+test('writeAdlcTickets: a symlinked legacy tickets.json is unlinked, not written through', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  const victimDir = mkdtempSync(join(tmpdir(), 'agb-bridge-victim-'));
+  try {
+    const victim = join(victimDir, 'victim.conf');
+    writeFileSync(victim, 'precious\n');
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    symlinkSync(victim, join(repo, '.adlc', 'tickets.json'));
+    const path = writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]);
+    assert.equal(readFileSync(victim, 'utf8'), 'precious\n', 'symlink target untouched');
+    assert.ok(!lstatSync(path).isSymbolicLink(), 'legacy file is a regular file now');
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).tickets.map((t) => t.id), ['T1']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(victimDir, { recursive: true, force: true });
+  }
+});
+
+test('writeAdlcTickets: recovers an orphaned store dir (created, manifest never landed)', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  try {
+    // Simulate an interrupted first projection: the dir exists, .store.json
+    // does not. initializeDirectoryStore would throw STORE_EXISTS forever.
+    mkdirSync(join(repo, '.adlc', 'tickets'), { recursive: true });
+    const path = writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]);
+    assert.ok(existsSync(join(path, '.store.json')), 'manifest recovered');
+    const { tickets: loaded, errors } = loadTickets(join(repo, '.adlc', 'tickets.json'));
+    assert.deepEqual(errors, []);
+    assert.deepEqual(loaded.map((t) => t.id), ['T1']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('writeAdlcTickets: single rail ticket (no body/edges) round-trips through the shared reader', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   try {

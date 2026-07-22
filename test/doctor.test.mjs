@@ -185,3 +185,15 @@ test('checkTicketStore: FAILS when both stores exist (plugin fails closed on thi
     rmSync(d, { recursive: true, force: true });
   }
 });
+
+test('checkTicketStore: warns on an orphaned directory store (dir without .store.json)', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-store-orphan-'));
+  try {
+    mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
+    const res = await checkTicketStore({ cwd: d });
+    assert.equal(res.level, 'warn');
+    assert.match(res.detail, /orphaned/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
