@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -243,6 +243,25 @@ test('writeAdlcTickets: when BOTH stores exist, the directory store wins and the
     assert.deepEqual(loaded.map((t) => t.id), ['T2']);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('writeAdlcTickets: refuses a symlinked store path (redirected cleanup would delete outside the store)', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  const elsewhere = mkdtempSync(join(tmpdir(), 'agb-bridge-elsewhere-'));
+  try {
+    writeFileSync(join(elsewhere, '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
+    writeFileSync(join(elsewhere, 'victim.json'), '{}\n');
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    symlinkSync(elsewhere, join(repo, '.adlc', 'tickets'));
+    assert.throws(
+      () => writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]),
+      /symlink/,
+    );
+    assert.ok(existsSync(join(elsewhere, 'victim.json')), 'nothing outside the store was deleted');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
   }
 });
 

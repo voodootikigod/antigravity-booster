@@ -426,6 +426,36 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
   }
 });
 
+test('runPlan: the materialized ticket-store projection never enters commits or burns a strike', async () => {
+  const repo = makeRepo();
+  mkdirSync(join(repo, '.adlc'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-strike-state-'));
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] }],
+      }, quiet)
+    );
+    assert.equal(report.merged.length, 1);
+    assert.equal(report.enforcementAvailable, true, report.enforcementReason);
+    const log = execFileSync('git', ['log', '--name-only', '--format=COMMIT %s'], { cwd: repo, encoding: 'utf8' });
+    // The projection is orchestrator-authored: had it been committed, the
+    // scope check would flag it out-of-scope, charge the builder a strike for
+    // the orchestrator's own artifact, and resetToBase would delete it —
+    // leaving the retry without live rail enforcement. One strike, no .adlc
+    // paths in history.
+    assert.match(log, /T1: one \(strike 1\)/, 'merged on the first strike');
+    assert.doesNotMatch(log, /strike 2/, 'no strike was burned on the projection');
+    assert.doesNotMatch(log, /\.adlc\//, 'projection files never enter commits');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes an edge-free single-ticket store the plugin validator accepts', async () => {
   const repo = makeRepo();
   mkdirSync(join(repo, '.adlc'));
