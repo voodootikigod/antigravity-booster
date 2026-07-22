@@ -467,6 +467,44 @@ test('runPlan: a repo with a COMMITTED directory store still integrates (project
   }
 });
 
+test('runPlan: a repo with a COMMITTED legacy tickets.json still integrates (projection discarded before rebase)', async () => {
+  const repo = makeRepo();
+  try {
+    // Same failure mode as the committed directory store, legacy backend: the
+    // worktree rail projection overwrites the TRACKED tickets.json (written in
+    // kind on legacy repos); commitAll excludes it, so without the pre-rebase
+    // discard it sits as an unstaged tracked change and `git rebase` refuses.
+    const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), JSON.stringify({
+      tickets: [
+        { id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: [], edges: [] },
+        { id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'], rails: [], edges: [] },
+      ],
+    }, null, 2) + '\n');
+    g('add', '-A'); g('commit', '-qm', 'commit legacy ticket store');
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    assert.deepEqual(Object.keys(report.failed), [], `nothing failed — ${JSON.stringify(report.failed)}`);
+    assert.equal(report.merged.length, 1);
+    const committed = JSON.parse(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'));
+    assert.equal(committed.tickets.length, 2, 'committed legacy store untouched on main');
+    assert.equal(g('status', '--porcelain').trim(), '', 'main tree clean after the run');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: the materialized ticket-store projection never enters commits or burns a strike', async () => {
   const repo = makeRepo();
   mkdirSync(join(repo, '.adlc'));
