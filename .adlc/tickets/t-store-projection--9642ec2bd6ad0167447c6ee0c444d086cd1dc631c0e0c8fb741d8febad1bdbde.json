@@ -1,0 +1,16 @@
+{
+  "body": "The ADLC moved from the single-file .adlc/tickets.json to a directory ticket store (.adlc/tickets/ with a .store.json manifest, one JSON shard per ticket). @adlc/core loadTickets and the adlc-antigravity plugin hook already read BOTH stores, and the plugin FAILS CLOSED if both exist in one repo. The booster still writes only the legacy file.\n\nMake both booster projection writers store-aware:\n\n1. lib/adlc-bridge.mjs writeAdlcTickets(repo, tickets): detect the target repo's store. If .adlc/tickets/.store.json exists -> write the directory store (rewrite shards deterministically: one <id>.json shard per projected ticket via @adlc/tickets APIs or matching serialization, remove stale shards from prior projections, keep .store.json). If a legacy .adlc/tickets.json exists (and no directory store) -> keep writing the legacy file (1.x bridge). If NO store exists -> initialize a directory store (initializeDirectoryStore from @adlc/tickets) and write shards; do NOT create tickets.json in new repos. NEVER leave both stores present.\n2. lib/scheduler.mjs (~line 430) per-worktree single-ticket rail projection (planTicketToRailTicket): the worktree inherits the target repo's checked-in store; the projection must overwrite/replace IN KIND — legacy repo -> overwrite worktree tickets.json (current behavior), directory-store repo -> rewrite the worktree's .adlc/tickets/ shards to exactly the single rail ticket. The single-ticket edge-dropping rule (see planTicketToRailTicket docstring) applies identically in both backends.\n3. lib/doctor.mjs: add a ticket-store check — PASS naming the detected backend (legacy|directory|none), FAIL with fix text when BOTH stores exist (the plugin hook fails closed on that state).\n\nAcceptance criteria:\n- Unit tests cover all three repo states (legacy-only, directory-only, no store) for whole-plan projection, asserting tickets.json is never created alongside a directory store, stale shards are removed on re-projection, and the projected shard content round-trips through @adlc/core loadTickets.\n- Scheduler/worktree test covers the directory-store worktree rail projection (single ticket, no edges).\n- Doctor test covers the both-stores FAIL.\n- npm test green.",
+  "edges": [],
+  "id": "T-STORE-PROJECTION",
+  "rails": [],
+  "scope": [
+    "lib/adlc-bridge.mjs",
+    "lib/scheduler.mjs",
+    "lib/plan.mjs",
+    "lib/doctor.mjs",
+    "test/unit.test.mjs",
+    "test/doctor.test.mjs",
+    "test/adlc-bridge.test.mjs"
+  ],
+  "title": "feat: store-aware ADLC ticket projection (directory store first, legacy bridge)"
+}

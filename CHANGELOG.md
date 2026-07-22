@@ -9,6 +9,27 @@ rather than enumerate.
 
 ## [Unreleased]
 
+### Changed
+
+- **The ADLC directory ticket store (`.adlc/tickets/`) is now the canonical
+  projection target.** `agb plan` and the per-worktree rail projection write
+  the directory store (one canonical JSON shard per ticket beside a
+  `.store.json` manifest) on new repos, and keep writing a legacy
+  `.adlc/tickets.json` only where one is already checked in (1.x bridge) —
+  never both, since the adlc-antigravity plugin's reader fails closed when
+  both stores exist. `agb doctor` gained a Ticket Store check that reports
+  the detected backend and fails on the both-stores state. This repo's own
+  workspace migrated via `adlc ticket store migrate`. In-session rail
+  enforcement on directory-store repos requires the `@adlc/antigravity`
+  plugin ≥ 1.6.0 (older plugins degrade to the scheduler's post-hoc
+  enforcement).
+- `ensureGitignore` now writes the full canonical ADLC stanza into target
+  repos (negating `.adlc/tickets/`, `.adlc/ticket-archive/`, `.adlc/specs/`,
+  and `.adlc/config.json`), matching `adlc ticket store migrate` and the
+  plugin's `adlc-init`.
+- `@adlc/core` and `@adlc/antigravity` upgraded to 1.6.0; `@adlc/tickets`
+  added as a direct dependency; CI installs `@adlc/cli@1.6.0`.
+
 ## [0.7.0] — 2026-07-21
 
 ### Breaking

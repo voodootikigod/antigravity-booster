@@ -225,3 +225,4 @@ Because of the platform's ~5-minute hard timeout on print-mode calls:
 - Do not try to run the plan again without modifying the ticket. A blocked ticket indicates that the requirements in the `body` are either ambiguous, conflicting with a read-only rail, or too large.
 - Edit the `body` to be more explicit, split the scope, or fix the underlying API contracts, and run again.
 - Check `.adlc/manifest.jsonl` (`adlc gate-manifest show`) for the exact gate sequence that led to the failure — build/prosecution/rollback outcomes are recorded there as append-only evidence, not just in `.booster/report.json`.
+- The active tickets themselves live in the repo's ADLC ticket store: the `.adlc/tickets/` directory store (one JSON shard per ticket) on new repos, or a legacy `.adlc/tickets.json` where one is still checked in. `agb plan` rewrites the store on every successful compile — inspect it with `adlc ticket list`.

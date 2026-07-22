@@ -171,7 +171,9 @@ test('runPlan: post-merge gate failure reverts main to the pre-run SHA (data-los
   try {
     // Pre-seed the entries ensureGitignore would otherwise commit at run
     // start, so the pre-run SHA is exactly what the revert must restore.
-    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n');
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
     execFileSync('git', ['add', '-A'], { cwd: repo });
     execFileSync('git', ['commit', '-qm', 'gitignore'], { cwd: repo });
     const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
@@ -395,7 +397,7 @@ test('runPlan: AC3 — a non-ADLC-initialized target repo produces a clear, non-
   }
 });
 
-test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin present sets ADLC_P4_ENFORCEMENT/ADLC_TICKET on the builder spawn and materializes .adlc/tickets.json into the worktree', async () => {
+test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin present sets ADLC_P4_ENFORCEMENT/ADLC_TICKET on the builder spawn and materializes the ticket store into the worktree', async () => {
   const repo = makeRepo();
   mkdirSync(join(repo, '.adlc'));
   const state = mkdtempSync(join(tmpdir(), 'agb-enforce-state-'));
@@ -424,7 +426,7 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
   }
 });
 
-test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes an edge-free single-ticket .adlc/tickets.json the plugin validator accepts', async () => {
+test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes an edge-free single-ticket store the plugin validator accepts', async () => {
   const repo = makeRepo();
   mkdirSync(join(repo, '.adlc'));
   const state = mkdtempSync(join(tmpdir(), 'agb-b11-state-'));

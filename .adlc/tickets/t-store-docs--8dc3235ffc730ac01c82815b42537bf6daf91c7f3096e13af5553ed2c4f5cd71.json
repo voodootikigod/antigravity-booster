@@ -1,0 +1,13 @@
+{
+  "body": "Update user-facing docs for the ticket-store migration (single-file .adlc/tickets.json -> directory store .adlc/tickets/ with one shard per ticket):\n\n1. README.md: the plan-compile section (~lines 119-126) says the gate pipeline 'projects the ticket set into .adlc/tickets.json'; the Layout section (~line 281) says 'tickets.json tracked'. Reword both: the projection targets the repo's ADLC ticket store — the .adlc/tickets/ directory store on new repos, or a legacy .adlc/tickets.json where one is already checked in (1.x bridge).\n2. docs/usage.md: no direct tickets.json reference exists in the command reference, but the Handling Blocked Tickets section references .adlc/manifest.jsonl only — add a one-line note that active tickets live in the repo's ADLC ticket store (.adlc/tickets/ directory, or legacy tickets.json).\n3. AGENTS.md: 'What follow the ADLC means' item 1 and the 'stricter here' bullet still name .adlc/tickets.json as THE ticket contract; update to name the directory store (this repo migrated) while noting the legacy file remains recognized in unmigrated target repos. Also update the self-hosted gates paragraph ('.adlc/tickets.json is the tracked ticket contract').\n4. docs/guidelines.md: update any '.adlc/tickets.json' projection references to the store-aware wording (grep for tickets.json).\n\nKeep wording changes minimal and factual; no restructuring.\n\nAcceptance criteria:\n- grep -rn 'tickets.json' README.md docs/ AGENTS.md returns only mentions that explicitly frame it as the legacy/bridge backend.\n- npm test green (docs-only, but the suite guards some doc invariants).",
+  "edges": [],
+  "id": "T-STORE-DOCS",
+  "rails": [],
+  "scope": [
+    "README.md",
+    "docs/usage.md",
+    "docs/guidelines.md",
+    "AGENTS.md"
+  ],
+  "title": "docs: describe the directory ticket store as the canonical projection target"
+}
