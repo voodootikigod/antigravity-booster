@@ -447,6 +447,50 @@ function makeRepo() {
   return { dir, g };
 }
 
+const CANONICAL_STANZA = ['.worktrees/', '.booster/', '.adlc/*',
+  '!.adlc/tickets.json', '!.adlc/tickets/', '!.adlc/tickets/**',
+  '!.adlc/ticket-archive/', '!.adlc/ticket-archive/**', '!.adlc/specs/', '!.adlc/config.json'];
+
+test('ensureGitignore: an already-complete .gitignore is left byte-identical (no commit)', () => {
+  const { dir, g } = makeRepo();
+  try {
+    const complete = CANONICAL_STANZA.join('\n') + '\n';
+    writeFileSync(join(dir, '.gitignore'), complete);
+    g('add', '-A'); g('commit', '-qm', 'seed complete gitignore');
+    const headBefore = g('rev-parse', 'HEAD').trim();
+
+    ensureGitignore(dir);
+
+    assert.equal(readFileSync(join(dir, '.gitignore'), 'utf8'), complete, 'byte-identical — nothing appended');
+    assert.equal(g('rev-parse', 'HEAD').trim(), headBefore, 'no new commit for an already-complete stanza');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ensureGitignore: a legacy-only partial stanza gains exactly the missing directory-store negations', () => {
+  const { dir, g } = makeRepo();
+  try {
+    const legacyOnly = '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n';
+    writeFileSync(join(dir, '.gitignore'), legacyOnly);
+    g('add', '-A'); g('commit', '-qm', 'seed legacy-only gitignore');
+
+    ensureGitignore(dir);
+
+    const gi = readFileSync(join(dir, '.gitignore'), 'utf8');
+    const missing = ['!.adlc/tickets/', '!.adlc/tickets/**', '!.adlc/ticket-archive/',
+      '!.adlc/ticket-archive/**', '!.adlc/specs/', '!.adlc/config.json'];
+    const lines = gi.split('\n');
+    for (const line of missing) assert.ok(lines.includes(line), `gained: ${line}`);
+    // Nothing already present is duplicated.
+    for (const line of legacyOnly.trim().split('\n')) {
+      assert.equal(lines.filter((l) => l === line).length, 1, `not duplicated: ${line}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('worktrees: create → edit → commit → diff → merge lifecycle', () => {
   const { dir, g } = makeRepo();
   try {
