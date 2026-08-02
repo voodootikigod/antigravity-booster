@@ -1,0 +1,22 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-02T18:46:38.008Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "519eca2a6783742d8f54b07eafd478348c34a601db09b4b13ce4aa0211856731",
+    "ticketHash": "0aa59206441b7c6f32676d87152f6e320c7c6352315f3cd729f06d3237c28dff",
+    "version": 1
+  },
+  "body": "Enhance antigravity-booster for compatibility with Antigravity 2.3.1 releases:\n\n1. Update `lib/brain.mjs` (`readBrain` function) to support loading local spec files with extensions `.json`, `.csv`, `.pdf`, `.txt` in addition to `.md`. Specifically, check if `idOrPrefix` matches a file path or supported file extension (`.md`, `.json`, `.csv`, `.pdf`, `.txt`) and exists as a file.\n2. Update `lib/agy.mjs` (`isAgyTimeout` function) to detect MCP connection and tool call timeout error strings returned by AGY 2.3.1 (e.g. `Error: MCP tool call timed out`, `Error: MCP server connection timed out`).\n3. Add unit tests in `test/phase2.test.mjs` verifying `readBrain` accepts `.json` and `.csv` local spec files.\n4. Add unit tests in `test/security.test.mjs` verifying `isAgyTimeout` returns `true` for MCP timeout errors.\n\nAcceptance criteria:\n- `readBrain('spec.json')` and `readBrain('tasks.csv')` load as local-spec files when they exist.\n- `isAgyTimeout` returns true for `Error: MCP tool call timed out` and `Error: MCP server connection timed out`.\n- `npm test` passes completely.",
+  "completed": true,
+  "edges": [],
+  "id": "T-AGY-2.3-COMPAT",
+  "rails": [],
+  "scope": [
+    "lib/brain.mjs",
+    "lib/agy.mjs",
+    "test/phase2.test.mjs",
+    "test/security.test.mjs"
+  ],
+  "title": "feat(agy-2.3): support json/csv/pdf/txt specs in readBrain and detect MCP timeouts in isAgyTimeout"
+}

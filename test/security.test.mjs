@@ -20,6 +20,8 @@ import { validatePlan } from '../lib/plan.mjs';
 test('isAgyTimeout: only a bare trailing marker counts, not quoted prose', () => {
   assert.equal(isAgyTimeout('Error: timed out waiting for response'), true);
   assert.equal(isAgyTimeout('Error: timed out waiting for response.\n\n'), true);
+  assert.equal(isAgyTimeout('Error: MCP tool call timed out'), true);
+  assert.equal(isAgyTimeout('Error: MCP server connection timed out'), true);
   assert.equal(
     isAgyTimeout('Sure — the daemon logs "Error: timed out waiting for response" when the upstream is slow; increase the read timeout and add retry-with-backoff so transient stalls do not surface to the user.'),
     false
