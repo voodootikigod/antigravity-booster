@@ -194,3 +194,23 @@ test('brain: readBrain can read directly from a local spec file path', () => {
     rmSync(tmpFile, { force: true });
   }
 });
+
+test('brain: readBrain supports .json and .csv local spec file paths', () => {
+  const jsonFile = join(tmpdir(), `agb-spec-${Date.now()}.json`);
+  const csvFile = join(tmpdir(), `agb-spec-${Date.now()}.csv`);
+  writeFileSync(jsonFile, '{\n  "name": "spec-json"\n}');
+  writeFileSync(csvFile, 'task,status\nstep1,todo\n');
+  try {
+    const bJson = readBrain(jsonFile);
+    assert.equal(bJson.sourceType, 'local-spec');
+    assert.match(bJson.implementationPlan, /spec-json/);
+
+    const bCsv = readBrain(csvFile);
+    assert.equal(bCsv.sourceType, 'local-spec');
+    assert.match(bCsv.implementationPlan, /step1/);
+  } finally {
+    rmSync(jsonFile, { force: true });
+    rmSync(csvFile, { force: true });
+  }
+});
+
