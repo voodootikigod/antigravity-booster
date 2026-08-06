@@ -447,6 +447,50 @@ function makeRepo() {
   return { dir, g };
 }
 
+const CANONICAL_STANZA = ['.worktrees/', '.booster/', '.adlc/*',
+  '!.adlc/tickets.json', '!.adlc/tickets/', '!.adlc/tickets/**',
+  '!.adlc/ticket-archive/', '!.adlc/ticket-archive/**', '!.adlc/specs/', '!.adlc/config.json'];
+
+test('ensureGitignore: an already-complete .gitignore is left byte-identical (no commit)', () => {
+  const { dir, g } = makeRepo();
+  try {
+    const complete = CANONICAL_STANZA.join('\n') + '\n';
+    writeFileSync(join(dir, '.gitignore'), complete);
+    g('add', '-A'); g('commit', '-qm', 'seed complete gitignore');
+    const headBefore = g('rev-parse', 'HEAD').trim();
+
+    ensureGitignore(dir);
+
+    assert.equal(readFileSync(join(dir, '.gitignore'), 'utf8'), complete, 'byte-identical — nothing appended');
+    assert.equal(g('rev-parse', 'HEAD').trim(), headBefore, 'no new commit for an already-complete stanza');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ensureGitignore: a legacy-only partial stanza gains EXACTLY the missing directory-store negations (no extras, no dupes)', () => {
+  const { dir, g } = makeRepo();
+  try {
+    // Includes an unrelated pre-existing user rule to verify append-only
+    // preservation of content ensureGitignore doesn't own.
+    const legacyOnly = '*.log\n.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n';
+    writeFileSync(join(dir, '.gitignore'), legacyOnly);
+    g('add', '-A'); g('commit', '-qm', 'seed legacy-only gitignore');
+
+    ensureGitignore(dir);
+
+    // Exact output, not just "contains": a regression that appends an extra
+    // over-broad pattern (e.g. '.adlc/**' after the negations, which would
+    // re-ignore the ticket store) or duplicates a line must fail this.
+    const gained = ['!.adlc/tickets/', '!.adlc/tickets/**', '!.adlc/ticket-archive/',
+      '!.adlc/ticket-archive/**', '!.adlc/specs/', '!.adlc/config.json'];
+    const expected = legacyOnly + gained.join('\n') + '\n';
+    assert.equal(readFileSync(join(dir, '.gitignore'), 'utf8'), expected);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('worktrees: create → edit → commit → diff → merge lifecycle', () => {
   const { dir, g } = makeRepo();
   try {
