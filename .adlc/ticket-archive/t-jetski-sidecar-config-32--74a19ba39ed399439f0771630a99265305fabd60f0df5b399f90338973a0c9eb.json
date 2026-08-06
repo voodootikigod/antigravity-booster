@@ -1,0 +1,14 @@
+{
+  "body": "Update lib/bootstrap.mjs to install sidecar.json definition into Jetski sidecars directory when running under Jetski.",
+  "edges": [],
+  "id": "T-JETSKI-SIDECAR-CONFIG-32",
+  "rails": [],
+  "scope": [
+    "lib/bootstrap.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "feat(bootstrap): install Jetski sidecar definition into ~/.gemini/jetski/sidecars/agb-dashboard",
+  "completedAt": "2026-08-03T18:55:55.903Z",
+  "status": "archived",
+  "authorizedBy": "user-request"
+}

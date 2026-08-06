@@ -1,0 +1,12 @@
+{
+  "body": "Create declarative subagent definitions (agent.json and config.yaml) under .agents/agents/ for booster specialist roles (prosecutor, spec-linter, fleet-scheduler) so Jetski IDE/CLI users can invoke them natively via invoke_subagent.\n\nAcceptance criteria:\n1. .agents/agents/ manifests conform to Jetski custom agent specification.\n2. Standard booster specialist agents are registered and validated.\n3. npm test passes cleanly.",
+  "category": "feature",
+  "completed": true,
+  "edges": [],
+  "id": "T-JETSKI-NATIVE-AGENTS",
+  "rails": [],
+  "scope": [
+    ".agents/agents/**"
+  ],
+  "title": "feat: expose declarative subagent manifests under .agents/agents/"
+}

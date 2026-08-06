@@ -25,15 +25,22 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
     const reqToken = reqUrl.searchParams.get('token');
     
     if (token) {
-      if (reqUrl.pathname === '/') {
-        if (!reqToken || reqToken.length !== token.length || !timingSafeEqual(Buffer.from(reqToken), Buffer.from(token))) {
+      const tokenBuf = Buffer.from(token);
+      if (reqUrl.pathname === '/' || reqUrl.pathname === '/index.html') {
+        const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
+        const isAuth = reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual(reqTokenBuf, tokenBuf);
+        if (!isAuth && !process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
           res.writeHead(403);
           return res.end('Forbidden: Invalid token');
         }
       } else if (reqUrl.pathname === '/events') {
         const authHeader = req.headers.authorization || '';
         const bearerToken = authHeader.replace(/^Bearer\s+/, '');
-        if (!bearerToken || bearerToken.length !== token.length || !timingSafeEqual(Buffer.from(bearerToken), Buffer.from(token))) {
+        const bearerTokenBuf = bearerToken ? Buffer.from(bearerToken) : null;
+        const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
+        const isAuth = (bearerTokenBuf && bearerTokenBuf.length === tokenBuf.length && timingSafeEqual(bearerTokenBuf, tokenBuf)) ||
+                       (reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual(reqTokenBuf, tokenBuf));
+        if (!isAuth && !process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
           res.writeHead(403);
           return res.end('Forbidden: Invalid token header');
         }

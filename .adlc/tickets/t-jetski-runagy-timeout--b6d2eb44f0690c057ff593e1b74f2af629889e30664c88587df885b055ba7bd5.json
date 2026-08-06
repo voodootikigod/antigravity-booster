@@ -1,0 +1,13 @@
+{
+  "body": "Add a process-level backing timer (setTimeout) in lib/agy.mjs runAgy to forcibly terminate (SIGTERM then SIGKILL) agy child processes if they exceed the print timeout window, ensuring pool slots are never leaked on subprocess hangs.\n\nAcceptance criteria:\n1. runAgy sets a process timeout fallback that kills hanging child processes.\n2. Timed out processes correctly return kind: \"timeout\" and error: \"print-timeout\".\n3. Unit tests cover process termination behavior.\n4. npm test passes cleanly.",
+  "category": "feature",
+  "completed": true,
+  "edges": [],
+  "id": "T-JETSKI-RUNAGY-TIMEOUT",
+  "rails": [],
+  "scope": [
+    "lib/agy.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "feat: enforce process-level SIGKILL fallback on hung runAgy subprocesses"
+}

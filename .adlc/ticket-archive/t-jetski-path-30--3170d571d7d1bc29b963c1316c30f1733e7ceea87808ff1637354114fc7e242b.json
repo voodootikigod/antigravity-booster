@@ -1,0 +1,15 @@
+{
+  "body": "Add findExecutable helper in lib/bootstrap.mjs and lib/doctor.mjs to locate binaries in ~/.gemini/jetski/bin, ~/.gemini/bin, and /usr/local/bin when PATH is unpopulated.",
+  "edges": [],
+  "id": "T-JETSKI-PATH-30",
+  "rails": [],
+  "scope": [
+    "lib/bootstrap.mjs",
+    "lib/doctor.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "fix(bootstrap/doctor): add fallback path resolution for agentapi/agy binaries",
+  "completedAt": "2026-08-03T18:51:53.463Z",
+  "status": "archived",
+  "authorizedBy": "user-request"
+}

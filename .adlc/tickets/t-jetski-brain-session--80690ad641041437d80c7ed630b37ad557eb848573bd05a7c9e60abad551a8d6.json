@@ -1,0 +1,13 @@
+{
+  "body": "Update lib/brain.mjs readBrain and brainToPlan to read process.env.ANTIGRAVITY_CONVERSATION_ID for active session resolution, and emit converted plan Markdown artifacts into the session artifact directory (<appDataDir>/brain/<conversation-id>/).\n\nAcceptance criteria:\n1. readBrain checks ANTIGRAVITY_CONVERSATION_ID to locate active session brain artifacts.\n2. Converted plans are saved as formatted markdown artifacts when running in session context.\n3. Unit tests cover session resolution and artifact generation.\n4. npm test passes cleanly.",
+  "category": "feature",
+  "completed": true,
+  "edges": [],
+  "id": "T-JETSKI-BRAIN-SESSION",
+  "rails": [],
+  "scope": [
+    "lib/brain.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "feat: integrate session context and artifact directory output in brain ingestion"
+}

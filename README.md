@@ -10,7 +10,9 @@ prosecution, and gate-shaped validation for accurate ideation to merge.
 
 Full guides, specifications, and walkthroughs are available:
 - 🤖 **[AGENTS.md](AGENTS.md)** — required reading for any agent (or human) working *on* this repo: the ADLC is mandatory here, not optional.
-- 🚀 **[CLI Usage & Configuration](docs/usage.md)**
+- 🏗️ **[Architecture Specification](ARCHITECTURE.md)** — System design, 4-layer model, execution state machines, and sandbox leak defenses.
+- 📖 **[CLI Usage & Operational Manual](USAGE.md)** — Full command reference, schemas (`plan.json`, `sweep.json`), environment variables, and JetSki integration.
+- 🚀 **[Docs Usage Guide](docs/usage.md)**
 - 🛡️ **[Guidelines & Doctrine](docs/guidelines.md)**
 - 📖 **[Concrete Execution Walkthrough](docs/execution-example.md)** — A complete, step-by-step example showing how to decompose a specification (like `do-better`) into a `plan.json` DAG and run it with `agb`.
 - 📊 **[Calibration Probes](docs/calibration/probes-2026-06-11.md)**

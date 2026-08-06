@@ -1,0 +1,13 @@
+{
+  "body": "Reconcile plugin names and metadata across root plugin.json and .agents/plugins/agb/plugin.json to ensure consistent discovery and prevent plugin registration collisions in Jetski environments.\n\nAcceptance criteria:\n1. Root plugin.json and .agents/plugins/ manifests share consistent IDs and version strings.\n2. Plugin handshake and discovery tests pass.\n3. npm test passes cleanly.",
+  "category": "chore",
+  "completed": true,
+  "edges": [],
+  "id": "T-JETSKI-MANIFEST-UNIFY",
+  "rails": [],
+  "scope": [
+    "plugin.json",
+    ".agents/plugins/agb/plugin.json"
+  ],
+  "title": "chore: unify plugin declarations and metadata across plugin.json manifests"
+}

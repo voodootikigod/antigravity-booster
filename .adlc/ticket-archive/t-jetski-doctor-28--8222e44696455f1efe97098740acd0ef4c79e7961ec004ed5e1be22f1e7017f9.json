@@ -1,0 +1,14 @@
+{
+  "body": "Update lib/doctor.mjs to support AGB_PROVIDER=jetski by checking agentapi CLI, routing brain directory to ~/.gemini/jetski/brain, and marking agy CLI/Auth as bypassed/warning under Jetski mode.",
+  "edges": [],
+  "id": "T-JETSKI-DOCTOR-28",
+  "rails": [],
+  "scope": [
+    "lib/doctor.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "fix(doctor): support Jetski provider in agb doctor diagnostics",
+  "completedAt": "2026-08-03T18:41:26.252Z",
+  "status": "archived",
+  "authorizedBy": "user-request"
+}

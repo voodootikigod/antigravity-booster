@@ -1,0 +1,14 @@
+{
+  "body": "Update bin/agb.mjs sidecar command to write .booster/token with chmodSync 0o600 and handle missing agy CLI gracefully under Jetski.",
+  "edges": [],
+  "id": "T-JETSKI-SIDECAR-31",
+  "rails": [],
+  "scope": [
+    "bin/agb.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "fix(sidecar): write .booster/token in agb sidecar and handle missing agy gracefully",
+  "completedAt": "2026-08-03T18:56:37.042Z",
+  "status": "archived",
+  "authorizedBy": "user-request"
+}

@@ -1,0 +1,23 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-03T17:14:09.260Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "be51e8eb469348b2205593ed2aa31a06b2f6c1e098d21dc6a6ff1cc2340cbd59",
+    "ticketHash": "96c36ec8d49681b6ee8509d9f256a4489844e0c306329771b0a47b6688f2f15c",
+    "version": 1
+  },
+  "body": "Address the twenty-fifth round of adversarial review findings:\n1. Audit, backup, and restore Git refs directory (except for the active ticket strike's own ref) to prevent refs/history tampering.\n2. Clean up orphaned dynamic agb-sidecar-plugin-* directories and agb-sidecar-dynamic-* plugins from previous crashed sessions upon launching the sidecar dashboard.",
+  "completed": true,
+  "edges": [],
+  "id": "T-JETSKI-HARDENING-25",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "lib/scheduler.mjs",
+    "bin/agb.mjs"
+  ],
+  "title": "fix: address twenty-fifth round of adversarial review findings"
+}

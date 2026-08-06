@@ -1,0 +1,24 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-06T16:16:03.881Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "d129ba7fb847e603b4a43a99ac6276fb32b2ea6b500af7318da08d43e8f60b21",
+    "ticketHash": "a3e99261482c9239e649096dfe9ad8d169d7095799ad945306e87738e9bd3388",
+    "version": 1
+  },
+  "body": "Review project functionality and update/create repository documentation (AGENTS.md, README.md, docs/usage.md, USAGE.md, ARCHITECTURE.md) to clearly explain what antigravity-booster adds to JetSki/Antigravity, how it integrates, and how to use it.",
+  "category": "docs",
+  "completed": true,
+  "edges": [],
+  "id": "T-DOCS-OVERHAUL",
+  "rails": [],
+  "scope": [
+    "README.md",
+    "AGENTS.md",
+    "USAGE.md",
+    "ARCHITECTURE.md",
+    "docs/**"
+  ],
+  "title": "docs: comprehensive documentation overhaul for JetSki/Antigravity integration and booster architecture"
+}

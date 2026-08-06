@@ -1,0 +1,6 @@
+{
+  "name": "spec-linter",
+  "configPath": {
+    "relativePathToConfig": "config.yaml"
+  }
+}
