@@ -1,0 +1,26 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-06T14:49:26.322Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "a8c404c8b6716adfacaa0c2b0a7df9b1a31428b005ba0c03907203aed1c54d34",
+    "ticketHash": "4bc26da283d488b40b68029761deea0a7747fa8a1489183303c4847de6770001",
+    "version": 1
+  },
+  "body": "Fix sidecar UI integration by conforming sidecar.json manifest to Jetski UI plugin specifications and updating jetski-launcher and server.mjs for standalone and host-embedded execution.\n\nAcceptance Criteria:\n1. .agents/sidecars/agb-dashboard/sidecar.json must specify valid ui_config with leading '/' paths, entrypoint, title, display_name, and relative command invocation.\n2. sidecars/jetski-launcher.mjs must resolve repository root directory relative to the sidecar folder when called with relative args (e.g. '../../../').\n3. sidecars/server.mjs must serve HTML UI, CSS, JS, and event logs reliably under both standalone port mode and Jetski host-embedded mode.\n4. npm test passes 100% cleanly with zero regressions.",
+  "category": "feature",
+  "completed": true,
+  "id": "T-JETSKI-UI-SIDECAR-1",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    ".agents/sidecars/agb-dashboard/**",
+    "sidecars/**",
+    "lib/bootstrap.mjs",
+    "lib/doctor.mjs",
+    "test/**"
+  ],
+  "title": "Fix sidecar UI plugin integration for Antigravity/Jetski dashboard"
+}

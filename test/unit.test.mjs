@@ -785,3 +785,25 @@ test('bootstrap: isNpxTemp recognizes actual npx cache and ignores temp substrin
   assert.equal(isNpxTemp('/var/folders/something/agb/lib/bootstrap.mjs', {}), true, 'macOS /var/folders is treated as temp');
   assert.equal(isNpxTemp('/private/var/folders/something/agb/lib/bootstrap.mjs', {}), true, 'macOS /private/var/folders is treated as temp');
 });
+
+test('sidecar: workspace manifest conforms to UI plugin specification', () => {
+  const manifestPath = new URL('../.agents/sidecars/agb-dashboard/sidecar.json', import.meta.url);
+  assert.ok(existsSync(manifestPath), 'workspace sidecar manifest must exist at .agents/sidecars/agb-dashboard/sidecar.json');
+
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  assert.equal(manifest.has_web_ui, true, 'has_web_ui must be true');
+  assert.equal(manifest.display_name, 'AGB Dashboard');
+  assert.ok(manifest.ui_config, 'ui_config must be present');
+  assert.ok(Array.isArray(manifest.ui_config.views), 'ui_config.views must be an array');
+  assert.ok(manifest.ui_config.views.length >= 1, 'ui_config.views must have at least one view');
+
+  for (const view of manifest.ui_config.views) {
+    assert.ok(view.path.startsWith('/'), `view path '${view.path}' must start with '/'`);
+    assert.ok(
+      view.entrypoint === 'SIDECAR_UI_ENTRYPOINT_FULL_PANE' || view.entrypoint === 'SIDECAR_UI_ENTRYPOINT_AUX_PANE',
+      `view entrypoint '${view.entrypoint}' must be a valid host entrypoint`
+    );
+    assert.ok(view.title, 'view title must be present');
+  }
+});
+
