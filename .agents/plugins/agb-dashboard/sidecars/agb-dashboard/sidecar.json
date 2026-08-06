@@ -1,8 +1,8 @@
 {
   "command": "node",
   "args": [
-    "../../../sidecars/jetski-launcher.mjs",
-    "../../../"
+    "../../../../sidecars/jetski-launcher.mjs",
+    "."
   ],
   "env": {
     "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
@@ -15,14 +15,8 @@
     "display_name": "AGB Dashboard",
     "views": [
       {
-        "path": "/",
-        "entrypoint": "SIDECAR_UI_ENTRYPOINT_FULL_PANE",
-        "title": "AGB Run Status"
-      },
-      {
-        "path": "/",
-        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE",
-        "title": "AGB Side Panel"
+        "path": "index.html",
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE"
       }
     ]
   }

@@ -1,0 +1,6 @@
+{
+  "name": "fleet-scheduler",
+  "configPath": {
+    "relativePathToConfig": "config.yaml"
+  }
+}

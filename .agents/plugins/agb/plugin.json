@@ -5,11 +5,11 @@
   "description": "Antigravity Booster orchestrator integration for Google Antigravity (agy CLI): quota-pool-aware scheduling, worktree fleets, cross-model prosecution, deterministic gates",
   "author": "Chris Williams <chris@voodootikigod.com>",
   "agents": [
-    ".agents/agents/prosecutor",
-    ".agents/agents/spec-linter",
-    ".agents/agents/fleet-scheduler"
+    "../../agents/prosecutor",
+    "../../agents/spec-linter",
+    "../../agents/fleet-scheduler"
   ],
   "sidecars": [
-    ".agents/sidecars/agb-dashboard"
+    "../../sidecars/agb-dashboard"
   ]
 }

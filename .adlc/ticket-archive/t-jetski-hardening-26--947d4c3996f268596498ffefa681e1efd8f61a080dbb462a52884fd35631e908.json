@@ -1,0 +1,21 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-03T18:23:29.378Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "3f75b9d93815737dfdc166b65e303cf80e5a53b6b7babc66c81cc8c0289047d6",
+    "ticketHash": "484394d08dab5f6b2d3a5a7f0fd3ffa5c421961fbed125c4394a0cabf31e9592",
+    "version": 1
+  },
+  "body": "Address security and observability findings from adversarial review round 25:\n\n1. In sidecars/jetski-launcher.mjs, restrict the permissions of .booster/token file to 0o600.\n2. In lib/scheduler.mjs, handle undefined err.message in logs by using err.message ?? err or String(err) when logging failures.\n3. Fix failing scheduler tests by adding AGB_ADLC_BIN: FAKE_ADLC to the failing test environments.",
+  "completed": true,
+  "edges": [],
+  "id": "T-JETSKI-HARDENING-26",
+  "rails": [],
+  "scope": [
+    "sidecars/jetski-launcher.mjs",
+    "lib/scheduler.mjs",
+    "test/scheduler.test.mjs"
+  ],
+  "title": "fix: restrict token file permissions and handle undefined err.message in logs"
+}

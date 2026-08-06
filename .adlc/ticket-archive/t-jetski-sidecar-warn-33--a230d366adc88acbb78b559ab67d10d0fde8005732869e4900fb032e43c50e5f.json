@@ -1,0 +1,14 @@
+{
+  "body": "Update bin/agb.mjs sidecar command to check for isJetski and findExecutable(agyBin) before attempting agy plugin install.",
+  "edges": [],
+  "id": "T-JETSKI-SIDECAR-WARN-33",
+  "rails": [],
+  "scope": [
+    "bin/agb.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "fix(sidecar): suppress agy plugin install warning under AGB_PROVIDER=jetski",
+  "completedAt": "2026-08-03T19:12:26.883Z",
+  "status": "archived",
+  "authorizedBy": "user-request"
+}

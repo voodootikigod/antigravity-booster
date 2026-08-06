@@ -11,8 +11,15 @@ const port = Number(process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) || 3333;
 let repoDir = process.argv[2] || process.cwd();
 let repoPath = resolve(repoDir);
 
-if (repoPath.includes('.agents/sidecars') || repoPath.includes('.gemini/sidecars')) {
-  repoPath = resolve(repoPath, '../../../');
+if (repoPath.includes('.agents') || repoPath.includes('.gemini')) {
+  let cur = repoPath;
+  while (cur !== resolve(cur, '..')) {
+    if (existsSync(join(cur, 'package.json')) && (existsSync(join(cur, 'lib')) || existsSync(join(cur, '.git')))) {
+      repoPath = cur;
+      break;
+    }
+    cur = resolve(cur, '..');
+  }
 }
 
 async function start() {
@@ -25,8 +32,15 @@ async function start() {
       app.page('/', () => readFileSync(join(__dirname, 'index.html'), 'utf8'));
       app.page('/index.html', () => readFileSync(join(__dirname, 'index.html'), 'utf8'));
 
-      app.api('/style.css', () => new sdk.Response(readFileSync(join(__dirname, 'style.css'), 'utf8'), { contentType: 'text/css' }), 'GET');
-      app.api('/app.js', () => new sdk.Response(readFileSync(join(__dirname, 'app.js'), 'utf8'), { contentType: 'application/javascript' }), 'GET');
+      const makeResponse = (content, mimeType) => {
+        if (typeof sdk.Response === 'function') {
+          return new sdk.Response(content, { contentType: mimeType });
+        }
+        return { body: content, headers: { 'Content-Type': mimeType } };
+      };
+
+      app.api('/style.css', () => makeResponse(readFileSync(join(__dirname, 'style.css'), 'utf8'), 'text/css'), 'GET');
+      app.api('/app.js', () => makeResponse(readFileSync(join(__dirname, 'app.js'), 'utf8'), 'application/javascript'), 'GET');
 
       app.api('/events', (data) => {
         const runJsonPath = join(repoPath, '.booster', 'run.json');
@@ -65,15 +79,13 @@ async function start() {
 
   const token = randomBytes(16).toString('hex');
 
-  if (isJetski) {
-    try {
-      const boosterDir = join(repoPath, '.booster');
-      const tokenFile = join(boosterDir, 'token');
-      mkdirSync(boosterDir, { recursive: true, mode: 0o700 });
-      writeFileSync(tokenFile, token, { mode: 0o600 });
-      chmodSync(tokenFile, 0o600);
-    } catch {}
-  }
+  try {
+    const boosterDir = join(repoPath, '.booster');
+    const tokenFile = join(boosterDir, 'token');
+    mkdirSync(boosterDir, { recursive: true, mode: 0o700 });
+    writeFileSync(tokenFile, token, { mode: 0o600 });
+    chmodSync(tokenFile, 0o600);
+  } catch {}
 
   console.log(`Starting AGB Dashboard for repository: ${repoPath} on port: ${port}`);
   serveSidecar(repoPath, port, token)

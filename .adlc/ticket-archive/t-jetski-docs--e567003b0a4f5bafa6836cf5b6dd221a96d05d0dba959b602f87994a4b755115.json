@@ -1,0 +1,14 @@
+{
+  "body": "Document Jetski runtime integration in README.md and docs/usage.md: installation & bootstrapping under Jetski, setting AGB_PROVIDER=jetski, utilizing subagent isolation and sandbox safety, sidecar launcher & token authentication, and verification using agb doctor.",
+  "edges": [],
+  "id": "T-JETSKI-DOCS",
+  "rails": [],
+  "scope": [
+    "README.md",
+    "docs/usage.md"
+  ],
+  "title": "docs: add Jetski integration, installation, and verification guide",
+  "completedAt": "2026-08-03T18:32:56.248Z",
+  "status": "archived",
+  "authorizedBy": "user-request"
+}

@@ -1,0 +1,14 @@
+{
+  "body": "Update lib/bootstrap.mjs to support AGB_PROVIDER=jetski when agy CLI is not on PATH by validating agentapi CLI, linking adlc-antigravity plugin skills directly, and placing the plugin manifest at ~/.gemini/config/plugins/adlc-antigravity.",
+  "edges": [],
+  "id": "T-JETSKI-BOOTSTRAP-29",
+  "rails": [],
+  "scope": [
+    "lib/bootstrap.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "fix(bootstrap): support Jetski provider in agb bootstrap",
+  "completedAt": "2026-08-03T18:45:05.819Z",
+  "status": "archived",
+  "authorizedBy": "user-request"
+}

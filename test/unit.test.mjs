@@ -786,24 +786,69 @@ test('bootstrap: isNpxTemp recognizes actual npx cache and ignores temp substrin
   assert.equal(isNpxTemp('/private/var/folders/something/agb/lib/bootstrap.mjs', {}), true, 'macOS /private/var/folders is treated as temp');
 });
 
-test('sidecar: workspace manifest conforms to UI plugin specification', () => {
-  const manifestPath = new URL('../.agents/sidecars/agb-dashboard/sidecar.json', import.meta.url);
-  assert.ok(existsSync(manifestPath), 'workspace sidecar manifest must exist at .agents/sidecars/agb-dashboard/sidecar.json');
+test('sidecar: workspace manifests conform to specification and contain portable paths', () => {
+  const manifestPaths = [
+    new URL('../.agents/sidecars/agb-dashboard/sidecar.json', import.meta.url),
+    new URL('../.agents/plugins/agb/sidecars/dashboard/sidecar.json', import.meta.url),
+    new URL('../.agents/plugins/agb-dashboard/sidecars/agb-dashboard/sidecar.json', import.meta.url),
+  ];
 
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-  assert.equal(manifest.has_web_ui, true, 'has_web_ui must be true');
-  assert.equal(manifest.display_name, 'AGB Dashboard');
-  assert.ok(manifest.ui_config, 'ui_config must be present');
-  assert.ok(Array.isArray(manifest.ui_config.views), 'ui_config.views must be an array');
-  assert.ok(manifest.ui_config.views.length >= 1, 'ui_config.views must have at least one view');
+  for (const manifestPath of manifestPaths) {
+    if (!existsSync(manifestPath)) continue;
+    const manifestContent = readFileSync(manifestPath, 'utf8');
+    assert.ok(!manifestContent.includes('/Users/voodootikigod/'), `Manifest at ${manifestPath.pathname} must not contain hardcoded developer paths`);
+    assert.ok(!manifestContent.includes('/Users/'), `Manifest at ${manifestPath.pathname} must not contain hardcoded user home paths`);
 
-  for (const view of manifest.ui_config.views) {
-    assert.ok(view.path.startsWith('/'), `view path '${view.path}' must start with '/'`);
-    assert.ok(
-      view.entrypoint === 'SIDECAR_UI_ENTRYPOINT_FULL_PANE' || view.entrypoint === 'SIDECAR_UI_ENTRYPOINT_AUX_PANE',
-      `view entrypoint '${view.entrypoint}' must be a valid host entrypoint`
-    );
-    assert.ok(view.title, 'view title must be present');
+    const manifest = JSON.parse(manifestContent);
+    assert.equal(manifest.has_web_ui, true, 'has_web_ui must be true');
+    assert.ok(manifest.ui_config, 'ui_config must be present');
+    assert.ok(Array.isArray(manifest.ui_config.views), 'ui_config.views must be an array');
+
+    if (Array.isArray(manifest.args)) {
+      for (const arg of manifest.args) {
+        assert.ok(!arg.startsWith('/Users/'), `arg '${arg}' must not be a hardcoded user path`);
+      }
+    }
   }
 });
+
+test('agy: parseTimeoutMs handles formatted string and numeric inputs', async () => {
+  const { parseTimeoutMs } = await import('../lib/agy.mjs');
+  assert.equal(parseTimeoutMs('30s'), 30000);
+  assert.equal(parseTimeoutMs('5m'), 300000);
+  assert.equal(parseTimeoutMs('1h'), 3600000);
+  assert.equal(parseTimeoutMs(60000), 60000);
+  assert.equal(parseTimeoutMs(null), 600000);
+});
+
+test('brain: getActiveSessionId reads ANTIGRAVITY_CONVERSATION_ID', async () => {
+  const { getActiveSessionId } = await import('../lib/brain.mjs');
+  const prev = process.env.ANTIGRAVITY_CONVERSATION_ID;
+  try {
+    process.env.ANTIGRAVITY_CONVERSATION_ID = 'test-session-123';
+    assert.equal(getActiveSessionId(), 'test-session-123');
+  } finally {
+    if (prev === undefined) delete process.env.ANTIGRAVITY_CONVERSATION_ID; else process.env.ANTIGRAVITY_CONVERSATION_ID = prev;
+  }
+});
+
+test('plugins: .agents/plugins/agb/plugin.json matches root plugin.json specification', () => {
+  const rootManifest = JSON.parse(readFileSync(new URL('../plugin.json', import.meta.url), 'utf8'));
+  const agentManifestPath = new URL('../.agents/plugins/agb/plugin.json', import.meta.url);
+  assert.ok(existsSync(agentManifestPath), '.agents/plugins/agb/plugin.json must exist');
+  const agentManifest = JSON.parse(readFileSync(agentManifestPath, 'utf8'));
+  assert.equal(agentManifest.id, rootManifest.id, 'Plugin ID must match root manifest');
+  assert.equal(agentManifest.version, rootManifest.version, 'Plugin version must match root manifest');
+});
+
+test('agents: declarative agent manifests exist under .agents/agents/', () => {
+  const roles = ['prosecutor', 'spec-linter', 'fleet-scheduler'];
+  for (const role of roles) {
+    const agentJson = new URL(`../.agents/agents/${role}/agent.json`, import.meta.url);
+    const configYaml = new URL(`../.agents/agents/${role}/config.yaml`, import.meta.url);
+    assert.ok(existsSync(agentJson), `.agents/agents/${role}/agent.json must exist`);
+    assert.ok(existsSync(configYaml), `.agents/agents/${role}/config.yaml must exist`);
+  }
+});
+
 

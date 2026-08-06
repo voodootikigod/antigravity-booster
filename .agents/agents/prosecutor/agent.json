@@ -1,0 +1,6 @@
+{
+  "name": "prosecutor",
+  "configPath": {
+    "relativePathToConfig": "config.yaml"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "body": "Ensure sidecars/jetski-launcher.mjs executes chmodSync after writing .booster/token so that secure file permissions (mode 0o600) are explicitly set even if the target file pre-existed with wider permissions.",
+  "edges": [],
+  "id": "T-JETSKI-HARDENING-27",
+  "rails": [],
+  "scope": [
+    "sidecars/jetski-launcher.mjs"
+  ],
+  "title": "fix(security): enforce mode 0o600 on dashboard token file via chmodSync",
+  "completedAt": "2026-08-03T18:27:24.689Z",
+  "status": "archived",
+  "authorizedBy": "adversarial-review-loop-jetski"
+}
