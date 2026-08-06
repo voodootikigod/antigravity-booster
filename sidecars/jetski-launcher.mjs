@@ -55,18 +55,16 @@ async function start() {
           } catch (e) {}
         }
 
-        if (!eventsPath || !existsSync(eventsPath)) {
-          return { lines: [], newOffset: 0, runId, repo: repoPath };
+        let result = { lines: [], newOffset: offset, runId, repo: repoPath };
+        if (eventsPath && existsSync(eventsPath)) {
+          try {
+            const content = readFileSync(eventsPath, 'utf8');
+            const allLines = content.split('\n').filter(Boolean);
+            const newLines = allLines.slice(offset);
+            result = { lines: newLines, newOffset: allLines.length, runId, repo: repoPath };
+          } catch (e) {}
         }
-
-        try {
-          const content = readFileSync(eventsPath, 'utf8');
-          const allLines = content.split('\n').filter(Boolean);
-          const newLines = allLines.slice(offset);
-          return { lines: newLines, newOffset: allLines.length, runId, repo: repoPath };
-        } catch (e) {
-          return { lines: [], newOffset: offset, runId, repo: repoPath };
-        }
+        return makeResponse(JSON.stringify(result), 'application/json');
       }, 'GET');
 
       app.run();
