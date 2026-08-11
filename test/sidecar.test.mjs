@@ -260,13 +260,7 @@ test('sidecar: accepts Host without port', async () => {
   const server = await serveSidecar(repo, 0);
   
   try {
-    const res = await new Promise(resolve => {
-      import('node:http').then(({ get }) => {
-        get(`http://127.0.0.1:${server.address().port}/events`, {
-          headers: { Host: '127.0.0.1' }
-        }, resolve);
-      });
-    });
+    const res = await fetchP(`http://127.0.0.1:${server.address().port}/events`, { Host: '127.0.0.1' });
     assert.equal(res.statusCode, 200, 'should accept Host header without port');
   } finally {
     server.close();
@@ -279,13 +273,7 @@ test('sidecar: accepts IPv6 loopback Host without port', async () => {
   const server = await serveSidecar(repo, 0);
   
   try {
-    const res = await new Promise(resolve => {
-      import('node:http').then(({ get }) => {
-        get(`http://127.0.0.1:${server.address().port}/events`, {
-          headers: { Host: '[::1]' }
-        }, resolve);
-      });
-    });
+    const res = await fetchP(`http://127.0.0.1:${server.address().port}/events`, { Host: '[::1]' });
     assert.equal(res.statusCode, 200, 'should accept [::1] Host header');
   } finally {
     server.close();
@@ -308,16 +296,6 @@ test('sidecar: recovers from oversized lines without stalling', async () => {
     const normal = '{"t": 1}\n';
     writeFileSync(eventsFile, huge + normal);
     
-    const fetchP = (url) => new Promise((resolve) => {
-      import('node:http').then(({ get }) => {
-        get(url, (res) => {
-          let data = '';
-          res.on('data', c => data += c);
-          res.on('end', () => resolve({ statusCode: res.statusCode, data }));
-        });
-      });
-    });
-
     const res1 = await fetchP(`http://127.0.0.1:${port}/events?offset=0`);
     const json1 = JSON.parse(res1.data);
     assert.equal(json1.lines.length, 1);
@@ -350,16 +328,6 @@ test('sidecar: recovers from oversized lines without stalling (multibyte boundar
     const huge = hugePrefix + hugeSuffix;
     const normal = '{"t": 1}\n';
     writeFileSync(eventsFile, huge + normal);
-
-    const fetchP = (url) => new Promise((resolve) => {
-      import('node:http').then(({ get }) => {
-        get(url, (res) => {
-          let data = '';
-          res.on('data', c => data += c);
-          res.on('end', () => resolve({ statusCode: res.statusCode, data }));
-        });
-      });
-    });
 
     const res1 = await fetchP(`http://127.0.0.1:${port}/events?offset=0`);
     const json1 = JSON.parse(res1.data);

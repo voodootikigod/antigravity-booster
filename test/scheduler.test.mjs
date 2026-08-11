@@ -10,6 +10,8 @@ import { ticketFilename } from '@adlc/tickets';
 
 import { runPlan } from '../lib/scheduler.mjs';
 
+process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_scheduler_test.json');
+
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
 // B12: the live-enforcement check now handshakes the installed plugin manifest's
