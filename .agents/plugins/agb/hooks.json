@@ -1,0 +1,16 @@
+{
+  "agb-auto-approve-tests": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node hooks/auto-approve-tests.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
