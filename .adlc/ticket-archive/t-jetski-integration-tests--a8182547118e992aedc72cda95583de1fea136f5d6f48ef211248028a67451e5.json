@@ -1,0 +1,25 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-12T14:21:42.432Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "f064736419f3765ed1e56c7ebe5f5571ba24f52c3b385aff8f3485b53fd09d8b",
+    "ticketHash": "93e29fe713b95f7a57fe9294dd016ca098f7b7dda0a92015b3437811d38dbb79",
+    "version": 1
+  },
+  "body": "Add test cases to verify the integration features:\n1. Add a unit test in test/unit.test.mjs verifying that bootstrap() successfully falls back to using the 'jetski' CLI when 'agy' is not available on the path.\n2. Add an integration test in test/integration-plugin.test.mjs verifying that the MCP server successfully handles '$/cancel' notifications by terminating active child processes.",
+  "category": "test",
+  "completed": true,
+  "duration": 1,
+  "edges": [],
+  "id": "T-JETSKI-INTEGRATION-TESTS",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "test/unit.test.mjs",
+    "test/integration-plugin.test.mjs"
+  ],
+  "title": "test(integration): add jetski fallback unit test and MCP process cancellation test"
+}

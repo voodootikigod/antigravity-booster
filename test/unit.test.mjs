@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, chmodSync } from 'node:fs';
+
 import { execFileSync, execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -901,5 +902,51 @@ test('agents: declarative agent manifests exist under .agents/agents/', () => {
     assert.ok(existsSync(configYaml), `.agents/agents/${role}/config.yaml must exist`);
   }
 });
+
+
+test('bootstrap: falls back to jetski plugin install when agy is not found', () => {
+  const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-state-'));
+  const mockBinDir = mkdtempSync(join(tmpdir(), 'agb-mock-bin-'));
+  const mockJetskiPath = join(mockBinDir, 'jetski');
+  
+  writeFileSync(mockJetskiPath, `#!/bin/sh
+if [ "$1" = "plugin" ] && [ "$2" = "install" ]; then
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    echo "$3" >> "$FAKE_STATE_DIR/jetski-installs"
+  fi
+  echo "installed plugin via mock jetski from $3"
+  exit 0
+fi
+exit 1
+`);
+  chmodSync(mockJetskiPath, 0o755);
+
+  const FAKE_PLUGIN = fileURLToPath(new URL('./fixtures/fake-adlc-antigravity-plugin', import.meta.url));
+
+  try {
+    execFileSync(process.execPath, [
+      '-e',
+      `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
+        `bootstrap({ destination: '${destDir}', pluginPath: '${FAKE_PLUGIN}', agyBin: 'non-existent-agy-bin' }))`,
+    ], {
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        PATH: mockBinDir,
+        FAKE_STATE_DIR: stateDir
+      }
+    });
+
+    const installs = readFileSync(join(stateDir, 'jetski-installs'), 'utf8').trim().split('\n');
+    assert.equal(installs[0], FAKE_PLUGIN, 'jetski plugin install received adlc path');
+    assert.ok(installs[1].endsWith('.agents/plugins/agb') || installs[1].includes('antigravity-booster'), 'also installed booster plugin itself');
+  } finally {
+    rmSync(destDir, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+    rmSync(mockBinDir, { recursive: true, force: true });
+  }
+});
+
 
 

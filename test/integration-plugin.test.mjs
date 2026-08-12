@@ -169,3 +169,71 @@ test('MCP Server: handles JSON-RPC initialization, tool listing, and tool calls'
   child.stdin.end();
   child.kill();
 });
+
+
+test('MCP Server: handles $/cancel notifications by terminating processes', async (t) => {
+  const mcpServerPath = join(PROJECT_ROOT, '.agents', 'plugins', 'agb', 'mcp', 'server.mjs');
+  assert.ok(existsSync(mcpServerPath), 'MCP Server script must exist');
+
+  const child = spawn(process.execPath, [mcpServerPath], {
+    stdio: ['pipe', 'pipe', 'inherit'],
+    cwd: PROJECT_ROOT
+  });
+
+  const reader = readline.createInterface({
+    input: child.stdout,
+    terminal: false
+  });
+
+  const writeLine = (obj) => {
+    child.stdin.write(JSON.stringify(obj) + '\n');
+  };
+
+  const getNextMessage = () => {
+    return new Promise((resolve) => {
+      reader.once('line', (line) => {
+        resolve(JSON.parse(line));
+      });
+    });
+  };
+
+  // 1. Initialize
+  writeLine({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {}
+  });
+  await getNextMessage();
+
+  // 2. Call agb_review (runs in background, takes time)
+  writeLine({
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/call',
+    params: {
+      name: 'agb_review',
+      arguments: {
+        repo: PROJECT_ROOT
+      }
+    }
+  });
+
+  // 3. Immediately send cancellation for request ID 2
+  writeLine({
+    jsonrpc: '2.0',
+    method: '$/cancel',
+    params: {
+      id: 2
+    }
+  });
+
+  const callResponse = await getNextMessage();
+  assert.equal(callResponse.jsonrpc, '2.0');
+  assert.equal(callResponse.id, 2);
+  assert.ok(callResponse.result.isError, 'Killed process should report error/failure status');
+
+  child.stdin.end();
+  child.kill();
+});
+
