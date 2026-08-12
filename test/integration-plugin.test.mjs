@@ -176,8 +176,20 @@ test('MCP Server: handles $/cancel notifications by terminating processes', asyn
   assert.ok(existsSync(mcpServerPath), 'MCP Server script must exist');
 
   const child = spawn(process.execPath, [mcpServerPath], {
-    stdio: ['pipe', 'pipe', 'inherit'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     cwd: PROJECT_ROOT
+  });
+
+  let spawnedPid;
+  const errReader = readline.createInterface({
+    input: child.stderr,
+    terminal: false
+  });
+  errReader.on('line', (line) => {
+    const match = line.match(/\[mcp\] spawned child pid: (\d+)/);
+    if (match) {
+      spawnedPid = parseInt(match[1], 10);
+    }
   });
 
   const reader = readline.createInterface({
@@ -219,6 +231,9 @@ test('MCP Server: handles $/cancel notifications by terminating processes', asyn
     }
   });
 
+  // Wait a small duration to ensure child is spawned and PID is logged
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
   // 3. Immediately send cancellation for request ID 2
   writeLine({
     jsonrpc: '2.0',
@@ -232,6 +247,22 @@ test('MCP Server: handles $/cancel notifications by terminating processes', asyn
   assert.equal(callResponse.jsonrpc, '2.0');
   assert.equal(callResponse.id, 2);
   assert.ok(callResponse.result.isError, 'Killed process should report error/failure status');
+
+  // Verify that the child process was actually terminated (is not running)
+  assert.ok(spawnedPid, 'Should have captured the spawned child process PID');
+  
+  // Wait a short duration to ensure termination is fully processed by the OS
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  let isAlive = true;
+  try {
+    process.kill(spawnedPid, 0);
+  } catch (err) {
+    if (err.code === 'ESRCH') {
+      isAlive = false;
+    }
+  }
+  assert.equal(isAlive, false, 'The spawned agb child process should be terminated after cancel');
 
   child.stdin.end();
   child.kill();

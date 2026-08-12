@@ -1,0 +1,25 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-12T14:30:23.097Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "2f058fab80b5617032f69d00f5543c3aeb92be5fb068b78529499f686114547e",
+    "ticketHash": "2203ec00a4ec6c163e95474d903315f79ab1769af20aa79fe96b4a34c21709ad",
+    "version": 1
+  },
+  "body": "Resolve process group leak in MCP server:\n1. Update server.mjs to spawn agb CLI processes with 'detached: true'.\n2. Modify handleCancelNotification and cleanup to send SIGTERM to the process group (-child.pid) instead of just the parent PID.\n3. Ensure integration tests pass cleanly.",
+  "category": "bugfix",
+  "completed": true,
+  "duration": 1,
+  "edges": [],
+  "id": "T-JETSKI-MCP-PROCESS-GROUP-FIX",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    ".agents/plugins/agb/mcp/server.mjs",
+    "test/integration-plugin.test.mjs"
+  ],
+  "title": "bugfix(mcp): spawn agb in a detached process group and kill entire process tree on cancel"
+}

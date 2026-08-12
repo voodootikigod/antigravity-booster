@@ -190,10 +190,14 @@ async function handleToolCall(id, name, args) {
   try {
     const child = spawn(agbCmd, cliArgs, {
       env: { ...process.env, AGB_PROVIDER: 'jetski' },
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true
     });
 
     activeProcesses.set(id, child);
+    if (child.pid) {
+      console.error(`[mcp] spawned child pid: ${child.pid} for request: ${id}`);
+    }
 
     let stdout = '';
     let stderr = '';
@@ -270,7 +274,11 @@ function handleCancelNotification(params) {
   if (targetId !== undefined && activeProcesses.has(targetId)) {
     const child = activeProcesses.get(targetId);
     try {
-      child.kill('SIGTERM');
+      if (child.pid) {
+        process.kill(-child.pid, 'SIGTERM');
+      } else {
+        child.kill('SIGTERM');
+      }
     } catch (e) {}
     activeProcesses.delete(targetId);
   }
@@ -279,7 +287,11 @@ function handleCancelNotification(params) {
 function cleanup() {
   for (const [id, child] of activeProcesses.entries()) {
     try {
-      child.kill('SIGTERM');
+      if (child.pid) {
+        process.kill(-child.pid, 'SIGTERM');
+      } else {
+        child.kill('SIGTERM');
+      }
     } catch (e) {}
   }
   activeProcesses.clear();
