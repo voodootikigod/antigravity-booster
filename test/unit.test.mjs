@@ -21,6 +21,10 @@ import {
 } from '../lib/worktrees.mjs';
 import { bootstrap, resolvePluginPath } from '../lib/bootstrap.mjs';
 
+delete process.env.AGB_PROVIDER;
+process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_unit_test.json');
+
+
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
 
@@ -227,16 +231,16 @@ test('PoolSet: caps enforced, waiters released, requests counted', async () => {
 test('PoolSet.route: reservation spreads concurrent dispatches across pools', () => {
   const pools = new PoolSet();
   // First mid ticket → claude (all reserved 0, claude is first candidate).
-  // First mid ticket -> Gemini 3.5 Flash (High)
-  assert.equal(pools.route('mid'), 'Gemini 3.5 Flash (High)');
+  // First mid ticket -> gemini-3.6-flash-high
+  assert.equal(pools.route('mid'), 'gemini-3.6-flash-high');
   // Second mid ticket (no slot acquired yet — the bug case) must NOT pick
   // claude again; reservation pushes it to the idle gemini-pro pool.
-  assert.equal(pools.route('mid'), 'Gemini 3.1 Pro (Low)');
+  assert.equal(pools.route('mid'), 'gemini-3.1-pro-low');
   // pool_hint still constrains family (but both are gemini now, so it falls back to load ratio: 1/8 < 1/4)
-  assert.equal(pools.route('mid', 'gemini'), 'Gemini 3.5 Flash (High)');
+  assert.equal(pools.route('mid', 'gemini'), 'gemini-3.6-flash-high');
   // unroute frees the assignment so the pool rebalances.
-  pools.unroute('Gemini 3.1 Pro (Low)');
-  pools.unroute('Gemini 3.1 Pro (Low)');
+  pools.unroute('gemini-3.1-pro-low');
+  pools.unroute('gemini-3.1-pro-low');
   assert.equal(pools.reserved['gemini-pro'], 0);
 });
 
@@ -688,14 +692,17 @@ test('bootstrap: agy plugin install invoked with the resolved plugin path', () =
   process.env.FAKE_STATE_DIR = stateDir;
   try {
     bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
-    const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim();
-    assert.equal(installs, '.', 'agy plugin install received "." once for adlc (booster auto-install removed)');
+    const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim().split('\n');
+    assert.equal(installs[0], '.', 'agy plugin install received "." for adlc');
+    assert.equal(installs[1], '.', 'also installed booster plugin itself via "."');
+
   } finally {
     if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
     rmSync(destDir, { recursive: true, force: true });
     rmSync(stateDir, { recursive: true, force: true });
   }
 });
+
 
 test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exist, but skill linking still performed', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));

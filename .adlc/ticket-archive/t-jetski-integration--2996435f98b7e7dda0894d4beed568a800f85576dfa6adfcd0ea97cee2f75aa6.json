@@ -1,0 +1,29 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-11T15:20:58.049Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "4911256b1d67682b268d246982bf7a183f2c18f2d256b6d22294c866ba21da39",
+    "ticketHash": "ee046f02c4866d85999d56054c22820bf341a593f64d613138dd0f2de4b9eed6",
+    "version": 1
+  },
+  "body": "Implement native Jetski integration features:\n1. Register /agb-plan, /agb-run, /agb-status, /agb-sidecar, /agb-doctor, /agb-preflight, and /agb-review as chat slash commands in .agents/plugins/agb/commands/ using Markdown files with metadata.\n2. Implement an MCP Server at lib/mcp/server.mjs (or similar) exposing agb functions as tools (agb_plan, agb_run, etc.) and register it in .agents/plugins/agb/mcp_config.json.\n3. Implement a PreToolUse lifecycle hook at lib/hooks/auto-approve-tests.mjs (or similar) that auto-allows command executions starting with node --test (returning {\"decision\": \"allow\"}) and register it in .agents/plugins/agb/hooks.json.\n4. Write integration/unit tests verifying command formatting, MCP tool schema execution, and hook auto-allow decision.",
+  "category": "feature",
+  "completed": true,
+  "duration": 2,
+  "edges": [],
+  "id": "T-JETSKI-INTEGRATION",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    ".agents/plugins/agb/commands/**",
+    ".agents/plugins/agb/hooks.json",
+    ".agents/plugins/agb/mcp_config.json",
+    "lib/mcp/**",
+    "lib/hooks/**",
+    "test/integration-plugin.test.mjs"
+  ],
+  "title": "feat: integrate agb commands, MCP tools, and test auto-approval hook into Jetski plugin"
+}

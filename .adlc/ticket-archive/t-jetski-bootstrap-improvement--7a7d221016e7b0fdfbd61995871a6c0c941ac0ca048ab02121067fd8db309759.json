@@ -1,0 +1,27 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-12T01:54:46.023Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "a792f5f39280284a5c04ad928c9268b9c489faf21458997a2a2872a8068a9dd1",
+    "ticketHash": "4df2a16ae6adebe7b4f6a211c625476ec6a8871594378ddbba1ae639e8781bea",
+    "version": 1
+  },
+  "body": "Resolve installation and validation limitations:\n1. Rename plugin \"name\" in root plugin.json and .agents/plugins/agb/plugin.json to \"antigravity-booster\" to fix Jetski installer name validation.\n2. Update lib/bootstrap.mjs to support installing both \"adlc-antigravity\" and the booster plugin itself (\"antigravity-booster\") during bootstrapping.\n3. Support falling back to \"jetski plugin install\" if \"agy\" binary is not available but \"jetski\" is present.\n4. Ensure unit tests pass cleanly.",
+  "category": "feature",
+  "completed": true,
+  "duration": 2,
+  "edges": [],
+  "id": "T-JETSKI-BOOTSTRAP-IMPROVEMENT",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "plugin.json",
+    ".agents/plugins/agb/plugin.json",
+    "lib/bootstrap.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "feat(bootstrap): rename plugin and automate jetski booster installation during bootstrapping"
+}

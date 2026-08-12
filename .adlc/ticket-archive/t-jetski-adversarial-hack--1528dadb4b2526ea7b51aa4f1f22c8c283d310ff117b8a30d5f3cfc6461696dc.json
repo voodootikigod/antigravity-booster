@@ -1,0 +1,28 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-08-12T13:28:08.070Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "bfacf8166f8b56659c022de9a0d3158712cf683c6675c934291d25776c06e3ec",
+    "ticketHash": "81589b12c0a30223fcc32e8c3adf8b1296806a4180392c260e0b4cf336b169b7",
+    "version": 1
+  },
+  "body": "Resolve five adversarial review findings:\n1. Prevent command injection in auto-approve-tests.mjs by checking for shell metacharacters (; & | < > $ ` \\n).\n2. Add '.agents/' to files whitelist in package.json.\n3. Correct bootstrap error flag so it does not report failure if the jetski install fallback succeeds.\n4. Delete the duplicate hook lib/hooks/auto-approve-tests.mjs and update tests to use the active plugin copy.\n5. Implement process tracking and cleanup on exit/close in the MCP server.",
+  "category": "bugfix",
+  "completed": true,
+  "duration": 2,
+  "edges": [],
+  "id": "T-JETSKI-ADVERSARIAL-HACK",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    ".agents/plugins/agb/hooks/auto-approve-tests.mjs",
+    "lib/bootstrap.mjs",
+    "package.json",
+    ".agents/plugins/agb/mcp/server.mjs",
+    "test/integration-plugin.test.mjs"
+  ],
+  "title": "bugfix(hook): fix command injection in auto-approve hook and resolve packaging/bootstrap bugs"
+}

@@ -26,13 +26,14 @@ test('events.jsonl schema replay contract: strike payload must have an error fie
   const srv = await serveSidecar(repo, 0);
   try {
      const port = srv.address().port;
-     const res = await new Promise((resolve) => {
+     const res = await new Promise((resolve, reject) => {
        import('node:http').then(({ get }) => {
-         get(`http://127.0.0.1:${port}/events`, (r) => {
+         const req = get(`http://127.0.0.1:${port}/events`, { agent: false }, (r) => {
             let data = '';
             r.on('data', c => data += c);
             r.on('end', () => resolve({ statusCode: r.statusCode, data }));
          });
+         req.on('error', reject);
        });
      });
      

@@ -15,6 +15,8 @@ import { acquireRepoLock } from '../lib/lock.mjs';
 import { RunStatus } from '../lib/status.mjs';
 import { validatePlan } from '../lib/plan.mjs';
 
+process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_security_test.json');
+
 // --- agy timeout anchoring (review: false-positive timeout) ---
 
 test('isAgyTimeout: only a bare trailing marker counts, not quoted prose', () => {

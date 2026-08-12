@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "antigravity-booster-mcp": {
+      "command": "node",
+      "args": [
+        "mcp/server.mjs"
+      ]
+    }
+  }
+}

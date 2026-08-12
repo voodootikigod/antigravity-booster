@@ -23,6 +23,8 @@
     "lib/",
     "skills/",
     "sidecars/",
+    ".agents/",
+
     "docs/",
     "templates/",
     "plugin.json",
