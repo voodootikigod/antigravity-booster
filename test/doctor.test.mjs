@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore } from '../lib/doctor.mjs';
+import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
@@ -197,3 +198,49 @@ test('checkTicketStore: warns on an orphaned directory store (dir without .store
     rmSync(d, { recursive: true, force: true });
   }
 });
+
+test('resolveAdlcBinary: resolves project-local @adlc/cli and validates version floor', () => {
+  const res = resolveAdlcBinary({ repo: process.cwd() });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, 'project-local');
+  assert.match(res.version, /^1\.11\./);
+});
+
+test('resolveAdlcBinary: fails closed when local dependency is missing', () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-no-adlc-'));
+  try {
+    const res = resolveAdlcBinary({ repo: d });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /missing or unverified/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('resolveAdlcBinary: fails when package version is below floor', () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-old-adlc-'));
+  try {
+    const pkgDir = join(d, 'node_modules', '@adlc', 'cli');
+    const binDir = join(d, 'node_modules', '.bin');
+    mkdirSync(pkgDir, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.6.0', bin: { adlc: './bin.js' } }));
+    writeFileSync(join(pkgDir, 'bin.js'), '#!/usr/bin/env node\n');
+    chmodSync(join(pkgDir, 'bin.js'), 0o755);
+    writeFileSync(join(binDir, 'adlc'), '#!/usr/bin/env node\n');
+    chmodSync(join(binDir, 'adlc'), 0o755);
+
+    const res = resolveAdlcBinary({ repo: d });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /does not meet floor/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkAdlcBinary: passes on current repo with local @adlc/cli', async () => {
+  const res = await checkAdlcBinary({ cwd: process.cwd() });
+  assert.equal(res.level, 'pass');
+  assert.match(res.detail, /^v1\.11\./);
+});
+

@@ -32,9 +32,10 @@
     "!docs/github-rulesets/"
   ],
   "dependencies": {
-    "@adlc/antigravity": "^1.6.0",
-    "@adlc/core": "^1.6.0",
-    "@adlc/tickets": "^1.6.0"
+    "@adlc/antigravity": "^1.7.0",
+    "@adlc/cli": "^1.11.1",
+    "@adlc/core": "^1.11.1",
+    "@adlc/tickets": "^1.11.1"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",

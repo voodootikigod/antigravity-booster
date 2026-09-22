@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-09-22T19:46:24.359Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "090d7b7926890e9ebc4c13491d8a1e6dadd6956ad1245ef1ded709aa3db53843",
+    "ticketHash": "df572addf2afff427c176300e806cbc328ad267ca2c1d8a747f07af404e78208",
+    "version": 1
+  },
   "body": "Reconcile plugin names and metadata across root plugin.json and .agents/plugins/agb/plugin.json to ensure consistent discovery and prevent plugin registration collisions in Jetski environments.\n\nAcceptance criteria:\n1. Root plugin.json and .agents/plugins/ manifests share consistent IDs and version strings.\n2. Plugin handshake and discovery tests pass.\n3. npm test passes cleanly.",
   "category": "chore",
   "completed": true,

@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-09-22T19:46:24.723Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "6512d6ef1621f11845052343183a47d26a73e7f3278769ad778eea61138da103",
+    "ticketHash": "a0b22db049e9141019fa89241b2a6920e2537c41892ebf84c756ff2ee5bcff9b",
+    "version": 1
+  },
   "body": "Create declarative subagent definitions (agent.json and config.yaml) under .agents/agents/ for booster specialist roles (prosecutor, spec-linter, fleet-scheduler) so Jetski IDE/CLI users can invoke them natively via invoke_subagent.\n\nAcceptance criteria:\n1. .agents/agents/ manifests conform to Jetski custom agent specification.\n2. Standard booster specialist agents are registered and validated.\n3. npm test passes cleanly.",
   "category": "feature",
   "completed": true,
