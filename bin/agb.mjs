@@ -14,7 +14,7 @@ import { reviewFleet, reviewDiff } from '../lib/review.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { validatePlan, compilePlan } from '../lib/plan.mjs';
-import { PoolSet } from '../lib/pools.mjs';
+import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 
@@ -49,6 +49,7 @@ const COMMANDS = {
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
+  pool: { args: 'drain [repo]', desc: 'safely drain active leases and reset coordinator' },
   tui: { args: '', desc: 'Removed. Use agb sidecar instead.' }
 };
 
@@ -409,6 +410,17 @@ try {
     } catch (e) {
       console.warn(`Warning: Could not automatically register the sidecar plugin with agy: ${e.message}`);
       console.warn(`The dashboard will not appear. To register it manually, add this manifest to your Antigravity plugins: ${pluginDir}`);
+    }
+  } else if (cmd === 'pool') {
+    const sub = rest[0];
+    if (sub === 'drain') {
+      const repo = resolve(rest[1] ?? '.');
+      const res = await drainPools(repo);
+      console.log(JSON.stringify(res, null, 2));
+      process.exit(0);
+    } else {
+      console.error("agb: unknown pool subcommand. Usage: agb pool drain [repo]");
+      process.exit(1);
     }
   } else {
     console.error(`agb: unknown command '${cmd}'\\n`);

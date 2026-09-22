@@ -1,0 +1,25 @@
+{
+  "body": "Implement 2 metered pools (gemini, claude-gpt), raw quota adapter, RFC 3339 UTC regex validation, bi-directional v0.7/v0.8 handoff, PID reuse protection via process start time, parent-mediated heartbeat leases for sandboxed workers, and agb pool drain.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-agy-json-schema"
+    }
+  ],
+  "id": "t-quota-dual-pools",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/doctor.mjs"
+  ],
+  "scope": [
+    "lib/pools.mjs",
+    "lib/status.mjs",
+    "lib/plan.mjs",
+    "test/**"
+  ],
+  "title": "2-pool quota coordinator with dynamic scaling and lease durability"
+}
