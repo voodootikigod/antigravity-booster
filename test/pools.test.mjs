@@ -218,9 +218,9 @@ test('v0.7 / v0.8 Handoff: throws LegacyFleetActiveError when v0.7 fleet is acti
 
     assert.throws(() => assertNoActiveLegacyFleet(), LegacyFleetActiveError);
   } finally {
-    process.env.AGB_QUOTA_STATE = origQuota;
-    process.env.AGB_POOLS_V2 = origV2;
-    process.env.AGB_POOLS_LOCK = origLock;
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
     rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -275,9 +275,9 @@ test('Lease durability: acquire, renew, reconcile, and idempotent release', asyn
     v2 = readV2State();
     assert.equal(v2.pools.gemini.inFlight, 0); // No counter underflow!
   } finally {
-    process.env.AGB_QUOTA_STATE = origQuota;
-    process.env.AGB_POOLS_V2 = origV2;
-    process.env.AGB_POOLS_LOCK = origLock;
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
     rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -315,9 +315,9 @@ test('Lease reconciliation: PID reuse detection marks lease RECLAIMED', async ()
       assert.equal(v2.pools.gemini.inFlight, 0);
     }
   } finally {
-    process.env.AGB_QUOTA_STATE = origQuota;
-    process.env.AGB_POOLS_V2 = origV2;
-    process.env.AGB_POOLS_LOCK = origLock;
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
     rmSync(tmp, { recursive: true, force: true });
   }
 });
@@ -350,9 +350,9 @@ test('drainPools: safely drains active leases and emits clean downgrade tombston
     const v2 = readV2State();
     assert.equal(v2.pools.claude_gpt.inFlight, 0);
   } finally {
-    process.env.AGB_QUOTA_STATE = origQuota;
-    process.env.AGB_POOLS_V2 = origV2;
-    process.env.AGB_POOLS_LOCK = origLock;
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
     rmSync(tmp, { recursive: true, force: true });
   }
 });

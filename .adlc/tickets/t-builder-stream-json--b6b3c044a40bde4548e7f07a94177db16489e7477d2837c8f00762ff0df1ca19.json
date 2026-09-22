@@ -1,0 +1,25 @@
+{
+  "body": "Implement outputFormat stream-json with line/total byte caps and watchdog. Add kernel-enforced process containment (cgroups v2/Job Objects), isolated per-attempt git database with host-mediated ref ingestion into assigned namespaces, complete root git state integrity verification, and sanitized child environment.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-adlc-graph-coupling"
+    }
+  ],
+  "id": "t-builder-stream-json",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/doctor.mjs",
+    "lib/pools.mjs",
+    "lib/worktrees.mjs"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "lib/scheduler.mjs",
+    "test/**"
+  ],
+  "title": "Stream-json execution with kernel containment and ref namespace isolation"
+}
