@@ -1,0 +1,26 @@
+{
+  "body": "Add gemini-3.8-flash-*, gemini-3.7-flash-*, and gemini-3.6-flash-* to MODELS and MODEL_ALIASES. Map legacy 3.5 to 3.8. Update parallax and coldstart models, and configure multi-family tier routing.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-quota-dual-pools"
+    }
+  ],
+  "id": "t-models-gemini-38",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/doctor.mjs"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "lib/pools.mjs",
+    "lib/plan.mjs",
+    "lib/preflight.mjs",
+    "test/**"
+  ],
+  "title": "Refresh model catalog with Gemini 3.8, 3.7, and 3.6 variants"
+}
