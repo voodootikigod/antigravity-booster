@@ -125,22 +125,38 @@ if [ "$1" = "flail-detector" ]; then
   echo '{"verdict":"clean","signals":[]}'
   exit 0
 fi
+if [ "$1" = "ticket" ]; then
+  subcmd="$2"
+  shift 2
+  if [ "$subcmd" = "doctor" ]; then
+    case "${FAKE_TICKET_DOCTOR_MODE:-pass}" in
+      fail)
+        echo '{"exitCode":2,"ok":false,"checks":[{"name":"store:corrupt","ok":false,"detail":"orphan shard detected"}]}'
+        exit 2 ;;
+      *)
+        echo '{"exitCode":0,"ok":true,"checks":[{"name":"config-valid","ok":true,"detail":null}]}'
+        exit 0 ;;
+    esac
+  fi
+fi
 # merge-forecast: canned, controllable width. FAKE_MERGE_FORECAST_MODE:
 #   default   — recommendedWidth=3, certifiedWidth=3, no gateFailures,
-#               records the invocation (--tickets path) to FAKE_STATE_DIR.
+#               records the invocation (--tickets path, --graph-coupling) to FAKE_STATE_DIR.
 #   veto       — same, plus a non-empty gateFailures array (advisory).
 #   fail       — operational error, exit 1, unparseable stdout.
 if [ "$1" = "merge-forecast" ]; then
   shift
   ticketspath=""
+  graphcoupling=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --tickets) ticketspath="$2"; shift 2 ;;
+      --graph-coupling) graphcoupling="$2"; shift 2 ;;
       *) shift ;;
     esac
   done
   if [ -n "$FAKE_STATE_DIR" ]; then
-    printf 'tickets=%s\n' "$ticketspath" >> "$FAKE_STATE_DIR/merge-forecast-invocations"
+    printf 'tickets=%s graph-coupling=%s\n' "$ticketspath" "$graphcoupling" >> "$FAKE_STATE_DIR/merge-forecast-invocations"
   fi
   case "${FAKE_MERGE_FORECAST_MODE:-default}" in
     fail) echo "not json"; exit 1 ;;
