@@ -1,0 +1,28 @@
+{
+  "body": "Add outputFormat json and jsonSchema to runAgy. Enforce semantic verdict invariants, outgoing DAG edge invariants, npm-only gate commands with script tampering verification, trusted baseline test oracle protocol, and sanitized gate execution.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-builder-stream-json"
+    }
+  ],
+  "id": "t-agy-json-schema",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/doctor.mjs",
+    "lib/pools.mjs"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "lib/prosecute.mjs",
+    "lib/review.mjs",
+    "lib/plan.mjs",
+    "lib/brain.mjs",
+    "test/**"
+  ],
+  "title": "Native structured output validation with versioned JSON schemas"
+}

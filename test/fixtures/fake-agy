@@ -22,12 +22,21 @@ if [ "$1" = "plugin" ]; then
 fi
 
 prompt=""
+output_format=""
+json_schema=""
 for i in $(seq 1 $#); do
   eval arg=\$$i
   if [ "$arg" = "--print" ]; then
     next=$((i+1))
     eval prompt=\$$next
-    break
+  fi
+  if [ "$arg" = "--output-format" ]; then
+    next=$((i+1))
+    eval output_format=\$$next
+  fi
+  if [ "$arg" = "--json-schema" ]; then
+    next=$((i+1))
+    eval json_schema=\$$next
   fi
 done
 if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
@@ -194,6 +203,8 @@ case "$prompt" in
     case "$verdict" in
       block)
         echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "block"}' ;;
+      block-empty)
+        echo '{"findings": [], "verdict": "block"}' ;;
       ship-with-high)
         echo '{"findings": [{"severity": "high", "charge": "correctness", "file": "out.txt", "claim": "wrong content", "evidence": "diff"}], "verdict": "ship"}' ;;
       ship-with-critical)
@@ -271,5 +282,11 @@ case "$prompt" in
 esac
 
 # Probe behavior: echo sentinel back.
+if [ "$output_format" = "json" ]; then
+  case "$prompt" in
+    *INVALID_JSON*) echo "not a valid json output"; exit 0 ;;
+    *) echo '{"status": "ok"}'; exit 0 ;;
+  esac
+fi
 echo "$prompt" | grep -o 'PONG-[A-Za-z0-9]*' || echo "OK"
 exit 0
