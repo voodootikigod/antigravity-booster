@@ -272,6 +272,34 @@ case "$prompt" in
           echo "TICKET-DONE"
         fi
         exit 0 ;;
+      sabotage-math)
+        mkdir -p src test
+        echo "export function add(a, b) { return 42; }" > src/math.js
+        cat << 'EOF' > test/math.test.js
+import assert from 'node:assert';
+import { add } from '../src/math.js';
+assert.equal(add(1, 1), 42);
+EOF
+        if [ "$output_format" = "stream-json" ]; then
+          echo '{"type":"step_update","step":1,"action":"sabotage-math"}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        else
+          echo "TICKET-DONE"
+        fi
+        exit 0 ;;
+      conflict)
+        if [ "$tid" = "T0" ]; then
+          echo "conflict t0 line" > shared.txt
+        else
+          echo "conflict t1 line" > shared.txt
+        fi
+        if [ "$output_format" = "stream-json" ]; then
+          echo '{"type":"step_update","step":1,"action":"conflict"}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        else
+          echo "TICKET-DONE"
+        fi
+        exit 0 ;;
       # sabotage: in-scope marker that passes the worktree gate but makes a
       # `.git`-directory-aware post-merge gate fail on main (revert-path test).
       sabotage)

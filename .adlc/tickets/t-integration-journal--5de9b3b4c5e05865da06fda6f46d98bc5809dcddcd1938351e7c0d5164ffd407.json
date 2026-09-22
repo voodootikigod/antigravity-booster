@@ -1,0 +1,25 @@
+{
+  "body": "Implement dedicated disposable integration worktree for isolated rebase, conflict quarantine, crash-atomic 4-phase durable rollback journal (PREPARED, GATES_PASSED, REF_ADVANCED, FINALIZED) with directory fsync and startup quarantine, 2-pass baseline test oracle gate, write-ahead finalization ordering, zero root repository mutation, and anti-no-op baseline diff gate.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-skill-modernize"
+    }
+  ],
+  "id": "t-integration-journal",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/doctor.mjs",
+    "lib/pools.mjs",
+    "lib/agy.mjs"
+  ],
+  "scope": [
+    "lib/worktrees.mjs",
+    "lib/scheduler.mjs",
+    "test/**"
+  ],
+  "title": "Disposable integration worktree with 4-phase durable rollback journal"
+}
