@@ -527,3 +527,43 @@ test('PoolSet: integrates durable lease acquisition and release with repo path',
   }
 });
 
+test('PoolSet: releasing a slot in one subpool wakes waiters in another subpool of the same family', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-poolset-family-'));
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 2, 'gemini-pro': 2 }, { repo });
+    // Override familyCap for test to 2
+    pools.familyCap = () => 2;
+
+    const rFlash1 = await pools.acquire('gemini-3.8-flash-low', { repo });
+    const rFlash2 = await pools.acquire('gemini-3.8-flash-low', { repo });
+    assert.equal(pools.familyInFlight('gemini'), 2);
+
+    let proWoken = false;
+    const proPromise = pools.acquire('gemini-3.1-pro-high', { repo }).then((rel) => {
+      proWoken = true;
+      return rel;
+    });
+
+    // Wait a tick to ensure pro is queued as waiter
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(proWoken, false, 'gemini-pro should be waiting because family capacity (2) is full');
+    assert.equal(pools.waiters['gemini-pro'].length, 1);
+
+    // Release flash slot: flash has no waiters, so family capacity opens up and pro waiter wakes
+    rFlash1();
+    const rPro = await proPromise;
+    assert.equal(proWoken, true, 'gemini-pro should be woken up when flash releases slot');
+    assert.equal(pools.totalInFlight('gemini-pro'), 1);
+    assert.equal(pools.totalInFlight('gemini-flash'), 1);
+
+    rFlash2();
+    rPro();
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+

@@ -292,3 +292,18 @@ test('verifyGateScriptIntegrity: detects tampering with package.json gate script
     /Candidate package.json missing required script 'test'/
   );
 });
+
+test('PROSECUTION_VERDICT_SCHEMA: allows optional file and evidence on finding items', () => {
+  const findingProps = PROSECUTION_VERDICT_SCHEMA.properties.findings.items.properties;
+  assert.equal(findingProps.file.type, 'string');
+  assert.equal(findingProps.evidence.type, 'string');
+  assert.deepEqual(PROSECUTION_VERDICT_SCHEMA.properties.findings.items.required, ['severity', 'charge', 'claim']);
+});
+
+test('BRAIN_PLAN_SCHEMA: allows test-only gate without build property', () => {
+  const gateSchema = BRAIN_PLAN_SCHEMA.properties.gate;
+  assert.deepEqual(gateSchema.required, ['test']);
+  assert.equal(gateSchema.properties.build.type, 'string');
+  assert.equal(gateSchema.properties.test.type, 'string');
+});
+

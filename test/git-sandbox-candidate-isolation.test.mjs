@@ -133,6 +133,24 @@ test('verifyRootGitIntegrity: verifies porcelain, HEAD, protected refs, and fail
     assert.match(foreignCheck.error, /Unauthorized or unregistered attempt namespace modified/);
     execFileSync('git', ['update-ref', '-d', `refs/namespaces/${unauthorizedSlug}/refs/heads/candidate`], { cwd: repo });
 
+    // 3b. Scheduler-owned temporary refs pass integrity check
+    execFileSync('git', ['update-ref', 'refs/transactions/T1/tok123', candidateSha], { cwd: repo });
+    execFileSync('git', ['update-ref', 'refs/quarantine/agb-t1-failed', candidateSha], { cwd: repo });
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t1', candidateSha], { cwd: repo });
+    execFileSync('git', ['update-ref', 'refs/namespaces/attempts/t1/rebased', candidateSha], { cwd: repo });
+
+    const schedulerRefsCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces,
+      candidateSha,
+    });
+    assert.equal(schedulerRefsCheck.ok, true, `Scheduler-owned refs must be permitted: ${schedulerRefsCheck.error}`);
+
+    execFileSync('git', ['update-ref', '-d', 'refs/transactions/T1/tok123'], { cwd: repo });
+    execFileSync('git', ['update-ref', '-d', 'refs/quarantine/agb-t1-failed'], { cwd: repo });
+    execFileSync('git', ['update-ref', '-d', 'refs/heads/agb/t1'], { cwd: repo });
+    execFileSync('git', ['update-ref', '-d', 'refs/namespaces/attempts/t1/rebased'], { cwd: repo });
+
     // 4. Unauthorized stray object in root .git/objects fails
     const straySha = execFileSync(
       'git',

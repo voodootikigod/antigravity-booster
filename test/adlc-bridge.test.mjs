@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, semverGte } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -452,4 +452,17 @@ test('authenticateAdlcPackage: rejects sibling package directory escape and bin 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('semverGte: compares prerelease identifiers following SemVer precedence', () => {
+  assert.equal(semverGte('1.11.1', '1.11.0'), true);
+  assert.equal(semverGte('1.11.0', '1.11.1'), false);
+  assert.equal(semverGte('1.11.1', '1.11.1-rc.1'), true);
+  assert.equal(semverGte('1.11.1-rc.1', '1.11.1'), false);
+  assert.equal(semverGte('1.11.1-rc.2', '1.11.1-rc.1'), true);
+  assert.equal(semverGte('1.11.1-rc.1', '1.11.1-rc.2'), false);
+  assert.equal(semverGte('1.11.1-alpha', '1.11.1-beta'), false);
+  assert.equal(semverGte('1.11.1-beta', '1.11.1-alpha'), true);
+  assert.equal(semverGte('1.11.1-rc.1', '1.11.1-rc.1'), true);
+});
+
 
