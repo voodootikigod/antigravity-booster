@@ -465,4 +465,81 @@ test('semverGte: compares prerelease identifiers following SemVer precedence', (
   assert.equal(semverGte('1.11.1-rc.1', '1.11.1-rc.1'), true);
 });
 
+test('authenticateAdlcPackage: validates lockfile entry, integrity, and version match', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-auth-lock-test-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: { adlc: './bin/adlc.js' },
+    }));
+    writeFileSync(join(pkgDir, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
+
+    const lockPath = join(root, 'package-lock.json');
+
+    // 1. Lockfile exists but lacks @adlc/cli entry -> fails closed
+    writeFileSync(lockPath, JSON.stringify({
+      name: 'test-project',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: {},
+    }));
+    const missingEntry = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), lockPath);
+    assert.equal(missingEntry.ok, false);
+    assert.match(missingEntry.error, /contains no matching entry for @adlc\/cli/);
+
+    // 2. Lockfile entry lacks integrity -> fails closed
+    writeFileSync(lockPath, JSON.stringify({
+      name: 'test-project',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: {
+        'node_modules/@adlc/cli': {
+          version: '1.11.1',
+        },
+      },
+    }));
+    const missingIntegrity = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), lockPath);
+    assert.equal(missingIntegrity.ok, false);
+    assert.match(missingIntegrity.error, /lacks mandatory integrity field/);
+
+    // 3. Lockfile version mismatch -> fails closed
+    writeFileSync(lockPath, JSON.stringify({
+      name: 'test-project',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: {
+        'node_modules/@adlc/cli': {
+          version: '1.10.0',
+          integrity: 'sha512-test',
+        },
+      },
+    }));
+    const mismatch = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), lockPath);
+    assert.equal(mismatch.ok, false);
+    assert.match(mismatch.error, /version mismatch/);
+
+    // 4. Valid lockfile entry -> succeeds
+    writeFileSync(lockPath, JSON.stringify({
+      name: 'test-project',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: {
+        'node_modules/@adlc/cli': {
+          version: '1.11.1',
+          integrity: 'sha512-validintegrity',
+        },
+      },
+    }));
+    const valid = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), lockPath);
+    assert.equal(valid.ok, true);
+    assert.equal(valid.version, '1.11.1');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
 

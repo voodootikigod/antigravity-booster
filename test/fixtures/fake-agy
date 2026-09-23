@@ -450,7 +450,13 @@ esac
 if [ "$output_format" = "json" ]; then
   case "$prompt" in
     *INVALID_JSON*) echo "not a valid json output"; exit 0 ;;
-    *) echo '{"status": "ok"}'; exit 0 ;;
+    *)
+      if [ -n "$json_schema" ]; then
+        echo '{"status": "ok", "structured_output": {"hello": "world"}}'
+      else
+        echo '{"status": "ok"}'
+      fi
+      exit 0 ;;
   esac
 fi
 if [ "$output_format" = "stream-json" ]; then

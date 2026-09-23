@@ -31,8 +31,13 @@ test('checkAgyAuth: fails when FAKE_AGY_MODE=empty', async () => {
 });
 
 test('checkAdlcBinary: warns when missing', async () => {
-  const res = await checkAdlcBinary({ env: { AGB_ADLC_BIN: '/does/not/exist' } });
-  assert.equal(res.level, 'warn');
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-missing-adlc-'));
+  try {
+    const res = await checkAdlcBinary({ cwd: d, env: {} });
+    assert.equal(res.level, 'warn');
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
 });
 
 test('checkSandbox: bypassed via env', async () => {
@@ -273,7 +278,7 @@ test('checkAdlcBinary: fails when adlc version is below floor', async () => {
     writeFileSync(fakeBin, '#!/bin/sh\necho "1.6.0"\n');
     chmodSync(fakeBin, 0o755);
 
-    const res = await checkAdlcBinary({ cwd: d, env: { AGB_ADLC_BIN: fakeBin } });
+    const res = await checkAdlcBinary({ cwd: d, env: { AGB_ADLC_BIN: fakeBin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
     assert.equal(res.level, 'fail');
     assert.match(res.detail, /required >= v1\.11\.1/);
   } finally {
