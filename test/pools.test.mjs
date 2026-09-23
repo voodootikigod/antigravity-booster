@@ -502,6 +502,12 @@ test('PoolSet: queued waiters are aborted if quota reduces capacity to 0', async
   assert.ok(waiterRejected, 'waiter must be rejected on quota drop');
   assert.equal(waiterRejected.kind, 'quota_depleted');
   r1();
+
+  // Restore quota to healthy so subsequent tests have positive capacity
+  pools.updateFromQuota({
+    gemini: { fiveHourRemainingPercent: 100.0, weeklyRemainingPercent: 100.0, fiveHourResetTime: '2026-09-22T20:00:00Z', weeklyResetTime: '2026-09-28T00:00:00Z' },
+    claude_gpt: { fiveHourRemainingPercent: 100.0, weeklyRemainingPercent: 100.0, fiveHourResetTime: '2026-09-22T20:00:00Z', weeklyResetTime: '2026-09-28T00:00:00Z' },
+  });
 });
 
 test('PoolSet: integrates durable lease acquisition and release with repo path', async () => {
@@ -565,5 +571,21 @@ test('PoolSet: releasing a slot in one subpool wakes waiters in another subpool 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('PoolSet: route() prefers models with positive capacity when some candidate pools are depleted', () => {
+  const pools = new PoolSet({ 'gemini-pro': 0, claude: 4 });
+  // frontier tier has gemini-3.1-pro-high and claude-sonnet-4-6
+  const picked = pools.route('frontier');
+  assert.equal(picked, 'claude-sonnet-4-6', 'route should avoid 0-capacity gemini-pro and pick claude-sonnet-4-6');
+  pools.unroute(picked);
+});
+
+test('PoolSet: prosecutorFor() prefers models with positive capacity when primary is depleted', () => {
+  const pools = new PoolSet({ 'gpt-oss': 0, claude: 4 });
+  // for gemini builder, primary prosecutor is gpt-oss-120b-medium, alternate is claude-sonnet-4-6
+  const pros = pools.prosecutorFor('gemini-3.8-flash-low');
+  assert.equal(pros, 'claude-sonnet-4-6', 'prosecutorFor should avoid 0-capacity gpt-oss and pick claude-sonnet-4-6');
+});
+
 
 

@@ -407,7 +407,7 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
   const state = mkdtempSync(join(tmpdir(), 'agb-enforce-state-'));
   try {
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -513,7 +513,7 @@ test('runPlan: the materialized ticket-store projection never enters commits or 
   const state = mkdtempSync(join(tmpdir(), 'agb-strike-state-'));
   try {
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -549,7 +549,7 @@ test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes 
     // it fails at route() before its builder runs — leaving T1's projection as
     // the captured adlc-tickets-seen.json (echo-adlc writes to a shared path).
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -693,3 +693,24 @@ test('runPlan: a stolen lock aborts the merge instead of resetting a repo we no 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('runPlan: reroutes to viable alternate model when primary pool capacity is zero', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-reroute-state-'));
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'frontier' }],
+        caps: { 'gemini-pro': 0, claude: 4 },
+      }, quiet)
+    );
+    assert.deepEqual(report.merged, ['T1']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
