@@ -81,6 +81,9 @@ fi
 if [ -n "$FAKE_STATE_DIR" ]; then
   printf 'ADLC_P4_ENFORCEMENT=%s ADLC_TICKET=%s\n' "${ADLC_P4_ENFORCEMENT:-}" "${ADLC_TICKET:-}" >> "$FAKE_STATE_DIR/agy-env-seen"
   printf '%s\n' "$*" >> "$FAKE_STATE_DIR/agy-argv-seen"
+  if [ "${FAKE_RECORD_ENV:-}" = "1" ]; then
+    env > "$FAKE_STATE_DIR/full-env"
+  fi
 fi
 
 # Global failure injection (any role): simulate a model/transport error.
@@ -237,7 +240,7 @@ case "$prompt" in
         node -e "process.stdout.write('x'.repeat(1024*1024 + 100) + '\n')"
         exit 0 ;;
       overflow-total)
-        node -e "for(let i=0;i<51;i++) process.stdout.write('x'.repeat(1024*1024) + '\n')"
+        node -e "const chunk = '{\"type\":\"heartbeat\",\"timestamp\":123456789}\\n'.repeat(20000); for(let i=0;i<65;i++) process.stdout.write(chunk);"
         exit 0 ;;
       corruption)
         node -e "for(let i=0;i<12;i++) process.stdout.write('g'.repeat(500*1024) + '\n')"

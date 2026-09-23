@@ -248,3 +248,47 @@ test('Semantic verdict invariants: Invariant 1 (Strict Severity Gate) & Invarian
     process.env.AGB_AGY_BIN = origBin;
   }
 });
+
+test('verifyGateScriptIntegrity: detects tampering with package.json gate scripts', () => {
+  const basePkg = {
+    name: 'target-repo',
+    scripts: {
+      test: 'node --test',
+      build: 'tsc',
+    },
+  };
+
+  // Identical passes
+  const cleanCand = {
+    name: 'target-repo',
+    scripts: {
+      test: 'node --test',
+      build: 'tsc',
+    },
+  };
+  assert.equal(verifyGateScriptIntegrity(cleanCand, basePkg, 'npm test'), true);
+  assert.equal(verifyGateScriptIntegrity(cleanCand, basePkg, 'npm run build'), true);
+
+  // Tampered candidate test script throws
+  const tamperedCand = {
+    name: 'target-repo',
+    scripts: {
+      test: 'exit 0',
+      build: 'tsc',
+    },
+  };
+  assert.throws(
+    () => verifyGateScriptIntegrity(tamperedCand, basePkg, 'npm test'),
+    /Gate script 'test' command string modified from baseline/
+  );
+
+  // Missing script in candidate throws
+  const missingCand = {
+    name: 'target-repo',
+    scripts: {},
+  };
+  assert.throws(
+    () => verifyGateScriptIntegrity(missingCand, basePkg, 'npm test'),
+    /Candidate package.json missing required script 'test'/
+  );
+});

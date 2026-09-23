@@ -17,8 +17,10 @@ import {
   ActiveV2LeasesPresentError,
   PoolSet,
   BASE_CAPS,
+  writeSharedState,
+  readSharedState,
 } from '../lib/pools.mjs';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -399,3 +401,129 @@ test('PoolSet: updates dynamic capacity from quota and trips circuit breaker on 
   assert.equal(pools.circuitBreakerTripped, false);
   assert.equal(pools.hasCapacity('gemini-3.8-flash-low'), true);
 });
+
+test('PoolSet: caps restore to configured values when depleted quota recovers', () => {
+  const pools = new PoolSet({ 'gemini-flash': 8, 'claude': 4 });
+  assert.equal(pools.caps['gemini-flash'], 8);
+
+  // Severe depletion: 5% remaining -> scaled cap is 0
+  const depleted = {
+    gemini: {
+      fiveHourRemainingPercent: 5.0,
+      weeklyRemainingPercent: 5.0,
+      fiveHourResetTime: '2026-09-22T20:00:00Z',
+      weeklyResetTime: '2026-09-28T00:00:00Z',
+    },
+    claude_gpt: {
+      fiveHourRemainingPercent: 5.0,
+      weeklyRemainingPercent: 5.0,
+      fiveHourResetTime: '2026-09-22T20:00:00Z',
+      weeklyResetTime: '2026-09-28T00:00:00Z',
+    },
+  };
+  pools.updateFromQuota(depleted);
+  assert.equal(pools.caps['gemini-flash'], 0);
+  assert.equal(pools.caps['claude'], 0);
+  assert.equal(pools.quota.paused, true);
+
+  // Recovery: quota refreshed to 100%
+  const healthy = {
+    gemini: {
+      fiveHourRemainingPercent: 100.0,
+      weeklyRemainingPercent: 100.0,
+      fiveHourResetTime: '2026-09-22T23:00:00Z',
+      weeklyResetTime: '2026-09-28T00:00:00Z',
+    },
+    claude_gpt: {
+      fiveHourRemainingPercent: 100.0,
+      weeklyRemainingPercent: 100.0,
+      fiveHourResetTime: '2026-09-22T23:00:00Z',
+      weeklyResetTime: '2026-09-28T00:00:00Z',
+    },
+  };
+  pools.updateFromQuota(healthy);
+  assert.equal(pools.caps['gemini-flash'], 8, 'gemini-flash cap must restore to configured value');
+  assert.equal(pools.caps['claude'], 4, 'claude cap must restore to configured value');
+  assert.equal(pools.quota.paused, false);
+});
+
+test('withLockSync and writeSharedState: serializes updates across calls', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-sync-lock-'));
+  const saved = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = dir;
+    writeSharedState({ test: 1 });
+    const s1 = readSharedState();
+    assert.deepEqual(s1[process.pid], { test: 1 });
+  } finally {
+    if (saved === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('PoolSet: zero-capacity pool rejects immediately without queuing forever', async () => {
+  const pools = new PoolSet({ 'gemini-flash': 0 });
+  await assert.rejects(
+    () => pools.acquire('gemini-3.8-flash-low'),
+    (err) => {
+      assert.equal(err.kind, 'quota_depleted');
+      assert.match(err.message, /zero capacity due to quota depletion/);
+      return true;
+    }
+  );
+});
+
+test('PoolSet: queued waiters are aborted if quota reduces capacity to 0', async () => {
+  const pools = new PoolSet({ 'gemini-flash': 1 });
+  const r1 = await pools.acquire('gemini-3.8-flash-low');
+
+  let waiterRejected = null;
+  const waiterPromise = pools.acquire('gemini-3.8-flash-low').catch((err) => {
+    waiterRejected = err;
+  });
+
+  // Deplete quota to 0%
+  pools.updateFromQuota({
+    gemini: {
+      fiveHourRemainingPercent: 0.0,
+      weeklyRemainingPercent: 0.0,
+      fiveHourResetTime: '2026-09-22T20:00:00Z',
+      weeklyResetTime: '2026-09-28T00:00:00Z',
+    },
+    claude_gpt: {
+      fiveHourRemainingPercent: 50.0,
+      weeklyRemainingPercent: 50.0,
+      fiveHourResetTime: '2026-09-22T20:00:00Z',
+      weeklyResetTime: '2026-09-28T00:00:00Z',
+    },
+  });
+
+  await waiterPromise;
+  assert.ok(waiterRejected, 'waiter must be rejected on quota drop');
+  assert.equal(waiterRejected.kind, 'quota_depleted');
+  r1();
+});
+
+test('PoolSet: integrates durable lease acquisition and release with repo path', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-poolset-lease-'));
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 2 }, { repo });
+    const release = await pools.acquire('gemini-3.8-flash-low', { repo, ticketId: 'T-LEASE-1' });
+
+    const leasesDir = join(repo, '.adlc', 'leases');
+    assert.ok(existsSync(leasesDir), '.adlc/leases directory must exist');
+    const heartbeats = readdirSync(leasesDir).filter((f) => f.endsWith('.heartbeat'));
+    assert.equal(heartbeats.length, 1, 'active lease heartbeat must exist');
+
+    release();
+    // After release, heartbeat should be unlinked
+    const remaining = readdirSync(leasesDir).filter((f) => f.endsWith('.heartbeat'));
+    assert.equal(remaining.length, 0, 'heartbeat must be removed after release');
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+

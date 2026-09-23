@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -394,3 +394,62 @@ test('round-trip: a blocked compile (divergent parallax) does NOT publish .adlc/
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('authenticateAdlcPackage: rejects sibling package directory escape and bin mismatch', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-auth-test-'));
+  try {
+    const legitimatePkg = join(root, 'node_modules', '@adlc', 'cli');
+    const evilPkg = join(root, 'node_modules', '@adlc', 'cli-evil');
+    mkdirSync(legitimatePkg, { recursive: true });
+    mkdirSync(evilPkg, { recursive: true });
+
+    writeFileSync(join(legitimatePkg, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: { adlc: './bin/adlc.js' },
+    }));
+    mkdirSync(join(legitimatePkg, 'bin'), { recursive: true });
+    writeFileSync(join(legitimatePkg, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
+
+    writeFileSync(join(evilPkg, 'evil.js'), '#!/usr/bin/env node\n');
+
+    // Test sibling path escape: evil.js startsWith legitimatePkg as substring if no separator, but relative() starts with '..'
+    const escapeCheck = authenticateAdlcPackage(legitimatePkg, join(evilPkg, 'evil.js'));
+    assert.equal(escapeCheck.ok, false);
+    assert.match(escapeCheck.error, /escapes package directory/);
+
+    // Test mismatched bin target inside package: legitimate package has bin/other.js not declared in manifest
+    writeFileSync(join(legitimatePkg, 'bin', 'other.js'), '#!/usr/bin/env node\n');
+    const mismatchCheck = authenticateAdlcPackage(legitimatePkg, join(legitimatePkg, 'bin', 'other.js'));
+    assert.equal(mismatchCheck.ok, false);
+    assert.match(mismatchCheck.error, /does not match manifest bin target/);
+
+    // Legitimate target passes
+    const validCheck = authenticateAdlcPackage(legitimatePkg, join(legitimatePkg, 'bin', 'adlc.js'));
+    assert.equal(validCheck.ok, true);
+    assert.equal(validCheck.version, '1.11.1');
+
+    // Test unresolvable / missing manifest bin target fails closed
+    writeFileSync(join(legitimatePkg, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: { adlc: './bin/nonexistent.js' },
+    }));
+    const unresolvableCheck = authenticateAdlcPackage(legitimatePkg, join(legitimatePkg, 'bin', 'adlc.js'));
+    assert.equal(unresolvableCheck.ok, false);
+    assert.match(unresolvableCheck.error, /cannot be resolved/);
+
+    // Test invalid non-string manifest bin target fails closed
+    writeFileSync(join(legitimatePkg, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: { adlc: 12345 },
+    }));
+    const invalidTargetCheck = authenticateAdlcPackage(legitimatePkg, join(legitimatePkg, 'bin', 'adlc.js'));
+    assert.equal(invalidTargetCheck.ok, false);
+    assert.match(invalidTargetCheck.error, /invalid bin target/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
