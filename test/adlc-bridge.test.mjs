@@ -5,11 +5,12 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, semverGte } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -536,6 +537,74 @@ test('authenticateAdlcPackage: validates lockfile entry, integrity, and version 
     const valid = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), lockPath);
     assert.equal(valid.ok, true);
     assert.equal(valid.version, '1.11.1');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha256, and treeDigest against KNOWN_ADLC_DIGESTS', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-auth-known-digest-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: { adlc: './bin/adlc.js' },
+    }));
+    writeFileSync(join(pkgDir, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
+
+    const lockPath = join(root, 'package-lock.json');
+    writeFileSync(lockPath, JSON.stringify({
+      name: 'test-project',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: {
+        'node_modules/@adlc/cli': {
+          version: '1.11.1',
+          integrity: 'sha512-wrong-integrity',
+        },
+      },
+    }));
+
+    // 1. Lockfile integrity mismatch with enforceKnownDigest
+    const badIntegrity = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), {
+      lockfilePath: lockPath,
+      enforceKnownDigest: true,
+    });
+    assert.equal(badIntegrity.ok, false);
+    assert.match(badIntegrity.error, /integrity mismatch for @adlc\/cli/);
+
+    // Update lockfile to correct known integrity
+    const known = KNOWN_ADLC_DIGESTS['1.11.1'];
+    writeFileSync(lockPath, JSON.stringify({
+      name: 'test-project',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: {
+        'node_modules/@adlc/cli': {
+          version: '1.11.1',
+          integrity: known.integrity,
+        },
+      },
+    }));
+
+    // 2. Binary sha256 mismatch with enforceKnownDigest
+    const badBin = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), {
+      lockfilePath: lockPath,
+      enforceKnownDigest: true,
+    });
+    assert.equal(badBin.ok, false);
+    assert.match(badBin.error, /binary candidate digest mismatch/);
+
+    // 3. Tree digest mismatch with enforceKnownDigest (when binary digest matches via override)
+    const badTree = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), {
+      lockfilePath: lockPath,
+      expectedDigest: crypto.createHash('sha256').update(readFileSync(join(pkgDir, 'bin', 'adlc.js'))).digest('hex'),
+      enforceKnownDigest: true,
+    });
+    assert.equal(badTree.ok, false);
+    assert.match(badTree.error, /package tree digest mismatch/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

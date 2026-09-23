@@ -29,10 +29,12 @@ const TARGET_AGY_VERSION = process.argv[4] || process.env.AGY_TARGET_VERSION || 
 const PINNED_AGY_REF = process.argv[5] || process.env.AGY_PINNED_REF || `v${TARGET_AGY_VERSION}`;
 
 const IMMUTABLE_AGY_CHANGELOG_SHA256 = process.env.EXPECTED_AGY_CHANGELOG_SHA256 || '52da0789b7fe6eb634d5dbf3288b51b600d5401a1374c415a83b8e99d70951e3';
-const KNOWN_AGY_CHANGELOG_SHA256 = new Set([
-  '52da0789b7fe6eb634d5dbf3288b51b600d5401a1374c415a83b8e99d70951e3',
-  'd4dd533ae11d9829e6132e8d3b192b3aeb2125c8d62cfa2ddbe16a0e95ca9181',
-]);
+export const KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION = {
+  '1.2.8': new Set([
+    '52da0789b7fe6eb634d5dbf3288b51b600d5401a1374c415a83b8e99d70951e3',
+    'd4dd533ae11d9829e6132e8d3b192b3aeb2125c8d62cfa2ddbe16a0e95ca9181',
+  ]),
+};
 const IMMUTABLE_ADLC_CHANGELOG_SHA256 = process.env.EXPECTED_ADLC_CHANGELOG_SHA256 || 'd5558cd419c8d46bdc958064cb97f963d1ea793866414c025906ec15033512ed';
 const IMMUTABLE_ADLC_TARBALL_SRI = process.env.EXPECTED_ADLC_TARBALL_SRI || 'sha512-2J6dID3l/UHYdEh3njbwAGuiBOP2NEOkMNUHIPWo1nb85SKrAlZxNESMkIH4M93WsoT54jFbcbDeRZdMIo9lBw==';
 
@@ -583,7 +585,8 @@ async function runStage3DeltaMatrix() {
 // ============================================================================
 async function runStage4RoadmapValidation(repoRoot) {
   console.log('[agb-modernize] [Stage 4] Validating modernization roadmap document and canonical ticket DAG plan...');
-  const roadmapPath = path.join(repoRoot, 'docs', 'research', 'roadmap-agy-1.2.8-adlc-1.11.1.md');
+  const roadmapName = `roadmap-agy-${TARGET_AGY_VERSION}-adlc-${TARGET_ADLC_VERSION}.md`;
+  const roadmapPath = process.env.AGB_ROADMAP_PATH || path.join(repoRoot, 'docs', 'research', roadmapName);
   if (!fs.existsSync(roadmapPath)) {
     throw new Error(`Roadmap document does not exist at ${roadmapPath}`);
   }
@@ -696,9 +699,17 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
   }
 
   const agySection = extractAgySection(agyContent, TARGET_AGY_VERSION) || agyContent;
-  const actualAgySha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
-  if (actualAgySha256 !== expectedAgyChangelogSha256 && !KNOWN_AGY_CHANGELOG_SHA256.has(actualAgySha256)) {
-    throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256}) does not match expected (${expectedAgyChangelogSha256})`);
+  const actualAgySha256 = crypto.createHash('sha256').update(agySection).digest('hex');
+  const actualAgyFullSha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
+  const knownAgyDigests = KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION[TARGET_AGY_VERSION] || new Set();
+  const agyDigestMatches = (
+    actualAgySha256 === expectedAgyChangelogSha256 ||
+    actualAgyFullSha256 === expectedAgyChangelogSha256 ||
+    knownAgyDigests.has(actualAgySha256) ||
+    knownAgyDigests.has(actualAgyFullSha256)
+  );
+  if (!agyDigestMatches) {
+    throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256} / full: ${actualAgyFullSha256}) does not match expected (${expectedAgyChangelogSha256})`);
   }
 
   console.log(`[agb-modernize] Fetching ADLC changelog: ${ADLC_CHANGELOG_URL}`);
