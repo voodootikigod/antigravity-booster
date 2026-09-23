@@ -1,0 +1,7 @@
+{
+  "name": "@adlc/cli",
+  "version": "1.11.1",
+  "bin": {
+    "adlc": "./fake-adlc"
+  }
+}
