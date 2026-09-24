@@ -25,6 +25,8 @@ import {
 const FAKE_AGY = join(import.meta.dirname, 'fixtures', 'fake-agy');
 const PLUGIN_COMPATIBLE = join(import.meta.dirname, 'fixtures', 'fake-adlc-antigravity-plugin-compatible');
 
+process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_journal_test.json');
+
 function makeTestRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-journal-test-'));
   const g = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
@@ -101,11 +103,15 @@ test('Integration Journal: crash-atomic write, readback, and corruption quaranti
 test('Integration Worktree: creation, isolation, and reaping', () => {
   const repo = makeTestRepo();
   try {
+    // Seed node_modules in repo and verify provisioning
+    mkdirSync(join(repo, 'node_modules'), { recursive: true });
+    writeFileSync(join(repo, 'node_modules', 'dummy.txt'), 'dummy module\n');
     const token = crypto.randomUUID();
     const intPath = createIntegrationWorktree(repo, token, 'main');
 
     assert.ok(existsSync(intPath), 'integration worktree directory exists');
     assert.match(intPath, new RegExp(`agb-integration-${token.slice(0, 8)}`));
+    assert.ok(existsSync(join(intPath, 'node_modules', 'dummy.txt')), 'node_modules provisioned in integration worktree');
 
     // Can commit inside integration worktree without mutating root
     writeFileSync(join(intPath, 'scratch.txt'), 'scratch\n');

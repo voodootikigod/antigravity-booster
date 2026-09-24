@@ -13,6 +13,7 @@ const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
 // realpathSync resolves macOS's /var -> /private/var symlink, which git
 // canonicalises and would otherwise mismatch paths reported back to us.
 const TMP = realpathSync(mkdtempSync(join(tmpdir(), 'agb-cli-test-')));
+process.env.AGB_QUOTA_STATE = join(TMP, 'agb_pools_cli_test.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 test('agb COMMANDS table covers all dispatched commands', () => {
