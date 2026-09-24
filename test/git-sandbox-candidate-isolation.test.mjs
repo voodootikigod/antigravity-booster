@@ -220,3 +220,52 @@ test('verifyScopeAndAntiNoOp: validates non-empty diff, scope, rails, and contai
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('verifyRootGitIntegrity: rejects mutations to unrelated scheduler refs and invalid commit provenance', () => {
+  const repo = makeTestRepo();
+  try {
+    const wt = createWorktree(repo, 'T1', 'main');
+    setupAttemptGitDatabase(repo, wt, 'main');
+    const attemptSlug = 'attempts/T1/1/token123';
+
+    // Plant an existing scheduler ref for another ticket T2
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t2', baseSha], { cwd: repo });
+
+    const preSnapshot = snapshotRootGit(repo);
+
+    writeFileSync(join(wt, 'T1.txt'), 'candidate content\n');
+    execFileSync('git', ['add', 'T1.txt'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'candidate commit'], { cwd: wt });
+    const candidateSha = hostMediatedFetch(repo, wt, attemptSlug);
+    const activeAttemptNamespaces = new Set([attemptSlug]);
+
+    // 1. Mutating unrelated ticket's scheduler ref fails
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t2', candidateSha], { cwd: repo });
+    const unrelatedCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      ticketId: 'T1',
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces,
+      candidateSha,
+      knownTickets: [{ id: 'T1' }, { id: 'T2' }],
+    });
+    assert.equal(unrelatedCheck.ok, false);
+    assert.match(unrelatedCheck.error, /Unauthorized mutation to scheduler ref refs\/heads\/agb\/t2 belonging to unrelated ticket 't2'/);
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t2', baseSha], { cwd: repo });
+
+    // 2. Setting current ticket ref to an unrelated unproven commit fails
+    const rogueSha = execFileSync('git', ['commit-tree', '-m', 'rogue', baseSha + '^{tree}'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t1', rogueSha], { cwd: repo });
+    const unprovenCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      ticketId: 'T1',
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces,
+      candidateSha,
+      knownTickets: [{ id: 'T1' }, { id: 'T2' }],
+    });
+    assert.equal(unprovenCheck.ok, false);
+    assert.match(unprovenCheck.error, /not reachable from candidate/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

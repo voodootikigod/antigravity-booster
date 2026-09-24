@@ -397,20 +397,22 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   let agyModelsText = '';
   let adlcVersion = null;
 
+  const agyBin = process.env.AGB_AGY_BIN || 'agy';
+
   try {
-    const res = cp.spawnSync('agy', ['--version'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['--version'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
     agyVersion = ((res.stdout || '') + (res.stderr || '')).trim();
   } catch (e) {
     agyVersion = 'unavailable';
   }
 
   try {
-    const res = cp.spawnSync('agy', ['--help'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['--help'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
     agyHelpText = (res.stdout || '') + (res.stderr || '');
   } catch (_) {}
 
   try {
-    const res = cp.spawnSync('agy', ['models'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['models'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
     agyModelsText = (res.stdout || '') + (res.stderr || '');
   } catch (_) {}
 

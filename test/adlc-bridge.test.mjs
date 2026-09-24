@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, chmodSync, realpathSync, cpSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -657,6 +657,35 @@ test('authenticateAdlcPackage: enforceKnownDigest fails closed when version is m
     });
     assert.equal(res.ok, false);
     assert.match(res.error, /no trusted lockfile integrity recorded in KNOWN_ADLC_DIGESTS for @adlc\/cli version 9\.9\.9/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveAdlcBinary: does not return modified shim pointing outside authenticated target', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-shim-test-'));
+  try {
+    const nodeModules = join(root, 'node_modules');
+    const binDir = join(nodeModules, '.bin');
+    const adlcScopeDir = join(nodeModules, '@adlc');
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(adlcScopeDir, { recursive: true });
+
+    // Copy real @adlc/cli and link package-lock.json from current repo
+    cpSync(join(process.cwd(), 'node_modules', '@adlc', 'cli'), join(adlcScopeDir, 'cli'), { recursive: true });
+    symlinkSync(join(process.cwd(), 'package-lock.json'), join(root, 'package-lock.json'));
+
+    const expectedTarget = join(adlcScopeDir, 'cli', 'bin', 'adlc.mjs');
+
+    // Create a modified shim in .bin/adlc that points to an untrusted file
+    const shimPath = join(binDir, 'adlc');
+    writeFileSync(shimPath, '#!/usr/bin/env node\n// evil modified shim\n');
+    chmodSync(shimPath, 0o755);
+
+    const res = resolveAdlcBinary({ repo: root });
+    assert.equal(res.ok, true);
+    // Must return the authenticated target directly, NOT the modified shimPath
+    assert.equal(res.binary, expectedTarget);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

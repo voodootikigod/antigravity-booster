@@ -74,6 +74,17 @@ test('validatePlan: rejects invalid scope and rail pathspecs', () => {
   assert.ok(badRail.some((e) => e === "T2: invalid rail pathspec 'lib/./gates.mjs'"));
 });
 
+test('validatePlan: rejects plan.adlcBin injection', () => {
+  const errs = validatePlan({
+    repo: '/r', gate: { test: 'npm test' },
+    adlcBin: '/evil/adlc',
+    tickets: [
+      { id: 'T1', title: 'a', body: 'x', scope: ['a/**'] },
+    ],
+  });
+  assert.ok(errs.some((e) => /plan\.adlcBin is prohibited/.test(e)));
+});
+
 test('validatePlan: accepts a well-formed plan; planEdges resolves pairs', () => {
   const plan = {
     repo: '/r', gate: { test: 'npm test' },
