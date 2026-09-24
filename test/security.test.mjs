@@ -207,7 +207,7 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
 // '..' in a ref name — incidental protection that would evaporate if the branch
 // scheme ever changed independently of the path scheme. validatePlan owns it now.
 test('validatePlan: rejects ticket ids that could escape the worktree path', () => {
-  const base = { repo: '/tmp/x', gate: { test: 'true' } };
+  const base = { repo: '/tmp/x', gate: { test: 'npm test' } };
   const ticket = (id) => ({ id, title: 't', body: 'b', scope: ['src/**'], rails: [], edges: [] });
 
   for (const bad of ['../../../../tmp/pwned', '..', '.hidden', 'a/b', 'a\\b', 'a b', '', 'a;rm -rf /']) {
@@ -229,7 +229,7 @@ test('validatePlan: rejects ticket ids that could escape the worktree path', () 
 // first's live worktree and uncommitted builder output — silently, because the
 // ids "passed validation".
 test('validatePlan: rejects ticket ids that collide once lowercased into a worktree', () => {
-  const base = { repo: '/tmp/x', gate: { test: 'true' } };
+  const base = { repo: '/tmp/x', gate: { test: 'npm test' } };
   const ticket = (id) => ({ id, title: 't', body: 'b', scope: [`${id}.txt`], rails: [], edges: [] });
 
   const errors = validatePlan({ ...base, tickets: [ticket('Api-1'), ticket('api-1')] });

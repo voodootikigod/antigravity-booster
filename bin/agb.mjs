@@ -129,8 +129,7 @@ try {
     const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
     if (spec.repo) spec.repo = resolve(spec.repo);
     const plan = sweepToPlan(spec, { project });
-    const errors = plan.tickets.flatMap(validateTicket);
-    if (!plan.gate || (!plan.gate.build && !plan.gate.test)) errors.push('sweep.gate must declare build/test');
+    const errors = validatePlan(plan);
     if (errors.length) {
       console.error('sweep invalid:\n  ' + errors.join('\n  '));
       process.exit(1);

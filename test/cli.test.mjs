@@ -86,7 +86,7 @@ test('agb help <cmd> exits 0 and prints per-cmd usage', () => {
 });
 
 test('agb validate exits 0 on valid plan', () => {
-  const plan = { repo: '.', tickets: [{id: 'T1', title: 't', body: 'b', scope: ['src/**'], rails: [], edges: []}], gate: { build: 'true' } };
+  const plan = { repo: '.', tickets: [{id: 'T1', title: 't', body: 'b', scope: ['src/**'], rails: [], edges: []}], gate: { test: 'npm test' } };
   const planFile = join(TMP, 'valid.json');
   writeFileSync(planFile, JSON.stringify(plan));
   execFileSync(process.execPath, [AGB_BIN, 'validate', planFile]);
@@ -131,14 +131,19 @@ test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
   g('config', 'user.email', 't@t');
   g('config', 'user.name', 't');
   g('config', 'commit.gpgsign', 'false');
-  g('commit', '--allow-empty', '-m', 'init');
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({
+    name: 'cli-repo',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  }));
+  g('add', '-A');
+  g('commit', '-m', 'init');
 
   const plan = {
     repo,
     tickets: [
       { id: 'T1', title: 'test', body: 't', scope: ['T1.txt'], rails: [], edges: [] }
     ],
-    gate: { build: 'true', test: 'true' }
+    gate: { test: 'npm test' }
   };
   writeFileSync(join(repo, 'plan.json'), JSON.stringify(plan));
 

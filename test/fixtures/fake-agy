@@ -146,7 +146,7 @@ case "$prompt" in
       n=$(cat "$cf" 2>/dev/null || echo 0)
       echo $((n + 1)) > "$cf"
       if [ "$n" -eq 0 ]; then
-        echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "a", "body": "", "scope": ["src/x.mjs"], "edges": []}, {"id": "T2", "title": "b", "body": "do b fully specified", "scope": ["src/x.mjs"], "edges": []}]}'
+        echo '{"repo": "/r", "base": "main", "gate": {"test": "npm test"}, "tickets": [{"id": "T1", "title": "a", "body": "", "scope": ["src/x.mjs"], "rails": [], "edges": [], "tier": "mid", "pool_hint": "auto"}, {"id": "T2", "title": "b", "body": "do b fully specified", "scope": ["src/x.mjs"], "rails": [], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
         exit 0
       fi
       # The retry must carry the compiler feedback block; without it stay broken.
@@ -156,9 +156,9 @@ case "$prompt" in
       esac
     fi
     if [ "$mode" = "edges" ]; then
-      echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "edges": [{"to": "T2"}], "tier": "mid", "pool_hint": "auto"}, {"id": "T2", "title": "widget step 2", "body": "do step 2 fully specified", "scope": ["src/widget2/**"], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
+      echo '{"repo": "/r", "base": "main", "gate": {"test": "npm test"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "rails": [], "edges": [{"to": "T2"}], "tier": "mid", "pool_hint": "auto"}, {"id": "T2", "title": "widget step 2", "body": "do step 2 fully specified", "scope": ["src/widget2/**"], "rails": [], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
     else
-      echo '{"repo": "/r", "base": "main", "gate": {"test": "true"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
+      echo '{"repo": "/r", "base": "main", "gate": {"test": "npm test"}, "tickets": [{"id": "T1", "title": "widget step 1", "body": "do step 1 fully specified", "scope": ["src/widget/**"], "rails": [], "edges": [], "tier": "mid", "pool_hint": "auto"}]}'
     fi
     exit 0 ;;
 esac

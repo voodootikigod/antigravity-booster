@@ -36,7 +36,7 @@ test('agb validate: rejects duplicate ids, unknown edges, missing body, empty sc
     const bad = join(dir, 'bad.json');
     writeFileSync(bad, JSON.stringify({
       repo: dir,
-      gate: { test: 'true' },
+      gate: { test: 'npm test' },
       tickets: [
         { id: 'T1', title: 'a', body: 'x', scope: ['a.txt'], edges: [{ to: 'T9' }] },
         { id: 'T1', title: 'dup', body: 'y', scope: ['b.txt'] },
@@ -64,7 +64,7 @@ test('agb validate: rejects duplicate ids, unknown edges, missing body, empty sc
     const good = join(dir, 'good.json');
     writeFileSync(good, JSON.stringify({
       repo: dir,
-      gate: { test: 'true' },
+      gate: { test: 'npm test' },
       tickets: [{ id: 'T1', title: 'a', body: 'do the thing', scope: ['a.txt'], tier: 'mid', pool_hint: 'auto' }],
     }));
     const ok = execFileSync(process.execPath, [AGB_BIN, 'validate', good], { encoding: 'utf8', stdio: 'pipe' });

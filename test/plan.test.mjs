@@ -58,7 +58,7 @@ test('validatePlan: catches missing repo/gate, dup ids, bad edges, cycles, unrou
 
 test('validatePlan: rejects invalid scope and rail pathspecs', () => {
   const badScope = validatePlan({
-    repo: '/r', gate: { test: 'true' },
+    repo: '/r', gate: { test: 'npm test' },
     tickets: [
       { id: 'T1', title: 'a', body: 'x', scope: ['*'] },
     ],
@@ -66,7 +66,7 @@ test('validatePlan: rejects invalid scope and rail pathspecs', () => {
   assert.ok(badScope.some((e) => e === "T1: invalid scope pathspec '*'"));
 
   const badRail = validatePlan({
-    repo: '/r', gate: { test: 'true' },
+    repo: '/r', gate: { test: 'npm test' },
     tickets: [
       { id: 'T2', title: 'b', body: 'x', scope: ['src/**'], rails: ['lib/./gates.mjs'] },
     ],
@@ -76,7 +76,7 @@ test('validatePlan: rejects invalid scope and rail pathspecs', () => {
 
 test('validatePlan: accepts a well-formed plan; planEdges resolves pairs', () => {
   const plan = {
-    repo: '/r', gate: { test: 'true' },
+    repo: '/r', gate: { test: 'npm test' },
     tickets: [
       { id: 'T1', title: 'a', body: 'x', scope: ['a/**'], edges: [{ to: 'T2' }] },
       { id: 'T2', title: 'b', body: 'x', scope: ['b/**'] },

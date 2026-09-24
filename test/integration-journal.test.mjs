@@ -271,7 +271,7 @@ test('Integration Journal: Trusted Baseline Test Oracle Protocol (Pass 1 regress
       { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0', FAKE_BUILDER_MODE: 'sabotage-math' },
       () => runPlan({
         repo,
-        gate: { test: 'node test/math.test.js' },
+        gate: { test: 'npm test' },
         tickets: [{
           id: 'T1',
           title: 'break math and tamper test',

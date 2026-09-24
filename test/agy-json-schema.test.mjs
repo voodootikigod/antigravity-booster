@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   runAgy,
+  validateJsonSchema,
+  MODELS,
+  resolveModelSlug,
   QUOTA_RESPONSE_SCHEMA,
   STREAM_EVENT_SCHEMA,
   PROSECUTION_VERDICT_SCHEMA,
@@ -306,4 +309,68 @@ test('BRAIN_PLAN_SCHEMA: allows test-only or build-only gate', () => {
   assert.equal(gateSchema.properties.build.type, 'string');
   assert.equal(gateSchema.properties.test.type, 'string');
 });
+
+test('validateJsonSchema: validates types, required properties, additionalProperties, and primitives', () => {
+  const schema = {
+    type: 'object',
+    required: ['id', 'count'],
+    additionalProperties: false,
+    properties: {
+      id: { type: 'string', pattern: '^T\\d+$' },
+      count: { type: 'integer', minimum: 1 },
+      status: { type: 'string', enum: ['active', 'paused'] },
+    },
+  };
+
+  assert.equal(validateJsonSchema({ id: 'T1', count: 5 }, schema).valid, true);
+  assert.equal(validateJsonSchema({ id: 'T1', count: 5, status: 'active' }, schema).valid, true);
+
+  // Missing required
+  const missing = validateJsonSchema({ id: 'T1' }, schema);
+  assert.equal(missing.valid, false);
+  assert.ok(missing.errors.some((e) => e.includes("missing required property 'count'")));
+
+  // Additional property
+  const extra = validateJsonSchema({ id: 'T1', count: 1, extraProp: true }, schema);
+  assert.equal(extra.valid, false);
+  assert.ok(extra.errors.some((e) => e.includes("unauthorized additional property 'extraProp'")));
+
+  // Primitive passed when object expected
+  assert.equal(validateJsonSchema(123, schema).valid, false);
+  assert.equal(validateJsonSchema('hello', schema).valid, false);
+  assert.equal(validateJsonSchema(null, schema).valid, false);
+
+  // Number bounds and regex pattern
+  assert.equal(validateJsonSchema({ id: 'INVALID', count: 5 }, schema).valid, false);
+  assert.equal(validateJsonSchema({ id: 'T1', count: 0 }, schema).valid, false);
+  assert.equal(validateJsonSchema({ id: 'T1', count: 2, status: 'unknown' }, schema).valid, false);
+});
+
+test('MODELS: retired Gemini 3.5 models removed from MODELS and remapped in resolveModelSlug', () => {
+  assert.equal(MODELS['gemini-flash'].includes('gemini-3.5-flash-low'), false);
+  assert.equal(MODELS['gemini-flash'].includes('gemini-3.5-flash-medium'), false);
+  assert.equal(MODELS['gemini-flash'].includes('gemini-3.5-flash-high'), false);
+
+  assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-3.8-flash-low');
+  assert.equal(resolveModelSlug('gemini-3.5-flash-medium'), 'gemini-3.8-flash-medium');
+  assert.equal(resolveModelSlug('gemini-3.5-flash-high'), 'gemini-3.8-flash-high');
+});
+
+test('validatePlan: rejects non-npm gates by default without strictGates flag', () => {
+  const badPlan = {
+    repo: '/tmp/repo',
+    gate: {
+      build: 'make build',
+      test: 'pytest',
+    },
+    tickets: [
+      { id: 'T1', title: 't', body: 'b', scope: ['src/**'], rails: [], edges: [], tier: 'mid' },
+    ],
+  };
+
+  const errors = validatePlan(badPlan);
+  assert.ok(errors.some((e) => e.includes('plan.gate.build must match')));
+  assert.ok(errors.some((e) => e.includes('plan.gate.test must match')));
+});
+
 
