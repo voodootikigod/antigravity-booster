@@ -359,7 +359,7 @@ test('drainPools: safely drains active leases and emits clean downgrade tombston
   }
 });
 
-test('PoolSet: updates dynamic capacity from quota and trips circuit breaker on 3 failures', () => {
+test('PoolSet: updates dynamic capacity from quota and trips circuit breaker on failure', () => {
   const pools = new PoolSet();
   const t5h = futureIso(3600);
   const tWeekly = futureIso(86400 * 7);
@@ -384,11 +384,7 @@ test('PoolSet: updates dynamic capacity from quota and trips circuit breaker on 
   assert.equal(pools.caps['claude'], 1);
   assert.equal(pools.quota.paused, false);
 
-  // Circuit breaker test
-  assert.equal(pools.circuitBreakerTripped, false);
-  pools.recordQuotaFailure();
-  assert.equal(pools.circuitBreakerTripped, false);
-  pools.recordQuotaFailure();
+  // Circuit breaker test: trips immediately on quota failure to prevent stale admissions
   assert.equal(pools.circuitBreakerTripped, false);
   pools.recordQuotaFailure();
   assert.equal(pools.circuitBreakerTripped, true);
