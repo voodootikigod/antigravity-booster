@@ -146,7 +146,7 @@ try {
       console.error('review: empty diff — nothing to prosecute');
       process.exit(0);
     }
-    const result = await reviewFleet({ diff, pools: new PoolSet(), log: (m) => console.error(m), project });
+    const result = await reviewFleet({ diff, repo, pools: new PoolSet(undefined, { repo }), log: (m) => console.error(m), project });
     console.log(JSON.stringify(result, null, 2));
     if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
     const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
@@ -157,7 +157,8 @@ try {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart'), project });
+    const targetRepo = resolve(plan.repo ?? '.');
+    const result = await preflight(plan, { pools: new PoolSet(undefined, { repo: targetRepo }), repo: targetRepo, skipColdstart: rest.includes('--no-coldstart'), project });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
@@ -179,9 +180,10 @@ try {
         `(compiled plans are disposable, hand-written ones may not be)`);
       process.exit(1);
     }
+    const targetRepo = resolve(repo);
     const result = await compilePlan(id, {
-      repo: resolve(repo),
-      pools: new PoolSet(),
+      repo: targetRepo,
+      pools: new PoolSet(undefined, { repo: targetRepo }),
       log: (m) => console.error(m),
       coldstart: !rest.includes('--no-coldstart'),
       parallax: !rest.includes('--no-parallax'),

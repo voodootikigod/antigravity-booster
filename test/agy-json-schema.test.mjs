@@ -77,6 +77,9 @@ test('Pathspec grammar and anti-traversal validation', () => {
   assert.equal(validatePathspec('.github/workflows/ci.yml'), true);
   assert.equal(validatePathspec('package.json'), true);
   assert.equal(validatePathspec('src/utils/math.js'), true);
+  assert.equal(validatePathspec('src/**/*.js'), true);
+  assert.equal(validatePathspec('test/**/*.test.mjs'), true);
+  assert.equal(validatePathspec('**/*.js'), true);
 
   // Invalid / traversal pathspecs
   assert.equal(validatePathspec('..'), false);
@@ -308,6 +311,27 @@ test('BRAIN_PLAN_SCHEMA: allows test-only or build-only gate', () => {
   assert.deepEqual(gateSchema.anyOf, [{ required: ['build'] }, { required: ['test'] }]);
   assert.equal(gateSchema.properties.build.type, 'string');
   assert.equal(gateSchema.properties.test.type, 'string');
+});
+
+test('BRAIN_PLAN_SCHEMA: validates conversionPrompt output shape without rails and with recursive globs', () => {
+  const plan = {
+    repo: '/tmp/repo',
+    base: 'main',
+    gate: { test: 'npm test' },
+    tickets: [
+      {
+        id: 'T1',
+        title: 'Title',
+        body: 'Body text',
+        scope: ['src/**/*.js', 'test/**/*.test.mjs'],
+        edges: [],
+        tier: 'mid',
+        pool_hint: 'auto',
+      },
+    ],
+  };
+  const res = validateJsonSchema(plan, BRAIN_PLAN_SCHEMA);
+  assert.equal(res.valid, true);
 });
 
 test('validateJsonSchema: validates types, required properties, additionalProperties, and primitives', () => {
