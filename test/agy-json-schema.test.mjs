@@ -334,6 +334,27 @@ test('BRAIN_PLAN_SCHEMA: validates conversionPrompt output shape without rails a
   assert.equal(res.valid, true);
 });
 
+test('BRAIN_PLAN_SCHEMA: accepts tickets with pool_hint gpt-oss', () => {
+  const plan = {
+    repo: '/tmp/repo',
+    base: 'main',
+    gate: { test: 'npm test' },
+    tickets: [
+      {
+        id: 'T1',
+        title: 'Title',
+        body: 'Body text',
+        scope: ['src/index.js'],
+        edges: [],
+        tier: 'cheap',
+        pool_hint: 'gpt-oss',
+      },
+    ],
+  };
+  const res = validateJsonSchema(plan, BRAIN_PLAN_SCHEMA);
+  assert.equal(res.valid, true);
+});
+
 test('validateJsonSchema: validates types, required properties, additionalProperties, and primitives', () => {
   const schema = {
     type: 'object',

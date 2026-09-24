@@ -228,6 +228,36 @@ test('verifyWindowsSandboxAttestation: fails closed on expired attestation', () 
   }
 });
 
+test('verifyWindowsSandboxAttestation: fails closed on repository_origin mismatch when repo has no origin', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  try {
+    // Remove remote.origin.url from the repo
+    execSync('git config --unset remote.origin.url', { cwd: repo });
+    const adminKey = 'test-key-no-origin';
+    const att = createAttestation({
+      installId,
+      rootCommit,
+      origin: 'git@github.com:foreign/repo.git',
+      repoPath: repo,
+      adminKey,
+    });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ sandboxBypassAttestation: att }));
+
+    const res = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+    });
+    assert.equal(res.valid, false);
+    assert.match(res.reason, /repository_origin_mismatch/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
 // --- Active Differential Sandbox Probe Tests ---
 
 test('sandbox-probe-helper: runSandboxProbe exercises file, net, and nonce actions', async () => {
