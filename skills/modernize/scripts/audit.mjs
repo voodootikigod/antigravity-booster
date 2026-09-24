@@ -91,7 +91,7 @@ function extractAgySection(raw, ver) {
   if (!startMatch) return null;
   const startIndex = startMatch.index + (startMatch[1] ? 1 : 0);
   const rest = raw.slice(startIndex);
-  const nextMatch = rest.slice(startMatch[0].length).match(/(^|\n)##\\s*\[?v?\\d/);
+  const nextMatch = rest.slice(startMatch[0].length).match(/(^|\n)##\s*\[?v?\d/);
   return nextMatch ? rest.slice(0, startMatch[0].length + nextMatch.index).trim() : rest.trim();
 }
 

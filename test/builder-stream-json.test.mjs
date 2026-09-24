@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import {
   runAgy,
   checkKernelContainment,
@@ -76,66 +77,122 @@ test('runAgy: fails closed with containment_unavailable if containment is unsupp
   }
 });
 
-test('verifySandboxBypassAttestation: validates HMAC-SHA256 signature in .adlc/config.json', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agb-attest-'));
-  const adlcDir = join(dir, '.adlc');
-  mkdirSync(adlcDir, { recursive: true });
+function setupMockGitRepo() {
+  const d = mkdtempSync(join(tmpdir(), 'agb-attest-repo-'));
+  execSync('git init -b main', { cwd: d });
+  execSync('git config user.email "test@example.com"', { cwd: d });
+  execSync('git config user.name "Test User"', { cwd: d });
+  execSync('git config commit.gpgsign false', { cwd: d });
+  execSync('git config remote.origin.url "git@github.com:test/repo.git"', { cwd: d });
+  writeFileSync(join(d, 'README.md'), '# Test Repo\n');
+  execSync('git add README.md && git commit -m "initial commit"', { cwd: d });
+  const rootCommit = execSync('git rev-list --max-parents=0 HEAD', { cwd: d, encoding: 'utf8' }).trim().split(/\s+/)[0];
+  mkdirSync(join(d, '.adlc'), { recursive: true });
+  return { repo: d, rootCommit, origin: 'git@github.com:test/repo.git' };
+}
+
+function setupMockHome() {
+  const h = mkdtempSync(join(tmpdir(), 'agb-attest-home-'));
+  mkdirSync(join(h, '.adlc'), { recursive: true });
+  const installId = crypto.randomUUID();
+  writeFileSync(join(h, '.adlc', 'installation_id'), installId);
+  return { homeDir: h, installId };
+}
+
+function createAttestation({
+  installId,
+  rootCommit,
+  origin,
+  repoPath,
+  nonce = crypto.randomUUID(),
+  runId = 'run-test-123',
+  platform = process.platform,
+  authorizedBy = 'operator@example.com',
+  adminKey = 'secret-admin-key-123',
+  ttlMs = 1800 * 1000,
+  expired = false,
+  signatureOverride = null,
+}) {
+  const now = Date.now();
+  const timestamp = new Date(expired ? now - 7200 * 1000 : now).toISOString();
+  const expiresAt = new Date(expired ? now - 3600 * 1000 : now + ttlMs).toISOString();
+
+  const payload = `${installId}:${rootCommit}:${origin}:${repoPath}:${nonce}:${runId}:${platform}:${authorizedBy}:${timestamp}:${expiresAt}`;
+  const signature = signatureOverride ?? crypto.createHmac('sha256', adminKey).update(payload).digest('hex');
+
+  return {
+    installationId: installId,
+    repositoryRootCommit: rootCommit,
+    repositoryOrigin: origin,
+    repositoryPath: repoPath,
+    nonce,
+    runId,
+    acknowledgedPlatform: platform,
+    authorizedBy,
+    timestamp,
+    expiresAt,
+    signature,
+  };
+}
+
+test('verifySandboxBypassAttestation: validates multi-factor HMAC-SHA256 signature in .adlc/config.json', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
 
   const adminKey = 'super-secret-admin-key-1234';
   const platform = process.platform;
-  const expiresAt = Date.now() + 60_000;
-  const signature = crypto.createHmac('sha256', adminKey).update(`${platform}:${expiresAt}`).digest('hex');
 
   const savedKey = process.env.ADLC_ADMIN_KEY;
+  const savedHome = process.env.AGB_HOME_DIR;
   process.env.ADLC_ADMIN_KEY = adminKey;
+  process.env.AGB_HOME_DIR = homeDir;
 
   try {
     // Valid attestation
+    const validAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey });
     writeFileSync(
-      join(adlcDir, 'config.json'),
-      JSON.stringify({ sandboxBypassAttestation: { platform, expiresAt, signature } })
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: validAtt })
     );
-    const validCheck = verifySandboxBypassAttestation(dir, platform);
+    const validCheck = verifySandboxBypassAttestation(repo, platform);
     assert.equal(validCheck.valid, true);
 
     // Mismatched platform
-    const badPlatform = verifySandboxBypassAttestation(dir, 'other_os');
+    const badPlatformAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform: 'other_os', adminKey });
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: badPlatformAtt })
+    );
+    const badPlatform = verifySandboxBypassAttestation(repo, platform);
     assert.equal(badPlatform.valid, false);
     assert.match(badPlatform.reason, /platform mismatch/);
 
-    // Expired numeric timestamp
-    const expiredSig = crypto.createHmac('sha256', adminKey).update(`${platform}:${Date.now() - 1000}`).digest('hex');
+    // Expired
+    const expiredAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey, expired: true });
     writeFileSync(
-      join(adlcDir, 'config.json'),
-      JSON.stringify({ sandboxBypassAttestation: { platform, expiresAt: Date.now() - 1000, signature: expiredSig } })
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: expiredAtt })
     );
-    const expiredCheck = verifySandboxBypassAttestation(dir, platform);
+    const expiredCheck = verifySandboxBypassAttestation(repo, platform);
     assert.equal(expiredCheck.valid, false);
     assert.match(expiredCheck.reason, /expired/);
 
-    // Expired ISO string timestamp (coercion defense)
-    const expiredIso = new Date(Date.now() - 5000).toISOString();
-    const expiredIsoSig = crypto.createHmac('sha256', adminKey).update(`${platform}:${expiredIso}`).digest('hex');
-    writeFileSync(
-      join(adlcDir, 'config.json'),
-      JSON.stringify({ sandboxBypassAttestation: { platform, expiresAt: expiredIso, signature: expiredIsoSig } })
-    );
-    const expiredIsoCheck = verifySandboxBypassAttestation(dir, platform);
-    assert.equal(expiredIsoCheck.valid, false);
-    assert.match(expiredIsoCheck.reason, /expired/);
-
     // Bad signature
+    const badSigAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey, signatureOverride: 'deadbeef' });
     writeFileSync(
-      join(adlcDir, 'config.json'),
-      JSON.stringify({ sandboxBypassAttestation: { platform, expiresAt, signature: 'deadbeef' } })
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: badSigAtt })
     );
-    const badSigCheck = verifySandboxBypassAttestation(dir, platform);
+    const badSigCheck = verifySandboxBypassAttestation(repo, platform);
     assert.equal(badSigCheck.valid, false);
-    assert.match(badSigCheck.reason, /invalid sandboxBypassAttestation HMAC signature/);
+    assert.match(badSigCheck.reason, /invalid attestation signature/);
   } finally {
     if (savedKey === undefined) delete process.env.ADLC_ADMIN_KEY;
     else process.env.ADLC_ADMIN_KEY = savedKey;
-    rmSync(dir, { recursive: true, force: true });
+    if (savedHome === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHome;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 
