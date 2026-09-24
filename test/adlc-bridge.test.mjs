@@ -266,6 +266,22 @@ test('writeAdlcTickets: refuses a symlinked store path (redirected cleanup would
   }
 });
 
+test('writeAdlcTickets: refuses a symlinked .adlc directory', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  const elsewhere = mkdtempSync(join(tmpdir(), 'agb-bridge-elsewhere-'));
+  try {
+    writeFileSync(join(elsewhere, 'tickets.json'), '{"tickets":[]}\n');
+    symlinkSync(elsewhere, join(repo, '.adlc'));
+    assert.throws(
+      () => writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]),
+      /refusing to project tickets through a symlink/,
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(elsewhere, { recursive: true, force: true });
+  }
+});
+
 test('writeAdlcTickets: a symlink planted AT the shard name is unlinked, not written through', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   const victimDir = mkdtempSync(join(tmpdir(), 'agb-bridge-victim-'));

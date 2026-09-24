@@ -151,6 +151,17 @@ test('verifyRootGitIntegrity: verifies porcelain, HEAD, protected refs, and fail
     execFileSync('git', ['update-ref', '-d', 'refs/heads/agb/t1'], { cwd: repo });
     execFileSync('git', ['update-ref', '-d', 'refs/namespaces/attempts/t1/rebased'], { cwd: repo });
 
+    // 3b. Unauthorized scheduler ref for unknown ticket fails
+    execFileSync('git', ['update-ref', 'refs/heads/agb/unknown_ticket', candidateSha], { cwd: repo });
+    const unknownSchedulerRefCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces,
+      candidateSha,
+    });
+    assert.equal(unknownSchedulerRefCheck.ok, false);
+    assert.match(unknownSchedulerRefCheck.error, /Unauthorized scheduler ref created for unknown ticket/);
+    execFileSync('git', ['update-ref', '-d', 'refs/heads/agb/unknown_ticket'], { cwd: repo });
+
     // 4. Unauthorized stray object in root .git/objects fails
     const straySha = execFileSync(
       'git',

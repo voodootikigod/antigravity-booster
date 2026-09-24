@@ -32,18 +32,21 @@ test('checkKernelContainment: recognizes supported platform and respects mock ov
   }
 });
 
-test('checkKernelContainment: fails closed on darwin and bsd', () => {
+test('checkKernelContainment: handles darwin and bsd', () => {
   const origPlatform = process.platform;
   try {
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
     const darwinCheck = checkKernelContainment();
-    assert.equal(darwinCheck.supported, false);
-    assert.match(darwinCheck.detail, /darwin\/bsd/);
+    if (darwinCheck.supported) {
+      assert.equal(darwinCheck.mechanism, 'seatbelt');
+    } else {
+      assert.match(darwinCheck.detail, /sandbox-exec/);
+    }
 
     Object.defineProperty(process, 'platform', { value: 'freebsd', configurable: true });
     const bsdCheck = checkKernelContainment();
     assert.equal(bsdCheck.supported, false);
-    assert.match(bsdCheck.detail, /darwin\/bsd/);
+    assert.match(bsdCheck.detail, /bsd/);
   } finally {
     Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
   }
