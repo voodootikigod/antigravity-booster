@@ -300,9 +300,9 @@ test('PROSECUTION_VERDICT_SCHEMA: allows optional file and evidence on finding i
   assert.deepEqual(PROSECUTION_VERDICT_SCHEMA.properties.findings.items.required, ['severity', 'charge', 'claim']);
 });
 
-test('BRAIN_PLAN_SCHEMA: allows test-only gate without build property', () => {
+test('BRAIN_PLAN_SCHEMA: allows test-only or build-only gate', () => {
   const gateSchema = BRAIN_PLAN_SCHEMA.properties.gate;
-  assert.deepEqual(gateSchema.required, ['test']);
+  assert.deepEqual(gateSchema.anyOf, [{ required: ['build'] }, { required: ['test'] }]);
   assert.equal(gateSchema.properties.build.type, 'string');
   assert.equal(gateSchema.properties.test.type, 'string');
 });
