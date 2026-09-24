@@ -610,5 +610,41 @@ test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha2
   }
 });
 
+test('authenticateAdlcPackage: enforceKnownDigest fails closed when version is missing from KNOWN_ADLC_DIGESTS', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-auth-unknown-version-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '9.9.9',
+      bin: { adlc: './bin/adlc.js' },
+    }));
+    writeFileSync(join(pkgDir, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
+
+    const lockPath = join(root, 'package-lock.json');
+    writeFileSync(lockPath, JSON.stringify({
+      name: 'test-project',
+      version: '1.0.0',
+      lockfileVersion: 3,
+      packages: {
+        'node_modules/@adlc/cli': {
+          version: '9.9.9',
+          integrity: 'sha512-placeholder',
+        },
+      },
+    }));
+
+    const res = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), {
+      lockfilePath: lockPath,
+      enforceKnownDigest: true,
+    });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /no trusted lockfile integrity recorded in KNOWN_ADLC_DIGESTS for @adlc\/cli version 9\.9\.9/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 
 

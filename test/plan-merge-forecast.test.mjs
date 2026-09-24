@@ -11,11 +11,12 @@ import { applyMergeForecast } from '../lib/preflight.mjs';
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
 
-const FAKE_ENV_KEYS = ['AGB_AGY_BIN', 'AGB_ADLC_BIN', 'FAKE_STATE_DIR', 'FAKE_MERGE_FORECAST_MODE'];
+const FAKE_ENV_KEYS = ['AGB_AGY_BIN', 'AGB_ADLC_BIN', 'AGB_ALLOW_CUSTOM_ADLC_CLI', 'FAKE_STATE_DIR', 'FAKE_MERGE_FORECAST_MODE'];
 
 function withFakes(env, fn) {
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.AGB_ADLC_BIN = FAKE_ADLC;
+  process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = '1';
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   return Promise.resolve()
     .then(fn)

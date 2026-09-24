@@ -85,7 +85,7 @@ test('agb help <cmd> exits 0 and prints per-cmd usage', () => {
 });
 
 test('agb validate exits 0 on valid plan', () => {
-  const plan = { repo: '.', tickets: [{id: 'T1', title: 't', body: 'b', scope: ['*'], rails: [], edges: []}], gate: { build: 'true' } };
+  const plan = { repo: '.', tickets: [{id: 'T1', title: 't', body: 'b', scope: ['src/**'], rails: [], edges: []}], gate: { build: 'true' } };
   const planFile = join(TMP, 'valid.json');
   writeFileSync(planFile, JSON.stringify(plan));
   execFileSync(process.execPath, [AGB_BIN, 'validate', planFile]);
@@ -135,7 +135,7 @@ test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
   const plan = {
     repo,
     tickets: [
-      { id: 'T1', title: 'test', body: 't', scope: ['*'], rails: [], edges: [] }
+      { id: 'T1', title: 'test', body: 't', scope: ['T1.txt'], rails: [], edges: [] }
     ],
     gate: { build: 'true', test: 'true' }
   };
@@ -143,7 +143,7 @@ test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
 
   // Fake agy script that succeeds
   const fakeAgy = fileURLToPath(new URL('fixtures/fake-agy', import.meta.url));
-  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_ADLC_BIN: fileURLToPath(new URL('fixtures/fake-adlc', import.meta.url)), PATH: process.env.PATH, AGB_ALLOW_DIRTY: '1', AGB_SANDBOX_GATES: '0' };
+  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_ADLC_BIN: fileURLToPath(new URL('fixtures/fake-adlc', import.meta.url)), AGB_ALLOW_CUSTOM_ADLC_CLI: '1', PATH: process.env.PATH, AGB_ALLOW_DIRTY: '1', AGB_SANDBOX_GATES: '0' };
 
   // success
   const out = execFileSync(process.execPath, [AGB_BIN, 'run', 'plan.json'], { cwd: repo, env, encoding: 'utf8' });

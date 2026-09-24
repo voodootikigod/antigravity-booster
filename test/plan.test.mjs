@@ -54,6 +54,24 @@ test('validatePlan: catches missing repo/gate, dup ids, bad edges, cycles, unrou
   assert.ok(errs.some((e) => /no model candidates for tier 'cheap' with pool_hint 'claude'/.test(e)));
 });
 
+test('validatePlan: rejects invalid scope and rail pathspecs', () => {
+  const badScope = validatePlan({
+    repo: '/r', gate: { test: 'true' },
+    tickets: [
+      { id: 'T1', title: 'a', body: 'x', scope: ['*'] },
+    ],
+  });
+  assert.ok(badScope.some((e) => e === "T1: invalid scope pathspec '*'"));
+
+  const badRail = validatePlan({
+    repo: '/r', gate: { test: 'true' },
+    tickets: [
+      { id: 'T2', title: 'b', body: 'x', scope: ['src/**'], rails: ['lib/./gates.mjs'] },
+    ],
+  });
+  assert.ok(badRail.some((e) => e === "T2: invalid rail pathspec 'lib/./gates.mjs'"));
+});
+
 test('validatePlan: accepts a well-formed plan; planEdges resolves pairs', () => {
   const plan = {
     repo: '/r', gate: { test: 'true' },

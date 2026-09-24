@@ -14,8 +14,9 @@ import { regenPrompt } from '../lib/charters.mjs';
 import { acquireRepoLock } from '../lib/lock.mjs';
 import { RunStatus } from '../lib/status.mjs';
 import { validatePlan } from '../lib/plan.mjs';
-
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_security_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_security_test_${process.pid}.json`);
+try { rmSync(process.env.AGB_QUOTA_STATE, { force: true }); } catch {}
+try { rmSync(process.env.AGB_QUOTA_STATE.replace(/\.json$/, '_v2.json'), { force: true }); } catch {}
 
 // --- agy timeout anchoring (review: false-positive timeout) ---
 
@@ -207,7 +208,7 @@ test('acquireRepoLock: a stale lock from a dead PID is reclaimed', () => {
 // scheme ever changed independently of the path scheme. validatePlan owns it now.
 test('validatePlan: rejects ticket ids that could escape the worktree path', () => {
   const base = { repo: '/tmp/x', gate: { test: 'true' } };
-  const ticket = (id) => ({ id, title: 't', body: 'b', scope: ['*'], rails: [], edges: [] });
+  const ticket = (id) => ({ id, title: 't', body: 'b', scope: ['src/**'], rails: [], edges: [] });
 
   for (const bad of ['../../../../tmp/pwned', '..', '.hidden', 'a/b', 'a\\b', 'a b', '', 'a;rm -rf /']) {
     const errors = validatePlan({ ...base, tickets: [ticket(bad)] });

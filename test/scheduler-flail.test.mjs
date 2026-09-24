@@ -24,8 +24,9 @@ function makeRepo() {
 }
 
 function withEnv(env, fn) {
+  const mergedEnv = { AGB_ALLOW_CUSTOM_ADLC_CLI: '1', ...env };
   const saved = {};
-  for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; process.env[k] = v; }
+  for (const [k, v] of Object.entries(mergedEnv)) { saved[k] = process.env[k]; process.env[k] = v; }
   return fn().finally(() => {
     for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
   });

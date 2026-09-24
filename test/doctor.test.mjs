@@ -293,7 +293,7 @@ test('checkTicketStore: reports store corruption when adlc ticket doctor exits n
     mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
     writeFileSync(join(d, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
 
-    const res = await checkTicketStore({ cwd: d, env: { AGB_ADLC_BIN: FAKE_ADLC, FAKE_TICKET_DOCTOR_MODE: 'fail' } });
+    const res = await checkTicketStore({ cwd: d, env: { AGB_ADLC_BIN: FAKE_ADLC, AGB_ALLOW_CUSTOM_ADLC_CLI: '1', FAKE_TICKET_DOCTOR_MODE: 'fail' } });
     assert.equal(res.level, 'fail');
     assert.match(res.detail, /store corruption/);
     assert.match(res.detail, /orphan shard detected/);
@@ -309,7 +309,7 @@ test('checkTicketStore: passes when adlc ticket doctor exits zero', async () => 
     mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
     writeFileSync(join(d, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
 
-    const res = await checkTicketStore({ cwd: d, env: { AGB_ADLC_BIN: FAKE_ADLC, FAKE_TICKET_DOCTOR_MODE: 'pass' } });
+    const res = await checkTicketStore({ cwd: d, env: { AGB_ADLC_BIN: FAKE_ADLC, AGB_ALLOW_CUSTOM_ADLC_CLI: '1', FAKE_TICKET_DOCTOR_MODE: 'pass' } });
     assert.equal(res.level, 'pass');
     assert.match(res.detail, /directory backend/);
   } finally {
