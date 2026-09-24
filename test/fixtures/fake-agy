@@ -51,20 +51,16 @@ fi
 prompt=""
 output_format=""
 json_schema=""
-for i in $(seq 1 $#); do
-  eval arg=\$$i
-  if [ "$arg" = "--print" ]; then
-    next=$((i+1))
-    eval prompt=\$$next
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--print" ]; then
+    prompt="$arg"
+  elif [ "$prev" = "--output-format" ]; then
+    output_format="$arg"
+  elif [ "$prev" = "--json-schema" ]; then
+    json_schema="$arg"
   fi
-  if [ "$arg" = "--output-format" ]; then
-    next=$((i+1))
-    eval output_format=\$$next
-  fi
-  if [ "$arg" = "--json-schema" ]; then
-    next=$((i+1))
-    eval json_schema=\$$next
-  fi
+  prev="$arg"
 done
 if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
   prompt=$(cat)
@@ -264,13 +260,13 @@ case "$prompt" in
         echo '{"type":"result","status":"SUCCESS","exit_code":0}'
         exit 0 ;;
       overflow-line)
-        node -e "process.stdout.write('x'.repeat(1024*1024 + 100) + '\n')"
+        node -e "process.stdout._handle?.setBlocking?.(true); process.stdout.write('x'.repeat(1024*1024 + 100) + '\n')"
         exit 0 ;;
       overflow-total)
-        node -e "const chunk = '{\"type\":\"heartbeat\",\"timestamp\":123456789}\\n'.repeat(20000); for(let i=0;i<65;i++) process.stdout.write(chunk);"
+        node -e "process.stdout._handle?.setBlocking?.(true); const chunk = '{\"type\":\"heartbeat\",\"timestamp\":123456789}\n'.repeat(20000); for(let i=0;i<65;i++) process.stdout.write(chunk);"
         exit 0 ;;
       corruption)
-        node -e "for(let i=0;i<12;i++) process.stdout.write('g'.repeat(500*1024) + '\n')"
+        node -e "process.stdout._handle?.setBlocking?.(true); for(let i=0;i<12;i++) process.stdout.write('g'.repeat(500*1024) + '\n')"
         exit 0 ;;
       heartbeat)
         echo '{"type":"step_update","step":1,"action":"start"}'
