@@ -942,4 +942,58 @@ test('agents: declarative agent manifests exist under .agents/agents/', () => {
   }
 });
 
+test('standalone commands: reviewFleet, preflight, compilePlan, and brainToPlan require successful quota refresh', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-quota-check-'));
+  const origBin = process.env.AGB_AGY_BIN;
+  const origQuotaMode = process.env.FAKE_AGY_QUOTA_MODE;
+  const origQuotaState = process.env.AGB_QUOTA_STATE;
+  const origPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_AGY_BIN = FAKE_AGY;
+    process.env.FAKE_AGY_QUOTA_MODE = 'fail';
+    process.env.AGB_QUOTA_STATE = join(dir, 'agb_pools_quota_check.json');
+    process.env.AGB_POOLS_DIR = dir;
 
+    const pools = new PoolSet(undefined, { repo: dir });
+
+    // 1. reviewFleet rejects when quota telemetry unavailable
+    await assert.rejects(
+      async () => {
+        await reviewFleet({ diff: 'some diff', pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+
+    // 2. preflight rejects when quota telemetry unavailable
+    const { preflight } = await import('../lib/preflight.mjs');
+    await assert.rejects(
+      async () => {
+        await preflight({ tickets: [] }, { pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+
+    // 3. compilePlan rejects when quota telemetry unavailable
+    await assert.rejects(
+      async () => {
+        await compilePlan('nonexistent', { pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+
+    // 4. brainToPlan rejects when quota telemetry unavailable
+    const { brainToPlan } = await import('../lib/brain.mjs');
+    await assert.rejects(
+      async () => {
+        await brainToPlan('nonexistent', { pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+  } finally {
+    if (origBin === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = origBin;
+    if (origQuotaMode === undefined) delete process.env.FAKE_AGY_QUOTA_MODE; else process.env.FAKE_AGY_QUOTA_MODE = origQuotaMode;
+    if (origQuotaState === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuotaState;
+    if (origPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = origPoolsDir;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

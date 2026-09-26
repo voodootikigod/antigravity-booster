@@ -146,7 +146,13 @@ try {
       console.error('review: empty diff — nothing to prosecute');
       process.exit(0);
     }
-    const result = await reviewFleet({ diff, repo, pools: new PoolSet(undefined, { repo }), log: (m) => console.error(m), project });
+    const pools = new PoolSet(undefined, { repo });
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    if (!quotaRes.ok) {
+      console.error(`review: quota telemetry unavailable from agy: ${quotaRes.error}`);
+      process.exit(1);
+    }
+    const result = await reviewFleet({ diff, repo, pools, log: (m) => console.error(m), project });
     console.log(JSON.stringify(result, null, 2));
     if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
     const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
@@ -158,7 +164,13 @@ try {
       process.exit(1);
     }
     const targetRepo = resolve(plan.repo ?? '.');
-    const result = await preflight(plan, { pools: new PoolSet(undefined, { repo: targetRepo }), repo: targetRepo, skipColdstart: rest.includes('--no-coldstart'), project });
+    const pools = new PoolSet(undefined, { repo: targetRepo });
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    if (!quotaRes.ok) {
+      console.error(`preflight: quota telemetry unavailable from agy: ${quotaRes.error}`);
+      process.exit(1);
+    }
+    const result = await preflight(plan, { pools, repo: targetRepo, skipColdstart: rest.includes('--no-coldstart'), project });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
@@ -181,9 +193,15 @@ try {
       process.exit(1);
     }
     const targetRepo = resolve(repo);
+    const pools = new PoolSet(undefined, { repo: targetRepo });
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    if (!quotaRes.ok) {
+      console.error(`plan: quota telemetry unavailable from agy: ${quotaRes.error}`);
+      process.exit(1);
+    }
     const result = await compilePlan(id, {
       repo: targetRepo,
-      pools: new PoolSet(undefined, { repo: targetRepo }),
+      pools,
       log: (m) => console.error(m),
       coldstart: !rest.includes('--no-coldstart'),
       parallax: !rest.includes('--no-parallax'),
@@ -222,7 +240,14 @@ try {
       process.exit(1);
     }
     console.error('import-brain is deprecated — use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)');
-    const plan = await brainToPlan(id, { repo: resolve(repo), project });
+    const targetRepo = resolve(repo);
+    const pools = new PoolSet(undefined, { repo: targetRepo });
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    if (!quotaRes.ok) {
+      console.error(`import-brain: quota telemetry unavailable from agy: ${quotaRes.error}`);
+      process.exit(1);
+    }
+    const plan = await brainToPlan(id, { repo: targetRepo, project, pools });
     console.log(JSON.stringify(plan, null, 2));
     console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
   } else if (cmd === 'status') {

@@ -745,3 +745,74 @@ test('writeLeaseHeartbeat: refuses to write through symlinked .adlc or .adlc/lea
     rmSync(targetDir, { recursive: true, force: true });
   }
 });
+
+test('v0.7 / v0.8 Handoff: throws LegacyFleetActiveError even when activeSchemaVersion: 2 marker is present', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-handoff-v2-'));
+  const origQuota = process.env.AGB_QUOTA_STATE;
+  try {
+    process.env.AGB_QUOTA_STATE = join(tmp, 'agb_pools_shared.json');
+    writeFileSync(
+      process.env.AGB_QUOTA_STATE,
+      JSON.stringify({
+        activeSchemaVersion: 2,
+        99999: {
+          ts: Date.now(),
+          inFlight: { 'gemini-flash': 2 },
+        },
+      })
+    );
+    assert.throws(() => assertNoActiveLegacyFleet(), LegacyFleetActiveError);
+  } finally {
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('isLeaseActive: validates expiry, heartbeat ownership, and worker identity', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-pools-active-test-'));
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+
+  try {
+    process.env.AGB_POOLS_V2 = join(repo, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_LOCK = join(repo, 'agb_pools_shared.lock');
+
+    const { leaseId, ownerToken } = await acquireLease(repo, { pool: 'gemini-flash', ticketId: 'T1' });
+    assert.equal(isLeaseActive(repo, leaseId, ownerToken), true);
+
+    // 1. Expired lease
+    const v2 = readV2State();
+    v2.leases[leaseId].leaseExpiryMs = Date.now() - 1000;
+    writeV2State(v2);
+    assert.equal(isLeaseActive(repo, leaseId, ownerToken), false);
+
+    // Reset expiry
+    v2.leases[leaseId].leaseExpiryMs = Date.now() + 60000;
+    writeV2State(v2);
+    assert.equal(isLeaseActive(repo, leaseId, ownerToken), true);
+
+    // 2. Tampered / wrong ownerToken in heartbeat file
+    const hbPath = join(repo, '.adlc', 'leases', `${leaseId}.heartbeat`);
+    writeFileSync(hbPath, JSON.stringify({ ownerToken: 'wrong-token', timestamp: Date.now() }));
+    assert.equal(isLeaseActive(repo, leaseId, ownerToken), false);
+
+    // Restore heartbeat file
+    writeFileSync(hbPath, JSON.stringify({ ownerToken, timestamp: Date.now() }));
+    assert.equal(isLeaseActive(repo, leaseId, ownerToken), true);
+
+    // 3. Worker PID identity mismatch (PID reuse)
+    await registerLeaseWorkerPid(repo, leaseId, ownerToken, process.pid);
+    assert.equal(isLeaseActive(repo, leaseId, ownerToken), true);
+
+    const v2Worker = readV2State();
+    v2Worker.leases[leaseId].workerStartTime = 'fake-nonexistent-start-time';
+    writeV2State(v2Worker);
+    assert.equal(isLeaseActive(repo, leaseId, ownerToken), false);
+
+    await releaseLease(repo, leaseId, ownerToken);
+  } finally {
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

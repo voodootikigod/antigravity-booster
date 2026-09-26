@@ -430,3 +430,47 @@ test('hostMediatedFetch: namespace ref can be cleaned up and verifyRootGitIntegr
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('verifyRootGitIntegrity: rejects deletion and mutation of unrelated unmerged attempt refs', () => {
+  const repo = makeTestRepo();
+  try {
+    const unrelatedAttemptSlug = 'attempts/T2/1/tokenT2';
+    const unrelatedRef = `refs/namespaces/${unrelatedAttemptSlug}/refs/heads/candidate`;
+
+    // Simulate pre-existing attempt ref for T2
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', unrelatedRef, headSha], { cwd: repo });
+    const preWithT2 = snapshotRootGit(repo);
+
+    // 1. Unrelated attempt ref deletion during T1 attempt is rejected
+    execFileSync('git', ['update-ref', '-d', unrelatedRef], { cwd: repo });
+    const delRes = verifyRootGitIntegrity(repo, preWithT2, {
+      ticketId: 'T1',
+      attemptNamespace: 'attempts/T1/1/tokenT1',
+      activeAttemptNamespaces: new Set(['attempts/T1/1/tokenT1']),
+      knownTickets: [{ id: 'T1' }, { id: 'T2' }],
+      mergedTickets: new Set(),
+      mergedShas: new Set(),
+    });
+    assert.equal(delRes.ok, false);
+    assert.match(delRes.error, /Unauthorized deletion of scheduler ref.*belonging to unmerged ticket 'T2'/);
+
+    // 2. Unrelated attempt ref mutation during T1 attempt is rejected even if mutated to a merged SHA
+    execFileSync('git', ['commit', '--allow-empty', '-qm', 'merged commit'], { cwd: repo });
+    const mergedSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', unrelatedRef, mergedSha], { cwd: repo });
+
+    const mutRes = verifyRootGitIntegrity(repo, preWithT2, {
+      ticketId: 'T1',
+      attemptNamespace: 'attempts/T1/1/tokenT1',
+      activeAttemptNamespaces: new Set(['attempts/T1/1/tokenT1']),
+      knownTickets: [{ id: 'T1' }, { id: 'T2' }],
+      mergedTickets: new Set(), // T2 is unmerged
+      mergedShas: new Set([mergedSha]),
+    });
+    assert.equal(mutRes.ok, false);
+    assert.match(mutRes.error, /Unauthorized mutation to scheduler ref.*belonging to unrelated ticket 'T2'/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
