@@ -748,3 +748,43 @@ test('runPlan: reroutes to viable alternate model when primary pool capacity is 
   }
 });
 
+test('runPlan: preserves generated ticket charter when base repo tracks AGENTS.md', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-charter-state-'));
+  try {
+    // Base repo tracks a root AGENTS.md
+    writeFileSync(join(repo, 'AGENTS.md'), '# Base Repository Root Charter\n');
+    execFileSync('git', ['add', 'AGENTS.md'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'track base AGENTS.md'], { cwd: repo });
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        FAKE_BUILDER_MODE: 'echo-charter',
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{
+          id: 'T1',
+          title: 'charter test',
+          body: 'ensure charter is preserved',
+          scope: ['T1.txt'],
+          tier: 'mid',
+        }],
+      }, quiet)
+    );
+
+    assert.deepEqual(report.merged, ['T1']);
+    const seenCharter = readFileSync(join(state, 'seen-agents.md'), 'utf8');
+    assert.match(seenCharter, /# Ticket T1: charter test/);
+    assert.match(seenCharter, /ensure charter is preserved/);
+    assert.ok(!seenCharter.includes('# Base Repository Root Charter'), 'builder must not see clobbered base AGENTS.md');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+

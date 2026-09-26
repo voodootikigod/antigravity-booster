@@ -382,6 +382,18 @@ EOF
           echo "TICKET-DONE"
         fi
         exit 0 ;;
+      echo-charter)
+        if [ -f AGENTS.md ] && [ -n "$FAKE_STATE_DIR" ]; then
+          cp AGENTS.md "$FAKE_STATE_DIR/seen-agents.md"
+        fi
+        echo "did the work" > "${tid:-out}.txt"
+        if [ "$output_format" = "stream-json" ]; then
+          echo '{"type":"step_update","step":1,"action":"echo-charter"}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        else
+          echo "TICKET-DONE"
+        fi
+        exit 0 ;;
       # flail-then-good: every strike blocks, printing the FLAIL-REPEATED-ERROR
       # marker twice in its own output. If a real agy repeated the same error
       # on strike 1, the accumulated log has the marker twice after strike 1

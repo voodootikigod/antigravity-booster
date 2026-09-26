@@ -748,6 +748,29 @@ test('resolveAdlcBinary: custom override rejects world-writable path', () => {
   }
 });
 
+test('resolveAdlcBinary: rejects binary if any ancestor directory is world-writable', () => {
+  if (process.platform === 'win32') return;
+  const safeBase = mkdtempSync(join(process.cwd(), '.test-ww-ancestor-'));
+  try {
+    const subDir = join(safeBase, 'nested', 'deep');
+    mkdirSync(subDir, { recursive: true });
+    const pkg = join(subDir, 'pkg');
+    mkdirSync(pkg);
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './adlc' } }));
+    const bin = join(pkg, 'adlc');
+    writeFileSync(bin, '#!/usr/bin/env node\n');
+    chmodSync(bin, 0o755); // File itself is not world-writable!
+    chmodSync(join(safeBase, 'nested'), 0o777); // Ancestor is world-writable!
+
+    const res = resolveAdlcBinary({ env: { AGB_ADLC_BIN: bin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /violates path security constraints: path component is world-writable/);
+  } finally {
+    try { chmodSync(join(safeBase, 'nested'), 0o755); } catch {}
+    rmSync(safeBase, { recursive: true, force: true });
+  }
+});
+
 test('revalidateAdlcBinary: succeeds on authentic binary and fails closed if tampered before execution', () => {
   const root = mkdtempSync(join(process.cwd(), '.test-revalidate-'));
   try {

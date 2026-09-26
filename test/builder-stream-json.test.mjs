@@ -140,7 +140,7 @@ test('verifySandboxBypassAttestation: validates multi-factor HMAC-SHA256 signatu
   const { homeDir, installId } = setupMockHome();
 
   const adminKey = 'super-secret-admin-key-1234';
-  const platform = process.platform;
+  const platform = 'win32';
 
   const savedKey = process.env.ADLC_ADMIN_KEY;
   const savedHome = process.env.AGB_HOME_DIR;
@@ -156,6 +156,11 @@ test('verifySandboxBypassAttestation: validates multi-factor HMAC-SHA256 signatu
     );
     const validCheck = verifySandboxBypassAttestation(repo, platform);
     assert.equal(validCheck.valid, true);
+
+    // Linux rejection (containment and bypass cannot be bypassed on Linux)
+    const linuxCheck = verifySandboxBypassAttestation(repo, 'linux');
+    assert.equal(linuxCheck.valid, false);
+    assert.match(linuxCheck.reason, /Sandbox bypass attestation is only supported on Windows/);
 
     // Mismatched platform
     const badPlatformAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform: 'other_os', adminKey });
@@ -200,7 +205,7 @@ test('runAgy builder: sandbox false with unsupported kernel containment reuses b
   const { repo, rootCommit, origin } = setupMockGitRepo();
   const { homeDir, installId } = setupMockHome();
   const adminKey = 'super-secret-admin-key-1234';
-  const platform = process.platform;
+  const platform = 'win32';
 
   const savedKey = process.env.ADLC_ADMIN_KEY;
   const savedHome = process.env.AGB_HOME_DIR;
@@ -228,6 +233,7 @@ test('runAgy builder: sandbox false with unsupported kernel containment reuses b
       role: 'builder',
       sandbox: false,
       containment: true,
+      platform,
     });
 
     assert.equal(res.ok, true);
@@ -514,6 +520,7 @@ test('runAgy builder: containment: false fails closed without bypass attestation
       role: 'builder',
       sandbox: true,
       containment: false,
+      platform: 'win32',
     });
 
     assert.equal(res.ok, false);
@@ -524,11 +531,11 @@ test('runAgy builder: containment: false fails closed without bypass attestation
   }
 });
 
-test('runAgy builder: containment: false succeeds with valid bypass attestation', async () => {
+test('runAgy builder: containment: false succeeds on win32 with valid bypass attestation', async () => {
   const { repo, rootCommit, origin } = setupMockGitRepo();
   const { homeDir, installId } = setupMockHome();
   const adminKey = 'super-secret-admin-key-1234';
-  const platform = process.platform;
+  const platform = 'win32';
 
   const savedKey = process.env.ADLC_ADMIN_KEY;
   const savedHome = process.env.AGB_HOME_DIR;
@@ -553,10 +560,55 @@ test('runAgy builder: containment: false succeeds with valid bypass attestation'
       role: 'builder',
       sandbox: true,
       containment: false,
+      platform: 'win32',
     });
 
     assert.equal(res.ok, true);
     assert.equal(res.terminalResult.status, 'SUCCESS');
+  } finally {
+    if (savedKey === undefined) delete process.env.ADLC_ADMIN_KEY;
+    else process.env.ADLC_ADMIN_KEY = savedKey;
+    if (savedHome === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHome;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: containment: false fails closed on Linux even with valid signed attestation', async () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const adminKey = 'super-secret-admin-key-1234';
+
+  const savedKey = process.env.ADLC_ADMIN_KEY;
+  const savedHome = process.env.AGB_HOME_DIR;
+  process.env.ADLC_ADMIN_KEY = adminKey;
+  process.env.AGB_HOME_DIR = homeDir;
+
+  try {
+    const validAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform: 'win32', adminKey });
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: validAtt })
+    );
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: repo,
+      repo,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: true,
+      containment: false,
+      platform: 'linux',
+    });
+
+    assert.equal(res.ok, false);
+    assert.equal(res.kind, 'containment_unavailable');
+    assert.match(res.error, /Builder containment is mandatory on linux and cannot be disabled or bypassed/);
   } finally {
     if (savedKey === undefined) delete process.env.ADLC_ADMIN_KEY;
     else process.env.ADLC_ADMIN_KEY = savedKey;
