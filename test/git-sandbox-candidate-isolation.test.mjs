@@ -11,6 +11,7 @@ import {
   hostMediatedFetch,
   verifyScopeAndAntiNoOp,
   getGitCommonDir,
+  verifyWorktreeGitPointer,
 } from '../lib/scheduler.mjs';
 import { createWorktree } from '../lib/worktrees.mjs';
 
@@ -470,6 +471,48 @@ test('verifyRootGitIntegrity: rejects deletion and mutation of unrelated unmerge
     });
     assert.equal(mutRes.ok, false);
     assert.match(mutRes.error, /Unauthorized mutation to scheduler ref.*belonging to unrelated ticket 'T2'/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('verifyWorktreeGitPointer: rejects redirected, symlinked, or missing worktree .git pointer before host operations', () => {
+  const repo = makeTestRepo();
+  try {
+    const wt = createWorktree(repo, 'T1', 'main');
+    const { gitDir } = setupAttemptGitDatabase(repo, wt, 'main');
+
+    // 1. Authentic pointer passes
+    assert.equal(verifyWorktreeGitPointer(wt, gitDir), true);
+
+    // 2. Tampered pointer pointing to root repo is rejected
+    writeFileSync(join(wt, '.git'), `gitdir: ${join(repo, '.git')}\n`);
+    assert.throws(
+      () => verifyWorktreeGitPointer(wt, gitDir),
+      /Security violation: worktree \.git pointer at .* redirected to .* expected/
+    );
+
+    // 3. Symlink pointer is rejected
+    rmSync(join(wt, '.git'), { force: true });
+    symlinkSync(gitDir, join(wt, '.git'));
+    assert.throws(
+      () => verifyWorktreeGitPointer(wt, gitDir),
+      /Security violation: worktree \.git pointer at .* is not a regular file/
+    );
+
+    // 4. Missing pointer is rejected
+    rmSync(join(wt, '.git'), { force: true });
+    assert.throws(
+      () => verifyWorktreeGitPointer(wt, gitDir),
+      /Security violation: worktree \.git pointer missing/
+    );
+
+    // 5. hostMediatedFetch rejects tampered pointer before host git execution
+    writeFileSync(join(wt, '.git'), `gitdir: ${join(repo, '.git')}\n`);
+    assert.throws(
+      () => hostMediatedFetch(repo, wt, 'attempts/T1/1/token1', gitDir),
+      /Security violation: worktree \.git pointer/
+    );
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

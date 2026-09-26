@@ -816,3 +816,28 @@ test('isLeaseActive: validates expiry, heartbeat ownership, and worker identity'
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('PoolSet: await release() ensures durable lease state is TERMINATED before resolving', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-poolset-durable-release-'));
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 2 }, { repo });
+    const release = await pools.acquire('gemini-3.8-flash-low', { repo, ticketId: 'T-DURABLE-1' });
+
+    assert.equal(release.isActive(), true);
+
+    await release();
+
+    assert.equal(release.isActive(), false);
+    const v2Path = join(repo, 'agb_pools_v2.json');
+    if (existsSync(v2Path)) {
+      const v2 = JSON.parse(readFileSync(v2Path, 'utf8'));
+      const lease = v2.leases?.[release.leaseId] || v2.activeLeases?.[release.leaseId];
+      assert.equal(lease?.state, 'TERMINATED');
+    }
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -837,5 +837,29 @@ test('execFileAuthenticatedAdlc: revalidates binary at execution boundary and re
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('resolveExecutionCommand: avoids shell: true and invokes Node entrypoint directly', () => {
+  // 1. JavaScript entrypoint invokes process.execPath with shell: false
+  const jsCmd = resolveExecutionCommand({ target: '/repo/node_modules/@adlc/cli/bin/adlc.mjs' }, ['--version']);
+  assert.equal(jsCmd.command, process.execPath);
+  assert.deepEqual(jsCmd.args, ['/repo/node_modules/@adlc/cli/bin/adlc.mjs', '--version']);
+  assert.equal(jsCmd.options.shell, false);
+
+  // 2. Windows batch file with control characters fails closed
+  const origPlatform = process.platform;
+  Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+  try {
+    assert.throws(
+      () => resolveExecutionCommand({ target: 'C:\\bin\\adlc.cmd' }, ['hello\nworld']),
+      /Security violation: command argument contains control characters/
+    );
+    assert.throws(
+      () => resolveExecutionCommand({ target: 'C:\\bin\\adlc.cmd' }, ['hello\rworld']),
+      /Security violation: command argument contains control characters/
+    );
+  } finally {
+    Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
   }
 });
