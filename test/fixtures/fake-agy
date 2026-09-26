@@ -327,6 +327,16 @@ EOF
           echo "TICKET-DONE"
         fi
         exit 0 ;;
+      mod-test)
+        mkdir -p test
+        echo "// test modified" >> test/sample.test.js
+        if [ "$output_format" = "stream-json" ]; then
+          echo '{"type":"step_update","step":1,"action":"mod-test"}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        else
+          echo "TICKET-DONE"
+        fi
+        exit 0 ;;
       # sabotage: in-scope marker that passes the worktree gate but makes a
       # `.git`-directory-aware post-merge gate fail on main (revert-path test).
       sabotage)

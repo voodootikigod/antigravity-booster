@@ -208,6 +208,39 @@ test('runPlan: post-merge gate failure reverts main to the pre-run SHA (data-los
   }
 });
 
+test('runPlan: fails closed when hollow-test binary is unavailable for modified tests', async () => {
+  const repo = makeRepo();
+  try {
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
+    mkdirSync(join(repo, 'test'), { recursive: true });
+    writeFileSync(join(repo, 'test', 'sample.test.js'), 'console.log("ok");\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'init with tests'], { cwd: repo });
+    const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+
+    // The builder will modify test/sample.test.js under FAKE_BUILDER_MODE=mod-test.
+    // Without an authenticated adlc binary available, hollow-test cannot run.
+    // The integration MUST fail closed with post_merge_gate_failure.
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'mod-test', AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'node test/sample.test.js' },
+        tickets: [{ id: 'T1', title: 'mod test', body: 'modify test', scope: ['test/sample.test.js'] }],
+      }, quiet)
+    );
+
+    assert.equal(report.merged.length, 0, 'ticket modifying tests must not merge when adlc is unavailable');
+    assert.match(report.failed.T1, /hollow-test mutation verification failed: authenticated adlc binary is unavailable/);
+    const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.equal(headAfter, headBefore, 'HEAD restored to pre-run SHA');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: editing a rail inside the declared scope fails the ticket', async () => {
   const repo = makeRepo();
   try {

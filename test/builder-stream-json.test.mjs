@@ -196,6 +196,53 @@ test('verifySandboxBypassAttestation: validates multi-factor HMAC-SHA256 signatu
   }
 });
 
+test('runAgy builder: sandbox false with unsupported kernel containment reuses bypass verification without second consumption', async () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const adminKey = 'super-secret-admin-key-1234';
+  const platform = process.platform;
+
+  const savedKey = process.env.ADLC_ADMIN_KEY;
+  const savedHome = process.env.AGB_HOME_DIR;
+  const savedContainment = process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE;
+  process.env.ADLC_ADMIN_KEY = adminKey;
+  process.env.AGB_HOME_DIR = homeDir;
+  process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE = '1';
+
+  try {
+    const validAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey });
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: validAtt })
+    );
+
+    // Call runAgy with sandbox: false and containment: true on an unsupported host.
+    // The bypass must be verified once and reused, not rejected on the second check as a replay.
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: repo,
+      repo,
+      bin: FAKE_AGY,
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: false,
+      containment: true,
+    });
+
+    assert.equal(res.ok, true);
+  } finally {
+    if (savedKey === undefined) delete process.env.ADLC_ADMIN_KEY;
+    else process.env.ADLC_ADMIN_KEY = savedKey;
+    if (savedHome === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHome;
+    if (savedContainment === undefined) delete process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE;
+    else process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE = savedContainment;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
 test('runAgy stream-json: handles happy-path stream and heartbeats', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-stream-'));
   const savedMode = process.env.FAKE_BUILDER_MODE;
