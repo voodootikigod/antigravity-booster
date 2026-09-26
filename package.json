@@ -33,7 +33,7 @@
   ],
   "dependencies": {
     "@adlc/antigravity": "^1.7.0",
-    "@adlc/cli": "^1.11.1",
+    "@adlc/cli": "1.11.1",
     "@adlc/core": "^1.11.1",
     "@adlc/tickets": "^1.11.1"
   },

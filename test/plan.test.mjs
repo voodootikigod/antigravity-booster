@@ -251,6 +251,34 @@ test('premortemPlan/parallaxEdges: standalone results parse from fake responders
   }
 });
 
+test('premortemPlan/parallaxEdges: keep quota admission advisory when pools.acquire rejects', async () => {
+  const brainDir = makeBrainDir();
+  try {
+    const brain = readBrain('aaaa', brainDir);
+    const plan = {
+      repo: '/r', gate: { test: 'true' },
+      tickets: [
+        { id: 'T1', title: 'a', body: 'x', scope: ['a/**'], edges: [{ to: 'T2' }] },
+        { id: 'T2', title: 'b', body: 'x', scope: ['b/**'] },
+      ],
+    };
+    const failingPools = {
+      acquire: async () => {
+        throw new Error('Quota circuit breaker is tripped; dispatch suspended');
+      },
+    };
+    const pm = await premortemPlan(plan, brain, { pools: failingPools });
+    assert.deepEqual(pm.causes, []);
+    assert.match(pm.error, /quota admission failed: Quota circuit breaker is tripped/);
+
+    const lax = await parallaxEdges(plan, { pools: failingPools, n: 1 });
+    assert.equal(lax.length, 1);
+    assert.match(lax[0].error, /quota admission failed: Quota circuit breaker is tripped/);
+  } finally {
+    rmSync(brainDir, { recursive: true, force: true });
+  }
+});
+
 // --- CLI ---
 
 test('agb plan: compiles a brain into plan.json with provenance, refuses overwrite', async () => {

@@ -425,6 +425,39 @@ test('runAgy stream-json: aborts on consecutive unparseable bytes exceeding MAX_
   }
 });
 
+test('runAgy stream-json: delayed tree-kill timer is cleared after child exit', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-stream-'));
+  const savedMode = process.env.FAKE_BUILDER_MODE;
+  let clearedTimers = 0;
+  const originalClearTimeout = globalThis.clearTimeout;
+  globalThis.clearTimeout = (id) => {
+    clearedTimers++;
+    return originalClearTimeout(id);
+  };
+  try {
+    process.env.FAKE_BUILDER_MODE = 'overflow-line';
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: true,
+    });
+
+    assert.equal(res.ok, false);
+    assert.equal(res.kind, 'stream_overflow');
+    assert.ok(clearedTimers >= 1, 'clearTimeout must be invoked to cancel watchdog/kill timers');
+  } finally {
+    globalThis.clearTimeout = originalClearTimeout;
+    if (savedMode === undefined) delete process.env.FAKE_BUILDER_MODE;
+    else process.env.FAKE_BUILDER_MODE = savedMode;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('runAgy builder: sanitizes sensitive keys and tokens from child environment', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-env-test-'));
   const stateDir = mkdtempSync(join(tmpdir(), 'agb-env-state-'));
