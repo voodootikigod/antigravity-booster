@@ -788,3 +788,44 @@ test('runPlan: preserves generated ticket charter when base repo tracks AGENTS.m
   }
 });
 
+test('runPlan: releases rerouted pool reservation when lease acquisition fails', async () => {
+  const repo = makeRepo();
+  const v2Dir = mkdtempSync(join(tmpdir(), 'agb-sched-v2-'));
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+  try {
+    process.env.AGB_POOLS_V2 = join(v2Dir, 'v2.json');
+    process.env.AGB_POOLS_LOCK = join(v2Dir, 'v2.lock');
+    // Pre-seed v2 state in DRAINING status so acquisition fails
+    writeFileSync(process.env.AGB_POOLS_V2, JSON.stringify({
+      generation: 1,
+      status: 'DRAINING',
+      pools: {
+        gemini: { baseCap: 12, scaledCap: 12, inFlight: 0, reserved: 0 },
+        claude_gpt: { baseCap: 4, scaledCap: 4, inFlight: 0, reserved: 0 },
+      },
+      leases: {},
+    }));
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'frontier' }],
+      }, quiet)
+    );
+
+    assert.ok(report.failed.T1);
+    assert.match(String(report.failed.T1), /DRAINING/);
+    for (const [pool, resCount] of Object.entries(report.pools?.reserved ?? {})) {
+      assert.equal(resCount, 0, `pool ${pool} must not leak reservations`);
+    }
+  } finally {
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(v2Dir, { recursive: true, force: true });
+  }
+});
+

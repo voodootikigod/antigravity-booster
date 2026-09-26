@@ -768,6 +768,29 @@ test('v0.7 / v0.8 Handoff: throws LegacyFleetActiveError even when activeSchemaV
   }
 });
 
+test('v2 lease mirror: does not throw LegacyFleetActiveError when active leases are v2Mirror', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-v2-mirror-'));
+  const origQuota = process.env.AGB_QUOTA_STATE;
+  try {
+    process.env.AGB_QUOTA_STATE = join(tmp, 'agb_pools_shared.json');
+    writeFileSync(
+      process.env.AGB_QUOTA_STATE,
+      JSON.stringify({
+        activeSchemaVersion: 2,
+        99999: {
+          ts: Date.now(),
+          inFlight: { 'gemini-flash': 2 },
+          v2Mirror: true,
+        },
+      })
+    );
+    assert.doesNotThrow(() => assertNoActiveLegacyFleet());
+  } finally {
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('isLeaseActive: validates expiry, heartbeat ownership, and worker identity', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-pools-active-test-'));
   const origV2 = process.env.AGB_POOLS_V2;

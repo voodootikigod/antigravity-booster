@@ -489,6 +489,13 @@ test('runAgy builder: sanitizes sensitive keys and tokens from child environment
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
+      env: {
+        NODE_OPTIONS: '--inspect',
+        LD_PRELOAD: '/tmp/evil.so',
+        BASH_ENV: '/tmp/bashrc',
+        UNLISTED_CUSTOM_VAR: 'attacker_value',
+        ADLC_TICKET: 'T1',
+      },
     });
 
     assert.equal(res.ok, true);
@@ -496,6 +503,11 @@ test('runAgy builder: sanitizes sensitive keys and tokens from child environment
     assert.equal(captured.includes('ADLC_MANIFEST_KEY'), false, 'ADLC_MANIFEST_KEY must be scrubbed');
     assert.equal(captured.includes('CUSTOM_NPM_TOKEN'), false, 'token must be scrubbed');
     assert.equal(captured.includes('AGB_SECRET_KEY'), false, 'secret must be scrubbed');
+    assert.equal(captured.includes('NODE_OPTIONS'), false, 'NODE_OPTIONS must be scrubbed');
+    assert.equal(captured.includes('LD_PRELOAD'), false, 'LD_PRELOAD must be scrubbed');
+    assert.equal(captured.includes('BASH_ENV'), false, 'BASH_ENV must be scrubbed');
+    assert.equal(captured.includes('UNLISTED_CUSTOM_VAR'), false, 'non-allowlisted override must be scrubbed');
+    assert.ok(captured.includes('ADLC_TICKET=T1'), 'allowlisted ADLC_ override must be retained');
   } finally {
     if (savedKey === undefined) delete process.env.ADLC_MANIFEST_KEY; else process.env.ADLC_MANIFEST_KEY = savedKey;
     if (savedToken === undefined) delete process.env.CUSTOM_NPM_TOKEN; else process.env.CUSTOM_NPM_TOKEN = savedToken;
