@@ -11,6 +11,7 @@ import {
   releaseLease,
   reconcileLeases,
   drainPools,
+  isLeaseActive,
   readV2State,
   writeV2State,
   assertNoActiveLegacyFleet,
@@ -352,6 +353,52 @@ test('drainPools: safely drains active leases and emits clean downgrade tombston
 
     const v2 = readV2State();
     assert.equal(v2.pools.claude_gpt.inFlight, 0);
+  } finally {
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('drainPools: terminates unsettled active leases and registerLeaseWorkerPid returns false during DRAINING', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-drain-unsettled-'));
+  const origQuota = process.env.AGB_QUOTA_STATE;
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(tmp, 'agb_pools_shared.json');
+    process.env.AGB_POOLS_V2 = join(tmp, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_LOCK = join(tmp, 'agb_pools_shared.lock');
+
+    // Acquire an unsettled lease (no workerPid registered yet)
+    const { leaseId, ownerToken } = await acquireLease(tmp, {
+      pool: 'claude_gpt',
+      ticketId: 't-unsettled-1',
+    });
+
+    assert.equal(isLeaseActive(tmp, leaseId, ownerToken), true);
+
+    // Set status to DRAINING manually to test registerLeaseWorkerPid rejection
+    const v2 = readV2State();
+    v2.status = 'DRAINING';
+    writeV2State(v2);
+
+    assert.equal(isLeaseActive(tmp, leaseId, ownerToken), false);
+
+    // Attempting to register workerPid while draining must fail
+    const regResult = await registerLeaseWorkerPid(tmp, leaseId, ownerToken, process.pid);
+    assert.equal(regResult, false);
+
+    // Now call drainPools (which handles DRAINING status and terminates remaining leases)
+    const res = await drainPools(tmp, { gracePeriodMs: 50 });
+    assert.ok(res.ok);
+
+    const afterV2 = readV2State();
+    assert.equal(afterV2.status, 'ACTIVE');
+    assert.equal(afterV2.leases[leaseId].state, 'TERMINATED');
+    assert.equal(afterV2.pools.claude_gpt.inFlight, 0);
   } finally {
     if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
     if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;

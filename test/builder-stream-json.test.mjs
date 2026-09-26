@@ -257,7 +257,6 @@ test('runAgy stream-json: handles happy-path stream and heartbeats', async () =>
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, true);
@@ -285,7 +284,6 @@ test('runAgy stream-json: classifies missing terminal result as missing_terminal
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, false);
@@ -312,7 +310,6 @@ test('runAgy stream-json: classifies non-zero exit despite SUCCESS as server_shu
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, false);
@@ -339,7 +336,6 @@ test('runAgy stream-json: duplicate terminal result uses first result', async ()
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, true);
@@ -365,7 +361,6 @@ test('runAgy stream-json: aborts on line exceeding MAX_STREAM_LINE_BYTES with st
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, false);
@@ -392,7 +387,6 @@ test('runAgy stream-json: aborts on total bytes exceeding MAX_STREAM_TOTAL_BYTES
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, false);
@@ -419,7 +413,6 @@ test('runAgy stream-json: aborts on consecutive unparseable bytes exceeding MAX_
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, false);
@@ -457,7 +450,6 @@ test('runAgy builder: sanitizes sensitive keys and tokens from child environment
       project: 'test-proj',
       role: 'builder',
       sandbox: true,
-      containment: false,
     });
 
     assert.equal(res.ok, true);
@@ -473,5 +465,71 @@ test('runAgy builder: sanitizes sensitive keys and tokens from child environment
     if (savedRec === undefined) delete process.env.FAKE_RECORD_ENV; else process.env.FAKE_RECORD_ENV = savedRec;
     rmSync(dir, { recursive: true, force: true });
     rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: containment: false fails closed without bypass attestation', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-stream-'));
+  try {
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: true,
+      containment: false,
+    });
+
+    assert.equal(res.ok, false);
+    assert.equal(res.kind, 'containment_unavailable');
+    assert.match(res.error, /Builder containment cannot be disabled without an authenticated bypass attestation/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: containment: false succeeds with valid bypass attestation', async () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const adminKey = 'super-secret-admin-key-1234';
+  const platform = process.platform;
+
+  const savedKey = process.env.ADLC_ADMIN_KEY;
+  const savedHome = process.env.AGB_HOME_DIR;
+  process.env.ADLC_ADMIN_KEY = adminKey;
+  process.env.AGB_HOME_DIR = homeDir;
+
+  try {
+    const validAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey });
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: validAtt })
+    );
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: repo,
+      repo,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: true,
+      containment: false,
+    });
+
+    assert.equal(res.ok, true);
+    assert.equal(res.terminalResult.status, 'SUCCESS');
+  } finally {
+    if (savedKey === undefined) delete process.env.ADLC_ADMIN_KEY;
+    else process.env.ADLC_ADMIN_KEY = savedKey;
+    if (savedHome === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHome;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
