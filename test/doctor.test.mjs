@@ -271,10 +271,27 @@ test('checkAdlcBinary: fails when local @adlc/cli fails package manifest authent
   }
 });
 
+test('checkAdlcBinary: fails when custom adlc binary resides in temporary directory', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-temp-bin-'));
+  try {
+    const fakeBin = join(d, 'fake-adlc');
+    writeFileSync(join(d, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './fake-adlc' } }));
+    writeFileSync(fakeBin, '#!/bin/sh\necho "1.11.1"\n');
+    chmodSync(fakeBin, 0o755);
+
+    const res = await checkAdlcBinary({ cwd: d, env: { AGB_ADLC_BIN: fakeBin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /temporary directory/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
 test('checkAdlcBinary: fails when adlc version is below floor', async () => {
-  const d = mkdtempSync(join(tmpdir(), 'agb-test-old-ver-'));
+  const d = mkdtempSync(join(process.cwd(), '.test-adlc-old-ver-'));
   try {
     const fakeBin = join(d, 'fake-old-adlc');
+    writeFileSync(join(d, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './fake-old-adlc' } }));
     writeFileSync(fakeBin, '#!/bin/sh\necho "1.6.0"\n');
     chmodSync(fakeBin, 0o755);
 
@@ -287,7 +304,7 @@ test('checkAdlcBinary: fails when adlc version is below floor', async () => {
 });
 
 test('checkAdlcBinary: fails when authenticated binary fails to execute', async () => {
-  const d = mkdtempSync(join(tmpdir(), 'agb-test-exec-fail-'));
+  const d = mkdtempSync(join(process.cwd(), '.test-adlc-exec-fail-'));
   try {
     const fakeBin = join(d, 'fake-broken-adlc');
     writeFileSync(join(d, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './fake-broken-adlc' } }));

@@ -6,6 +6,7 @@ import {
   computeScaledCap,
   computeQuotaResumption,
   acquireLease,
+  registerLeaseWorkerPid,
   renewLease,
   releaseLease,
   reconcileLeases,
@@ -581,6 +582,44 @@ test('PoolSet: prosecutorFor() prefers models with positive capacity when primar
   // for gemini builder, primary prosecutor is gpt-oss-120b-medium, alternate is claude-sonnet-4-6
   const pros = pools.prosecutorFor('gemini-3.8-flash-low');
   assert.equal(pros, 'claude-sonnet-4-6', 'prosecutorFor should avoid 0-capacity gpt-oss and pick claude-sonnet-4-6');
+});
+
+test('registerLeaseWorkerPid: fails closed when process start time cannot be verified', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-pools-pid-test-'));
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+  try {
+    process.env.AGB_POOLS_V2 = join(repo, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_LOCK = join(repo, 'agb_pools_shared.lock');
+
+    const lease = await acquireLease(repo, { pool: 'gemini-flash', ticketId: 'T1' });
+    const registered = await registerLeaseWorkerPid(repo, lease.leaseId, lease.ownerToken, 999999999);
+    assert.equal(registered, false, 'must reject worker registration without verified start time');
+
+    const v2 = readV2State();
+    assert.equal(v2.leases[lease.leaseId].workerPid, null);
+    assert.equal(v2.leases[lease.leaseId].workerStartTime, null);
+
+    await releaseLease(repo, lease.leaseId, lease.ownerToken);
+  } finally {
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('acquireLease: fails closed when workerPid has unverifiable start time', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-pools-acq-test-'));
+  try {
+    await assert.rejects(
+      async () => {
+        await acquireLease(repo, { pool: 'gemini-flash', ticketId: 'T1', workerPid: 999999999 });
+      },
+      /cannot verify worker process start time/
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 

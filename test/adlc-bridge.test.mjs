@@ -691,5 +691,42 @@ test('resolveAdlcBinary: does not return modified shim pointing outside authenti
   }
 });
 
+test('resolveAdlcBinary: custom override rejects temporary directory on all platforms', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-temp-custom-test-'));
+  try {
+    const pkg = join(tmp, 'pkg');
+    mkdirSync(pkg);
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './adlc' } }));
+    const bin = join(pkg, 'adlc');
+    writeFileSync(bin, '#!/usr/bin/env node\n');
+    chmodSync(bin, 0o755);
+
+    const res = resolveAdlcBinary({ env: { AGB_ADLC_BIN: bin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /violates path security constraints: resides in temporary directory/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('resolveAdlcBinary: custom override rejects world-writable path', () => {
+  if (process.platform === 'win32') return;
+  const safeBase = mkdtempSync(join(process.cwd(), '.test-ww-'));
+  try {
+    const pkg = join(safeBase, 'pkg');
+    mkdirSync(pkg);
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './adlc' } }));
+    const bin = join(pkg, 'adlc');
+    writeFileSync(bin, '#!/usr/bin/env node\n');
+    chmodSync(bin, 0o777); // World-writable!
+
+    const res = resolveAdlcBinary({ env: { AGB_ADLC_BIN: bin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /violates path security constraints: path component is world-writable/);
+  } finally {
+    rmSync(safeBase, { recursive: true, force: true });
+  }
+});
+
 
 

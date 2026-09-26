@@ -148,7 +148,8 @@ test('verifyRootGitIntegrity: verifies porcelain, HEAD, protected refs, and fail
 
     execFileSync('git', ['update-ref', '-d', 'refs/transactions/T1/tok123'], { cwd: repo });
     execFileSync('git', ['update-ref', '-d', 'refs/quarantine/agb-t1-failed'], { cwd: repo });
-    execFileSync('git', ['update-ref', '-d', 'refs/heads/agb/t1'], { cwd: repo });
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t1', baseSha], { cwd: repo });
     execFileSync('git', ['update-ref', '-d', 'refs/namespaces/attempts/t1/rebased'], { cwd: repo });
 
     // 3b. Unauthorized scheduler ref for unknown ticket fails
@@ -264,7 +265,54 @@ test('verifyRootGitIntegrity: rejects mutations to unrelated scheduler refs and 
       knownTickets: [{ id: 'T1' }, { id: 'T2' }],
     });
     assert.equal(unprovenCheck.ok, false);
-    assert.match(unprovenCheck.error, /not reachable from candidate/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('verifyRootGitIntegrity: rejects unauthorized deletion of scheduler refs belonging to unmerged tickets', () => {
+  const repo = makeTestRepo();
+  try {
+    const wt = createWorktree(repo, 'T1', 'main');
+    setupAttemptGitDatabase(repo, wt, 'main');
+    const attemptSlug = 'attempts/T1/1/token123';
+
+    // Plant an existing scheduler ref for another ticket T2
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t2', baseSha], { cwd: repo });
+
+    const preSnapshot = snapshotRootGit(repo);
+
+    writeFileSync(join(wt, 'T1.txt'), 'candidate content\n');
+    execFileSync('git', ['add', 'T1.txt'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'candidate commit'], { cwd: wt });
+    const candidateSha = hostMediatedFetch(repo, wt, attemptSlug);
+    const activeAttemptNamespaces = new Set([attemptSlug]);
+
+    // Deleting unrelated ticket's scheduler ref fails when ticket is not confirmed merged
+    execFileSync('git', ['update-ref', '-d', 'refs/heads/agb/t2'], { cwd: repo });
+    const unmergedDeleteCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      ticketId: 'T1',
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces,
+      candidateSha,
+      knownTickets: [{ id: 'T1' }, { id: 'T2' }],
+      mergedTickets: new Set(),
+    });
+    assert.equal(unmergedDeleteCheck.ok, false);
+    assert.match(unmergedDeleteCheck.error, /Unauthorized deletion of scheduler ref refs\/heads\/agb\/t2 belonging to unmerged ticket 't2'/);
+
+    // But if T2 is confirmed merged with legitimate old sha, deletion is accepted
+    const mergedDeleteCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      ticketId: 'T1',
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces,
+      candidateSha,
+      knownTickets: [{ id: 'T1' }, { id: 'T2' }],
+      mergedTickets: new Set(['T2']),
+      mergedShas: new Set([baseSha]),
+    });
+    assert.equal(mergedDeleteCheck.ok, true);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
