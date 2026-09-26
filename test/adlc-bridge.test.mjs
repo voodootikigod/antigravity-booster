@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -886,3 +886,29 @@ test('resolveExecutionCommand: avoids shell: true and invokes Node entrypoint di
     Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
   }
 });
+
+test('revalidateAdlcBinary: rejects custom binary in temporary directory even when custom is allowed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-reval-tmp-'));
+  try {
+    const fakeBin = join(root, 'adlc');
+    writeFileSync(fakeBin, '#!/usr/bin/env node\n');
+    chmodSync(fakeBin, 0o755);
+
+    const res = revalidateAdlcBinary(fakeBin, {
+      env: { AGB_ALLOW_CUSTOM_ADLC_CLI: '1', AGB_ADLC_BIN: fakeBin },
+      allowCustom: true,
+    });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /violates path security constraints/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('isTemporaryOrWorldWritablePath: allows non-writable ancestors owned by untrusted UIDs', () => {
+  // Safe path in workspace
+  const safePath = fileURLToPath(import.meta.url);
+  const res = isTemporaryOrWorldWritablePath(safePath);
+  assert.equal(res.restricted, false);
+});
+

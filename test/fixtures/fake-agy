@@ -360,6 +360,15 @@ EOF
           echo "TICKET-DONE"
         fi
         exit 0 ;;
+      delete-pkg)
+        rm -f package.json
+        if [ "$output_format" = "stream-json" ]; then
+          echo '{"type":"step_update","step":1,"action":"delete-pkg"}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        else
+          echo "TICKET-DONE"
+        fi
+        exit 0 ;;
       # echo-adlc: snapshots cwd's ADLC ticket store (legacy tickets.json OR
       # the .adlc/tickets/ directory store, normalized to the {tickets:[...]}
       # envelope) to FAKE_STATE_DIR so a test can verify the scheduler

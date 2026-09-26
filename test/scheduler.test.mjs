@@ -829,3 +829,27 @@ test('runPlan: releases rerouted pool reservation when lease acquisition fails',
   }
 });
 
+test('runPlan: fails closed when candidate deletes package.json while baseline requires it', async () => {
+  const repo = makeRepo();
+  try {
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'test-app', scripts: { test: 'node -e "process.exit(0)"' } }));
+    execFileSync('git', ['add', 'package.json'], { cwd: repo });
+    execFileSync('git', ['commit', '-m', 'add package.json'], { cwd: repo });
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'delete-pkg', AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'npm test' },
+        tickets: [{ id: 'T1', title: 'delete manifest', body: 'remove package.json', scope: ['package.json'], tier: 'cheap' }],
+      }, quiet)
+    );
+
+    assert.ok(report.failed.T1);
+    assert.match(String(report.failed.T1), /gate script tampering: candidate deleted package\.json/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+

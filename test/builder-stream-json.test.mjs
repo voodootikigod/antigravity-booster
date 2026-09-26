@@ -638,3 +638,36 @@ test('job-object-wrapper.ps1: accepts -ArgsBase64 parameter and safely cleans up
   assert.ok(content.includes('FromBase64String($ArgsBase64)'));
   assert.ok(content.includes('Remove-Item -Force -Path $ArgsFile'));
 });
+
+test('runAgy builder: bwrap containment mounts root read-only with explicit read-write worktree and tmp', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-test-'));
+  try {
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    if (spawnedBin && spawnedBin.endsWith('bwrap')) {
+      assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount root read-only');
+      assert.equal(spawnedArgs.includes('--dev-bind'), false, 'bwrap must not mount host root read-write');
+      assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and /tmp read-write');
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
