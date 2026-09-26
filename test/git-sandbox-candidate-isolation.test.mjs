@@ -10,6 +10,7 @@ import {
   setupAttemptGitDatabase,
   hostMediatedFetch,
   verifyScopeAndAntiNoOp,
+  getGitCommonDir,
 } from '../lib/scheduler.mjs';
 import { createWorktree } from '../lib/worktrees.mjs';
 
@@ -317,3 +318,51 @@ test('verifyRootGitIntegrity: rejects unauthorized deletion of scheduler refs be
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('getGitCommonDir, setupAttemptGitDatabase, and snapshotRootGit operate correctly when repo is a linked worktree', () => {
+  const repo = makeTestRepo();
+  const linkedDir = mkdtempSync(join(tmpdir(), 'agb-linked-wt-'));
+  try {
+    execFileSync('git', ['worktree', 'add', linkedDir, '-b', 'linked-branch'], { cwd: repo });
+
+    const rootGitCommon = getGitCommonDir(repo);
+    const linkedGitCommon = getGitCommonDir(linkedDir);
+    assert.equal(rootGitCommon, join(repo, '.git'));
+    assert.equal(linkedGitCommon, join(repo, '.git'));
+
+    // setupAttemptGitDatabase configures alternates pointing to common dir objects
+    const wt = createWorktree(linkedDir, 'T1', 'linked-branch');
+    const { baseSha, gitDir } = setupAttemptGitDatabase(linkedDir, wt, 'linked-branch');
+    const alternates = readFileSync(join(gitDir, 'objects', 'info', 'alternates'), 'utf8').trim();
+    assert.equal(alternates, join(repo, '.git', 'objects'));
+
+    // snapshotRootGit on the linked worktree hashes the common objects directory
+    const preSnapshot = snapshotRootGit(linkedDir);
+    assert.ok(preSnapshot.headSha, 'snapshot has headSha');
+    assert.ok(preSnapshot.objectsManifest.size > 0, 'snapshot found git objects via common dir');
+
+    writeFileSync(join(wt, 'linked_file.txt'), 'candidate commit on linked worktree\n');
+    execFileSync('git', ['add', 'linked_file.txt'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'candidate commit'], { cwd: wt });
+
+    const attemptSlug = 'attempts/T1/1/tokenLinked';
+    const candidateSha = hostMediatedFetch(linkedDir, wt, attemptSlug);
+    assert.ok(candidateSha, 'candidate Sha resolved from fetch into linked repo');
+
+    const integrityRes = verifyRootGitIntegrity(linkedDir, preSnapshot, {
+      ticketId: 'T1',
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces: new Set([attemptSlug]),
+      candidateSha,
+      knownTickets: [{ id: 'T1' }],
+    });
+    assert.equal(integrityRes.ok, true);
+  } finally {
+    try {
+      execFileSync('git', ['worktree', 'remove', '--force', linkedDir], { cwd: repo });
+    } catch {}
+    rmSync(linkedDir, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+

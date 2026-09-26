@@ -465,6 +465,26 @@ test('authenticateAdlcPackage: rejects sibling package directory escape and bin 
     const invalidTargetCheck = authenticateAdlcPackage(legitimatePkg, join(legitimatePkg, 'bin', 'adlc.js'));
     assert.equal(invalidTargetCheck.ok, false);
     assert.match(invalidTargetCheck.error, /invalid bin target/);
+
+    // Test manifest.bin object lacking explicit 'adlc' key fails closed (no arbitrary fallback)
+    writeFileSync(join(legitimatePkg, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: { other: './bin/other.js' },
+    }));
+    const missingAdlcKeyCheck = authenticateAdlcPackage(legitimatePkg, join(legitimatePkg, 'bin', 'adlc.js'));
+    assert.equal(missingAdlcKeyCheck.ok, false);
+    assert.match(missingAdlcKeyCheck.error, /invalid bin target/);
+
+    // Test manifest.bin string passes when pointing to adlc.js
+    writeFileSync(join(legitimatePkg, 'package.json'), JSON.stringify({
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: './bin/adlc.js',
+    }));
+    const stringBinCheck = authenticateAdlcPackage(legitimatePkg, join(legitimatePkg, 'bin', 'adlc.js'));
+    assert.equal(stringBinCheck.ok, true);
+    assert.equal(stringBinCheck.version, '1.11.1');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

