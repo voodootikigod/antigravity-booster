@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -220,6 +220,35 @@ test('verifyScopeAndAntiNoOp: validates non-empty diff, scope, rails, and contai
     assert.match(scopeCheck.error, /Out-of-scope/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('verifyScopeAndAntiNoOp: rejects multi-hop symlink escaping containment', () => {
+  const repo = makeTestRepo();
+  const outsideDir = mkdtempSync(join(tmpdir(), 'agb-outside-'));
+  try {
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    const wt = createWorktree(repo, 'T1', 'main');
+    setupAttemptGitDatabase(repo, wt, 'main');
+
+    const outsideSecret = join(outsideDir, 'secret.txt');
+    writeFileSync(outsideSecret, 'secret data\n');
+
+    // Create intermediate symlinkB in worktree pointing to outsideSecret
+    // Then symlinkA pointing to symlinkB
+    symlinkSync(outsideSecret, join(wt, 'symlinkB'));
+    symlinkSync('symlinkB', join(wt, 'symlinkA'));
+
+    execFileSync('git', ['add', 'symlinkB', 'symlinkA'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'add symlinks'], { cwd: wt });
+
+    const res = verifyScopeAndAntiNoOp(repo, wt, baseSha, { id: 'T1', scope: ['**'], rails: [] });
+    assert.equal(res.ok, false);
+    assert.equal(res.kind, 'scope_violation');
+    assert.match(res.error, /Physical containment escape \(symlink target\)/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   }
 });
 

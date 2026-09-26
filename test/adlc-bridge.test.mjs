@@ -777,5 +777,37 @@ test('revalidateAdlcBinary: succeeds on authentic binary and fails closed if tam
   }
 });
 
+test('revalidateAdlcBinary: detects .cmd and .bin shims, resolves package target JS, and authenticates', () => {
+  const root = mkdtempSync(join(process.cwd(), '.test-revalidate-shim-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+
+    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    cpSync(realCliDir, pkgDir, { recursive: true });
+
+    // Create a .cmd shim in node_modules/.bin/adlc.cmd
+    const binDir = join(root, 'node_modules', '.bin');
+    mkdirSync(binDir, { recursive: true });
+    const cmdShim = join(binDir, 'adlc.cmd');
+    writeFileSync(cmdShim, '@IF EXIST "%~dp0\\node.exe" (\n  "%~dp0\\node.exe"  "%~dp0\\..\\@adlc\\cli\\bin\\adlc.mjs" %*\n) ELSE (\n  node  "%~dp0\\..\\@adlc\\cli\\bin\\adlc.mjs" %*\n)\n');
+
+    const res = revalidateAdlcBinary(cmdShim, { repo: root });
+    assert.equal(res.ok, true);
+    assert.equal(res.binary, cmdShim);
+    assert.ok(res.version);
+
+    // If underlying JS binary in @adlc/cli is tampered with:
+    const targetJs = join(pkgDir, 'bin', 'adlc.mjs');
+    writeFileSync(targetJs, '// tampered\n');
+
+    const resTampered = revalidateAdlcBinary(cmdShim, { repo: root });
+    assert.equal(resTampered.ok, false);
+    assert.match(resTampered.error, /digest mismatch/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 
 

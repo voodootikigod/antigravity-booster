@@ -440,3 +440,58 @@ test('checkSandbox: integrates multi-factor attestation bypass on win32', async 
     rmSync(homeDir, { recursive: true, force: true });
   }
 });
+
+test('checkSandbox: does not consume attestation nonce when called from doctor', async () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  try {
+    const adminKey = 'test-key-checkSandbox-nonce';
+    const att = createAttestation({
+      installId,
+      rootCommit,
+      origin,
+      repoPath: repo,
+      adminKey,
+    });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ sandboxBypassAttestation: att }));
+
+    // Run checkSandbox twice - both must pass because doctor does not consume the single-use nonce
+    const res1 = await checkSandbox({
+      cwd: repo,
+      platform: 'win32',
+      env: { ADLC_ADMIN_KEY: adminKey, AGB_HOME_DIR: homeDir },
+    });
+    assert.equal(res1.level, 'pass');
+
+    const res2 = await checkSandbox({
+      cwd: repo,
+      platform: 'win32',
+      env: { ADLC_ADMIN_KEY: adminKey, AGB_HOME_DIR: homeDir },
+    });
+    assert.equal(res2.level, 'pass');
+
+    // Consuming it explicitly now works on the first attempt
+    const consumeRes = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+      consumeNonce: true,
+    });
+    assert.equal(consumeRes.valid, true);
+
+    // But fails on replay now that it's consumed
+    const replayRes = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+      consumeNonce: true,
+    });
+    assert.equal(replayRes.valid, false);
+    assert.match(replayRes.reason, /replayed_attestation_rejected/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});

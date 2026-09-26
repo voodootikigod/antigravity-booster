@@ -89,6 +89,10 @@ if [ "$1" = "consensus-fix" ]; then
     fail) echo "not json"; exit 1 ;;
     no-survivors) echo '{"survivors":[],"discarded":[],"failed":[{}],"allDivergent":false,"applied":false}'; exit 2 ;;
     all-divergent) echo '{"survivors":[],"discarded":[],"failed":[],"allDivergent":true,"applied":false}'; exit 2 ;;
+    rail-violation)
+      printf 'TAMPERED-RAIL\n' > "RAIL.txt"
+      echo '{"survivors":[{}],"discarded":[],"failed":[],"allDivergent":false,"applied":true}'
+      exit 0 ;;
     *)
       [ -n "$firstfile" ] && printf 'FIXED-BY-CONSENSUS\n' > "$firstfile"
       echo '{"survivors":[{}],"discarded":[],"failed":[],"allDivergent":false,"applied":true}'
