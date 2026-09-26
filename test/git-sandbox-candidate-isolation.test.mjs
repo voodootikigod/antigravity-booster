@@ -395,3 +395,38 @@ test('getGitCommonDir, setupAttemptGitDatabase, and snapshotRootGit operate corr
   }
 });
 
+test('hostMediatedFetch: namespace ref can be cleaned up and verifyRootGitIntegrity tolerates ephemeral deletion', () => {
+  const repo = makeTestRepo();
+  try {
+    const wt = createWorktree(repo, 'T1', 'main');
+    setupAttemptGitDatabase(repo, wt, 'main');
+    const preSnapshot = snapshotRootGit(repo);
+    const attemptSlug = 'attempts/T1/1/tokenCleanup';
+
+    writeFileSync(join(wt, 'T1.txt'), 'candidate content\n');
+    execFileSync('git', ['add', 'T1.txt'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'candidate commit'], { cwd: wt });
+
+    const candidateSha = hostMediatedFetch(repo, wt, attemptSlug);
+    const attemptRef = `refs/namespaces/${attemptSlug}/refs/heads/candidate`;
+    assert.equal(execFileSync('git', ['rev-parse', attemptRef], { cwd: repo, encoding: 'utf8' }).trim(), candidateSha);
+
+    // After attempt completes (in finally block), attempt ref is deleted
+    execFileSync('git', ['update-ref', '-d', attemptRef], { cwd: repo });
+
+    // Ref no longer exists in git repo
+    assert.throws(() => execFileSync('git', ['rev-parse', attemptRef], { cwd: repo, stdio: 'pipe' }));
+
+    // verifyRootGitIntegrity accepts that attempt namespace refs are deleted
+    const integrityRes = verifyRootGitIntegrity(repo, preSnapshot, {
+      ticketId: 'T1',
+      attemptNamespace: attemptSlug,
+      activeAttemptNamespaces: new Set(),
+      candidateSha,
+      knownTickets: [{ id: 'T1' }],
+    });
+    assert.equal(integrityRes.ok, true);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

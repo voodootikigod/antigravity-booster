@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -809,5 +809,33 @@ test('revalidateAdlcBinary: detects .cmd and .bin shims, resolves package target
   }
 });
 
+test('execFileAuthenticatedAdlc: revalidates binary at execution boundary and rejects unauthentic binary', async () => {
+  const root = mkdtempSync(join(process.cwd(), '.test-execfile-auth-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
 
+    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    cpSync(realCliDir, pkgDir, { recursive: true });
 
+    const initial = resolveAdlcBinary({ repo: root });
+    assert.equal(initial.ok, true);
+
+    // Normal execution succeeds
+    const res = await execFileAuthenticatedAdlc(initial.binary, ['--version'], {}, { repo: root });
+    assert.ok(res.stdout);
+
+    // Tamper with binary
+    writeFileSync(initial.binary, '#!/usr/bin/env node\n// tampered\n');
+
+    // ExecFile rejects before running
+    await assert.rejects(
+      async () => {
+        await execFileAuthenticatedAdlc(initial.binary, ['--version'], {}, { repo: root });
+      },
+      /Authenticated ADLC binary verification failed/
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

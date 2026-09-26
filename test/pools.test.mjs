@@ -22,7 +22,7 @@ import {
   writeSharedState,
   readSharedState,
 } from '../lib/pools.mjs';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -707,5 +707,41 @@ test('acquireLease: fails closed when workerPid has unverifiable start time', as
   }
 });
 
+test('writeLeaseHeartbeat: refuses to write through symlinked .adlc or .adlc/leases directory', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-pools-symlink-test-'));
+  const targetDir = mkdtempSync(join(tmpdir(), 'agb-pools-target-'));
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
 
+  try {
+    process.env.AGB_POOLS_V2 = join(repo, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_LOCK = join(repo, 'agb_pools_shared.lock');
 
+    // Case 1: .adlc is a symlink
+    symlinkSync(targetDir, join(repo, '.adlc'), 'dir');
+    await assert.rejects(
+      async () => {
+        await acquireLease(repo, { pool: 'gemini-flash', ticketId: 'T1' });
+      },
+      /refusing to write lease heartbeat through symlinked \.adlc/
+    );
+
+    // Remove symlink
+    unlinkSync(join(repo, '.adlc'));
+
+    // Case 2: .adlc/leases is a symlink
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    symlinkSync(targetDir, join(repo, '.adlc', 'leases'), 'dir');
+    await assert.rejects(
+      async () => {
+        await acquireLease(repo, { pool: 'gemini-flash', ticketId: 'T1' });
+      },
+      /refusing to write lease heartbeat through symlinked leases directory/
+    );
+  } finally {
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(targetDir, { recursive: true, force: true });
+  }
+});
