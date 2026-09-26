@@ -533,3 +533,11 @@ test('runAgy builder: containment: false succeeds with valid bypass attestation'
     rmSync(homeDir, { recursive: true, force: true });
   }
 });
+
+test('job-object-wrapper.ps1: accepts -ArgsBase64 parameter and safely cleans up temporary file', () => {
+  const ps1Path = fileURLToPath(new URL('../lib/job-object-wrapper.ps1', import.meta.url));
+  const content = readFileSync(ps1Path, 'utf8');
+  assert.ok(content.includes('[string]$ArgsBase64'));
+  assert.ok(content.includes('FromBase64String($ArgsBase64)'));
+  assert.ok(content.includes('Remove-Item -Force -Path $ArgsFile'));
+});

@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, semverGte, KNOWN_ADLC_DIGESTS } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -745,6 +745,35 @@ test('resolveAdlcBinary: custom override rejects world-writable path', () => {
     assert.match(res.error, /violates path security constraints: path component is world-writable/);
   } finally {
     rmSync(safeBase, { recursive: true, force: true });
+  }
+});
+
+test('revalidateAdlcBinary: succeeds on authentic binary and fails closed if tampered before execution', () => {
+  const root = mkdtempSync(join(process.cwd(), '.test-revalidate-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+
+    // Copy actual package files from node_modules/@adlc/cli to create a valid fixture
+    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    cpSync(realCliDir, pkgDir, { recursive: true });
+
+    const initial = resolveAdlcBinary({ repo: root });
+    assert.equal(initial.ok, true);
+
+    // Initial revalidation passes
+    const reval1 = revalidateAdlcBinary(initial.binary, { repo: root });
+    assert.equal(reval1.ok, true);
+    assert.equal(reval1.binary, initial.binary);
+
+    // Now simulate an attacker modifying the executable in the gap before spawn
+    writeFileSync(initial.binary, '#!/usr/bin/env node\n// injected malicious payload\n');
+
+    const reval2 = revalidateAdlcBinary(initial.binary, { repo: root });
+    assert.equal(reval2.ok, false);
+    assert.match(reval2.error, /digest mismatch/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

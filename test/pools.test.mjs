@@ -22,7 +22,7 @@ import {
   writeSharedState,
   readSharedState,
 } from '../lib/pools.mjs';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -404,6 +404,44 @@ test('drainPools: terminates unsettled active leases and registerLeaseWorkerPid 
     if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
     if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
     rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('drainPools and reconcileLeases: cleans up fallback heartbeat files under /tmp/agb_fallback_leases', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-fallback-drain-'));
+  const fallbackDir = join(tmpdir(), 'agb_fallback_leases');
+  mkdirSync(fallbackDir, { recursive: true });
+
+  const origQuota = process.env.AGB_QUOTA_STATE;
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(tmp, 'agb_pools_shared.json');
+    process.env.AGB_POOLS_V2 = join(tmp, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_LOCK = join(tmp, 'agb_pools_shared.lock');
+
+    const { leaseId, ownerToken } = await acquireLease(tmp, {
+      pool: 'claude_gpt',
+      ticketId: 't-fallback-1',
+    });
+
+    // Plant a fallback heartbeat file
+    const fallbackFile = join(fallbackDir, `${leaseId}.heartbeat`);
+    writeFileSync(fallbackFile, JSON.stringify({ ownerToken, timestamp: Date.now() }));
+    assert.ok(existsSync(fallbackFile));
+
+    // Call drainPools
+    await drainPools(tmp, { gracePeriodMs: 50 });
+
+    // The fallback heartbeat file must have been cleaned up!
+    assert.equal(existsSync(fallbackFile), false, 'fallback heartbeat file must be unlinked during drainPools');
+  } finally {
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(tmp, { recursive: true, force: true });
+    try { rmSync(fallbackDir, { recursive: true, force: true }); } catch {}
   }
 });
 

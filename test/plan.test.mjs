@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { validatePlan, planEdges, compilePlan, premortemPlan, parallaxEdges } from '../lib/plan.mjs';
+import { validatePlan, planEdges, compilePlan, premortemPlan, parallaxEdges, PARALLAX_READER_SCHEMA, PARALLAX_JUDGE_SCHEMA, PREMORTEM_SCHEMA } from '../lib/plan.mjs';
+import { coldstartTickets, COLDSTART_SCHEMA } from '../lib/preflight.mjs';
 import { readBrain } from '../lib/brain.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
@@ -365,4 +366,35 @@ test('agb plan: compiles local spec path with spec provenance and prints customi
     rmSync(tmpFile, { force: true });
     rmSync(outDir, { recursive: true, force: true });
   }
+});
+
+test('coldstartTickets: fails closed with error when model response is garbage or missing required gaps field', async () => {
+  const tickets = [{ id: 'T1', title: 'T1', body: 'body', scope: ['src/**'] }];
+  await withFakeAgy({ FAKE_COLDSTART_MODE: 'garbage' }, async () => {
+    const res = await coldstartTickets(tickets, { test: 'npm test' });
+    assert.equal(res.length, 1);
+    assert.ok(res[0].error, 'must report error when model output violates schema or is unparseable');
+  });
+});
+
+test('parallaxEdges: fails closed with error when reader or judge verdict fails', async () => {
+  const plan = {
+    repo: '/r',
+    tickets: [
+      { id: 'T1', title: 'T1', body: 'body 1', scope: ['src/a'], edges: [{ to: 'T2' }] },
+      { id: 'T2', title: 'T2', body: 'body 2', scope: ['src/b'], edges: [] },
+    ],
+  };
+  await withFakeAgy({ FAKE_AGY_MODE: 'fail' }, async () => {
+    const results = await parallaxEdges(plan);
+    assert.equal(results.length, 1);
+    assert.ok(results[0].error, 'must report error when reader/judge fails');
+  });
+});
+
+test('COLDSTART_SCHEMA, PARALLAX_READER_SCHEMA, PARALLAX_JUDGE_SCHEMA, PREMORTEM_SCHEMA enforce required fields', () => {
+  assert.deepEqual(COLDSTART_SCHEMA.required, ['gaps']);
+  assert.deepEqual(PARALLAX_READER_SCHEMA.required, ['contract']);
+  assert.deepEqual(PARALLAX_JUDGE_SCHEMA.required, ['divergent', 'divergences']);
+  assert.deepEqual(PREMORTEM_SCHEMA.required, ['causes']);
 });

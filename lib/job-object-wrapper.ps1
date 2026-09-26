@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$TargetBin,
-    [Parameter(Mandatory=$false)][string]$ArgsFile
+    [Parameter(Mandatory=$false)][string]$ArgsFile,
+    [Parameter(Mandatory=$false)][string]$ArgsBase64
 )
 
 $jobTypeDef = @"
@@ -88,9 +89,16 @@ if (-not $ok) {
 }
 
 $argList = @()
-if ($ArgsFile -and (Test-Path $ArgsFile)) {
-    $rawJson = Get-Content -Raw -Path $ArgsFile
+if ($ArgsBase64) {
+    $rawJson = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($ArgsBase64))
     $argList = ConvertFrom-Json $rawJson
+} elseif ($ArgsFile -and (Test-Path $ArgsFile)) {
+    try {
+        $rawJson = Get-Content -Raw -Path $ArgsFile
+        $argList = ConvertFrom-Json $rawJson
+    } finally {
+        Remove-Item -Force -Path $ArgsFile -ErrorAction SilentlyContinue
+    }
 }
 
 & $TargetBin @argList
