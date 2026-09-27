@@ -713,8 +713,8 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
     assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount root read-only');
     assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and /tmp read-write');
 
-    const homeIndex = spawnedArgs.indexOf(fakeHome);
-    assert.ok(homeIndex > 0 && spawnedArgs[homeIndex - 1] === '--tmpfs', 'host home directory must be masked via --tmpfs');
+    const agyIndex = spawnedArgs.indexOf(FAKE_AGY);
+    assert.ok(agyIndex > 0 && spawnedArgs[agyIndex - 1] === '--ro-bind', 'agy binary must be preserved via --ro-bind');
     const sshIndex = spawnedArgs.indexOf(join(fakeHome, '.ssh'));
     assert.ok(sshIndex > 0 && spawnedArgs[sshIndex - 1] === '--tmpfs', 'sensitive ~/.ssh dir must be masked via --tmpfs');
     const awsIndex = spawnedArgs.indexOf(join(fakeHome, '.aws'));

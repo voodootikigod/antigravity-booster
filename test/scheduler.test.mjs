@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { ticketFilename } from '@adlc/tickets';
 
 import { runPlan } from '../lib/scheduler.mjs';
-import { reapIntegrationWorktrees } from '../lib/worktrees.mjs';
+import { reapIntegrationWorktrees, resetToBase, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
+import { PoolSet } from '../lib/pools.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_scheduler_test.json');
 
@@ -887,6 +888,76 @@ test('reapIntegrationWorktrees: removes orphaned per-attempt Git databases', () 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('resetToBase: cleans untracked builder artifacts while preserving AGENTS.md and .adlc', () => {
+  const repo = makeRepo();
+  let worktreePath = null;
+  try {
+    worktreePath = createWorktree(repo, 'T1', 'main');
+    writeFileSync(join(worktreePath, 'AGENTS.md'), '# Charter\n');
+    mkdirSync(join(worktreePath, '.adlc'), { recursive: true });
+    writeFileSync(join(worktreePath, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
+
+    writeFileSync(join(worktreePath, 'stale_builder_artifact.txt'), 'abandoned content\n');
+    mkdirSync(join(worktreePath, 'stale_dir'), { recursive: true });
+    writeFileSync(join(worktreePath, 'stale_dir', 'scratch.o'), 'binary\n');
+
+    resetToBase(worktreePath, 'main');
+
+    assert.ok(existsSync(join(worktreePath, 'AGENTS.md')), 'AGENTS.md must be preserved');
+    assert.ok(existsSync(join(worktreePath, '.adlc', 'tickets.json')), '.adlc must be preserved');
+    assert.equal(existsSync(join(worktreePath, 'stale_builder_artifact.txt')), false, 'untracked artifact must be cleaned');
+    assert.equal(existsSync(join(worktreePath, 'stale_dir')), false, 'untracked directory must be cleaned');
+  } finally {
+    if (worktreePath) {
+      try { removeWorktree(repo, worktreePath, { force: true }); } catch {}
+    }
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: reclassifies post-dispatch quota failures without consuming a strike', async () => {
+  const repo = makeRepo();
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 2 }, { repo });
+
+    let refreshCount = 0;
+    pools.refreshQuota = async () => {
+      refreshCount++;
+      if (refreshCount === 1) {
+        // Startup refresh: healthy
+        return { ok: true, quota: { paused: false } };
+      }
+      // Post-dispatch refresh: quota depleted and circuit breaker tripped
+      pools.recordQuotaFailure();
+      return { ok: false, error: 'simulated 429 quota exhaustion', tripped: true };
+    };
+
+    // When builder fails and quota is depleted, the ticket is paused rather than failing
+    // Use AGB_QUOTA_TIMEOUT_MS to prevent hanging on resumption pause
+    await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'missing-result', AGB_SANDBOX_GATES: '0', AGB_QUOTA_TIMEOUT_MS: '100' },
+      async () => {
+        const report = await runPlan({
+          repo,
+          gate: { test: 'true' },
+          tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'cheap' }],
+          pools,
+        }, quiet);
+
+        assert.equal(report.merged.length, 0);
+        // Quota reclassification happened before strike accounting
+        assert.ok(refreshCount >= 2, 'post-dispatch refreshQuota was called');
+      }
+    );
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 
 
 
