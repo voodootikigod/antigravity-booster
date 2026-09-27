@@ -57,6 +57,28 @@ test('validatePlan: catches missing repo/gate, dup ids, bad edges, cycles, unrou
   assert.ok(errs.some((e) => /no model candidates for tier 'cheap' with pool_hint 'claude'/.test(e)));
 });
 
+test('validatePlan: handles malformed edge entries gracefully without throwing', () => {
+  const errs = validatePlan({
+    repo: '/r',
+    gate: { test: 'npm test' },
+    tickets: [
+      { id: 'T1', title: 'a', body: 'x', scope: ['a/**'], edges: [null, { to: 123 }, { invalid: true }] },
+      { id: 'T2', title: 'b', body: 'x', scope: ['b/**'] },
+    ],
+  });
+  assert.ok(errs.length > 0);
+  assert.ok(errs.some((e) => /edge must declare a valid 'to' field/.test(e)));
+
+  // Test planEdges with null / malformed edges
+  const edges = planEdges([
+    { id: 'T1', edges: [null, undefined, { to: null }, { to: 'T2' }] },
+    { id: 'T2' },
+  ]);
+  assert.equal(edges.length, 1);
+  assert.equal(edges[0].from.id, 'T1');
+  assert.equal(edges[0].to.id, 'T2');
+});
+
 test('validatePlan: rejects invalid scope and rail pathspecs', () => {
   const badScope = validatePlan({
     repo: '/r', gate: { test: 'npm test' },

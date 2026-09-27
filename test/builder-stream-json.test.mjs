@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, chmodSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -991,6 +991,166 @@ test('runAgy builder: forwards spawn env to attestation verification on Windows'
     rmSync(homeDir, { recursive: true, force: true });
   }
 });
+
+test('runAgy builder: bwrap containment mounts external gitdir and alternates read-write and read-only', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-git-wt-'));
+  const extGitDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-extgit-'));
+  const altDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-altobjects-'));
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+
+    // Configure .git pointer file in worktree
+    writeFileSync(join(dir, '.git'), `gitdir: ${extGitDir}\n`);
+
+    // Configure alternates file in external gitdir
+    mkdirSync(join(extGitDir, 'objects', 'info'), { recursive: true });
+    writeFileSync(join(extGitDir, 'objects', 'info', 'alternates'), `${altDir}\n`);
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+
+    let realExtGitDir;
+    try { realExtGitDir = realpathSync(extGitDir); } catch { realExtGitDir = extGitDir; }
+    let realAltDir;
+    try { realAltDir = realpathSync(altDir); } catch { realAltDir = altDir; }
+
+    // extGitDir must be bound read-write (--bind)
+    const extGitIdx = spawnedArgs.indexOf(realExtGitDir);
+    assert.ok(extGitIdx >= 2, 'external gitdir must be in spawnargs');
+    assert.equal(spawnedArgs[extGitIdx - 1], '--bind', 'external gitdir must be mounted --bind (read-write)');
+
+    // altDir must be bound read-only (--ro-bind)
+    const altIdx = spawnedArgs.indexOf(realAltDir);
+    assert.ok(altIdx >= 2, 'alternates dir must be in spawnargs');
+    assert.equal(spawnedArgs[altIdx - 1], '--ro-bind', 'alternates dir must be mounted --ro-bind (read-only)');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(extGitDir, { recursive: true, force: true });
+    rmSync(altDir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: bwrap containment launches resolved executable when agyBin is a bare command name', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bare-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bin-'));
+  const fakeBareAgy = join(binDir, 'custom-bare-agy');
+  writeFileSync(fakeBareAgy, '#!/bin/sh\nexit 0\n');
+  chmodSync(fakeBareAgy, 0o755);
+
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+  const savedPath = process.env.PATH;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+    process.env.PATH = `${binDir}:${process.env.PATH || ''}`;
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: dir,
+      bin: 'custom-bare-agy',
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+    const dashDashIdx = spawnedArgs.indexOf('--');
+    assert.ok(dashDashIdx !== -1, 'bwrap arguments must include -- separator');
+    const launchedBin = spawnedArgs[dashDashIdx + 1];
+    let realFakeBareAgy;
+    try { realFakeBareAgy = realpathSync(fakeBareAgy); } catch { realFakeBareAgy = fakeBareAgy; }
+    assert.equal(launchedBin, realFakeBareAgy, 'bwrap must launch the resolved binary path, not bare name');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    if (savedPath === undefined) delete process.env.PATH;
+    else process.env.PATH = savedPath;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: seatbelt containment profile includes external gitdir and alternates rules on darwin', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-seatbelt-git-'));
+  const extGitDir = mkdtempSync(join(tmpdir(), 'agb-seatbelt-extgit-'));
+  const altDir = mkdtempSync(join(tmpdir(), 'agb-seatbelt-alt-'));
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'seatbelt';
+
+    writeFileSync(join(dir, '.git'), `gitdir: ${extGitDir}\n`);
+    mkdirSync(join(extGitDir, 'objects', 'info'), { recursive: true });
+    writeFileSync(join(extGitDir, 'objects', 'info', 'alternates'), `${altDir}\n`);
+
+    let capturedArgs = null;
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1',
+      cwd: dir,
+      bin: FAKE_AGY,
+      role: 'builder',
+      platform: 'darwin',
+      sandbox: true,
+      containment: true,
+      onSpawn: (p) => {
+        capturedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(capturedArgs, 'must have attempted to spawn');
+    assert.equal(capturedArgs[1], '-p');
+    const profile = capturedArgs[2];
+
+    let realExtGitDir;
+    try { realExtGitDir = realpathSync(extGitDir); } catch { realExtGitDir = extGitDir; }
+    let realAltDir;
+    try { realAltDir = realpathSync(altDir); } catch { realAltDir = altDir; }
+
+    assert.ok(profile.includes(`(allow file-read* (subpath "${realExtGitDir}"))`), 'profile must allow reading external gitdir');
+    assert.ok(profile.includes(`(allow file-write* (subpath "${realExtGitDir}"))`), 'profile must allow writing external gitdir');
+    assert.ok(profile.includes(`(allow file-read* (subpath "${realAltDir}"))`), 'profile must allow reading alternates');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(extGitDir, { recursive: true, force: true });
+    rmSync(altDir, { recursive: true, force: true });
+  }
+});
+
 
 
 
