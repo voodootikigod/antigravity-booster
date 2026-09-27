@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { ticketFilename } from '@adlc/tickets';
 
 import { runPlan } from '../lib/scheduler.mjs';
+import { reapIntegrationWorktrees } from '../lib/worktrees.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_scheduler_test.json');
 
@@ -851,5 +852,41 @@ test('runPlan: fails closed when candidate deletes package.json while baseline r
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('runPlan: cleans up per-attempt Git databases on ticket completion', async () => {
+  const repo = makeRepo();
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'cheap' }],
+      }, quiet)
+    );
+
+    assert.equal(report.merged.length, 1);
+    const attemptGitDir = join(repo, '.worktrees', '.attempt_git', 'agb-t1');
+    assert.equal(existsSync(attemptGitDir), false, 'per-attempt git directory must be cleaned up on merge');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('reapIntegrationWorktrees: removes orphaned per-attempt Git databases', () => {
+  const repo = makeRepo();
+  try {
+    const orphanedAttemptDir = join(repo, '.worktrees', '.attempt_git', 'agb-dangling');
+    mkdirSync(orphanedAttemptDir, { recursive: true });
+    assert.ok(existsSync(orphanedAttemptDir));
+
+    reapIntegrationWorktrees(repo);
+
+    assert.equal(existsSync(orphanedAttemptDir), false, 'orphaned attempt_git directory must be reaped');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 
 

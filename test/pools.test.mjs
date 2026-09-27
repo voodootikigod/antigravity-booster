@@ -21,7 +21,10 @@ import {
   BASE_CAPS,
   writeSharedState,
   readSharedState,
+  isProcessAlive,
+  getProcessStartTime,
 } from '../lib/pools.mjs';
+import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -406,6 +409,71 @@ test('drainPools: terminates unsettled active leases and registerLeaseWorkerPid 
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('drainPools: terminates owning orchestrator process when active lease has no workerPid', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-drain-orch-'));
+  const origQuota = process.env.AGB_QUOTA_STATE;
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+
+  // Spawn a dummy process to simulate a separate orchestrator
+  const dummyOrch = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+  });
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(tmp, 'agb_pools_shared.json');
+    process.env.AGB_POOLS_V2 = join(tmp, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_LOCK = join(tmp, 'agb_pools_shared.lock');
+
+    const v2 = {
+      generation: 1,
+      status: 'ACTIVE',
+      pools: {
+        gemini: { baseCap: 12, scaledCap: 12, inFlight: 1, reserved: 0 },
+        claude_gpt: { baseCap: 4, scaledCap: 4, inFlight: 0, reserved: 0 },
+      },
+      leases: {
+        'lease-orch-1': {
+          leaseId: 'lease-orch-1',
+          ownerToken: 'tok-1',
+          repo: tmp,
+          orchestratorPid: dummyOrch.pid,
+          orchestratorStartTime: getProcessStartTime(dummyOrch.pid),
+          workerPid: null,
+          workerStartTime: null,
+          ticketId: 't-orch-1',
+          pool: 'gemini',
+          modelPool: 'gemini-flash',
+          createdAtMs: Date.now(),
+          heartbeatMs: Date.now(),
+          leaseExpiryMs: Date.now() + 60000,
+          state: 'ACTIVE',
+        },
+      },
+    };
+    writeV2State(v2);
+
+    assert.equal(isProcessAlive(dummyOrch.pid), true);
+
+    const res = await drainPools(tmp, { gracePeriodMs: 50 });
+    assert.ok(res.ok);
+
+    // Wait a brief moment for SIGTERM/SIGKILL delivery
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(isProcessAlive(dummyOrch.pid), false, 'dummy orchestrator process must be terminated by drainPools');
+
+    const afterV2 = readV2State();
+    assert.equal(afterV2.leases['lease-orch-1'].state, 'TERMINATED');
+  } finally {
+    try { dummyOrch.kill('SIGKILL'); } catch {}
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 
 test('drainPools and reconcileLeases: cleans up fallback heartbeat files under /tmp/agb_fallback_leases', async () => {
   const tmp = mkdtempSync(join(tmpdir(), 'agb-test-fallback-drain-'));
