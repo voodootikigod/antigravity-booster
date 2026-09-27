@@ -671,3 +671,109 @@ test('runAgy builder: bwrap containment mounts root read-only with explicit read
   }
 });
 
+test('runAgy builder: bwrap containment isolates network and masks credentials', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-net-test-'));
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agb-fake-home-'));
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+  const savedHome = process.env.AGB_HOME_DIR;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+    process.env.AGB_HOME_DIR = fakeHome;
+
+    mkdirSync(join(fakeHome, '.ssh'), { recursive: true });
+    mkdirSync(join(fakeHome, '.aws'), { recursive: true });
+    writeFileSync(join(fakeHome, '.netrc'), 'machine example.com login user password secret\n');
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+    assert.ok(spawnedArgs.includes('--unshare-net'), 'bwrap must isolate network via --unshare-net');
+    assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount root read-only');
+    assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and /tmp read-write');
+
+    const sshIndex = spawnedArgs.indexOf(join(fakeHome, '.ssh'));
+    assert.ok(sshIndex > 0 && spawnedArgs[sshIndex - 1] === '--tmpfs', 'sensitive ~/.ssh dir must be masked via --tmpfs');
+    const awsIndex = spawnedArgs.indexOf(join(fakeHome, '.aws'));
+    assert.ok(awsIndex > 0 && spawnedArgs[awsIndex - 1] === '--tmpfs', 'sensitive ~/.aws dir must be masked via --tmpfs');
+    const netrcIndex = spawnedArgs.indexOf(join(fakeHome, '.netrc'));
+    assert.ok(netrcIndex > 0 && spawnedArgs[netrcIndex - 1] === '/dev/null' && spawnedArgs[netrcIndex - 2] === '--ro-bind', 'sensitive ~/.netrc file must be masked via --ro-bind /dev/null');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    if (savedHome === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHome;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('runAgy non-builder: preserves unlisted custom environment variables unless sanitizeEnv is set', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-env-pres-'));
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-env-state-pres-'));
+  const savedState = process.env.FAKE_STATE_DIR;
+  const savedRec = process.env.FAKE_RECORD_ENV;
+  const savedCustom = process.env.MY_CUSTOM_TEST_VAR;
+
+  try {
+    process.env.FAKE_STATE_DIR = stateDir;
+    process.env.FAKE_RECORD_ENV = '1';
+    process.env.MY_CUSTOM_TEST_VAR = 'custom_inherited_val';
+
+    const res1 = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Review diff',
+      cwd: dir,
+      bin: FAKE_AGY,
+      role: 'prosecutor',
+      env: {
+        MY_SPECIAL_TOOL_SETTING: 'active_123',
+      },
+    });
+    assert.equal(res1.ok, true);
+    const captured1 = readFileSync(join(stateDir, 'full-env'), 'utf8');
+    assert.ok(captured1.includes('MY_CUSTOM_TEST_VAR=custom_inherited_val'), 'inherited custom var must be preserved');
+    assert.ok(captured1.includes('MY_SPECIAL_TOOL_SETTING=active_123'), 'passed custom env var must be preserved');
+
+    const res2 = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Review diff',
+      cwd: dir,
+      bin: FAKE_AGY,
+      role: 'prosecutor',
+      sanitizeEnv: true,
+      env: {
+        MY_SPECIAL_TOOL_SETTING: 'active_123',
+      },
+    });
+    assert.equal(res2.ok, true);
+    const captured2 = readFileSync(join(stateDir, 'full-env'), 'utf8');
+    assert.equal(captured2.includes('MY_CUSTOM_TEST_VAR'), false, 'inherited custom var must be scrubbed when sanitizeEnv: true');
+    assert.equal(captured2.includes('MY_SPECIAL_TOOL_SETTING'), false, 'passed custom var must be scrubbed when sanitizeEnv: true');
+  } finally {
+    if (savedState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = savedState;
+    if (savedRec === undefined) delete process.env.FAKE_RECORD_ENV; else process.env.FAKE_RECORD_ENV = savedRec;
+    if (savedCustom === undefined) delete process.env.MY_CUSTOM_TEST_VAR; else process.env.MY_CUSTOM_TEST_VAR = savedCustom;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+
