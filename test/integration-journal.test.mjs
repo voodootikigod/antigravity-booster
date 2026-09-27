@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -361,5 +361,51 @@ test('Integration Journal: anti-no-op baseline diff check rejects zero-change co
     assert.equal(g('rev-parse', 'HEAD'), headBefore);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Integration Journal: rejects symlinked .adlc directory during journaling and reconciliation', async () => {
+  const repo = makeTestRepo();
+  const evilTarget = mkdtempSync(join(tmpdir(), 'agb-evil-target-'));
+  try {
+    rmSync(join(repo, '.adlc'), { recursive: true, force: true });
+    symlinkSync(evilTarget, join(repo, '.adlc'));
+
+    const data = {
+      ticketId: 'T1',
+      transactionToken: 'token-1234',
+      preMergeSha: 'abc1234',
+      candidateSha: 'def5678',
+      phase: JOURNAL_PHASES.PREPARED,
+      timestamp: Date.now(),
+    };
+
+    assert.throws(
+      () => writeIntegrationJournal(repo, data),
+      /Security error: .adlc directory in .* is a symbolic link/
+    );
+
+    assert.throws(
+      () => readIntegrationJournal(repo),
+      /Security error: .adlc directory in .* is a symbolic link/
+    );
+
+    assert.throws(
+      () => quarantineIntegrationJournal(repo),
+      /Security error: .adlc directory in .* is a symbolic link/
+    );
+
+    assert.throws(
+      () => unlinkIntegrationJournal(repo),
+      /Security error: .adlc directory in .* is a symbolic link/
+    );
+
+    await assert.rejects(
+      () => reconcileIntegrationJournal(repo, 'main'),
+      /Security error: .adlc directory in .* is a symbolic link/
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(evilTarget, { recursive: true, force: true });
   }
 });

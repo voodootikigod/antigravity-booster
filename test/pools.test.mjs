@@ -932,3 +932,42 @@ test('PoolSet: await release() ensures durable lease state is TERMINATED before 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('PoolSet: circuit breaker trips and immediately aborts queued requests in saturated pools', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-cb-waiters-'));
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 1 }, { repo });
+
+    const rel1 = await pools.acquire('gemini-3.8-flash-low', { repo });
+    assert.equal(pools.inFlight['gemini-flash'], 1);
+
+    let secondAcquired = false;
+    let secondError = null;
+    const secondPromise = pools.acquire('gemini-3.8-flash-low', { repo })
+      .then(() => { secondAcquired = true; })
+      .catch((err) => { secondError = err; });
+
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(pools.waiters['gemini-flash'].length, 1);
+    assert.equal(secondAcquired, false);
+
+    pools.recordQuotaFailure();
+    assert.equal(pools.circuitBreakerTripped, true);
+
+    await secondPromise;
+    assert.equal(secondAcquired, false);
+    assert.ok(secondError, 'queued request must be rejected');
+    assert.equal(secondError.kind, 'circuit_breaker_tripped');
+    assert.match(secondError.message, /Quota circuit breaker is tripped/);
+    assert.equal(pools.waiters['gemini-flash'].length, 0);
+
+    await rel1();
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+

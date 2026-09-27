@@ -683,7 +683,11 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
 
     mkdirSync(join(fakeHome, '.ssh'), { recursive: true });
     mkdirSync(join(fakeHome, '.aws'), { recursive: true });
+    mkdirSync(join(fakeHome, '.config'), { recursive: true });
+    mkdirSync(join(fakeHome, '.gemini'), { recursive: true });
     writeFileSync(join(fakeHome, '.netrc'), 'machine example.com login user password secret\n');
+    writeFileSync(join(fakeHome, '.npmrc'), '//registry.npmjs.org/:_authToken=secret-npm-token\n');
+    writeFileSync(join(fakeHome, '.pypirc'), '[pypi]\npassword = secret-pypi-token\n');
 
     let spawnedArgs = null;
     let spawnedBin = null;
@@ -709,12 +713,22 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
     assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount root read-only');
     assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and /tmp read-write');
 
+    const homeIndex = spawnedArgs.indexOf(fakeHome);
+    assert.ok(homeIndex > 0 && spawnedArgs[homeIndex - 1] === '--tmpfs', 'host home directory must be masked via --tmpfs');
     const sshIndex = spawnedArgs.indexOf(join(fakeHome, '.ssh'));
     assert.ok(sshIndex > 0 && spawnedArgs[sshIndex - 1] === '--tmpfs', 'sensitive ~/.ssh dir must be masked via --tmpfs');
     const awsIndex = spawnedArgs.indexOf(join(fakeHome, '.aws'));
     assert.ok(awsIndex > 0 && spawnedArgs[awsIndex - 1] === '--tmpfs', 'sensitive ~/.aws dir must be masked via --tmpfs');
+    const configIndex = spawnedArgs.indexOf(join(fakeHome, '.config'));
+    assert.ok(configIndex > 0 && spawnedArgs[configIndex - 1] === '--tmpfs', 'sensitive ~/.config dir must be masked via --tmpfs');
+    const geminiIndex = spawnedArgs.indexOf(join(fakeHome, '.gemini'));
+    assert.ok(geminiIndex > 0 && spawnedArgs[geminiIndex - 1] === '--tmpfs', 'sensitive ~/.gemini dir must be masked via --tmpfs');
     const netrcIndex = spawnedArgs.indexOf(join(fakeHome, '.netrc'));
     assert.ok(netrcIndex > 0 && spawnedArgs[netrcIndex - 1] === '/dev/null' && spawnedArgs[netrcIndex - 2] === '--ro-bind', 'sensitive ~/.netrc file must be masked via --ro-bind /dev/null');
+    const npmrcIndex = spawnedArgs.indexOf(join(fakeHome, '.npmrc'));
+    assert.ok(npmrcIndex > 0 && spawnedArgs[npmrcIndex - 1] === '/dev/null' && spawnedArgs[npmrcIndex - 2] === '--ro-bind', 'sensitive ~/.npmrc file must be masked via --ro-bind /dev/null');
+    const pypircIndex = spawnedArgs.indexOf(join(fakeHome, '.pypirc'));
+    assert.ok(pypircIndex > 0 && spawnedArgs[pypircIndex - 1] === '/dev/null' && spawnedArgs[pypircIndex - 2] === '--ro-bind', 'sensitive ~/.pypirc file must be masked via --ro-bind /dev/null');
   } finally {
     if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
     else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
