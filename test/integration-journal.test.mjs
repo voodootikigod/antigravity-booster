@@ -235,6 +235,10 @@ test('Integration Journal: startup crash recovery across all 4 phases', async ()
     assert.equal(res5.status, 'clean');
     assert.equal(res5.phase, JOURNAL_PHASES.FINALIZED);
     assert.equal(readIntegrationJournal(repo).exists, false);
+
+    // Verify all transaction marker refs were cleaned up
+    const lingering = g('for-each-ref', '--format=%(refname)', 'refs/transactions');
+    assert.equal(lingering, '', 'no transaction marker refs should linger');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

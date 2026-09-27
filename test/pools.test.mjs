@@ -1046,4 +1046,48 @@ test('withLock and withLockSync: reclaims orphaned lock when PID was reused with
   }
 });
 
+test('syncSharedState & writeSharedState: preserves v2Mirror marker so concurrent v2 coordinator does not throw LegacyFleetActiveError', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-v2mirror-test-'));
+  const savedState = process.env.AGB_QUOTA_STATE;
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
+
+  try {
+    const sharedFile = join(dir, 'shared.json');
+    const v2File = join(dir, 'v2.json');
+    const lockFile = join(dir, 'shared.lock');
+    process.env.AGB_QUOTA_STATE = sharedFile;
+    process.env.AGB_POOLS_V2 = v2File;
+    process.env.AGB_POOLS_LOCK = lockFile;
+
+    // Simulate coordinator 1 (PID 11111) with inFlight work and v2Mirror
+    writeFileSync(sharedFile, JSON.stringify({
+      '11111': { ts: Date.now(), inFlight: { 'gemini-flash': 2, 'gemini-pro': 0, claude: 0, 'gpt-oss': 0 }, v2Mirror: true },
+    }), 'utf8');
+
+    // Current coordinator calls syncSharedState via PoolSet
+    const pools = new PoolSet({ 'gemini-flash': 4 });
+    pools.inFlight['gemini-flash'] = 1;
+    pools.syncSharedState();
+
+    // Verify shared state preserves v2Mirror for current process
+    const shared = readSharedState();
+    assert.equal(shared[process.pid]?.v2Mirror, true, 'syncSharedState must set v2Mirror: true');
+
+    // Simulate writeSharedState update without stripping v2Mirror
+    writeSharedState({ ts: Date.now(), inFlight: pools.inFlight, requests: 5 });
+    const sharedAfter = readSharedState();
+    assert.equal(sharedAfter[process.pid]?.v2Mirror, true, 'writeSharedState must preserve v2Mirror: true');
+
+    // Calling assertNoActiveLegacyFleet should pass without throwing LegacyFleetActiveError
+    assert.doesNotThrow(() => assertNoActiveLegacyFleet());
+  } finally {
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = savedState;
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 
