@@ -62,7 +62,7 @@ for arg in "$@"; do
   fi
   prev="$arg"
 done
-if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
+if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "--help" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
   prompt=$(cat)
 fi
 
@@ -122,9 +122,27 @@ if [ "$1" = "--version" ]; then
   exit 0
 fi
 
+if [ "$1" = "--help" ]; then
+  cat <<EOF
+Usage of agy:
+  --effort                        Reasoning effort for the current CLI session (low|medium|high|max)
+  --json-schema                   Optional JSON schema string or path to a schema file
+  --output-format                 Output format for print mode (text, json, stream-json)
+  --print                         Run a single prompt non-interactively
+  --print-timeout                 Optional time limit for print mode
+  --project                       Project ID or project name for the current CLI session
+  --sandbox                       Run in a sandbox with terminal restrictions enabled
+
+Available subcommands:
+  models                          List available models
+  plugin                          Manage plugins
+EOF
+  exit 0
+fi
+
 if [ "$1" = "models" ]; then
-  echo "gemini-flash"
-  echo "claude"
+  echo "gemini-3.8-flash-high"
+  echo "claude-sonnet-4-6"
   exit 0
 fi
 

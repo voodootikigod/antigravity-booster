@@ -51,6 +51,7 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
 test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
   const out = execFileSync('node', [AUDIT_SCRIPT], {
     cwd: join(import.meta.dirname, '..'),
+    env: { ...process.env, AGB_AGY_BIN: FAKE_AGY },
     encoding: 'utf8',
   });
 
@@ -93,6 +94,7 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   const p1 = new Promise((resolve, reject) => {
     const child = spawn('node', [AUDIT_SCRIPT], {
       cwd: join(import.meta.dirname, '..'),
+      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -107,6 +109,7 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   const p2 = new Promise((resolve, reject) => {
     const child = spawn('node', [AUDIT_SCRIPT], {
       cwd: join(import.meta.dirname, '..'),
+      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -131,3 +134,66 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
     }
   }
 });
+
+test('Modernize Skill: audit.mjs fails closed if agy probe exits with nonzero status', () => {
+  const tempBinDir = makeTempDir('agb-bad-agy-bin-');
+  const badAgy = join(tempBinDir, 'bad-agy');
+  writeFileSync(badAgy, '#!/bin/sh\necho "agy version 1.2.8"\nexit 1\n', { mode: 0o755 });
+
+  try {
+    assert.throws(
+      () => {
+        execFileSync('node', [AUDIT_SCRIPT], {
+          cwd: join(import.meta.dirname, '..'),
+          env: { ...process.env, AGB_AGY_BIN: badAgy },
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      },
+      (err) => {
+        const msg = String(err.stderr || err.stdout || err.message);
+        return msg.includes('probe failed') || msg.includes('FAILED');
+      }
+    );
+  } finally {
+    rmSync(tempBinDir, { recursive: true, force: true });
+  }
+});
+
+test('Modernize Skill: audit.mjs fails closed if required agy flags are missing', () => {
+  const tempBinDir = makeTempDir('agb-missing-flags-bin-');
+  const incompleteAgy = join(tempBinDir, 'agy');
+  writeFileSync(
+    incompleteAgy,
+    `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "agy version 1.2.8"; exit 0; fi
+if [ "$1" = "models" ]; then echo "gemini-flash"; exit 0; fi
+if [ "$1" = "--help" ]; then
+  echo "Usage: agy --output-format stream-json --json-schema --sandbox"
+  exit 0
+fi
+exit 0
+`,
+    { mode: 0o755 }
+  );
+
+  try {
+    assert.throws(
+      () => {
+        execFileSync('node', [AUDIT_SCRIPT], {
+          cwd: join(import.meta.dirname, '..'),
+          env: { ...process.env, AGB_AGY_BIN: incompleteAgy },
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      },
+      (err) => {
+        const msg = String(err.stderr || err.stdout || err.message);
+        return msg.includes('--print-timeout') || msg.includes('FAILED');
+      }
+    );
+  } finally {
+    rmSync(tempBinDir, { recursive: true, force: true });
+  }
+});
+

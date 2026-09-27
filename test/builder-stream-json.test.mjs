@@ -466,7 +466,8 @@ test('runAgy stream-json: delayed tree-kill timer is cleared after child exit', 
 
 test('runAgy builder: sanitizes sensitive keys and tokens from child environment', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-env-test-'));
-  const stateDir = mkdtempSync(join(tmpdir(), 'agb-env-state-'));
+  const stateDir = join(dir, 'agb-env-state');
+  mkdirSync(stateDir, { recursive: true });
   const savedKey = process.env.ADLC_MANIFEST_KEY;
   const savedToken = process.env.CUSTOM_NPM_TOKEN;
   const savedSecret = process.env.AGB_SECRET_KEY;
@@ -515,7 +516,6 @@ test('runAgy builder: sanitizes sensitive keys and tokens from child environment
     if (savedState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = savedState;
     if (savedRec === undefined) delete process.env.FAKE_RECORD_ENV; else process.env.FAKE_RECORD_ENV = savedRec;
     rmSync(dir, { recursive: true, force: true });
-    rmSync(stateDir, { recursive: true, force: true });
   }
 });
 
@@ -709,26 +709,13 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
     });
 
     assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
-    assert.ok(spawnedArgs.includes('--unshare-net'), 'bwrap must isolate network via --unshare-net');
-    assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount root read-only');
-    assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and /tmp read-write');
+    assert.equal(spawnedArgs.includes('--unshare-net'), false, 'bwrap must not isolate network from agy model transport');
+    assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount approved system paths read-only');
+    assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and private /tmp read-write');
+    assert.equal(spawnedArgs.includes(fakeHome), false, 'host home directory must not be mounted into bwrap');
 
     const agyIndex = spawnedArgs.indexOf(FAKE_AGY);
     assert.ok(agyIndex > 0 && spawnedArgs[agyIndex - 1] === '--ro-bind', 'agy binary must be preserved via --ro-bind');
-    const sshIndex = spawnedArgs.indexOf(join(fakeHome, '.ssh'));
-    assert.ok(sshIndex > 0 && spawnedArgs[sshIndex - 1] === '--tmpfs', 'sensitive ~/.ssh dir must be masked via --tmpfs');
-    const awsIndex = spawnedArgs.indexOf(join(fakeHome, '.aws'));
-    assert.ok(awsIndex > 0 && spawnedArgs[awsIndex - 1] === '--tmpfs', 'sensitive ~/.aws dir must be masked via --tmpfs');
-    const configIndex = spawnedArgs.indexOf(join(fakeHome, '.config'));
-    assert.ok(configIndex > 0 && spawnedArgs[configIndex - 1] === '--tmpfs', 'sensitive ~/.config dir must be masked via --tmpfs');
-    const geminiIndex = spawnedArgs.indexOf(join(fakeHome, '.gemini'));
-    assert.ok(geminiIndex > 0 && spawnedArgs[geminiIndex - 1] === '--tmpfs', 'sensitive ~/.gemini dir must be masked via --tmpfs');
-    const netrcIndex = spawnedArgs.indexOf(join(fakeHome, '.netrc'));
-    assert.ok(netrcIndex > 0 && spawnedArgs[netrcIndex - 1] === '/dev/null' && spawnedArgs[netrcIndex - 2] === '--ro-bind', 'sensitive ~/.netrc file must be masked via --ro-bind /dev/null');
-    const npmrcIndex = spawnedArgs.indexOf(join(fakeHome, '.npmrc'));
-    assert.ok(npmrcIndex > 0 && spawnedArgs[npmrcIndex - 1] === '/dev/null' && spawnedArgs[npmrcIndex - 2] === '--ro-bind', 'sensitive ~/.npmrc file must be masked via --ro-bind /dev/null');
-    const pypircIndex = spawnedArgs.indexOf(join(fakeHome, '.pypirc'));
-    assert.ok(pypircIndex > 0 && spawnedArgs[pypircIndex - 1] === '/dev/null' && spawnedArgs[pypircIndex - 2] === '--ro-bind', 'sensitive ~/.pypirc file must be masked via --ro-bind /dev/null');
   } finally {
     if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
     else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
@@ -789,5 +776,78 @@ test('runAgy non-builder: preserves unlisted custom environment variables unless
     rmSync(stateDir, { recursive: true, force: true });
   }
 });
+
+test('runAgy builder: rejects fallback containment mechanisms as insufficient', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-fallback-cont-'));
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    for (const mech of ['cgroups_v2_scope', 'pid_namespace']) {
+      process.env.AGB_MOCK_CONTAINMENT_MECHANISM = mech;
+      const res = await runAgy({
+        model: 'gemini-flash',
+        prompt: 'Ticket T1 TICKET-DONE',
+        cwd: dir,
+        bin: FAKE_AGY,
+        outputFormat: 'stream-json',
+        role: 'builder',
+        sandbox: true,
+        containment: true,
+        platform: 'linux',
+      });
+      assert.equal(res.ok, false);
+      assert.equal(res.kind, 'containment_unavailable');
+      assert.match(res.error, /provides insufficient filesystem isolation/);
+    }
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: scrubs XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS host IPC endpoints', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-ipc-scrub-'));
+  const stateDir = join(dir, 'agb-ipc-state');
+  mkdirSync(stateDir, { recursive: true });
+  const savedState = process.env.FAKE_STATE_DIR;
+  const savedRec = process.env.FAKE_RECORD_ENV;
+  const savedXdg = process.env.XDG_RUNTIME_DIR;
+  const savedDbus = process.env.DBUS_SESSION_BUS_ADDRESS;
+
+  try {
+    process.env.FAKE_STATE_DIR = stateDir;
+    process.env.FAKE_RECORD_ENV = '1';
+    process.env.XDG_RUNTIME_DIR = '/run/user/1000';
+    process.env.DBUS_SESSION_BUS_ADDRESS = 'unix:path=/run/user/1000/bus';
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: true,
+      env: {
+        XDG_RUNTIME_DIR: '/run/user/1000',
+        DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus',
+      },
+    });
+
+    assert.equal(res.ok, true);
+    const captured = readFileSync(join(stateDir, 'full-env'), 'utf8');
+    assert.equal(captured.includes('XDG_RUNTIME_DIR'), false, 'XDG_RUNTIME_DIR must be scrubbed');
+    assert.equal(captured.includes('DBUS_SESSION_BUS_ADDRESS'), false, 'DBUS_SESSION_BUS_ADDRESS must be scrubbed');
+  } finally {
+    if (savedState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = savedState;
+    if (savedRec === undefined) delete process.env.FAKE_RECORD_ENV; else process.env.FAKE_RECORD_ENV = savedRec;
+    if (savedXdg === undefined) delete process.env.XDG_RUNTIME_DIR; else process.env.XDG_RUNTIME_DIR = savedXdg;
+    if (savedDbus === undefined) delete process.env.DBUS_SESSION_BUS_ADDRESS; else process.env.DBUS_SESSION_BUS_ADDRESS = savedDbus;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 

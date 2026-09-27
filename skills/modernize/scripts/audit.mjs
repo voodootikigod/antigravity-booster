@@ -201,6 +201,14 @@ function getValidatedAdlcDir() {
   return adlcDir;
 }
 
+// Helper: Anchor file operations inside .adlc directly to retained directory descriptor where supported
+function adlcFilePath(dir, fileName) {
+  if (adlcDirFd !== null && process.platform === 'linux' && fs.existsSync(`/proc/self/fd/${adlcDirFd}`)) {
+    return `/proc/self/fd/${adlcDirFd}/${fileName}`;
+  }
+  return path.join(dir, fileName);
+}
+
 // Helper: Continuous re-validation of .adlc containment immediately before every operation
 function assertAdlcContained(adlcDir) {
   const repoRoot = path.resolve('.');
@@ -281,7 +289,7 @@ function isProcessAlive(pid, recordedStartTime = null) {
 // Helper: Cross-platform atomic file lock on .adlc/modernize_provenance.lock with continuous containment re-validation
 function withProvenanceLock(adlcDir, fn) {
   assertAdlcContained(adlcDir);
-  const lockPath = path.join(adlcDir, 'modernize_provenance.lock');
+  const lockPath = adlcFilePath(adlcDir, 'modernize_provenance.lock');
   const timeoutMs = 45000;
   const startTime = Date.now();
   const ownerToken = `${process.pid}:${crypto.randomUUID()}:${Date.now()}`;
@@ -319,7 +327,7 @@ function withProvenanceLock(adlcDir, fn) {
           // Stale reclamation: NEVER unlink a lock whose owner process is positively confirmed alive
           if (!alive) {
             // Atomic reclamation protocol: synchronize stale lock unlinking to prevent clobbering newly acquired locks
-            const reclaimLockPath = path.join(adlcDir, 'modernize_provenance_reclaim.lock');
+            const reclaimLockPath = adlcFilePath(adlcDir, 'modernize_provenance_reclaim.lock');
             let reclaimFd = null;
             try {
               reclaimFd = fs.openSync(reclaimLockPath, fs.constants.O_CREAT | fs.constants.O_EXCL | NO_FOLLOW, 0o600);
@@ -399,22 +407,46 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
 
   const agyBin = process.env.AGB_AGY_BIN || 'agy';
 
+  const stage1Errors = [];
+
   try {
     const res = cp.spawnSync(agyBin, ['--version'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
-    agyVersion = ((res.stdout || '') + (res.stderr || '')).trim();
+    if (res.error || res.status !== 0 || res.signal) {
+      agyVersion = 'unavailable';
+      stage1Errors.push(`agy --version probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
+    } else {
+      agyVersion = ((res.stdout || '') + (res.stderr || '')).trim();
+      if (!agyVersion) {
+        agyVersion = 'unavailable';
+        stage1Errors.push('agy --version probe returned empty output');
+      }
+    }
   } catch (e) {
     agyVersion = 'unavailable';
+    stage1Errors.push(`agy --version threw error: ${e.message}`);
   }
 
   try {
     const res = cp.spawnSync(agyBin, ['--help'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
-    agyHelpText = (res.stdout || '') + (res.stderr || '');
-  } catch (_) {}
+    if (res.error || res.status !== 0 || res.signal) {
+      stage1Errors.push(`agy --help probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
+    } else {
+      agyHelpText = (res.stdout || '') + (res.stderr || '');
+    }
+  } catch (e) {
+    stage1Errors.push(`agy --help threw error: ${e.message}`);
+  }
 
   try {
     const res = cp.spawnSync(agyBin, ['models'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
-    agyModelsText = (res.stdout || '') + (res.stderr || '');
-  } catch (_) {}
+    if (res.error || res.status !== 0 || res.signal) {
+      stage1Errors.push(`agy models probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
+    } else {
+      agyModelsText = (res.stdout || '') + (res.stderr || '');
+    }
+  } catch (e) {
+    stage1Errors.push(`agy models threw error: ${e.message}`);
+  }
 
   // Authenticate project-local @adlc/cli without invoking unpinned npx or unauthenticated PATH
   const repoRoot = path.resolve('.');
@@ -452,7 +484,6 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
     if (agyModelsText.includes(m)) modelsIdentified.push(m);
   }
 
-  const stage1Errors = [];
   if (!agyVersion || agyVersion === 'unavailable') {
     stage1Errors.push('Google Antigravity CLI (agy) is not available or failed to execute');
   }
@@ -465,13 +496,22 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   if (!flagsSupported.sandbox) {
     stage1Errors.push('Installed agy CLI does not support --sandbox flag');
   }
+  if (!flagsSupported.printTimeout) {
+    stage1Errors.push('Installed agy CLI does not support --print-timeout flag');
+  }
+  if (!flagsSupported.project) {
+    stage1Errors.push('Installed agy CLI does not support --project flag');
+  }
+  if (!flagsSupported.effort) {
+    stage1Errors.push('Installed agy CLI does not support --effort flag');
+  }
 
   const passed = stage1Errors.length === 0;
 
   console.log(`[agb-modernize] [Stage 1] Probed agy CLI: ${agyVersion} (target: ${targetAgyVer})`);
   console.log(`[agb-modernize] [Stage 1] Probed adlc CLI: ${adlcVersion} (target: ${targetAdlcVer})`);
   console.log(`[agb-modernize] [Stage 1] Available flagship models identified: ${modelsIdentified.length} verified`);
-  console.log(`[agb-modernize] [Stage 1] Key CLI flags verified: --output-format stream-json (${flagsSupported.outputFormatStreamJson}), --json-schema (${flagsSupported.jsonSchema}), --sandbox (${flagsSupported.sandbox})`);
+  console.log(`[agb-modernize] [Stage 1] Key CLI flags verified: --output-format stream-json (${flagsSupported.outputFormatStreamJson}), --json-schema (${flagsSupported.jsonSchema}), --sandbox (${flagsSupported.sandbox}), --print-timeout (${flagsSupported.printTimeout}), --project (${flagsSupported.project}), --effort (${flagsSupported.effort})`);
 
   if (!passed) {
     console.error(`[agb-modernize] [Stage 1] FAILED: ${stage1Errors.join('; ')}`);
@@ -908,7 +948,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
     const MAX_TOTAL_QUARANTINES = 3;
     const MAX_TOTAL_STORAGE_BYTES = 25 * 1024 * 1024; // 25 MB
 
-    const ledgerPath = path.join(adlcDir, 'modernize_provenance.jsonl');
+    const ledgerPath = adlcFilePath(adlcDir, 'modernize_provenance.jsonl');
     let existingLines = [];
 
     assertAdlcContained(adlcDir);
@@ -931,7 +971,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
       }
       if (corrupted) {
         console.warn('[agb-modernize] Detected corrupted lines in provenance ledger. Quarantining...');
-        const quarantinePath = path.join(adlcDir, `modernize_provenance_corrupt_${Date.now()}.jsonl`);
+        const quarantinePath = adlcFilePath(adlcDir, `modernize_provenance_corrupt_${Date.now()}.jsonl`);
         fs.writeFileSync(quarantinePath, raw, { mode: 0o600 });
       }
     }
@@ -940,7 +980,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
     const ledgerBytes = existingLines.reduce((acc, l) => acc + Buffer.byteLength(l, 'utf8') + 1, 0);
     if (existingLines.length >= MAX_ACTIVE_ENTRIES || ledgerBytes >= MAX_ACTIVE_BYTES) {
       console.log(`[agb-modernize] Rotating provenance ledger (${existingLines.length} entries, ${ledgerBytes} bytes)...`);
-      const archivePath = path.join(adlcDir, `modernize_provenance_archive_${Date.now()}.jsonl`);
+      const archivePath = adlcFilePath(adlcDir, `modernize_provenance_archive_${Date.now()}.jsonl`);
       fs.writeFileSync(archivePath, existingLines.join('\n') + '\n', { mode: 0o600 });
       existingLines = existingLines.slice(-RETAIN_ENTRIES);
     }
@@ -948,7 +988,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
     // Storage budget pruning across all archives and quarantines
     assertAdlcContained(adlcDir);
     const allFiles = fs.readdirSync(adlcDir).map(name => {
-      const full = path.join(adlcDir, name);
+      const full = adlcFilePath(adlcDir, name);
       try {
         const s = fs.lstatSync(full);
         return { name, full, size: s.size, mtimeMs: s.mtimeMs, isFile: s.isFile() };
@@ -1012,7 +1052,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
 
     // Atomic 4-phase crash-durable write
     assertAdlcContained(adlcDir);
-    const tempPath = path.join(adlcDir, `provenance_tmp_${Date.now()}_${process.pid}.jsonl`);
+    const tempPath = adlcFilePath(adlcDir, `provenance_tmp_${Date.now()}_${process.pid}.jsonl`);
     const tempFd = fs.openSync(tempPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | NO_FOLLOW, 0o600);
     try {
       const buf = Buffer.from(content, 'utf8');

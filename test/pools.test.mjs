@@ -23,6 +23,7 @@ import {
   readSharedState,
   isProcessAlive,
   getProcessStartTime,
+  withLockSync,
 } from '../lib/pools.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
@@ -970,4 +971,30 @@ test('PoolSet: circuit breaker trips and immediately aborts queued requests in s
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('withLockSync: does not reclaim active lock solely due to age when owner PID is alive, but reclaims when dead', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-lock-reclaim-test-'));
+  const lockFile = join(dir, 'test.lock');
+
+  try {
+    // 1. Write lock with alive PID (current process) but timestamp 60s ago
+    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, token: 'alive-token', ts: Date.now() - 60000 }), 'utf8');
+
+    // Trying to acquire lock with short timeout should fail because owner is still alive
+    assert.throws(
+      () => withLockSync(lockFile, () => 'should_not_run', { timeoutMs: 100, retryMs: 20 }),
+      /Timeout acquiring lock/
+    );
+
+    // 2. Write lock with dead PID (9999999) and timestamp 60s ago
+    writeFileSync(lockFile, JSON.stringify({ pid: 9999999, token: 'dead-token', ts: Date.now() - 60000 }), 'utf8');
+
+    // Should succeed because owner PID is dead and lock is reclaimed
+    const result = withLockSync(lockFile, () => 'reclaimed_success', { timeoutMs: 200, retryMs: 20 });
+    assert.equal(result, 'reclaimed_success');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
