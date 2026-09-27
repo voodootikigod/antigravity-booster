@@ -23,6 +23,7 @@ import {
   readSharedState,
   isProcessAlive,
   getProcessStartTime,
+  withLock,
   withLockSync,
 } from '../lib/pools.mjs';
 import { spawn } from 'node:child_process';
@@ -992,6 +993,54 @@ test('withLockSync: does not reclaim active lock solely due to age when owner PI
     // Should succeed because owner PID is dead and lock is reclaimed
     const result = withLockSync(lockFile, () => 'reclaimed_success', { timeoutMs: 200, retryMs: 20 });
     assert.equal(result, 'reclaimed_success');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('withLock (async): does not reclaim active lock solely due to age when owner PID is alive, but reclaims when dead', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-async-lock-test-'));
+  const lockFile = join(dir, 'test.lock');
+
+  try {
+    const myStart = getProcessStartTime(process.pid);
+    // 1. Write lock with alive PID and matching start time, but ts 60s ago
+    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startTime: myStart, token: 'alive-token', ts: Date.now() - 60000 }), 'utf8');
+
+    // Async acquisition must fail/timeout because owner is still alive
+    await assert.rejects(
+      async () => withLock(lockFile, async () => 'should_not_run', { timeoutMs: 100, retryMs: 20 }),
+      /Timeout acquiring lock/
+    );
+
+    // 2. Write lock with dead PID
+    writeFileSync(lockFile, JSON.stringify({ pid: 9999999, token: 'dead-token', ts: Date.now() - 60000 }), 'utf8');
+
+    const result = await withLock(lockFile, async () => 'async_reclaimed_success', { timeoutMs: 200, retryMs: 20 });
+    assert.equal(result, 'async_reclaimed_success');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('withLock and withLockSync: reclaims orphaned lock when PID was reused with mismatched start time', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-pid-reuse-lock-test-'));
+  const lockFile = join(dir, 'test.lock');
+
+  try {
+    // Write lock with current PID but fake ancient start time representing prior dead process
+    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startTime: 'bogus_old_start_time_99999', token: 'reused-token', ts: Date.now() - 1000 }), 'utf8');
+
+    // withLockSync should detect start time mismatch, consider owner dead, and reclaim lock
+    const syncRes = withLockSync(lockFile, () => 'sync_reused_reclaimed', { timeoutMs: 200, retryMs: 20 });
+    assert.equal(syncRes, 'sync_reused_reclaimed');
+
+    // Write lock again with current PID and bogus start time
+    writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startTime: 'bogus_old_start_time_88888', token: 'reused-token-2', ts: Date.now() - 1000 }), 'utf8');
+
+    // withLock (async) should also detect start time mismatch and reclaim
+    const asyncRes = await withLock(lockFile, async () => 'async_reused_reclaimed', { timeoutMs: 200, retryMs: 20 });
+    assert.equal(asyncRes, 'async_reused_reclaimed');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

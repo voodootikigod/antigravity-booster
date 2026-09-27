@@ -849,5 +849,38 @@ test('runAgy builder: scrubs XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS host I
   }
 });
 
+test('runAgy builder: on win32 under job_object, fails closed when Windows sandbox is unverified and no bypass attestation', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-win-builder-fail-'));
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+  const savedProbe = process.env.AGB_SANDBOX_PROBE_CMD;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'job_object';
+    process.env.AGB_SANDBOX_PROBE_CMD = 'echo';
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      platform: 'win32',
+    });
+
+    assert.equal(res.ok, false);
+    assert.equal(res.kind, 'containment_unavailable');
+    assert.match(res.error, /Active Windows AppContainer sandbox verification failed/);
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    if (savedProbe === undefined) delete process.env.AGB_SANDBOX_PROBE_CMD;
+    else process.env.AGB_SANDBOX_PROBE_CMD = savedProbe;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 
 
