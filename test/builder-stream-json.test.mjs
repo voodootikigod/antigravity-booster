@@ -688,6 +688,8 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
     writeFileSync(join(fakeHome, '.netrc'), 'machine example.com login user password secret\n');
     writeFileSync(join(fakeHome, '.npmrc'), '//registry.npmjs.org/:_authToken=secret-npm-token\n');
     writeFileSync(join(fakeHome, '.pypirc'), '[pypi]\npassword = secret-pypi-token\n');
+    writeFileSync(join(dir, '.npmrc'), '//registry.npmjs.org/:_authToken=project-npm-token\n');
+    writeFileSync(join(dir, '.pypirc'), '[pypi]\npassword = project-pypi-token\n');
 
     let spawnedArgs = null;
     let spawnedBin = null;
@@ -713,6 +715,11 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
     assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount approved system paths read-only');
     assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and private /tmp read-write');
     assert.equal(spawnedArgs.includes(fakeHome), false, 'host home directory must not be mounted into bwrap');
+
+    const npmrcIdx = spawnedArgs.indexOf(join(dir, '.npmrc'));
+    assert.ok(npmrcIdx >= 2 && spawnedArgs[npmrcIdx - 2] === '--ro-bind' && spawnedArgs[npmrcIdx - 1] === '/dev/null', 'worktree .npmrc must be masked with /dev/null');
+    const pypircIdx = spawnedArgs.indexOf(join(dir, '.pypirc'));
+    assert.ok(pypircIdx >= 2 && spawnedArgs[pypircIdx - 2] === '--ro-bind' && spawnedArgs[pypircIdx - 1] === '/dev/null', 'worktree .pypirc must be masked with /dev/null');
 
     const agyIndex = spawnedArgs.indexOf(FAKE_AGY);
     assert.ok(agyIndex > 0 && spawnedArgs[agyIndex - 1] === '--ro-bind', 'agy binary must be preserved via --ro-bind');
@@ -880,6 +887,111 @@ test('runAgy builder: on win32 under job_object, fails closed when Windows sandb
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('runAgy builder: denies .npmrc and .pypirc in seatbelt profile on darwin', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-seatbelt-test-'));
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'seatbelt';
+    let capturedArgs = null;
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1',
+      cwd: dir,
+      bin: FAKE_AGY,
+      role: 'builder',
+      platform: 'darwin',
+      sandbox: true,
+      containment: true,
+      onSpawn: (p) => {
+        capturedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(capturedArgs, 'must have attempted to spawn');
+    assert.equal(capturedArgs[1], '-p');
+    const profile = capturedArgs[2];
+    assert.ok(profile.includes('(deny file-read* (subpath "'), 'seatbelt profile must have deny directives');
+    assert.ok(profile.includes('.npmrc'), 'seatbelt profile must deny .npmrc');
+    assert.ok(profile.includes('.pypirc'), 'seatbelt profile must deny .pypirc');
+    assert.ok(profile.includes('.netrc'), 'seatbelt profile must deny .netrc');
+    assert.ok(profile.includes('.git-credentials'), 'seatbelt profile must deny .git-credentials');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('verifySandboxBypassAttestation: honors custom env without requiring process.env', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const adminKey = 'custom-env-secret-key-987';
+  const platform = 'win32';
+
+  try {
+    const validAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey });
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: validAtt })
+    );
+
+    const check = verifySandboxBypassAttestation(repo, platform, {
+      env: {
+        ADLC_ADMIN_KEY: adminKey,
+        AGB_HOME_DIR: homeDir,
+      },
+    });
+    assert.equal(check.valid, true);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: forwards spawn env to attestation verification on Windows', async () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const adminKey = 'spawn-env-secret-key-456';
+  const platform = 'win32';
+
+  const savedContainment = process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE;
+  process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE = '1';
+
+  try {
+    const validAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey });
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: validAtt })
+    );
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: repo,
+      repo,
+      bin: FAKE_AGY,
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: false,
+      containment: true,
+      platform,
+      env: {
+        ADLC_ADMIN_KEY: adminKey,
+        AGB_HOME_DIR: homeDir,
+      },
+    });
+
+    assert.equal(res.ok, true);
+  } finally {
+    if (savedContainment === undefined) delete process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE;
+    else process.env.AGB_MOCK_CONTAINMENT_UNAVAILABLE = savedContainment;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
 
 
 
