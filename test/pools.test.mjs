@@ -1089,5 +1089,38 @@ test('syncSharedState & writeSharedState: preserves v2Mirror marker so concurren
   }
 });
 
+test('Lease liveness: detects orchestrator PID reuse with mismatched start time across isLeaseActive and reconcileLeases', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-orch-pid-reuse-'));
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
+
+  try {
+    process.env.AGB_POOLS_V2 = join(dir, 'v2.json');
+    process.env.AGB_POOLS_LOCK = join(dir, 'shared.lock');
+
+    // Acquire a lease with current orchestrator
+    const lease = await acquireLease(dir, { pool: 'gemini-flash', ticketId: 'T1' });
+
+    // Mutate the lease in v2 state to have a bogus orchestrator start time (simulating PID reuse)
+    const v2 = readV2State();
+    v2.leases[lease.leaseId].orchestratorStartTime = 'ancient_bogus_orch_start_12345';
+    writeV2State(v2);
+
+    // 1. isLeaseActive must return false because orchestrator start time does not match current process
+    const active = isLeaseActive(dir, lease.leaseId, lease.ownerToken);
+    assert.equal(active, false, 'isLeaseActive must reject recycled orchestrator PID');
+
+    // 2. reconcileLeases must reclaim the lease
+    await reconcileLeases(dir);
+    const v2After = readV2State();
+    assert.equal(v2After.leases[lease.leaseId].state, 'RECLAIMED', 'reconcileLeases must reclaim recycled orchestrator lease');
+  } finally {
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 
 

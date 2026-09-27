@@ -958,6 +958,52 @@ test('runPlan: reclassifies post-dispatch quota failures without consuming a str
   }
 });
 
+test('runPlan: does not bypass strike accounting when unrelated pool is paused but active pool has capacity', async () => {
+  const repo = makeRepo();
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 2, 'claude': 0 }, { repo });
+
+    // Simulate quota where Claude is paused, making pools.quota.paused true globally,
+    // but Gemini has full capacity.
+    pools.quota = {
+      gemini: { scaledCap: 4, effectivePercent: 100 },
+      claude_gpt: { scaledCap: 0, effectivePercent: 0 },
+      paused: true,
+      depletionCause: 'claude_exhausted',
+      resumesAt: '2029-01-01T00:00:00Z',
+    };
+    pools.caps['gemini-flash'] = 2;
+    pools.caps['claude'] = 0;
+
+    pools.refreshQuota = async () => ({
+      ok: true,
+      quota: pools.quota,
+    });
+
+    await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'flail-then-good', AGB_SANDBOX_GATES: '0' },
+      async () => {
+        const report = await runPlan({
+          repo,
+          gate: { test: 'true' },
+          tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'cheap' }],
+          pools,
+        }, quiet);
+
+        // Flail detection or strike accounting must take effect; ticket must fail rather than infinite-looping on quota pause
+        assert.equal(report.merged.length, 0);
+        assert.ok('T1' in report.failed, 'ticket must fail via strike/flail accounting');
+      }
+    );
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+
 
 
 
