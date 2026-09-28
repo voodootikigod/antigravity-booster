@@ -78,6 +78,20 @@ test('checkSandbox: linux fails if bwrap is missing', async () => {
   }
 });
 
+test('checkSandbox: linux fails if bwrap is present but fails usability probe (namespaces restricted)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-unusable-bwrap-test-'));
+  try {
+    writeFileSync(join(dir, 'bwrap'), '#!/bin/sh\necho "bwrap: No permissions to create new namespace" >&2\nexit 1');
+    chmodSync(join(dir, 'bwrap'), 0o755);
+    const res = await checkSandbox({ env: { PATH: dir }, platform: 'linux' });
+    assert.equal(res.level, 'fail');
+    assert.ok(res.detail.includes('bwrap unusable'));
+    assert.ok(res.fix.includes('user namespaces'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkBrainDir: passes when dir exists', async () => {
   const d = join(tmpdir(), 'agb-test-brain');
   mkdirSync(d, { recursive: true });
