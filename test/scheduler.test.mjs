@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync, lstatSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ticketFilename } from '@adlc/tickets';
 
-import { runPlan, safeWriteWorktreeFile } from '../lib/scheduler.mjs';
+import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/scheduler.mjs';
 import { reapIntegrationWorktrees, resetToBase, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 
@@ -1111,5 +1111,29 @@ test('runPlan: aborts fleet on root integrity violation, marks remaining tickets
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('terminateProcessTree: kills child and all descendant processes in process group', async () => {
+  // Spawn a detached leader that spawns a sleep subprocess
+  const leader = spawn(
+    process.execPath,
+    ['-e', 'const { spawn } = require("child_process"); const sub = spawn("sleep", ["60"], { stdio: "ignore" }); sub.unref(); setTimeout(() => {}, 60000);'],
+    { detached: process.platform !== 'win32', stdio: 'ignore' }
+  );
+  assert.ok(leader.pid);
+  // Wait brief moment for leader to start
+  await new Promise((r) => setTimeout(r, 100));
+
+  terminateProcessTree(leader, 'SIGKILL');
+
+  // Verify leader is dead
+  await new Promise((r) => setTimeout(r, 150));
+  let leaderAlive = false;
+  try {
+    process.kill(leader.pid, 0);
+    leaderAlive = true;
+  } catch {}
+  assert.equal(leaderAlive, false, 'leader process must be terminated');
+});
+
 
 

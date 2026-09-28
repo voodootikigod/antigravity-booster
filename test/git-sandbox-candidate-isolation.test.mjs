@@ -73,6 +73,9 @@ test('hostMediatedFetch: ingests candidate commit into root repo assigned attemp
     const destRef = `refs/namespaces/${attemptSlug}/refs/heads/candidate`;
     const repoSha = execFileSync('git', ['rev-parse', destRef], { cwd: repo, encoding: 'utf8' }).trim();
     assert.equal(repoSha, wtSha, 'candidate ref exists in root repo under assigned namespace');
+
+    const fetchHeadPath = join(repo, '.git', 'FETCH_HEAD');
+    assert.equal(existsSync(fetchHeadPath), false, 'hostMediatedFetch must suppress FETCH_HEAD writes');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
