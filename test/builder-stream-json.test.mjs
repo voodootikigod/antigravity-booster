@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, chmodSync, realpathSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, chmodSync, realpathSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +10,7 @@ import {
   runAgy,
   checkKernelContainment,
   verifySandboxBypassAttestation,
+  isAllowedEnvVar,
   MAX_STREAM_LINE_BYTES,
   MAX_STREAM_TOTAL_BYTES,
   MAX_CONSECUTIVE_GARBAGE_BYTES,
@@ -856,6 +857,55 @@ test('runAgy builder: scrubs XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS host I
   }
 });
 
+test('runAgy builder: scrubs inherited GIT_DIR and GIT_WORK_TREE redirection variables', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-git-scrub-'));
+  const stateDir = join(dir, 'agb-git-state');
+  mkdirSync(stateDir, { recursive: true });
+  const savedState = process.env.FAKE_STATE_DIR;
+  const savedRec = process.env.FAKE_RECORD_ENV;
+  const savedGitDir = process.env.GIT_DIR;
+  const savedGitWt = process.env.GIT_WORK_TREE;
+
+  try {
+    process.env.FAKE_STATE_DIR = stateDir;
+    process.env.FAKE_RECORD_ENV = '1';
+    process.env.GIT_DIR = '/external/repo/.git';
+    process.env.GIT_WORK_TREE = '/external/repo';
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE or TICKET-BLOCKED',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      project: 'test-proj',
+      role: 'builder',
+      sandbox: true,
+      env: {
+        GIT_DIR: '/external/repo/.git',
+        GIT_WORK_TREE: '/external/repo',
+      },
+    });
+
+    assert.equal(res.ok, true);
+    const captured = readFileSync(join(stateDir, 'full-env'), 'utf8');
+    assert.equal(captured.includes('GIT_DIR='), false, 'GIT_DIR must be scrubbed');
+    assert.equal(captured.includes('GIT_WORK_TREE='), false, 'GIT_WORK_TREE must be scrubbed');
+  } finally {
+    if (savedState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = savedState;
+    if (savedRec === undefined) delete process.env.FAKE_RECORD_ENV; else process.env.FAKE_RECORD_ENV = savedRec;
+    if (savedGitDir === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = savedGitDir;
+    if (savedGitWt === undefined) delete process.env.GIT_WORK_TREE; else process.env.GIT_WORK_TREE = savedGitWt;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('isAllowedEnvVar: rejects GIT_DIR and GIT_WORK_TREE', () => {
+  assert.equal(isAllowedEnvVar('GIT_DIR'), false);
+  assert.equal(isAllowedEnvVar('GIT_WORK_TREE'), false);
+  assert.equal(isAllowedEnvVar('GIT_CEILING_DIRECTORIES'), true);
+});
+
 test('runAgy builder: on win32 under job_object, fails closed when Windows sandbox is unverified and no bypass attestation', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-win-builder-fail-'));
   const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
@@ -1218,7 +1268,51 @@ test('runAgy builder: bwrap containment mounts physical worktree node_modules re
   }
 });
 
+test('runAgy builder: bwrap containment rejects untrusted node_modules symlinks outside approved roots', async () => {
+  const repoDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-approved-repo-'));
+  const wtDir = join(repoDir, 'worktree');
+  mkdirSync(wtDir, { recursive: true });
 
+  const outsideDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-outside-secret-'));
+  const evilSymlink = join(wtDir, 'node_modules');
+  symlinkSync(outsideDir, evilSymlink, 'dir');
+
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: wtDir,
+      repo: repoDir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+
+    const realOutside = realpathSync(outsideDir);
+    assert.equal(spawnedArgs.includes(realOutside), false, 'untrusted symlink outside dependency root must not be mounted into bwrap');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
 
 test('runAgy builder: bwrap containment launches resolved executable when agyBin is a bare command name', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bare-'));
