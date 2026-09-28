@@ -1494,3 +1494,116 @@ test('drainPools: terminates active legacy processes and blocks coordinators wit
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('assertNoActiveLegacyFleet: live legacy worker remains blocked even if timestamp is older than 60s', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-legacy-ttl-test-'));
+  const savedState = process.env.AGB_QUOTA_STATE;
+
+  const dummyLegacy = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+  });
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(dir, 'test_quota.json');
+    const legacyFile = getStateFile();
+
+    // Timestamp is older than 60s, but process is still alive and has inFlight > 0
+    writeFileSync(legacyFile, JSON.stringify({
+      activeSchemaVersion: 1,
+      inFlight: { gemini: 1 },
+      [dummyLegacy.pid]: { inFlight: { gemini: 1 }, ts: Date.now() - 120000, startTime: getProcessStartTime(dummyLegacy.pid) },
+    }), 'utf8');
+
+    assert.equal(isProcessAlive(dummyLegacy.pid), true);
+    assert.throws(() => assertNoActiveLegacyFleet(), /LegacyFleetActiveError/);
+  } finally {
+    try { dummyLegacy.kill('SIGKILL'); } catch {}
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE;
+    else process.env.AGB_QUOTA_STATE = savedState;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeV2State: clears stale v2Mirror entries when leases terminate', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-v2mirror-cleanup-test-'));
+  const savedState = process.env.AGB_QUOTA_STATE;
+  try {
+    process.env.AGB_QUOTA_STATE = join(dir, 'test_quota.json');
+    const legacyFile = getStateFile();
+
+    // Pre-populate shared legacy file with a stale v2Mirror from a previous lease run
+    writeFileSync(legacyFile, JSON.stringify({
+      activeSchemaVersion: 1,
+      '99999': { ts: Date.now(), inFlight: { 'gemini-flash': 2 }, v2Mirror: true },
+      '88888': { ts: Date.now(), inFlight: { gemini: 1 } }, // real legacy entry
+    }), 'utf8');
+
+    // Call writeV2State with no active leases for 99999
+    const v2 = {
+      schemaVersion: 2,
+      generation: 1,
+      status: 'ACTIVE',
+      pools: { gemini: { inFlight: 0, reserved: 0 }, claude_gpt: { inFlight: 0, reserved: 0 } },
+      leases: {},
+    };
+    writeV2State(v2);
+
+    const updated = JSON.parse(readFileSync(legacyFile, 'utf8'));
+    // Stale v2Mirror 99999 must have been stripped
+    assert.equal(updated['99999'], undefined, 'stale v2Mirror entry must be removed');
+    // Real legacy entry 88888 must be preserved
+    assert.ok(updated['88888'], 'non-mirror legacy entry must be preserved');
+  } finally {
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE;
+    else process.env.AGB_QUOTA_STATE = savedState;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('drainPools: rechecks PID identity and does not signal target if PID exited before signal loop', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-drain-pid-reuse-test-'));
+  const savedState = process.env.AGB_QUOTA_STATE;
+  const savedV2 = process.env.AGB_POOLS_V2;
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(dir, 'test_quota.json');
+    process.env.AGB_POOLS_V2 = join(dir, 'test_quota_v2.json');
+
+    // Dummy process that exits immediately
+    const shortLived = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
+    await new Promise((r) => shortLived.on('exit', r));
+
+    // Seed v2 state with this dead PID as an active lease orchestrator
+    const v2State = {
+      schemaVersion: 2,
+      generation: 1,
+      status: 'ACTIVE',
+      pools: { gemini: { inFlight: 1, reserved: 0 }, claude_gpt: { inFlight: 0, reserved: 0 } },
+      leases: {
+        'lease-dead': {
+          id: 'lease-dead',
+          state: 'ACTIVE',
+          pool: 'gemini',
+          modelPool: 'gemini-flash',
+          orchestratorPid: shortLived.pid,
+          orchestratorStartTime: 12345678, // stale start time
+          leaseExpiryMs: Date.now() + 60000,
+        },
+      },
+    };
+    writeFileSync(process.env.AGB_POOLS_V2, JSON.stringify(v2State), 'utf8');
+
+    // drainPools should handle this cleanly without throwing or crashing
+    const res = await drainPools(dir, { gracePeriodMs: 50 });
+    assert.equal(res.ok, true);
+    const finalV2 = readV2State();
+    assert.equal(finalV2.leases['lease-dead'].state, 'RECLAIMED');
+  } finally {
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE;
+    else process.env.AGB_QUOTA_STATE = savedState;
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2;
+    else process.env.AGB_POOLS_V2 = savedV2;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+

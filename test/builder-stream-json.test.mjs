@@ -1123,6 +1123,59 @@ test('runAgy builder: bwrap containment mounts external gitdir and alternates re
   }
 });
 
+test('runAgy builder: bwrap containment mounts project node_modules read-only into worktree', async () => {
+  const parentDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-parent-'));
+  const wtDir = join(parentDir, 'worktree');
+  mkdirSync(wtDir, { recursive: true });
+  const nmDir = join(parentDir, 'node_modules');
+  mkdirSync(nmDir, { recursive: true });
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: wtDir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+
+    const realNm = realpathSync(nmDir);
+    const expectedLocalNm = join(realpathSync(wtDir), 'node_modules');
+
+    // realNm must be mounted read-only
+    const realNmIdx = spawnedArgs.indexOf(realNm);
+    assert.ok(realNmIdx >= 2, 'parent node_modules must be mounted');
+    assert.equal(spawnedArgs[realNmIdx - 1], '--ro-bind', 'parent node_modules must be mounted --ro-bind');
+
+    // worktree node_modules mount target must be mounted read-only
+    const localNmIdx = spawnedArgs.indexOf(expectedLocalNm);
+    assert.ok(localNmIdx >= 2, 'worktree node_modules must be mounted');
+    assert.equal(spawnedArgs[localNmIdx - 1], realNm, 'worktree node_modules source must be parent node_modules');
+    assert.equal(spawnedArgs[localNmIdx - 2], '--ro-bind', 'worktree node_modules destination must be mounted --ro-bind');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(parentDir, { recursive: true, force: true });
+  }
+});
+
+
 test('runAgy builder: bwrap containment launches resolved executable when agyBin is a bare command name', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bare-'));
   const binDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bin-'));
