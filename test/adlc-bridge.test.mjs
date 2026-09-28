@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -338,6 +338,29 @@ test('writeAdlcTickets: recovers an orphaned store dir (created, manifest never 
     assert.deepEqual(loaded.map((t) => t.id), ['T1']);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('writeAdlcTickets: unlinks dangling symlinked .store.json during recovery and does not write through it', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  const victimDir = mkdtempSync(join(tmpdir(), 'agb-bridge-victim-'));
+  try {
+    const victim = join(victimDir, 'escaped.json');
+    const storeDir = join(repo, '.adlc', 'tickets');
+    mkdirSync(storeDir, { recursive: true });
+    // Plant dangling symlink at .store.json pointing outside repo
+    symlinkSync(victim, join(storeDir, '.store.json'));
+
+    const path = writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]);
+    assert.equal(existsSync(victim), false, 'dangling symlink target must not be created outside repository');
+    const manifestPath = join(path, '.store.json');
+    assert.equal(lstatSync(manifestPath).isSymbolicLink(), false, 'manifest must be a regular file, not a symlink');
+    const { tickets: loaded, errors } = loadTickets(join(repo, '.adlc', 'tickets.json'));
+    assert.deepEqual(errors, []);
+    assert.deepEqual(loaded.map((t) => t.id), ['T1']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(victimDir, { recursive: true, force: true });
   }
 });
 
@@ -1013,15 +1036,43 @@ test('preventExecutableReplacement: does not mutate persistent permissions and p
       assert.equal((subStat.mode & 0o200) !== 0, true, 'sub directory write bit must not be stripped');
       const binStat = statSync(fakeBin);
       assert.equal((binStat.mode & 0o200) !== 0, true, 'fakeBin write bit must not be stripped');
+
+      // Pinned copy is write-locked (0o500)
+      if (seal.pinnedPath) {
+        const pinnedStat = statSync(seal.pinnedPath);
+        assert.equal((pinnedStat.mode & 0o222) === 0, true, 'pinned binary must be write-locked');
+      }
     } finally {
       seal.release();
     }
 
-    // After release, permissions must still remain intact (no manual fix needed for subsequent installs)
+    // After release, permissions must be restored (crash-safe and install-ready)
     const pkgStatAfter = statSync(pkgDir);
-    assert.equal((pkgStatAfter.mode & 0o200) !== 0, true, 'pkgDir write bit must remain intact after release');
+    assert.equal((pkgStatAfter.mode & 0o200) !== 0, true, 'pkgDir write bit must be restored after release');
+    const subStatAfter = statSync(sub);
+    assert.equal((subStatAfter.mode & 0o200) !== 0, true, 'sub directory write bit must be restored after release');
+
+    // Test stale lock recovery from an ungraceful crash (dead PID)
+    const locksDir = join(tmpdir(), 'agb_adlc_locks');
+    mkdirSync(locksDir, { recursive: true, mode: 0o700 });
+    chmodSync(pkgDir, 0o555); // simulate left read-only by crash
+    const fakeLockFile = join(locksDir, `9999999_testlock.json`);
+    writeFileSync(fakeLockFile, JSON.stringify({
+      pid: 9999999, // dead PID
+      startTime: 'dead-start-time',
+      ts: Date.now() - 1000,
+      paths: [{ path: pkgDir, origMode: 0o755 }],
+    }));
+
+    const recovered = recoverStaleExecutableLocks(locksDir);
+    assert.ok(recovered >= 1, 'stale lock must be recovered');
+    assert.equal(existsSync(fakeLockFile), false, 'stale lock file must be removed');
+    const pkgStatRecovered = statSync(pkgDir);
+    assert.equal((pkgStatRecovered.mode & 0o200) !== 0, true, 'pkgDir write bit must be recovered from stale lock');
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    try { chmodSync(root, 0o755); } catch {}
+    try { chmodSync(sub, 0o755); } catch {}
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
   }
 });
 
@@ -1087,6 +1138,30 @@ test('revalidateAdlcBinary: seals executable when binaryPath is omitted', () => 
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('preventExecutableReplacement: pins standalone binary executables and resolveExecutionCommand executes pinned path', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-pinned-bin-test-'));
+  try {
+    const fakeBin = join(root, 'adlc-native');
+    writeFileSync(fakeBin, '#!/bin/sh\necho "native adlc"\n');
+    chmodSync(fakeBin, 0o755);
+
+    const seal = preventExecutableReplacement(fakeBin);
+    try {
+      assert.ok(seal.pinnedPath !== null, 'seal must create a pinned binary path for standalone binaries');
+      assert.ok(existsSync(seal.pinnedPath), 'pinned binary file must exist');
+      const pinnedStat = statSync(seal.pinnedPath);
+      assert.equal((pinnedStat.mode & 0o222) === 0, true, 'pinned binary must be read-only (immutable)');
+
+      const cmd = resolveExecutionCommand({ seal, target: fakeBin, binary: fakeBin }, ['--version']);
+      assert.equal(cmd.command, seal.pinnedPath, 'resolveExecutionCommand must execute the pinned path');
+    } finally {
+      seal.release();
+    }
+  } finally {
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
   }
 });
 

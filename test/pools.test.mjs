@@ -1713,4 +1713,37 @@ test('drainPools: does not signal legacy PID when record lacks startTime identit
   }
 });
 
+test('withLockSync and withLock: do not retry callback errors with code EEXIST as lock contention', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-lock-cb-err-'));
+  const lockFile = join(dir, 'test.lock');
+
+  try {
+    let syncCalls = 0;
+    assert.throws(
+      () => withLockSync(lockFile, () => {
+        syncCalls++;
+        const err = new Error('simulated callback EEXIST');
+        err.code = 'EEXIST';
+        throw err;
+      }, { timeoutMs: 50, retryMs: 2 }),
+      (err) => err.message === 'simulated callback EEXIST' && err.code === 'EEXIST'
+    );
+    assert.equal(syncCalls, 1, 'withLockSync must invoke callback exactly once without retrying on EEXIST');
+
+    let asyncCalls = 0;
+    await assert.rejects(
+      async () => await withLock(lockFile, async () => {
+        asyncCalls++;
+        const err = new Error('simulated async callback EEXIST');
+        err.code = 'EEXIST';
+        throw err;
+      }, { timeoutMs: 50, retryMs: 2 }),
+      (err) => err.message === 'simulated async callback EEXIST' && err.code === 'EEXIST'
+    );
+    assert.equal(asyncCalls, 1, 'withLock must invoke callback exactly once without retrying on EEXIST');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 

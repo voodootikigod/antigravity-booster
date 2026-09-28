@@ -248,9 +248,15 @@ test('sidecar: CLI launches server on custom port', async () => {
     
   } finally {
     clearTimeout(timer);
-    child.kill();
+    child.kill('SIGTERM');
+    await new Promise((r) => {
+      if (child.exitCode !== null) return r();
+      child.once('exit', () => r());
+      setTimeout(r, 200);
+    });
     const { rmSync } = await import('node:fs');
-    rmSync(pluginDir, { recursive: true, force: true });
+    try { rmSync(pluginDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
+    try { rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
   }
 });
 
