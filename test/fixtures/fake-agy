@@ -335,7 +335,7 @@ EOF
         if [ "$tid" = "T0" ]; then
           echo "conflict t0 line" > shared.txt
         else
-          sleep 0.2
+          sleep 0.4
           echo "conflict t1 line" > shared.txt
         fi
         if [ "$output_format" = "stream-json" ]; then

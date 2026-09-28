@@ -1300,6 +1300,40 @@ test('revalidateAdlcBinary: authenticates pinned bytes and fails closed on sourc
   }
 });
 
+test('preventExecutableReplacement: verifies transitive dependency tree digests and fails closed when dependency is tampered', () => {
+  const root = mkdtempSync(join(process.cwd(), '.test-dep-tamper-'));
+  try {
+    const cliDir = join(root, 'node_modules', '@adlc', 'cli');
+    const coreDir = join(root, 'node_modules', '@adlc', 'core');
+    mkdirSync(join(cliDir, 'bin'), { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+
+    // Copy genuine cli package
+    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    cpSync(realCliDir, cliDir, { recursive: true });
+
+    // Copy genuine core package then tamper with it
+    const realCoreDir = join(process.cwd(), 'node_modules', '@adlc', 'core');
+    cpSync(realCoreDir, coreDir, { recursive: true });
+
+    // Inject malicious modification into transitive dependency
+    writeFileSync(join(coreDir, 'malicious.js'), '// injected backdoor\n');
+
+    const targetBin = join(cliDir, 'bin', 'adlc.mjs');
+
+    assert.throws(
+      () => preventExecutableReplacement(targetBin, {
+        pkgDir: cliDir,
+        enforceKnownDigest: true,
+      }),
+      /Security violation: package tree digest mismatch for dependency @adlc\/core/
+    );
+  } finally {
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
+  }
+});
+
+
 
 
 

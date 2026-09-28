@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
 import { execFileSync, execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -635,6 +635,21 @@ test('createWorktree: rejects invalid ticket id syntax (path traversal preventio
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createWorktree: rejects symlinked .worktrees directory', () => {
+  const { dir } = makeRepo();
+  const outsideDir = mkdtempSync(join(tmpdir(), 'agb-outside-wt-'));
+  try {
+    symlinkSync(outsideDir, join(dir, '.worktrees'));
+    assert.throws(
+      () => createWorktree(dir, 'T1', 'main'),
+      /Security violation: \.worktrees directory is a symbolic link/
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   }
 });
 
