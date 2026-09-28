@@ -650,4 +650,40 @@ test('verifyWindowsSandboxAttestation: rejects symlinked attestation ledger in r
   }
 });
 
+test('verifyWindowsSandboxActive: restricts mock canary to test execution and does not delete pre-existing files', async () => {
+  const { repo } = setupMockGitRepo();
+  const importantFile = join(tmpdir(), `agb-important-doc-${crypto.randomUUID()}.txt`);
+  writeFileSync(importantFile, 'DO NOT DELETE ME');
+  try {
+    // 1. Point AGB_MOCK_WIN_CANARY to existing important file
+    await verifyWindowsSandboxActive({
+      cwd: repo,
+      env: {
+        ...process.env,
+        AGB_MOCK_WIN_CANARY: importantFile,
+      },
+    });
+
+    // Important file must not be removed
+    assert.equal(existsSync(importantFile), true, 'pre-existing file must not be deleted by canary cleanup');
+    assert.equal(readFileSync(importantFile, 'utf8'), 'DO NOT DELETE ME');
+
+    // 2. Non-test environment ignores AGB_MOCK_WIN_CANARY override completely
+    const nonTestFile = join(tmpdir(), `agb-nontest-${crypto.randomUUID()}.txt`);
+    await verifyWindowsSandboxActive({
+      cwd: repo,
+      env: {
+        ...process.env,
+        NODE_ENV: 'production',
+        AGB_MOCK_WIN_CANARY: nonTestFile,
+      },
+    });
+    assert.equal(existsSync(nonTestFile), false, 'non-test execution must not use AGB_MOCK_WIN_CANARY');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    if (existsSync(importantFile)) rmSync(importantFile, { force: true });
+  }
+});
+
+
 
