@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T00:58:59.149Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "5fdc941215e9b111845673ca407e073ffc6bca223e3af10643573d081a8ca106",
+    "ticketHash": "9622d967d23ca3e781db10b1af54ba5abf77365c2bec90a9430894718e811c22",
+    "version": 1
+  },
   "body": "Implement outputFormat stream-json with line/total byte caps and watchdog. Add kernel-enforced process containment (cgroups v2/Job Objects), isolated per-attempt git database with host-mediated ref ingestion into assigned namespaces, complete root git state integrity verification, and sanitized child environment.",
   "category": "feature",
   "completed": true,

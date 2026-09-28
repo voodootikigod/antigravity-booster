@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T00:59:10.071Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "4be563ec376509c26687e223da1741eaa845267b562eb9dae40bd1efe2dee242",
+    "ticketHash": "12df11eb6af5ff36064db9c90d4190e5efa8caa5d136b1ace686f76cd9e77910",
+    "version": 1
+  },
   "body": "Implement dedicated disposable integration worktree for isolated rebase, conflict quarantine, crash-atomic 4-phase durable rollback journal (PREPARED, GATES_PASSED, REF_ADVANCED, FINALIZED) with directory fsync and startup quarantine, 2-pass baseline test oracle gate, write-ahead finalization ordering, zero root repository mutation, and anti-no-op baseline diff gate.",
   "category": "feature",
   "completed": true,

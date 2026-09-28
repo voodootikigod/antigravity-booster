@@ -1222,8 +1222,39 @@ test('runAgy builder: seatbelt containment profile includes external gitdir and 
   }
 });
 
+test('runAgy stream-json: enforces configured timeout even when emitting continuous events', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-stream-timeout-test-'));
+  const savedGrace = process.env.AGB_KILL_GRACE_MS;
+  const fakeAgyScript = join(dir, 'fake-continuous-agy');
 
+  try {
+    process.env.AGB_KILL_GRACE_MS = '50';
 
+    writeFileSync(fakeAgyScript, `#!/bin/sh
+while true; do
+  echo '{"type":"heartbeat"}'
+  sleep 0.01
+done
+`);
+    chmodSync(fakeAgyScript, 0o755);
 
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'hello',
+      cwd: dir,
+      bin: fakeAgyScript,
+      outputFormat: 'stream-json',
+      role: 'prosecutor',
+      timeout: 50,
+    });
 
-
+    assert.equal(res.ok, false);
+    assert.equal(res.kind, 'timeout');
+    assert.equal(res.error, 'stream-timeout');
+    assert.ok(res.output.includes('timed out'));
+  } finally {
+    if (savedGrace === undefined) delete process.env.AGB_KILL_GRACE_MS;
+    else process.env.AGB_KILL_GRACE_MS = savedGrace;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

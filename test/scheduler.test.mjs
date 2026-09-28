@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'; // eslint-disable-line
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync, lstatSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { ticketFilename } from '@adlc/tickets';
 
-import { runPlan } from '../lib/scheduler.mjs';
+import { runPlan, safeWriteWorktreeFile } from '../lib/scheduler.mjs';
 import { reapIntegrationWorktrees, resetToBase, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 
@@ -1014,7 +1014,29 @@ test('runPlan: does not bypass strike accounting when unrelated pool is paused b
   }
 });
 
+test('safeWriteWorktreeFile: unlinks symlink and does not write through to target host file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-safewrite-test-'));
+  try {
+    const sensitiveFile = join(dir, 'sensitive-host-file.txt');
+    writeFileSync(sensitiveFile, 'PROTECTED CONTENT');
 
+    const symlinkPath = join(dir, '.git');
+    symlinkSync(sensitiveFile, symlinkPath);
 
+    // Call safeWriteWorktreeFile to overwrite .git
+    safeWriteWorktreeFile(symlinkPath, 'gitdir: /new/path\n');
 
+    // Verify sensitive file was NOT modified
+    const sensitiveContent = readFileSync(sensitiveFile, 'utf8');
+    assert.equal(sensitiveContent, 'PROTECTED CONTENT', 'target of symlink must not be overwritten');
+
+    // Verify symlink was replaced with a regular file
+    const st = lstatSync(symlinkPath);
+    assert.equal(st.isSymbolicLink(), false, '.git must no longer be a symlink');
+    assert.equal(st.isFile(), true, '.git must be a regular file');
+    assert.equal(readFileSync(symlinkPath, 'utf8'), 'gitdir: /new/path\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
