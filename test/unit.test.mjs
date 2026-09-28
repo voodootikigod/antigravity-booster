@@ -638,6 +638,24 @@ test('createWorktree: rejects invalid ticket id syntax (path traversal preventio
   }
 });
 
+test('commitAll: excludes .agb_home and files within it from staged commits', () => {
+  const { dir } = makeRepo();
+  try {
+    const wt = createWorktree(dir, 'T8', 'main');
+    writeFileSync(join(wt, 'valid.txt'), 'valid content\n');
+    mkdirSync(join(wt, '.agb_home', '.config'), { recursive: true });
+    writeFileSync(join(wt, '.agb_home', '.config', 'settings.json'), '{"auth":"secret"}\n');
+
+    const committed = commitAll(wt, 'T8: add valid file');
+    assert.equal(committed, true);
+
+    const changed = changedFiles(wt, 'main');
+    assert.deepEqual(changed, ['valid.txt']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () => {
   const { dir, g } = makeRepo();
   try {

@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -500,6 +500,17 @@ test('semverGte: compares prerelease identifiers following SemVer precedence', (
   assert.equal(semverGte('1.11.1-alpha', '1.11.1-beta'), false);
   assert.equal(semverGte('1.11.1-beta', '1.11.1-alpha'), true);
   assert.equal(semverGte('1.11.1-rc.1', '1.11.1-rc.1'), true);
+});
+
+test('parseSemver: rejects trailing data and malformed semver strings', () => {
+  assert.equal(parseSemver('1.11.1.attacker'), null);
+  assert.equal(parseSemver('1.11.1junk'), null);
+  assert.equal(parseSemver('1.11'), null);
+  assert.deepEqual(parseSemver('1.11.1-alpha.1'), { major: 1, minor: 11, patch: 1, prerelease: 'alpha.1', build: null });
+  assert.deepEqual(parseSemver('1.11.1+build.123'), { major: 1, minor: 11, patch: 1, prerelease: null, build: 'build.123' });
+  assert.deepEqual(parseSemver('1.11.1-rc.1+sha.abc'), { major: 1, minor: 11, patch: 1, prerelease: 'rc.1', build: 'sha.abc' });
+  assert.equal(semverGte('1.11.1.attacker', '1.11.1'), false);
+  assert.equal(semverGte('1.11.1junk', '1.11.1'), false);
 });
 
 test('authenticateAdlcPackage: validates lockfile entry, integrity, and version match', () => {
