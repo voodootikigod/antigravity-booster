@@ -622,6 +622,22 @@ test('createWorktree: reclaims a leftover branch from a prior run (no crash)', (
   }
 });
 
+test('createWorktree: rejects invalid ticket id syntax (path traversal prevention)', () => {
+  const { dir } = makeRepo();
+  try {
+    assert.throws(
+      () => createWorktree(dir, 'foo/../../bar', 'main'),
+      /invalid ticket id 'foo\/..\/..\/bar'/
+    );
+    assert.throws(
+      () => createWorktree(dir, '..', 'main'),
+      /invalid ticket id '\.\.'/
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () => {
   const { dir, g } = makeRepo();
   try {

@@ -362,6 +362,37 @@ test('runPlan: duplicate ids and unknown edge targets are rejected before touchi
   }
 });
 
+test('runPlan: invalid ticket id syntax is rejected before touching the repo', async () => {
+  const repo = makeRepo();
+  try {
+    const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
+          tickets: [
+            { id: 'foo/../../../../tmp', title: 'a', body: 'x', scope: ['a.txt'] },
+          ],
+        }, quiet)),
+      /invalid ticket id 'foo\/\.\.\/\.\.\/\.\.\/\.\.\/tmp'/
+    );
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
+          tickets: [
+            { id: '..', title: 'a', body: 'x', scope: ['a.txt'] },
+          ],
+        }, quiet)),
+      /invalid ticket id '\.\.'/
+    );
+    const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.equal(headAfter, headBefore, 'repo untouched');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: refuses to run when the repo is on a non-base branch', async () => {
   const repo = makeRepo();
   try {

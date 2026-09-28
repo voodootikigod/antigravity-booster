@@ -1288,3 +1288,82 @@ test('terminateWorkerTree: terminates active worker when dead orchestrator lease
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('withLock: atomic stale lock reclamation does not delete live lock acquired by concurrent reclaimer', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-stale-reclaim-race-'));
+  const lockFile = join(dir, 'test.lock');
+
+  try {
+    // 1. Write dead lock
+    writeFileSync(lockFile, JSON.stringify({ pid: 9999999, token: 'dead-lock-token', ts: Date.now() - 60000 }), 'utf8');
+
+    // 2. Process A reclaims and holds a new live lock
+    let lockAHeld = false;
+    let lockAFinished = false;
+    const holdLockPromise = withLock(lockFile, async () => {
+      lockAHeld = true;
+      while (!lockAFinished) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      return 'holder_a_done';
+    });
+
+    // Wait until Process A acquired lock
+    while (!lockAHeld) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
+    // Lock file is now held by Process A (our current process).
+    // Attempting to acquire the lock from another concurrent caller must timeout and NOT delete Process A's live lock.
+    await assert.rejects(
+      async () => withLock(lockFile, async () => 'should_fail', { timeoutMs: 100, retryMs: 20 }),
+      /Timeout acquiring lock/
+    );
+
+    // Verify Process A's lock is still intact and holding
+    assert.ok(existsSync(lockFile), 'lockFile must still exist');
+    const cur = JSON.parse(readFileSync(lockFile, 'utf8'));
+    assert.equal(cur.pid, process.pid);
+
+    lockAFinished = true;
+    const resA = await holdLockPromise;
+    assert.equal(resA, 'holder_a_done');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('drainPools: clears active legacy fleet state and successfully sets DRAINING without throwing LegacyFleetActiveError', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-drain-legacy-test-'));
+  const savedState = process.env.AGB_QUOTA_STATE;
+  try {
+    process.env.AGB_QUOTA_STATE = join(dir, 'test_quota.json');
+    const legacyFile = getStateFile();
+    // Seed active legacy fleet in flight
+    writeFileSync(legacyFile, JSON.stringify({
+      activeSchemaVersion: 1,
+      inFlight: { gemini: 2, claude_gpt: 1 },
+      12345: { inFlight: { gemini: 2 }, ts: Date.now() },
+    }), 'utf8');
+
+    // Before drainPools, readV2State() throws LegacyFleetActiveError
+    assert.throws(() => readV2State(), /LegacyFleetActiveError/);
+
+    // drainPools must bypass assertNoActiveLegacyFleet, clear legacy file, and succeed
+    const res = await drainPools(dir, { gracePeriodMs: 50 });
+    assert.equal(res.ok, true);
+
+    // After drainPools, legacy file is tombstoned and readV2State does not throw
+    const v2 = readV2State();
+    assert.equal(v2.status, 'ACTIVE');
+    assert.equal(v2.pools.gemini.inFlight, 0);
+
+    const legacyState = JSON.parse(readFileSync(legacyFile, 'utf8'));
+    assert.equal(legacyState.inFlight.gemini, 0);
+    assert.equal(legacyState.inFlight.claude_gpt, 0);
+  } finally {
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE;
+    else process.env.AGB_QUOTA_STATE = savedState;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

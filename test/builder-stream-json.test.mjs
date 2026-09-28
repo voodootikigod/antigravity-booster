@@ -1258,3 +1258,37 @@ done
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('runAgy: timeout of 0 or "0" does not arm the wrapper timeout timer', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-stream-zero-timeout-test-'));
+  const savedGrace = process.env.AGB_KILL_GRACE_MS;
+  const fakeAgyScript = join(dir, 'fake-quick-agy');
+
+  try {
+    process.env.AGB_KILL_GRACE_MS = '50';
+
+    writeFileSync(fakeAgyScript, `#!/bin/sh
+sleep 0.1
+echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+`);
+    chmodSync(fakeAgyScript, 0o755);
+
+    const res = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'hello',
+      cwd: dir,
+      bin: fakeAgyScript,
+      outputFormat: 'stream-json',
+      role: 'prosecutor',
+      timeout: 0,
+    });
+
+    assert.equal(res.ok, true);
+    assert.notEqual(res.kind, 'timeout');
+  } finally {
+    if (savedGrace === undefined) delete process.env.AGB_KILL_GRACE_MS;
+    else process.env.AGB_KILL_GRACE_MS = savedGrace;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
