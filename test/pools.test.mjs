@@ -30,6 +30,7 @@ import {
   withLock,
   withLockSync,
   safeWriteHeartbeatFile,
+  LEASE_TTL_MS,
 } from '../lib/pools.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
@@ -288,6 +289,63 @@ test('Lease durability: acquire, renew, reconcile, and idempotent release', asyn
 
     v2 = readV2State();
     assert.equal(v2.pools.gemini.inFlight, 0); // No counter underflow!
+  } finally {
+    if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('renewLease: rejects expired lease, stale heartbeat, or draining pool state', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-renew-expiry-'));
+  const origQuota = process.env.AGB_QUOTA_STATE;
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(tmp, 'agb_pools_shared.json');
+    process.env.AGB_POOLS_V2 = join(tmp, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_LOCK = join(tmp, 'agb_pools_shared.lock');
+
+    const { leaseId, ownerToken } = await acquireLease(tmp, {
+      pool: 'gemini',
+      ticketId: 't-renew-exp-1',
+    });
+
+    // 1. Draining pool state rejects renewal
+    let v2 = readV2State();
+    v2.status = 'DRAINING';
+    writeV2State(v2);
+
+    assert.equal(await renewLease(tmp, leaseId, ownerToken), false);
+
+    // Reset status to ACTIVE
+    v2 = readV2State();
+    v2.status = 'ACTIVE';
+    writeV2State(v2);
+
+    // 2. Expired leaseExpiryMs rejects renewal
+    v2 = readV2State();
+    v2.leases[leaseId].leaseExpiryMs = Date.now() - 1000;
+    writeV2State(v2);
+
+    assert.equal(await renewLease(tmp, leaseId, ownerToken), false);
+
+    // 3. Stale heartbeat (now - heartbeatMs >= LEASE_TTL_MS) rejects renewal
+    v2 = readV2State();
+    v2.leases[leaseId].leaseExpiryMs = Date.now() + 60000;
+    v2.leases[leaseId].heartbeatMs = Date.now() - LEASE_TTL_MS - 1000;
+    writeV2State(v2);
+
+    assert.equal(await renewLease(tmp, leaseId, ownerToken), false);
+
+    // 4. Valid active lease renews successfully
+    v2 = readV2State();
+    v2.leases[leaseId].heartbeatMs = Date.now();
+    writeV2State(v2);
+
+    assert.equal(await renewLease(tmp, leaseId, ownerToken), true);
   } finally {
     if (origQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuota;
     if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;

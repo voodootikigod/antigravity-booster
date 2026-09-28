@@ -801,6 +801,7 @@ test('revalidateAdlcBinary: succeeds on authentic binary and fails closed if tam
     assert.equal(reval1.binary, initial.binary);
 
     // Now simulate an attacker modifying the executable in the gap before spawn
+    chmodSync(initial.binary, 0o755);
     writeFileSync(initial.binary, '#!/usr/bin/env node\n// injected malicious payload\n');
 
     const reval2 = revalidateAdlcBinary(initial.binary, { repo: root });
@@ -833,6 +834,7 @@ test('revalidateAdlcBinary: detects .cmd and .bin shims, resolves package target
 
     // If underlying JS binary in @adlc/cli is tampered with:
     const targetJs = join(pkgDir, 'bin', 'adlc.mjs');
+    chmodSync(targetJs, 0o755);
     writeFileSync(targetJs, '// tampered\n');
 
     const resTampered = revalidateAdlcBinary(cmdShim, { repo: root });
@@ -860,6 +862,7 @@ test('execFileAuthenticatedAdlc: revalidates binary at execution boundary and re
     assert.ok(res.stdout);
 
     // Tamper with binary
+    chmodSync(initial.binary, 0o755);
     writeFileSync(initial.binary, '#!/usr/bin/env node\n// tampered\n');
 
     // ExecFile rejects before running
@@ -1016,6 +1019,32 @@ test('resolveAdlcBinary: custom override resolves shims in .bin to @adlc/cli pac
     assert.equal(res.ok, true, `must resolve custom shim: ${res.error}`);
     assert.equal(res.source, 'custom-override');
     assert.equal(res.version, '1.11.1');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('revalidateAdlcBinary: seals executable when binaryPath is omitted', () => {
+  const root = mkdtempSync(join(process.cwd(), '.test-reval-seal-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    cpSync(realCliDir, pkgDir, { recursive: true });
+
+    const verified = revalidateAdlcBinary(undefined, {
+      repo: root,
+      lockExecutable: true,
+      allowCustom: false,
+    });
+
+    try {
+      assert.equal(verified.ok, true, `revalidate must succeed: ${verified.error}`);
+      assert.ok(verified.seal !== null, 'seal must be instantiated when binaryPath is omitted');
+      assert.doesNotThrow(() => verified.seal.verifyUnchanged());
+    } finally {
+      verified.seal?.release();
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
