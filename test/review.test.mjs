@@ -36,3 +36,33 @@ test('reviewFleet: passes project option to runAgy', async () => {
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('reviewFleet: captures quota admission errors per lens without crashing or throwing', async () => {
+  const prevAgy = process.env.AGB_AGY_BIN;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+  const pools = {
+    quota: { raw: {}, models: {} },
+    refreshQuota: async () => ({ ok: true }),
+    acquire: async (model, opts) => {
+      if (model.includes('pro')) {
+        throw new Error('pro quota exhausted');
+      }
+      return () => {};
+    },
+  };
+  try {
+    const res = await reviewFleet({
+      diff: 'diff --git a/x b/x\n+code',
+      lenses: ['correctness', 'performance'],
+      dryRounds: 1,
+      maxRounds: 1,
+      pools,
+    });
+    assert.equal(res.converged, false);
+    assert.ok(res.errors.length > 0, 'errors must capture failed lens');
+    assert.ok(res.errors.some((e) => e.error.includes('pro quota exhausted')), 'must record quota error');
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+  }
+});
+

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, chmodSync, realpathSync, cpSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, chmodSync, realpathSync, cpSync, statSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -945,6 +945,39 @@ test('preventExecutableReplacement: locks executable fd, verifies integrity, and
     }
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('preventExecutableReplacement: detects directory replacement during execution', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-dir-repl-test-'));
+  const sub = join(root, 'bin');
+  mkdirSync(sub);
+  try {
+    const fakeBin = join(sub, 'adlc.mjs');
+    writeFileSync(fakeBin, '#!/usr/bin/env node\nconsole.log("hello");\n');
+    chmodSync(fakeBin, 0o755);
+
+    const seal = preventExecutableReplacement(fakeBin);
+    try {
+      assert.doesNotThrow(() => seal.verifyUnchanged());
+
+      // If directory is unlocked and replaced with another inode, verifyUnchanged must throw
+      chmodSync(root, 0o755);
+      const sub2 = join(root, 'bin2');
+      mkdirSync(sub2);
+      renameSync(sub, join(root, 'bin_old'));
+      renameSync(sub2, sub);
+      const newBin = join(sub, 'adlc.mjs');
+      writeFileSync(newBin, '#!/usr/bin/env node\nconsole.log("swapped");\n');
+
+      assert.throws(() => seal.verifyUnchanged(), /tampered with|replaced|unlocked|Security violation/);
+    } finally {
+      seal.release();
+    }
+  } finally {
+    try { chmodSync(root, 0o755); } catch {}
+    try { chmodSync(sub, 0o755); } catch {}
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
   }
 });
 

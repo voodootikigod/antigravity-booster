@@ -427,6 +427,29 @@ test('coldstartTickets: fails closed with error when model response is garbage o
   });
 });
 
+test('coldstartTickets: captures quota admission errors per ticket rather than rejecting', async () => {
+  const tickets = [
+    { id: 'T1', title: 'T1', body: 'body 1', scope: ['src/a'] },
+    { id: 'T2', title: 'T2', body: 'body 2', scope: ['src/b'] },
+  ];
+  const pools = {
+    acquire: async (model, opts) => {
+      if (opts.ticketId === 'T2') {
+        throw new Error('pool capacity exhausted');
+      }
+      return () => {};
+    },
+  };
+  await withFakeAgy({ FAKE_COLDSTART_MODE: 'clean' }, async () => {
+    const res = await coldstartTickets(tickets, { test: 'npm test' }, { pools });
+    assert.equal(res.length, 2);
+    assert.equal(res[0].id, 'T1');
+    assert.equal(res[0].error, undefined);
+    assert.equal(res[1].id, 'T2');
+    assert.ok(res[1].error.includes('pool capacity exhausted'), 'T2 must capture quota admission error');
+  });
+});
+
 test('parallaxEdges: fails closed with error when reader or judge verdict fails', async () => {
   const plan = {
     repo: '/r',
