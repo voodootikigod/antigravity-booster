@@ -1175,6 +1175,50 @@ test('runAgy builder: bwrap containment mounts project node_modules read-only in
   }
 });
 
+test('runAgy builder: bwrap containment mounts physical worktree node_modules read-only', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-phys-nm-'));
+  const nmDir = join(dir, 'node_modules');
+  mkdirSync(nmDir, { recursive: true });
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+
+    const realNm = realpathSync(nmDir);
+
+    // Physical worktree node_modules must have a read-only submount
+    const nmIdx = spawnedArgs.indexOf(realNm);
+    assert.ok(nmIdx >= 2, 'worktree node_modules must be in spawnargs');
+    assert.equal(spawnedArgs[nmIdx - 1], '--ro-bind', 'worktree physical node_modules must be mounted --ro-bind');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 
 test('runAgy builder: bwrap containment launches resolved executable when agyBin is a bare command name', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bare-'));

@@ -1463,11 +1463,11 @@ test('drainPools: terminates active legacy processes and blocks coordinators wit
     }), 'utf8');
     assert.throws(() => assertNoActiveLegacyFleet(), /Fleet is currently DRAINING/i);
 
-    // 2. Seed active legacy process with alive PID
+    // 2. Seed active legacy process with alive PID and verified startTime
     writeFileSync(legacyFile, JSON.stringify({
       activeSchemaVersion: 1,
       inFlight: { gemini: 1, claude_gpt: 0 },
-      [dummyLegacy.pid]: { inFlight: { gemini: 1 }, ts: Date.now() },
+      [dummyLegacy.pid]: { inFlight: { gemini: 1 }, ts: Date.now(), startTime: getProcessStartTime(dummyLegacy.pid) },
     }), 'utf8');
 
     assert.equal(isProcessAlive(dummyLegacy.pid), true);
@@ -1606,4 +1606,40 @@ test('drainPools: rechecks PID identity and does not signal target if PID exited
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('drainPools: does not signal legacy PID when record lacks startTime identity (fails closed against PID reuse)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-drain-no-identity-test-'));
+  const savedState = process.env.AGB_QUOTA_STATE;
+
+  const dummyLegacy = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+  });
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(dir, 'test_quota.json');
+    const legacyFile = getStateFile();
+
+    // Legacy record exists for dummyLegacy.pid, but has NO startTime recorded
+    writeFileSync(legacyFile, JSON.stringify({
+      activeSchemaVersion: 1,
+      inFlight: { gemini: 1, claude_gpt: 0 },
+      [dummyLegacy.pid]: { inFlight: { gemini: 1 }, ts: Date.now() },
+    }), 'utf8');
+
+    assert.equal(isProcessAlive(dummyLegacy.pid), true);
+
+    // drainPools must fail closed and NOT terminate dummyLegacy
+    const res = await drainPools(dir, { gracePeriodMs: 50 });
+    assert.equal(res.ok, true);
+
+    // Dummy process must still be alive!
+    assert.equal(isProcessAlive(dummyLegacy.pid), true, 'process without recorded startTime must NOT be killed');
+  } finally {
+    try { dummyLegacy.kill('SIGKILL'); } catch {}
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE;
+    else process.env.AGB_QUOTA_STATE = savedState;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 

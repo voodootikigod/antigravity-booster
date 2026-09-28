@@ -413,3 +413,55 @@ test('Integration Journal: rejects symlinked .adlc directory during journaling a
     rmSync(evilTarget, { recursive: true, force: true });
   }
 });
+
+test('reconcileIntegrationJournal: recovers and finalizes after baseRef advanced even if finalization was interrupted', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-journal-finalization-recovery-'));
+  const g = (cmd, ...args) => execFileSync('git', [cmd, ...args], { cwd: repo, encoding: 'utf8' }).trim();
+
+  try {
+    g('init', '-b', 'main');
+    g('config', 'user.email', 'test@test.local');
+    g('config', 'user.name', 'Tester');
+    writeFileSync(join(repo, 'init.txt'), 'init\n');
+    g('add', 'init.txt');
+    g('commit', '-qm', 'initial commit');
+    const baseSha = g('rev-parse', 'refs/heads/main');
+
+    writeFileSync(join(repo, 'cand.txt'), 'cand\n');
+    g('add', 'cand.txt');
+    g('commit', '-qm', 'candidate commit');
+    const candSha = g('rev-parse', 'refs/heads/main');
+
+    // Simulate CAS advancing refs/heads/main to candSha while markerRef and journal remain at GATES_PASSED
+    const markerRef = 'refs/transactions/t-recovery/tok-rec';
+    g('update-ref', markerRef, candSha);
+    g('update-ref', 'refs/heads/main', candSha);
+
+    writeIntegrationJournal(repo, {
+      ticketId: 't-recovery',
+      transactionToken: 'tok-rec',
+      preMergeSha: baseSha,
+      candidateSha: candSha,
+      phase: JOURNAL_PHASES.GATES_PASSED,
+      timestamp: Date.now(),
+    });
+
+    // Journal and markerRef must still exist
+    assert.equal(readIntegrationJournal(repo).exists, true);
+    assert.equal(g('rev-parse', markerRef), candSha);
+
+    // Reconcile must recognize base was already advanced, finalize, clean marker, and unlink journal
+    const res = await reconcileIntegrationJournal(repo, 'main');
+    assert.equal(res.ok, true);
+    assert.equal(res.status, 'reconciled');
+    assert.equal(res.action, 'finalized_gates_passed');
+    assert.equal(readIntegrationJournal(repo).exists, false);
+
+    // Marker ref must have been deleted
+    const markers = g('for-each-ref', '--format=%(refname)', 'refs/transactions/t-recovery');
+    assert.equal(markers, '');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
