@@ -29,7 +29,8 @@
 - **Node.js**: `>= 22.19.0`
 - **Git**: `>= 2.38` (support for `git worktree`)
 - **CLI Runtime**:
-  - **Standalone Antigravity**: [`agy`](file:///Users/voodootikigod/Projects/antigravity-booster/lib/agy.mjs) CLI installed and authenticated on `PATH`.
+  - **Standalone Antigravity**: [`agy`](lib/agy.mjs) CLI (`>= 1.2.8`) installed and authenticated on `PATH`.
+  - **ADLC Runtime**: [`@adlc/cli`](node_modules/@adlc/cli/bin/adlc.mjs) (`>= 1.11.1`) installed or resolvable.
   - **JetSki Environment**: `agentapi` CLI available (`AGB_PROVIDER=jetski`).
 
 ### 1. Installation
@@ -48,7 +49,7 @@ npm link
 
 ### 2. Bootstrapping
 
-Run [`agb bootstrap`](file:///Users/voodootikigod/Projects/antigravity-booster/lib/bootstrap.mjs) to install the `@adlc/antigravity` plugin and link ADLC skills into `~/.gemini/skills`:
+Run [`agb bootstrap`](lib/bootstrap.mjs) to install the `@adlc/antigravity` plugin and link ADLC skills into `~/.gemini/skills`:
 
 ```bash
 agb bootstrap
@@ -58,7 +59,7 @@ agb bootstrap
 
 ### 3. Diagnostic Health Check
 
-Run [`agb doctor`](file:///Users/voodootikigod/Projects/antigravity-booster/lib/doctor.mjs) to verify your tools, quota pools, and sandbox setup:
+Run [`agb doctor`](lib/doctor.mjs) to verify your tools, quota pools, and sandbox setup:
 
 ```bash
 agb doctor
@@ -147,8 +148,8 @@ agb run <plan.json> [options]
 
 **Execution Details**:
 - Creates isolated git worktrees (`.worktrees/agb-<runId>-<ticketId>`).
-- Enforces macOS Seatbelt / Linux `bwrap` sandboxed gates ([`lib/gates.mjs`](file:///Users/voodootikigod/Projects/antigravity-booster/lib/gates.mjs)).
-- Runs cross-family refute-charter prosecution ([`lib/prosecute.mjs`](file:///Users/voodootikigod/Projects/antigravity-booster/lib/prosecute.mjs)).
+- Enforces sandboxed gates ([`lib/gates.mjs`](lib/gates.mjs)) using macOS Seatbelt, Linux Bubblewrap (`bwrap`), or Windows AppContainer.
+- Runs cross-family refute-charter prosecution ([`lib/prosecute.mjs`](lib/prosecute.mjs)).
 - Sequential rebase and merge onto base branch with post-merge gate verification.
 - Reverts to pre-merge SHA on post-merge gate failure.
 
@@ -183,12 +184,13 @@ agb doctor
 ```
 
 **Checked Items**:
-- Node.js version (`>= 18`)
-- `agy` CLI binary & authentication
-- `@adlc/antigravity` plugin installation & contract version
-- `adlc` CLI binary
-- macOS `sandbox-exec` / Linux `bwrap`
-- Brain directory existence
+- Node.js version (`>= 22.19.0`)
+- `agy` CLI binary (`>= 1.2.8`) & authentication
+- `@adlc/antigravity` plugin installation & contract version handshake
+- `@adlc/cli` binary (`>= 1.11.1`) with SHA-256 pinning & approved cache permissions (`~/.adlc/pinned/`)
+- `adlc ticket doctor` syntax & DAG consistency check
+- Platform sandboxing: macOS `sandbox-exec`, Linux `bwrap` usability probe (read-only root, credential masking), or Windows AppContainer active differential syscall probing and nonce attestation
+- Quota pool availability across Gemini Flash, Gemini Pro, and Claude
 - ADLC Ticket Store integrity (`.adlc/tickets/`)
 
 ---
@@ -294,7 +296,11 @@ agb probe <concurrencies> [model]
 | :--- | :--- | :--- |
 | `AGB_PROVIDER` | `agy` | Execution provider mode (`agy` for standard CLI, `jetski` for JetSki `agentapi` subagents). |
 | `AGB_BUILD_TIMEOUT` | `5m` | Worker execution timeout (excess burns a strike). |
-| `AGB_SANDBOX_GATES` | `1` (macOS) | Enforces Seatbelt / `bwrap` sandboxing for gates. Set to `0` inside disposable containers. |
+| `AGB_SANDBOX_GATES` | sandbox on | `0` runs gates unsandboxed. Darwin uses Seatbelt; Linux uses Bubblewrap (`bwrap`); Windows uses AppContainer. |
+| `AGB_EXEC_CACHE_DIR` | `~/.adlc/pinned/` | Directory where immutable pinned executables are staged outside restricted `noexec` temporary directories. |
+| `AGB_STREAM_TIMEOUT` | `30000` (30s) | Subprocess streaming idle watchdog timeout in milliseconds. |
+| `AGB_STREAM_LINE_CAP` | `1048576` (1MB) | Maximum line length for `stream-json` parser before truncation/error. |
+| `AGB_STREAM_TOTAL_CAP` | `10485760` (10MB)| Total stream byte cap across subprocess lifetime. |
 | `AGB_ALLOW_DIRTY` | `0` | Set `1` to allow running on dirty git repos. *Warning: Rollbacks use `git reset --hard`.* |
 | `AGB_AGY_BIN` | `agy` | Custom path to `agy` binary. |
 | `AGB_ADLC_BIN` | `adlc` | Custom path to `adlc` binary. |
@@ -323,3 +329,19 @@ To use `antigravity-booster` in JetSki:
    ```
 4. **Verification**:
    Run `agb doctor` and `npm test` to verify subagent isolation and sandbox leak audit protections.
+
+---
+
+## 7. Antigravity Booster (`agb`) vs. Built-in `/boost`
+
+Google Antigravity 2.0 provides the built-in [`/boost` slash command](https://antigravity.google/docs/boost/) for interactive multi-agent reasoning. The table below outlines how `agb` relates to `/boost`:
+
+| Dimension | Built-in `/boost` Command | Antigravity Booster (`agb`) |
+| :--- | :--- | :--- |
+| **Primary Use Case** | Interactive, on-demand reasoning for difficult coding problems during an active session (debugging, tricky algorithms, single-file refactoring). | Autonomous, multi-hour execution of large architectural specifications and multi-ticket roadmaps across git worktrees. |
+| **Execution Surface** | Internal to the Antigravity GUI or `agy` chat session. | External Node.js CLI daemon driving parallel `agy` subprocesses. |
+| **Workspace Model** | Shared working directory with in-memory subagent context isolation. | Physical `git worktree` isolation per ticket (`.worktrees/agb-<id>`) with automated rebase and rollback. |
+| **Sandboxing** | Standard interactive user permission prompts. | OS-level kernel isolation (Linux `bwrap` with read-only root and masked credentials, macOS Seatbelt, Windows AppContainer with differential probing). |
+| **Quota Management** | Single interactive quota session. | Dual-pool quota routing across Gemini Flash, Gemini Pro, and Claude with token-bucket metering and admission controls. |
+| **Lifecycle & Governance**| Single-turn or iterative conversation flow. | Full ADLC (P0–P6) ticket store, frozen machine rails (`rails-guard`), mutation testing (`hollow-test`), and cross-family prosecution (`agb review`). |
+

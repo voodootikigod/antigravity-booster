@@ -51,11 +51,30 @@ disciplined fleet:
   root, and `.github/workflows/adlc-rails-guard.yml` enforces frozen rails
   in CI, not just locally. See [AGENTS.md](AGENTS.md).
 
+## ⚡ Antigravity Booster (`agb`) vs. Built-in `/boost`
+
+Antigravity 2.0 introduces the [`/boost` slash command](https://antigravity.google/docs/boost/) for on-demand multi-agent reasoning during interactive developer sessions. While both tools leverage multi-agent reasoning, they target fundamentally different scopes, isolation models, and execution lifecycles:
+
+| Dimension | Built-in `/boost` Command | Antigravity Booster (`agb`) Fleet Engine |
+| :--- | :--- | :--- |
+| **Primary Scope** | **Interactive single-task reasoning**: High-difficulty bugs, algorithmic puzzles, or localized refactorings within an active chat session. | **Autonomous multi-ticket campaigns**: Repository migrations, large feature build-outs, and decomposing specifications into 10–50 parallel tickets. |
+| **Execution Surface** | Runs inside your active Antigravity IDE or CLI chat session. Subagents report back directly into the active conversation thread. | External deterministic Node.js orchestrator running outside chat, managing parallel child `agy` workers across independent processes. |
+| **Workspace & Isolation** | Subagents share the current working tree with ephemeral memory context isolation; file edits/commands prompt the user interactively. | **Physical git worktree isolation** (`.worktrees/agb-<id>`) per ticket with automated rebase, sequential merge locks, and branch rollback on failure. |
+| **Sandboxing & Containment** | Standard Antigravity permission prompts. | **Kernel-enforced containment**: Linux Bubblewrap (`bwrap`) with read-only system root and masked credentials (`~/.gnupg`, package manager tokens); macOS Seatbelt; Windows AppContainer + Job Objects with active differential syscall probing and attestation nonces. |
+| **Quota & Pool Routing** | Executes against the active model within session rate limits. | **Dual-pool quota router**: Coordinates independent Gemini Flash, Gemini Pro, and Claude model pools with token-bucket metering, concurrency semaphores, and rate-limit backoff. |
+| **Architecture & Scheduling** | Dynamic, unconstrained subagent dispatch without persistent state across crashes. | **Deterministic ticket DAG**: Compiles specs into `plan.json` with cycle validation, coldstart checks, parallax contract verification, and transactional integration journal recovery. |
+| **Verification & Governance** | Ad-hoc iterative rounds within conversation context. | **Full ADLC Doctrine (P0–P6)**: Machine-enforced frozen rails (`rails-guard`), mutation-tested evidence (`hollow-test`), cross-family adversarial prosecution (`agb review`), and post-merge revert gates. |
+
+### When to use which?
+
+- **Use `/boost` when**: You are actively coding in Antigravity, hit an intricate concurrency issue, mathematical edge case, or tricky refactor, and want immediate multi-agent assistance within your conversational flow without setting up formal tickets or branches.
+- **Use `agb` when**: You have an architectural specification, feature PRD, or large codebase migration that must execute autonomously across hours, safely rebase and merge passing tickets in isolated git worktrees, and maintain an auditable cryptographic provenance ledger.
+
 ## 🚀 Installation & Setup
 
-Before starting, ensure you have **Node >= 22.19**, the **Antigravity CLI (`agy`)** installed and authenticated on your `PATH`, and a clean target git repository. 
+Before starting, ensure you have **Node >= 22.19**, the **Antigravity CLI (`agy >= 1.2.8`)** installed and authenticated on your `PATH`, and a clean target git repository. 
 
-*(Note: Gates use macOS Seatbelt by default. On Linux/Windows, run inside a disposable container and set `AGB_SANDBOX_GATES=0`.)*
+*(Sandboxing: macOS Seatbelt, Linux Bubblewrap [`bwrap`] with read-only system root and credential masking, and Windows AppContainer with differential probing are enabled by default. Run `agb doctor` to verify your platform's sandbox capabilities.)*
 
 ### 1. Install & Bootstrap
 We recommend installing `agb` globally. The `bootstrap` command is mandatory as it installs the `adlc-antigravity` plugin and links the booster's ADLC skills.
@@ -249,7 +268,11 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 | Variable | Default | Effect |
 |---|---|---|
 | `AGB_BUILD_TIMEOUT` | `5m` | Per-builder agy timeout (agy hard-caps ~5m anyway; a timeout consumes a strike) |
-| `AGB_SANDBOX_GATES` | sandbox on (darwin) | `0` runs gates unsandboxed — only inside a disposable container; non-darwin fails closed without it |
+| `AGB_SANDBOX_GATES` | sandbox on | `0` runs gates unsandboxed — Darwin uses macOS Seatbelt; Linux uses Bubblewrap (`bwrap`); Windows uses AppContainer |
+| `AGB_EXEC_CACHE_DIR` | `~/.adlc/pinned/` | Directory where immutable pinned executables are staged outside restricted `noexec` temporary directories |
+| `AGB_STREAM_TIMEOUT` | `30000` (30s) | Subprocess streaming idle watchdog timeout in milliseconds |
+| `AGB_STREAM_LINE_CAP` | `1048576` (1MB) | Maximum line length for `stream-json` parser before truncation/error |
+| `AGB_STREAM_TOTAL_CAP` | `10485760` (10MB)| Total stream byte cap across subprocess lifetime |
 | `AGB_ALLOW_DIRTY` | refuse dirty repo | `1` skips the clean-tree guard — merge rollback uses `git reset --hard`, uncommitted work WILL be lost |
 | `AGB_AGY_BIN` | `agy` | Alternate agy binary (tests point this at a fake) |
 | `AGB_ADLC_BIN` | `adlc` | Alternate adlc CLI binary (tests point this at a fake) — used by every `adlc <tool>` integration: `rails-guard`, `model-router`, `merge-forecast`, `flail-detector`, `consensus-fix`, `gate-manifest`, `review-calibration` |
@@ -262,11 +285,12 @@ See [docs/guidelines.md](docs/guidelines.md) and the plugin's
 ## Testing
 
 ```sh
-npm test    # node:test suite, fully offline (fake-agy + fake-adlc fixtures)
+npm test    # node:test suite, 496 tests passing, fully offline (fake-agy + fake-adlc fixtures)
 ```
 
-Sandbox-specific security tests are darwin-gated; scheduler tests run
-gates unsandboxed so the suite is green on any platform.
+Platform-native sandbox probes and security tests exercise Darwin Seatbelt,
+Linux Bubblewrap (`bwrap`), and Windows AppContainer / Job Object boundaries.
+Scheduler tests run gates unsandboxed so the suite passes across all platforms.
 
 ## Layout
 
@@ -277,8 +301,8 @@ lib/               scheduler, pools, agy wrapper, worktrees, gates,
                    charters, prosecution, review, sweep, preflight,
                    plan compiler (validate/parallax/premortem),
                    adlc-bridge (plan.json ⇄ ADLC ticket store projection),
-                   brain import, bootstrap, status, repo lock
-skills/            release (booster-specific; ADLC doctrine/prosecutor/
+                   brain import, bootstrap, status, repo lock, doctor
+skills/            release, modernize (booster-specific; ADLC doctrine/prosecutor/
                    self-orchestrate skills come from the adlc-antigravity
                    plugin, installed by `agb bootstrap`, not vendored here)
 templates/         plan.example.json (schema by example)
@@ -286,7 +310,7 @@ templates/         plan.example.json (schema by example)
                    tracked, config.json tracked, everything else gitignored)
 .github/workflows/ ci.yml (npm test) + adlc-rails-guard.yml (CI rail-freeze
                    backstop, dogfooding the same doctrine this tool imposes)
-docs/research/     agy CLI + Antigravity 2.0 platform findings
+docs/research/     agy CLI + Antigravity 2.0 platform findings & roadmap
 docs/calibration/  probed latency/concurrency/sandbox facts
 ```
 
@@ -295,7 +319,16 @@ docs/calibration/  probed latency/concurrency/sandbox facts
 - `agy --print` reads stdin, loads `AGENTS.md`/`GEMINI.md` from cwd, sees
   global skills, writes files and runs commands non-interactively, and
   **exits 0 even on timeout** (assert on output, never exit codes).
-- `--sandbox` (macOS) permits git/npm/node/network — builders run sandboxed.
+- `agy >= 1.2.8` structured output: `--output-format stream-json` and
+  `--json-schema` provide structured event streams with line and byte caps.
+- `@adlc >= 1.11.1`: `--graph-coupling` informs `adlc merge-forecast`,
+  `adlc ticket doctor` validates ticket consistency, and project-local
+  authenticated binary resolution pins shims with SHA-256 verification.
+- Sandboxing: Linux Bubblewrap (`bwrap`) provides read-only root mounts and
+  credential masking (`~/.gnupg`); macOS uses Seatbelt profiles; Windows uses
+  AppContainer isolation with active differential syscall probing and attestation nonces.
+- Pinned executable staging: Binaries and shims are staged under `~/.adlc/pinned/`
+  with private `0o700` permissions to avoid `noexec` mount blocks in container `/tmp`.
 - Gemini Flash pool degrades past width 8; Claude pool is unaffected by
   concurrent Gemini load. Claude models have the lowest fixed overhead.
 
