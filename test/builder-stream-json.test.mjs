@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, chmodSync, realpathSync, existsSync, symlinkSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
@@ -906,6 +906,15 @@ test('isAllowedEnvVar: rejects GIT_DIR and GIT_WORK_TREE', () => {
   assert.equal(isAllowedEnvVar('GIT_CEILING_DIRECTORIES'), true);
 });
 
+test('isAllowedEnvVar: gates FAKE_ variables on isTestExecution', () => {
+  assert.equal(isAllowedEnvVar('FAKE_STATE_DIR'), true);
+  assert.equal(isAllowedEnvVar('FAKE_BUILDER_MODE'), true);
+
+  assert.equal(isAllowedEnvVar('FAKE_STATE_DIR', { NODE_ENV: 'production' }), false);
+  assert.equal(isAllowedEnvVar('FAKE_BUILDER_MODE', { NODE_ENV: 'production' }), false);
+  assert.equal(isAllowedEnvVar('PATH', { NODE_ENV: 'production' }), true);
+});
+
 test('runAgy builder: on win32 under job_object, fails closed when Windows sandbox is unverified and no bypass attestation', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-win-builder-fail-'));
   const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
@@ -1529,6 +1538,130 @@ echo '{"type":"result","status":"SUCCESS","exit_code":0}'
     if (savedGrace === undefined) delete process.env.AGB_KILL_GRACE_MS;
     else process.env.AGB_KILL_GRACE_MS = savedGrace;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: bwrap containment mounts .adlc read-only and overlays .adlc/leases with tmpfs', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-adlc-'));
+  const adlcDir = join(dir, '.adlc');
+  const leasesDir = join(adlcDir, 'leases');
+  mkdirSync(leasesDir, { recursive: true });
+
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+
+    // Check .adlc is mounted read-only
+    const roBindIndices = [];
+    spawnedArgs.forEach((arg, idx) => {
+      if (arg === '--ro-bind') roBindIndices.push(idx);
+    });
+    const hasAdlcRoMount = roBindIndices.some(i => spawnedArgs[i + 1] === adlcDir && spawnedArgs[i + 2] === adlcDir);
+    assert.ok(hasAdlcRoMount, '.adlc directory must be mounted read-only via --ro-bind');
+
+    // Check .adlc/leases is overlaid with tmpfs
+    const tmpfsIndices = [];
+    spawnedArgs.forEach((arg, idx) => {
+      if (arg === '--tmpfs') tmpfsIndices.push(idx);
+    });
+    const hasLeasesTmpfs = tmpfsIndices.some(i => spawnedArgs[i + 1] === leasesDir);
+    assert.ok(hasLeasesTmpfs, '.adlc/leases must be overlaid with empty tmpfs');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: bwrap containment rejects FAKE_STATE_DIR outside tmpdir or non-test execution', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-fake-state-'));
+  const outsideDir = join(homedir(), `agb-outside-state-${crypto.randomUUID()}`);
+  mkdirSync(outsideDir, { recursive: true });
+
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    // Case 1: outside tmpdir
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: dir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      env: { FAKE_STATE_DIR: outsideDir },
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+    let realOutside;
+    try { realOutside = realpathSync(outsideDir); } catch { realOutside = outsideDir; }
+    assert.equal(spawnedArgs.includes(realOutside), false, 'FAKE_STATE_DIR outside tmpdir must not be mounted into bwrap');
+
+    // Case 2: non-test execution (NODE_ENV=production)
+    const validTmpState = mkdtempSync(join(tmpdir(), 'agb-tmp-fake-state-'));
+    try {
+      let prodSpawnedArgs = null;
+      await runAgy({
+        model: 'gemini-flash',
+        prompt: 'Ticket T1 TICKET-DONE',
+        cwd: dir,
+        bin: FAKE_AGY,
+        outputFormat: 'stream-json',
+        role: 'builder',
+        sandbox: true,
+        containment: true,
+        platform: 'linux',
+        env: { FAKE_STATE_DIR: validTmpState, NODE_ENV: 'production' },
+        onSpawn: (p) => {
+          prodSpawnedArgs = p.spawnargs;
+        },
+      });
+
+      let realValidTmp;
+      try { realValidTmp = realpathSync(validTmpState); } catch { realValidTmp = validTmpState; }
+      assert.equal(prodSpawnedArgs.includes(realValidTmp), false, 'FAKE_STATE_DIR must not be mounted when NODE_ENV=production');
+    } finally {
+      rmSync(validTmpState, { recursive: true, force: true });
+    }
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   }
 });
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
@@ -560,6 +560,93 @@ test('verifyWindowsSandboxAttestation: rolls back repository nonce reservation w
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('verifyWindowsSandboxAttestation: atomic ledger rollback when host ledger append fails', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  try {
+    const adminKey = 'test-key-atomic-ledger';
+    const att = createAttestation({
+      installId,
+      rootCommit,
+      origin,
+      repoPath: repo,
+      adminKey,
+    });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ sandboxBypassAttestation: att }));
+
+    // Pre-create host ledger as a directory so appendLedger fails on openSync
+    const hostLedgerPath = join(homeDir, '.adlc', 'consumed_attestations.jsonl');
+    mkdirSync(hostLedgerPath, { recursive: true });
+
+    const res = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+    });
+    assert.equal(res.valid, false);
+    assert.match(res.reason, /failed to record consumed nonce/);
+
+    // Repository ledger must have been rolled back (must not exist since it didn't exist before)
+    const repoLedgerPath = join(repo, '.adlc', 'consumed_attestations.jsonl');
+    assert.equal(existsSync(repoLedgerPath), false, 'repo ledger must be rolled back when host ledger append fails');
+
+    // Both locks must be unlinked
+    const safeNonce = String(att.nonce).replace(/[^a-zA-Z0-9_-]/g, '_');
+    assert.equal(existsSync(join(repo, '.adlc', 'nonces', `${safeNonce}.lock`)), false);
+    assert.equal(existsSync(join(homeDir, '.adlc', 'nonces', `${safeNonce}.lock`)), false);
+
+    // Now remove the directory blocking hostLedger, and retry: attestation should now succeed
+    rmSync(hostLedgerPath, { recursive: true, force: true });
+    const retryRes = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+    });
+    assert.equal(retryRes.valid, true, 'retry must succeed because nonce was not permanently consumed');
+    assert.ok(existsSync(repoLedgerPath));
+    assert.ok(existsSync(hostLedgerPath));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+test('verifyWindowsSandboxAttestation: rejects symlinked attestation ledger in repo or host', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const outsideTarget = join(tmpdir(), `agb-outside-target-${crypto.randomUUID()}`);
+  try {
+    const adminKey = 'test-key-symlink-ledger';
+    const att = createAttestation({
+      installId,
+      rootCommit,
+      origin,
+      repoPath: repo,
+      adminKey,
+    });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ sandboxBypassAttestation: att }));
+
+    const repoLedgerPath = join(repo, '.adlc', 'consumed_attestations.jsonl');
+    writeFileSync(outsideTarget, 'target');
+    symlinkSync(outsideTarget, repoLedgerPath);
+
+    const res = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+    });
+    assert.equal(res.valid, false);
+    assert.match(res.reason, /symbolic link/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+    if (existsSync(outsideTarget)) rmSync(outsideTarget, { force: true });
   }
 });
 
