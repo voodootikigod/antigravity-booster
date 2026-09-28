@@ -317,7 +317,7 @@ test('runPlan: unroutable tier/pool_hint fails the ticket — never a silent dro
     const accounted = [...report.merged, ...Object.keys(report.failed)].sort();
     assert.deepEqual(accounted, ['T1', 'T2'], 'every ticket appears in merged ∪ failed');
   } finally {
-    rmSync(repo, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
@@ -14,7 +14,8 @@ import {
 import { runSandboxProbe } from '../lib/sandbox-probe-helper.mjs';
 
 function setupMockGitRepo() {
-  const d = mkdtempSync(join(tmpdir(), 'agb-win-doctor-repo-'));
+  let d = mkdtempSync(join(tmpdir(), 'agb-win-doctor-repo-'));
+  try { d = realpathSync(d); } catch {}
   execSync('git init -b main', { cwd: d });
   execSync('git config user.email "test@example.com"', { cwd: d });
   execSync('git config user.name "Test User"', { cwd: d });
@@ -28,7 +29,8 @@ function setupMockGitRepo() {
 }
 
 function setupMockHome() {
-  const h = mkdtempSync(join(tmpdir(), 'agb-win-doctor-home-'));
+  let h = mkdtempSync(join(tmpdir(), 'agb-win-doctor-home-'));
+  try { h = realpathSync(h); } catch {}
   mkdirSync(join(h, '.adlc'), { recursive: true });
   const installId = crypto.randomUUID();
   writeFileSync(join(h, '.adlc', 'installation_id'), installId);
@@ -721,7 +723,8 @@ test('verifyWindowsSandboxActive: rejects symlinked or non-contained .worktrees 
 test('verifyWindowsSandboxAttestation: rejects symlinked .adlc directory before reserving nonces', () => {
   const { repo, rootCommit, origin } = setupMockGitRepo();
   const { homeDir, installId } = setupMockHome();
-  const outsideAdlc = mkdtempSync(join(tmpdir(), 'agb-outside-adlc-'));
+  let outsideAdlc = mkdtempSync(join(tmpdir(), 'agb-outside-adlc-'));
+  try { outsideAdlc = realpathSync(outsideAdlc); } catch {}
   try {
     const adminKey = 'test-key-symlink-adlc';
     const att = createAttestation({
