@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -517,3 +517,51 @@ test('verifyWorktreeGitPointer: rejects redirected, symlinked, or missing worktr
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('verifyRootGitIntegrity: validates newly created pack objects and rejects stray files or unreachable objects', () => {
+  const repo = makeTestRepo();
+  const otherRepo = makeTestRepo();
+  try {
+    const pre = snapshotRootGit(repo);
+    const packDir = join(repo, '.git', 'objects', 'pack');
+    mkdirSync(packDir, { recursive: true });
+
+    // 1. Stray non-pack file in pack directory is rejected
+    writeFileSync(join(packDir, 'evil.txt'), 'payload');
+    const strayFileRes = verifyRootGitIntegrity(repo, pre);
+    assert.equal(strayFileRes.ok, false);
+    assert.match(strayFileRes.error, /Unauthorized stray file in pack directory: pack\/evil\.txt/);
+    rmSync(join(packDir, 'evil.txt'));
+
+    // 2. Stray pack metadata file without matching pack is rejected
+    writeFileSync(join(packDir, 'pack-stray.idx'), 'bogus index');
+    const strayIdxRes = verifyRootGitIntegrity(repo, pre);
+    assert.equal(strayIdxRes.ok, false);
+    assert.match(strayIdxRes.error, /Unauthorized stray pack metadata file without matching pack: pack\/pack-stray\.idx/);
+    rmSync(join(packDir, 'pack-stray.idx'));
+
+    // 3. Newly created pack file with reachable objects passes
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    const packPrefix = join(packDir, 'pack');
+    execFileSync('git', ['pack-objects', packPrefix], { cwd: repo, input: headSha });
+    const validPackRes = verifyRootGitIntegrity(repo, pre, { base: 'main' });
+    assert.equal(validPackRes.ok, true);
+
+    // 4. Stray pack file containing unreachable object from another repository is rejected
+    writeFileSync(join(otherRepo, 'unauthorized.txt'), 'unauthorized content\n');
+    execFileSync('git', ['add', 'unauthorized.txt'], { cwd: otherRepo });
+    execFileSync('git', ['commit', '-qm', 'unauthorized commit'], { cwd: otherRepo });
+    execFileSync('git', ['repack', '-a', '-d'], { cwd: otherRepo });
+    const otherPackDir = join(otherRepo, '.git', 'objects', 'pack');
+    for (const f of readdirSync(otherPackDir)) {
+      copyFileSync(join(otherPackDir, f), join(packDir, f));
+    }
+    const unreachablePackRes = verifyRootGitIntegrity(repo, pre, { base: 'main' });
+    assert.equal(unreachablePackRes.ok, false);
+    assert.match(unreachablePackRes.error, /Unauthorized stray object detected in root object storage pack/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(otherRepo, { recursive: true, force: true });
+  }
+});
+

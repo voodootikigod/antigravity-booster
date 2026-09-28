@@ -1071,3 +1071,45 @@ test('safeWriteWorktreeFile: unlinks symlink and does not write through to targe
   }
 });
 
+test('runPlan: aborts fleet on root integrity violation, marks remaining tickets failed and terminates work', async () => {
+  const repo = makeRepo();
+  let poller;
+  try {
+    let tampered = false;
+    const configPath = join(repo, '.git', 'config');
+    poller = setInterval(() => {
+      if (!tampered && existsSync(join(repo, '.worktrees'))) {
+        writeFileSync(configPath, readFileSync(configPath, 'utf8') + '# tampered\n');
+        tampered = true;
+      }
+    }, 1);
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () =>
+        runPlan({
+          repo,
+          gate: { test: 'true' },
+          tickets: [
+            { id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], edges: [{ to: 'T2' }] },
+            { id: 'T2', title: 'two', body: 'write T2.txt', scope: ['T2.txt'] },
+          ],
+        }, quiet)
+    );
+
+    assert.ok(tampered, 'precondition: root git config was tampered mid-run');
+    assert.equal(report.merged.length, 0, 'no tickets should merge after root integrity violation');
+    assert.ok(report.failed.T1, 'T1 must fail');
+    assert.match(report.failed.T1, /root integrity violation: Root Git config altered/);
+    assert.ok(report.failed.T2, 'T2 must fail due to fleet abort');
+    assert.match(report.failed.T2, /fleet aborted: root integrity violation: Root Git config altered/);
+  } finally {
+    clearInterval(poller);
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+

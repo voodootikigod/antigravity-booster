@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, chmodSync, realpathSync, cpSync, statSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 
@@ -1164,4 +1164,73 @@ test('preventExecutableReplacement: pins standalone binary executables and resol
     try { rmSync(root, { recursive: true, force: true }); } catch {}
   }
 });
+
+test('writeAdlcTickets: replaces symlinked .store.json even when backend is already directory', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-manifest-symlink-test-'));
+  const victimDir = mkdtempSync(join(tmpdir(), 'agb-manifest-victim-'));
+  try {
+    const storeDir = join(repo, '.adlc', 'tickets');
+    mkdirSync(storeDir, { recursive: true });
+    const victim = join(victimDir, 'target.json');
+    writeFileSync(victim, JSON.stringify({ victim: true }));
+    symlinkSync(victim, join(storeDir, '.store.json'));
+
+    // Write a dummy ticket shard so store appears to be directory store
+    writeFileSync(join(storeDir, 't1.json'), JSON.stringify({ id: 't1' }));
+
+    const written = writeAdlcTickets(repo, [{ id: 't1', title: 't1', body: 'b', scope: [], rails: [], edges: [] }]);
+    const manifestPath = join(written, '.store.json');
+    assert.equal(lstatSync(manifestPath).isSymbolicLink(), false, '.store.json must not remain a symlink');
+    assert.equal(lstatSync(manifestPath).isFile(), true, '.store.json must be a regular file');
+    const victimContent = readFileSync(victim, 'utf8');
+    assert.ok(victimContent.includes('"victim":true'), 'victim file must not be overwritten through symlink');
+  } finally {
+    try { rmSync(repo, { recursive: true, force: true }); } catch {}
+    try { rmSync(victimDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('preventExecutableReplacement: copies entire dependency closure without symlinks and keeps active tree alive during recovery', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-closure-pin-test-'));
+  const locksDir = mkdtempSync(join(tmpdir(), 'agb-test-locks-'));
+  const origExecLocks = process.env.AGB_EXEC_LOCKS_DIR;
+  process.env.AGB_EXEC_LOCKS_DIR = locksDir;
+
+  try {
+    const cliDir = join(root, 'node_modules', '@adlc', 'cli');
+    const coreDir = join(root, 'node_modules', '@adlc', 'core');
+    mkdirSync(join(cliDir, 'bin'), { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+
+    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
+    const fakeBin = join(cliDir, 'bin', 'adlc.mjs');
+    writeFileSync(fakeBin, '#!/usr/bin/env node\nimport "@adlc/core";\n');
+    chmodSync(fakeBin, 0o755);
+
+    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.11.1"}');
+    writeFileSync(join(coreDir, 'index.js'), 'export const core = true;\n');
+
+    const seal = preventExecutableReplacement(fakeBin);
+    try {
+      let pinnedDir = dirname(seal.pinnedPath);
+      while (pinnedDir && !basename(pinnedDir).startsWith('agb-pinned-adlc-')) {
+        pinnedDir = dirname(pinnedDir);
+      }
+      const pinnedCore = join(pinnedDir, 'node_modules', '@adlc', 'core');
+      assert.ok(existsSync(pinnedCore), 'pinned copy must include dependency closure (@adlc/core)');
+      assert.equal(lstatSync(pinnedCore).isSymbolicLink(), false, 'dependency closure must be a real copy, not a symlink');
+
+      // Run recovery during active execution — must keep active pinned tree alive
+      recoverStaleExecutableLocks(locksDir);
+      assert.ok(existsSync(pinnedDir), 'active pinned tree must NOT be pruned by recovery while process is alive');
+    } finally {
+      seal.release();
+    }
+  } finally {
+    process.env.AGB_EXEC_LOCKS_DIR = origExecLocks;
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
+    try { rmSync(locksDir, { recursive: true, force: true }); } catch {}
+  }
+});
+
 
