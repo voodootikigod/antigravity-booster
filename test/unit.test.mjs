@@ -1007,6 +1007,10 @@ test('standalone commands: reviewFleet, preflight, compilePlan, and brainToPlan 
       /quota telemetry unavailable/
     );
 
+    // 2b. preflight succeeds when quota telemetry unavailable if skipColdstart is true
+    const noColdstartRes = await preflight({ tickets: [] }, { pools, repo: dir, skipColdstart: true });
+    assert.equal(noColdstartRes.ok, true);
+
     // 3. compilePlan rejects when quota telemetry unavailable
     await assert.rejects(
       async () => {

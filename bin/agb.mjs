@@ -158,19 +158,23 @@ try {
     const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
     process.exit(blocking.length || !result.converged ? 2 : 0);
   } else if (cmd === 'preflight') {
-    const { plan, errors } = loadPlan(rest[0] ?? 'plan.json');
+    const planPath = rest.find((arg) => !arg.startsWith('--')) ?? 'plan.json';
+    const { plan, errors } = loadPlan(planPath);
     if (errors.length) {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
     const targetRepo = resolve(plan.repo ?? '.');
+    const skipColdstart = rest.includes('--no-coldstart');
     const pools = new PoolSet(undefined, { repo: targetRepo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
-    if (!quotaRes.ok) {
-      console.error(`preflight: quota telemetry unavailable from agy: ${quotaRes.error}`);
-      process.exit(1);
+    if (!skipColdstart) {
+      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+      if (!quotaRes.ok) {
+        console.error(`preflight: quota telemetry unavailable from agy: ${quotaRes.error}`);
+        process.exit(1);
+      }
     }
-    const result = await preflight(plan, { pools, repo: targetRepo, skipColdstart: rest.includes('--no-coldstart'), project });
+    const result = await preflight(plan, { pools, repo: targetRepo, skipColdstart, project });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {

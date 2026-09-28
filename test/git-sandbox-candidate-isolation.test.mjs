@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync, copyFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -13,7 +13,7 @@ import {
   getGitCommonDir,
   verifyWorktreeGitPointer,
 } from '../lib/scheduler.mjs';
-import { createWorktree } from '../lib/worktrees.mjs';
+import { createWorktree, commitAll } from '../lib/worktrees.mjs';
 
 function makeTestRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-git-test-'));
@@ -564,4 +564,55 @@ test('verifyRootGitIntegrity: validates newly created pack objects and rejects s
     rmSync(otherRepo, { recursive: true, force: true });
   }
 });
+
+test('hooks isolation: host git commands and verifyWorktreeGitPointer neutralize planted attempt git hooks', () => {
+  const repo = makeTestRepo();
+  try {
+    const wt = createWorktree(repo, 'T1', 'main');
+    const { baseSha, gitDir } = setupAttemptGitDatabase(repo, wt, 'main');
+
+    // 1. Initial clean setup passes verifyWorktreeGitPointer
+    assert.equal(verifyWorktreeGitPointer(wt, gitDir), true);
+
+    // 2. Plant an executable hook in attempt git database hooks/
+    const sentinelFile = join(repo, 'hook-ran.sentinel');
+    const hookPath = join(gitDir, 'hooks', 'pre-commit');
+    writeFileSync(hookPath, `#!/bin/sh\ntouch "${sentinelFile}"\nexit 0\n`);
+    try { chmodSync(hookPath, 0o755); } catch {}
+
+    // verifyWorktreeGitPointer detects the planted hook
+    assert.throws(
+      () => verifyWorktreeGitPointer(wt, gitDir),
+      /Security violation: unexpected hook file found in attempt git database: pre-commit/
+    );
+
+    // 3. Even if someone configures core.hooksPath in worktree config to point to hooks
+    execFileSync('git', ['config', 'core.hooksPath', join(gitDir, 'hooks')], { cwd: wt });
+
+    // verifyWorktreeGitPointer detects tampered core.hooksPath even if hooks were removed
+    rmSync(hookPath, { force: true });
+    assert.throws(
+      () => verifyWorktreeGitPointer(wt, gitDir),
+      /Security violation: core.hooksPath tampered with/
+    );
+
+    // Put back the hook script to test host command immunity
+    writeFileSync(hookPath, `#!/bin/sh\ntouch "${sentinelFile}"\nexit 0\n`);
+    try { chmodSync(hookPath, 0o755); } catch {}
+
+    // 4. Host commitAll does NOT execute the hook
+    writeFileSync(join(wt, 'test.txt'), 'payload\n');
+    commitAll(wt, 'test commit from host');
+    assert.equal(existsSync(sentinelFile), false, 'pre-commit hook was NOT executed by commitAll');
+
+    // 5. Host verifyScopeAndAntiNoOp does NOT execute the hook
+    writeFileSync(join(wt, 'test2.txt'), 'payload 2\n');
+    const ticket = { id: 'T1', scope: ['test.txt', 'test2.txt'] };
+    verifyScopeAndAntiNoOp(repo, wt, baseSha, ticket);
+    assert.equal(existsSync(sentinelFile), false, 'pre-commit hook was NOT executed by verifyScopeAndAntiNoOp');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 
