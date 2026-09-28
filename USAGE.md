@@ -1,6 +1,6 @@
 # Antigravity Booster Usage Guide
 
-`antigravity-booster` (`agb`) orchestrates **Google Antigravity** (`agy` CLI) and **JetSki** (`agentapi` subagent environment) for large, parallel, disciplined software build-outs.
+`antigravity-booster` (`agb`) orchestrates **Google Antigravity** (`agy` CLI) for large, parallel, disciplined software build-outs.
 
 ---
 
@@ -29,9 +29,8 @@
 - **Node.js**: `>= 22.19.0`
 - **Git**: `>= 2.38` (support for `git worktree`)
 - **CLI Runtime**:
-  - **Standalone Antigravity**: [`agy`](lib/agy.mjs) CLI (`>= 1.2.8`) installed and authenticated on `PATH`.
+  - **Antigravity CLI**: [`agy`](lib/agy.mjs) (`>= 1.2.8`) installed and authenticated on `PATH`.
   - **ADLC Runtime**: [`@adlc/cli`](node_modules/@adlc/cli/bin/adlc.mjs) (`>= 1.11.1`) installed or resolvable.
-  - **JetSki Environment**: `agentapi` CLI available (`AGB_PROVIDER=jetski`).
 
 ### 1. Installation
 
@@ -54,8 +53,6 @@ Run [`agb bootstrap`](lib/bootstrap.mjs) to install the `@adlc/antigravity` plug
 ```bash
 agb bootstrap
 ```
-
-*(Under `AGB_PROVIDER=jetski`, `agb bootstrap` auto-detects JetSki mode and links skills directly).*
 
 ### 3. Diagnostic Health Check
 
@@ -294,7 +291,7 @@ agb probe <concurrencies> [model]
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `AGB_PROVIDER` | `agy` | Execution provider mode (`agy` for standard CLI, `jetski` for JetSki `agentapi` subagents). |
+| `AGB_PROVIDER` | `agy` | Execution provider mode (defaults to `agy`). |
 | `AGB_BUILD_TIMEOUT` | `5m` | Worker execution timeout (excess burns a strike). |
 | `AGB_SANDBOX_GATES` | sandbox on | `0` runs gates unsandboxed. Darwin uses Seatbelt; Linux uses Bubblewrap (`bwrap`); Windows uses AppContainer. |
 | `AGB_EXEC_CACHE_DIR` | `~/.adlc/pinned/` | Directory where immutable pinned executables are staged outside restricted `noexec` temporary directories. |
@@ -311,28 +308,7 @@ agb probe <concurrencies> [model]
 
 ---
 
-## 6. JetSki Environment Integration
-
-To use `antigravity-booster` in JetSki:
-
-1. **Bootstrap in JetSki**:
-   ```bash
-   agb bootstrap
-   ```
-2. **Enable JetSki Provider**:
-   ```bash
-   export AGB_PROVIDER=jetski
-   ```
-3. **Run Fleet Workloads**:
-   ```bash
-   agb run plan.json
-   ```
-4. **Verification**:
-   Run `agb doctor` and `npm test` to verify subagent isolation and sandbox leak audit protections.
-
----
-
-## 7. Antigravity Booster (`agb`) vs. Built-in `/boost`
+## 6. Antigravity Booster (`agb`) vs. Built-in `/boost`
 
 Google Antigravity 2.0 provides the built-in [`/boost` slash command](https://antigravity.google/docs/boost/) for interactive multi-agent reasoning. The table below outlines how `agb` relates to `/boost`:
 

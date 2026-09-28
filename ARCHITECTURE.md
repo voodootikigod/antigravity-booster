@@ -1,35 +1,35 @@
 # Antigravity Booster Architecture
 
-This document provides a comprehensive architectural specification of **Antigravity Booster** (`agb`), detailing its design, core components, gate pipeline, cross-model prosecution flow, and integration with **Google Antigravity** (`agy` CLI) and **JetSki** (`agentapi` subagent environment).
+This document provides a comprehensive architectural specification of **Antigravity Booster** (`agb`), detailing its design, core components, gate pipeline, cross-model prosecution flow, and integration with **Google Antigravity** (`agy` CLI).
 
 ---
 
 ## 1. System Purpose & Value Proposition
 
-Google Antigravity and JetSki provide powerful AI agent execution capabilities and model access across multiple model families (Gemini Flash, Gemini Pro, Claude Sonnet/Opus, GPT-OSS). However, executing large, multi-component build-outs manually faces several challenges:
+Google Antigravity provides powerful AI agent execution capabilities and model access across multiple model families (Gemini Flash, Gemini Pro, Claude Sonnet/Opus, GPT-OSS). However, executing large, multi-component build-outs manually faces several challenges:
 - **Sequential Bottlenecks**: Single-agent chat sessions execute work sequentially, leading to high wall-clock latency for multi-file features.
 - **Quota Misallocation**: Models from separate providers/families sit idle while a single model's quota exhausts.
 - **Unsupervised Drift & Flailing**: Unsupervised agents burn quota making repeated failing edits or straying outside their assigned task scope.
 - **Merge Conflicts & Data Loss**: Concurrent edits across subtasks cause dirty working tree corruption and broken main branches.
 
-**Antigravity Booster (`agb`)** solves these problems by providing a deterministic, quota-aware parallel execution engine that imposes the **Agentic Development Lifecycle ([ADLC](AGENTS.md))** on Antigravity (`agy >= 1.2.8`) and JetSki. While Antigravity 2.0 provides the built-in [`/boost`](https://antigravity.google/docs/boost/) command for interactive in-chat multi-agent reasoning, `agb` is designed for autonomous, repository-scale multi-ticket build-outs across physical git worktrees.
+**Antigravity Booster (`agb`)** solves these problems by providing a deterministic, quota-aware parallel execution engine that imposes the **Agentic Development Lifecycle ([ADLC](AGENTS.md))** on Antigravity (`agy >= 1.2.8`). While Antigravity 2.0 provides the built-in [`/boost`](https://antigravity.google/docs/boost/) command for interactive in-chat multi-agent reasoning, `agb` is designed for autonomous, repository-scale multi-ticket build-outs across physical git worktrees.
 
-### What `agb` Adds to Antigravity & JetSki
+### What `agb` Adds to Antigravity
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Antigravity Booster (agb)                           │
 │  Deterministic Execution Engine | Quota Pool Routing | ADLC Gate Pipeline   │
-└──────────────────────┬──────────────────────┴──────────────────────────────┘
-                       │
-        ┌──────────────┴───────────────┐
-        ▼                              ▼
-┌───────────────────────────────┐      ┌───────────────────────────────┐
-│     Antigravity (agy CLI)     │      │     JetSki (agentapi Env)     │
-│  - CLI / Desktop App planning │      │  - Subagent context isolation │
-│  - Stream-json subprocesses   │      │  - Worktree leak defense      │
-│  - Multi-model pool access    │      │  - Dashboard sidecar auth     │
-└───────────────────────────────┘      └───────────────────────────────┘
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Antigravity (agy CLI)                            │
+│  - CLI / Desktop App planning artifacts (implementation_plan.md)            │
+│  - Structured subprocess worker execution (--output-format stream-json)     │
+│  - Multi-model independent quota pools (Gemini Flash / Pro, Claude)         │
+│  - Native dashboard sidecar telemetry & token authentication                │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 1. **Deterministic Parallel Orchestration**:
@@ -46,8 +46,8 @@ Google Antigravity and JetSki provide powerful AI agent execution capabilities a
    - Integrates `adlc hollow-test` mutation evidence into prosecution decisions.
 5. **Flail Detection & Two-Strike Protection**:
    - Detects worker flailing (repeated errors, scope violations, edit churn, oversized logs) via `adlc flail-detector`. Skip wasted retries on diagnosed dead ends.
-6. **JetSki Environment Native Integration**:
-   - In JetSki (`AGB_PROVIDER=jetski`), executes subagents via `agentapi` ([`lib/agy.mjs`](lib/agy.mjs)) in fresh context windows.
+6. **Worktree Sandbox Containment & Dashboard Sidecars**:
+   - Executes workers via `runAgy` ([`lib/agy.mjs`](lib/agy.mjs)) in isolated workspaces.
    - Enforces active worktree sandbox leak detection (prevents edits outside designated worktrees, `.git/hooks` modification, `.git/config` tampering, or git ref manipulation).
    - Provides native REST & WebSocket dashboard sidecars ([`sidecars/server.mjs`](sidecars/server.mjs)) authenticated via secure POSIX `0o600` token files.
 
@@ -119,15 +119,14 @@ graph TD
                                               ▼
                                      ┌──────────────────┐
                                      │   lib/agy.mjs    │
-                                     │ (agy / JetSki)   │
+                                     │  (agy Subprocess)│
                                      └────────┬─────────┘
                                               │
-                      ┌───────────────────────┴───────────────────────┐
-                      ▼                                               ▼
-           ┌──────────────────────┐                       ┌──────────────────────┐
-           │   Standard agy CLI   │                       │   JetSki agentapi    │
-           │ (--print completer)  │                       │ (Subagent Runner)    │
-           └──────────────────────┘                       └──────────────────────┘
+                                              ▼
+                                   ┌──────────────────────┐
+                                   │   Antigravity CLI    │
+                                   │ (stream-json / print)│
+                                   └──────────────────────┘
 ```
 
 ### Module Descriptions & Symbol Map
@@ -137,7 +136,7 @@ graph TD
 | [`bin/agb.mjs`](bin/agb.mjs) | CLI Entry point & subcommand dispatcher | Subcommands: `bootstrap`, `brains`, `plan`, `validate`, `preflight`, `run`, `sweep`, `review`, `doctor`, `status`, `sidecar`, `probe` |
 | [`lib/scheduler.mjs`](lib/scheduler.mjs) | Ticket DAG execution, rebase/merge, rollback, 2-strike flail handling | `runPlan()`, `executeTicket()`, `rebaseAndMerge()` |
 | [`lib/pools.mjs`](lib/pools.mjs) | Per-model-family semaphore pools and rate limiting | `PoolManager`, `acquirePool()`, `releasePool()` |
-| [`lib/agy.mjs`](lib/agy.mjs) | Completer invocation for `agy` CLI & JetSki `agentapi` | `runAgy()`, `poolOf()`, `familyOf()`, `isAgyTimeout()` |
+| [`lib/agy.mjs`](lib/agy.mjs) | Completer invocation for `agy` CLI | `runAgy()`, `poolOf()`, `familyOf()`, `isAgyTimeout()` |
 | [`lib/worktrees.mjs`](lib/worktrees.mjs) | Git worktree lifecycle management | `createWorktree()`, `removeWorktree()`, `cleanWorktrees()` |
 | [`lib/gates.mjs`](lib/gates.mjs) | Sandboxed build and test command execution | `runGate()`, `gateSandboxAvailable()` |
 | [`lib/prosecute.mjs`](lib/prosecute.mjs) | Cross-family model prosecution & review | `prosecute()`, `prosecuteDiff()` |
@@ -192,8 +191,8 @@ stateDiagram-v2
     Scheduled --> InWorktree: Acquire Quota Pool Semaphore & Create Worktree (.worktrees/agb-<id>)
 
     state InWorktree {
-        [*] --> BuilderSpawn: Spawn Builder Agent (agy / agentapi)
-        BuilderSpawn --> WorktreeLeakAudit: Audit Sandbox Leak (Jetski provider)
+        [*] --> BuilderSpawn: Spawn Builder Agent (agy CLI)
+        BuilderSpawn --> WorktreeLeakAudit: Audit Sandbox Leak
         WorktreeLeakAudit --> RunL2Gates: Execute Build & Test Gates (Seatbelt / bwrap)
         
         state StrikeHandling <<choice>>
@@ -236,13 +235,13 @@ Build and test commands specified in `plan.json` are executed via [`lib/gates.mj
 - **Windows AppContainer & Job Objects**: Uses Windows AppContainer security profiles with active differential syscall probing (asserting `EACCES` file denial and `WSAEACCES` loopback TCP denial) combined with multi-factor nonce attestation ledgers. Process tree termination is enforced via Windows Job Objects on abort / SIGKILL.
 - **Fail-Closed Policy**: If sandboxing is requested but unavailable on the host platform, gate execution fails closed unless `AGB_SANDBOX_GATES=0` is explicitly set for containerized environments.
 
-### 5.2 JetSki Subagent Context & Worktree Leak Defenses
+### 5.2 Worktree Containment & Sandbox Leak Defenses
 
-When running inside **JetSki** (`AGB_PROVIDER=jetski`), subagents are launched via `agentapi new-conversation`. `agb` enforces strict post-execution audits to prevent subagent containment breaches:
+When executing builder workers in isolated git worktrees, `agb` enforces strict post-execution audits to prevent sandbox containment breaches:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          JetSki Sandbox Auditor                             │
+│                         Worktree Sandbox Auditor                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 🛡️ Leaked File Audit      │ Detects files modified outside worktree root   │
 │ 🛡️ Git Hooks Audit        │ Detects unauthorized edits to .git/hooks       │
@@ -289,18 +288,3 @@ If any violation occurs, the ticket is immediately aborted with a sandbox securi
     └── agb-<runId>-<ticketId>/     # Isolated git worktrees during active runs
 ```
 
----
-
-## 7. Integration Matrix: Antigravity vs. JetSki
-
-| Feature / Capability | Standalone Antigravity (`agy`) | JetSki Environment (`agentapi`) |
-| :--- | :--- | :--- |
-| **Provider Env** | Default / `AGB_PROVIDER=agy` | `AGB_PROVIDER=jetski` |
-| **Worker Subprocess** | `agy --print --model <m>` | `agentapi new-conversation --model <m>` |
-| **Context Isolation** | Per-process CLI invocation | Isolated subagent context window |
-| **Model Pools** | Gemini Flash, Gemini Pro, Claude, GPT-OSS | Mapped to Gemini Flash/Pro tiers |
-| **ADLC Ticket Store** | Directory store (`.adlc/tickets/`) | Directory store (`.adlc/tickets/`) |
-| **Worktree Sandboxing** | Seatbelt / `bwrap` gates | Seatbelt / `bwrap` + Subagent Leak Audit |
-| **Dashboard Sidecar** | `agb sidecar <repo>` (Port 3333) | `agb sidecar <repo>` (Port via `ANTIGRAVITY_SIDECAR_WEB_PORT`) |
-| **Sidecar Security** | Mode `0o600` token at `.booster/token` | Mode `0o600` token at `.booster/token` |
-| **Diagnostic Verification** | `agb doctor` checks `agy` binary & auth | `agb doctor` checks `agentapi` & JetSki provider |

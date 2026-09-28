@@ -7,7 +7,7 @@ Welcome to the documentation for **antigravity-booster** (`agb`). This tool impl
 | Section | Description |
 | :--- | :--- |
 | 🏗️ **[Architecture Specification](../ARCHITECTURE.md)** | System design, 4-layer architectural model, execution state machines, and sandbox leak defenses. |
-| 📖 **[CLI Operational Manual](../USAGE.md)** | Root operational reference for CLI subcommands, plan schemas, environment variables, and JetSki integration. |
+| 📖 **[CLI Operational Manual](../USAGE.md)** | Root operational reference for CLI subcommands, plan schemas, and environment variables. |
 | 🚀 **[CLI Usage & Configuration](usage.md)** | Full guide to commands, schemas (`plan.json` and `sweep.json`), environment variables, and running runs. |
 | 🛡️ **[Guidelines & Doctrine](guidelines.md)** | Core principles, the ADLC doctrine (P0-P7), cross-model prosecution flow, sandboxing, and execution gates. |
 | 📖 **[Execution Example](execution-example.md)** | Step-by-step example showing how to decompose a spec into a plan.json DAG and run it with agb. |
