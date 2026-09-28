@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, chmodSync, realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, chmodSync, realpathSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -885,6 +885,77 @@ test('runAgy builder: on win32 under job_object, fails closed when Windows sandb
     if (savedProbe === undefined) delete process.env.AGB_SANDBOX_PROBE_CMD;
     else process.env.AGB_SANDBOX_PROBE_CMD = savedProbe;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy builder: on win32 under job_object, consumes bypass attestation nonce when active sandbox fails', async () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const adminKey = 'job-object-bypass-key-777';
+  const platform = 'win32';
+
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+  const savedProbe = process.env.AGB_SANDBOX_PROBE_CMD;
+  const savedKey = process.env.ADLC_ADMIN_KEY;
+  const savedHome = process.env.AGB_HOME_DIR;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'job_object';
+    process.env.AGB_SANDBOX_PROBE_CMD = 'echo'; // Forces active Windows sandbox check to fail
+    process.env.ADLC_ADMIN_KEY = adminKey;
+    process.env.AGB_HOME_DIR = homeDir;
+
+    const validAtt = createAttestation({ installId, rootCommit, origin, repoPath: repo, platform, adminKey });
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ sandboxBypassAttestation: validAtt })
+    );
+
+    // First invocation: bypass is used and nonce MUST be consumed
+    const res1 = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: repo,
+      repo,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform,
+    });
+    // First invocation: bypass verification succeeds and consumes nonce, proceeding to launch
+    assert.notEqual(res1.kind, 'containment_unavailable', 'containment check must pass via bypass attestation');
+    const nonceLock = join(homeDir, '.adlc', 'nonces', `${validAtt.nonce}.lock`);
+    assert.equal(existsSync(nonceLock), true, 'nonce must be recorded as consumed');
+
+    // Second invocation with same config must fail because nonce was already consumed (replay prevented)
+    const res2 = await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: repo,
+      repo,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform,
+    });
+    assert.equal(res2.ok, false);
+    assert.equal(res2.kind, 'containment_unavailable');
+    assert.match(res2.error, /Active Windows AppContainer sandbox verification failed/);
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    if (savedProbe === undefined) delete process.env.AGB_SANDBOX_PROBE_CMD;
+    else process.env.AGB_SANDBOX_PROBE_CMD = savedProbe;
+    if (savedKey === undefined) delete process.env.ADLC_ADMIN_KEY;
+    else process.env.ADLC_ADMIN_KEY = savedKey;
+    if (savedHome === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHome;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 

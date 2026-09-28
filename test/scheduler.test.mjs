@@ -340,6 +340,17 @@ test('runPlan: duplicate ids and unknown edge targets are rejected before touchi
       withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
         runPlan({
           repo, gate: { test: 'true' },
+          tickets: [
+            { id: 'T1', title: 'a', body: 'x', scope: ['a.txt'] },
+            { id: 't1', title: 'b', body: 'y', scope: ['b.txt'] },
+          ],
+        }, quiet)),
+      /ticket id 't1' collides with 'T1'/
+    );
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
           tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a.txt'], edges: [{ to: 'T9' }] }],
         }, quiet)),
       /edge to unknown ticket 'T9'/

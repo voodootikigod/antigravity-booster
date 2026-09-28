@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, chmodSync, realpathSync, cpSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, symlinkSync, lstatSync, chmodSync, realpathSync, cpSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -910,5 +910,50 @@ test('isTemporaryOrWorldWritablePath: allows non-writable ancestors owned by unt
   const safePath = fileURLToPath(import.meta.url);
   const res = isTemporaryOrWorldWritablePath(safePath);
   assert.equal(res.restricted, false);
+});
+
+test('preventExecutableReplacement: write-protects binary and parent directory, verifies integrity, and restores modes on release', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-repl-test-'));
+  try {
+    const fakeBin = join(root, 'adlc.mjs');
+    writeFileSync(fakeBin, '#!/usr/bin/env node\nconsole.log("hello");\n');
+    chmodSync(fakeBin, 0o755);
+
+    const initialBinStat = statSync(fakeBin);
+    const initialDirStat = statSync(root);
+
+    const seal = preventExecutableReplacement(fakeBin);
+    try {
+      if (process.platform !== 'win32') {
+        const lockedBinStat = statSync(fakeBin);
+        const lockedDirStat = statSync(root);
+        assert.equal(lockedBinStat.mode & 0o222, 0, 'binary must have write bits stripped');
+        assert.equal(lockedDirStat.mode & 0o222, 0, 'parent dir must have write bits stripped');
+      }
+
+      // Integrity verification succeeds when untouched
+      assert.doesNotThrow(() => seal.verifyUnchanged());
+
+      // If tampered with, verifyUnchanged must throw
+      if (process.platform !== 'win32') {
+        chmodSync(root, 0o755);
+        chmodSync(fakeBin, 0o755);
+      }
+      writeFileSync(fakeBin, '#!/usr/bin/env node\n// tampered!\n');
+      assert.throws(() => seal.verifyUnchanged(), /tampered with/);
+    } finally {
+      seal.release();
+    }
+
+    if (process.platform !== 'win32') {
+      const restoredBinStat = statSync(fakeBin);
+      const restoredDirStat = statSync(root);
+      assert.equal(restoredBinStat.mode & 0o777, initialBinStat.mode & 0o777, 'binary mode restored');
+      assert.equal(restoredDirStat.mode & 0o777, initialDirStat.mode & 0o777, 'parent dir mode restored');
+    }
+  } finally {
+    try { chmodSync(root, 0o755); } catch {}
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 

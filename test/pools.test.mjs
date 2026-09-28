@@ -23,6 +23,10 @@ import {
   readSharedState,
   isProcessAlive,
   getProcessStartTime,
+  getStateFile,
+  getV2StateFile,
+  getLockFile,
+  terminateWorkerTree,
   withLock,
   withLockSync,
 } from '../lib/pools.mjs';
@@ -1121,6 +1125,166 @@ test('Lease liveness: detects orchestrator PID reuse with mismatched start time 
   }
 });
 
+test('Quota state overrides: extensionless AGB_QUOTA_STATE produces distinct state, v2, and lock files', () => {
+  const savedState = process.env.AGB_QUOTA_STATE;
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
 
+  try {
+    delete process.env.AGB_POOLS_V2;
+    delete process.env.AGB_POOLS_LOCK;
+    process.env.AGB_QUOTA_STATE = '/tmp/quota_override_noext';
 
+    const state = getStateFile();
+    const v2 = getV2StateFile();
+    const lock = getLockFile();
 
+    assert.equal(state, '/tmp/quota_override_noext');
+    assert.equal(v2, '/tmp/quota_override_noext_v2.json');
+    assert.equal(lock, '/tmp/quota_override_noext.lock');
+    assert.notEqual(state, v2);
+    assert.notEqual(state, lock);
+    assert.notEqual(v2, lock);
+  } finally {
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = savedState;
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+  }
+});
+
+test('terminateWorkerTree: terminates active worker process when dead orchestrator lease is reclaimed in reconcileLeases', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-worker-term-'));
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
+
+  let worker = null;
+  try {
+    process.env.AGB_POOLS_V2 = join(dir, 'v2.json');
+    process.env.AGB_POOLS_LOCK = join(dir, 'shared.lock');
+
+    worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+      detached: process.platform !== 'win32',
+    });
+    worker.unref();
+
+    const workerPid = worker.pid;
+    const workerStartTime = getProcessStartTime(workerPid);
+    assert.ok(isProcessAlive(workerPid, workerStartTime), 'worker process must be alive initially');
+
+    const deadOrchPid = 9999999;
+    const v2 = {
+      version: 2,
+      lastUpdated: new Date().toISOString(),
+      pools: {
+        gemini: { baseCap: 4, scaledCap: 4, inFlight: 1, reserved: 0 },
+      },
+      leases: {
+        'lease-worker-test': {
+          leaseId: 'lease-worker-test',
+          pool: 'gemini',
+          ticketId: 'T-WORKER',
+          ownerToken: 'token-worker',
+          orchestratorPid: deadOrchPid,
+          orchestratorStartTime: 'dead_orch_start_time',
+          workerPid: workerPid,
+          workerStartTime: workerStartTime,
+          leaseExpiryMs: Date.now() + 60000,
+          heartbeatMs: Date.now(),
+          state: 'ACTIVE',
+        },
+      },
+    };
+    writeV2State(v2);
+
+    await reconcileLeases(dir);
+
+    let alive = true;
+    for (let i = 0; i < 20; i++) {
+      if (!isProcessAlive(workerPid)) {
+        alive = false;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    assert.equal(alive, false, 'worker process must be terminated when dead orchestrator lease is reclaimed');
+
+    const v2After = readV2State();
+    assert.equal(v2After.leases['lease-worker-test'].state, 'RECLAIMED');
+    assert.equal(v2After.pools.gemini.inFlight, 0);
+  } finally {
+    if (worker && isProcessAlive(worker.pid)) {
+      try { process.kill(worker.pid, 'SIGKILL'); } catch {}
+    }
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('terminateWorkerTree: terminates active worker when dead orchestrator lease is encountered during acquireLease', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-worker-acq-'));
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
+
+  let worker = null;
+  try {
+    process.env.AGB_POOLS_V2 = join(dir, 'v2.json');
+    process.env.AGB_POOLS_LOCK = join(dir, 'shared.lock');
+
+    worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+      detached: process.platform !== 'win32',
+    });
+    worker.unref();
+
+    const workerPid = worker.pid;
+    const workerStartTime = getProcessStartTime(workerPid);
+    assert.ok(isProcessAlive(workerPid, workerStartTime));
+
+    const deadOrchPid = 9999999;
+    const v2 = {
+      version: 2,
+      lastUpdated: new Date().toISOString(),
+      pools: {
+        gemini: { baseCap: 1, scaledCap: 1, inFlight: 1, reserved: 0 },
+      },
+      leases: {
+        'lease-dead-orch': {
+          leaseId: 'lease-dead-orch',
+          pool: 'gemini',
+          ticketId: 'T-DEAD',
+          ownerToken: 'tok-dead',
+          orchestratorPid: deadOrchPid,
+          orchestratorStartTime: 'dead_orch_start',
+          workerPid: workerPid,
+          workerStartTime: workerStartTime,
+          leaseExpiryMs: Date.now() + 60000,
+          heartbeatMs: Date.now(),
+          state: 'ACTIVE',
+        },
+      },
+    };
+    writeV2State(v2);
+
+    const newLease = await acquireLease(dir, { pool: 'gemini-flash', ticketId: 'T-NEW' });
+    assert.ok(newLease?.leaseId);
+
+    let alive = true;
+    for (let i = 0; i < 20; i++) {
+      if (!isProcessAlive(workerPid)) {
+        alive = false;
+        break;
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    assert.equal(alive, false, 'worker process must be killed during acquireLease dead-lease reclamation');
+  } finally {
+    if (worker && isProcessAlive(worker.pid)) {
+      try { process.kill(worker.pid, 'SIGKILL'); } catch {}
+    }
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
