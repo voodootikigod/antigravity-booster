@@ -1247,5 +1247,59 @@ test('pinExecutable and preventExecutableReplacement: fails closed when executab
   );
 });
 
+test('preventExecutableReplacement: rejects symlinks in copied dependencies', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-dep-symlink-test-'));
+  try {
+    const cliDir = join(root, 'node_modules', '@adlc', 'cli');
+    const coreDir = join(root, 'node_modules', '@adlc', 'core');
+    mkdirSync(join(cliDir, 'bin'), { recursive: true });
+    mkdirSync(coreDir, { recursive: true });
+
+    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
+    const fakeBin = join(cliDir, 'bin', 'adlc.mjs');
+    writeFileSync(fakeBin, '#!/usr/bin/env node\nconsole.log(1);\n');
+    chmodSync(fakeBin, 0o755);
+
+    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.11.1"}');
+    // Plant an internal symlink inside dependency
+    const outsideTarget = join(tmpdir(), `agb-sym-target-${crypto.randomUUID()}`);
+    writeFileSync(outsideTarget, 'malicious');
+    try {
+      symlinkSync(outsideTarget, join(coreDir, 'sym.js'));
+    } catch {}
+
+    assert.throws(
+      () => preventExecutableReplacement(fakeBin),
+      /Security violation/
+    );
+  } finally {
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('revalidateAdlcBinary: authenticates pinned bytes and fails closed on source-versus-pinned TOCTOU', () => {
+  const root = mkdtempSync(join(process.cwd(), '.test-reval-toctou-'));
+  try {
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    mkdirSync(join(pkgDir, 'bin'), { recursive: true });
+
+    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    cpSync(realCliDir, pkgDir, { recursive: true });
+
+    const targetBin = join(pkgDir, 'bin', 'adlc.mjs');
+
+    // Simulate an attacker modifying the file so pinned copy gets bad bytes
+    writeFileSync(targetBin, '#!/usr/bin/env node\n// malicious injected code\n');
+
+    // Even if source was modified before and could be restored, revalidateAdlcBinary authenticates the pinned tree
+    const res = revalidateAdlcBinary(targetBin, { repo: root });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /digest mismatch/);
+  } finally {
+    try { rmSync(root, { recursive: true, force: true }); } catch {}
+  }
+});
+
+
 
 
