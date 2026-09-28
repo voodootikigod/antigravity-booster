@@ -321,7 +321,7 @@ test('renewLease: rejects expired lease, stale heartbeat, or draining pool state
     assert.equal(await renewLease(tmp, leaseId, ownerToken), false);
 
     // Reset status to ACTIVE
-    v2 = readV2State();
+    v2 = readV2State({ allowLegacy: true });
     v2.status = 'ACTIVE';
     writeV2State(v2);
 
@@ -1436,6 +1436,59 @@ test('drainPools: clears active legacy fleet state and successfully sets DRAININ
     assert.equal(legacyState.inFlight.gemini, 0);
     assert.equal(legacyState.inFlight.claude_gpt, 0);
   } finally {
+    if (savedState === undefined) delete process.env.AGB_QUOTA_STATE;
+    else process.env.AGB_QUOTA_STATE = savedState;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('drainPools: terminates active legacy processes and blocks coordinators with draining marker', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-drain-live-legacy-test-'));
+  const savedState = process.env.AGB_QUOTA_STATE;
+
+  const dummyLegacy = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+  });
+
+  try {
+    process.env.AGB_QUOTA_STATE = join(dir, 'test_quota.json');
+    const legacyFile = getStateFile();
+
+    // 1. Draining marker alone blocks admission even if inFlight is 0
+    writeFileSync(legacyFile, JSON.stringify({
+      activeSchemaVersion: 1,
+      status: 'DRAINING',
+      draining: true,
+      inFlight: { gemini: 0, claude_gpt: 0 },
+    }), 'utf8');
+    assert.throws(() => assertNoActiveLegacyFleet(), /Fleet is currently DRAINING/i);
+
+    // 2. Seed active legacy process with alive PID
+    writeFileSync(legacyFile, JSON.stringify({
+      activeSchemaVersion: 1,
+      inFlight: { gemini: 1, claude_gpt: 0 },
+      [dummyLegacy.pid]: { inFlight: { gemini: 1 }, ts: Date.now() },
+    }), 'utf8');
+
+    assert.equal(isProcessAlive(dummyLegacy.pid), true);
+    assert.throws(() => readV2State(), /LegacyFleetActiveError/);
+
+    // 3. drainPools terminates the legacy process and tombstones cleanly
+    const res = await drainPools(dir, { gracePeriodMs: 100 });
+    assert.equal(res.ok, true);
+
+    // Dummy process is now dead
+    assert.equal(isProcessAlive(dummyLegacy.pid), false);
+
+    // After drain, admission is restored and state is clean
+    const v2 = readV2State();
+    assert.equal(v2.status, 'ACTIVE');
+
+    const legacyState = JSON.parse(readFileSync(legacyFile, 'utf8'));
+    assert.equal(legacyState.status, undefined);
+    assert.equal(legacyState.inFlight.gemini, 0);
+  } finally {
+    try { dummyLegacy.kill('SIGKILL'); } catch {}
     if (savedState === undefined) delete process.env.AGB_QUOTA_STATE;
     else process.env.AGB_QUOTA_STATE = savedState;
     rmSync(dir, { recursive: true, force: true });
