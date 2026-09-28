@@ -684,6 +684,8 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
 
     mkdirSync(join(fakeHome, '.ssh'), { recursive: true });
     mkdirSync(join(fakeHome, '.aws'), { recursive: true });
+    mkdirSync(join(fakeHome, '.gnupg'), { recursive: true });
+    mkdirSync(join(dir, '.gnupg'), { recursive: true });
     mkdirSync(join(fakeHome, '.config'), { recursive: true });
     mkdirSync(join(fakeHome, '.gemini'), { recursive: true });
     writeFileSync(join(fakeHome, '.netrc'), 'machine example.com login user password secret\n');
@@ -721,6 +723,10 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
     assert.ok(npmrcIdx >= 2 && spawnedArgs[npmrcIdx - 2] === '--ro-bind' && spawnedArgs[npmrcIdx - 1] === '/dev/null', 'worktree .npmrc must be masked with /dev/null');
     const pypircIdx = spawnedArgs.indexOf(join(dir, '.pypirc'));
     assert.ok(pypircIdx >= 2 && spawnedArgs[pypircIdx - 2] === '--ro-bind' && spawnedArgs[pypircIdx - 1] === '/dev/null', 'worktree .pypirc must be masked with /dev/null');
+    const gnupgHomeIdx = spawnedArgs.indexOf(join(fakeHome, '.gnupg'));
+    assert.ok(gnupgHomeIdx >= 1 && spawnedArgs[gnupgHomeIdx - 1] === '--tmpfs', 'home .gnupg must be masked with --tmpfs');
+    const gnupgDirIdx = spawnedArgs.indexOf(join(dir, '.gnupg'));
+    assert.ok(gnupgDirIdx >= 1 && spawnedArgs[gnupgDirIdx - 1] === '--tmpfs', 'worktree .gnupg must be masked with --tmpfs');
 
     const agyIndex = spawnedArgs.indexOf(FAKE_AGY);
     assert.ok(agyIndex > 0 && spawnedArgs[agyIndex - 1] === '--ro-bind', 'agy binary must be preserved via --ro-bind');

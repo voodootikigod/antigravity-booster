@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import crypto from 'node:crypto';
@@ -685,5 +685,61 @@ test('verifyWindowsSandboxActive: restricts mock canary to test execution and do
   }
 });
 
+test('verifyWindowsSandboxActive: rejects symlinked or non-contained .worktrees directory', async () => {
+  const { repo } = setupMockGitRepo();
+  const outsideWorktrees = mkdtempSync(join(tmpdir(), 'agb-outside-worktrees-'));
+  try {
+    // 1. Symlinked .worktrees pointing outside repository
+    symlinkSync(outsideWorktrees, join(repo, '.worktrees'));
 
+    const res = await verifyWindowsSandboxActive({
+      cwd: repo,
+    });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /symbolic link/);
 
+    // Verify no canary was created in outside worktrees
+    const files = readdirSync(outsideWorktrees);
+    assert.equal(files.length, 0, 'no canary should be created in outside target');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(outsideWorktrees, { recursive: true, force: true });
+  }
+});
+
+test('verifyWindowsSandboxAttestation: rejects symlinked .adlc directory before reserving nonces', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  const outsideAdlc = mkdtempSync(join(tmpdir(), 'agb-outside-adlc-'));
+  try {
+    const adminKey = 'test-key-symlink-adlc';
+    const att = createAttestation({
+      installId,
+      rootCommit,
+      origin,
+      repoPath: repo,
+      adminKey,
+    });
+    writeFileSync(join(outsideAdlc, 'config.json'), JSON.stringify({ sandboxBypassAttestation: att }));
+
+    // Replace repo's .adlc with a symlink to outside directory
+    rmSync(join(repo, '.adlc'), { recursive: true, force: true });
+    symlinkSync(outsideAdlc, join(repo, '.adlc'));
+
+    const res = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+    });
+    assert.equal(res.valid, false);
+    assert.match(res.reason, /symbolic link/);
+
+    // Verify that NO nonce lock file was created in outsideAdlc
+    assert.equal(existsSync(join(outsideAdlc, 'nonces')), false, 'nonces directory must not be created in outside directory');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+    rmSync(outsideAdlc, { recursive: true, force: true });
+  }
+});
