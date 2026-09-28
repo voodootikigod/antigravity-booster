@@ -985,6 +985,46 @@ test('preventExecutableReplacement: detects directory replacement during executi
   }
 });
 
+test('preventExecutableReplacement: does not mutate persistent permissions and provides crash-safe recovery', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agb-crashsafe-test-'));
+  const sub = join(root, 'node_modules', '@adlc', 'cli', 'bin');
+  mkdirSync(sub, { recursive: true });
+  try {
+    const fakeBin = join(sub, 'adlc.mjs');
+    writeFileSync(fakeBin, '#!/usr/bin/env node\nconsole.log("hello");\n');
+    chmodSync(fakeBin, 0o755);
+
+    // Simulate an ancestor directory left without write bits by an earlier crash
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    writeFileSync(join(pkgDir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
+    chmodSync(pkgDir, 0o555); // write bit stripped
+
+    // preventExecutableReplacement must recover write bits and not strip permissions from sub/root
+    const seal = preventExecutableReplacement(fakeBin);
+    try {
+      assert.doesNotThrow(() => seal.verifyUnchanged());
+
+      // Check that pkgDir had its write bit restored (crash-safe recovery)
+      const pkgStat = statSync(pkgDir);
+      assert.equal((pkgStat.mode & 0o200) !== 0, true, 'pkgDir write bit must be restored');
+
+      // Check that bin directory and fakeBin remained writable (no persistent mutation)
+      const subStat = statSync(sub);
+      assert.equal((subStat.mode & 0o200) !== 0, true, 'sub directory write bit must not be stripped');
+      const binStat = statSync(fakeBin);
+      assert.equal((binStat.mode & 0o200) !== 0, true, 'fakeBin write bit must not be stripped');
+    } finally {
+      seal.release();
+    }
+
+    // After release, permissions must still remain intact (no manual fix needed for subsequent installs)
+    const pkgStatAfter = statSync(pkgDir);
+    assert.equal((pkgStatAfter.mode & 0o200) !== 0, true, 'pkgDir write bit must remain intact after release');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('resolveAdlcBinary: custom override resolves shims in .bin to @adlc/cli package target', () => {
   const root = mkdtempSync(join(process.cwd(), '.test-custom-shim-'));
   try {

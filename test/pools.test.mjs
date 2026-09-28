@@ -1363,6 +1363,77 @@ test('terminateWorkerTree: terminates active worker when dead orchestrator lease
   }
 });
 
+test('terminateWorkerTree and reconcileLeases: do not terminate worker process when workerStartTime is absent or unverifiable', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-worker-unverified-'));
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
+
+  let worker = null;
+  try {
+    process.env.AGB_POOLS_V2 = join(dir, 'v2.json');
+    process.env.AGB_POOLS_LOCK = join(dir, 'shared.lock');
+
+    worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      stdio: 'ignore',
+      detached: process.platform !== 'win32',
+    });
+    worker.unref();
+
+    const workerPid = worker.pid;
+    const workerStartTime = getProcessStartTime(workerPid);
+    assert.ok(isProcessAlive(workerPid, workerStartTime));
+
+    // 1. Direct call to terminateWorkerTree without expectedStartTime must be a no-op
+    terminateWorkerTree(workerPid, null);
+    assert.ok(isProcessAlive(workerPid, workerStartTime), 'worker must remain alive when terminateWorkerTree is called with null expectedStartTime');
+    terminateWorkerTree(workerPid, undefined);
+    assert.ok(isProcessAlive(workerPid, workerStartTime), 'worker must remain alive when terminateWorkerTree is called with undefined expectedStartTime');
+
+    // 2. Lease in v2 state has workerPid but workerStartTime is null (e.g. recycled PID or legacy persisted state)
+    const deadOrchPid = 9999999;
+    const v2 = {
+      version: 2,
+      lastUpdated: new Date().toISOString(),
+      pools: {
+        gemini: { baseCap: 1, scaledCap: 1, inFlight: 1, reserved: 0 },
+      },
+      leases: {
+        'lease-unverified-worker': {
+          leaseId: 'lease-unverified-worker',
+          pool: 'gemini',
+          ticketId: 'T-UNVERIFIED',
+          ownerToken: 'tok-unverified',
+          orchestratorPid: deadOrchPid,
+          orchestratorStartTime: 'dead_orch_start',
+          workerPid: workerPid,
+          workerStartTime: null, // missing start time
+          leaseExpiryMs: Date.now() + 60000,
+          heartbeatMs: Date.now(),
+          state: 'ACTIVE',
+        },
+      },
+    };
+    writeV2State(v2);
+
+    // Reconcile leases: lease must be marked RECLAIMED, but worker must NOT be killed
+    await reconcileLeases(dir);
+
+    const v2After = readV2State();
+    assert.equal(v2After.leases['lease-unverified-worker'].state, 'RECLAIMED');
+    assert.equal(v2After.pools.gemini.inFlight, 0);
+
+    // Worker must still be alive!
+    assert.ok(isProcessAlive(workerPid, workerStartTime), 'worker process must not be killed when workerStartTime is absent');
+  } finally {
+    if (worker && isProcessAlive(worker.pid)) {
+      try { process.kill(worker.pid, 'SIGKILL'); } catch {}
+    }
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('withLock: atomic stale lock reclamation does not delete live lock acquired by concurrent reclaimer', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-stale-reclaim-race-'));
   const lockFile = join(dir, 'test.lock');
