@@ -640,7 +640,7 @@ test('job-object-wrapper.ps1: accepts -ArgsBase64 parameter and safely cleans up
   assert.ok(content.includes('Remove-Item -Force -Path $ArgsFile'));
 });
 
-test('runAgy builder: bwrap containment mounts root read-only with explicit read-write worktree and tmp', async () => {
+test('runAgy builder: bwrap containment restricts mounts to approved paths and does not mount host root', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-test-'));
   try {
     let spawnedArgs = null;
@@ -663,9 +663,11 @@ test('runAgy builder: bwrap containment mounts root read-only with explicit read
     });
 
     if (spawnedBin && spawnedBin.endsWith('bwrap')) {
-      assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount root read-only');
+      assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount approved system paths read-only');
       assert.equal(spawnedArgs.includes('--dev-bind'), false, 'bwrap must not mount host root read-write');
       assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and /tmp read-write');
+      const mountsRoot = spawnedArgs.some((arg, i) => (arg === '--ro-bind' || arg === '--bind') && spawnedArgs[i + 1] === '/' && spawnedArgs[i + 2] === '/');
+      assert.equal(mountsRoot, false, 'bwrap must not mount host root / into builder namespace');
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
