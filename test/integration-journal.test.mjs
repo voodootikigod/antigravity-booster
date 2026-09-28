@@ -555,4 +555,61 @@ test('reconcileIntegrationJournal: REF_ADVANCED requires valid matching transact
   }
 });
 
+test('reconcileIntegrationJournal: unsupported journal phase is quarantined and fails closed', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-journal-unsupported-phase-'));
+  const g = (cmd, ...args) => execFileSync('git', [cmd, ...args], { cwd: repo, encoding: 'utf8' }).trim();
+
+  try {
+    g('init', '-b', 'main');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'commit.gpgsign', 'false');
+
+    writeFileSync(join(repo, 'base.txt'), 'base\n');
+    g('add', '-A');
+    g('commit', '-qm', 'init');
+    const baseSha = g('rev-parse', 'HEAD');
+
+    // Create candidate commit
+    g('checkout', '-qb', 'cand');
+    writeFileSync(join(repo, 'base.txt'), 'base\ncand\n');
+    g('commit', '-qam', 'cand commit');
+    const candSha = g('rev-parse', 'HEAD');
+    g('checkout', '-q', 'main');
+
+    // Plant a transaction marker ref
+    const markerRef = 'refs/transactions/t-unsupported/tok-unsupported';
+    g('update-ref', markerRef, candSha);
+
+    // Write journal with an unsupported phase
+    writeIntegrationJournal(repo, {
+      ticketId: 't-unsupported',
+      transactionToken: 'tok-unsupported',
+      preMergeSha: baseSha,
+      candidateSha: candSha,
+      phase: 'UNSUPPORTED_WEIRD_PHASE',
+      timestamp: Date.now(),
+    });
+
+    await assert.rejects(
+      async () => reconcileIntegrationJournal(repo, 'main'),
+      /Unsupported integration journal phase 'UNSUPPORTED_WEIRD_PHASE' for ticket 't-unsupported'\. Journal quarantined for operator review\./
+    );
+
+    // Active journal unlinked from active path
+    assert.equal(readIntegrationJournal(repo).exists, false, 'journal must not remain active');
+
+    // Journal was quarantined in .adlc
+    const adlcFiles = readdirSync(join(repo, '.adlc'));
+    const quarantined = adlcFiles.find((f) => f.startsWith('integration_journal_corrupt_'));
+    assert.ok(quarantined, 'journal must be preserved in quarantine');
+
+    // Transaction marker was quarantined
+    const quarantineSha = g('rev-parse', '--verify', 'refs/quarantine/agb-t-unsupported-unsupported-phase');
+    assert.equal(quarantineSha, candSha, 'candidate marker was preserved in quarantine');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 
