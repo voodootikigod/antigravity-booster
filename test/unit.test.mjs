@@ -17,7 +17,7 @@ import { compilePlan } from '../lib/plan.mjs';
 import { runPlan } from '../lib/scheduler.mjs';
 import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
-  isMidMerge, abortAnyMerge,
+  isMidMerge, abortAnyMerge, isDirty,
 } from '../lib/worktrees.mjs';
 import { bootstrap, resolvePluginPath } from '../lib/bootstrap.mjs';
 
@@ -653,6 +653,41 @@ test('createWorktree: rejects symlinked .worktrees directory', () => {
   }
 });
 
+test('isDirty: returns false when untracked ticket store exists in .adlc/tickets/ or .adlc/tickets.json', () => {
+  const { dir } = makeRepo();
+  try {
+    mkdirSync(join(dir, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(dir, '.adlc', 'tickets', '.store.json'), '{}');
+    writeFileSync(join(dir, '.adlc', 'tickets', 'T1.json'), '{}');
+    assert.equal(isDirty(dir), false, 'untracked directory ticket store must not make repo dirty');
+
+    writeFileSync(join(dir, '.adlc', 'tickets.json'), '{}');
+    assert.equal(isDirty(dir), false, 'untracked legacy tickets.json must not make repo dirty');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('isDirty: returns true when untracked or modified files exist outside ticket store', () => {
+  const { dir } = makeRepo();
+  try {
+    mkdirSync(join(dir, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(dir, '.adlc', 'tickets', '.store.json'), '{}');
+
+    // Untracked file outside tickets
+    writeFileSync(join(dir, 'untracked.txt'), 'hello\n');
+    assert.equal(isDirty(dir), true, 'untracked file outside ticket store makes repo dirty');
+    rmSync(join(dir, 'untracked.txt'));
+    assert.equal(isDirty(dir), false);
+
+    // Tracked file modified
+    writeFileSync(join(dir, 'README.md'), 'modified\n');
+    assert.equal(isDirty(dir), true, 'modified tracked file makes repo dirty');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('commitAll: excludes .agb_home and files within it from staged commits', () => {
   const { dir } = makeRepo();
   try {
@@ -877,7 +912,6 @@ test('compilePlan and runPlan: pass project option through to runAgy', async () 
   process.env.FAKE_STATE_DIR = state;
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.FAKE_BRAIN_MODE = 'edges';
-  process.env.AGB_ALLOW_DIRTY = '1';
   const repo = join(tmpdir(), `agb-test-plan-${Date.now()}`);
   mkdirSync(repo, { recursive: true });
   mkdirSync(join(repo, '.adlc'), { recursive: true });
