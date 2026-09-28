@@ -643,6 +643,17 @@ test('verifyWindowsSandboxAttestation: rejects symlinked attestation ledger in r
     });
     assert.equal(res.valid, false);
     assert.match(res.reason, /symbolic link/);
+
+    // Doctor verification path (consumeNonce: false) must also fail closed
+    const resNoConsume = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+      consumeNonce: false,
+    });
+    assert.equal(resNoConsume.valid, false, 'symlinked ledger must fail closed even when consumeNonce is false');
+    assert.match(resNoConsume.reason, /symbolic link/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(homeDir, { recursive: true, force: true });
