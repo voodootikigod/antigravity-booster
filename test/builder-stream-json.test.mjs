@@ -1314,6 +1314,55 @@ test('runAgy builder: bwrap containment rejects untrusted node_modules symlinks 
   }
 });
 
+test('runAgy builder: bwrap containment rejects node_modules symlink pointing to non-dependency repo paths (e.g. repo secrets)', async () => {
+  const repoDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-repo-secrets-'));
+  const wtDir = join(repoDir, 'worktree');
+  mkdirSync(wtDir, { recursive: true });
+
+  const secretDir = join(repoDir, 'secrets');
+  mkdirSync(secretDir, { recursive: true });
+  writeFileSync(join(secretDir, 'secret.key'), 'super-secret-key\n');
+
+  const evilSymlink = join(wtDir, 'node_modules');
+  symlinkSync(secretDir, evilSymlink, 'dir');
+
+  const savedMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+
+  try {
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+
+    let spawnedArgs = null;
+    let spawnedBin = null;
+
+    await runAgy({
+      model: 'gemini-flash',
+      prompt: 'Ticket T1 TICKET-DONE',
+      cwd: wtDir,
+      repo: repoDir,
+      bin: FAKE_AGY,
+      outputFormat: 'stream-json',
+      role: 'builder',
+      sandbox: true,
+      containment: true,
+      platform: 'linux',
+      onSpawn: (p) => {
+        spawnedBin = p.spawnfile;
+        spawnedArgs = p.spawnargs;
+      },
+    });
+
+    assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
+
+    const realSecretDir = realpathSync(secretDir);
+    assert.equal(spawnedArgs.includes(realSecretDir), false, 'repo secrets symlinked by node_modules must NOT be mounted into bwrap');
+  } finally {
+    if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = savedMech;
+    rmSync(repoDir, { recursive: true, force: true });
+  }
+});
+
+
 test('runAgy builder: bwrap containment launches resolved executable when agyBin is a bare command name', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bare-'));
   const binDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bin-'));

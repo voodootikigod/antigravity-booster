@@ -525,3 +525,42 @@ test('verifyWindowsSandboxActive: rejects AGB_SANDBOX_PROBE_CMD outside test env
   }
 });
 
+test('verifyWindowsSandboxAttestation: rolls back repository nonce reservation when host reservation fails', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir, installId } = setupMockHome();
+  try {
+    const adminKey = 'test-key-rollback';
+    const att = createAttestation({
+      installId,
+      rootCommit,
+      origin,
+      repoPath: repo,
+      adminKey,
+    });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ sandboxBypassAttestation: att }));
+
+    // Pre-create the host nonce lock to simulate collision / host reservation failure
+    const safeNonce = String(att.nonce).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const hostNonceDir = join(homeDir, '.adlc', 'nonces');
+    mkdirSync(hostNonceDir, { recursive: true });
+    writeFileSync(join(hostNonceDir, `${safeNonce}.lock`), 'existing-lock');
+
+    const res = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey },
+      platform: 'win32',
+      homeDir,
+    });
+    assert.equal(res.valid, false);
+    assert.equal(res.reason, 'replayed_attestation_rejected');
+
+    // Repository nonce lock must have been rolled back (unlinked)
+    const repoLockPath = join(repo, '.adlc', 'nonces', `${safeNonce}.lock`);
+    assert.equal(existsSync(repoLockPath), false, 'repository lock must be unlinked when host reservation fails');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
+  }
+});
+
+
