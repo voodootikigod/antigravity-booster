@@ -495,3 +495,33 @@ test('checkSandbox: does not consume attestation nonce when called from doctor',
     rmSync(homeDir, { recursive: true, force: true });
   }
 });
+
+test('verifyWindowsSandboxActive: rejects AGB_SANDBOX_PROBE_CMD outside test environment', async () => {
+  const origNodeEnv = process.env.NODE_ENV;
+  const origTestContext = process.env.NODE_TEST_CONTEXT;
+  const origExecArgv = [...process.execArgv];
+  const origArgv = [...process.argv];
+
+  try {
+    process.env.NODE_ENV = 'production';
+    delete process.env.NODE_TEST_CONTEXT;
+    process.execArgv = [];
+    process.argv = ['node', 'index.js'];
+
+    const res = await verifyWindowsSandboxActive({
+      env: {
+        AGB_SANDBOX_PROBE_CMD: 'mock-cmd',
+        NODE_ENV: 'production',
+      },
+    });
+
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /restricted to test-only execution/);
+  } finally {
+    if (origNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = origNodeEnv;
+    if (origTestContext === undefined) delete process.env.NODE_TEST_CONTEXT; else process.env.NODE_TEST_CONTEXT = origTestContext;
+    process.execArgv = origExecArgv;
+    process.argv = origArgv;
+  }
+});
+

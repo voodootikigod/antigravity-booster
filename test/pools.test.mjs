@@ -29,6 +29,7 @@ import {
   terminateWorkerTree,
   withLock,
   withLockSync,
+  safeWriteHeartbeatFile,
 } from '../lib/pools.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
@@ -812,6 +813,21 @@ test('writeLeaseHeartbeat: refuses to write through symlinked .adlc or .adlc/lea
       },
       /refusing to write lease heartbeat through symlinked leases directory/
     );
+
+    // Case 3: A symlink planted at a heartbeat path cannot overwrite an external file
+    unlinkSync(join(repo, '.adlc', 'leases'));
+    mkdirSync(join(repo, '.adlc', 'leases'), { recursive: true });
+    const victim = join(targetDir, 'victim.txt');
+    writeFileSync(victim, 'important-content');
+    const victimLink = join(repo, '.adlc', 'leases', 'planted.heartbeat');
+    symlinkSync(victim, victimLink);
+    assert.throws(
+      () => {
+        safeWriteHeartbeatFile(victimLink, { ownerToken: 'evil', timestamp: Date.now() });
+      },
+      /refusing to write lease heartbeat|ELOOP/
+    );
+    assert.equal(readFileSync(victim, 'utf8'), 'important-content', 'victim content must remain unmolested');
   } finally {
     if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
     if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;

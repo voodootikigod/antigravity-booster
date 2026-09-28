@@ -938,8 +938,9 @@ test('preventExecutableReplacement: locks executable fd, verifies integrity, and
       assert.doesNotThrow(() => seal.verifyUnchanged());
 
       // If tampered with, verifyUnchanged must throw
+      try { chmodSync(fakeBin, 0o755); } catch {}
       writeFileSync(fakeBin, '#!/usr/bin/env node\n// tampered!\n');
-      assert.throws(() => seal.verifyUnchanged(), /tampered with/);
+      assert.throws(() => seal.verifyUnchanged(), /tampered with|unlocked|Security violation/);
     } finally {
       seal.release();
     }
@@ -978,6 +979,45 @@ test('preventExecutableReplacement: detects directory replacement during executi
     try { chmodSync(root, 0o755); } catch {}
     try { chmodSync(sub, 0o755); } catch {}
     try { rmSync(root, { recursive: true, force: true }); } catch {}
+  }
+});
+
+test('resolveAdlcBinary: custom override resolves shims in .bin to @adlc/cli package target', () => {
+  const root = mkdtempSync(join(process.cwd(), '.test-custom-shim-'));
+  try {
+    const binDir = join(root, 'node_modules', '.bin');
+    const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+    const pkgBinDir = join(pkgDir, 'bin');
+    mkdirSync(binDir, { recursive: true });
+    mkdirSync(pkgBinDir, { recursive: true });
+
+    const pkgJson = {
+      name: '@adlc/cli',
+      version: '1.11.1',
+      bin: './bin/adlc.js',
+    };
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify(pkgJson));
+    const targetScript = join(pkgBinDir, 'adlc.js');
+    writeFileSync(targetScript, '#!/usr/bin/env node\nconsole.log("adlc 1.11.1");\n');
+    chmodSync(targetScript, 0o755);
+
+    const shimCmd = join(binDir, 'adlc.cmd');
+    writeFileSync(shimCmd, '@ECHO off\r\nnode "%~dp0\\..\\@adlc\\cli\\bin\\adlc.js" %*\r\n');
+    chmodSync(shimCmd, 0o755);
+
+    const res = resolveAdlcBinary({
+      repo: root,
+      env: {
+        AGB_ADLC_BIN: shimCmd,
+        AGB_ALLOW_CUSTOM_ADLC_CLI: '1',
+      },
+      allowCustom: true,
+    });
+    assert.equal(res.ok, true, `must resolve custom shim: ${res.error}`);
+    assert.equal(res.source, 'custom-override');
+    assert.equal(res.version, '1.11.1');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 
