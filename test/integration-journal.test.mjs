@@ -465,3 +465,94 @@ test('reconcileIntegrationJournal: recovers and finalizes after baseRef advanced
   }
 });
 
+test('reconcileIntegrationJournal: REF_ADVANCED requires valid matching transaction marker before re-advancing base ref', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-journal-ref-adv-marker-'));
+  const g = (cmd, ...args) => execFileSync('git', [cmd, ...args], { cwd: repo, encoding: 'utf8' }).trim();
+
+  try {
+    g('init', '-b', 'main');
+    g('config', 'user.email', 'test@test.local');
+    g('config', 'user.name', 'Tester');
+    writeFileSync(join(repo, 'init.txt'), 'init\n');
+    g('add', 'init.txt');
+    g('commit', '-qm', 'initial commit');
+    const baseSha = g('rev-parse', 'refs/heads/main');
+
+    writeFileSync(join(repo, 'cand.txt'), 'cand\n');
+    g('add', 'cand.txt');
+    g('commit', '-qm', 'candidate commit');
+    const candSha = g('rev-parse', 'refs/heads/main');
+
+    // Reset main back to baseSha so currentBaseSha === preMergeSha
+    g('reset', '--hard', baseSha);
+    assert.equal(g('rev-parse', 'refs/heads/main'), baseSha);
+
+    const markerRef = 'refs/transactions/t-ref-adv/tok-ref';
+
+    // 1. Missing marker: must reject and quarantine
+    writeIntegrationJournal(repo, {
+      ticketId: 't-ref-adv',
+      transactionToken: 'tok-ref',
+      preMergeSha: baseSha,
+      candidateSha: candSha,
+      phase: JOURNAL_PHASES.REF_ADVANCED,
+      timestamp: Date.now(),
+    });
+
+    await assert.rejects(
+      async () => reconcileIntegrationJournal(repo, 'main'),
+      /Unproven ref advancement requires operator: journal phase is REF_ADVANCED but base branch 'main' is at preMergeSha and marker ref refs\/transactions\/t-ref-adv\/tok-ref is missing or does not match/
+    );
+    assert.equal(readIntegrationJournal(repo).exists, false, 'journal unlinked from active path');
+    let adlcFiles = readdirSync(join(repo, '.adlc'));
+    let quarantined = adlcFiles.find((f) => f.startsWith('integration_journal_corrupt_'));
+    assert.ok(quarantined, 'journal quarantined on missing marker');
+    rmSync(join(repo, '.adlc', quarantined), { force: true });
+
+    // 2. Mismatched marker: must reject and quarantine
+    g('update-ref', markerRef, baseSha); // Points to baseSha instead of candSha
+    writeIntegrationJournal(repo, {
+      ticketId: 't-ref-adv',
+      transactionToken: 'tok-ref',
+      preMergeSha: baseSha,
+      candidateSha: candSha,
+      phase: JOURNAL_PHASES.REF_ADVANCED,
+      timestamp: Date.now(),
+    });
+
+    await assert.rejects(
+      async () => reconcileIntegrationJournal(repo, 'main'),
+      /Unproven ref advancement requires operator: journal phase is REF_ADVANCED but base branch 'main' is at preMergeSha and marker ref refs\/transactions\/t-ref-adv\/tok-ref is missing or does not match/
+    );
+    adlcFiles = readdirSync(join(repo, '.adlc'));
+    quarantined = adlcFiles.find((f) => f.startsWith('integration_journal_corrupt_'));
+    assert.ok(quarantined, 'journal quarantined on mismatched marker');
+    rmSync(join(repo, '.adlc', quarantined), { force: true });
+
+    // 3. Valid matching marker: succeeds and advances base ref
+    g('update-ref', markerRef, candSha);
+    writeIntegrationJournal(repo, {
+      ticketId: 't-ref-adv',
+      transactionToken: 'tok-ref',
+      preMergeSha: baseSha,
+      candidateSha: candSha,
+      phase: JOURNAL_PHASES.REF_ADVANCED,
+      timestamp: Date.now(),
+    });
+
+    const res = await reconcileIntegrationJournal(repo, 'main');
+    assert.equal(res.ok, true);
+    assert.equal(res.status, 'reconciled');
+    assert.equal(res.action, 'advanced_and_finalized_from_ref_advanced');
+    assert.equal(g('rev-parse', 'refs/heads/main'), candSha, 'base branch advanced to candidateSha');
+    assert.equal(readIntegrationJournal(repo).exists, false);
+
+    // Marker deleted
+    const markers = g('for-each-ref', '--format=%(refname)', 'refs/transactions/t-ref-adv');
+    assert.equal(markers, '');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+

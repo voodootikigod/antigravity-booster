@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // Local port of the adlc-antigravity plugin's tickets validation rules
@@ -1232,5 +1232,20 @@ test('preventExecutableReplacement: copies entire dependency closure without sym
     try { rmSync(locksDir, { recursive: true, force: true }); } catch {}
   }
 });
+
+test('pinExecutable and preventExecutableReplacement: fails closed when executable pinning cannot be completed', () => {
+  // 1. Non-existent path throws in pinExecutable
+  assert.throws(
+    () => pinExecutable('/nonexistent/binary/path', null),
+    /Failed to pin ADLC executable for authenticated execution/
+  );
+
+  // 2. resolveExecutionCommand rejects seal with missing or null pinnedPath
+  assert.throws(
+    () => resolveExecutionCommand({ seal: { pinnedPath: null }, binary: '/some/path' }, []),
+    /Authenticated execution requires a verified pinned executable/
+  );
+});
+
 
 
