@@ -1,0 +1,23 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-10-03T15:32:11.776Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "cc4e753bfc767e8992c141678efe4472aef91852460d3f72e478e62292fa935d",
+    "ticketHash": "d558bd937062d1dd897c1a3339c1e5dd383ea95ecb7456dfbbdce4ee166266e7",
+    "version": 1
+  },
+  "body": "Add Bubblewrap installation and user-namespace verification steps to .github/workflows/publish.yml so that Linux sandbox containment checks pass during npm test prior to npm publish.\n\nAcceptance criteria:\n1. .github/workflows/publish.yml installs bubblewrap and verifies userns before tests.\n2. Rails guard passes: rails lib/lock.mjs and lib/gates.mjs remain untouched.\n3. npm test passes locally.\n4. GitHub Actions publish workflow successfully runs tests and proceeds to npm-publish deployment.",
+  "category": "bugfix",
+  "completed": true,
+  "edges": [],
+  "id": "t-fix-publish-bubblewrap",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    ".github/workflows/publish.yml"
+  ],
+  "title": "Install Bubblewrap in publish workflow for test containment"
+}
