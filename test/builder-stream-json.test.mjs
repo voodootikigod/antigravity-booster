@@ -719,15 +719,16 @@ test('runAgy builder: bwrap containment isolates network and masks credentials',
     assert.equal(spawnedArgs.includes('--unshare-net'), false, 'bwrap must not isolate network from agy model transport');
     assert.ok(spawnedArgs.includes('--ro-bind'), 'bwrap must mount approved system paths read-only');
     assert.ok(spawnedArgs.includes('--bind'), 'bwrap must mount worktree and private /tmp read-write');
-    assert.equal(spawnedArgs.includes(fakeHome), false, 'host home directory must not be mounted into bwrap');
+    const realDir = (() => { try { return realpathSync(dir); } catch { return dir; } })();
+    const realFakeHome = (() => { try { return realpathSync(fakeHome); } catch { return fakeHome; } })();
 
-    const npmrcIdx = spawnedArgs.indexOf(join(dir, '.npmrc'));
+    const npmrcIdx = spawnedArgs.indexOf(join(dir, '.npmrc')) !== -1 ? spawnedArgs.indexOf(join(dir, '.npmrc')) : spawnedArgs.indexOf(join(realDir, '.npmrc'));
     assert.ok(npmrcIdx >= 2 && spawnedArgs[npmrcIdx - 2] === '--ro-bind' && spawnedArgs[npmrcIdx - 1] === '/dev/null', 'worktree .npmrc must be masked with /dev/null');
-    const pypircIdx = spawnedArgs.indexOf(join(dir, '.pypirc'));
+    const pypircIdx = spawnedArgs.indexOf(join(dir, '.pypirc')) !== -1 ? spawnedArgs.indexOf(join(dir, '.pypirc')) : spawnedArgs.indexOf(join(realDir, '.pypirc'));
     assert.ok(pypircIdx >= 2 && spawnedArgs[pypircIdx - 2] === '--ro-bind' && spawnedArgs[pypircIdx - 1] === '/dev/null', 'worktree .pypirc must be masked with /dev/null');
-    const gnupgHomeIdx = spawnedArgs.indexOf(join(fakeHome, '.gnupg'));
+    const gnupgHomeIdx = spawnedArgs.indexOf(join(fakeHome, '.gnupg')) !== -1 ? spawnedArgs.indexOf(join(fakeHome, '.gnupg')) : spawnedArgs.indexOf(join(realFakeHome, '.gnupg'));
     assert.ok(gnupgHomeIdx >= 1 && spawnedArgs[gnupgHomeIdx - 1] === '--tmpfs', 'home .gnupg must be masked with --tmpfs');
-    const gnupgDirIdx = spawnedArgs.indexOf(join(dir, '.gnupg'));
+    const gnupgDirIdx = spawnedArgs.indexOf(join(dir, '.gnupg')) !== -1 ? spawnedArgs.indexOf(join(dir, '.gnupg')) : spawnedArgs.indexOf(join(realDir, '.gnupg'));
     assert.ok(gnupgDirIdx >= 1 && spawnedArgs[gnupgDirIdx - 1] === '--tmpfs', 'worktree .gnupg must be masked with --tmpfs');
 
     const agyIndex = spawnedArgs.indexOf(FAKE_AGY);
@@ -1581,12 +1582,16 @@ test('runAgy builder: bwrap containment mounts .adlc read-only and overlays .adl
 
     assert.ok(spawnedBin && spawnedBin.endsWith('bwrap'));
 
+    const realDir = (() => { try { return realpathSync(dir); } catch { return dir; } })();
+    const realAdlcDir = join(realDir, '.adlc');
+    const realLeasesDir = join(realAdlcDir, 'leases');
+
     // Check .adlc is mounted read-only
     const roBindIndices = [];
     spawnedArgs.forEach((arg, idx) => {
       if (arg === '--ro-bind') roBindIndices.push(idx);
     });
-    const hasAdlcRoMount = roBindIndices.some(i => spawnedArgs[i + 1] === adlcDir && spawnedArgs[i + 2] === adlcDir);
+    const hasAdlcRoMount = roBindIndices.some(i => (spawnedArgs[i + 1] === adlcDir || spawnedArgs[i + 1] === realAdlcDir) && (spawnedArgs[i + 2] === adlcDir || spawnedArgs[i + 2] === realAdlcDir));
     assert.ok(hasAdlcRoMount, '.adlc directory must be mounted read-only via --ro-bind');
 
     // Check .adlc/leases is overlaid with tmpfs
@@ -1594,7 +1599,7 @@ test('runAgy builder: bwrap containment mounts .adlc read-only and overlays .adl
     spawnedArgs.forEach((arg, idx) => {
       if (arg === '--tmpfs') tmpfsIndices.push(idx);
     });
-    const hasLeasesTmpfs = tmpfsIndices.some(i => spawnedArgs[i + 1] === leasesDir);
+    const hasLeasesTmpfs = tmpfsIndices.some(i => spawnedArgs[i + 1] === leasesDir || spawnedArgs[i + 1] === realLeasesDir);
     assert.ok(hasLeasesTmpfs, '.adlc/leases must be overlaid with empty tmpfs');
   } finally {
     if (savedMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;

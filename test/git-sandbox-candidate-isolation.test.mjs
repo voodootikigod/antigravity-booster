@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync, copyFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync, copyFileSync, chmodSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -360,14 +360,15 @@ test('getGitCommonDir, setupAttemptGitDatabase, and snapshotRootGit operate corr
 
     const rootGitCommon = getGitCommonDir(repo);
     const linkedGitCommon = getGitCommonDir(linkedDir);
-    assert.equal(rootGitCommon, join(repo, '.git'));
-    assert.equal(linkedGitCommon, join(repo, '.git'));
+    const canonicalRepoGit = (() => { try { return realpathSync(join(repo, '.git')); } catch { return join(repo, '.git'); } })();
+    assert.equal(realpathSync(rootGitCommon), canonicalRepoGit);
+    assert.equal(realpathSync(linkedGitCommon), canonicalRepoGit);
 
     // setupAttemptGitDatabase configures alternates pointing to common dir objects
     const wt = createWorktree(linkedDir, 'T1', 'linked-branch');
     const { baseSha, gitDir } = setupAttemptGitDatabase(linkedDir, wt, 'linked-branch');
     const alternates = readFileSync(join(gitDir, 'objects', 'info', 'alternates'), 'utf8').trim();
-    assert.equal(alternates, join(repo, '.git', 'objects'));
+    assert.equal(realpathSync(alternates), realpathSync(join(canonicalRepoGit, 'objects')));
 
     // snapshotRootGit on the linked worktree hashes the common objects directory
     const preSnapshot = snapshotRootGit(linkedDir);
