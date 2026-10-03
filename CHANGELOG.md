@@ -9,6 +9,20 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-03
+
+### Added
+
+- **Antigravity 1.2.8 & ADLC 1.11.1 Modernization:** Upgraded core runtime and orchestration to support Google Antigravity CLI (`agy >= 1.2.8`) and the Agentic Development Lifecycle (`@adlc >= 1.11.1`).
+- **Model Catalog & Quota Routing:** Integrated Gemini 3.8/3.7/3.6 model tiers; retired Gemini 3.5 variants; implemented dual-pool quota routing dividing Gemini and Claude/GPT-OSS model pools.
+- **Structured Subprocess Protocol:** Integrated `agy --output-format stream-json` and `--json-schema` validation with watchdog controls for line length and total stream bytes.
+- **Hardened Platform Sandboxing:**
+  - **Linux**: Bubblewrap (`bwrap`) containment with read-only root mounts, masked `.gnupg` and host credentials, and loopback network denial.
+  - **macOS**: Hardened Seatbelt profile enforcing strict worktree write containment and credential masking while supporting standard Darwin process execution.
+  - **Windows**: AppContainer differential sandbox probing and replay-defended attestation nonces.
+- **Transactional Attempt Databases:** Added per-attempt bare Git databases with external gitdir alternates, preventing worktree leakage and ensuring clean atomic rollbacks.
+- **Modernization Skill (`skills/modernize/`):** Added automated 5-stage verification audit checking live environment compatibility, dependencies, architectural pillars, and cryptographic provenance.
+
 ### Changed
 
 - **The ADLC directory ticket store (`.adlc/tickets/`) is now the canonical
@@ -27,8 +41,10 @@ rather than enumerate.
   repos (negating `.adlc/tickets/`, `.adlc/ticket-archive/`, `.adlc/specs/`,
   and `.adlc/config.json`), matching `adlc ticket store migrate` and the
   plugin's `adlc-init`.
-- `@adlc/core` and `@adlc/antigravity` upgraded to 1.6.0; `@adlc/tickets`
+- `@adlc/core` and `@adlc/antigravity` upgraded to 1.11.1; `@adlc/tickets`
   added as a direct dependency; CI installs `@adlc/cli@1.6.0`.
+- Modernized documentation and added comparison matrix with built-in `/boost`
+  command.
 
 ## [0.7.0] — 2026-07-21
 
