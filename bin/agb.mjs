@@ -14,7 +14,7 @@ import { reviewFleet, reviewDiff } from '../lib/review.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { validatePlan, compilePlan } from '../lib/plan.mjs';
-import { PoolSet } from '../lib/pools.mjs';
+import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 
@@ -49,6 +49,7 @@ const COMMANDS = {
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
+  pool: { args: 'drain [repo]', desc: 'safely drain active leases and reset coordinator' },
   tui: { args: '', desc: 'Removed. Use agb sidecar instead.' }
 };
 
@@ -128,8 +129,7 @@ try {
     const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
     if (spec.repo) spec.repo = resolve(spec.repo);
     const plan = sweepToPlan(spec, { project });
-    const errors = plan.tickets.flatMap(validateTicket);
-    if (!plan.gate || (!plan.gate.build && !plan.gate.test)) errors.push('sweep.gate must declare build/test');
+    const errors = validatePlan(plan);
     if (errors.length) {
       console.error('sweep invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
@@ -146,18 +146,35 @@ try {
       console.error('review: empty diff — nothing to prosecute');
       process.exit(0);
     }
-    const result = await reviewFleet({ diff, pools: new PoolSet(), log: (m) => console.error(m), project });
+    const pools = new PoolSet(undefined, { repo });
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    if (!quotaRes.ok) {
+      console.error(`review: quota telemetry unavailable from agy: ${quotaRes.error}`);
+      process.exit(1);
+    }
+    const result = await reviewFleet({ diff, repo, pools, log: (m) => console.error(m), project });
     console.log(JSON.stringify(result, null, 2));
     if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
     const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
     process.exit(blocking.length || !result.converged ? 2 : 0);
   } else if (cmd === 'preflight') {
-    const { plan, errors } = loadPlan(rest[0] ?? 'plan.json');
+    const planPath = rest.find((arg) => !arg.startsWith('--')) ?? 'plan.json';
+    const { plan, errors } = loadPlan(planPath);
     if (errors.length) {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const result = await preflight(plan, { pools: new PoolSet(), skipColdstart: rest.includes('--no-coldstart'), project });
+    const targetRepo = resolve(plan.repo ?? '.');
+    const skipColdstart = rest.includes('--no-coldstart');
+    const pools = new PoolSet(undefined, { repo: targetRepo });
+    if (!skipColdstart) {
+      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+      if (!quotaRes.ok) {
+        console.error(`preflight: quota telemetry unavailable from agy: ${quotaRes.error}`);
+        process.exit(1);
+      }
+    }
+    const result = await preflight(plan, { pools, repo: targetRepo, skipColdstart, project });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
@@ -179,9 +196,16 @@ try {
         `(compiled plans are disposable, hand-written ones may not be)`);
       process.exit(1);
     }
+    const targetRepo = resolve(repo);
+    const pools = new PoolSet(undefined, { repo: targetRepo });
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    if (!quotaRes.ok) {
+      console.error(`plan: quota telemetry unavailable from agy: ${quotaRes.error}`);
+      process.exit(1);
+    }
     const result = await compilePlan(id, {
-      repo: resolve(repo),
-      pools: new PoolSet(),
+      repo: targetRepo,
+      pools,
       log: (m) => console.error(m),
       coldstart: !rest.includes('--no-coldstart'),
       parallax: !rest.includes('--no-parallax'),
@@ -220,7 +244,14 @@ try {
       process.exit(1);
     }
     console.error('import-brain is deprecated — use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)');
-    const plan = await brainToPlan(id, { repo: resolve(repo), project });
+    const targetRepo = resolve(repo);
+    const pools = new PoolSet(undefined, { repo: targetRepo });
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    if (!quotaRes.ok) {
+      console.error(`import-brain: quota telemetry unavailable from agy: ${quotaRes.error}`);
+      process.exit(1);
+    }
+    const plan = await brainToPlan(id, { repo: targetRepo, project, pools });
     console.log(JSON.stringify(plan, null, 2));
     console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
   } else if (cmd === 'status') {
@@ -409,6 +440,17 @@ try {
     } catch (e) {
       console.warn(`Warning: Could not automatically register the sidecar plugin with agy: ${e.message}`);
       console.warn(`The dashboard will not appear. To register it manually, add this manifest to your Antigravity plugins: ${pluginDir}`);
+    }
+  } else if (cmd === 'pool') {
+    const sub = rest[0];
+    if (sub === 'drain') {
+      const repo = resolve(rest[1] ?? '.');
+      const res = await drainPools(repo);
+      console.log(JSON.stringify(res, null, 2));
+      process.exit(0);
+    } else {
+      console.error("agb: unknown pool subcommand. Usage: agb pool drain [repo]");
+      process.exit(1);
     }
   } else {
     console.error(`agb: unknown command '${cmd}'\\n`);

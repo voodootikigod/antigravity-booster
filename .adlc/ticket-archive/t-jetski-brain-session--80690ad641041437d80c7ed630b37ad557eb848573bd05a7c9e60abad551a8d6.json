@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-09-22T19:46:21.497Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b7cb4f91127611007c5c8909c671b510bc9cbd6a63c72424b0eed634bd9598f3",
+    "ticketHash": "b08ae613a0a7aba9e0a4ecb016771b99df4bc87e9ac14b9a81f373d38eb65643",
+    "version": 1
+  },
   "body": "Update lib/brain.mjs readBrain and brainToPlan to read process.env.ANTIGRAVITY_CONVERSATION_ID for active session resolution, and emit converted plan Markdown artifacts into the session artifact directory (<appDataDir>/brain/<conversation-id>/).\n\nAcceptance criteria:\n1. readBrain checks ANTIGRAVITY_CONVERSATION_ID to locate active session brain artifacts.\n2. Converted plans are saved as formatted markdown artifacts when running in session context.\n3. Unit tests cover session resolution and artifact generation.\n4. npm test passes cleanly.",
   "category": "feature",
   "completed": true,

@@ -1,0 +1,31 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T00:59:12.726Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "35d3f8f9b71313ee8c122c80860e61fb4cbe933cb5d764524e74d8446fa2145f",
+    "ticketHash": "2dca056af3907c6a40a81dc09aadce094664134576d5eaa61ac70bda3d34e96d",
+    "version": 1
+  },
+  "body": "Finalize skills/modernize/SKILL.md and scripts/audit.mjs auditing Antigravity and @adlc with cross-platform portability, version-bound release artifact verification, recursive canonical HMAC trust store resolution with strict release binding, pure Node.js unpacking, package directory containment, shim target authentication, cross-platform locking, bounded storage with total retention budget pruning, crash-durable directory fsync commit, and bootstrap discovery.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [],
+  "id": "t-skill-modernize",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/pools.mjs",
+    "lib/agy.mjs",
+    "lib/doctor.mjs"
+  ],
+  "scope": [
+    "skills/modernize/scripts/audit.mjs",
+    "skills/modernize/SKILL.md",
+    "lib/bootstrap.mjs",
+    "test/**"
+  ],
+  "title": "Modernize skill packaging and bootstrap discovery"
+}

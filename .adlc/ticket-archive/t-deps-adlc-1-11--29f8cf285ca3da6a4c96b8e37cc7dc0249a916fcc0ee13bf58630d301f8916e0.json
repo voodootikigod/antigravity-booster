@@ -1,0 +1,33 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T00:58:43.595Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "4ad13ab78636725b4f21410a9efcd71552491c67024befdac5e908371e27ac4e",
+    "ticketHash": "3b1bc34b5772b7d7de8898b311166694518aeacf543f5a9813372a40c53a3970",
+    "version": 1
+  },
+  "body": "Bump @adlc/core and @adlc/tickets to ^1.11.1, @adlc/antigravity to ^1.7.0, and add @adlc/cli@^1.11.1. Implement resolveAdlcBinary() to resolve local node_modules/.bin/adlc first, validating adjacent package.json has \"name\": \"@adlc/cli\" with semver >= 1.11.1, lockfile tarball verification, and two-factor operator trust anchor authentication.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-models-gemini-38"
+    }
+  ],
+  "id": "t-deps-adlc-1-11",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/pools.mjs",
+    "lib/agy.mjs"
+  ],
+  "scope": [
+    "package.json",
+    "package-lock.json",
+    "lib/doctor.mjs"
+  ],
+  "title": "Upgrade @adlc dependencies and binary resolution to 1.11.1"
+}

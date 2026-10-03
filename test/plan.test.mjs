@@ -6,11 +6,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { validatePlan, planEdges, compilePlan, premortemPlan, parallaxEdges } from '../lib/plan.mjs';
+import { validatePlan, planEdges, compilePlan, premortemPlan, parallaxEdges, PARALLAX_READER_SCHEMA, PARALLAX_JUDGE_SCHEMA, PREMORTEM_SCHEMA } from '../lib/plan.mjs';
+import { coldstartTickets, COLDSTART_SCHEMA } from '../lib/preflight.mjs';
 import { readBrain } from '../lib/brain.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
+
+process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_plan_test.json');
 
 const FAKE_ENV_KEYS = [
   'AGB_AGY_BIN', 'FAKE_STATE_DIR', 'FAKE_BRAIN_MODE',
@@ -54,9 +57,60 @@ test('validatePlan: catches missing repo/gate, dup ids, bad edges, cycles, unrou
   assert.ok(errs.some((e) => /no model candidates for tier 'cheap' with pool_hint 'claude'/.test(e)));
 });
 
+test('validatePlan: handles malformed edge entries gracefully without throwing', () => {
+  const errs = validatePlan({
+    repo: '/r',
+    gate: { test: 'npm test' },
+    tickets: [
+      { id: 'T1', title: 'a', body: 'x', scope: ['a/**'], edges: [null, { to: 123 }, { invalid: true }] },
+      { id: 'T2', title: 'b', body: 'x', scope: ['b/**'] },
+    ],
+  });
+  assert.ok(errs.length > 0);
+  assert.ok(errs.some((e) => /edge must declare a valid 'to' field/.test(e)));
+
+  // Test planEdges with null / malformed edges
+  const edges = planEdges([
+    { id: 'T1', edges: [null, undefined, { to: null }, { to: 'T2' }] },
+    { id: 'T2' },
+  ]);
+  assert.equal(edges.length, 1);
+  assert.equal(edges[0].from.id, 'T1');
+  assert.equal(edges[0].to.id, 'T2');
+});
+
+test('validatePlan: rejects invalid scope and rail pathspecs', () => {
+  const badScope = validatePlan({
+    repo: '/r', gate: { test: 'npm test' },
+    tickets: [
+      { id: 'T1', title: 'a', body: 'x', scope: ['*'] },
+    ],
+  });
+  assert.ok(badScope.some((e) => e === "T1: invalid scope pathspec '*'"));
+
+  const badRail = validatePlan({
+    repo: '/r', gate: { test: 'npm test' },
+    tickets: [
+      { id: 'T2', title: 'b', body: 'x', scope: ['src/**'], rails: ['lib/./gates.mjs'] },
+    ],
+  });
+  assert.ok(badRail.some((e) => e === "T2: invalid rail pathspec 'lib/./gates.mjs'"));
+});
+
+test('validatePlan: rejects plan.adlcBin injection', () => {
+  const errs = validatePlan({
+    repo: '/r', gate: { test: 'npm test' },
+    adlcBin: '/evil/adlc',
+    tickets: [
+      { id: 'T1', title: 'a', body: 'x', scope: ['a/**'] },
+    ],
+  });
+  assert.ok(errs.some((e) => /plan\.adlcBin is prohibited/.test(e)));
+});
+
 test('validatePlan: accepts a well-formed plan; planEdges resolves pairs', () => {
   const plan = {
-    repo: '/r', gate: { test: 'true' },
+    repo: '/r', gate: { test: 'npm test' },
     tickets: [
       { id: 'T1', title: 'a', body: 'x', scope: ['a/**'], edges: [{ to: 'T2' }] },
       { id: 'T2', title: 'b', body: 'x', scope: ['b/**'] },
@@ -219,6 +273,34 @@ test('premortemPlan/parallaxEdges: standalone results parse from fake responders
   }
 });
 
+test('premortemPlan/parallaxEdges: keep quota admission advisory when pools.acquire rejects', async () => {
+  const brainDir = makeBrainDir();
+  try {
+    const brain = readBrain('aaaa', brainDir);
+    const plan = {
+      repo: '/r', gate: { test: 'true' },
+      tickets: [
+        { id: 'T1', title: 'a', body: 'x', scope: ['a/**'], edges: [{ to: 'T2' }] },
+        { id: 'T2', title: 'b', body: 'x', scope: ['b/**'] },
+      ],
+    };
+    const failingPools = {
+      acquire: async () => {
+        throw new Error('Quota circuit breaker is tripped; dispatch suspended');
+      },
+    };
+    const pm = await premortemPlan(plan, brain, { pools: failingPools });
+    assert.deepEqual(pm.causes, []);
+    assert.match(pm.error, /quota admission failed: Quota circuit breaker is tripped/);
+
+    const lax = await parallaxEdges(plan, { pools: failingPools, n: 1 });
+    assert.equal(lax.length, 1);
+    assert.match(lax[0].error, /quota admission failed: Quota circuit breaker is tripped/);
+  } finally {
+    rmSync(brainDir, { recursive: true, force: true });
+  }
+});
+
 // --- CLI ---
 
 test('agb plan: compiles a brain into plan.json with provenance, refuses overwrite', async () => {
@@ -334,4 +416,58 @@ test('agb plan: compiles local spec path with spec provenance and prints customi
     rmSync(tmpFile, { force: true });
     rmSync(outDir, { recursive: true, force: true });
   }
+});
+
+test('coldstartTickets: fails closed with error when model response is garbage or missing required gaps field', async () => {
+  const tickets = [{ id: 'T1', title: 'T1', body: 'body', scope: ['src/**'] }];
+  await withFakeAgy({ FAKE_COLDSTART_MODE: 'garbage' }, async () => {
+    const res = await coldstartTickets(tickets, { test: 'npm test' });
+    assert.equal(res.length, 1);
+    assert.ok(res[0].error, 'must report error when model output violates schema or is unparseable');
+  });
+});
+
+test('coldstartTickets: captures quota admission errors per ticket rather than rejecting', async () => {
+  const tickets = [
+    { id: 'T1', title: 'T1', body: 'body 1', scope: ['src/a'] },
+    { id: 'T2', title: 'T2', body: 'body 2', scope: ['src/b'] },
+  ];
+  const pools = {
+    acquire: async (model, opts) => {
+      if (opts.ticketId === 'T2') {
+        throw new Error('pool capacity exhausted');
+      }
+      return () => {};
+    },
+  };
+  await withFakeAgy({ FAKE_COLDSTART_MODE: 'clean' }, async () => {
+    const res = await coldstartTickets(tickets, { test: 'npm test' }, { pools });
+    assert.equal(res.length, 2);
+    assert.equal(res[0].id, 'T1');
+    assert.equal(res[0].error, undefined);
+    assert.equal(res[1].id, 'T2');
+    assert.ok(res[1].error.includes('pool capacity exhausted'), 'T2 must capture quota admission error');
+  });
+});
+
+test('parallaxEdges: fails closed with error when reader or judge verdict fails', async () => {
+  const plan = {
+    repo: '/r',
+    tickets: [
+      { id: 'T1', title: 'T1', body: 'body 1', scope: ['src/a'], edges: [{ to: 'T2' }] },
+      { id: 'T2', title: 'T2', body: 'body 2', scope: ['src/b'], edges: [] },
+    ],
+  };
+  await withFakeAgy({ FAKE_AGY_MODE: 'fail' }, async () => {
+    const results = await parallaxEdges(plan);
+    assert.equal(results.length, 1);
+    assert.ok(results[0].error, 'must report error when reader/judge fails');
+  });
+});
+
+test('COLDSTART_SCHEMA, PARALLAX_READER_SCHEMA, PARALLAX_JUDGE_SCHEMA, PREMORTEM_SCHEMA enforce required fields', () => {
+  assert.deepEqual(COLDSTART_SCHEMA.required, ['gaps']);
+  assert.deepEqual(PARALLAX_READER_SCHEMA.required, ['contract']);
+  assert.deepEqual(PARALLAX_JUDGE_SCHEMA.required, ['divergent', 'divergences']);
+  assert.deepEqual(PREMORTEM_SCHEMA.required, ['causes']);
 });

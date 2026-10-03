@@ -1,0 +1,36 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T00:58:56.005Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b1bf00587be39d209196a0d456154e799687b9a0cd62d16f833c46fdb5a00bf8",
+    "ticketHash": "955ca2ac99466c6e061d4a1dcc3a1eb8e5d2d032ae446ac81e11577b10efdfba",
+    "version": 1
+  },
+  "body": "Add outputFormat json and jsonSchema to runAgy. Enforce semantic verdict invariants, outgoing DAG edge invariants, npm-only gate commands with script tampering verification, trusted baseline test oracle protocol, and sanitized gate execution.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-builder-stream-json"
+    }
+  ],
+  "id": "t-agy-json-schema",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/doctor.mjs",
+    "lib/pools.mjs"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "lib/prosecute.mjs",
+    "lib/review.mjs",
+    "lib/plan.mjs",
+    "lib/brain.mjs",
+    "test/**"
+  ],
+  "title": "Native structured output validation with versioned JSON schemas"
+}

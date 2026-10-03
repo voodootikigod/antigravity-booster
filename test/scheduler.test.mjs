@@ -1,14 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs'; // eslint-disable-line
-import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync, lstatSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ticketFilename } from '@adlc/tickets';
 
-import { runPlan } from '../lib/scheduler.mjs';
+import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/scheduler.mjs';
+import { reapIntegrationWorktrees, resetToBase, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
+import { PoolSet } from '../lib/pools.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_scheduler_test.json');
 
@@ -35,8 +37,9 @@ function makeRepo() {
 }
 
 function withEnv(env, fn) {
+  const mergedEnv = { AGB_ALLOW_CUSTOM_ADLC_CLI: '1', ...env };
   const saved = {};
-  for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; process.env[k] = v; }
+  for (const [k, v] of Object.entries(mergedEnv)) { saved[k] = process.env[k]; process.env[k] = v; }
   return fn().finally(() => {
     for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
   });
@@ -207,6 +210,39 @@ test('runPlan: post-merge gate failure reverts main to the pre-run SHA (data-los
   }
 });
 
+test('runPlan: fails closed when hollow-test binary is unavailable for modified tests', async () => {
+  const repo = makeRepo();
+  try {
+    writeFileSync(join(repo, '.gitignore'),
+      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
+      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
+    mkdirSync(join(repo, 'test'), { recursive: true });
+    writeFileSync(join(repo, 'test', 'sample.test.js'), 'console.log("ok");\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'init with tests'], { cwd: repo });
+    const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+
+    // The builder will modify test/sample.test.js under FAKE_BUILDER_MODE=mod-test.
+    // Without an authenticated adlc binary available, hollow-test cannot run.
+    // The integration MUST fail closed with post_merge_gate_failure.
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'mod-test', AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'node test/sample.test.js' },
+        tickets: [{ id: 'T1', title: 'mod test', body: 'modify test', scope: ['test/sample.test.js'] }],
+      }, quiet)
+    );
+
+    assert.equal(report.merged.length, 0, 'ticket modifying tests must not merge when adlc is unavailable');
+    assert.match(report.failed.T1, /hollow-test mutation verification failed: authenticated adlc binary is unavailable/);
+    const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.equal(headAfter, headBefore, 'HEAD restored to pre-run SHA');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: editing a rail inside the declared scope fails the ticket', async () => {
   const repo = makeRepo();
   try {
@@ -281,7 +317,7 @@ test('runPlan: unroutable tier/pool_hint fails the ticket — never a silent dro
     const accounted = [...report.merged, ...Object.keys(report.failed)].sort();
     assert.deepEqual(accounted, ['T1', 'T2'], 'every ticket appears in merged ∪ failed');
   } finally {
-    rmSync(repo, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -304,12 +340,54 @@ test('runPlan: duplicate ids and unknown edge targets are rejected before touchi
       withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
         runPlan({
           repo, gate: { test: 'true' },
+          tickets: [
+            { id: 'T1', title: 'a', body: 'x', scope: ['a.txt'] },
+            { id: 't1', title: 'b', body: 'y', scope: ['b.txt'] },
+          ],
+        }, quiet)),
+      /ticket id 't1' collides with 'T1'/
+    );
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
           tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a.txt'], edges: [{ to: 'T9' }] }],
         }, quiet)),
       /edge to unknown ticket 'T9'/
     );
     const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
     assert.equal(headAfter, headBefore, 'repo untouched (no gitignore commit, no lock side effects)');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: invalid ticket id syntax is rejected before touching the repo', async () => {
+  const repo = makeRepo();
+  try {
+    const headBefore = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
+          tickets: [
+            { id: 'foo/../../../../tmp', title: 'a', body: 'x', scope: ['a.txt'] },
+          ],
+        }, quiet)),
+      /invalid ticket id 'foo\/\.\.\/\.\.\/\.\.\/\.\.\/tmp'/
+    );
+    await assert.rejects(
+      withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+        runPlan({
+          repo, gate: { test: 'true' },
+          tickets: [
+            { id: '..', title: 'a', body: 'x', scope: ['a.txt'] },
+          ],
+        }, quiet)),
+      /invalid ticket id '\.\.'/
+    );
+    const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.equal(headAfter, headBefore, 'repo untouched');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -355,6 +433,21 @@ test('runPlan: warns if dirty repo and AGB_ALLOW_DIRTY=1', async () => {
       runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, captureLogger)
     );
     assert.ok(logs.some((l) => l.includes('WARNING') && l.includes('AGB_ALLOW_DIRTY=1') && l.includes('git reset --hard')), 'warning should be printed');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: accepts clean repository with untracked projected ticket store without AGB_ALLOW_DIRTY=1', async () => {
+  const repo = makeRepo();
+  try {
+    mkdirSync(join(repo, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets', '.store.json'), JSON.stringify({ backend: 'dir' }));
+    writeFileSync(join(repo, '.adlc', 'tickets', 'T1.json'), JSON.stringify({ id: 'T1', title: 'a' }));
+    const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
+      runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, quiet)
+    );
+    assert.deepEqual(report.merged, ['T1']);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -407,7 +500,7 @@ test('runPlan: AC1 (mechanical) — an ADLC-initialized target with the plugin p
   const state = mkdtempSync(join(tmpdir(), 'agb-enforce-state-'));
   try {
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -513,7 +606,7 @@ test('runPlan: the materialized ticket-store projection never enters commits or 
   const state = mkdtempSync(join(tmpdir(), 'agb-strike-state-'));
   try {
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -549,7 +642,7 @@ test('runPlan: B11 — a foundational ticket WITH an outgoing edge materializes 
     // it fails at route() before its builder runs — leaving T1's projection as
     // the captured adlc-tickets-seen.json (echo-adlc writes to a shared path).
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
       () => runPlan({
         repo,
         gate: { test: 'true' },
@@ -693,3 +786,369 @@ test('runPlan: a stolen lock aborts the merge instead of resetting a repo we no 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('runPlan: reroutes to viable alternate model when primary pool capacity is zero', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-reroute-state-'));
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'echo-adlc', FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'frontier' }],
+        caps: { 'gemini-pro': 0, claude: 4 },
+      }, quiet)
+    );
+    assert.deepEqual(report.merged, ['T1']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: preserves generated ticket charter when base repo tracks AGENTS.md', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-charter-state-'));
+  try {
+    // Base repo tracks a root AGENTS.md
+    writeFileSync(join(repo, 'AGENTS.md'), '# Base Repository Root Charter\n');
+    execFileSync('git', ['add', 'AGENTS.md'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'track base AGENTS.md'], { cwd: repo });
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        FAKE_BUILDER_MODE: 'echo-charter',
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{
+          id: 'T1',
+          title: 'charter test',
+          body: 'ensure charter is preserved',
+          scope: ['T1.txt'],
+          tier: 'mid',
+        }],
+      }, quiet)
+    );
+
+    assert.deepEqual(report.merged, ['T1']);
+    const seenCharter = readFileSync(join(state, 'seen-agents.md'), 'utf8');
+    assert.match(seenCharter, /# Ticket T1: charter test/);
+    assert.match(seenCharter, /ensure charter is preserved/);
+    assert.ok(!seenCharter.includes('# Base Repository Root Charter'), 'builder must not see clobbered base AGENTS.md');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: releases rerouted pool reservation when lease acquisition fails', async () => {
+  const repo = makeRepo();
+  const v2Dir = mkdtempSync(join(tmpdir(), 'agb-sched-v2-'));
+  const origV2 = process.env.AGB_POOLS_V2;
+  const origLock = process.env.AGB_POOLS_LOCK;
+  try {
+    process.env.AGB_POOLS_V2 = join(v2Dir, 'v2.json');
+    process.env.AGB_POOLS_LOCK = join(v2Dir, 'v2.lock');
+    // Pre-seed v2 state in DRAINING status so acquisition fails
+    writeFileSync(process.env.AGB_POOLS_V2, JSON.stringify({
+      generation: 1,
+      status: 'DRAINING',
+      pools: {
+        gemini: { baseCap: 12, scaledCap: 12, inFlight: 0, reserved: 0 },
+        claude_gpt: { baseCap: 4, scaledCap: 4, inFlight: 0, reserved: 0 },
+      },
+      leases: {},
+    }));
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'frontier' }],
+      }, quiet)
+    );
+
+    assert.ok(report.failed.T1);
+    assert.match(String(report.failed.T1), /DRAINING/);
+    for (const [pool, resCount] of Object.entries(report.pools?.reserved ?? {})) {
+      assert.equal(resCount, 0, `pool ${pool} must not leak reservations`);
+    }
+  } finally {
+    if (origV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = origV2;
+    if (origLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = origLock;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(v2Dir, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: fails closed when candidate deletes package.json while baseline requires it', async () => {
+  const repo = makeRepo();
+  try {
+    writeFileSync(join(repo, 'package.json'), JSON.stringify({ name: 'test-app', scripts: { test: 'node -e "process.exit(0)"' } }));
+    execFileSync('git', ['add', 'package.json'], { cwd: repo });
+    execFileSync('git', ['commit', '-m', 'add package.json'], { cwd: repo });
+
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'delete-pkg', AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'npm test' },
+        tickets: [{ id: 'T1', title: 'delete manifest', body: 'remove package.json', scope: ['package.json'], tier: 'cheap' }],
+      }, quiet)
+    );
+
+    assert.ok(report.failed.T1);
+    assert.match(String(report.failed.T1), /gate script tampering: candidate deleted package\.json/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: cleans up per-attempt Git databases on ticket completion', async () => {
+  const repo = makeRepo();
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'cheap' }],
+      }, quiet)
+    );
+
+    assert.equal(report.merged.length, 1);
+    const attemptGitDir = join(repo, '.worktrees', '.attempt_git', 'agb-t1');
+    assert.equal(existsSync(attemptGitDir), false, 'per-attempt git directory must be cleaned up on merge');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('reapIntegrationWorktrees: removes orphaned per-attempt Git databases', () => {
+  const repo = makeRepo();
+  try {
+    const orphanedAttemptDir = join(repo, '.worktrees', '.attempt_git', 'agb-dangling');
+    mkdirSync(orphanedAttemptDir, { recursive: true });
+    assert.ok(existsSync(orphanedAttemptDir));
+
+    reapIntegrationWorktrees(repo);
+
+    assert.equal(existsSync(orphanedAttemptDir), false, 'orphaned attempt_git directory must be reaped');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('resetToBase: cleans untracked builder artifacts while preserving AGENTS.md and .adlc', () => {
+  const repo = makeRepo();
+  let worktreePath = null;
+  try {
+    worktreePath = createWorktree(repo, 'T1', 'main');
+    writeFileSync(join(worktreePath, 'AGENTS.md'), '# Charter\n');
+    mkdirSync(join(worktreePath, '.adlc'), { recursive: true });
+    writeFileSync(join(worktreePath, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
+
+    writeFileSync(join(worktreePath, 'stale_builder_artifact.txt'), 'abandoned content\n');
+    mkdirSync(join(worktreePath, 'stale_dir'), { recursive: true });
+    writeFileSync(join(worktreePath, 'stale_dir', 'scratch.o'), 'binary\n');
+
+    resetToBase(worktreePath, 'main');
+
+    assert.ok(existsSync(join(worktreePath, 'AGENTS.md')), 'AGENTS.md must be preserved');
+    assert.ok(existsSync(join(worktreePath, '.adlc', 'tickets.json')), '.adlc must be preserved');
+    assert.equal(existsSync(join(worktreePath, 'stale_builder_artifact.txt')), false, 'untracked artifact must be cleaned');
+    assert.equal(existsSync(join(worktreePath, 'stale_dir')), false, 'untracked directory must be cleaned');
+  } finally {
+    if (worktreePath) {
+      try { removeWorktree(repo, worktreePath, { force: true }); } catch {}
+    }
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: reclassifies post-dispatch quota failures without consuming a strike', async () => {
+  const repo = makeRepo();
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 2 }, { repo });
+
+    let refreshCount = 0;
+    pools.refreshQuota = async () => {
+      refreshCount++;
+      if (refreshCount === 1) {
+        // Startup refresh: healthy
+        return { ok: true, quota: { paused: false } };
+      }
+      // Post-dispatch refresh: quota depleted and circuit breaker tripped
+      pools.recordQuotaFailure();
+      return { ok: false, error: 'simulated 429 quota exhaustion', tripped: true };
+    };
+
+    // When builder fails and quota is depleted, the ticket is paused rather than failing
+    // Use AGB_QUOTA_TIMEOUT_MS to prevent hanging on resumption pause
+    await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'missing-result', AGB_SANDBOX_GATES: '0', AGB_QUOTA_TIMEOUT_MS: '100' },
+      async () => {
+        const report = await runPlan({
+          repo,
+          gate: { test: 'true' },
+          tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'cheap' }],
+          pools,
+        }, quiet);
+
+        assert.equal(report.merged.length, 0);
+        // Quota reclassification happened before strike accounting
+        assert.ok(refreshCount >= 2, 'post-dispatch refreshQuota was called');
+      }
+    );
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: does not bypass strike accounting when unrelated pool is paused but active pool has capacity', async () => {
+  const repo = makeRepo();
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = repo;
+    const pools = new PoolSet({ 'gemini-flash': 2, 'claude': 0 }, { repo });
+
+    // Simulate quota where Claude is paused, making pools.quota.paused true globally,
+    // but Gemini has full capacity.
+    pools.quota = {
+      gemini: { scaledCap: 4, effectivePercent: 100 },
+      claude_gpt: { scaledCap: 0, effectivePercent: 0 },
+      paused: true,
+      depletionCause: 'claude_exhausted',
+      resumesAt: '2029-01-01T00:00:00Z',
+    };
+    pools.caps['gemini-flash'] = 2;
+    pools.caps['claude'] = 0;
+
+    pools.refreshQuota = async () => ({
+      ok: true,
+      quota: pools.quota,
+    });
+
+    await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'flail-then-good', AGB_SANDBOX_GATES: '0' },
+      async () => {
+        const report = await runPlan({
+          repo,
+          gate: { test: 'true' },
+          tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'cheap' }],
+          pools,
+        }, quiet);
+
+        // Flail detection or strike accounting must take effect; ticket must fail rather than infinite-looping on quota pause
+        assert.equal(report.merged.length, 0);
+        assert.ok('T1' in report.failed, 'ticket must fail via strike/flail accounting');
+      }
+    );
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('safeWriteWorktreeFile: unlinks symlink and does not write through to target host file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-safewrite-test-'));
+  try {
+    const sensitiveFile = join(dir, 'sensitive-host-file.txt');
+    writeFileSync(sensitiveFile, 'PROTECTED CONTENT');
+
+    const symlinkPath = join(dir, '.git');
+    symlinkSync(sensitiveFile, symlinkPath);
+
+    // Call safeWriteWorktreeFile to overwrite .git
+    safeWriteWorktreeFile(symlinkPath, 'gitdir: /new/path\n');
+
+    // Verify sensitive file was NOT modified
+    const sensitiveContent = readFileSync(sensitiveFile, 'utf8');
+    assert.equal(sensitiveContent, 'PROTECTED CONTENT', 'target of symlink must not be overwritten');
+
+    // Verify symlink was replaced with a regular file
+    const st = lstatSync(symlinkPath);
+    assert.equal(st.isSymbolicLink(), false, '.git must no longer be a symlink');
+    assert.equal(st.isFile(), true, '.git must be a regular file');
+    assert.equal(readFileSync(symlinkPath, 'utf8'), 'gitdir: /new/path\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: aborts fleet on root integrity violation, marks remaining tickets failed and terminates work', async () => {
+  const repo = makeRepo();
+  let poller;
+  try {
+    let tampered = false;
+    const configPath = join(repo, '.git', 'config');
+    poller = setInterval(() => {
+      if (!tampered && existsSync(join(repo, '.worktrees'))) {
+        writeFileSync(configPath, readFileSync(configPath, 'utf8') + '# tampered\n');
+        tampered = true;
+      }
+    }, 1);
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () =>
+        runPlan({
+          repo,
+          gate: { test: 'true' },
+          tickets: [
+            { id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], edges: [{ to: 'T2' }] },
+            { id: 'T2', title: 'two', body: 'write T2.txt', scope: ['T2.txt'] },
+          ],
+        }, quiet)
+    );
+
+    assert.ok(tampered, 'precondition: root git config was tampered mid-run');
+    assert.equal(report.merged.length, 0, 'no tickets should merge after root integrity violation');
+    assert.ok(report.failed.T1, 'T1 must fail');
+    assert.match(report.failed.T1, /root integrity violation: Root Git config altered/);
+    assert.ok(report.failed.T2, 'T2 must fail due to fleet abort');
+    assert.match(report.failed.T2, /fleet aborted: root integrity violation: Root Git config altered/);
+  } finally {
+    clearInterval(poller);
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('terminateProcessTree: kills child and all descendant processes in process group', async () => {
+  // Spawn a detached leader that spawns a sleep subprocess
+  const leader = spawn(
+    process.execPath,
+    ['-e', 'const { spawn } = require("child_process"); const sub = spawn("sleep", ["60"], { stdio: "ignore" }); sub.unref(); setTimeout(() => {}, 60000);'],
+    { detached: process.platform !== 'win32', stdio: 'ignore' }
+  );
+  assert.ok(leader.pid);
+  // Wait brief moment for leader to start
+  await new Promise((r) => setTimeout(r, 100));
+
+  terminateProcessTree(leader, 'SIGKILL');
+
+  // Verify leader is dead
+  await new Promise((r) => setTimeout(r, 150));
+  let leaderAlive = false;
+  try {
+    process.kill(leader.pid, 0);
+    leaderAlive = true;
+  } catch {}
+  assert.equal(leaderAlive, false, 'leader process must be terminated');
+});
+
+
+

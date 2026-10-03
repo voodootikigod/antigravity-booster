@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync, symlinkSync } from 'node:fs';
 import { execFileSync, execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { poolOf, familyOf, runAgy } from '../lib/agy.mjs';
-import { PoolSet } from '../lib/pools.mjs';
+import { poolOf, familyOf, runAgy, resolveModelSlug } from '../lib/agy.mjs';
+import { PoolSet, tierCandidates } from '../lib/pools.mjs';
 import { builderAgentsMd, prosecutionPrompt } from '../lib/charters.mjs';
 import { runGate, runGates } from '../lib/gates.mjs';
 import { prosecute } from '../lib/prosecute.mjs';
@@ -17,7 +17,7 @@ import { compilePlan } from '../lib/plan.mjs';
 import { runPlan } from '../lib/scheduler.mjs';
 import {
   ensureGitignore, createWorktree, commitAll, branchDiff, mergeWorktree, changedFiles,
-  isMidMerge, abortAnyMerge,
+  isMidMerge, abortAnyMerge, isDirty,
 } from '../lib/worktrees.mjs';
 import { bootstrap, resolvePluginPath } from '../lib/bootstrap.mjs';
 
@@ -36,7 +36,7 @@ test('agb validate: rejects duplicate ids, unknown edges, missing body, empty sc
     const bad = join(dir, 'bad.json');
     writeFileSync(bad, JSON.stringify({
       repo: dir,
-      gate: { test: 'true' },
+      gate: { test: 'npm test' },
       tickets: [
         { id: 'T1', title: 'a', body: 'x', scope: ['a.txt'], edges: [{ to: 'T9' }] },
         { id: 'T1', title: 'dup', body: 'y', scope: ['b.txt'] },
@@ -64,7 +64,7 @@ test('agb validate: rejects duplicate ids, unknown edges, missing body, empty sc
     const good = join(dir, 'good.json');
     writeFileSync(good, JSON.stringify({
       repo: dir,
-      gate: { test: 'true' },
+      gate: { test: 'npm test' },
       tickets: [{ id: 'T1', title: 'a', body: 'do the thing', scope: ['a.txt'], tier: 'mid', pool_hint: 'auto' }],
     }));
     const ok = execFileSync(process.execPath, [AGB_BIN, 'validate', good], { encoding: 'utf8', stdio: 'pipe' });
@@ -80,6 +80,20 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.equal(poolOf('Gemini 3.5 Flash (Low)'), 'gemini-flash');
   assert.equal(poolOf('Claude Opus 4.6 (Thinking)'), 'claude');
   assert.equal(familyOf('Gemini 3.1 Pro (High)'), 'gemini');
+  assert.equal(poolOf('gemini-3.8-flash-low'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.8-flash-medium'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.8-flash-high'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.7-flash-low'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.7-flash-medium'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.7-flash-high'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.6-flash-low'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.6-flash-medium'), 'gemini-flash');
+  assert.equal(poolOf('gemini-3.6-flash-high'), 'gemini-flash');
+  assert.equal(familyOf('gemini-3.8-flash-high'), 'gemini');
+  assert.equal(familyOf('gemini-3.7-flash-low'), 'gemini');
+  assert.equal(familyOf('gemini-3.6-flash-medium'), 'gemini');
+  assert.equal(familyOf('claude-sonnet-4-6'), 'claude');
+  assert.equal(familyOf('gpt-oss-120b-medium'), 'gpt-oss');
   // test fuzzy/prefix fallback matching
   assert.equal(poolOf('gemini-1.5-flash-custom'), 'gemini-flash');
   assert.equal(poolOf('custom-gemini-model'), 'gemini-pro');
@@ -92,6 +106,32 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.throws(() => poolOf(undefined), /unknown model: undefined/);
   assert.throws(() => poolOf(null), /unknown model: null/);
   assert.throws(() => poolOf(123), /unknown model: 123/);
+});
+
+test('resolveModelSlug: maps 3.5 legacy models to 3.8 and resolves display aliases', () => {
+  assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-3.8-flash-low');
+  assert.equal(resolveModelSlug('gemini-3.5-flash-medium'), 'gemini-3.8-flash-medium');
+  assert.equal(resolveModelSlug('gemini-3.5-flash-high'), 'gemini-3.8-flash-high');
+  assert.equal(resolveModelSlug('Gemini 3.5 Flash (Low)'), 'gemini-3.8-flash-low');
+  assert.equal(resolveModelSlug('Gemini 3.8 Flash (High)'), 'gemini-3.8-flash-high');
+  assert.equal(resolveModelSlug('Gemini 3.7 Flash (Medium)'), 'gemini-3.7-flash-medium');
+  assert.equal(resolveModelSlug('Gemini 3.6 Flash (Low)'), 'gemini-3.6-flash-low');
+  assert.equal(resolveModelSlug('Claude Sonnet 4.6 (Thinking)'), 'claude-sonnet-4-6');
+});
+
+test('tierCandidates: filters by pool_hint including claude-gpt alias', () => {
+  const cheapGemini = tierCandidates('cheap', 'gemini');
+  assert.ok(cheapGemini.includes('gemini-3.8-flash-low'));
+  assert.ok(cheapGemini.includes('gemini-3.7-flash-low'));
+  assert.ok(cheapGemini.includes('gemini-3.6-flash-low'));
+
+  const frontierClaude = tierCandidates('frontier', 'claude');
+  assert.ok(frontierClaude.includes('claude-sonnet-4-6'));
+  assert.ok(!frontierClaude.includes('gemini-3.1-pro-high'));
+
+  const frontierClaudeGpt = tierCandidates('frontier', 'claude-gpt');
+  assert.ok(frontierClaudeGpt.includes('claude-sonnet-4-6'));
+  assert.ok(!frontierClaudeGpt.includes('gemini-3.1-pro-high'));
 });
 
 test('runAgy: success round-trip via fake binary', async () => {
@@ -231,13 +271,13 @@ test('PoolSet: caps enforced, waiters released, requests counted', async () => {
 test('PoolSet.route: reservation spreads concurrent dispatches across pools', () => {
   const pools = new PoolSet();
   // First mid ticket → claude (all reserved 0, claude is first candidate).
-  // First mid ticket -> gemini-3.6-flash-high
-  assert.equal(pools.route('mid'), 'gemini-3.6-flash-high');
+  // First mid ticket -> gemini-3.8-flash-high
+  assert.equal(pools.route('mid'), 'gemini-3.8-flash-high');
   // Second mid ticket (no slot acquired yet — the bug case) must NOT pick
   // claude again; reservation pushes it to the idle gemini-pro pool.
   assert.equal(pools.route('mid'), 'gemini-3.1-pro-low');
   // pool_hint still constrains family (but both are gemini now, so it falls back to load ratio: 1/8 < 1/4)
-  assert.equal(pools.route('mid', 'gemini'), 'gemini-3.6-flash-high');
+  assert.equal(pools.route('mid', 'gemini'), 'gemini-3.8-flash-high');
   // unroute frees the assignment so the pool rebalances.
   pools.unroute('gemini-3.1-pro-low');
   pools.unroute('gemini-3.1-pro-low');
@@ -582,6 +622,90 @@ test('createWorktree: reclaims a leftover branch from a prior run (no crash)', (
   }
 });
 
+test('createWorktree: rejects invalid ticket id syntax (path traversal prevention)', () => {
+  const { dir } = makeRepo();
+  try {
+    assert.throws(
+      () => createWorktree(dir, 'foo/../../bar', 'main'),
+      /invalid ticket id 'foo\/..\/..\/bar'/
+    );
+    assert.throws(
+      () => createWorktree(dir, '..', 'main'),
+      /invalid ticket id '\.\.'/
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('createWorktree: rejects symlinked .worktrees directory', () => {
+  const { dir } = makeRepo();
+  const outsideDir = mkdtempSync(join(tmpdir(), 'agb-outside-wt-'));
+  try {
+    symlinkSync(outsideDir, join(dir, '.worktrees'));
+    assert.throws(
+      () => createWorktree(dir, 'T1', 'main'),
+      /Security violation: \.worktrees directory is a symbolic link/
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('isDirty: returns false when untracked ticket store exists in .adlc/tickets/ or .adlc/tickets.json', () => {
+  const { dir } = makeRepo();
+  try {
+    mkdirSync(join(dir, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(dir, '.adlc', 'tickets', '.store.json'), '{}');
+    writeFileSync(join(dir, '.adlc', 'tickets', 'T1.json'), '{}');
+    assert.equal(isDirty(dir), false, 'untracked directory ticket store must not make repo dirty');
+
+    writeFileSync(join(dir, '.adlc', 'tickets.json'), '{}');
+    assert.equal(isDirty(dir), false, 'untracked legacy tickets.json must not make repo dirty');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('isDirty: returns true when untracked or modified files exist outside ticket store', () => {
+  const { dir } = makeRepo();
+  try {
+    mkdirSync(join(dir, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(dir, '.adlc', 'tickets', '.store.json'), '{}');
+
+    // Untracked file outside tickets
+    writeFileSync(join(dir, 'untracked.txt'), 'hello\n');
+    assert.equal(isDirty(dir), true, 'untracked file outside ticket store makes repo dirty');
+    rmSync(join(dir, 'untracked.txt'));
+    assert.equal(isDirty(dir), false);
+
+    // Tracked file modified
+    writeFileSync(join(dir, 'README.md'), 'modified\n');
+    assert.equal(isDirty(dir), true, 'modified tracked file makes repo dirty');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('commitAll: excludes .agb_home and files within it from staged commits', () => {
+  const { dir } = makeRepo();
+  try {
+    const wt = createWorktree(dir, 'T8', 'main');
+    writeFileSync(join(wt, 'valid.txt'), 'valid content\n');
+    mkdirSync(join(wt, '.agb_home', '.config'), { recursive: true });
+    writeFileSync(join(wt, '.agb_home', '.config', 'settings.json'), '{"auth":"secret"}\n');
+
+    const committed = commitAll(wt, 'T8: add valid file');
+    assert.equal(committed, true);
+
+    const changed = changedFiles(wt, 'main');
+    assert.deepEqual(changed, ['valid.txt']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('isMidMerge/abortAnyMerge: a conflicted merge is detected and cleaned', () => {
   const { dir, g } = makeRepo();
   try {
@@ -788,7 +912,6 @@ test('compilePlan and runPlan: pass project option through to runAgy', async () 
   process.env.FAKE_STATE_DIR = state;
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.FAKE_BRAIN_MODE = 'edges';
-  process.env.AGB_ALLOW_DIRTY = '1';
   const repo = join(tmpdir(), `agb-test-plan-${Date.now()}`);
   mkdirSync(repo, { recursive: true });
   mkdirSync(join(repo, '.adlc'), { recursive: true });
@@ -902,4 +1025,62 @@ test('agents: declarative agent manifests exist under .agents/agents/', () => {
   }
 });
 
+test('standalone commands: reviewFleet, preflight, compilePlan, and brainToPlan require successful quota refresh', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-quota-check-'));
+  const origBin = process.env.AGB_AGY_BIN;
+  const origQuotaMode = process.env.FAKE_AGY_QUOTA_MODE;
+  const origQuotaState = process.env.AGB_QUOTA_STATE;
+  const origPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_AGY_BIN = FAKE_AGY;
+    process.env.FAKE_AGY_QUOTA_MODE = 'fail';
+    process.env.AGB_QUOTA_STATE = join(dir, 'agb_pools_quota_check.json');
+    process.env.AGB_POOLS_DIR = dir;
 
+    const pools = new PoolSet(undefined, { repo: dir });
+
+    // 1. reviewFleet rejects when quota telemetry unavailable
+    await assert.rejects(
+      async () => {
+        await reviewFleet({ diff: 'some diff', pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+
+    // 2. preflight rejects when quota telemetry unavailable
+    const { preflight } = await import('../lib/preflight.mjs');
+    await assert.rejects(
+      async () => {
+        await preflight({ tickets: [] }, { pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+
+    // 2b. preflight succeeds when quota telemetry unavailable if skipColdstart is true
+    const noColdstartRes = await preflight({ tickets: [] }, { pools, repo: dir, skipColdstart: true });
+    assert.equal(noColdstartRes.ok, true);
+
+    // 3. compilePlan rejects when quota telemetry unavailable
+    await assert.rejects(
+      async () => {
+        await compilePlan('nonexistent', { pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+
+    // 4. brainToPlan rejects when quota telemetry unavailable
+    const { brainToPlan } = await import('../lib/brain.mjs');
+    await assert.rejects(
+      async () => {
+        await brainToPlan('nonexistent', { pools, repo: dir });
+      },
+      /quota telemetry unavailable/
+    );
+  } finally {
+    if (origBin === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = origBin;
+    if (origQuotaMode === undefined) delete process.env.FAKE_AGY_QUOTA_MODE; else process.env.FAKE_AGY_QUOTA_MODE = origQuotaMode;
+    if (origQuotaState === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = origQuotaState;
+    if (origPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = origPoolsDir;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

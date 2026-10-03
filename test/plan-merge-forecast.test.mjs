@@ -11,11 +11,12 @@ import { applyMergeForecast } from '../lib/preflight.mjs';
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
 
-const FAKE_ENV_KEYS = ['AGB_AGY_BIN', 'AGB_ADLC_BIN', 'FAKE_STATE_DIR', 'FAKE_MERGE_FORECAST_MODE'];
+const FAKE_ENV_KEYS = ['AGB_AGY_BIN', 'AGB_ADLC_BIN', 'AGB_ALLOW_CUSTOM_ADLC_CLI', 'FAKE_STATE_DIR', 'FAKE_MERGE_FORECAST_MODE'];
 
 function withFakes(env, fn) {
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.AGB_ADLC_BIN = FAKE_ADLC;
+  process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = '1';
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   return Promise.resolve()
     .then(fn)
@@ -96,8 +97,29 @@ test('compilePlan: AC1 — a successful compile\'s plan carries a concurrencyCap
     });
     const invocations = readFileSync(join(state, 'merge-forecast-invocations'), 'utf8');
     assert.match(invocations, /tickets=.*\.adlc[/\\]tickets\b/, 'merge-forecast was invoked against the projected ticket store');
+    assert.match(invocations, /graph-coupling=.*\.adlc[/\\]graph-coupling\.json/, 'merge-forecast was passed --graph-coupling');
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('applyMergeForecast: passes custom graphCoupling path when specified', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-mf-custom-'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-mf-state-'));
+  try {
+    const ticketsPath = join(repo, 'tickets.json');
+    writeFileSync(ticketsPath, JSON.stringify({ tickets: [{ id: 'T1' }] }));
+    const plan = { tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a'] }] };
+    const customCoupling = join(repo, 'custom-graph.json');
+    await withFakes({ FAKE_STATE_DIR: state }, async () => {
+      const forecast = await applyMergeForecast(plan, ticketsPath, { repo, graphCoupling: customCoupling });
+      assert.equal(forecast.ok, true);
+    });
+    const invocations = readFileSync(join(state, 'merge-forecast-invocations'), 'utf8');
+    assert.match(invocations, /graph-coupling=.*custom-graph\.json/, 'custom graph coupling was passed');
+  } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
   }

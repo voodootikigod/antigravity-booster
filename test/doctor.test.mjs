@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, runDoctor } from '../lib/doctor.mjs';
+import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
@@ -30,8 +31,13 @@ test('checkAgyAuth: fails when FAKE_AGY_MODE=empty', async () => {
 });
 
 test('checkAdlcBinary: warns when missing', async () => {
-  const res = await checkAdlcBinary({ env: { AGB_ADLC_BIN: '/does/not/exist' } });
-  assert.equal(res.level, 'warn');
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-missing-adlc-'));
+  try {
+    const res = await checkAdlcBinary({ cwd: d, env: {} });
+    assert.equal(res.level, 'warn');
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
 });
 
 test('checkSandbox: bypassed via env', async () => {
@@ -67,6 +73,20 @@ test('checkSandbox: linux fails if bwrap is missing', async () => {
     const res = await checkSandbox({ env: { PATH: dir }, platform: 'linux' });
     assert.equal(res.level, 'fail');
     assert.ok(res.detail.includes('bwrap missing'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkSandbox: linux fails if bwrap is present but fails usability probe (namespaces restricted)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-unusable-bwrap-test-'));
+  try {
+    writeFileSync(join(dir, 'bwrap'), '#!/bin/sh\necho "bwrap: No permissions to create new namespace" >&2\nexit 1');
+    chmodSync(join(dir, 'bwrap'), 0o755);
+    const res = await checkSandbox({ env: { PATH: dir }, platform: 'linux' });
+    assert.equal(res.level, 'fail');
+    assert.ok(res.detail.includes('bwrap unusable'));
+    assert.ok(res.fix.includes('user namespaces'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -197,3 +217,156 @@ test('checkTicketStore: warns on an orphaned directory store (dir without .store
     rmSync(d, { recursive: true, force: true });
   }
 });
+
+test('resolveAdlcBinary: resolves project-local @adlc/cli and validates version floor', () => {
+  const res = resolveAdlcBinary({ repo: process.cwd() });
+  assert.equal(res.ok, true);
+  assert.equal(res.source, 'project-local');
+  assert.match(res.version, /^1\.11\./);
+});
+
+test('resolveAdlcBinary: fails closed when local dependency is missing', () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-no-adlc-'));
+  try {
+    const res = resolveAdlcBinary({ repo: d });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /missing or unverified/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('resolveAdlcBinary: fails when package version is below floor', () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-old-adlc-'));
+  try {
+    const pkgDir = join(d, 'node_modules', '@adlc', 'cli');
+    const binDir = join(d, 'node_modules', '.bin');
+    mkdirSync(pkgDir, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.6.0', bin: { adlc: './bin.js' } }));
+    writeFileSync(join(pkgDir, 'bin.js'), '#!/usr/bin/env node\n');
+    chmodSync(join(pkgDir, 'bin.js'), 0o755);
+    writeFileSync(join(binDir, 'adlc'), '#!/usr/bin/env node\n');
+    chmodSync(join(binDir, 'adlc'), 0o755);
+
+    const res = resolveAdlcBinary({ repo: d });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /does not meet floor/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkAdlcBinary: passes on current repo with local @adlc/cli', async () => {
+  const res = await checkAdlcBinary({ cwd: process.cwd() });
+  assert.equal(res.level, 'pass');
+  assert.match(res.detail, /^v1\.11\./);
+});
+
+test('checkAdlcBinary: fails when local @adlc/cli fails package manifest authentication', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-auth-fail-'));
+  try {
+    const pkgDir = join(d, 'node_modules', '@adlc', 'cli');
+    const binDir = join(d, 'node_modules', '.bin');
+    mkdirSync(pkgDir, { recursive: true });
+    mkdirSync(binDir, { recursive: true });
+    // Invalid version < 1.11.1
+    writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.6.0', bin: { adlc: './bin.js' } }));
+    writeFileSync(join(pkgDir, 'bin.js'), '#!/usr/bin/env node\n');
+    chmodSync(join(pkgDir, 'bin.js'), 0o755);
+    writeFileSync(join(binDir, 'adlc'), '#!/usr/bin/env node\n');
+    chmodSync(join(binDir, 'adlc'), 0o755);
+
+    const res = await checkAdlcBinary({ cwd: d, env: {} });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /package manifest authentication failed/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkAdlcBinary: fails when custom adlc binary resides in temporary directory', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-temp-bin-'));
+  try {
+    const fakeBin = join(d, 'fake-adlc');
+    writeFileSync(join(d, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './fake-adlc' } }));
+    writeFileSync(fakeBin, '#!/bin/sh\necho "1.11.1"\n');
+    chmodSync(fakeBin, 0o755);
+
+    const res = await checkAdlcBinary({ cwd: d, env: { AGB_ADLC_BIN: fakeBin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /temporary directory/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkAdlcBinary: fails when adlc version is below floor', async () => {
+  const d = mkdtempSync(join(process.cwd(), '.test-adlc-old-ver-'));
+  try {
+    const fakeBin = join(d, 'fake-old-adlc');
+    writeFileSync(join(d, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './fake-old-adlc' } }));
+    writeFileSync(fakeBin, '#!/bin/sh\necho "1.6.0"\n');
+    chmodSync(fakeBin, 0o755);
+
+    const res = await checkAdlcBinary({ cwd: d, env: { AGB_ADLC_BIN: fakeBin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /required >= v1\.11\.1/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkAdlcBinary: fails when authenticated binary fails to execute', async () => {
+  const d = mkdtempSync(join(process.cwd(), '.test-adlc-exec-fail-'));
+  try {
+    const fakeBin = join(d, 'fake-broken-adlc');
+    writeFileSync(join(d, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './fake-broken-adlc' } }));
+    writeFileSync(fakeBin, '#!/bin/sh\nexit 1\n');
+    chmodSync(fakeBin, 0o755);
+
+    const res = await checkAdlcBinary({ cwd: d, env: { AGB_ADLC_BIN: fakeBin, AGB_ALLOW_CUSTOM_ADLC_CLI: '1' } });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /execution failed/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkTicketStore: reports store corruption when adlc ticket doctor exits non-zero', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-corrupt-store-'));
+  const FAKE_ADLC = join(process.cwd(), 'test/fixtures/fake-adlc');
+  try {
+    mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(d, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
+
+    const res = await checkTicketStore({ cwd: d, env: { AGB_ADLC_BIN: FAKE_ADLC, AGB_ALLOW_CUSTOM_ADLC_CLI: '1', FAKE_TICKET_DOCTOR_MODE: 'fail' } });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /store corruption/);
+    assert.match(res.detail, /orphan shard detected/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkTicketStore: passes when adlc ticket doctor exits zero', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-pass-store-'));
+  const FAKE_ADLC = join(process.cwd(), 'test/fixtures/fake-adlc');
+  try {
+    mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(d, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
+
+    const res = await checkTicketStore({ cwd: d, env: { AGB_ADLC_BIN: FAKE_ADLC, AGB_ALLOW_CUSTOM_ADLC_CLI: '1', FAKE_TICKET_DOCTOR_MODE: 'pass' } });
+    assert.equal(res.level, 'pass');
+    assert.match(res.detail, /directory backend/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('checkTicketStore: runs cleanly on current repo with project-local @adlc/cli', async () => {
+  const res = await checkTicketStore({ cwd: process.cwd() });
+  assert.equal(res.level, 'pass');
+  assert.match(res.detail, /directory backend/);
+});
+

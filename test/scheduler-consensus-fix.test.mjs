@@ -24,8 +24,9 @@ function makeRepo() {
 }
 
 function withEnv(env, fn) {
+  const mergedEnv = { AGB_ALLOW_CUSTOM_ADLC_CLI: '1', ...env };
   const saved = {};
-  for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; process.env[k] = v; }
+  for (const [k, v] of Object.entries(mergedEnv)) { saved[k] = process.env[k]; process.env[k] = v; }
   return fn().finally(() => {
     for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
   });
@@ -134,5 +135,35 @@ test('runPlan: consensus-fix being unavailable (adlc missing) falls back cleanly
     assert.deepEqual(report.merged, ['T1']);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: consensus-fix candidate violating rails is discarded and falls back to regeneration', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-cf-state-'));
+  try {
+    writeFileSync(join(repo, 'RAIL.txt'), 'frozen rail\n');
+    execFileSync('git', ['add', 'RAIL.txt'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add rail'], { cwd: repo });
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_STATE_DIR: state,
+        FAKE_PROSECUTOR_VERDICT: 'block-then-ship',
+        FAKE_CONSENSUS_FIX_MODE: 'rail-violation',
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] }],
+      }, quiet)
+    );
+    assert.deepEqual(report.merged, ['T1']);
+    // Rail must remain untouched after merge
+    assert.equal(readFileSync(join(repo, 'RAIL.txt'), 'utf8'), 'frozen rail\n');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
   }
 });

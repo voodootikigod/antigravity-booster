@@ -1,0 +1,25 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T11:22:43.983Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "d06d1ac17997ab537f64789f7e686d039cfdf4aee9cf077d8e9ba46cb9a91925",
+    "ticketHash": "3c752f5a30dbda743b4d4b068d1e2f5971e6852438ff09b3824fe77dbe7891f5",
+    "version": 1
+  },
+  "body": "Update README.md, ARCHITECTURE.md, USAGE.md, and docs/usage.md to reflect major runtime modernizations:\n1. Antigravity 1.2.8+ stream-json structured output, schema validation, streaming watchdog byte/line caps.\n2. ADLC 1.11.1+ integration: adlc merge-forecast --graph-coupling, adlc ticket doctor in agb doctor, project-local authenticated binary resolution.\n3. Platform sandbox hardening: Linux Bubblewrap (bwrap) read-only root, masked host credentials, Windows AppContainer with active differential syscall probing and attestation nonces, approved executable cache staging (~/.adlc/pinned/).\n4. Dual-pool quota routing with Gemini 3.8/3.7 models.\n5. Explicit comparison section in README.md detailing the differences, benefits, and tradeoffs between antigravity-booster (agb) and Antigravity's built-in /boost slash command (https://antigravity.google/docs/boost/).\n6. Clean up hardcoded macOS file:/// paths in markdown documentation to portable relative links.\n\nAcceptance criteria:\n- README.md contains a clear, comprehensive comparison table and narrative for agb vs built-in /boost.\n- Documentation reflects Linux bwrap and Windows AppContainer capabilities and environment variables.\n- All tests pass (npm test).\n- Rails guard passes cleanly.",
+  "completed": true,
+  "edges": [],
+  "id": "t-doc-modernization-and-boost-comparison",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "README.md",
+    "ARCHITECTURE.md",
+    "USAGE.md",
+    "docs/usage.md"
+  ],
+  "title": "Update documentation for agy 1.2.8 / adlc 1.11.1 and add booster vs built-in /boost comparison"
+}

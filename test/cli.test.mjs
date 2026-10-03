@@ -13,6 +13,7 @@ const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
 // realpathSync resolves macOS's /var -> /private/var symlink, which git
 // canonicalises and would otherwise mismatch paths reported back to us.
 const TMP = realpathSync(mkdtempSync(join(tmpdir(), 'agb-cli-test-')));
+process.env.AGB_QUOTA_STATE = join(TMP, 'agb_pools_cli_test.json');
 after(() => rmSync(TMP, { recursive: true, force: true }));
 
 test('agb COMMANDS table covers all dispatched commands', () => {
@@ -85,7 +86,7 @@ test('agb help <cmd> exits 0 and prints per-cmd usage', () => {
 });
 
 test('agb validate exits 0 on valid plan', () => {
-  const plan = { repo: '.', tickets: [{id: 'T1', title: 't', body: 'b', scope: ['*'], rails: [], edges: []}], gate: { build: 'true' } };
+  const plan = { repo: '.', tickets: [{id: 'T1', title: 't', body: 'b', scope: ['src/**'], rails: [], edges: []}], gate: { test: 'npm test' } };
   const planFile = join(TMP, 'valid.json');
   writeFileSync(planFile, JSON.stringify(plan));
   execFileSync(process.execPath, [AGB_BIN, 'validate', planFile]);
@@ -130,20 +131,25 @@ test('agb run smoke on a tiny fixture (fake-agy, success)', () => {
   g('config', 'user.email', 't@t');
   g('config', 'user.name', 't');
   g('config', 'commit.gpgsign', 'false');
-  g('commit', '--allow-empty', '-m', 'init');
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({
+    name: 'cli-repo',
+    scripts: { test: 'node -e "process.exit(0)"' },
+  }));
+  g('add', '-A');
+  g('commit', '-m', 'init');
 
   const plan = {
     repo,
     tickets: [
-      { id: 'T1', title: 'test', body: 't', scope: ['*'], rails: [], edges: [] }
+      { id: 'T1', title: 'test', body: 't', scope: ['T1.txt'], rails: [], edges: [] }
     ],
-    gate: { build: 'true', test: 'true' }
+    gate: { test: 'npm test' }
   };
   writeFileSync(join(repo, 'plan.json'), JSON.stringify(plan));
 
   // Fake agy script that succeeds
   const fakeAgy = fileURLToPath(new URL('fixtures/fake-agy', import.meta.url));
-  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_ADLC_BIN: fileURLToPath(new URL('fixtures/fake-adlc', import.meta.url)), PATH: process.env.PATH, AGB_ALLOW_DIRTY: '1', AGB_SANDBOX_GATES: '0' };
+  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_ADLC_BIN: fileURLToPath(new URL('fixtures/fake-adlc', import.meta.url)), AGB_ALLOW_CUSTOM_ADLC_CLI: '1', PATH: process.env.PATH, AGB_ALLOW_DIRTY: '1', AGB_SANDBOX_GATES: '0' };
 
   // success
   const out = execFileSync(process.execPath, [AGB_BIN, 'run', 'plan.json'], { cwd: repo, env, encoding: 'utf8' });

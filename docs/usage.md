@@ -27,6 +27,8 @@ This guide details how to configure and run Antigravity Booster (`agb`) to manag
 ### 🛠️ Setup & Diagnostics
 - **`agb bootstrap`** (aliases: `setup`, `install`)  
   Installs the `@adlc/antigravity` plugin globally into your `agy` installation and links the booster's ADLC skills. Use `--force` to overwrite existing skills. Fails loudly if `agy` is missing.
+- **`agb doctor`**  
+  Runs diagnostic health checks on runtime tools (`agy >= 1.2.8`, `@adlc >= 1.11.1`), probes platform sandboxes (macOS Seatbelt, Linux Bubblewrap `bwrap` with credential masking, Windows AppContainer with differential syscall probing), verifies pinned executable permissions, and checks quota pools.
 
 To register the native Sidecar dashboard with Antigravity, you must explicitly run:
 `agb sidecar <repo>`
@@ -196,7 +198,11 @@ Modify these flags in your shell to adjust how `agb` runs:
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `AGB_BUILD_TIMEOUT` | `5m` | Maximum time allowed for one `agy` build call. Excess causes a strike. (Hard capped at ~5m by the platform). |
-| `AGB_SANDBOX_GATES` | `1` (on macOS) | Enforces macOS Seatbelt sandboxing for all gate scripts. Set to `0` to disable sandboxing (e.g., when running inside Docker containers on Linux). |
+| `AGB_SANDBOX_GATES` | sandbox on | `0` runs gates unsandboxed. Darwin uses macOS Seatbelt; Linux uses Bubblewrap (`bwrap`); Windows uses AppContainer. |
+| `AGB_EXEC_CACHE_DIR` | `~/.adlc/pinned/` | Directory where immutable pinned executables are staged outside restricted `noexec` temporary directories. |
+| `AGB_STREAM_TIMEOUT` | `30000` (30s) | Subprocess streaming idle watchdog timeout in milliseconds. |
+| `AGB_STREAM_LINE_CAP` | `1048576` (1MB) | Maximum line length for `stream-json` parser before truncation/error. |
+| `AGB_STREAM_TOTAL_CAP` | `10485760` (10MB)| Total stream byte cap across subprocess lifetime. |
 | `AGB_ALLOW_DIRTY` | `0` | Set to `1` to bypass the clean git directory check. *Caution: Rollbacks use git resets, which will discard uncommitted changes.* |
 | `AGB_AGY_BIN` | `agy` | Custom path to the Antigravity CLI binary. Used mainly for testing with mock wrappers. |
 | `AGB_ADLC_BIN` | `adlc` | Custom path to the adlc CLI binary. Used by every `adlc <tool>` integration (rails-guard, model-router, merge-forecast, flail-detector, consensus-fix, gate-manifest, review-calibration) and for testing with mock wrappers. |
@@ -205,6 +211,21 @@ Modify these flags in your shell to adjust how `agb` runs:
 | `AGB_BRAIN_DIR` | `~/.gemini/antigravity/brain` | Where `agb brains` and `agb plan` look for Antigravity plan artifacts. |
 | `AGB_CALIBRATION_DIR` | `docs/calibration/` | Target directory where `agb probe` writes result reports. |
 | `ADLC_PROVIDER` | — | Set to `agy` to route general `@adlc` package execution through Antigravity CLI credentials. |
+
+---
+
+## Antigravity Booster (`agb`) vs. Built-in `/boost`
+
+Antigravity 2.0 provides the built-in [`/boost` slash command](https://antigravity.google/docs/boost/) for interactive multi-agent reasoning. The table below outlines how `agb` relates to `/boost`:
+
+| Dimension | Built-in `/boost` Command | Antigravity Booster (`agb`) Fleet Engine |
+| :--- | :--- | :--- |
+| **Primary Scope** | Interactive single-task reasoning (debugging, difficult algorithms, single-file refactoring). | Autonomous multi-ticket campaigns (repository migrations, multi-ticket milestones). |
+| **Execution Surface** | Internal to Antigravity GUI or CLI chat session. | External Node.js CLI daemon driving parallel `agy` subprocesses. |
+| **Workspace Model** | Shared working directory with memory context isolation. | Physical `git worktree` isolation per ticket (`.worktrees/agb-<id>`) with automated rebase and rollback. |
+| **Sandboxing** | Standard interactive permission prompts. | OS-level kernel isolation (Linux `bwrap` with read-only root and masked credentials, macOS Seatbelt, Windows AppContainer with differential probing). |
+| **Quota Management** | Single interactive quota session. | Dual-pool quota routing across Gemini Flash, Gemini Pro, and Claude with token-bucket metering and admission controls. |
+| **Lifecycle & Governance**| Single-turn or iterative conversation flow. | Full ADLC (P0–P6) ticket store, frozen machine rails (`rails-guard`), mutation testing (`hollow-test`), and cross-family prosecution (`agb review`). |
 
 ---
 

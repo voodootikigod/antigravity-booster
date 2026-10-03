@@ -1,0 +1,33 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T00:59:06.838Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "be4f277fea2b5fa05c84a8c89b40113b67c25b304a117c68568bf62a06e69fa5",
+    "ticketHash": "51cd961d204cca6e11028545f296e27f1e6176968cb8904b48baff5e2e6a931b",
+    "version": 1
+  },
+  "body": "Implement checkSandbox() on Windows using direct OS syscall and socket error verification (ERROR_ACCESS_DENIED, WSAEACCES, worktree nonce verification) rather than model prose. Enforce HMAC-signed attestation bypass.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-integration-journal"
+    }
+  ],
+  "id": "t-windows-sandbox-doctor",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/pools.mjs",
+    "lib/agy.mjs"
+  ],
+  "scope": [
+    "lib/doctor.mjs",
+    "lib/sandbox-probe-helper.mjs",
+    "test/**"
+  ],
+  "title": "Windows AppContainer differential sandbox verification via direct OS syscalls"
+}

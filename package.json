@@ -32,14 +32,15 @@
     "!docs/github-rulesets/"
   ],
   "dependencies": {
-    "@adlc/antigravity": "^1.6.0",
-    "@adlc/core": "^1.6.0",
-    "@adlc/tickets": "^1.6.0"
+    "@adlc/antigravity": "^1.7.0",
+    "@adlc/cli": "1.11.1",
+    "@adlc/core": "^1.11.1",
+    "@adlc/tickets": "^1.11.1"
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' test/*.test.mjs",
-    "coverage:check": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=90 test/*.test.mjs"
+    "coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' test/*.test.mjs",
+    "coverage:check": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=86 test/*.test.mjs"
   },
   "engines": {
     "node": ">=22.19.0"

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,8 +24,9 @@ function makeRepo() {
 }
 
 function withEnv(env, fn) {
+  const mergedEnv = { AGB_ALLOW_CUSTOM_ADLC_CLI: '1', ...env };
   const saved = {};
-  for (const [k, v] of Object.entries(env)) { saved[k] = process.env[k]; process.env[k] = v; }
+  for (const [k, v] of Object.entries(mergedEnv)) { saved[k] = process.env[k]; process.env[k] = v; }
   return fn().finally(() => {
     for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v);
   });
@@ -109,4 +110,32 @@ test('checkFlailDetector: a missing log file is never treated as a flail — not
   const result = await checkFlailDetector({ logFile: '/nonexistent/path/to.log', scope: [] });
   assert.equal(result.detected, false);
   assert.deepEqual(result.signals, []);
+});
+
+test('checkFlailDetector: unauthenticated binary fails open without executing raw AGB_ADLC_BIN', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-flail-auth-'));
+  try {
+    const logFile = join(tmp, 'test.log');
+    writeFileSync(logFile, 'some error output\n');
+    const canary = join(tmp, 'executed.canary');
+    const evilBin = join(tmp, 'evil-adlc');
+    writeFileSync(evilBin, `#!/bin/sh\ntouch "${canary}"\nexit 0\n`);
+    chmodSync(evilBin, 0o755);
+
+    const origBin = process.env.AGB_ADLC_BIN;
+    const origCustom = process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
+    try {
+      process.env.AGB_ADLC_BIN = evilBin;
+      process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = '0'; // unauthenticated!
+      const res = await checkFlailDetector({ logFile, scope: ['test.txt'], cwd: tmp });
+      assert.equal(res.detected, false);
+      assert.deepEqual(res.signals, []);
+      assert.equal(existsSync(canary), false, 'unauthenticated adlc binary must not be executed');
+    } finally {
+      if (origBin === undefined) delete process.env.AGB_ADLC_BIN; else process.env.AGB_ADLC_BIN = origBin;
+      if (origCustom === undefined) delete process.env.AGB_ALLOW_CUSTOM_ADLC_CLI; else process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = origCustom;
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });

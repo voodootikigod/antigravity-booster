@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-09-22T19:46:25.452Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "976c580d4ab9a89d555019bd2cde119bfa18f5c569923a8727aa4a2c7fe02df3",
+    "ticketHash": "3250a6fda46eb054009841f29336a46bce250766895c075967e1fc2ede368725",
+    "version": 1
+  },
   "body": "Fix sidecar manifest configurations to remove developer-specific absolute paths (/Users/voodootikigod/...) and brittle relative traversals (../../../). Use runtime module resolution or environment macros in jetski-launcher.mjs.\n\nAcceptance criteria:\n1. sidecar.json files contain no hardcoded absolute developer paths.\n2. Relative entrypoint paths resolve properly when sidecars are launched from any working directory.\n3. npm test passes cleanly.",
   "category": "bugfix",
   "completed": true,

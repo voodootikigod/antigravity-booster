@@ -1,0 +1,33 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-09-28T00:59:02.520Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "1283c59754eabe1b067fa717372ed9507cfbf49c9bc8deae3f8361ced69c39de",
+    "ticketHash": "d6d85f9850c943fa7bc9a90acc6ca7fcf67ab06521e1920de71334624097385f",
+    "version": 1
+  },
+  "body": "Pass --graph-coupling to adlc merge-forecast via resolveAdlcBinary(). Add adlc ticket doctor invocation to agb doctor and enforce @adlc/cli >= 1.11.1 floor.",
+  "category": "feature",
+  "completed": true,
+  "duration": 1,
+  "edges": [
+    {
+      "to": "t-windows-sandbox-doctor"
+    }
+  ],
+  "id": "t-adlc-graph-coupling",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/pools.mjs",
+    "lib/agy.mjs"
+  ],
+  "scope": [
+    "lib/preflight.mjs",
+    "lib/doctor.mjs",
+    "test/**"
+  ],
+  "title": "Wire adlc merge-forecast graph coupling and ticket doctor"
+}
