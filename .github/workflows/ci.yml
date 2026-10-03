@@ -63,6 +63,14 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
+      - name: Install Bubblewrap (Linux Sandbox)
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Verify Bubblewrap Userns
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --ro-bind / / --unshare-net -- true || echo "bwrap still restricted, tests may skip or fallback"
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
