@@ -1,0 +1,14 @@
+# agy version: 1.2.16
+# uname: Linux 7.0.0-31-generic
+  [32m[ok][0m    <work>/probe-hookenv
+          - skills      : skipped (not found)
+          - agents      : skipped (not found)
+          [32m✔[0m commands    : 1 processed (converted to skills)
+          [32m✔[0m mcpServers  : 1 processed
+          [32m✔[0m hooks       : 3 processed
+  [32m[ok][0m    probe-hookenv
+          - skills      : skipped (not found)
+          - agents      : skipped (not found)
+          [32m✔[0m commands    : 1 processed (converted to skills)
+          [32m✔[0m mcpServers  : 1 processed
+          [32m✔[0m hooks       : 3 processed

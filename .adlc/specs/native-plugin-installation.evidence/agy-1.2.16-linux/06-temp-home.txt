@@ -1,0 +1,10 @@
+# Manually captured 2026-10-04 (agy 1.2.16, Linux) — t-plugin-00-spec
+# Command: HOME=<tmp> timeout 60 agy -p "Reply with the single word PONG" --print-timeout 50s
+Waiting for authentication (timeout 60s)...
+Or, paste the authorization code here and press Enter:
+
+Error: authentication interrupted.
+error: authentication failed or timed out
+# Result: a temporary HOME has no OAuth state (agy keeps it in ~/.gemini/oauth_creds.json and
+# ~/.gemini/antigravity-cli/antigravity-oauth-token); copying credentials was rejected, so live
+# probes run against the real HOME with throwaway probe-* plugins.

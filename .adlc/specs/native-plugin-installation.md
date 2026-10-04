@@ -51,6 +51,7 @@ All platform capabilities and constraints specified here were measured on macOS 
 
 ### 2.2 Execution Environment in Commands, Hooks, and MCP
 Live probes executed via `agy` measured the following empirical runtime behavior:
+> ⚠️ **Superseded on Linux by Appendix A (V7, E3, D3):** command code blocks are not executed by agy; commands are model-interpreted skills that invoke `~/.local/bin/agb`.
 - **Slash Commands** (`/probe` command block):
   ```text
   ENV_PLUGIN_ROOT: /Users/voodootikigod/.gemini/config/plugins/cmd-probe
@@ -81,6 +82,7 @@ Live probes executed via `agy` measured the following empirical runtime behavior
   > - `timeout`: Execution timeout in seconds (default `30`).
   
   **Crucial Invariant**: Neither `PLUGIN_ROOT` nor `PLUGIN_DATA` is exported as an environment variable or template placeholder in `hooks.json`! Because `cwd` is guaranteed to be the plugin directory containing `hooks.json`, **all hook commands must be relative to the plugin root** (e.g. `"command": "/bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs"`).
+> ⚠️ **Appendix A V6/D4:** `ask` is honoured only in interactive sessions; in `agy -p` it degrades to allow.
 - **Authoritative Hook Timeout & Fallback Contract**:
   - **Platform Timeout**: Configured explicitly as `"timeout": 15` (15.0s) in `hooks.json`.
   - **Runner Watchdog Timeout**: `bin/hook-runner.sh` runs with `--timeout 9` passed explicitly in `hooks.json`, setting `WAIT_TIMEOUT=9` (9.0s).
@@ -494,6 +496,7 @@ emit_fallback() {
   # IMPORTANT: The hook runs with cwd set to the staged plugin root (~/.gemini/config/plugins/antigravity-booster).
   # We MUST extract candidate roots from the payload (workspacePaths and Cwd) and walk up from THEM, never from pwd!
   HAS_ADLC_TICKETS=0
+  HAS_ADLC_DIR=0
   PARSE_SUCCESS=0
 
   if [ -f "$TMP_IN" ]; then
@@ -529,7 +532,7 @@ emit_fallback() {
           for _shard in "$_curr/.adlc/tickets"/*.json; do
             if [ -f "$_shard" ]; then
               # Active ticket: status NOT in completed, closed, or archived (fail closed)
-              if ! grep -q '"status"[[:space:]]*:[[:space:]]*"\(completed\|closed\|archived\)"' "$_shard" 2>/dev/null; then
+              if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"(completed|closed|archived)"' "$_shard" 2>/dev/null; then
                 # Signal active in-flight ticket to outer scope
                 touch "$TMP_DIR/has_active_tickets"
                 break 2
@@ -559,9 +562,11 @@ emit_fallback() {
   fi
 
   # Fail closed on unparseable payload or ambiguous context
+  UNPARSEABLE=0
   if [ "$PARSE_SUCCESS" -eq 0 ] && [ -s "$TMP_IN" ]; then
     HAS_ADLC_TICKETS=1
     HAS_ADLC_DIR=1
+    UNPARSEABLE=1
   fi
 
   if [ "$HAS_ADLC_TICKETS" -eq 1 ] || [ "$HAS_ADLC_DIR" -eq 1 ]; then
@@ -579,7 +584,7 @@ emit_fallback() {
     esac
 
     TARGETS_PROTECTED=0
-    if grep -q '\.migration\.lock\|plugin_data/antigravity-booster\|\.config/antigravity-booster' "$TMP_IN" 2>/dev/null; then
+    if grep -Eq '\.migration\.lock|plugin_data/antigravity-booster|\.config/antigravity-booster' "$TMP_IN" 2>/dev/null; then
       TARGETS_PROTECTED=1
     fi
 
@@ -596,6 +601,13 @@ emit_fallback() {
       exit 0
     fi
 
+    # Unparseable payload: fail closed for every non-read tool, including run_command (Fallback table)
+    if [ "$UNPARSEABLE" -eq 1 ]; then
+      printf '{"decision":"deny","reason":"Hook runner fail-safe — unparseable payload; failing closed"}\n'
+      cleanup_tmp
+      exit 0
+    fi
+
     # For shell commands (run_command): fall back to interactive operator prompt (ask)
     # rather than hard-denying all shell commands when the hook is degraded
     if [ "$TOOL_NAME" = "run_command" ]; then
@@ -608,16 +620,17 @@ emit_fallback() {
     printf '{"decision":"deny","reason":"Hook runner fail-safe in ADLC repository — frozen rails require denial (run `agb doctor` to verify runtime health)"}\n'
   else
     # In non-ADLC repositories or workspaces without active tickets:
-    # If in headless worker mode, never prompt 'ask':
-    if [ -n "$AGB_WORKER_TICKET" ]; then
-      printf '{"decision":"deny","reason":"Hook runner fail-safe in headless worker mode — failing closed"}\n'
+    # If node-launcher exited with 86 (Node >= 22.19 not found), yield to neutral pass-through ("" with exit 0)
+    # regardless of worker mode (Fallback table: Missing Node Runtime / Non-ADLC / Any)
+    if [ "$CHILD_STATUS" -eq 86 ]; then
+      printf '%s: [warn] hook runner: Node runtime missing in non-ADLC workspace (exit 86); passing through\n' "$(date)" >>"$HOOK_LOG_FILE" 2>/dev/null || true
       cleanup_tmp
       exit 0
     fi
 
-    # If node-launcher exited with 86 (Node >= 22.19 not found), yield to neutral pass-through ("" with exit 0)
-    if [ "$CHILD_STATUS" -eq 86 ]; then
-      printf '%s: [warn] hook runner: Node runtime missing in non-ADLC workspace (exit 86); passing through\n' "$(date)" >>"$HOOK_LOG_FILE" 2>/dev/null || true
+    # If in headless worker mode, never prompt 'ask':
+    if [ -n "$AGB_WORKER_TICKET" ]; then
+      printf '{"decision":"deny","reason":"Hook runner fail-safe in headless worker mode — failing closed"}\n'
       cleanup_tmp
       exit 0
     fi
@@ -910,6 +923,7 @@ To guarantee that git clones, git-URL installs (`agy plugin install <git-url>`),
   ```
   The gate fails with code 1 if any tracked file is modified OR any untracked output is emitted. `esbuild` is pinned to an exact version (`0.28.2` in `devDependencies`).
 - **Canonical Entry Points**:
+  > ⚠️ **Superseded by Appendix A D3:** the `PLUGIN_DIR` code block below is void (V7). Commands instruct the model to run `~/.local/bin/agb <subcommand>`.
   - **Full Slash Command Set (`commands/*.md`)**:
     Booster ships native plugin slash commands for all operations so users do not rely on global npm installations:
     1. `/agb-plan` (`commands/agb-plan.md` -> `dist/agb.mjs plan`)
@@ -1064,6 +1078,7 @@ Instead, booster enforces a clean **Deny / Ask / Pass-Through Architecture**:
 - **Exact 4-Ticket Plan**: Eliminates Ticket 5 / Ticket 6, streamlining execution into four discrete, non-breaking tickets (T1–T4).
 
 #### Normative Definition of Active Tickets, Active Rails & Standing Implicit Rails:
+> ⚠️ **Narrowed by Appendix A D1:** "`.adlc/**`" below means the trust-root set (config, manifest, sessions, ticket-archive, ticket-transactions, leases, existing shards); `.adlc/specs/**` and `.adlc/lessons/**` stay editable.
 1. **Standing Implicit Rails (Enforced Unconditionally Across ALL ADLC Repositories)**:
    Whenever a target directory resides inside an ADLC repository (identified by the presence of a `.adlc/` directory), the following paths are **permanently frozen and unconditionally protected** from modification or deletion regardless of whether active tickets are currently in flight:
    - `.adlc/**`: The entire `.adlc` tree (including `.adlc/config.json` trust root, `.adlc/manifest.jsonl` audit ledger, and existing active ticket shards; excluding only P0 new-shard creation and read inspection of `.adlc/tickets/*.json`).
@@ -1158,6 +1173,7 @@ Because both plugins register `PreToolUse` hooks, Antigravity evaluates both hoo
      - **Verification**: Ticket 1 / AC12 includes an empirical multi-plugin integration test probing `ask` versus `allow` under both plugin registration orders.
    - Because `antigravity-booster` never outputs `{"decision":"allow"}`, there is zero risk of booster accidentally auto-approving an action that `@adlc/antigravity` would prompt or deny.
 
+> ⚠️ **Corrected by Appendix A E2:** the real 1.7.0 companion hook is `node …/hooks/adlc-rails-guard.cjs` (matcher `.*`) and does not resolve a booster-vendored `adlc`.
 2. **Companion Hook `adlc` Discovery & Stripped PATH Resilience**:
    The `@adlc/antigravity` shell hook calls `adlc rails-guard --in-session`.
    Under a stripped desktop GUI PATH (`/usr/bin:/bin`), external binaries may not be on PATH.
@@ -1440,7 +1456,9 @@ To guarantee that frozen rails are mechanically protected in Antigravity chat se
          const EXCLUDED_CONTENT_KEYS = new Set([
            'TargetContent', 'ReplacementContent', 'CodeContent', 'Content',
            'Instruction', 'Description', 'summary', 'prompt', 'code', 'text',
-           'explanation', 'message', 'comment'
+           'explanation', 'message', 'comment',
+           // Probed agy 1.2.16 (Linux, Appendix A §A.2): free-text / numeric metadata keys present on tool args
+           'toolAction', 'toolSummary', 'WaitMsBeforeAsync'
          ]);
 
          function extractProbedPaths(toolName, args) {
@@ -1505,10 +1523,15 @@ To guarantee that frozen rails are mechanically protected in Antigravity chat se
 
            // 1. Standing implicit rails enforced unconditionally across ALL ADLC repositories
            // (Evaluated regardless of whether active tickets are currently in flight)
+           // Trust-root set (owner decision, Appendix A §A.3 D1). .adlc/specs/** and .adlc/lessons/** stay editable.
            const STANDING_IMPLICIT_RAILS = [
              '.git/**',
              '.adlc/config.json',
-             '.adlc/manifest.jsonl'
+             '.adlc/manifest.jsonl',
+             '.adlc/sessions.json',
+             '.adlc/ticket-archive/**',
+             '.adlc/ticket-transactions/**',
+             '.adlc/leases/**'
            ];
            for (const implicitRail of STANDING_IMPLICIT_RAILS) {
              const impNorm = isDarwin ? implicitRail.toLowerCase() : implicitRail;
@@ -1520,16 +1543,19 @@ To guarantee that frozen rails are mechanically protected in Antigravity chat se
              }
            }
 
-           // 2. Active Ticket Shard Protection Invariant:
-           // Editing or deleting existing active ticket shards is strictly forbidden
+           // 2. Existing Ticket Shard Protection Invariant:
+           // Editing or deleting ANY existing ticket shard is strictly forbidden in-session
+           // (active shards freeze rails; inactive shards are history). Uses the shared
+           // isActiveTicket() predicate from lib/active-rails.mjs only for the reason text.
            if (rel.startsWith('.adlc/tickets/') && rel.endsWith('.json')) {
              const shardPath = path.join(realRepo, rel);
              if (existsSync(shardPath)) {
                try {
                  const shard = JSON.parse(readFileSync(shardPath, 'utf8'));
-                 if (shard?.status === 'in_progress' || shard?.status === 'open') {
-                   return { decision: 'deny', reason: 'Direct modification of an active ticket shard is forbidden; ticket rails and status are frozen during execution' };
-                 }
+                 const reason = isActiveTicket(shard)
+                   ? 'Direct modification of an active ticket shard is forbidden; ticket rails and status are frozen during execution'
+                   : 'Direct modification of an existing ticket shard is forbidden; use the adlc ticket CLI';
+                 return { decision: 'deny', reason };
                } catch {
                  return { decision: 'deny', reason: 'Corrupt or unreadable ticket shard in flight; mutations forbidden' };
                }
@@ -1537,8 +1563,9 @@ To guarantee that frozen rails are mechanically protected in Antigravity chat se
              // Non-existent shard creation is permitted under ADLC P0 authoring doctrine
            }
 
-           // 3. If repository has no active tickets in flight, allow normal tool execution
-           if (!activeRailsResult.hasActiveTickets) {
+           // 3. If repository is not active-rail (no active ticket declares a rail), allow normal tool execution
+           // (owner decision, Appendix A §A.3 D2: active-rail = non-empty declared rails union)
+           if (!activeRailsResult.hasActiveTickets || activeRailsResult.rails.length === 0) {
              return { decision: 'pass_through' };
            }
 
@@ -1586,7 +1613,7 @@ To ensure deterministic, uninterrupted autonomous build-outs without sacrificing
 1. **Worker Mode Identification (`AGB_WORKER_TICKET`)**:
    - `agb run` injects `AGB_WORKER_TICKET=<ticketId>` into the child process environment when launching each worker session.
    - When `process.env.AGB_WORKER_TICKET` is set, `dist/hooks/pre-tool-use.bundle.mjs` identifies the session as an active headless fleet worker.
-   - The hook reads the worker's assigned ticket shard directly from `.adlc/tickets/${AGB_WORKER_TICKET}.json`.
+   - The hook resolves the worker's assigned ticket by its `id` field (shards are named `.adlc/tickets/<id>--<hash>.json`; never by literal filename) via the same reader as `lib/active-rails.mjs`. If the ticket is missing, ambiguous, unreadable, or has no `scope`, every worker mutation and non-read shell command is denied.
 
 2. **Autonomous Execution Envelope (Permitted Operations — `PASS_THROUGH`)**:
    Within its assigned scope, a headless worker executes without confirmation prompts:
@@ -2057,41 +2084,164 @@ graph TD
 ## 6. Acceptance Criteria
 
 Per-ticket acceptance is enforced in each ticket PR. Final integration requires:
-1. `agy plugin validate .` passes reporting all 5 categories (`skills`, `agents`, `commands`, `mcpServers`, `hooks`).
-2. `npm pack --dry-run` confirms all required assets (`bin/`, `lib/`, `skills/`, `commands/`, `agents/`, `hooks/`, `dist/`, `vendor/`, `hooks.json`, `mcp_config.json`, `plugin.json`) are packaged.
-3. Clean-clone test: In an isolated copy of the repo with `node_modules` deleted:
-   - `dist/agb.mjs doctor` (reports expected `not-installed` with exit code 1 and zero uncaught JS exceptions) and `dist/agb.mjs plan` execute cleanly.
-   - MCP server initializes and lists tools without stdout corruption.
-   - Hook evaluates test payloads without error.
-4. Clean-home test: In a clean repository with no local `adlc`, `agb run` successfully enforces rails via `rails-guard` (`ok: true`) and records gate manifest entries (`ok: true`).
-5. In-session hook compliance:
+1. `agy plugin validate .` passes reporting all 5 categories (`skills`, `agents`, `commands`, `mcpServers`, `hooks`). Verified by: `node --test test/plugin-layout.test.mjs` (asserts layout always; runs `agy plugin validate .` and checks all 5 categories when `agy` is on PATH).
+2. `npm pack --dry-run` confirms all required assets (`bin/`, `lib/`, `skills/`, `commands/`, `agents/`, `hooks/`, `dist/`, `vendor/`, `hooks.json`, `mcp_config.json`, `plugin.json`) are packaged. Verified by: `node --test test/packaging.test.mjs` (parses `npm pack --dry-run --json` and asserts every listed path plus `sidecars/` is present).
+3. Clean-clone test: In an isolated copy of the repo with `node_modules` deleted: Verified by: `node --test test/clean-clone.test.mjs`, which copies the repo with `git ls-files` into a temp dir without `node_modules` and runs each sub-item below.
+   - `node dist/agb.mjs doctor` exits 1 reporting `not-installed` with no `Uncaught`/stack trace on stderr, and `node dist/agb.mjs <sub> --help` exits 0 for every subcommand (Appendix A P1). Verified by: `node --test test/clean-clone.test.mjs`.
+   - MCP server initializes and lists tools without stdout corruption. Verified by: `node --test test/clean-clone.test.mjs` (JSON-RPC `initialize` + `tools/list` on stdout parse cleanly; stderr only for diagnostics).
+   - Hook evaluates test payloads without error. Verified by: `node --test test/clean-clone.test.mjs` (valid, malformed, and rail-violating payloads each yield one schema-valid line or empty stdout, exit 0).
+4. Clean-home test: In a clean repository with no local `adlc`, `agb run` successfully enforces rails via `rails-guard` (`ok: true`) and records gate manifest entries (`ok: true`). Verified by: `node --test test/clean-home-run.test.mjs` (fixture repo + fake agy via `test/fixtures/fake-agy`, vendored adlc only; asserts gate results `rails-guard.ok === true` and a `gate-manifest` entry for the ticket).
+5. In-session hook compliance: Each sub-item is verified by `node --test test/pre-tool-use.test.mjs test/hook-runner.test.mjs` unless it names its own test.
    - PreToolUse unified policy dispatcher in `dist/hooks/pre-tool-use.bundle.mjs` intercepts all tools via `"matcher": "*"` under `/bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs` with platform timeout `15`.
-   - Node evaluates closed taxonomy: `READ_ONLY_TOOLS` (14 tools), `ORCHESTRATION_TOOLS` (5 tools), and `BOOSTER_MCP_TOOLS` (6 tools matching `mcp__agb__` server prefix or `call_mcp_tool` with `ServerName: "agb"`) output `""` and exit 0 immediately; generic `call_mcp_tool` and third-party `mcp__*` tools route to Gate 1 path inspection; unknown tools in active-rail ADLC repositories fail closed (`deny`).
-   - Out-of-repo platform protection evaluated in Step 1 via `READ_TOOL_PATH_SCHEMAS`: strictly denies reading, listing, grepping, or modifying anything under `${HOME}/.gemini/antigravity-cli/plugin_data/antigravity-booster/**` or `${HOME}/.config/antigravity-booster/**`. Ancestor searches ($HOME, workspace) permitted without credential exposure.
+   - Node evaluates closed taxonomy: `READ_ONLY_TOOLS` (14 tools), `ORCHESTRATION_TOOLS` (5 tools), and `BOOSTER_MCP_TOOLS` (6 tools matching `mcp__agb__` server prefix or `call_mcp_tool` with `ServerName: "agb"`) output `""` and exit 0 immediately; generic `call_mcp_tool` and third-party `mcp__*` tools route to Gate 1 path inspection; unknown tools in active-rail ADLC repositories fail closed (`deny`). Verified by: `node --test test/pre-tool-use.test.mjs`.
+   - Out-of-repo platform protection evaluated in Step 1 via `READ_TOOL_PATH_SCHEMAS`: strictly denies reading, listing, grepping, or modifying anything under `${HOME}/.gemini/antigravity-cli/plugin_data/antigravity-booster/**` or `${HOME}/.config/antigravity-booster/**`. Ancestor searches ($HOME, workspace) permitted without credential exposure. Verified by: `node --test test/pre-tool-use.test.mjs`.
    - Gate 1 enforces frozen rails fail-closed (`deny`) with probed `agy 1.2.16` argument schema extraction (requiring all declared keys, e.g. both `source` and `destination` for `move`, and rejecting unexpected path keys), unresolvable mutating tool denial, implicit standing rails (`.adlc/**` excluding narrowed ticket authoring, `.git/**`), repository root target protection (`rel === ''` or `'.'`), parent directory protection (`..`), Darwin case normalization, and shell command directory change (`cd`/`pushd` exact token equality check).
    - Shell command validation: `toolCall.args.Cwd` validated against `workspacePaths` fail-closed in ADLC repos; candidate path tokens evaluated independently per repo; narrowed P0 ticket authoring allowlist (`git add`, `adlc ticket create`) permitted while destructive commands (`rm`, `mv`, `archive`) are denied; Authoritative Shell Command Normative Decision Table (§4.5.1) prompts `ask` for indirect mutators (`patch`, `git apply`, `git rebase`, `git switch`), arbitrary scripts (`node -e`, `python -c`), and unlisted shell commands; `adlc rails-guard` mechanically blocks merge on out-of-band mutations.
-   - Clean Deny / Ask / Pass-Through architecture: Booster strictly omits in-session auto-approval (`allow`), eliminating all reliance on mutable trust anchors (`auto-approve-repos.json`, network `ls-remote`, SHA pinning). Filesystem mutations targeting frozen rails fail closed (`deny`); unlisted shell commands and indirect mutators in active-rail ADLC repositories prompt the operator (`ask`); read-only inspection tools, orchestration tools, booster MCP tools, non-rail edits, and all tools in non-ADLC repositories yield to neutral pass-through (`""` with exit 0).
-   - Defaults inspection tools, orchestration tools, booster MCP tools, and other non-rail operations safely to neutral pass-through (`""` with exit 0).
+   - Clean Deny / Ask / Pass-Through architecture: Booster strictly omits in-session auto-approval (`allow`), eliminating all reliance on mutable trust anchors (`auto-approve-repos.json`, network `ls-remote`, SHA pinning). Filesystem mutations targeting frozen rails fail closed (`deny`); unlisted shell commands and indirect mutators in active-rail ADLC repositories prompt the operator (`ask`); read-only inspection tools, orchestration tools, booster MCP tools, non-rail edits, and all tools in non-ADLC repositories yield to neutral pass-through (`""` with exit 0). Verified by: `node --test test/pre-tool-use.test.mjs` (table-driven over every §4.5.1 decision-table row) and `node --test test/no-allow.test.mjs` (asserts no source or bundle under `hooks/`, `bin/`, `dist/` can emit `"decision":"allow"`).
+   - Defaults inspection tools, orchestration tools, booster MCP tools, and other non-rail operations safely to neutral pass-through (`""` with exit 0). Verified by: `node --test test/pre-tool-use.test.mjs`.
    - Hook runner internal watchdog (`WAIT_TIMEOUT=9` passed via `--timeout 9`) enforces absolute deadline on interruptible background `cat` input duplicated via `exec 3<&0` (verified under `dash` and `bash` without a TTY), emitting fallback decision strictly within 10.5 seconds (leaving a 4.5s margin before 15s platform deadline); extracts workspace roots from payload (`workspacePaths` and `Cwd`, never relying on hook's own `cwd`); non-zero child exit status immediately triggers fallback strictly per the Authoritative Fallback Decision Table: missing Node (exit 86) yields neutral pass-through (`""` with exit 0) in non-ADLC workspaces; runtime crash/watchdog timeout yields user confirmation (`ask`) in non-ADLC workspaces; in ADLC repositories with active tickets, read-only tools pass through, file mutations yield mechanical denial (`deny`), and shell command watchdog timeouts yield operator confirmation (`ask`).
-   - Emergency killswitch requires parent launch environment variable `export AGB_HOOK_DISABLE=1` (or any non-empty value) or CLI disable command (eliminating all file-based tokens).
-6. Decoy protection test: Slash commands canonically resolve `PLUGIN_DIR` by verifying `PLUGIN_ROOT` resides under `${HOME}/.gemini/config/plugins/*` with valid `plugin.json` (`"name": "antigravity-booster*"`) and `bin/node-launcher.sh`, ignoring local decoy `bin/` and `dist/` files, traversal attempts with `../`, or spoofed environment variables outside the platform's trusted plugin directory.
-7. Stripped PATH compliance: Slash commands, MCP server, terminal shim `~/.local/bin/agb`, and booster hooks execute successfully under `PATH=/usr/bin:/bin` via `/bin/sh bin/node-launcher.sh` (with unquoted case globs and direct Volta image inspection, skipping repo rejection when cwd is `$HOME` or root, and supporting standard version managers fnm and mise under `$HOME/.local/share` alongside asdf, volta, nodenv, nvm, n, and system paths, while Step 1 in-session policy guard denies file mutations to all runtime manager directories).
-8. `agb doctor` reports `plugin contract: compatible` when contract is 1; evaluates flat unnested contract status enum strictly per the Unified Evaluation Order (§4.4): validity -> older version (`< 1.7.0`, reporting `outdated-plugin`, exit 1, `railsTrusted: false` even if contract is absent e.g. 1.3.0) -> digest -> contract; on clean clone reports `not-installed` with exit code 1 and zero uncaught JS exceptions; computes staged directory tree digest against `KNOWN_ADLC_DEPENDENCY_DIGESTS` for every version present in the map (`1.7.0` family), marking `railsTrusted: true` (an informational diagnostic boolean indicating verified tree digest and contract 1) only on exact digest match with contract 1 and reporting `corrupt-tree` (exit 1) on mismatch or `incompatible-contract` (exit 1) on contract mismatch; accepts unpinned newer versions (`> 1.7.0`) with `contract: 1` as `compatible (newer-unpinned: v${stagedVersion})` (exits 0, sets `railsTrusted: false`), accepts absent contract on newer versions as tolerant mode; verifies booster's companion policy guard executes cleanly under minimal PATH (`PATH=/usr/bin:/bin`), asserting exact denial reason `'Target path matches frozen rail: lib/lock.mjs'` on a fixture repo and pass-through on non-rail targets; records `rails-guard-health.json` containing `nodeSha256`, `bundleSha256`, `hooksSha256` (strictly an informational diagnostic log whose absence, deletion, or modification has zero effect on hook decisions or gate enforcement).
-9. `agb migrate --rollback` evaluates strictly per the Normative Rollback-from-Each-State Table (§4.6), successfully restoring pre-migration directory contents, cleaning up unneeded staged plugins without self-deletion, restoring or cleaning up terminal shim `~/.local/bin/agb` according to initial baseline presence, warning on loss of agb, detecting post-migration plugin upgrades against `postMigrationSnapshots` (allowing immediate clean rollback without `--force-rollback` when matching), tracking all state transitions in single state file `migration-state.json`, keeping baseline `pre-migration.baseline.json` immutable across `--force` re-runs (restoring original symlinks even if `--force` crashes during `SNAPSHOT_CREATED`), tracking final cleanup via intermediate state `ROLLED_BACK_PENDING_UNINSTALL` and standalone locked script in a secure randomized 0700 temporary directory running `migrate --finish-uninstall` under `node-launcher.sh` with token-based lock handover (child updates PID in `meta.json` and writes `handover.ack`, parent waits up to 2.0s; timeout terminates child process group, waits for child exit, invalidates token, releases lock, and exits code 1), and recreating symlinks idempotently across multiple migration runs exclusively from `baseline.originalSkillSymlinks` (skipping missing targets with notice) using dedicated module `lib/migration-lock.mjs` with standing claim verification (`assertMigrationLockHeld()`). Dead-PID lock is reclaimed immediately via ABA-safe atomic rename protocol with process `startTime` verification (extracting Linux `/proc/<pid>/stat` field 22 clock ticks after last close paren) to detect PID reuse, backed by `agb migrate --break-lock` for manual operator recovery.
-10. `CODEOWNERS` explicitly covers all execution, hook, and command assets: `bin/**`, `hooks/**`, `hooks.json`, `mcp_config.json`, `commands/**`, `agents/**`, `plugin.json`, `dist/**`, `vendor/**`, and `.adlc/**`. Documentation updates explicitly include `AGENTS.md` and `docs/guidelines.md` in Ticket 1 scope with explicit owner sign-off on Architectural Decisions 1–3 before any vendoring is committed.
+   - Emergency killswitch requires parent launch environment variable `export AGB_HOOK_DISABLE=1` (or any non-empty value) or CLI disable command (eliminating all file-based tokens). Verified by: `node --test test/hook-runner.test.mjs` (with `AGB_HOOK_DISABLE=1`: empty stdout, exit 0, CRITICAL NOTICE on stderr and in `hooks.log`; no file-based token is consulted).
+6. Slash command invocation (Appendix A D3): every `commands/agb-*.md` instructs running `~/.local/bin/agb <subcommand>`; the dispatcher passes execution of the canonical shim/launcher through Step 1 (not denied as a protected-root mutation) while writes to the shim or plugin dir are denied, and a decoy `bin/node-launcher.sh` or `dist/agb.mjs` in the user repo is never executed by the shim. Verified by: `node --test test/commands.test.mjs test/pre-tool-use.test.mjs`.
+7. Stripped PATH compliance: Slash commands, MCP server, terminal shim `~/.local/bin/agb`, and booster hooks execute successfully under `PATH=/usr/bin:/bin` via `/bin/sh bin/node-launcher.sh` (with unquoted case globs and direct Volta image inspection, skipping repo rejection when cwd is `$HOME` or root, and supporting standard version managers fnm and mise under `$HOME/.local/share` alongside asdf, volta, nodenv, nvm, n, and system paths, while Step 1 in-session policy guard denies file mutations to all runtime manager directories). Verified by: `node --test test/node-launcher.test.mjs test/shim.test.mjs` (spawns with `env PATH=/usr/bin:/bin` and mock Node trees under a temp HOME) and, for slash commands and MCP, `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs`.
+8. `agb doctor` reports `plugin contract: compatible` when contract is 1; evaluates flat unnested contract status enum strictly per the Unified Evaluation Order (§4.4): validity -> older version (`< 1.7.0`, reporting `outdated-plugin`, exit 1, `railsTrusted: false` even if contract is absent e.g. 1.3.0) -> digest -> contract; on clean clone reports `not-installed` with exit code 1 and zero uncaught JS exceptions; computes staged directory tree digest against `KNOWN_ADLC_DEPENDENCY_DIGESTS` for every version present in the map (`1.7.0` family), marking `railsTrusted: true` (an informational diagnostic boolean indicating verified tree digest and contract 1) only on exact digest match with contract 1 and reporting `corrupt-tree` (exit 1) on mismatch or `incompatible-contract` (exit 1) on contract mismatch; accepts unpinned newer versions (`> 1.7.0`) with `contract: 1` as `compatible (newer-unpinned: v${stagedVersion})` (exits 0, sets `railsTrusted: false`), accepts absent contract on newer versions as tolerant mode; verifies booster's companion policy guard executes cleanly under minimal PATH (`PATH=/usr/bin:/bin`), asserting exact denial reason `'Target path matches frozen rail: lib/lock.mjs'` on a fixture repo and pass-through on non-rail targets; records `rails-guard-health.json` containing `nodeSha256`, `bundleSha256`, `hooksSha256` (strictly an informational diagnostic log whose absence, deletion, or modification has zero effect on hook decisions or gate enforcement). Verified by: `node --test test/doctor-contract.test.mjs` (one case per §4.4 decision-table row, staged fixtures under a temp HOME).
+9. `agb migrate --rollback` evaluates strictly per the Normative Rollback-from-Each-State Table (§4.6), successfully restoring pre-migration directory contents, cleaning up unneeded staged plugins without self-deletion, restoring or cleaning up terminal shim `~/.local/bin/agb` according to initial baseline presence, warning on loss of agb, detecting post-migration plugin upgrades against `postMigrationSnapshots` (allowing immediate clean rollback without `--force-rollback` when matching), tracking all state transitions in single state file `migration-state.json`, keeping baseline `pre-migration.baseline.json` immutable across `--force` re-runs (restoring original symlinks even if `--force` crashes during `SNAPSHOT_CREATED`), tracking final cleanup via intermediate state `ROLLED_BACK_PENDING_UNINSTALL` and standalone locked script in a secure randomized 0700 temporary directory running `migrate --finish-uninstall` under `node-launcher.sh` with token-based lock handover (child updates PID in `meta.json` and writes `handover.ack`, parent waits up to 2.0s; timeout terminates child process group, waits for child exit, invalidates token, releases lock, and exits code 1), and recreating symlinks idempotently across multiple migration runs exclusively from `baseline.originalSkillSymlinks` (skipping missing targets with notice) using dedicated module `lib/migration-lock.mjs` with standing claim verification (`assertMigrationLockHeld()`). Dead-PID lock is reclaimed immediately via ABA-safe atomic rename protocol with process `startTime` verification (extracting Linux `/proc/<pid>/stat` field 22 clock ticks after last close paren) to detect PID reuse, backed by `agb migrate --break-lock` for manual operator recovery. Verified by: `node --test test/migrate-rollback.test.mjs test/migration-lock.test.mjs` (one case per rollback-table row and per T4 evidence item, temp HOME, fake agy).
+10. `CODEOWNERS` explicitly covers all execution, hook, and command assets: `bin/**`, `hooks/**`, `hooks.json`, `mcp_config.json`, `commands/**`, `agents/**`, `plugin.json`, `dist/**`, `vendor/**`, and `.adlc/**`. Documentation updates explicitly include `AGENTS.md` and `docs/guidelines.md` in Ticket 1 scope with explicit owner sign-off on Architectural Decisions 1–3 before any vendoring is committed. Verified by: `node --test test/codeowners.test.mjs` (parses CODEOWNERS and asserts each listed glob is owned by `@voodootikigod`); owner sign-off verified by `adlc gate-manifest show --gate doctrine-amendment --ticket T-PLUGIN-01-CORE`.
 11. Full `npm test` suite passes (current count shown in evidence output).
-12. Empirical platform hook acceptance tests (tested live against Antigravity CLI binary `agy >= 1.2.16`):
-   - Matcher wildcard probe: Live probe proving that `agy` accepts `"matcher": "*"` in `hooks.json` and invokes the hook for arbitrary platform tool calls.
-   - Environment variable propagation probe: Live probe confirming `agy` passes parent launch environment variables (such as `AGB_HOOK_DISABLE` and `AGB_WORKER_TICKET`) down to PreToolUse hook processes.
-   - Headless interactive prompt probe: Live probe verifying `agy`'s runtime behavior in non-interactive / headless sessions when `ask` is returned, validating whether the platform terminates, fails closed, or prompts.
-   - Empty stdout pass-through test: A test plugin hook outputting `""` with exit 0 proceeds directly to platform tool execution without prompting or logging errors.
-   - Non-zero exit fail-open test: A test plugin hook exiting non-zero (e.g. 127) logs a warning and proceeds with normal tool execution.
-   - Watchdog / timeout test: A hanging test hook exceeding configured timeout is terminated by `agy` and falls back to interactive confirmation prompt (`ask`). Watchdog fallback response is emitted within 10.5s (leaving 4.5s margin before platform 15s deadline).
-   - Multi-plugin composition test: Co-installed `antigravity-booster` and `@adlc/antigravity` plugin hooks verify that `deny` overrides `allow`, non-empty decision overrides empty stdout pass-through, P0 ticket authoring (`git add .adlc/tickets/T1.json`) succeeds, unlisted shell commands prompt `ask`, and probing `ask` vs `allow` across both registration orders confirms booster's strict `deny` for rail-adjacent operations prevents unauthorized rail touches regardless of hook execution order.
-   - Headless fleet worker test: Verifies that when `AGB_WORKER_TICKET` is set, in-scope mutations, test commands, and read-only inspection pass through while out-of-scope operations and dynamic commands fail closed to `deny` without prompting.
-   - Killswitch prominent notice test: Verifies that when `AGB_HOOK_DISABLE` is set, a critical warning notice is logged to stderr and `hooks.log` before emitting pass-through.
-   - Subagent propagation test: PreToolUse hooks intercept tool calls from child subagents spawned via `invoke_subagent`, and a `deny` decision halts the child tool call.
-   - Missing-Node non-ADLC pass-through test: In a non-ADLC workspace with Node uninstalled or stripped PATH (exit code 86), tool execution passes through cleanly (`""` with exit 0) without prompts or agent crashes per the Authoritative Fallback Decision Table.
-   - Plugin root cwd fail-closed test: Running hook-runner from the plugin directory (`cwd = plugin root`) against an ADLC workspace with active rails returns `deny` on exit 86, crash, or watchdog timeout on mutations.
-   - Unclosed stdin interruptibility test: Piping an unclosed stdin stream to hook-runner unblocks on watchdog timeout and emits fallback within 10.5 seconds (leaving 4.5s margin before 15s platform deadline).
-   - Live booster MCP tool test: Calling an `agb` MCP tool (`mcp__agb__agb_status`, `call_mcp_tool` with `ServerName: "agb"`) in an active-rail ADLC repository succeeds with pass-through (`""` with exit 0) without false-positive denial.
+12. Empirical platform hook acceptance tests (tested live against Antigravity CLI binary `agy >= 1.2.16`): Every sub-item is a scenario in `test/live/hooks.live.test.mjs`, run with `AGB_LIVE_AGY=1 node --test test/live/`; transcripts are recorded via `adlc gate-manifest record live-agy-probe --ticket <ticket>`.
+   - Matcher wildcard probe: Live probe proving that `agy` accepts `"matcher": "*"` in `hooks.json` and invokes the hook for arbitrary platform tool calls. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario V1).
+   - Environment variable propagation probe: Live probe confirming `agy` passes parent launch environment variables (such as `AGB_HOOK_DISABLE` and `AGB_WORKER_TICKET`) down to PreToolUse hook processes. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario V2).
+   - Headless interactive prompt probe: Live probe verifying `agy`'s runtime behavior in non-interactive / headless sessions when `ask` is returned, validating whether the platform terminates, fails closed, or prompts. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario V6: asserts `ask` in `agy -p` executes the command, pinning the Appendix A D4 residual risk).
+   - Empty stdout pass-through test: A test plugin hook outputting `""` with exit 0 proceeds directly to platform tool execution without prompting or logging errors. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario pass-through).
+   - Non-zero exit fail-open test: A test plugin hook exiting non-zero (e.g. 127) logs a warning and proceeds with normal tool execution. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario fail-open).
+   - Watchdog / timeout test: a hanging probe hook exceeding its configured timeout is terminated by `agy`; the test records the platform outcome in print mode (expected per V6: proceeds) and asserts booster's own runner emits its fallback within 10.5s wall clock. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario timeout).
+   - Multi-plugin composition test: Co-installed `antigravity-booster` and `@adlc/antigravity` plugin hooks verify that `deny` overrides `allow`, non-empty decision overrides empty stdout pass-through, P0 ticket authoring (`git add .adlc/tickets/T1.json`) succeeds, unlisted shell commands prompt `ask`, and probing `ask` vs `allow` across both registration orders confirms booster's strict `deny` for rail-adjacent operations prevents unauthorized rail touches regardless of hook execution order. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario multi-plugin).
+   - Headless fleet worker test: Verifies that when `AGB_WORKER_TICKET` is set, in-scope mutations, test commands, and read-only inspection pass through while out-of-scope operations and dynamic commands fail closed to `deny` without prompting. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario worker). Offline counterpart: `node --test test/pre-tool-use.test.mjs` (worker rows).
+   - Killswitch prominent notice test: Verifies that when `AGB_HOOK_DISABLE` is set, a critical warning notice is logged to stderr and `hooks.log` before emitting pass-through. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario killswitch).
+   - Subagent propagation test: PreToolUse hooks intercept tool calls from child subagents spawned via `invoke_subagent`, and a `deny` decision halts the child tool call. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario subagent).
+   - Missing-Node non-ADLC pass-through test: In a non-ADLC workspace with Node uninstalled or stripped PATH (exit code 86), tool execution passes through cleanly (`""` with exit 0) without prompts or agent crashes per the Authoritative Fallback Decision Table. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario missing-node). Offline counterpart: `node --test test/hook-runner.test.mjs`.
+   - Plugin root cwd fail-closed test: Running hook-runner from the plugin directory (`cwd = plugin root`) against an ADLC workspace with active rails returns `deny` on exit 86, crash, or watchdog timeout on mutations. Verified by: `node --test test/hook-runner.test.mjs` (cwd set to a fake staged plugin root).
+   - Unclosed stdin interruptibility test: Piping an unclosed stdin stream to hook-runner unblocks on watchdog timeout and emits fallback within 10.5 seconds (leaving 4.5s margin before 15s platform deadline). Verified by: `node --test test/hook-runner.test.mjs` (writer holds the pipe open with `sleep 60`; asserts output ≤ 10.5s under dash and bash).
+   - Live booster MCP tool test: Calling an `agb` MCP tool (`mcp__agb__agb_status`, `call_mcp_tool` with `ServerName: "agb"`) in an active-rail ADLC repository succeeds with pass-through (`""` with exit 0) without false-positive denial. Verified by: `AGB_LIVE_AGY=1 node --test test/live/hooks.live.test.mjs` (scenario booster-mcp).
+
+---
+
+## Appendix A: Errata, Resolved Decisions & Linux Verification (t-plugin-00-spec, 2026-10-04)
+
+### A.0 Precedence
+This appendix is **normative**. Where it conflicts with any earlier section, table, code sample, ticket description, or acceptance criterion in this document, **this appendix governs**. Ticket bodies authored from this spec (`T-PLUGIN-01-CORE` … `T-PLUGIN-04-MIGRATE-ROLLBACK-DOCS`) restate the binding parts so a fresh agent never needs to reconcile the two. Earlier `file:///Users/...` links are illustrative macOS paths; resolve them relative to the repository root.
+
+### A.1 Linux platform verification (`agy 1.2.16`, Linux 7.0)
+Reproduced with `.adlc/specs/native-plugin-installation.evidence/probe-agy.sh` (transcripts in `.adlc/specs/native-plugin-installation.evidence/agy-1.2.16-linux/`). The script installs a throwaway `probe-hookenv` plugin into the real `$HOME` and uninstalls it on exit.
+
+| # | Claim | Linux result | Evidence file |
+| :--- | :--- | :--- | :--- |
+| V1 | `"matcher": "*"` is accepted and matches every tool | **Confirmed.** `"*"` and `".*"` both fire for `view_file` and `run_command`; `"view_file"` matches only that exact tool name | `01-matcher-env.hooks.log` |
+| V2 | Parent launch env vars reach hook processes | **Confirmed.** `AGB_HOOK_DISABLE` and `AGB_WORKER_TICKET` set on the `agy` process are visible in the hook | `01-matcher-env.hooks.log` |
+| V3 | Hook cwd = plugin root; `PLUGIN_ROOT`/`PLUGIN_DATA` not exported to hooks | **Confirmed** | `01-matcher-env.hooks.log` |
+| V4 | Payload shape | **Refined.** Top-level keys: `artifactDirectoryPath`, `conversationId`, `modelName`, `stepIdx`, `toolCall`, `transcriptPath`, `workspacePaths`. `toolCall.args` additionally carries free-text `toolAction`, `toolSummary` and (for `run_command`) numeric `WaitMsBeforeAsync`. `view_file` uses `AbsolutePath` | `01-matcher-env.hooks.log` |
+| V5 | `{"decision":"deny"}` blocks the tool | **Confirmed** in print mode: `tool call denied by pre-tool hook: probe deny` | `03-headless-deny.agy.txt` |
+| V6 | `{"decision":"ask"}` prompts the operator | **REFUTED for print mode (`agy -p`).** The command executed with no prompt. Control run (no hook decision, unlisted command, no `--dangerously-skip-permissions`) also executed unprompted, so print mode auto-approves anything not denied and `ask` degrades to allow | `02-headless-ask.agy.txt`, `04-control-no-decision.agy.txt` |
+| V7 | Slash command code blocks are executed by `agy` via `sh -c` with `"$@"` and `PLUGIN_ROOT` | **REFUTED.** `commands/*.md` are converted to skills; the code block was never executed (`05-slash-command.cmd.log` empty). The model reads the markdown and issues its own `run_command` calls from the user's workspace (cwd = user repo, no `PLUGIN_ROOT`), and those calls go through PreToolUse hooks. The official `@adlc/antigravity@1.7.0` commands follow the same prompt-style convention | `05-slash-command.*` |
+| V8 | MCP servers: cwd = plugin root, `PLUGIN_ROOT`/`PLUGIN_DATA` exported, `${PLUGIN_ROOT}` expanded in `args` | **Confirmed** | `01-matcher-env.hooks.log` (lines starting `MCP`) |
+| V9 | A temporary `HOME` isolates live tests | **Infeasible.** `HOME=<tmp> agy -p` blocks on OAuth (`Waiting for authentication`). Live tests must use the real `$HOME` with `probe-`-prefixed throwaway plugins and must uninstall them on exit | `06-temp-home.txt` |
+
+### A.2 Errata to the body
+- **E1 (§4.5.1 shard protection):** the `status === 'in_progress' || 'open'` check contradicted §4.3. Fixed in the code sample: *every existing* ticket shard is immutable through in-session tools; `isActiveTicket()` from `lib/active-rails.mjs` (status not in `{completed, closed, archived}`, missing status = active) is the only active predicate anywhere.
+- **E2 (§4.4 companion hook):** `@adlc/antigravity@1.7.0` ships `hooks.json` → `node $HOME/.gemini/config/plugins/adlc-antigravity/hooks/adlc-rails-guard.cjs`, `"matcher": ".*"`, `"timeout": 20`. It does **not** ship `hooks/pre-tool-use.sh` and does **not** look up a booster-vendored `adlc`. It invokes bare `node`, so under a stripped GUI PATH it exits non-zero and agy fails open. Booster's own hook is therefore the only reliable in-session guard in GUI launches; remove every claim that the companion hook resolves `vendor/adlc`.
+- **E3 (§2.2 / §4.1 / AC6 slash commands):** see V7. The `PLUGIN_DIR` canonical-resolution code block and the "decoy & path traversal immunity" claims for commands are void. Replacement design in A.3 D3.
+- **E4 (§2.2 / §4.5.1 / AC12 `ask`):** see V6. `ask` is meaningful only in interactive sessions. Replacement policy in A.3 D4.
+- **E5 (§4.5.1 `extractProbedPaths`):** `toolAction`, `toolSummary`, `WaitMsBeforeAsync` are added to `EXCLUDED_CONTENT_KEYS` (V4). Without this, an action summary such as `"Editing lib/foo.mjs"` would trigger a false `Unexpected path parameter` deny.
+- **E6 (§4.5.2, §4.3 item 3):** shards are stored as `.adlc/tickets/<id>--<hash>.json`, not `<id>.json`. Workers resolve their ticket by `id` field; "new-shard creation" means creating a shard file whose path did not previously exist.
+- **E7 (§3 hook-runner):** fixed in the code sample: `HAS_ADLC_DIR` initialised before the payload block; exit 86 in a non-ADLC workspace passes through **before** the worker-mode deny (table: "Any"); a non-empty unparseable payload denies `run_command` as well as mutations (table row "Unparseable Payload"); GNU-only BRE `\|` alternation replaced with `grep -E`. Use `command -v` rather than `which` in all POSIX scripts.
+- **E8 (§4.5.2):** nothing sets `AGB_WORKER_TICKET` today (`lib/agy.mjs` launches workers with `--print`). Injection is assigned to T2 (A.5).
+- **E9 (§2.2 deny reason example):** the declared-rail deny reason is exactly `Target path matches frozen rail: <rail>`; the §2.2 string is illustrative.
+- **E10 (§4.4 doctor):** doctor runs the exact `hooks.json` command string (including `--timeout 9`), parses the single output line as JSON, and asserts `decision === 'deny'` plus the reason substring. The non-rail check requires **empty stdout with exit 0** (an `ask` is a failure).
+
+### A.3 Owner decisions (binding)
+Interrogation round 1 (P1, 2026-10-04):
+- **D1 Standing implicit rails = trust-root set.** In every ADLC repo: `.git/**`, `.adlc/config.json`, `.adlc/manifest.jsonl`, `.adlc/sessions.json`, `.adlc/ticket-archive/**`, `.adlc/ticket-transactions/**`, `.adlc/leases/**`, and every *existing* `.adlc/tickets/*.json` shard. `.adlc/specs/**`, `.adlc/lessons/**` and other `.adlc` paths stay editable. All prose saying "`.adlc/**`" means this set. Creating a new shard via `adlc ticket create` remains permitted.
+- **D2 Active-rail repository** = an ADLC repo where active tickets declare a **non-empty** rails union, or where the ticket store is unreadable or corrupt (fail closed). Ask-on-shell, unknown-tool deny and third-party-MCP ask apply only in active-rail repos. Standing implicit rails and platform protected roots apply regardless.
+- **D3 Slash commands invoke the terminal shim.** Each `commands/agb-*.md` instructs the model to run `~/.local/bin/agb <subcommand> [args]`. `agb bootstrap` (T1) and `agb migrate` (T4) both install the shim. The dispatcher treats *executing* the canonical shim (`~/.local/bin/agb`, `$HOME/.local/bin/agb`) or `/bin/sh <staged-plugin>/bin/node-launcher.sh dist/agb.mjs …` as non-mutating, so Step 1 protected-root rules (which protect writes) do not deny it. The call then gets normal Stage 5 treatment: `ask` in active-rail interactive sessions, pass-through elsewhere. `/agb-bootstrap` additionally documents the first-run terminal command, because the shim cannot exist before bootstrap. Commands whose MCP equivalent exists may tell the model to prefer the `mcp__agb__*` tool.
+- **D4 Headless `ask` policy.** `agb run` always injects `AGB_WORKER_TICKET=<id>` into worker environments (T2), so booster workers get deny-not-ask. For user-launched `agy -p` sessions without that variable, booster's protection is **deny-only**: rail and protected-root denials hold, `ask` degrades to allow (V6). Document this residual risk in README/USAGE (T4). The merge-time `adlc rails-guard` remains the backstop. A live test pins V6 so a future agy behavior change is detected.
+
+Interrogation round 2 (premortem, 2026-10-04):
+- **D12 Vendored adlc = booster-owned static dispatcher.** `vendor/adlc/bin/adlc.mjs` statically imports only the 8 verbs booster invokes (`rails-guard`, `gate-manifest`, `flail-detector`, `hollow-test`, `consensus-fix`, `model-router`, `merge-forecast`, `ticket`) and is bundled by esbuild into `vendor/adlc/dist/adlc.bundle.mjs`. The upstream `@adlc/cli` dispatcher is not vendored, because it resolves per-tool bins at runtime via `require.resolve`. Any other verb exits 1 with `verb not vendored`. Acceptance smoke-tests each of the 8 verbs' `--help` from `vendor/` with `node_modules` deleted.
+- **D13 Migration snapshots exclude `node_modules/`, `.worktrees/` and `.git/`.** The exclusions are recorded in `pre-migration.baseline.json` as `excludedPaths`. Step 3 refuses with guidance if a staged plugin still exceeds **100 MB** after exclusions. Rollback restores a working plugin, not stale worktrees.
+- **D14 Every agb-spawned agy session is marked as a worker** at the single choke point `runAgy` (`lib/agy.mjs`): `AGB_WORKER_TICKET=<id>` for ticketed `agb run` workers, `AGB_WORKER_MODE=readonly` for `review`, `sweep`, `prosecute`, `preflight` and `plan`/brain. In readonly mode the dispatcher denies every mutating tool and every `run_command` that is not Stage 1 inspection. A caller that passes neither marker gets `AGB_WORKER_MODE=readonly` by default (fail closed).
+- **D15 Routine commands pass through in active-rail interactive sessions:** `git add` whose literal path args are all non-rail and outside the D1 set (shard additions still follow A.4 item 6); `git commit` without `--amend` and without the hook-skipping flag; `npm run build` with no extra args. Tests still `ask` (D7). Doctor and `agb status` report AGB_HOOK_DISABLE killswitch usage counts from `hooks.log`.
+
+Premortem preventions adopted without a question (no product tradeoff):
+- **P1** T1 inventories every `import.meta.url`/`__dirname`/`require.resolve` site in `lib/` and `bin/` (known: `lib/doctor.mjs` sandbox-probe-helper, `lib/agy.mjs` job-object-wrapper.ps1, `lib/bootstrap.mjs` skills and `@adlc/antigravity`, `bin/agb.mjs` package.json and docs/calibration) and routes non-JS assets through `resolveAssetPath()`. A test asserts every such asset exists relative to the plugin root, and the clean-clone smoke test runs `--help` for **every** agb subcommand.
+- **P2** `.gitattributes` marks `dist/**` and `vendor/**` `linguist-generated -diff`. Restack procedure (documented in CONTRIBUTING.md): resolve source conflicts only, then `npm run build` and commit; the drift gate is the arbiter.
+- **P3** `@adlc/*` devDependencies are pinned to exact versions. The drift gate runs in one canonical CI job (`ubuntu-latest`, Node pinned) using `npm ci`; bundle bumps go in dedicated chore PRs.
+- **P4** The live suite first uninstalls any stale `probe-*` plugin, makes probe hooks inert unless a per-run nonce env var is set, and doctor warns when any `probe-*` plugin is installed.
+
+Pre-execution planning (grill session, 2026-10-04):
+- **D5** Four stacked PRs (T1→T4) after this spec PR.
+- **D6** Doctrine amendment (§4.4 Decisions 1–3) is **approved by the owner**, with one addition: CI downloads `@adlc/antigravity@1.7.0` from the npm registry (`npm pack @adlc/antigravity@1.7.0`) and asserts it is byte-identical to `vendor/cache/adlc-antigravity-1.7.0.tgz`. T1 records the sign-off with `adlc gate-manifest record doctrine-amendment --ticket T-PLUGIN-01-CORE`.
+- **D7** No in-session `allow` anywhere. `.agents/plugins/agb/hooks/auto-approve-tests.mjs` is removed in T1, and interactive test runs in active-rail repos `ask`.
+- **D8** Live-agy acceptance checks (AC12, T1 "Live agy hook test", multi-plugin tests) live in `test/live/*.live.test.mjs`, run only when `AGB_LIVE_AGY=1`, and are excluded from `npm test` and CI. They follow the `probe-agy.sh` pattern (real `$HOME`, `probe-*` plugins, uninstall on exit). They run on Linux during each ticket and once on macOS by the owner before T1 merges.
+- **D9** The top-level `sidecars/` is the single dashboard source, launched by `agb sidecar`; `sidecars/` is added to `package.json` `files`. T4 deletes **all** of `.agents/`.
+- **D10** npm remains a secondary channel: `package.json` `bin.agb` → `dist/agb.mjs`; `@adlc/*` move to `devDependencies`; doctor reports an npm-global `agb` as a **warning** ("secondary install detected; prefer `~/.local/bin/agb`"), never an error.
+- **D11** Each ticket PR adds a CHANGELOG entry under "Unreleased"; there are no version bumps until T4 merges and the owner's real-machine migration passes. Then cut `1.0.0`, with `plugin.json` and `package.json` versions in lockstep.
+
+### A.4 Resolved ambiguities (parallax round 1: 3 readings, all agreeing unless noted)
+1. Fallback fail-closed context = any `.adlc/` ancestor of `workspacePaths` or `Cwd`; active tickets are not required.
+2. Read-only tools pass through on every ADLC fallback cause, including malformed child output, unless the payload references booster data, `.migration.lock`, or `.config/antigravity-booster`.
+3. `.git/**` and the D1 set apply only in ADLC repos; platform protected roots (Step 1) apply in every repo. Step 1 runs first for every tool, including `run_command` tokens, with `~`, `$HOME` and `${HOME}` expanded for protection matching only. Any other `$VAR` routes to Stage 5.
+4. `git commit`, `git add` (non-ticket paths) and `git fetch` are unlisted (Stage 5), not `.git/**` violations. Only explicit path tokens or redirections resolving into `.git/` are denied.
+5. Compound commands: each subcommand is evaluated; the most restrictive verdict wins (`deny` > `ask` > pass-through). An un-lexable subcommand (for example, unbalanced quotes) is treated as Stage 5 dynamic.
+6. P0 allowlist: `adlc ticket create …`; `git add` and `cat` with **literal, glob-free** paths that are all under `.adlc/tickets/`. Glob forms route to Stage 5.
+7. Ticket lifecycle: `adlc ticket complete|archive` **without** `--authorize` → `deny`; **with** `--authorize` → `ask` interactive, `deny` headless.
+8. Headless test allowlist: `npm test [-- <args>]`, `npm run test`, `npm run test:<name>`, `node --test <paths>` where no path matches a rail; no redirection, dynamic constructs, or env-assignment prefixes. Worker scope entries are minimatch globs relative to the repo root (`dot: true`, `nocase` on darwin); a plain directory entry also matches its descendants; missing or empty scope → deny every worker mutation.
+9. Third-party MCP tools are never considered provably read-only: in active-rail repos, after path inspection, `ask` interactive / `deny` headless.
+10. `Cwd` absent → use `workspacePaths[0]`; neither present in an ADLC context → `deny`. `Cwd` outside every `workspacePath` is denied in any ADLC repo (active or not) and skipped in non-ADLC repos.
+11. Stage 1 inspection whitelist adds `ls` (no write redirection) to `git status|diff|log|show`, `cat`, `head`, `tail`, `grep`. Any `--output`/`-o`/redirection target that resolves to a rail, implicit rail or protected root → `deny`; other `--output` targets → `ask` interactive / `deny` headless.
+12. `file_search` gets Step 1 inspection and is otherwise an unknown tool. `READ_ONLY_TOOLS` stays at exactly 14.
+13. Dispatcher 7 s ceiling: write nothing to stdout, `process.exit(1)` (the runner applies the crash row).
+14. Watchdog fallback must emit within **10.5 s** wall clock (the 12 s figure in T1 is superseded).
+15. Version and integrity constants are defined once in `lib/plugin-paths.mjs`; `lib/adlc-bridge.mjs` re-exports them. T2 records the 1.7.0 tree digest (computed with `lib/digest.mjs` over the extracted vendored tarball), so T3 never edits the frozen bridge. A unit test asserts the integrity constant equals the `package-lock.json` entry.
+16. Pinned 1.7.0 evaluation: digest mismatch → `corrupt-tree` (checked first); digest match with `adlcContract` absent or `!== 1` → `incompatible-contract`; match with contract 1 → `compatible`, `railsTrusted: true`. The tree digest covers every file including `plugin.json`; the contract row is implemented defensively and tested with an injected digest map.
+17. `semver.mjs` accepts `MAJOR.MINOR.PATCH[-prerelease]` with semver precedence; anything else is "lacks semver" → `corrupt-manifest`.
+18. Plugin-name acceptance everywhere: exactly `antigravity-booster`, or a prefix of `antigravity-booster-`.
+19. `safePluginInstall` always copies into `mkdtemp/<targetPluginName>` before `agy plugin install`, so the staged directory name never depends on the source basename; it then asserts `plugins/<target>/plugin.json` exists. The self-install skip is kept.
+20. `railsTrusted` (table) and `rails-guard-health.json` are informational only; `rails-guard-health.json.railsTrusted` = hook self-test passed AND table `railsTrusted`. Nothing reads them to make a decision.
+21. Migration: the lock is acquired before Step 2 (reading state) and held through Step 6. `INITIAL` = `migration-state.json` absent. Virgin rollback from `SNAPSHOT_CREATED`/`SYMLINKS_RECORDED` deletes the state file and the incomplete snapshot. All restores, including the shim, come from `baselineSnapshotDir`.
+22. Migration records every `~/.gemini/skills` symlink in the baseline but only unlinks links whose resolved target is inside the npm-global booster package, a booster checkout's `skills/`, or the adlc-antigravity sources. User-skill links are never touched, and dangling links into deleted booster skills (e.g. `adlc-doctrine`) are removed.
+23. Detached uninstaller: `/bin/sh <staged>/bin/node-launcher.sh dist/agb.mjs migrate --finish-uninstall --baseline <json> --token <t> --uninstaller-dir <d> --agy-bin <abs>`; the logic lives in `finishUninstall()` exported from `lib/migration-lock.mjs`. It refuses unless the state is `ROLLED_BACK_PENDING_UNINSTALL` and the token matches.
+24. Forward `migrate` in `ROLLED_BACK_PENDING_UNINSTALL` with booster still present: finish the uninstall, set `ROLLED_BACK`, exit 0 with a notice to re-run. It never continues migrating in the same invocation.
+25. `--break-lock`: `--force` only skips the `[y/N]` prompt; no migration runs in that invocation.
+26. Darwin case folding applies whenever `process.platform === 'darwin'` (fails closed); Linux comparisons are exact.
+
+### A.5 Ticket scope amendments
+- **T1:** add `lib/active-rails.mjs` `isActiveTicket()`; implement D1–D3 in the dispatcher; commands per D3; bootstrap installs `~/.local/bin/agb`; remove `auto-approve-tests.mjs` (D7); `test/live/` per D8 (port `probe-agy.sh` scenarios V1–V8 plus the multi-plugin checks); add `sidecars/` to `files` and point `bin.agb` at `dist/agb.mjs` with `@adlc/*` in `devDependencies` (D9, D10); add the CI npm byte-identity check (D6); install `shellcheck` in CI (it is not assumed locally — use `npx shellcheck` for local runs).
+- **T1 (additional):** P1, P2, P3; dispatcher implements D14 readonly mode, D15 pass-throughs and A.6 items 1–11, 15–17 (A.6 item 1 runner change must land here).
+- **T2:** D12 static dispatcher replaces the single-bundle `@adlc/cli` vendoring; `runAgy` injects the D14 markers (E8, D4) with unit tests asserting the env for each caller (`run`, `review`, `sweep`, `prosecute`, `preflight`, `plan`, and the default); A.6 items 12–14 (tiers, D12 auth inputs, post-run integrity).
+- **T3:** doctor implements E10, the D10 npm-global warning, the D15 killswitch-usage report, and the P4 probe-plugin warning.
+- **T4:** A.6 items 18–19; README/USAGE document the D4 residual risk and the D3 command model; delete all of `.agents/` (D9); CHANGELOG per D11; migration snapshot exclusions and size cap per D13.
+
+### A.6 Resolved residuals (parallax round 2: 3 fresh readings of the amended spec)
+Round 2 surfaced no owner-level decisions. Every residual was settled by the codebase or by the fail-closed doctrine, as recorded here:
+1. **Hook-runner and readonly workers:** in every place `hook-runner.sh` tests `AGB_WORKER_TICKET`, it tests "`AGB_WORKER_TICKET` or `AGB_WORKER_MODE` non-empty". Headless sessions never receive `ask` from the runner. This must land in T1, before the runner freezes in T2.
+2. **D14 readonly scope:** applies in every repo, ADLC or not. It permits read-only tools, Stage 1/2 commands, orchestration tools, and booster MCP tools other than `agb_run` (denied), all after Gate 1 path inspection. It denies `PATH_MUTATING_TOOLS`, unknown tools, third-party MCP tools, and every other `run_command`.
+3. **Ticketed workers (`AGB_WORKER_TICKET`):**
+   - In an ADLC target repo, the §4.5.2 envelope (scope confinement, A.4 item 8 tests, deny-not-ask) applies whether or not the repo is active-rail.
+   - In a non-ADLC target repo (supported by `agb run`, `lib/scheduler.mjs:1012`), normal non-ADLC policy applies and Step 1 protected roots still hold.
+   - Workers never get D15 routine commands or D3 shim execution, because the scheduler commits worker output itself (`commitAll`, `lib/scheduler.mjs:1740`).
+   - The ticket, scope and rails resolve from the ADLC root found by walking up from the target path or `Cwd` (the worktree's own `.adlc/`). The merge-time `rails-guard` against the base ref remains the trust anchor.
+4. **D15 vs A.4 item 4:** D15 governs in interactive active-rail sessions. `git add` qualifies only with at least one literal path and no `.`, `..`, glob, `-A`, `--all` or `-u`. Those root forms, and `git commit -a/--all/--amend` or with the hook-skipping flag, route to Stage 5 (`ask` interactive). Stage 3 token checks run before D15, so a literal rail path in any `git add`/`git commit` is denied.
+5. **Stage 3 tokens:** every non-flag argv token (from argv[1] on) and every redirection target is a candidate path; there is no "resembles a path" heuristic. In any command outside Stages 1 and 2, a candidate matching a declared rail, the D1 set, or a protected root is `deny`. argv[0] is never matched as a protected-root target, since executing is not writing. The D3 exemption also covers the launcher-path argument. The root/parent deny for `.`/`..` applies to destructive verbs (`rm`, `mv`, `git clean`, `git checkout --`, `git restore`, `git reset --hard`).
+6. **Unexpanded variables:** after Step 1 matching, a token that still contains `~`, `$HOME` or `${HOME}` is dynamic (Stage 5), except in the D3 canonical shim invocation. The recognized shim forms are an argv[0] of `~/.local/bin/agb`, `$HOME/.local/bin/agb`, `${HOME}/.local/bin/agb` or `<realpath $HOME>/.local/bin/agb`, plus `/bin/sh <staged>/bin/node-launcher.sh dist/agb.mjs`. A bare `agb` resolved through PATH is an ordinary unlisted command.
+7. **Protected-root inspection via shell:** tokens into booster `plugin_data` or `~/.config/antigravity-booster` are denied for every command. Tokens into other protected roots are denied unless the subcommand is Stage 1 inspection without write redirection, or D3 shim/launcher execution.
+8. **Multi-repo payloads:** each path token is evaluated against its own repo, and the most restrictive verdict wins. Pathless decisions use the repo containing `Cwd`, or `workspacePaths[0]` if there is none.
+9. **Step 1 for unknown and MCP tools:** recursively scan every string argument value outside `EXCLUDED_CONTENT_KEYS` that is absolute, starts with `~` or `$HOME`, or contains `/`.
+10. **Ticket lifecycle (A.4 item 7):** applies in every ADLC repo, active-rail or not.
+11. **Doctor self-test:** writes its fixture shard with the bundled `@adlc/tickets` canonical writer (correct `<id>--<hash>.json`). It always writes `rails-guard-health.json` (`ok` = self-test result) and exits 1 when the self-test fails. Killswitch usage is reported as the all-time count of `AGB_HOOK_DISABLE is active` lines in `hooks.log` plus the last such line; log rotation is out of scope.
+12. **§4.2 tiers:** Tier 1 wins whenever `vendor/adlc/` exists, and tampering fails closed even in dev. Tiers 2–4 are reachable only when `vendor/adlc/` is absent, which tests arrange with a fixture plugin root.
+13. **D12 authentication inputs:** `vendor/adlc/package.json` declares the exact pinned `@adlc/cli` version, which is also `minVersion`. `scripts/update-adlc-digests.mjs` checks each bundled `@adlc/*` package's `package-lock.json` integrity against the registry, then records `binarySha256`, `vendoredBundleSha256` and `treeDigest` computed after a reproducible build.
+14. **Post-run integrity (§4.5.2 item 5) is owned by T2 (scheduler).** Before dispatch, take tree digests of the staged booster and adlc-antigravity plugins and a hash listing of each repo's and worktree's hooks dir (`git rev-parse --git-path hooks`). Compare them after each worker. A difference, or a `rails-guard` failure, marks the run compromised and blocks merging. A plugin that is not staged is skipped with a warning.
+15. **Shim install:** bootstrap writes `~/.local/bin/agb` (0755) if it is absent or already byte-identical. If it holds other content, bootstrap warns and skips unless `--force-reinstall` is given. Migrate snapshots the existing shim and then overwrites it.
+16. **Copy exclusions:** `safePluginInstall` applies the D13 exclusion list (`node_modules/`, `.worktrees/`, `.git/`) to its copy as well.
+17. **Packaging:** `package.json` `files` includes every non-JS asset from the P1 inventory (at least `docs/calibration/`). The P1 test asserts that `npm pack --dry-run` includes each one.
+18. **Symlink classification (A.4 item 22):** a link is booster- or adlc-owned if its resolved target lies under one of: the npm-global `antigravity-booster` package root; `skills/` of any directory whose `package.json` name is `antigravity-booster`; `node_modules/@adlc/antigravity`; `~/.gemini/config/plugins/{antigravity-booster,adlc-antigravity}`.
+19. **Resuming `ROLLED_BACK_PENDING_UNINSTALL`:** both `--rollback` and forward `migrate` acquire a fresh lock, mint a new token, and spawn the detached `--finish-uninstall` with that token. The spawn stays detached because the caller may be running from the directory being uninstalled.

@@ -1,0 +1,442 @@
+MCP cwd=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_ROOT=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_DATA=$HOME/.gemini/antigravity-cli/plugin_data/probe-hookenv argv=[$HOME/.gemini/config/plugins/probe-hookenv/bin/mcp-log.sh $HOME/.gemini/config/plugins/probe-hookenv/x]
+MCP cwd=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_ROOT=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_DATA=$HOME/.gemini/antigravity-cli/plugin_data/probe-hookenv argv=[$HOME/.gemini/config/plugins/probe-hookenv/bin/mcp-log.sh $HOME/.gemini/config/plugins/probe-hookenv/x]
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":2,"toolCall":{"args":{"CommandLine":"ls -la <work>/ws","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing workspace directory","toolSummary":"Workspace directory check"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":2,"toolCall":{"args":{"CommandLine":"ls -la <work>/ws","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing workspace directory","toolSummary":"Workspace directory check"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":4,"toolCall":{"args":{"CommandLine":"ls -la <work>","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing parent directory","toolSummary":"Check parent directory"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":4,"toolCall":{"args":{"CommandLine":"ls -la <work>","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing parent directory","toolSummary":"Check parent directory"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":6,"toolCall":{"args":{"CommandLine":"find <work> -maxdepth 3","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Finding files in probe directory","toolSummary":"Probe directory scan"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":6,"toolCall":{"args":{"CommandLine":"find <work> -maxdepth 3","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Finding files in probe directory","toolSummary":"Probe directory scan"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":8,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/commands/probe-env.md","toolAction":"Viewing probe-env.md command file","toolSummary":"View probe-env command file"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":8,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/commands/probe-env.md","toolAction":"Viewing probe-env.md command file","toolSummary":"View probe-env command file"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":8,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/commands/probe-env.md","toolAction":"Viewing probe-env.md command file","toolSummary":"View probe-env command file"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":10,"toolCall":{"args":{"AbsolutePath":"<work>/logs/cmd.log","toolAction":"Viewing cmd.log","toolSummary":"View cmd.log"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":10,"toolCall":{"args":{"AbsolutePath":"<work>/logs/cmd.log","toolAction":"Viewing cmd.log","toolSummary":"View cmd.log"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":10,"toolCall":{"args":{"AbsolutePath":"<work>/logs/cmd.log","toolAction":"Viewing cmd.log","toolSummary":"View cmd.log"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":12,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/plugin.json","toolAction":"Viewing plugin.json","toolSummary":"View plugin.json"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":12,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/plugin.json","toolAction":"Viewing plugin.json","toolSummary":"View plugin.json"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":12,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/plugin.json","toolAction":"Viewing plugin.json","toolSummary":"View plugin.json"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":14,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/hooks.json","toolAction":"Viewing hooks.json","toolSummary":"View hooks.json"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":14,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/hooks.json","toolAction":"Viewing hooks.json","toolSummary":"View hooks.json"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":14,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/hooks.json","toolAction":"Viewing hooks.json","toolSummary":"View hooks.json"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":16,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/bin/log.sh","toolAction":"Viewing log.sh","toolSummary":"View log.sh"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":16,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/bin/log.sh","toolAction":"Viewing log.sh","toolSummary":"View log.sh"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":16,"toolCall":{"args":{"AbsolutePath":"<work>/probe-hookenv/bin/log.sh","toolAction":"Viewing log.sh","toolSummary":"View log.sh"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":18,"toolCall":{"args":{"AbsolutePath":"$HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md","toolAction":"Viewing agy-customizations SKILL.md","toolSummary":"Read agy customizations skill"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":18,"toolCall":{"args":{"AbsolutePath":"$HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md","toolAction":"Viewing agy-customizations SKILL.md","toolSummary":"Read agy customizations skill"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":18,"toolCall":{"args":{"AbsolutePath":"$HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/SKILL.md","toolAction":"Viewing agy-customizations SKILL.md","toolSummary":"Read agy customizations skill"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":20,"toolCall":{"args":{"CommandLine":"ls -la $HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing customization docs","toolSummary":"Check customizations docs directory"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":20,"toolCall":{"args":{"CommandLine":"ls -la $HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing customization docs","toolSummary":"Check customizations docs directory"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":22,"toolCall":{"args":{"AbsolutePath":"$HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/plugins.md","toolAction":"Viewing plugins.md","toolSummary":"Read plugins.md"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":22,"toolCall":{"args":{"AbsolutePath":"$HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/plugins.md","toolAction":"Viewing plugins.md","toolSummary":"Read plugins.md"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":22,"toolCall":{"args":{"AbsolutePath":"$HOME/.gemini/antigravity-cli/builtin/skills/agy-customizations/docs/plugins.md","toolAction":"Viewing plugins.md","toolSummary":"Read plugins.md"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":24,"toolCall":{"args":{"CommandLine":"ps aux | grep probe","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Checking running probe processes","toolSummary":"Check processes"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":24,"toolCall":{"args":{"CommandLine":"ps aux | grep probe","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Checking running probe processes","toolSummary":"Check processes"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":26,"toolCall":{"args":{"AbsolutePath":"$HOME/Projects/voodootikigod/antigravity-booster/.adlc/specs/native-plugin-installation.evidence/probe-agy.sh","toolAction":"Viewing probe-agy.sh","toolSummary":"Read probe-agy.sh"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":26,"toolCall":{"args":{"AbsolutePath":"$HOME/Projects/voodootikigod/antigravity-booster/.adlc/specs/native-plugin-installation.evidence/probe-agy.sh","toolAction":"Viewing probe-agy.sh","toolSummary":"Read probe-agy.sh"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":26,"toolCall":{"args":{"AbsolutePath":"$HOME/Projects/voodootikigod/antigravity-booster/.adlc/specs/native-plugin-installation.evidence/probe-agy.sh","toolAction":"Viewing probe-agy.sh","toolSummary":"Read probe-agy.sh"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":28,"toolCall":{"args":{"CommandLine":"agy --help","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Checking agy help","toolSummary":"Check agy help"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":28,"toolCall":{"args":{"CommandLine":"agy --help","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Checking agy help","toolSummary":"Check agy help"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== viewfile-only
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":30,"toolCall":{"args":{"AbsolutePath":"$HOME/Projects/voodootikigod/antigravity-booster/.adlc/specs/native-plugin-installation.evidence/agy-1.2.16-linux/00-install.txt","toolAction":"Viewing 00-install.txt","toolSummary":"View 00-install.txt"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":30,"toolCall":{"args":{"AbsolutePath":"$HOME/Projects/voodootikigod/antigravity-booster/.adlc/specs/native-plugin-installation.evidence/agy-1.2.16-linux/00-install.txt","toolAction":"Viewing 00-install.txt","toolSummary":"View 00-install.txt"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":30,"toolCall":{"args":{"AbsolutePath":"$HOME/Projects/voodootikigod/antigravity-booster/.adlc/specs/native-plugin-installation.evidence/agy-1.2.16-linux/00-install.txt","toolAction":"Viewing 00-install.txt","toolSummary":"View 00-install.txt"},"name":"view_file"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":32,"toolCall":{"args":{"CommandLine":"find ~/.gemini -name \"*probe-hookenv*\"","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Finding probe-hookenv files in ~/.gemini","toolSummary":"Find probe-hookenv installation"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":32,"toolCall":{"args":{"CommandLine":"find ~/.gemini -name \"*probe-hookenv*\"","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Finding probe-hookenv files in ~/.gemini","toolSummary":"Find probe-hookenv installation"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":34,"toolCall":{"args":{"CommandLine":"find ~/.gemini/config/plugins/probe-hookenv","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing installed plugin files","toolSummary":"List installed plugin files"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":34,"toolCall":{"args":{"CommandLine":"find ~/.gemini/config/plugins/probe-hookenv","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Listing installed plugin files","toolSummary":"List installed plugin files"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":36,"toolCall":{"args":{"CommandLine":"find ~/.gemini -name \"*probe-env*\"","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching for probe-env in ~/.gemini","toolSummary":"Search for probe-env"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":36,"toolCall":{"args":{"CommandLine":"find ~/.gemini -name \"*probe-env*\"","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching for probe-env in ~/.gemini","toolSummary":"Search for probe-env"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":38,"toolCall":{"args":{"CommandLine":"which agy","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Finding agy binary path","toolSummary":"Find agy binary"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":38,"toolCall":{"args":{"CommandLine":"which agy","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Finding agy binary path","toolSummary":"Find agy binary"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":40,"toolCall":{"args":{"CommandLine":"file $HOME/.local/bin/agy","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Checking file type of agy","toolSummary":"Check agy file type"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":40,"toolCall":{"args":{"CommandLine":"file $HOME/.local/bin/agy","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Checking file type of agy","toolSummary":"Check agy file type"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":42,"toolCall":{"args":{"CommandLine":"strings $HOME/.local/bin/agy | grep -E \"converted to skills|commands\" | head -n 30","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching agy binary strings","toolSummary":"Search agy binary for commands"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":42,"toolCall":{"args":{"CommandLine":"strings $HOME/.local/bin/agy | grep -E \"converted to skills|commands\" | head -n 30","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching agy binary strings","toolSummary":"Search agy binary for commands"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":44,"toolCall":{"args":{"CommandLine":"strings $HOME/.local/bin/agy | grep \"converted to skills\" -B 2 -A 5","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching converted to skills in agy binary","toolSummary":"Find plugin install output string"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":44,"toolCall":{"args":{"CommandLine":"strings $HOME/.local/bin/agy | grep \"converted to skills\" -B 2 -A 5","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching converted to skills in agy binary","toolSummary":"Find plugin install output string"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":46,"toolCall":{"args":{"CommandLine":"grep -a -b -C 2 \"converted to skills\" $HOME/.local/bin/agy","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching exact string in agy","toolSummary":"Search binary offset"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":46,"toolCall":{"args":{"CommandLine":"grep -a -b -C 2 \"converted to skills\" $HOME/.local/bin/agy","Cwd":"<work>/ws","WaitMsBeforeAsync":5000,"toolAction":"Searching exact string in agy","toolSummary":"Search binary offset"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
