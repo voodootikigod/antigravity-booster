@@ -13,6 +13,7 @@ Welcome to the documentation for **antigravity-booster** (`agb`). This tool impl
 | 📖 **[Execution Example](execution-example.md)** | Step-by-step example showing how to decompose a spec into a plan.json DAG and run it with agb. |
 | 📊 **[Calibration Probes](calibration/probes-2026-06-11.md)** | Empirical measurements of latency, concurrency curves, and Seatbelt sandbox safety profiles. |
 | 🔍 **[Research & Platform Discovery](research/)** | Analysis of the Antigravity CLI and GUI limits, capabilities, and platform quirks. |
+| 🔌 **[Native Plugin Installation Spec](specs/native-plugin-installation.md)** | Full architecture and phased execution plan for transitioning from global npm to a native Antigravity plugin. |
 
 ---
 
