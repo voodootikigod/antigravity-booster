@@ -1,7 +1,7 @@
 // Path resolution and matching for the PreToolUse policy guard.
 import { existsSync, lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import { dirname, basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { minimatch } from 'minimatch';
+import { Minimatch } from 'minimatch';
 import { IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, TICKET_STORE_DIR } from './constants.mjs';
 
 const SHARD_NAME = /^[^/]+--[0-9a-f]{64}\.json$/;
@@ -29,6 +29,7 @@ function lstatOrNull(p) {
 }
 
 const MAX_SYMLINK_HOPS = 40;
+const MAX_PATH_COMPONENTS = 4096;
 
 /**
  * Resolve `input` (absolute, or relative to `base`) the way the kernel does:
@@ -40,29 +41,41 @@ const MAX_SYMLINK_HOPS = 40;
  */
 export function physicalResolve(input, base = '/') {
   const raw = input.startsWith('/') ? input : `${base}/${input}`;
-  let pending = raw.split('/');
+  const initial = raw.split('/');
+  if (initial.length > MAX_PATH_COMPONENTS) return null;
+  const stack = initial.reverse(); // pop() yields components in order, in O(1)
   let current = '/';
-  let exists = true;
+  // Depth of components appended below the first missing one. While > 0 there
+  // is nothing on disk to lstat; a later `..` that climbs back out resumes
+  // following symlinks (P5 round 4: `nope/../link/x`).
+  let missingDepth = 0;
   let hops = 0;
-  while (pending.length > 0) {
-    const comp = pending.shift();
+  let steps = 0;
+  while (stack.length > 0) {
+    steps += 1;
+    if (steps > MAX_PATH_COMPONENTS * 4) return null;
+    const comp = stack.pop();
     if (comp === '' || comp === '.') continue;
     if (comp === '..') {
       current = dirname(current);
+      if (missingDepth > 0) missingDepth -= 1;
       continue;
     }
     const next = current === '/' ? `/${comp}` : `${current}/${comp}`;
-    if (exists) {
+    if (missingDepth === 0) {
       const st = lstatOrNull(next);
       if (st?.isSymbolicLink()) {
         hops += 1;
         if (hops > MAX_SYMLINK_HOPS) return null;
         const target = readlinkSync(next);
         if (target.startsWith('/')) current = '/';
-        pending = [...target.split('/'), ...pending];
+        const parts = target.split('/');
+        for (let i = parts.length - 1; i >= 0; i -= 1) stack.push(parts[i]);
         continue;
       }
-      if (!st) exists = false;
+      if (!st) missingDepth = 1;
+    } else {
+      missingDepth += 1;
     }
     current = next;
   }
@@ -79,8 +92,10 @@ export function resolveCandidate(token, base, home) {
   const expanded = expandHome(token, home);
   const lexical = isAbsolute(expanded) ? resolve(expanded) : resolve(base ?? '/', expanded);
   // The physical path is resolved from the RAW token: collapsing `..` first
-  // (as resolve() does) would skip symlinks the kernel follows.
-  return { lexical, real: physicalResolve(expanded, base ?? '/') ?? lexical };
+  // (as resolve() does) would skip symlinks the kernel follows. A symlink loop
+  // or an absurd path cannot be resolved: callers deny `unresolved` targets.
+  const real = physicalResolve(expanded, base ?? '/');
+  return { lexical, real: real ?? lexical, unresolved: real === null };
 }
 
 function fold(p, platform) {
@@ -193,6 +208,13 @@ export function railStaticPrefix(rail) {
   return kept.join('/');
 }
 
+const MATCHERS = new Map();
+function matcher(pattern, nocase) {
+  const key = `${nocase ? 'i' : 's'}:${pattern}`;
+  if (!MATCHERS.has(key)) MATCHERS.set(key, new Minimatch(pattern, { dot: true, nocase }));
+  return MATCHERS.get(key);
+}
+
 /**
  * First declared rail matching `rel` in either direction (§4.5.1 Gate 1):
  * the path is inside the rail, matches its glob, or is a directory that
@@ -207,7 +229,7 @@ export function matchDeclaredRail(rel, rails, platform) {
     if (
       covers(rel, rail, platform) ||
       (prefix !== '' && (fold(rel, platform) === fold(prefix, platform) || isAncestor(rel, prefix, platform))) ||
-      minimatch(rel, rail, { dot: true, nocase })
+      matcher(rail, nocase).match(rel)
     ) {
       return rail;
     }
@@ -222,7 +244,7 @@ export function matchesScope(rel, scope, platform) {
     (entry) =>
       typeof entry === 'string' &&
       entry.length > 0 &&
-      (minimatch(rel, entry, { dot: true, nocase }) || covers(rel, entry.replace(/\/+$/, ''), platform)),
+      (matcher(entry, nocase).match(rel) || covers(rel, entry.replace(/\/+$/, ''), platform)),
   );
 }
 
@@ -239,5 +261,5 @@ export function isImplicitAncestorOnly(rel, platform) {
 }
 
 export function isRailAncestorOnly(rel, rail, platform) {
-  return !covers(rel, rail, platform) && !minimatch(rel, rail, { dot: true, nocase: platform === 'darwin' });
+  return !covers(rel, rail, platform) && !matcher(rail, platform === 'darwin').match(rel);
 }

@@ -330,14 +330,9 @@ var require_brace_expansion = __commonJS({
 });
 
 // hooks/policy/evaluate.mjs
-import { realpathSync as realpathSync2 } from "node:fs";
+import { lstatSync as lstatSync7, readdirSync as readdirSync6, realpathSync as realpathSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
-import { isAbsolute as isAbsolute5, resolve as resolve8 } from "node:path";
-
-// lib/active-rails.mjs
-import { existsSync as existsSync10, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { dirname as dirname8, join as join8, resolve as resolve5 } from "node:path";
+import { basename as basename5, isAbsolute as isAbsolute5, join as join11, resolve as resolve8 } from "node:path";
 
 // node_modules/@adlc/tickets/lib/pointer.mjs
 var MAX_POINTER_BYTES = 64 * 1024;
@@ -1900,6 +1895,9 @@ var MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketpl
 import { createInterface } from "node:readline/promises";
 
 // lib/active-rails.mjs
+import { existsSync as existsSync10, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname as dirname8, join as join8, resolve as resolve5 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
 function isActiveTicket(ticket) {
   if (!ticket || typeof ticket !== "object") return true;
@@ -3405,31 +3403,41 @@ function lstatOrNull(p) {
   }
 }
 var MAX_SYMLINK_HOPS = 40;
+var MAX_PATH_COMPONENTS = 4096;
 function physicalResolve(input, base = "/") {
   const raw = input.startsWith("/") ? input : `${base}/${input}`;
-  let pending = raw.split("/");
+  const initial = raw.split("/");
+  if (initial.length > MAX_PATH_COMPONENTS) return null;
+  const stack = initial.reverse();
   let current = "/";
-  let exists = true;
+  let missingDepth = 0;
   let hops = 0;
-  while (pending.length > 0) {
-    const comp = pending.shift();
+  let steps = 0;
+  while (stack.length > 0) {
+    steps += 1;
+    if (steps > MAX_PATH_COMPONENTS * 4) return null;
+    const comp = stack.pop();
     if (comp === "" || comp === ".") continue;
     if (comp === "..") {
       current = dirname9(current);
+      if (missingDepth > 0) missingDepth -= 1;
       continue;
     }
     const next = current === "/" ? `/${comp}` : `${current}/${comp}`;
-    if (exists) {
+    if (missingDepth === 0) {
       const st = lstatOrNull(next);
       if (st?.isSymbolicLink()) {
         hops += 1;
         if (hops > MAX_SYMLINK_HOPS) return null;
         const target = readlinkSync(next);
         if (target.startsWith("/")) current = "/";
-        pending = [...target.split("/"), ...pending];
+        const parts = target.split("/");
+        for (let i = parts.length - 1; i >= 0; i -= 1) stack.push(parts[i]);
         continue;
       }
-      if (!st) exists = false;
+      if (!st) missingDepth = 1;
+    } else {
+      missingDepth += 1;
     }
     current = next;
   }
@@ -3438,7 +3446,8 @@ function physicalResolve(input, base = "/") {
 function resolveCandidate(token, base, home) {
   const expanded = expandHome(token, home);
   const lexical = isAbsolute3(expanded) ? resolve6(expanded) : resolve6(base ?? "/", expanded);
-  return { lexical, real: physicalResolve(expanded, base ?? "/") ?? lexical };
+  const real = physicalResolve(expanded, base ?? "/");
+  return { lexical, real: real ?? lexical, unresolved: real === null };
 }
 function fold(p, platform) {
   return platform === "darwin" ? p.toLowerCase() : p;
@@ -3525,11 +3534,17 @@ function railStaticPrefix(rail) {
   }
   return kept.join("/");
 }
+var MATCHERS = /* @__PURE__ */ new Map();
+function matcher(pattern, nocase) {
+  const key = `${nocase ? "i" : "s"}:${pattern}`;
+  if (!MATCHERS.has(key)) MATCHERS.set(key, new Minimatch(pattern, { dot: true, nocase }));
+  return MATCHERS.get(key);
+}
 function matchDeclaredRail(rel, rails, platform) {
   const nocase = platform === "darwin";
   for (const rail of rails) {
     const prefix = railStaticPrefix(rail);
-    if (covers(rel, rail, platform) || prefix !== "" && (fold(rel, platform) === fold(prefix, platform) || isAncestor(rel, prefix, platform)) || minimatch(rel, rail, { dot: true, nocase })) {
+    if (covers(rel, rail, platform) || prefix !== "" && (fold(rel, platform) === fold(prefix, platform) || isAncestor(rel, prefix, platform)) || matcher(rail, nocase).match(rel)) {
       return rail;
     }
   }
@@ -3538,7 +3553,7 @@ function matchDeclaredRail(rel, rails, platform) {
 function matchesScope(rel, scope, platform) {
   const nocase = platform === "darwin";
   return scope.some(
-    (entry) => typeof entry === "string" && entry.length > 0 && (minimatch(rel, entry, { dot: true, nocase }) || covers(rel, entry.replace(/\/+$/, ""), platform))
+    (entry) => typeof entry === "string" && entry.length > 0 && (matcher(entry, nocase).match(rel) || covers(rel, entry.replace(/\/+$/, ""), platform))
   );
 }
 function isImplicitAncestorOnly(rel, platform) {
@@ -3546,7 +3561,7 @@ function isImplicitAncestorOnly(rel, platform) {
   return ![...IMPLICIT_RAIL_DIRS, ...IMPLICIT_RAIL_FILES, TICKET_STORE_DIR].some((t) => covers(rel, t, platform));
 }
 function isRailAncestorOnly(rel, rail, platform) {
-  return !covers(rel, rail, platform) && !minimatch(rel, rail, { dot: true, nocase: platform === "darwin" });
+  return !covers(rel, rail, platform) && !matcher(rail, platform === "darwin").match(rel);
 }
 
 // hooks/policy/shell.mjs
@@ -3979,6 +3994,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
   const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
+    if (r.unresolved && !stage1) return { verdict: deny("Shell target path cannot be resolved (symlink loop or oversized path)"), repos };
     if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
       return { verdict: deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden"), repos };
     }
@@ -4145,11 +4161,10 @@ var MAX_SCAN_DEPTH = 64;
 var MAX_SCAN_NODES = 2e4;
 function toPath(value) {
   if (!FILE_URL.test(value)) return value;
-  const path2 = value.replace(FILE_URL, "");
   try {
-    return decodeURIComponent(path2);
+    return decodeURIComponent(new URL(value).pathname);
   } catch {
-    return path2;
+    return value.replace(FILE_URL, "");
   }
 }
 function realOr(p) {
@@ -4230,6 +4245,35 @@ function resolveAll(token, ctx) {
   if (isAbsolute5(token) || hasHomePrefix(token)) return [resolveCandidate(token, "/", ctx.home)];
   return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
 }
+var MAX_SUBTREE_ENTRIES = 5e4;
+var SUBTREE_SKIP = /* @__PURE__ */ new Set(["node_modules", ".git"]);
+function subtreeHoldsAdlc(dir) {
+  const queue = [dir];
+  let seen = 0;
+  while (queue.length > 0) {
+    let entries;
+    try {
+      entries = readdirSync6(queue.shift(), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      seen += 1;
+      if (seen > MAX_SUBTREE_ENTRIES) return "unknown";
+      if (!entry.isDirectory()) continue;
+      if (entry.name === ".adlc") return true;
+      if (!SUBTREE_SKIP.has(entry.name)) queue.push(join11(entry.parentPath ?? entry.path, entry.name));
+    }
+  }
+  return false;
+}
+function isExistingDirectory(p) {
+  try {
+    return lstatSync7(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
 function containsProtected(r, ctx) {
   if (ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
     return deny("Target path contains platform configuration, plugins, or Node runtimes");
@@ -4240,9 +4284,29 @@ function containsProtected(r, ctx) {
       return deny("Target path contains an ADLC repository");
     }
   }
+  if (isExistingDirectory(r.real)) {
+    const holds = subtreeHoldsAdlc(r.real);
+    if (holds === true) return deny("Target directory contains an ADLC repository (.adlc/)");
+    if (holds === "unknown") return deny("Target directory is too large to verify that it holds no ADLC repository");
+  }
+  return null;
+}
+function newShardVerdict(rel, args) {
+  if (!rel.startsWith(`${TICKET_STORE_DIR}/`)) return null;
+  const content = [args?.CodeContent, args?.Content].find((c) => typeof c === "string");
+  let id;
+  try {
+    id = JSON.parse(content ?? "")?.id;
+  } catch {
+    id = void 0;
+  }
+  if (typeof id !== "string" || ticketFilename(id) !== basename5(rel)) {
+    return deny("A new ticket shard must be the canonical <id>--<sha256(id)>.json file for the ticket it contains");
+  }
   return null;
 }
 function gateOnePath(resolved, ctx, { rootIsTarget = true } = {}) {
+  if (resolved.unresolved) return { verdict: deny("Target path cannot be resolved (symlink loop or oversized path)"), repo: { adlc: false } };
   if (ctx.storeOverrides.some((store) => isWithin(resolved.real, store, ctx.platform) || isWithin(store, resolved.real, ctx.platform))) {
     return { verdict: deny("Target path is (or contains) the configured ADLC ticket store"), repo: { adlc: false } };
   }
@@ -4284,6 +4348,7 @@ function stepOne(name, args, ctx) {
   }
   for (const token of candidates) {
     for (const r of resolveAll(token, ctx)) {
+      if (r.unresolved && !isRead) return deny("Target path cannot be resolved (symlink loop or oversized path)");
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
         return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
       }
@@ -4319,7 +4384,8 @@ function evaluateFileTool(name, args, ctx) {
     return schemaViolationVerdict(name, args, reason, ctx);
   }
   if (ctx.readonly) return deny("Read-only agb worker session: file mutations are forbidden");
-  const workerHome = ctx.workerTicket ? ctx.repoAt(ctx.workspacePaths[0] ?? "/") : null;
+  const workerRepos = ctx.workerTicket ? ctx.anchors.map((a) => ctx.repoAt(a)).filter((r) => r.adlc) : [];
+  if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; mutations denied");
   const verdicts = [];
   for (const token of extracted.paths.map(toPath)) {
     const resolved = resolveAll(token, ctx);
@@ -4328,6 +4394,10 @@ function evaluateFileTool(name, args, ctx) {
       continue;
     }
     for (const r of resolved) {
+      if (r.unresolved) {
+        verdicts.push(deny(`Target path '${token}' cannot be resolved (symlink loop or oversized path)`));
+        continue;
+      }
       const contains = containsProtected(r, ctx);
       if (contains) {
         verdicts.push(contains);
@@ -4338,8 +4408,15 @@ function evaluateFileTool(name, args, ctx) {
         verdicts.push(verdict);
         continue;
       }
-      if (workerHome?.adlc) {
-        if (!repo.adlc || repo.root !== workerHome.root) {
+      if (repo.adlc && rel) {
+        const shard = newShardVerdict(rel, args);
+        if (shard) {
+          verdicts.push(shard);
+          continue;
+        }
+      }
+      if (workerRepos.length > 0) {
+        if (!repo.adlc || !workerRepos.some((w) => w.root === repo.root)) {
           verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
         } else {
           verdicts.push(workerScopeVerdict(repo, rel, ctx));
@@ -4365,6 +4442,7 @@ function evaluateMcpTool(name, args, ctx) {
     return PASS;
   }
   if (ctx.readonly) return deny("Third-party MCP tool call cannot prompt operator in a read-only agb worker session");
+  if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; tool call denied");
   const repos = ctx.anchors.map((a) => ctx.repoAt(a));
   if (ctx.workerTicket && repos.some((r) => r.adlc)) return deny("Third-party MCP tool call cannot prompt operator in headless worker mode");
   if (repos.some((r) => r.adlc && r.activeRail)) {
@@ -4374,6 +4452,7 @@ function evaluateMcpTool(name, args, ctx) {
 }
 function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny("Unknown tool in a read-only agb worker session");
+  if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; tool call denied");
   const scan = scanPathLike(args);
   if (scan.overflow) return OVERFLOW;
   for (const token of scan.paths) {
@@ -4390,7 +4469,7 @@ function evaluateUnknownTool(args, ctx) {
 }
 function buildContext(payload, options = {}) {
   const env = options.env ?? process.env;
-  const home = options.home ?? homedir2();
+  const home = resolve8(options.home ?? homedir2());
   const realHome = realOr(home);
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : []).filter((p) => typeof p === "string" && isAbsolute5(p)).map((p) => resolve8(p));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;

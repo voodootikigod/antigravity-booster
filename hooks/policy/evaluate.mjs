@@ -6,13 +6,14 @@
 // File and MCP tools are the EXACT layer (owner decision 2026-10-05): every
 // path they name is resolved physically and judged against rails, the ADLC
 // trust root and the platform's protected roots, failing closed.
-import { realpathSync } from 'node:fs';
+import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
+import { ticketFilename } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
   BOOSTER_MCP_SERVER, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
-  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TOOL_PATH_SCHEMAS,
+  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS,
 } from './constants.mjs';
 import {
   boosterDataRoots, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
@@ -27,14 +28,16 @@ const FILE_URL = /^file:(\/\/(localhost)?)?(?=\/)/i;
 const MAX_SCAN_DEPTH = 64;
 const MAX_SCAN_NODES = 20000;
 
-/** Tools may name targets as file: URLs; policy always evaluates the decoded path. */
+/**
+ * Tools may name targets as file: URLs; policy always evaluates the URL's
+ * decoded pathname, dropping any query or fragment (P5 round 4 M4).
+ */
 function toPath(value) {
   if (!FILE_URL.test(value)) return value;
-  const path = value.replace(FILE_URL, '');
   try {
-    return decodeURIComponent(path);
+    return decodeURIComponent(new URL(value).pathname);
   } catch {
-    return path;
+    return value.replace(FILE_URL, '');
   }
 }
 
@@ -141,7 +144,43 @@ function resolveAll(token, ctx) {
   return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
 }
 
-/** A directory operation on a path that CONTAINS a workspace repo or protected root (P5 round 3 H1). */
+const MAX_SUBTREE_ENTRIES = 50000;
+const SUBTREE_SKIP = new Set(['node_modules', '.git']);
+
+/**
+ * Does an existing directory hold any `.adlc/` below it? Bounded BFS that
+ * never follows symlinks; exhausting the budget answers "unknown" (P5 r4 H2).
+ */
+function subtreeHoldsAdlc(dir) {
+  const queue = [dir];
+  let seen = 0;
+  while (queue.length > 0) {
+    let entries;
+    try {
+      entries = readdirSync(queue.shift(), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      seen += 1;
+      if (seen > MAX_SUBTREE_ENTRIES) return 'unknown';
+      if (!entry.isDirectory()) continue;
+      if (entry.name === '.adlc') return true;
+      if (!SUBTREE_SKIP.has(entry.name)) queue.push(join(entry.parentPath ?? entry.path, entry.name));
+    }
+  }
+  return false;
+}
+
+function isExistingDirectory(p) {
+  try {
+    return lstatSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** A directory operation on a path that CONTAINS an ADLC repo or a protected root (P5 rounds 3–4). */
 function containsProtected(r, ctx) {
   if (ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
     return deny('Target path contains platform configuration, plugins, or Node runtimes');
@@ -152,11 +191,37 @@ function containsProtected(r, ctx) {
       return deny('Target path contains an ADLC repository');
     }
   }
+  if (isExistingDirectory(r.real)) {
+    const holds = subtreeHoldsAdlc(r.real);
+    if (holds === true) return deny('Target directory contains an ADLC repository (.adlc/)');
+    if (holds === 'unknown') return deny('Target directory is too large to verify that it holds no ADLC repository');
+  }
+  return null;
+}
+
+/**
+ * A new ticket shard must be the canonical file for the ticket it contains:
+ * `ticketFilename(content.id)`. Anything else would make the store unloadable
+ * and freeze every later tool call (P5 round 4 L6).
+ */
+function newShardVerdict(rel, args) {
+  if (!rel.startsWith(`${TICKET_STORE_DIR}/`)) return null;
+  const content = [args?.CodeContent, args?.Content].find((c) => typeof c === 'string');
+  let id;
+  try {
+    id = JSON.parse(content ?? '')?.id;
+  } catch {
+    id = undefined;
+  }
+  if (typeof id !== 'string' || ticketFilename(id) !== basename(rel)) {
+    return deny('A new ticket shard must be the canonical <id>--<sha256(id)>.json file for the ticket it contains');
+  }
   return null;
 }
 
 /** Gate 1 for one resolved path: store overrides, implicit rails, shards, declared rails. */
 function gateOnePath(resolved, ctx, { rootIsTarget = true } = {}) {
+  if (resolved.unresolved) return { verdict: deny('Target path cannot be resolved (symlink loop or oversized path)'), repo: { adlc: false } };
   if (ctx.storeOverrides.some((store) => isWithin(resolved.real, store, ctx.platform) || isWithin(store, resolved.real, ctx.platform))) {
     return { verdict: deny('Target path is (or contains) the configured ADLC ticket store'), repo: { adlc: false } };
   }
@@ -201,6 +266,7 @@ function stepOne(name, args, ctx) {
   }
   for (const token of candidates) {
     for (const r of resolveAll(token, ctx)) {
+      if (r.unresolved && !isRead) return deny('Target path cannot be resolved (symlink loop or oversized path)');
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
         return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
       }
@@ -245,7 +311,9 @@ function evaluateFileTool(name, args, ctx) {
     return schemaViolationVerdict(name, args, reason, ctx);
   }
   if (ctx.readonly) return deny('Read-only agb worker session: file mutations are forbidden');
-  const workerHome = ctx.workerTicket ? ctx.repoAt(ctx.workspacePaths[0] ?? '/') : null;
+  // A worker's repositories come from every anchor; a worker with none fails closed (P5 round 4 M3).
+  const workerRepos = ctx.workerTicket ? ctx.anchors.map((a) => ctx.repoAt(a)).filter((r) => r.adlc) : [];
+  if (ctx.workerTicket && ctx.anchors.length === 0) return deny('Headless worker has no workspace; mutations denied');
   const verdicts = [];
   for (const token of extracted.paths.map(toPath)) {
     const resolved = resolveAll(token, ctx);
@@ -254,6 +322,10 @@ function evaluateFileTool(name, args, ctx) {
       continue;
     }
     for (const r of resolved) {
+      if (r.unresolved) {
+        verdicts.push(deny(`Target path '${token}' cannot be resolved (symlink loop or oversized path)`));
+        continue;
+      }
       const contains = containsProtected(r, ctx);
       if (contains) {
         verdicts.push(contains);
@@ -264,9 +336,16 @@ function evaluateFileTool(name, args, ctx) {
         verdicts.push(verdict);
         continue;
       }
-      if (workerHome?.adlc) {
+      if (repo.adlc && rel) {
+        const shard = newShardVerdict(rel, args);
+        if (shard) {
+          verdicts.push(shard);
+          continue;
+        }
+      }
+      if (workerRepos.length > 0) {
         // A worker inside an ADLC repo may only write inside that repo's ticket scope (P5 round 3 W2).
-        if (!repo.adlc || repo.root !== workerHome.root) {
+        if (!repo.adlc || !workerRepos.some((w) => w.root === repo.root)) {
           verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
         } else {
           verdicts.push(workerScopeVerdict(repo, rel, ctx));
@@ -294,6 +373,7 @@ function evaluateMcpTool(name, args, ctx) {
     return PASS;
   }
   if (ctx.readonly) return deny('Third-party MCP tool call cannot prompt operator in a read-only agb worker session');
+  if (ctx.workerTicket && ctx.anchors.length === 0) return deny('Headless worker has no workspace; tool call denied');
   const repos = ctx.anchors.map((a) => ctx.repoAt(a));
   if (ctx.workerTicket && repos.some((r) => r.adlc)) return deny('Third-party MCP tool call cannot prompt operator in headless worker mode');
   if (repos.some((r) => r.adlc && r.activeRail)) {
@@ -306,6 +386,7 @@ function evaluateMcpTool(name, args, ctx) {
 
 function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny('Unknown tool in a read-only agb worker session');
+  if (ctx.workerTicket && ctx.anchors.length === 0) return deny('Headless worker has no workspace; tool call denied');
   // Trust-root and rail gating applies to unknown tools in every repo (P5 round 3 M6).
   const scan = scanPathLike(args);
   if (scan.overflow) return OVERFLOW;
@@ -324,7 +405,7 @@ function evaluateUnknownTool(args, ctx) {
 
 export function buildContext(payload, options = {}) {
   const env = options.env ?? process.env;
-  const home = options.home ?? homedir();
+  const home = resolve(options.home ?? homedir()); // a relative HOME would disable protection (P5 r4 L8)
   const realHome = realOr(home);
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : [])
     .filter((p) => typeof p === 'string' && isAbsolute(p))

@@ -310,6 +310,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
   const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
+    if (r.unresolved && !stage1) return { verdict: deny('Shell target path cannot be resolved (symlink loop or oversized path)'), repos };
     if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
       return { verdict: deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden'), repos };
     }

@@ -165,7 +165,8 @@ test('Gate 1: existing ticket shards are immutable; creating a new shard is perm
   assert.equal(run('write_to_file', { TargetFile: existing }, fx.active).decision, 'deny');
   assert.equal(run('delete_file', { TargetFile: existing }, fx.active).decision, 'deny');
   assert.equal(run('delete_directory', { directoryPath: join(fx.active, '.adlc/tickets') }, fx.active).decision, 'deny');
-  assert.equal(run('write_to_file', { TargetFile: join(fx.active, '.adlc/tickets', ticketFilename('T5')) }, fx.active).decision, 'pass');
+  assert.equal(run('write_to_file', { TargetFile: join(fx.active, '.adlc/tickets', ticketFilename('T5')), CodeContent: JSON.stringify({ id: 'T5', title: 't', body: 'b', scope: [], rails: [], edges: [] }) }, fx.active).decision, 'pass');
+  assert.equal(run('write_to_file', { TargetFile: join(fx.active, '.adlc/tickets', ticketFilename('T5')), CodeContent: JSON.stringify({ id: 'T6', title: 't', body: 'b', scope: [], rails: [], edges: [] }) }, fx.active).decision, 'deny', 'content id must match the filename');
 });
 
 test('Gate 1: non-ADLC repos and inactive repos pass ordinary edits', () => {

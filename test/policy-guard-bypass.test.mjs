@@ -354,7 +354,7 @@ test('R3 H4: the legacy tickets.json and an overridden store path are trust root
   assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets.json') }, I), 'deny');
   assert.equal(run('delete_file', { TargetFile: join(I, '.adlc', 'tickets.json') }, I), 'deny');
   assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', 'foo') }, I), 'deny', 'non-shard file would brick the store');
-  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', ticketFilename('T5')) }, I), 'pass');
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', ticketFilename('T5')), CodeContent: JSON.stringify({ id: 'T5', title: 't', body: 'b', scope: [], rails: [], edges: [] }) }, I), 'pass');
   const store = join(base, 'elsewhere', 'tickets');
   assert.equal(runIn('write_to_file', { TargetFile: join(store, 'x.json') }, P, { env: { ADLC_TICKET_STORE: store } }), 'deny');
 });
@@ -417,4 +417,63 @@ test('R3 usability: wc and git blame / log --follow are inspection', () => {
   assert.equal(sh('wc -l lib/gates.mjs', A), 'pass');
   assert.equal(sh('git blame lib/lock.mjs', A), 'pass');
   assert.equal(sh('git log --follow lib/lock.mjs', A), 'pass');
+});
+
+// ======================= P5 round 4 =======================
+test('R4 H1: symlinks after a missing component and .. are still followed; loops deny', async () => {
+  const { symlinkSync } = await import('node:fs');
+  symlinkSync('lib', join(A, 'lnk'));
+  symlinkSync('loop', join(A, 'loop'));
+  symlinkSync('.adlc', join(I, 'ad'));
+  assert.equal(run('write_to_file', { TargetFile: `${A}/nope/../lnk/gates.mjs` }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: 'nope/../lnk/gates.mjs' }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: `${A}/loop/../lnk/gates.mjs` }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: `${A}/loop/x` }, A), 'deny', 'an unresolvable loop fails closed');
+  assert.equal(run('write_to_file', { TargetFile: `${I}/nope/../ad/config.json` }, I), 'deny');
+  const up = '../'.repeat(A.split('/').length);
+  assert.equal(run('write_to_file', { TargetFile: `${A}/nope/${up}proc/self/root${home}/.gemini/settings.json` }, P), 'deny');
+});
+
+test('R4 H2: deleting or moving a directory that holds any ADLC root (e.g. .worktrees/) is denied', () => {
+  const O = repo('outer-wt', { rails: { list: ['lib/lock.mjs'] } });
+  const wt = join(O, '.worktrees', 'x');
+  mkdirSync(join(wt, '.adlc'), { recursive: true });
+  writeFileSync(join(wt, '.git'), 'gitdir: ../../.git/worktrees/x\n');
+  assert.equal(run('delete_directory', { directoryPath: join(O, '.worktrees') }, O), 'deny');
+  const projects = join(base, 'projects');
+  mkdirSync(join(projects, 'adlc2', '.adlc'), { recursive: true });
+  assert.equal(run('delete_directory', { directoryPath: projects }, P), 'deny');
+  assert.equal(run('move', { source: projects, destination: '/tmp/x' }, P), 'deny');
+  mkdirSync(join(P, 'build', 'out'), { recursive: true });
+  assert.equal(run('delete_directory', { directoryPath: join(P, 'build') }, P), 'pass', 'ordinary directories still delete');
+});
+
+test('R4 M3: a worker with no usable ADLC workspace cannot mutate', () => {
+  const W = { AGB_WORKER_TICKET: 'T1' };
+  assert.equal(runIn('write_to_file', { TargetFile: join(A, 'lib', 'other.mjs') }, [], { env: W }), 'deny');
+  assert.equal(runIn('write_to_file', { TargetFile: join(A, 'lib', 'other.mjs') }, ['/other', A], { env: W }), 'deny', 'out of scope via any anchor');
+  assert.equal(runIn('mcp__fs__write', { x: 1 }, [], { env: W }), 'deny');
+});
+
+test('R4 M4: file: URLs are parsed as URLs (query and fragment dropped)', () => {
+  assert.equal(run('write_to_file', { TargetFile: `file://${join(A, 'lib', 'gates.mjs')}?x` }, A), 'deny');
+  assert.equal(run('mcp__fs__write_file', { path: `file://${join(I, '.adlc', 'config.json')}?x=1` }, I), 'deny');
+  assert.equal(run('mcp__fs__write_file', { path: `file://${join(I, '.adlc', 'config.json')}#x` }, I), 'deny');
+});
+
+test('R4 L6: only shards whose hash matches their id may be created', () => {
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', `zzz--${'a'.repeat(64)}.json`) }, I), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', ticketFilename('T7')), CodeContent: JSON.stringify({ id: 'T7', title: 't', body: 'b', scope: [], rails: [], edges: [] }) }, I), 'pass');
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', ticketFilename('T7')) }, I), 'deny', 'no content: cannot verify');
+});
+
+test('R4 L7: hostile path sizes are bounded', () => {
+  const t0 = Date.now();
+  assert.equal(run('write_to_file', { TargetFile: `${A}/${'x/'.repeat(100000)}y` }, A), 'deny');
+  assert.ok(Date.now() - t0 < 2000, 'a 100k-component path is rejected quickly');
+});
+
+test('R4 L8: a relative HOME is made absolute', () => {
+  const v = evaluatePayload({ toolCall: { name: 'write_to_file', args: { TargetFile: join(process.cwd(), 'home', '.gemini', 'settings.json') } }, workspacePaths: [P] }, { env: {}, home: 'home', platform: 'linux' });
+  assert.equal(v.decision, 'deny');
 });
