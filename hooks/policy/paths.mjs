@@ -4,6 +4,7 @@ import { dirname, basename, isAbsolute, join, relative, resolve, sep } from 'nod
 import { minimatch } from 'minimatch';
 import { IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, TICKET_STORE_DIR } from './constants.mjs';
 
+const SHARD_NAME = /^[^/]+--[0-9a-f]{64}\.json$/;
 const HOME_PREFIX = /^(~[A-Za-z0-9._-]*|\$HOME|\$\{HOME\})(?=\/|$)/;
 
 /**
@@ -30,47 +31,56 @@ function lstatOrNull(p) {
 const MAX_SYMLINK_HOPS = 40;
 
 /**
- * Canonicalise a path that may not exist yet (spec §4.5.1 resolveSafeTarget):
- * find the deepest ancestor that exists *as a directory entry* (lstat, so a
- * dangling symlink counts), follow it if it is a symlink — relative to the
- * link's own directory — and repeat; then realpath the existing ancestor and
- * re-append the missing segments. A dangling link therefore resolves to the
- * file it would create (P5 round 2). A symlink loop returns the lexical path.
+ * Resolve `input` (absolute, or relative to `base`) the way the kernel does:
+ * component by component, following every symlink — including dangling ones
+ * and links inside directories reached through other links — relative to the
+ * PHYSICAL directory that holds them, and applying `..` to the physical path
+ * (spec §4.5.1 resolveSafeTarget; P5 rounds 2 and 3). Components past the
+ * first missing one are appended literally. A symlink loop yields null.
  */
-export function resolveSafeTarget(absPath) {
-  let curr = resolve(absPath);
-  for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop += 1) {
-    let probe = curr;
-    const missing = [];
-    let st = lstatOrNull(probe);
-    while (!st) {
-      const parent = dirname(probe);
-      if (parent === probe) break;
-      missing.unshift(basename(probe));
-      probe = parent;
-      st = lstatOrNull(probe);
-    }
-    if (st?.isSymbolicLink()) {
-      const target = resolve(dirname(probe), readlinkSync(probe));
-      curr = missing.length > 0 ? join(target, ...missing) : target;
+export function physicalResolve(input, base = '/') {
+  const raw = input.startsWith('/') ? input : `${base}/${input}`;
+  let pending = raw.split('/');
+  let current = '/';
+  let exists = true;
+  let hops = 0;
+  while (pending.length > 0) {
+    const comp = pending.shift();
+    if (comp === '' || comp === '.') continue;
+    if (comp === '..') {
+      current = dirname(current);
       continue;
     }
-    let real = probe;
-    try {
-      real = realpathSync(probe);
-    } catch {
-      // Unreadable ancestor: fall back to the lexical path.
+    const next = current === '/' ? `/${comp}` : `${current}/${comp}`;
+    if (exists) {
+      const st = lstatOrNull(next);
+      if (st?.isSymbolicLink()) {
+        hops += 1;
+        if (hops > MAX_SYMLINK_HOPS) return null;
+        const target = readlinkSync(next);
+        if (target.startsWith('/')) current = '/';
+        pending = [...target.split('/'), ...pending];
+        continue;
+      }
+      if (!st) exists = false;
     }
-    return missing.length > 0 ? join(real, ...missing) : real;
+    current = next;
   }
-  return resolve(absPath);
+  return current;
+}
+
+/** Physical path for policy matching; a symlink loop falls back to the lexical path. */
+export function resolveSafeTarget(absPath) {
+  return physicalResolve(absPath) ?? resolve(absPath);
 }
 
 /** Resolve a candidate token against `base`, returning both lexical and real forms. */
 export function resolveCandidate(token, base, home) {
   const expanded = expandHome(token, home);
   const lexical = isAbsolute(expanded) ? resolve(expanded) : resolve(base ?? '/', expanded);
-  return { lexical, real: resolveSafeTarget(lexical) };
+  // The physical path is resolved from the RAW token: collapsing `..` first
+  // (as resolve() does) would skip symlinks the kernel follows.
+  return { lexical, real: physicalResolve(expanded, base ?? '/') ?? lexical };
 }
 
 function fold(p, platform) {
@@ -161,9 +171,12 @@ export function matchImplicitRail(rel, repoRoot, platform) {
     return `${TICKET_STORE_DIR}/`;
   }
   if (covers(rel, TICKET_STORE_DIR, platform)) {
-    // A path inside the store: only creating a NEW shard file is permitted (P0).
+    // A path inside the store: only creating a NEW, canonically named shard
+    // (<id>--<sha256>.json) is permitted (P0). Any other file would make the
+    // store unloadable and freeze every tool call (P5 round 3).
     if (existsSync(join(repoRoot, rel))) return 'existing ticket shard';
-    if (rel.slice(TICKET_STORE_DIR.length + 1).includes('/')) return `${TICKET_STORE_DIR}/`;
+    const name = rel.slice(TICKET_STORE_DIR.length + 1);
+    if (name.includes('/') || !SHARD_NAME.test(name)) return `${TICKET_STORE_DIR}/`;
   }
   return null;
 }

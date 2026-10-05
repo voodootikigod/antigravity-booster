@@ -22,9 +22,11 @@ import { ask, deny, PASS, mostRestrictive } from './verdict.mjs';
 const GIT_READ_FLAGS = {
   status: [/^-s$/, /^--short$/, /^-b$/, /^--branch$/, /^--porcelain(=v[12])?$/, /^--ignored$/, /^-u(normal|all|no)?$/, /^--untracked-files(=.*)?$/],
   diff: [/^--staged$/, /^--cached$/, /^--stat$/, /^--name-only$/, /^--name-status$/, /^--color$/, /^--no-color$/, /^-p$/, /^-u$/, /^--$/],
-  log: [/^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
+  log: [/^--follow$/, /^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
   show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/],
+  blame: [/^-L.+$/, /^-w$/, /^-M$/, /^-C$/, /^-e$/, /^--porcelain$/, /^--$/],
 };
+const TEST_FLAG_OK = /^(--test-(name-pattern|skip-pattern|concurrency|timeout)=.+|--test-only|--test-force-exit|--experimental-test-coverage)$/;
 const GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o.*)$/;
 const LIFECYCLE_VERBS = new Set(['complete', 'archive', 'update', 'edit', 'discard', 'restore', 'store']);
 const DIR_CHANGE = new Set(['cd', 'pushd', 'popd']);
@@ -38,22 +40,33 @@ const GLOB_CHARS = /[*?[{]/;
 
 // ---------- argv shape ----------
 
-/** Strip prefix words (`builtin cd`, `if cd`, `env FOO=1 git`) to the real command (P5 round 2). */
-function effectiveArgv(argv) {
+/**
+ * Strip prefix words (`builtin cd`, `if cd`, `env FOO=1 git`) to the real
+ * command (P5 round 2). Assignments made through `env` are returned so they
+ * count exactly like leading `FOO=1` assignments: `env GIT_EXTERNAL_DIFF=…
+ * git diff` runs arbitrary code and is never Stage 1 (P5 round 3 W1).
+ */
+function unwrap(argv) {
   let i = 0;
+  const assignments = [];
   while (i < argv.length) {
     const word = argv[i];
     if (PREFIX_WORDS.has(word)) {
       i += 1;
     } else if (word === 'env') {
       i += 1;
-      while (i < argv.length && (argv[i].startsWith('-') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) i += 1;
+      while (i < argv.length && (argv[i].startsWith('-') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) {
+        assignments.push(argv[i]); // VAR=value, and env -i / -u / -S, all change the environment
+        i += 1;
+      }
     } else {
       break;
     }
   }
-  return argv.slice(i);
+  return { argv: argv.slice(i), assignments };
 }
+
+const effectiveArgv = (argv) => unwrap(argv).argv;
 
 /** git subcommand past global options (`git -c x=y clean`, `git -C . reset`; P5 round 2). */
 function gitSubcommand(argv) {
@@ -169,7 +182,9 @@ function isTestCommand(sub) {
   const [cmd, a1, a2] = sub.argv;
   if (cmd === 'npm' && a1 === 'test') return sub.argv.length === 2 || a2 === '--';
   if (cmd === 'npm' && a1 === 'run' && sub.argv.length === 3) return a2 === 'test' || /^test:[\w.:-]+$/.test(a2);
-  return cmd === 'node' && a1 === '--test';
+  if (cmd !== 'node' || a1 !== '--test') return false;
+  // Only flags that cannot write files (e.g. not --test-reporter-destination; P5 round 3 W2).
+  return sub.argv.slice(2).every((t) => !t.startsWith('-') || TEST_FLAG_OK.test(t));
 }
 
 /** A pathspec that resolves to a whole repository (`.`, `./`, `docs/..`, `:/` magic). */
@@ -269,7 +284,7 @@ function globTargetVerdict(token, cwd, ctx) {
   if (token.length > MAX_PATTERN_LENGTH) return deny('Over-long glob pattern in a shell command cannot be verified');
   const absPattern = resolve(cwd, expandHome(token, ctx.home));
   const staticDir = dirname(absPattern.slice(0, absPattern.search(GLOB_CHARS) + 1));
-  const roots = protectedRoots(ctx.home);
+  const roots = ctx.protectedRoots;
   if (roots.some((root) => isWithin(staticDir, root, ctx.platform) || (staticDir !== '/' && isWithin(root, staticDir, ctx.platform)))) {
     return deny('Glob in a shell command reaches platform configuration, plugins, or Node runtimes');
   }
@@ -285,7 +300,7 @@ function globTargetVerdict(token, cwd, ctx) {
 }
 
 function writesIntoProtectedParent(r, ctx) {
-  return protectedRoots(ctx.home).some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
+  return ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
 }
 
 function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
@@ -295,10 +310,10 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
   const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
-    if (matchRoot(r, boosterDataRoots(ctx.home), ctx.platform)) {
+    if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
       return { verdict: deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden'), repos };
     }
-    if ((writeTargets.has(token) || !(stage1 || shim)) && matchRoot(r, protectedRoots(ctx.home), ctx.platform)) {
+    if ((writeTargets.has(token) || !(stage1 || shim)) && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
       return { verdict: deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden'), repos };
     }
     // Writing into a directory that CONTAINS a protected root (`cp -r x ~/.local/`, `tar -C ~`).
@@ -375,7 +390,8 @@ function inlineScript(argv) {
 }
 
 function classifySubcommand(rawSub, cwd, ctx, depth) {
-  const sub = { ...rawSub, argv: effectiveArgv(rawSub.argv) };
+  const unwrapped = unwrap(rawSub.argv);
+  const sub = { ...rawSub, argv: unwrapped.argv, assignments: [...rawSub.assignments, ...unwrapped.assignments] };
   const argv = sub.argv;
   if (argv.length === 0) return PASS;
   const cwdRepo = ctx.repoAt(cwd);

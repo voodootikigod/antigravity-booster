@@ -64,11 +64,11 @@ export const EXCLUDED_CONTENT_KEYS = new Set([
 // Appendix A D1: standing implicit rails (trust-root set), repo-relative.
 // Directory entries freeze everything beneath them.
 export const IMPLICIT_RAIL_DIRS = ['.git', '.adlc/ticket-archive', '.adlc/ticket-transactions', '.adlc/leases'];
-export const IMPLICIT_RAIL_FILES = ['.adlc/config.json', '.adlc/manifest.jsonl', '.adlc/sessions.json'];
+export const IMPLICIT_RAIL_FILES = ['.adlc/config.json', '.adlc/manifest.jsonl', '.adlc/sessions.json', '.adlc/tickets.json'];
 export const TICKET_STORE_DIR = '.adlc/tickets';
 
 // Appendix A.6 item 5: verbs for which `.`/`..`/repo-root tokens are destructive.
 export const DESTRUCTIVE_ROOT_VERBS = new Set(['rm', 'mv']);
 
 // Shell Stage 1: pure readers (argv[0] exactly, no write redirection).
-export const PURE_READERS = new Set(['cat', 'head', 'tail', 'grep', 'ls']);
+export const PURE_READERS = new Set(['cat', 'head', 'tail', 'grep', 'ls', 'wc']);

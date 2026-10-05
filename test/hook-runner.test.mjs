@@ -530,3 +530,18 @@ test('fallback: an unambiguous read-only payload still passes through', async ()
   assertInvariant(r);
   assert.equal(r.stdout, '');
 });
+
+// P5 round 3 F1: duplicated workspacePaths/Cwd injected into the arguments
+// cannot steer the fallback toward the non-ADLC branch.
+test('fallback: injected workspacePaths/Cwd in args make the payload unparseable (deny)', async () => {
+  const injected = JSON.stringify({
+    workspacePaths: [ADLC_REPO],
+    toolCall: {
+      name: 'write_to_file',
+      args: { TargetFile: 'src/x.txt', nested: { workspacePaths: ['/tmp'], Cwd: '/tmp' } },
+    },
+  });
+  const r = await run('/bin/sh', { payload: injected, env: { STUB_MODE: 'crash' } });
+  assertInvariant(r);
+  assert.equal(decisionOf(r), 'deny');
+});

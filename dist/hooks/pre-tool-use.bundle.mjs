@@ -1913,28 +1913,18 @@ function isDirectory(path2) {
     return false;
   }
 }
-function walkUp(start, predicate) {
-  let curr = resolve5(start);
-  for (; ; ) {
-    if (predicate(curr)) return curr;
-    const parent = dirname8(curr);
-    if (parent === curr) return null;
-    curr = parent;
-  }
-}
-function findGitTop(targetPath) {
-  return walkUp(targetPath, (dir) => existsSync10(join8(dir, ".git")));
-}
 function findAdlcRoot(targetPath, { home = homedir() } = {}) {
-  const gitTop = findGitTop(targetPath);
-  if (gitTop && isDirectory(join8(gitTop, ".adlc"))) return gitTop;
   const homeDir = resolve5(home);
   let outermost = null;
   let curr = resolve5(targetPath);
   for (; ; ) {
-    if (curr !== homeDir && curr !== "/" && isDirectory(join8(curr, ".adlc"))) outermost = curr;
+    const hasAdlc = curr !== homeDir && curr !== "/" && isDirectory(join8(curr, ".adlc"));
+    if (hasAdlc) {
+      if (existsSync10(join8(curr, ".git"))) return curr;
+      outermost = curr;
+    }
     const parent = dirname8(curr);
-    if (curr === gitTop || parent === curr) return outermost;
+    if (parent === curr) return outermost;
     curr = parent;
   }
 }
@@ -2060,9 +2050,9 @@ var EXCLUDED_CONTENT_KEYS = /* @__PURE__ */ new Set([
   "WaitMsBeforeAsync"
 ]);
 var IMPLICIT_RAIL_DIRS = [".git", ".adlc/ticket-archive", ".adlc/ticket-transactions", ".adlc/leases"];
-var IMPLICIT_RAIL_FILES = [".adlc/config.json", ".adlc/manifest.jsonl", ".adlc/sessions.json"];
+var IMPLICIT_RAIL_FILES = [".adlc/config.json", ".adlc/manifest.jsonl", ".adlc/sessions.json", ".adlc/tickets.json"];
 var TICKET_STORE_DIR = ".adlc/tickets";
-var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls"]);
+var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls", "wc"]);
 
 // hooks/policy/paths.mjs
 import { existsSync as existsSync11, lstatSync as lstatSync6, readlinkSync, realpathSync } from "node:fs";
@@ -3399,6 +3389,7 @@ minimatch.escape = escape;
 minimatch.unescape = unescape;
 
 // hooks/policy/paths.mjs
+var SHARD_NAME = /^[^/]+--[0-9a-f]{64}\.json$/;
 var HOME_PREFIX = /^(~[A-Za-z0-9._-]*|\$HOME|\$\{HOME\})(?=\/|$)/;
 function expandHome(token, home) {
   return token.replace(HOME_PREFIX, (m) => m.startsWith("~") && m.length > 1 ? join9(dirname9(home), m.slice(1)) : home);
@@ -3414,37 +3405,40 @@ function lstatOrNull(p) {
   }
 }
 var MAX_SYMLINK_HOPS = 40;
-function resolveSafeTarget(absPath) {
-  let curr = resolve6(absPath);
-  for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop += 1) {
-    let probe = curr;
-    const missing = [];
-    let st = lstatOrNull(probe);
-    while (!st) {
-      const parent = dirname9(probe);
-      if (parent === probe) break;
-      missing.unshift(basename3(probe));
-      probe = parent;
-      st = lstatOrNull(probe);
-    }
-    if (st?.isSymbolicLink()) {
-      const target = resolve6(dirname9(probe), readlinkSync(probe));
-      curr = missing.length > 0 ? join9(target, ...missing) : target;
+function physicalResolve(input, base = "/") {
+  const raw = input.startsWith("/") ? input : `${base}/${input}`;
+  let pending = raw.split("/");
+  let current = "/";
+  let exists = true;
+  let hops = 0;
+  while (pending.length > 0) {
+    const comp = pending.shift();
+    if (comp === "" || comp === ".") continue;
+    if (comp === "..") {
+      current = dirname9(current);
       continue;
     }
-    let real = probe;
-    try {
-      real = realpathSync(probe);
-    } catch {
+    const next = current === "/" ? `/${comp}` : `${current}/${comp}`;
+    if (exists) {
+      const st = lstatOrNull(next);
+      if (st?.isSymbolicLink()) {
+        hops += 1;
+        if (hops > MAX_SYMLINK_HOPS) return null;
+        const target = readlinkSync(next);
+        if (target.startsWith("/")) current = "/";
+        pending = [...target.split("/"), ...pending];
+        continue;
+      }
+      if (!st) exists = false;
     }
-    return missing.length > 0 ? join9(real, ...missing) : real;
+    current = next;
   }
-  return resolve6(absPath);
+  return current;
 }
 function resolveCandidate(token, base, home) {
   const expanded = expandHome(token, home);
   const lexical = isAbsolute3(expanded) ? resolve6(expanded) : resolve6(base ?? "/", expanded);
-  return { lexical, real: resolveSafeTarget(lexical) };
+  return { lexical, real: physicalResolve(expanded, base ?? "/") ?? lexical };
 }
 function fold(p, platform) {
   return platform === "darwin" ? p.toLowerCase() : p;
@@ -3517,7 +3511,8 @@ function matchImplicitRail(rel, repoRoot, platform) {
   }
   if (covers(rel, TICKET_STORE_DIR, platform)) {
     if (existsSync11(join9(repoRoot, rel))) return "existing ticket shard";
-    if (rel.slice(TICKET_STORE_DIR.length + 1).includes("/")) return `${TICKET_STORE_DIR}/`;
+    const name = rel.slice(TICKET_STORE_DIR.length + 1);
+    if (name.includes("/") || !SHARD_NAME.test(name)) return `${TICKET_STORE_DIR}/`;
   }
   return null;
 }
@@ -3764,9 +3759,11 @@ function mostRestrictive(verdicts) {
 var GIT_READ_FLAGS = {
   status: [/^-s$/, /^--short$/, /^-b$/, /^--branch$/, /^--porcelain(=v[12])?$/, /^--ignored$/, /^-u(normal|all|no)?$/, /^--untracked-files(=.*)?$/],
   diff: [/^--staged$/, /^--cached$/, /^--stat$/, /^--name-only$/, /^--name-status$/, /^--color$/, /^--no-color$/, /^-p$/, /^-u$/, /^--$/],
-  log: [/^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
-  show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/]
+  log: [/^--follow$/, /^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
+  show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/],
+  blame: [/^-L.+$/, /^-w$/, /^-M$/, /^-C$/, /^-e$/, /^--porcelain$/, /^--$/]
 };
+var TEST_FLAG_OK = /^(--test-(name-pattern|skip-pattern|concurrency|timeout)=.+|--test-only|--test-force-exit|--experimental-test-coverage)$/;
 var GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o.*)$/;
 var LIFECYCLE_VERBS = /* @__PURE__ */ new Set(["complete", "archive", "update", "edit", "discard", "restore", "store"]);
 var DIR_CHANGE = /* @__PURE__ */ new Set(["cd", "pushd", "popd"]);
@@ -3776,21 +3773,26 @@ var MAX_NESTING = 3;
 var MAX_PATTERN_LENGTH2 = 1024;
 var PREFIX_WORDS = /* @__PURE__ */ new Set(["builtin", "command", "exec", "time", "nohup", "nice", "!", "if", "then", "else", "elif", "do", "while", "until", "{", "sudo", "doas"]);
 var GLOB_CHARS2 = /[*?[{]/;
-function effectiveArgv(argv) {
+function unwrap(argv) {
   let i = 0;
+  const assignments = [];
   while (i < argv.length) {
     const word = argv[i];
     if (PREFIX_WORDS.has(word)) {
       i += 1;
     } else if (word === "env") {
       i += 1;
-      while (i < argv.length && (argv[i].startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) i += 1;
+      while (i < argv.length && (argv[i].startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) {
+        assignments.push(argv[i]);
+        i += 1;
+      }
     } else {
       break;
     }
   }
-  return argv.slice(i);
+  return { argv: argv.slice(i), assignments };
 }
+var effectiveArgv = (argv) => unwrap(argv).argv;
 function gitSubcommand(argv) {
   if (argv[0] !== "git") return null;
   let i = 1;
@@ -3877,7 +3879,8 @@ function isTestCommand(sub) {
   const [cmd, a1, a2] = sub.argv;
   if (cmd === "npm" && a1 === "test") return sub.argv.length === 2 || a2 === "--";
   if (cmd === "npm" && a1 === "run" && sub.argv.length === 3) return a2 === "test" || /^test:[\w.:-]+$/.test(a2);
-  return cmd === "node" && a1 === "--test";
+  if (cmd !== "node" || a1 !== "--test") return false;
+  return sub.argv.slice(2).every((t) => !t.startsWith("-") || TEST_FLAG_OK.test(t));
 }
 function isRootPathspec(token, cwd, ctx) {
   if (token.startsWith(":")) return true;
@@ -3952,7 +3955,7 @@ function globTargetVerdict(token, cwd, ctx) {
   if (token.length > MAX_PATTERN_LENGTH2) return deny("Over-long glob pattern in a shell command cannot be verified");
   const absPattern = resolve7(cwd, expandHome(token, ctx.home));
   const staticDir = dirname10(absPattern.slice(0, absPattern.search(GLOB_CHARS2) + 1));
-  const roots = protectedRoots(ctx.home);
+  const roots = ctx.protectedRoots;
   if (roots.some((root) => isWithin(staticDir, root, ctx.platform) || staticDir !== "/" && isWithin(root, staticDir, ctx.platform))) {
     return deny("Glob in a shell command reaches platform configuration, plugins, or Node runtimes");
   }
@@ -3967,7 +3970,7 @@ function globTargetVerdict(token, cwd, ctx) {
   return rail ? deny(`Glob in a shell command can match frozen rail: ${rail}`) : null;
 }
 function writesIntoProtectedParent(r, ctx) {
-  return protectedRoots(ctx.home).some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
+  return ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
 }
 function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
   const writeTargets = new Set(sub.redirects.filter((r) => r.op.includes(">")).map((r) => r.target));
@@ -3976,10 +3979,10 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
   const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
-    if (matchRoot(r, boosterDataRoots(ctx.home), ctx.platform)) {
+    if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
       return { verdict: deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden"), repos };
     }
-    if ((writeTargets.has(token) || !(stage1 || shim)) && matchRoot(r, protectedRoots(ctx.home), ctx.platform)) {
+    if ((writeTargets.has(token) || !(stage1 || shim)) && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
       return { verdict: deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden"), repos };
     }
     if ((destructive || writeTargets.has(token)) && writesIntoProtectedParent(r, ctx)) {
@@ -4041,7 +4044,8 @@ function inlineScript(argv) {
   return flag > 0 && typeof argv[flag + 1] === "string" ? argv[flag + 1] : null;
 }
 function classifySubcommand(rawSub, cwd, ctx, depth) {
-  const sub = { ...rawSub, argv: effectiveArgv(rawSub.argv) };
+  const unwrapped = unwrap(rawSub.argv);
+  const sub = { ...rawSub, argv: unwrapped.argv, assignments: [...rawSub.assignments, ...unwrapped.assignments] };
   const argv = sub.argv;
   if (argv.length === 0) return PASS;
   const cwdRepo = ctx.repoAt(cwd);
@@ -4136,8 +4140,18 @@ function classifyRunCommand(args, ctx) {
 
 // hooks/policy/evaluate.mjs
 var UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
-var FILE_URL = /^file:\/\//;
-var toPath = (value) => value.replace(FILE_URL, "");
+var FILE_URL = /^file:(\/\/(localhost)?)?(?=\/)/i;
+var MAX_SCAN_DEPTH = 64;
+var MAX_SCAN_NODES = 2e4;
+function toPath(value) {
+  if (!FILE_URL.test(value)) return value;
+  const path2 = value.replace(FILE_URL, "");
+  try {
+    return decodeURIComponent(path2);
+  } catch {
+    return path2;
+  }
+}
 function realOr(p) {
   try {
     return realpathSync2(p);
@@ -4145,11 +4159,12 @@ function realOr(p) {
     return p;
   }
 }
-function makeRepoCache() {
+var unique = (xs) => [...new Set(xs)];
+function makeRepoCache(home) {
   const byRoot = /* @__PURE__ */ new Map();
   return {
     repoAt(absPath) {
-      const root = findAdlcRoot(absPath);
+      const root = findAdlcRoot(absPath, { home });
       if (!root) return { adlc: false };
       if (!byRoot.has(root)) {
         const store = unionActiveRails(root);
@@ -4183,33 +4198,65 @@ function extractProbedPaths(toolName, args) {
   }
   return { paths };
 }
-function scanPathLike(value, out = [], key = null) {
-  if (key !== null && EXCLUDED_CONTENT_KEYS.has(key)) return out;
-  if (typeof value === "string") {
-    if (isAbsolute5(value) || hasHomePrefix(value) || value.includes("/")) out.push(value);
-  } else if (Array.isArray(value)) {
-    for (const v of value) scanPathLike(v, out, null);
-  } else if (value && typeof value === "object") {
-    for (const [k, v] of Object.entries(value)) scanPathLike(v, out, k);
+var looksLikePath = (s) => isAbsolute5(s) || hasHomePrefix(s) || s.includes("/") || s.startsWith(".") || FILE_URL.test(s);
+function scanPathLike(value, { skipContentKeys = false } = {}) {
+  const paths = [];
+  const stack = [{ value, depth: 0 }];
+  let nodes = 0;
+  while (stack.length > 0) {
+    const { value: v, depth } = stack.pop();
+    nodes += 1;
+    if (depth > MAX_SCAN_DEPTH || nodes > MAX_SCAN_NODES) return { paths, overflow: true };
+    if (typeof v === "string") {
+      if (looksLikePath(v)) paths.push(toPath(v));
+    } else if (Array.isArray(v)) {
+      for (const item of v) stack.push({ value: item, depth: depth + 1 });
+    } else if (v && typeof v === "object") {
+      for (const [k, item] of Object.entries(v)) {
+        if (skipContentKeys && EXCLUDED_CONTENT_KEYS.has(k)) continue;
+        if (looksLikePath(k)) paths.push(toPath(k));
+        stack.push({ value: item, depth: depth + 1 });
+      }
+    }
   }
-  return out;
+  return { paths, overflow: false };
 }
+var OVERFLOW = deny("Tool arguments are nested too deeply or are too large to verify");
 function readToolPaths(name, args) {
   const keys = READ_TOOL_PATH_SCHEMAS[name] ?? [];
   return keys.map((k) => args?.[k]).filter((v) => typeof v === "string" && v.length > 0).map(toPath);
 }
+function resolveAll(token, ctx) {
+  if (isAbsolute5(token) || hasHomePrefix(token)) return [resolveCandidate(token, "/", ctx.home)];
+  return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
+}
+function containsProtected(r, ctx) {
+  if (ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
+    return deny("Target path contains platform configuration, plugins, or Node runtimes");
+  }
+  for (const w of ctx.workspacePaths) {
+    const repo = ctx.repoAt(w);
+    if (repo.adlc && repo.root !== r.real && isWithin(repo.root, r.real, ctx.platform)) {
+      return deny("Target path contains an ADLC repository");
+    }
+  }
+  return null;
+}
 function gateOnePath(resolved, ctx, { rootIsTarget = true } = {}) {
+  if (ctx.storeOverrides.some((store) => isWithin(resolved.real, store, ctx.platform) || isWithin(store, resolved.real, ctx.platform))) {
+    return { verdict: deny("Target path is (or contains) the configured ADLC ticket store"), repo: { adlc: false } };
+  }
   const repo = ctx.repoAt(resolved.real);
   if (!repo.adlc) return { verdict: PASS, repo };
   if (!repo.store.ok) return { verdict: deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified"), repo };
   const rel = repoRelative(resolved.real, repo.root);
   if (rel === null) return { verdict: deny("Target path sits outside repository root"), repo };
-  const implicit = rel === "" && !rootIsTarget ? null : matchImplicitRail(rel, repo.root, ctx.platform);
+  if (rel === "") {
+    return rootIsTarget ? { verdict: deny("Target path is an ADLC repository root, which holds frozen trust-root state"), repo, rel } : { verdict: PASS, repo, rel };
+  }
+  const implicit = matchImplicitRail(rel, repo.root, ctx.platform);
   if (implicit) return { verdict: deny(`Target path matches standing ADLC implicit rail: ${implicit}`), repo, rel };
   if (repo.activeRail) {
-    if (rel === "") {
-      return rootIsTarget ? { verdict: deny("Target path is repository root, which contains active frozen rails"), repo, rel } : { verdict: PASS, repo, rel };
-    }
     const rail = matchDeclaredRail(rel, repo.store.rails, ctx.platform);
     if (rail) return { verdict: deny(`Target path matches frozen rail: ${rail}`), repo, rel };
   }
@@ -4225,32 +4272,43 @@ function workerScopeVerdict(repo, rel, ctx) {
   return PASS;
 }
 function stepOne(name, args, ctx) {
-  const anchor = ctx.anchor;
+  if (name === "run_command") return PASS;
+  const isRead = READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]);
   let candidates;
-  if (READ_ONLY_TOOLS.has(name) || READ_TOOL_PATH_SCHEMAS[name]) candidates = readToolPaths(name, args);
-  else if (TOOL_PATH_SCHEMAS[name]) {
-    candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === "string").map(toPath);
-  } else if (name === "run_command") return PASS;
-  else candidates = scanPathLike(args);
+  if (isRead) candidates = readToolPaths(name, args);
+  else if (TOOL_PATH_SCHEMAS[name]) candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === "string").map(toPath);
+  else {
+    const scan = scanPathLike(args);
+    if (scan.overflow) return OVERFLOW;
+    candidates = scan.paths;
+  }
   for (const token of candidates) {
-    const r = resolveCandidate(token, anchor, ctx.home);
-    if (matchRoot(r, boosterDataRoots(ctx.home), ctx.platform)) {
-      return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
-    }
-    if (!READ_ONLY_TOOLS.has(name) && !READ_TOOL_PATH_SCHEMAS[name] && matchRoot(r, protectedRoots(ctx.home), ctx.platform)) {
-      return deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden");
+    for (const r of resolveAll(token, ctx)) {
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+      }
+      if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
+        return deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden");
+      }
     }
   }
   return PASS;
 }
 function schemaViolationVerdict(name, args, reason, ctx) {
   if (ctx.readonly) return deny(reason);
-  const required = (TOOL_PATH_SCHEMAS[name]?.required ?? []).map((k) => args?.[k]).filter((v) => typeof v === "string" && v.length > 0);
-  const anchorRepo = ctx.repoAt(ctx.anchor ?? "/");
-  if (anchorRepo.adlc && (anchorRepo.activeRail || ctx.workerTicket)) return deny(reason);
-  for (const token of [...required, ...scanPathLike(args)].map(toPath)) {
-    const r = resolveCandidate(token, ctx.anchor, ctx.home);
-    if (matchRoot(r, protectedRoots(ctx.home), ctx.platform) || ctx.repoAt(r.real).adlc) return deny(reason);
+  const required = (TOOL_PATH_SCHEMAS[name]?.required ?? []).map((k) => args?.[k]).filter((v) => typeof v === "string" && v.length > 0).map(toPath);
+  const scan = scanPathLike(args, { skipContentKeys: true });
+  if (scan.overflow) return OVERFLOW;
+  if (ctx.anchors.some((a) => {
+    const repo = ctx.repoAt(a);
+    return repo.adlc && (repo.activeRail || ctx.workerTicket);
+  })) return deny(reason);
+  for (const token of [...required, ...scan.paths]) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) return deny(reason);
+    for (const r of resolved) {
+      if (matchRoot(r, ctx.protectedRoots, ctx.platform) || ctx.repoAt(r.real).adlc) return deny(reason);
+    }
   }
   return PASS;
 }
@@ -4261,23 +4319,45 @@ function evaluateFileTool(name, args, ctx) {
     return schemaViolationVerdict(name, args, reason, ctx);
   }
   if (ctx.readonly) return deny("Read-only agb worker session: file mutations are forbidden");
+  const workerHome = ctx.workerTicket ? ctx.repoAt(ctx.workspacePaths[0] ?? "/") : null;
   const verdicts = [];
   for (const token of extracted.paths.map(toPath)) {
-    const r = resolveCandidate(token, ctx.anchor, ctx.home);
-    const { verdict, repo, rel } = gateOnePath(r, ctx);
-    if (verdict.decision !== "pass") {
-      verdicts.push(verdict);
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) {
+      verdicts.push(deny(`Relative target '${token}' has no workspace to anchor it`));
       continue;
     }
-    if (ctx.workerTicket && repo.adlc) verdicts.push(workerScopeVerdict(repo, rel, ctx));
+    for (const r of resolved) {
+      const contains = containsProtected(r, ctx);
+      if (contains) {
+        verdicts.push(contains);
+        continue;
+      }
+      const { verdict, repo, rel } = gateOnePath(r, ctx);
+      if (verdict.decision !== "pass") {
+        verdicts.push(verdict);
+        continue;
+      }
+      if (workerHome?.adlc) {
+        if (!repo.adlc || repo.root !== workerHome.root) {
+          verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
+        } else {
+          verdicts.push(workerScopeVerdict(repo, rel, ctx));
+        }
+      }
+    }
   }
   return mostRestrictive(verdicts);
 }
 function evaluateMcpTool(name, args, ctx) {
+  const scan = scanPathLike(args);
+  if (scan.overflow) return OVERFLOW;
   const verdicts = [];
-  for (const token of scanPathLike(args)) {
-    const { verdict } = gateOnePath(resolveCandidate(token, ctx.anchor, ctx.home), ctx, { rootIsTarget: false });
-    if (verdict.decision === "deny") verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${verdict.reason})`));
+  for (const token of scan.paths) {
+    for (const r of resolveAll(token, ctx)) {
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision === "deny") verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${verdict.reason})`));
+    }
   }
   if (verdicts.length) return mostRestrictive(verdicts);
   if (isBoosterMcpTool(name, args)) {
@@ -4285,17 +4365,25 @@ function evaluateMcpTool(name, args, ctx) {
     return PASS;
   }
   if (ctx.readonly) return deny("Third-party MCP tool call cannot prompt operator in a read-only agb worker session");
-  const repo = ctx.repoAt(ctx.anchor ?? "/");
-  if (ctx.workerTicket && repo.adlc) return deny("Third-party MCP tool call cannot prompt operator in headless worker mode");
-  if (repo.adlc && repo.activeRail) {
+  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  if (ctx.workerTicket && repos.some((r) => r.adlc)) return deny("Third-party MCP tool call cannot prompt operator in headless worker mode");
+  if (repos.some((r) => r.adlc && r.activeRail)) {
     return ctx.headless ? deny("Third-party MCP tool call cannot prompt operator in headless worker mode") : ask("Third-party MCP tool call in an active-rail ADLC repository requires operator confirmation");
   }
   return PASS;
 }
-function evaluateUnknownTool(ctx) {
+function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny("Unknown tool in a read-only agb worker session");
-  const repo = ctx.repoAt(ctx.anchor ?? "/");
-  if (repo.adlc && (repo.activeRail || ctx.workerTicket)) {
+  const scan = scanPathLike(args);
+  if (scan.overflow) return OVERFLOW;
+  for (const token of scan.paths) {
+    for (const r of resolveAll(token, ctx)) {
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision === "deny") return verdict;
+    }
+  }
+  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  if (repos.some((r) => r.adlc && (r.activeRail || ctx.workerTicket))) {
     return deny("Unknown tool in ADLC repository with active frozen rails; cannot verify safety");
   }
   return PASS;
@@ -4303,14 +4391,16 @@ function evaluateUnknownTool(ctx) {
 function buildContext(payload, options = {}) {
   const env = options.env ?? process.env;
   const home = options.home ?? homedir2();
+  const realHome = realOr(home);
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : []).filter((p) => typeof p === "string" && isAbsolute5(p)).map((p) => resolve8(p));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;
   const cwd = typeof args?.Cwd === "string" && isAbsolute5(args.Cwd) ? resolve8(args.Cwd) : null;
+  const homes = unique([home, realHome]);
   return {
     home,
-    realHome: realOr(home),
+    realHome,
     platform: options.platform ?? process.platform,
     workspacePaths,
     workerTicket,
@@ -4318,7 +4408,12 @@ function buildContext(payload, options = {}) {
     cdpath: Boolean(env.CDPATH),
     headless: Boolean(workerTicket) || readonly,
     anchor: cwd ?? workspacePaths[0] ?? null,
-    ...makeRepoCache()
+    anchors: unique([...cwd ? [cwd] : [], ...workspacePaths]),
+    // Roots for both the lexical and the physical home (P5 round 3 M4).
+    protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
+    boosterDataRoots: unique(homes.flatMap((h) => boosterDataRoots(h))),
+    storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === "string" && p.length > 0).map((p) => realOr(resolve8(p))),
+    ...makeRepoCache(home)
   };
 }
 function evaluatePayload(payload, options = {}) {
@@ -4332,7 +4427,7 @@ function evaluatePayload(payload, options = {}) {
   if (name === "run_command") return classifyRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
   if (name === "call_mcp_tool" || name.startsWith("mcp__")) return evaluateMcpTool(name, args, ctx);
-  return evaluateUnknownTool(ctx);
+  return evaluateUnknownTool(args, ctx);
 }
 
 // hooks/pre-tool-use.mjs

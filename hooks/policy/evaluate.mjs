@@ -2,6 +2,10 @@
 //
 // evaluatePayload(payload, options) -> { decision: 'deny'|'ask'|'pass', reason? }
 // Pure apart from filesystem reads of the target repos' ticket stores.
+//
+// File and MCP tools are the EXACT layer (owner decision 2026-10-05): every
+// path they name is resolved physically and judged against rails, the ADLC
+// trust root and the platform's protected roots, failing closed.
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
@@ -11,17 +15,28 @@ import {
   PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TOOL_PATH_SCHEMAS,
 } from './constants.mjs';
 import {
-  boosterDataRoots, hasHomePrefix, matchDeclaredRail, matchImplicitRail, matchRoot,
+  boosterDataRoots, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
   matchesScope, protectedRoots, repoRelative, resolveCandidate,
 } from './paths.mjs';
 import { classifyRunCommand } from './shell.mjs';
 import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
 
 const UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
-const FILE_URL = /^file:\/\//;
+// file:/abs, file:///abs, file://localhost/abs — any case (P5 rounds 1 and 3).
+const FILE_URL = /^file:(\/\/(localhost)?)?(?=\/)/i;
+const MAX_SCAN_DEPTH = 64;
+const MAX_SCAN_NODES = 20000;
 
-/** Tools may name targets as file:// URLs; policy always evaluates the path (P5 prosecution M3). */
-const toPath = (value) => value.replace(FILE_URL, '');
+/** Tools may name targets as file: URLs; policy always evaluates the decoded path. */
+function toPath(value) {
+  if (!FILE_URL.test(value)) return value;
+  const path = value.replace(FILE_URL, '');
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
+}
 
 function realOr(p) {
   try {
@@ -31,12 +46,14 @@ function realOr(p) {
   }
 }
 
+const unique = (xs) => [...new Set(xs)];
+
 /** Repo lookups are cached per evaluation: the ticket store is read at most once per repo. */
-function makeRepoCache() {
+function makeRepoCache(home) {
   const byRoot = new Map();
   return {
     repoAt(absPath) {
-      const root = findAdlcRoot(absPath);
+      const root = findAdlcRoot(absPath, { home });
       if (!root) return { adlc: false };
       if (!byRoot.has(root)) {
         const store = unionActiveRails(root);
@@ -75,37 +92,86 @@ export function extractProbedPaths(toolName, args) {
   return { paths };
 }
 
-/** A.6 item 9: recursive scan of string args that look like paths (unknown and MCP tools). */
-function scanPathLike(value, out = [], key = null) {
-  if (key !== null && EXCLUDED_CONTENT_KEYS.has(key)) return out;
-  if (typeof value === 'string') {
-    if (isAbsolute(value) || hasHomePrefix(value) || value.includes('/')) out.push(value);
-  } else if (Array.isArray(value)) {
-    for (const v of value) scanPathLike(v, out, null);
-  } else if (value && typeof value === 'object') {
-    for (const [k, v] of Object.entries(value)) scanPathLike(v, out, k);
+const looksLikePath = (s) => isAbsolute(s) || hasHomePrefix(s) || s.includes('/') || s.startsWith('.') || FILE_URL.test(s);
+
+/**
+ * A.6 item 9: every string (and object key) that looks like a path, anywhere
+ * in the arguments, iteratively and with depth/size limits so hostile nesting
+ * cannot crash the evaluator (P5 round 3 F1). `skipContentKeys` drops the
+ * free-text keys of file tools; MCP and unknown tools get no such exemption.
+ */
+function scanPathLike(value, { skipContentKeys = false } = {}) {
+  const paths = [];
+  const stack = [{ value, depth: 0 }];
+  let nodes = 0;
+  while (stack.length > 0) {
+    const { value: v, depth } = stack.pop();
+    nodes += 1;
+    if (depth > MAX_SCAN_DEPTH || nodes > MAX_SCAN_NODES) return { paths, overflow: true };
+    if (typeof v === 'string') {
+      if (looksLikePath(v)) paths.push(toPath(v));
+    } else if (Array.isArray(v)) {
+      for (const item of v) stack.push({ value: item, depth: depth + 1 });
+    } else if (v && typeof v === 'object') {
+      for (const [k, item] of Object.entries(v)) {
+        if (skipContentKeys && EXCLUDED_CONTENT_KEYS.has(k)) continue;
+        if (looksLikePath(k)) paths.push(toPath(k));
+        stack.push({ value: item, depth: depth + 1 });
+      }
+    }
   }
-  return out;
+  return { paths, overflow: false };
 }
+
+const OVERFLOW = deny('Tool arguments are nested too deeply or are too large to verify');
 
 function readToolPaths(name, args) {
   const keys = READ_TOOL_PATH_SCHEMAS[name] ?? [];
   return keys.map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
 }
 
-/** Gate 1 for one resolved path inside the repo cache: implicit rails, shards, declared rails. */
+/**
+ * Every physical path a token can denote. Absolute and home-relative tokens
+ * have one; a relative token is resolved against EVERY anchor (Cwd and each
+ * workspace path), because the caller chooses the anchor (P5 round 3 M5).
+ * No anchor at all yields [] — callers fail closed.
+ */
+function resolveAll(token, ctx) {
+  if (isAbsolute(token) || hasHomePrefix(token)) return [resolveCandidate(token, '/', ctx.home)];
+  return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
+}
+
+/** A directory operation on a path that CONTAINS a workspace repo or protected root (P5 round 3 H1). */
+function containsProtected(r, ctx) {
+  if (ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
+    return deny('Target path contains platform configuration, plugins, or Node runtimes');
+  }
+  for (const w of ctx.workspacePaths) {
+    const repo = ctx.repoAt(w);
+    if (repo.adlc && repo.root !== r.real && isWithin(repo.root, r.real, ctx.platform)) {
+      return deny('Target path contains an ADLC repository');
+    }
+  }
+  return null;
+}
+
+/** Gate 1 for one resolved path: store overrides, implicit rails, shards, declared rails. */
 function gateOnePath(resolved, ctx, { rootIsTarget = true } = {}) {
+  if (ctx.storeOverrides.some((store) => isWithin(resolved.real, store, ctx.platform) || isWithin(store, resolved.real, ctx.platform))) {
+    return { verdict: deny('Target path is (or contains) the configured ADLC ticket store'), repo: { adlc: false } };
+  }
   const repo = ctx.repoAt(resolved.real);
   if (!repo.adlc) return { verdict: PASS, repo };
   if (!repo.store.ok) return { verdict: deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified'), repo };
   const rel = repoRelative(resolved.real, repo.root);
   if (rel === null) return { verdict: deny('Target path sits outside repository root'), repo };
-  const implicit = rel === '' && !rootIsTarget ? null : matchImplicitRail(rel, repo.root, ctx.platform);
+  if (rel === '') {
+    // The repository root itself holds the trust root: a mutation there is never routine.
+    return rootIsTarget ? { verdict: deny('Target path is an ADLC repository root, which holds frozen trust-root state'), repo, rel } : { verdict: PASS, repo, rel };
+  }
+  const implicit = matchImplicitRail(rel, repo.root, ctx.platform);
   if (implicit) return { verdict: deny(`Target path matches standing ADLC implicit rail: ${implicit}`), repo, rel };
   if (repo.activeRail) {
-    if (rel === '') {
-      return rootIsTarget ? { verdict: deny('Target path is repository root, which contains active frozen rails'), repo, rel } : { verdict: PASS, repo, rel };
-    }
     const rail = matchDeclaredRail(rel, repo.store.rails, ctx.platform);
     if (rail) return { verdict: deny(`Target path matches frozen rail: ${rail}`), repo, rel };
   }
@@ -123,21 +189,24 @@ function workerScopeVerdict(repo, rel, ctx) {
 }
 
 function stepOne(name, args, ctx) {
-  const anchor = ctx.anchor;
+  if (name === 'run_command') return PASS; // shell tokens are checked by the classifier
+  const isRead = READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]);
   let candidates;
-  if (READ_ONLY_TOOLS.has(name) || READ_TOOL_PATH_SCHEMAS[name]) candidates = readToolPaths(name, args);
-  else if (TOOL_PATH_SCHEMAS[name]) {
-    candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === 'string').map(toPath);
-  } else if (name === 'run_command') return PASS; // shell tokens are checked by the classifier
-  else candidates = scanPathLike(args);
-
+  if (isRead) candidates = readToolPaths(name, args);
+  else if (TOOL_PATH_SCHEMAS[name]) candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === 'string').map(toPath);
+  else {
+    const scan = scanPathLike(args);
+    if (scan.overflow) return OVERFLOW;
+    candidates = scan.paths;
+  }
   for (const token of candidates) {
-    const r = resolveCandidate(token, anchor, ctx.home);
-    if (matchRoot(r, boosterDataRoots(ctx.home), ctx.platform)) {
-      return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
-    }
-    if (!READ_ONLY_TOOLS.has(name) && !READ_TOOL_PATH_SCHEMAS[name] && matchRoot(r, protectedRoots(ctx.home), ctx.platform)) {
-      return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
+    for (const r of resolveAll(token, ctx)) {
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
+        return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
+      }
     }
   }
   return PASS;
@@ -145,17 +214,24 @@ function stepOne(name, args, ctx) {
 
 /**
  * A schema-violating call is judged by every path it could touch, not by the
- * caller-controllable anchor (P5 prosecution H3, Appendix A.6 item 8): deny
- * when any candidate lands in an ADLC repository or a protected root.
+ * caller-controllable anchor (P5 H3, Appendix A.6 item 8): deny when any
+ * candidate lands in an ADLC repository or a protected root.
  */
 function schemaViolationVerdict(name, args, reason, ctx) {
   if (ctx.readonly) return deny(reason);
-  const required = (TOOL_PATH_SCHEMAS[name]?.required ?? []).map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0);
-  const anchorRepo = ctx.repoAt(ctx.anchor ?? '/');
-  if (anchorRepo.adlc && (anchorRepo.activeRail || ctx.workerTicket)) return deny(reason);
-  for (const token of [...required, ...scanPathLike(args)].map(toPath)) {
-    const r = resolveCandidate(token, ctx.anchor, ctx.home);
-    if (matchRoot(r, protectedRoots(ctx.home), ctx.platform) || ctx.repoAt(r.real).adlc) return deny(reason);
+  const required = (TOOL_PATH_SCHEMAS[name]?.required ?? []).map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
+  const scan = scanPathLike(args, { skipContentKeys: true });
+  if (scan.overflow) return OVERFLOW;
+  if (ctx.anchors.some((a) => {
+    const repo = ctx.repoAt(a);
+    return repo.adlc && (repo.activeRail || ctx.workerTicket);
+  })) return deny(reason);
+  for (const token of [...required, ...scan.paths]) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) return deny(reason);
+    for (const r of resolved) {
+      if (matchRoot(r, ctx.protectedRoots, ctx.platform) || ctx.repoAt(r.real).adlc) return deny(reason);
+    }
   }
   return PASS;
 }
@@ -169,25 +245,48 @@ function evaluateFileTool(name, args, ctx) {
     return schemaViolationVerdict(name, args, reason, ctx);
   }
   if (ctx.readonly) return deny('Read-only agb worker session: file mutations are forbidden');
+  const workerHome = ctx.workerTicket ? ctx.repoAt(ctx.workspacePaths[0] ?? '/') : null;
   const verdicts = [];
   for (const token of extracted.paths.map(toPath)) {
-    const r = resolveCandidate(token, ctx.anchor, ctx.home);
-    const { verdict, repo, rel } = gateOnePath(r, ctx);
-    if (verdict.decision !== 'pass') {
-      verdicts.push(verdict);
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) {
+      verdicts.push(deny(`Relative target '${token}' has no workspace to anchor it`));
       continue;
     }
-    if (ctx.workerTicket && repo.adlc) verdicts.push(workerScopeVerdict(repo, rel, ctx));
+    for (const r of resolved) {
+      const contains = containsProtected(r, ctx);
+      if (contains) {
+        verdicts.push(contains);
+        continue;
+      }
+      const { verdict, repo, rel } = gateOnePath(r, ctx);
+      if (verdict.decision !== 'pass') {
+        verdicts.push(verdict);
+        continue;
+      }
+      if (workerHome?.adlc) {
+        // A worker inside an ADLC repo may only write inside that repo's ticket scope (P5 round 3 W2).
+        if (!repo.adlc || repo.root !== workerHome.root) {
+          verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
+        } else {
+          verdicts.push(workerScopeVerdict(repo, rel, ctx));
+        }
+      }
+    }
   }
   return mostRestrictive(verdicts);
 }
 
 function evaluateMcpTool(name, args, ctx) {
+  const scan = scanPathLike(args);
+  if (scan.overflow) return OVERFLOW;
   const verdicts = [];
-  for (const token of scanPathLike(args)) {
-    // An MCP argument that names a repository (e.g. `repo`) is a reference, not a mutation target.
-    const { verdict } = gateOnePath(resolveCandidate(token, ctx.anchor, ctx.home), ctx, { rootIsTarget: false });
-    if (verdict.decision === 'deny') verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${verdict.reason})`));
+  for (const token of scan.paths) {
+    for (const r of resolveAll(token, ctx)) {
+      // An MCP argument that names a repository (e.g. `repo`) is a reference, not a mutation target.
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision === 'deny') verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${verdict.reason})`));
+    }
   }
   if (verdicts.length) return mostRestrictive(verdicts);
   if (isBoosterMcpTool(name, args)) {
@@ -195,9 +294,9 @@ function evaluateMcpTool(name, args, ctx) {
     return PASS;
   }
   if (ctx.readonly) return deny('Third-party MCP tool call cannot prompt operator in a read-only agb worker session');
-  const repo = ctx.repoAt(ctx.anchor ?? '/');
-  if (ctx.workerTicket && repo.adlc) return deny('Third-party MCP tool call cannot prompt operator in headless worker mode');
-  if (repo.adlc && repo.activeRail) {
+  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  if (ctx.workerTicket && repos.some((r) => r.adlc)) return deny('Third-party MCP tool call cannot prompt operator in headless worker mode');
+  if (repos.some((r) => r.adlc && r.activeRail)) {
     return ctx.headless
       ? deny('Third-party MCP tool call cannot prompt operator in headless worker mode')
       : ask('Third-party MCP tool call in an active-rail ADLC repository requires operator confirmation');
@@ -205,10 +304,19 @@ function evaluateMcpTool(name, args, ctx) {
   return PASS;
 }
 
-function evaluateUnknownTool(ctx) {
+function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny('Unknown tool in a read-only agb worker session');
-  const repo = ctx.repoAt(ctx.anchor ?? '/');
-  if (repo.adlc && (repo.activeRail || ctx.workerTicket)) {
+  // Trust-root and rail gating applies to unknown tools in every repo (P5 round 3 M6).
+  const scan = scanPathLike(args);
+  if (scan.overflow) return OVERFLOW;
+  for (const token of scan.paths) {
+    for (const r of resolveAll(token, ctx)) {
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision === 'deny') return verdict;
+    }
+  }
+  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  if (repos.some((r) => r.adlc && (r.activeRail || ctx.workerTicket))) {
     return deny('Unknown tool in ADLC repository with active frozen rails; cannot verify safety');
   }
   return PASS;
@@ -217,6 +325,7 @@ function evaluateUnknownTool(ctx) {
 export function buildContext(payload, options = {}) {
   const env = options.env ?? process.env;
   const home = options.home ?? homedir();
+  const realHome = realOr(home);
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : [])
     .filter((p) => typeof p === 'string' && isAbsolute(p))
     .map((p) => resolve(p));
@@ -224,9 +333,10 @@ export function buildContext(payload, options = {}) {
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;
   const cwd = typeof args?.Cwd === 'string' && isAbsolute(args.Cwd) ? resolve(args.Cwd) : null;
+  const homes = unique([home, realHome]);
   return {
     home,
-    realHome: realOr(home),
+    realHome,
     platform: options.platform ?? process.platform,
     workspacePaths,
     workerTicket,
@@ -234,7 +344,12 @@ export function buildContext(payload, options = {}) {
     cdpath: Boolean(env.CDPATH),
     headless: Boolean(workerTicket) || readonly,
     anchor: cwd ?? workspacePaths[0] ?? null,
-    ...makeRepoCache(),
+    anchors: unique([...(cwd ? [cwd] : []), ...workspacePaths]),
+    // Roots for both the lexical and the physical home (P5 round 3 M4).
+    protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
+    boosterDataRoots: unique(homes.flatMap((h) => boosterDataRoots(h))),
+    storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === 'string' && p.length > 0).map((p) => realOr(resolve(p))),
+    ...makeRepoCache(home),
   };
 }
 
@@ -251,5 +366,5 @@ export function evaluatePayload(payload, options = {}) {
   if (name === 'run_command') return classifyRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
   if (name === 'call_mcp_tool' || name.startsWith('mcp__')) return evaluateMcpTool(name, args, ctx);
-  return evaluateUnknownTool(ctx);
+  return evaluateUnknownTool(args, ctx);
 }

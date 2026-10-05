@@ -106,6 +106,15 @@ emit_fallback() {
       PARSE_SUCCESS=1
     fi
 
+    # The greedy extraction above takes the LAST match, so a second
+    # "workspacePaths" or "Cwd" injected into the tool's own arguments could
+    # steer the fallback (P5 round 3 F1). Ambiguous payloads are unparseable.
+    WS_COUNT="$(grep -o '"workspacePaths"' "$TMP_FLAT" 2>/dev/null | wc -l | tr -d ' ')"
+    CWD_COUNT="$(grep -o '"[Cc]wd"[[:space:]]*:' "$TMP_FLAT" 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "$WS_COUNT" -gt 1 ] || [ "$CWD_COUNT" -gt 1 ]; then
+      PARSE_SUCCESS=0
+    fi
+
     # Iterate line by line over extracted paths preserving spaces
     {
       if [ -n "$WS_RAW" ]; then

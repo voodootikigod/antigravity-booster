@@ -69,7 +69,7 @@ test('C1: a global ~/.adlc state dir does not make plain repos ADLC repos', () =
   const nested = join(home, 'code', 'plain');
   mkdirSync(join(nested, 'lib'), { recursive: true });
   spawnSync('git', ['init', '-q', nested]);
-  assert.equal(findAdlcRoot(join(nested, 'lib', 'x.mjs')), null);
+  assert.equal(findAdlcRoot(join(nested, 'lib', 'x.mjs'), { home }), null);
   assert.equal(run('write_to_file', { TargetFile: join(nested, 'lib', 'x.mjs') }, nested), 'pass');
 });
 
@@ -309,4 +309,112 @@ test('R2 mutation: allowlisted long commit flags stay routine', () => {
   for (const flag of ['--signoff', '--quiet', '--verbose']) {
     assert.equal(sh(`${commit} -m x ${flag}`, A), 'pass', flag);
   }
+});
+
+// ======================= P5 round 3: the exact layer =======================
+const runIn = (name, args, ws, extra = {}) => evaluatePayload({ toolCall: { name, args }, workspacePaths: Array.isArray(ws) ? ws : [ws] }, { env: {}, home, platform: 'linux', ...extra }).decision;
+
+test('R3 H1: deleting or moving a directory that contains a repo or protected root is denied', () => {
+  assert.equal(run('delete_directory', { directoryPath: base }, A), 'deny');
+  assert.equal(run('delete_directory', { directoryPath: base }, I), 'deny');
+  assert.equal(run('move', { source: base, destination: '/tmp/zz' }, A), 'deny');
+  assert.equal(run('delete_directory', { directoryPath: join(home, '.local') }, P), 'deny');
+  assert.equal(run('move', { source: join(home, '.config'), destination: '/tmp/x' }, P), 'deny');
+  assert.equal(run('delete_directory', { directoryPath: home }, P), 'deny');
+});
+
+test('R3 H2: symlinks are resolved physically, component by component', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const ext = join(base, 'ext', 'deep');
+  mkdirSync(ext, { recursive: true });
+  mkdirSync(join(A, 'docs'), { recursive: true });
+  symlinkSync(ext, join(A, 'docs', 'd'));
+  symlinkSync('../../active/lib/gates.mjs', join(ext, 'link'));
+  assert.equal(run('write_to_file', { TargetFile: join(A, 'docs', 'd', 'link') }, A), 'deny', 'link reached through a symlinked dir');
+  symlinkSync('../.adlc/tickets', join(I, 'lib', 't'));
+  assert.equal(run('write_to_file', { TargetFile: `${join(I, 'lib', 't')}/../config.json` }, I), 'deny', '.. after a symlink is physical');
+});
+
+test('R3 H3: a nested .git (submodule or planted) cannot drop the outer repo rails', () => {
+  const S = join(base, 'super');
+  mkdirSync(join(S, 'vendor', 'mod'), { recursive: true });
+  mkdirSync(join(S, 'lib'), { recursive: true });
+  spawnSync('git', ['init', '-q', S]);
+  mkdirSync(join(S, '.adlc'), { recursive: true });
+  initializeDirectoryStore(join(S, '.adlc', 'tickets'));
+  writeFileSync(join(S, '.adlc', 'tickets', ticketFilename('T1')), JSON.stringify({ id: 'T1', title: 't', body: 'b', scope: [], rails: ['vendor/mod/**', 'lib/gates.mjs'], edges: [] }));
+  writeFileSync(join(S, 'vendor', 'mod', '.git'), 'gitdir: ../../.git/modules/mod\n');
+  mkdirSync(join(S, 'lib', '.git'), { recursive: true });
+  assert.equal(findAdlcRoot(join(S, 'vendor', 'mod', 'x.c'), { home }), S);
+  assert.equal(run('write_to_file', { TargetFile: join(S, 'vendor', 'mod', 'x.c') }, S), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: join(S, 'lib', 'gates.mjs') }, S), 'deny');
+});
+
+test('R3 H4: the legacy tickets.json and an overridden store path are trust roots; only well-formed shards may be created', () => {
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets.json') }, I), 'deny');
+  assert.equal(run('delete_file', { TargetFile: join(I, '.adlc', 'tickets.json') }, I), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', 'foo') }, I), 'deny', 'non-shard file would brick the store');
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', ticketFilename('T5')) }, I), 'pass');
+  const store = join(base, 'elsewhere', 'tickets');
+  assert.equal(runIn('write_to_file', { TargetFile: join(store, 'x.json') }, P, { env: { ADLC_TICKET_STORE: store } }), 'deny');
+});
+
+test('R3 M3: file: URI spellings are normalised for MCP and file tools', () => {
+  const settings = join(home, '.gemini', 'settings.json');
+  assert.equal(run('mcp__fs__write_file', { path: `file://${settings}` }, P), 'deny');
+  assert.equal(run('mcp__fs__write_file', { path: `file://${join(A, 'lib', 'gates.mjs')}` }, A), 'deny');
+  for (const t of [`file://localhost${join(A, 'lib', 'lock.mjs')}`, `FILE://${join(A, 'lib', 'lock.mjs')}`, `file:${join(A, 'lib', 'lock.mjs')}`, `file://${join(A, 'lib', 'lock%2Emjs')}`]) {
+    assert.equal(run('write_to_file', { TargetFile: t }, A), 'deny', t);
+  }
+});
+
+test('R3 M4: a HOME reached through a symlink is protected by its real path too', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const realHome = join(base, 'data', 'u');
+  mkdirSync(realHome, { recursive: true });
+  const linkHome = join(base, 'h2');
+  symlinkSync(realHome, linkHome);
+  const v = evaluatePayload({ toolCall: { name: 'write_to_file', args: { TargetFile: join(realHome, '.gemini', 'settings.json') } }, workspacePaths: [P] }, { env: {}, home: linkHome, platform: 'linux' });
+  assert.equal(v.decision, 'deny');
+});
+
+test('R3 M5: relative targets are judged against every anchor; none means deny', () => {
+  assert.equal(run('write_to_file', { TargetFile: 'lib/gates.mjs', Cwd: '/tmp' }, A), 'deny');
+  assert.equal(runIn('write_to_file', { TargetFile: 'lib/gates.mjs' }, [P, A]), 'deny');
+  assert.equal(runIn('write_to_file', { TargetFile: 'lib/x.mjs' }, []), 'deny');
+});
+
+test('R3 M6: unknown tools and MCP args get trust-root gating everywhere', () => {
+  assert.equal(run('apply_patch', { path: join(I, '.adlc', 'config.json') }, I), 'deny');
+  assert.equal(run('mcp__fs__write', { message: { path: join(I, '.adlc', 'config.json') } }, I), 'deny', 'nested under an excluded key');
+  assert.equal(run('mcp__fs__write', { files: { [join(I, '.adlc', 'config.json')]: 'x' } }, I), 'deny', 'path as an object key');
+  assert.equal(run('mcp__fs__write', { path: '.adlc' }, I), 'deny', 'relative path without a slash');
+});
+
+test('R3 F1: absurdly deep arguments are denied instead of crashing the evaluator', () => {
+  let deep = join(A, 'lib', 'x');
+  for (let i = 0; i < 20000; i += 1) deep = [deep];
+  assert.equal(run('mcp__fs__write', { deep }, A), 'deny');
+});
+
+test('R3 W1: env-prefixed assignments are not Stage 1, so GIT_EXTERNAL_DIFF cannot ride git diff', () => {
+  const cmd = `env "GIT_EXTERNAL_DIFF=sh -c 'echo x > lib/gates.mjs'" git diff`;
+  assert.equal(sh(cmd, A, { AGB_WORKER_MODE: 'readonly' }), 'deny');
+  assert.equal(sh(cmd, A, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+  assert.equal(sh(cmd, A), 'ask');
+  assert.equal(sh('env LD_PRELOAD=/tmp/x.so cat lib/feature.mjs', A, { AGB_WORKER_MODE: 'readonly' }), 'deny');
+});
+
+test('R3 W2: workers in an ADLC repo cannot write outside it; test flags are allowlisted', () => {
+  const W = { AGB_WORKER_TICKET: 'T1' };
+  assert.equal(run('write_to_file', { TargetFile: join(home, '.bashrc') }, A, W), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: '/tmp/xx' }, A, W), 'deny');
+  assert.equal(sh('node --test --test-reporter-destination=README.md', A, W), 'deny');
+  assert.equal(sh('node --test --test-name-pattern=foo test/a.test.mjs', A, W), 'pass');
+});
+
+test('R3 usability: wc and git blame / log --follow are inspection', () => {
+  assert.equal(sh('wc -l lib/gates.mjs', A), 'pass');
+  assert.equal(sh('git blame lib/lock.mjs', A), 'pass');
+  assert.equal(sh('git log --follow lib/lock.mjs', A), 'pass');
 });
