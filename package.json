@@ -48,5 +48,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/voodootikigod/antigravity-booster.git"
+  },
+  "devDependencies": {
+    "minimatch": "10.0.1"
   }
 }
