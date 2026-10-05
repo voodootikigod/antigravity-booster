@@ -30,6 +30,19 @@ function lstatOrNull(p) {
 
 const MAX_SYMLINK_HOPS = 40;
 const MAX_PATH_COMPONENTS = 4096;
+const DEFAULT_EVALUATION_BUDGET = 200000;
+
+// Paths whose meaning depends on the RESOLVING process (its cwd, fds, root):
+// the hook would resolve them against itself, not the agent that writes (P5 r5).
+const MAGIC_PATH = /^\/(proc\/(self|thread-self|\d+)|dev\/fd)(\/|$)/;
+export const isMagicPath = (p) => MAGIC_PATH.test(p);
+
+// Total resolution steps allowed per policy evaluation (P5 round 5 L7):
+// many large paths can otherwise push a single call past the runner watchdog.
+let budget = DEFAULT_EVALUATION_BUDGET;
+export function beginEvaluation(limit = DEFAULT_EVALUATION_BUDGET) {
+  budget = limit;
+}
 
 /**
  * Resolve `input` (absolute, or relative to `base`) the way the kernel does:
@@ -53,7 +66,8 @@ export function physicalResolve(input, base = '/') {
   let steps = 0;
   while (stack.length > 0) {
     steps += 1;
-    if (steps > MAX_PATH_COMPONENTS * 4) return null;
+    budget -= 1;
+    if (steps > MAX_PATH_COMPONENTS * 4 || budget < 0) return null;
     const comp = stack.pop();
     if (comp === '' || comp === '.') continue;
     if (comp === '..') {
@@ -62,6 +76,7 @@ export function physicalResolve(input, base = '/') {
       continue;
     }
     const next = current === '/' ? `/${comp}` : `${current}/${comp}`;
+    if (isMagicPath(next)) return null;
     if (missingDepth === 0) {
       const st = lstatOrNull(next);
       if (st?.isSymbolicLink()) {

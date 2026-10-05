@@ -219,6 +219,8 @@ Owner decision (2026-10-05), after two P5 prosecution rounds against the policy 
   - A command written to a script file, a `package.json` script or a git hook, then run, executes code the guard never saw. `npm run build` asks for this reason; `git commit` still passes and will run repository hooks.
   - In `agy -p` (headless) sessions not started by `agb`, `ask` is honoured as allow (measured on agy 1.2.16 and 1.2.17). `agb`'s own sessions are always marked as workers and receive `deny` instead.
   - `git config core.hooksPath`, `git update-ref`, `git gc --prune=now` and other low-level git plumbing are not specifically recognised.
+  - Deleting or moving a directory is checked for any `.adlc/` beneath it by a bounded scan. The scan does not descend into `node_modules/` or `.git/`, so an ADLC repository nested inside one of those is not detected. A directory too large to scan asks interactively and is denied headless; a directory with unreadable subdirectories is denied.
+  - Process-relative paths (`/proc/self/…`, `/dev/fd/…`) and `file:` URLs that carry a host, userinfo or port are never accepted as mutation targets, because the hook cannot know how the writing process would resolve them.
 - **Platform note (agy 1.2.17):** agy now fails *closed* when a hook exits non-zero or times out (1.2.16 failed open). `bin/hook-runner.sh` always exits 0 and emits its own fallback decision, so booster's behaviour is unchanged, but a crashing hook would block every tool call. Never let the runner exit non-zero.
 
 ## Gate Evidence (ADLC gate-manifest)

@@ -9,35 +9,44 @@
 import { lstatSync, readdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { ticketFilename } from '@adlc/tickets';
+import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
   BOOSTER_MCP_SERVER, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
   PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS,
 } from './constants.mjs';
 import {
-  boosterDataRoots, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
+  beginEvaluation, boosterDataRoots, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
   matchesScope, protectedRoots, repoRelative, resolveCandidate,
 } from './paths.mjs';
 import { classifyRunCommand } from './shell.mjs';
 import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
 
 const UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
-// file:/abs, file:///abs, file://localhost/abs — any case (P5 rounds 1 and 3).
-const FILE_URL = /^file:(\/\/(localhost)?)?(?=\/)/i;
+// Any file: URL (P5 rounds 1, 3, 5). Only an empty or `localhost` authority is a
+// local path; anything with a host, userinfo or port cannot be verified.
+const FILE_URL = /^file:/i;
+const FILE_URL_PARTS = /^file:(?:\/\/([^/?#]*))?([^?#]*)/i;
+// Resolves as a process-relative magic path, which mutations always deny.
+const UNVERIFIABLE_URL = '/dev/fd/unverifiable-file-url';
 const MAX_SCAN_DEPTH = 64;
 const MAX_SCAN_NODES = 20000;
 
 /**
- * Tools may name targets as file: URLs; policy always evaluates the URL's
- * decoded pathname, dropping any query or fragment (P5 round 4 M4).
+ * Tools may name targets as file: URLs. Policy evaluates the percent-decoded
+ * path WITHOUT URL normalisation — WHATWG URL collapses `..` lexically, but
+ * a writer that strips the scheme lets the kernel follow symlinks first
+ * (P5 round 5 M2) — with any query or fragment dropped.
  */
 function toPath(value) {
   if (!FILE_URL.test(value)) return value;
+  const [, authority = '', rawPath = ''] = FILE_URL_PARTS.exec(value) ?? [];
+  if (authority !== '' && authority.toLowerCase() !== 'localhost') return UNVERIFIABLE_URL;
+  if (!rawPath.startsWith('/')) return UNVERIFIABLE_URL;
   try {
-    return decodeURIComponent(new URL(value).pathname);
+    return decodeURIComponent(rawPath);
   } catch {
-    return value.replace(FILE_URL, '');
+    return rawPath;
   }
 }
 
@@ -144,29 +153,33 @@ function resolveAll(token, ctx) {
   return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
 }
 
-const MAX_SUBTREE_ENTRIES = 50000;
+const DEFAULT_SUBTREE_ENTRIES = 50000;
 const SUBTREE_SKIP = new Set(['node_modules', '.git']);
 
 /**
- * Does an existing directory hold any `.adlc/` below it? Bounded BFS that
- * never follows symlinks; exhausting the budget answers "unknown" (P5 r4 H2).
+ * Does an existing directory hold any `.adlc` below it (P5 rounds 4–5)?
+ * Bounded BFS that never descends through symlinks, but counts a SYMLINK named
+ * `.adlc` as a hit (findAdlcRoot follows it). Answers true, false,
+ * 'unreadable' (a subdirectory hides its contents) or 'too-large'.
+ * node_modules/ and .git/ are not scanned (documented residual).
  */
-function subtreeHoldsAdlc(dir) {
+function subtreeHoldsAdlc(dir, limit) {
   const queue = [dir];
   let seen = 0;
   while (queue.length > 0) {
+    const current = queue.shift();
     let entries;
     try {
-      entries = readdirSync(queue.shift(), { withFileTypes: true });
-    } catch {
-      continue;
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch (err) {
+      if (err?.code === 'ENOENT') continue;
+      return 'unreadable';
     }
     for (const entry of entries) {
       seen += 1;
-      if (seen > MAX_SUBTREE_ENTRIES) return 'unknown';
-      if (!entry.isDirectory()) continue;
-      if (entry.name === '.adlc') return true;
-      if (!SUBTREE_SKIP.has(entry.name)) queue.push(join(entry.parentPath ?? entry.path, entry.name));
+      if (seen > limit) return 'too-large';
+      if (entry.name === '.adlc' && (entry.isDirectory() || entry.isSymbolicLink())) return true;
+      if (entry.isDirectory() && !SUBTREE_SKIP.has(entry.name)) queue.push(join(current, entry.name));
     }
   }
   return false;
@@ -192,29 +205,42 @@ function containsProtected(r, ctx) {
     }
   }
   if (isExistingDirectory(r.real)) {
-    const holds = subtreeHoldsAdlc(r.real);
+    const holds = subtreeHoldsAdlc(r.real, ctx.limits.subtreeEntries);
     if (holds === true) return deny('Target directory contains an ADLC repository (.adlc/)');
-    if (holds === 'unknown') return deny('Target directory is too large to verify that it holds no ADLC repository');
+    if (holds === 'unreadable') return deny('Target directory has unreadable subdirectories; cannot verify it holds no ADLC repository');
+    if (holds === 'too-large') {
+      const reason = 'Target directory is too large to verify that it holds no ADLC repository';
+      return ctx.headless ? deny(reason) : ask(reason);
+    }
   }
   return null;
 }
 
+const SHARD_WRITERS = new Set(['write_to_file', 'create_file', 'save_file']);
+const SHARD_CONTENT_KEYS = ['CodeContent', 'Content'];
+
 /**
- * A new ticket shard must be the canonical file for the ticket it contains:
- * `ticketFilename(content.id)`. Anything else would make the store unloadable
- * and freeze every later tool call (P5 round 4 L6).
+ * A new ticket shard must be a schema-valid ticket written to its canonical
+ * file, `ticketFilename(id)`, by a whole-file writer, and EVERY content field
+ * must agree. Anything else would make the store unloadable and freeze every
+ * later tool call (P5 rounds 4–5). Case folds on darwin.
  */
-function newShardVerdict(rel, args) {
-  if (!rel.startsWith(`${TICKET_STORE_DIR}/`)) return null;
-  const content = [args?.CodeContent, args?.Content].find((c) => typeof c === 'string');
-  let id;
-  try {
-    id = JSON.parse(content ?? '')?.id;
-  } catch {
-    id = undefined;
-  }
-  if (typeof id !== 'string' || ticketFilename(id) !== basename(rel)) {
-    return deny('A new ticket shard must be the canonical <id>--<sha256(id)>.json file for the ticket it contains');
+function newShardVerdict(name, rel, args, platform) {
+  const folded = platform === 'darwin' ? rel.toLowerCase() : rel;
+  if (!folded.startsWith(`${TICKET_STORE_DIR}/`)) return null;
+  const reason = 'A new ticket shard must be a schema-valid ticket written whole to its canonical <id>--<sha256(id)>.json file';
+  if (!SHARD_WRITERS.has(name)) return deny(reason);
+  const present = SHARD_CONTENT_KEYS.filter((k) => args?.[k] !== undefined);
+  if (present.length === 0) return deny(reason);
+  for (const key of present) {
+    let ticket;
+    try {
+      ticket = JSON.parse(args[key]);
+    } catch {
+      return deny(reason);
+    }
+    if (!ticket || typeof ticket !== 'object' || Array.isArray(ticket)) return deny(reason);
+    if (validateTicket(ticket).length > 0 || ticketFilename(ticket.id) !== basename(rel)) return deny(reason);
   }
   return null;
 }
@@ -337,14 +363,17 @@ function evaluateFileTool(name, args, ctx) {
         continue;
       }
       if (repo.adlc && rel) {
-        const shard = newShardVerdict(rel, args);
+        const shard = newShardVerdict(name, rel, args, ctx.platform);
         if (shard) {
           verdicts.push(shard);
           continue;
         }
       }
-      if (workerRepos.length > 0) {
-        // A worker inside an ADLC repo may only write inside that repo's ticket scope (P5 round 3 W2).
+      // A worker may write only inside its own ADLC repo's ticket scope, and never
+      // into an ADLC repo that is not its own (P5 rounds 3–5).
+      if (ctx.workerTicket && repo.adlc && !workerRepos.some((w) => w.root === repo.root)) {
+        verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation in another ADLC repository: ${r.real}`));
+      } else if (workerRepos.length > 0) {
         if (!repo.adlc || !workerRepos.some((w) => w.root === repo.root)) {
           verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
         } else {
@@ -429,6 +458,7 @@ export function buildContext(payload, options = {}) {
     // Roots for both the lexical and the physical home (P5 round 3 M4).
     protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
     boosterDataRoots: unique(homes.flatMap((h) => boosterDataRoots(h))),
+    limits: { subtreeEntries: options.limits?.subtreeEntries ?? DEFAULT_SUBTREE_ENTRIES },
     storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === 'string' && p.length > 0).map((p) => realOr(resolve(p))),
     ...makeRepoCache(home),
   };
@@ -438,6 +468,7 @@ export function evaluatePayload(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== 'string' || name.length === 0) return deny('Malformed PreToolUse payload: missing tool name');
   const args = payload.toolCall.args ?? {};
+  beginEvaluation();
   const ctx = buildContext(payload, options);
 
   const step1 = stepOne(name, args, ctx);

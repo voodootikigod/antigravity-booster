@@ -3404,6 +3404,13 @@ function lstatOrNull(p) {
 }
 var MAX_SYMLINK_HOPS = 40;
 var MAX_PATH_COMPONENTS = 4096;
+var DEFAULT_EVALUATION_BUDGET = 2e5;
+var MAGIC_PATH = /^\/(proc\/(self|thread-self|\d+)|dev\/fd)(\/|$)/;
+var isMagicPath = (p) => MAGIC_PATH.test(p);
+var budget = DEFAULT_EVALUATION_BUDGET;
+function beginEvaluation(limit = DEFAULT_EVALUATION_BUDGET) {
+  budget = limit;
+}
 function physicalResolve(input, base = "/") {
   const raw = input.startsWith("/") ? input : `${base}/${input}`;
   const initial = raw.split("/");
@@ -3415,7 +3422,8 @@ function physicalResolve(input, base = "/") {
   let steps = 0;
   while (stack.length > 0) {
     steps += 1;
-    if (steps > MAX_PATH_COMPONENTS * 4) return null;
+    budget -= 1;
+    if (steps > MAX_PATH_COMPONENTS * 4 || budget < 0) return null;
     const comp = stack.pop();
     if (comp === "" || comp === ".") continue;
     if (comp === "..") {
@@ -3424,6 +3432,7 @@ function physicalResolve(input, base = "/") {
       continue;
     }
     const next = current === "/" ? `/${comp}` : `${current}/${comp}`;
+    if (isMagicPath(next)) return null;
     if (missingDepth === 0) {
       const st = lstatOrNull(next);
       if (st?.isSymbolicLink()) {
@@ -4156,15 +4165,20 @@ function classifyRunCommand(args, ctx) {
 
 // hooks/policy/evaluate.mjs
 var UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
-var FILE_URL = /^file:(\/\/(localhost)?)?(?=\/)/i;
+var FILE_URL = /^file:/i;
+var FILE_URL_PARTS = /^file:(?:\/\/([^/?#]*))?([^?#]*)/i;
+var UNVERIFIABLE_URL = "/dev/fd/unverifiable-file-url";
 var MAX_SCAN_DEPTH = 64;
 var MAX_SCAN_NODES = 2e4;
 function toPath(value) {
   if (!FILE_URL.test(value)) return value;
+  const [, authority = "", rawPath = ""] = FILE_URL_PARTS.exec(value) ?? [];
+  if (authority !== "" && authority.toLowerCase() !== "localhost") return UNVERIFIABLE_URL;
+  if (!rawPath.startsWith("/")) return UNVERIFIABLE_URL;
   try {
-    return decodeURIComponent(new URL(value).pathname);
+    return decodeURIComponent(rawPath);
   } catch {
-    return value.replace(FILE_URL, "");
+    return rawPath;
   }
 }
 function realOr(p) {
@@ -4245,24 +4259,25 @@ function resolveAll(token, ctx) {
   if (isAbsolute5(token) || hasHomePrefix(token)) return [resolveCandidate(token, "/", ctx.home)];
   return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
 }
-var MAX_SUBTREE_ENTRIES = 5e4;
+var DEFAULT_SUBTREE_ENTRIES = 5e4;
 var SUBTREE_SKIP = /* @__PURE__ */ new Set(["node_modules", ".git"]);
-function subtreeHoldsAdlc(dir) {
+function subtreeHoldsAdlc(dir, limit) {
   const queue = [dir];
   let seen = 0;
   while (queue.length > 0) {
+    const current = queue.shift();
     let entries;
     try {
-      entries = readdirSync6(queue.shift(), { withFileTypes: true });
-    } catch {
-      continue;
+      entries = readdirSync6(current, { withFileTypes: true });
+    } catch (err) {
+      if (err?.code === "ENOENT") continue;
+      return "unreadable";
     }
     for (const entry of entries) {
       seen += 1;
-      if (seen > MAX_SUBTREE_ENTRIES) return "unknown";
-      if (!entry.isDirectory()) continue;
-      if (entry.name === ".adlc") return true;
-      if (!SUBTREE_SKIP.has(entry.name)) queue.push(join11(entry.parentPath ?? entry.path, entry.name));
+      if (seen > limit) return "too-large";
+      if (entry.name === ".adlc" && (entry.isDirectory() || entry.isSymbolicLink())) return true;
+      if (entry.isDirectory() && !SUBTREE_SKIP.has(entry.name)) queue.push(join11(current, entry.name));
     }
   }
   return false;
@@ -4285,23 +4300,34 @@ function containsProtected(r, ctx) {
     }
   }
   if (isExistingDirectory(r.real)) {
-    const holds = subtreeHoldsAdlc(r.real);
+    const holds = subtreeHoldsAdlc(r.real, ctx.limits.subtreeEntries);
     if (holds === true) return deny("Target directory contains an ADLC repository (.adlc/)");
-    if (holds === "unknown") return deny("Target directory is too large to verify that it holds no ADLC repository");
+    if (holds === "unreadable") return deny("Target directory has unreadable subdirectories; cannot verify it holds no ADLC repository");
+    if (holds === "too-large") {
+      const reason = "Target directory is too large to verify that it holds no ADLC repository";
+      return ctx.headless ? deny(reason) : ask(reason);
+    }
   }
   return null;
 }
-function newShardVerdict(rel, args) {
-  if (!rel.startsWith(`${TICKET_STORE_DIR}/`)) return null;
-  const content = [args?.CodeContent, args?.Content].find((c) => typeof c === "string");
-  let id;
-  try {
-    id = JSON.parse(content ?? "")?.id;
-  } catch {
-    id = void 0;
-  }
-  if (typeof id !== "string" || ticketFilename(id) !== basename5(rel)) {
-    return deny("A new ticket shard must be the canonical <id>--<sha256(id)>.json file for the ticket it contains");
+var SHARD_WRITERS = /* @__PURE__ */ new Set(["write_to_file", "create_file", "save_file"]);
+var SHARD_CONTENT_KEYS = ["CodeContent", "Content"];
+function newShardVerdict(name, rel, args, platform) {
+  const folded = platform === "darwin" ? rel.toLowerCase() : rel;
+  if (!folded.startsWith(`${TICKET_STORE_DIR}/`)) return null;
+  const reason = "A new ticket shard must be a schema-valid ticket written whole to its canonical <id>--<sha256(id)>.json file";
+  if (!SHARD_WRITERS.has(name)) return deny(reason);
+  const present = SHARD_CONTENT_KEYS.filter((k) => args?.[k] !== void 0);
+  if (present.length === 0) return deny(reason);
+  for (const key of present) {
+    let ticket;
+    try {
+      ticket = JSON.parse(args[key]);
+    } catch {
+      return deny(reason);
+    }
+    if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) return deny(reason);
+    if (validateTicket(ticket).length > 0 || ticketFilename(ticket.id) !== basename5(rel)) return deny(reason);
   }
   return null;
 }
@@ -4409,13 +4435,15 @@ function evaluateFileTool(name, args, ctx) {
         continue;
       }
       if (repo.adlc && rel) {
-        const shard = newShardVerdict(rel, args);
+        const shard = newShardVerdict(name, rel, args, ctx.platform);
         if (shard) {
           verdicts.push(shard);
           continue;
         }
       }
-      if (workerRepos.length > 0) {
+      if (ctx.workerTicket && repo.adlc && !workerRepos.some((w) => w.root === repo.root)) {
+        verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation in another ADLC repository: ${r.real}`));
+      } else if (workerRepos.length > 0) {
         if (!repo.adlc || !workerRepos.some((w) => w.root === repo.root)) {
           verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
         } else {
@@ -4491,6 +4519,7 @@ function buildContext(payload, options = {}) {
     // Roots for both the lexical and the physical home (P5 round 3 M4).
     protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
     boosterDataRoots: unique(homes.flatMap((h) => boosterDataRoots(h))),
+    limits: { subtreeEntries: options.limits?.subtreeEntries ?? DEFAULT_SUBTREE_ENTRIES },
     storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === "string" && p.length > 0).map((p) => realOr(resolve8(p))),
     ...makeRepoCache(home)
   };
@@ -4499,6 +4528,7 @@ function evaluatePayload(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== "string" || name.length === 0) return deny("Malformed PreToolUse payload: missing tool name");
   const args = payload.toolCall.args ?? {};
+  beginEvaluation();
   const ctx = buildContext(payload, options);
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;

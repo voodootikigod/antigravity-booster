@@ -477,3 +477,77 @@ test('R4 L8: a relative HOME is made absolute', () => {
   const v = evaluatePayload({ toolCall: { name: 'write_to_file', args: { TargetFile: join(process.cwd(), 'home', '.gemini', 'settings.json') } }, workspacePaths: [P] }, { env: {}, home: 'home', platform: 'linux' });
   assert.equal(v.decision, 'deny');
 });
+
+// ======================= P5 round 5 =======================
+test('R5 H1: process-relative magic paths (/proc/self, /dev/fd) are never a mutation target', async () => {
+  const { symlinkSync } = await import('node:fs');
+  assert.equal(run('write_to_file', { TargetFile: '/proc/self/cwd/lib/lock.mjs' }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: '/proc/thread-self/cwd/x' }, P), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: '/dev/fd/3' }, P), 'deny');
+  symlinkSync('/proc/self/cwd', join(A, 'pl'));
+  assert.equal(run('write_to_file', { TargetFile: join(A, 'pl', 'x') }, A), 'deny', 'reached through a symlink');
+  assert.equal(run('view_file', { AbsolutePath: '/proc/self/status' }, P), 'pass', 'reads are unaffected');
+});
+
+test('R5 M2: file: URLs are resolved physically without URL normalisation; hosts and userinfo deny', async () => {
+  const { symlinkSync } = await import('node:fs');
+  mkdirSync(join(A, 'lib', 'deep'), { recursive: true });
+  symlinkSync('../lib/deep', join(A, 'docs', 'l2'));
+  assert.equal(run('write_to_file', { TargetFile: `file://${A}/docs/l2/../lock.mjs` }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: `file://${A}/docs/l2/%2e%2e/lock.mjs` }, A), 'deny');
+  assert.equal(run('mcp__fs__write_file', { path: `file://${A}/docs/l2/../lock.mjs` }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: `file://user@localhost${A}/lib/x.mjs` }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: `file://otherhost${A}/lib/x.mjs` }, A), 'deny');
+});
+
+test('R5 M3: the subtree scan treats a symlinked .adlc and an unreadable directory as ADLC/unknown', async () => {
+  const { symlinkSync, chmodSync } = await import('node:fs');
+  const sd = join(base, 'sd');
+  mkdirSync(join(sd, 'r'), { recursive: true });
+  mkdirSync(join(base, 'shared-adlc'), { recursive: true });
+  symlinkSync(join(base, 'shared-adlc'), join(sd, 'r', '.adlc'));
+  assert.equal(run('delete_directory', { directoryPath: sd }, P), 'deny');
+  if (process.getuid?.() !== 0) {
+    const pd = join(base, 'pd');
+    mkdirSync(join(pd, 'locked', 'r', '.adlc'), { recursive: true });
+    chmodSync(join(pd, 'locked'), 0o311);
+    try {
+      assert.equal(run('move', { source: pd, destination: '/tmp/pd2' }, P), 'deny');
+    } finally {
+      chmodSync(join(pd, 'locked'), 0o755);
+    }
+  }
+});
+
+test('R5 M4: a new shard must be a schema-valid ticket in every content field; darwin folds case', () => {
+  const name = ticketFilename('T8');
+  const valid = JSON.stringify({ id: 'T8', title: 't', body: 'b', scope: [], rails: [], edges: [] });
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', name), CodeContent: '{"id":"T8"}' }, I), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', name), CodeContent: valid, Content: 'junk' }, I), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: join(I, '.adlc', 'tickets', name), CodeContent: valid }, I), 'pass');
+  const darwin = evaluatePayload({ toolCall: { name: 'write_to_file', args: { TargetFile: join(I, '.ADLC', 'Tickets', `zzz--${'a'.repeat(64)}.json`), CodeContent: '{}' } }, workspacePaths: [I] }, { env: {}, home, platform: 'darwin' });
+  assert.equal(darwin.decision, 'deny');
+});
+
+test('R5 L5: a worker cannot write into any ADLC repo that is not its own', () => {
+  const W = { AGB_WORKER_TICKET: 'T1' };
+  assert.equal(run('write_to_file', { TargetFile: join(A, 'lib', 'other.mjs') }, P, W), 'deny');
+  assert.equal(run('edit_notebook', { notebookPath: join(A, 'lib', 'x.ipynb') }, P, W), 'deny');
+});
+
+test('R5 L6: an unverifiably large directory asks interactively and denies headless', () => {
+  const big = join(P, 'target');
+  mkdirSync(big, { recursive: true });
+  for (let i = 0; i < 30; i += 1) writeFileSync(join(big, `f${i}`), '');
+  const opts = (env) => ({ env, home, platform: 'linux', limits: { subtreeEntries: 10 } });
+  const call = { toolCall: { name: 'delete_directory', args: { directoryPath: big } }, workspacePaths: [P] };
+  assert.equal(evaluatePayload(call, opts({})).decision, 'ask');
+  assert.equal(evaluatePayload(call, opts({ AGB_WORKER_TICKET: 'T1' })).decision, 'deny');
+});
+
+test('R5 L7: total resolution work per evaluation is bounded', () => {
+  const paths = Array.from({ length: 400 }, (_, i) => `${'lib/../'.repeat(1500)}x${i}`);
+  const t0 = Date.now();
+  assert.equal(runIn('mcp__fs__write', { paths }, [A, I, P]), 'deny');
+  assert.ok(Date.now() - t0 < 3000, `bounded (${Date.now() - t0} ms)`);
+});
