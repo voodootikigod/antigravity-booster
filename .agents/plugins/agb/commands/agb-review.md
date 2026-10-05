@@ -1,12 +1,6 @@
 ---
 name: agb-review
-description: Read-only lens fleet over a diff, loop-until-dry
+description: Read-only lens fleet over a diff, loop-until-dry (deprecated legacy shim)
 ---
 
-# /agb-review [repo] [ref]
-
-Deploys a read-only fleet of models to audit changes until no new critical/high findings remain.
-
-```sh
-agb review "$@"
-```
+Deprecated legacy shim: use the antigravity-booster plugin's root `commands/agb-review.md` (`/agb-review`) instead.

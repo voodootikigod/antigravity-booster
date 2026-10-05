@@ -1,0 +1,16 @@
+{
+  "agb-policy-guard": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

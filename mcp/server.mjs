@@ -9,16 +9,29 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const activeProcesses = new Map();
 
 
-// Smart resolution of agb executable:
-// 1. If running locally in dev/test, use the repository source file
-// 2. Otherwise, fall back to global 'agb' CLI on the system PATH
-let agbCmd = 'agb';
-let baseArgs = [];
+// Resolution of the agb CLI entry point (spec §4.1):
+// 1. Bundled (`dist/mcp-server.mjs`, built with --define:__AGB_BUNDLED__=true):
+//    the sibling bundle `dist/agb.mjs` in the same staged plugin directory.
+// 2. Source checkout (`mcp/server.mjs`): the repository's `bin/agb.mjs`.
+// 3. Otherwise fall back to an `agb` on PATH.
+// eslint-disable-next-line no-undef
+const IS_BUNDLED = typeof __AGB_BUNDLED__ !== 'undefined' && __AGB_BUNDLED__ === true;
 
-const localBin = join(__dirname, '..', '..', '..', '..', 'bin', 'agb.mjs');
-if (existsSync(localBin)) {
-  agbCmd = process.execPath;
-  baseArgs = [localBin];
+export function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED) {
+  const candidate = bundled ? join(dir, 'agb.mjs') : join(dir, '..', 'bin', 'agb.mjs');
+  if (existsSync(candidate)) return { cmd: process.execPath, args: [candidate] };
+  return { cmd: 'agb', args: [] };
+}
+
+const { cmd: agbCmd, args: baseArgs } = resolveAgbEntry();
+
+/** Diagnostics go to stderr only: stdout is reserved for JSON-RPC traffic. */
+function logDiagnostic(message) {
+  try {
+    process.stderr.write(`[agb-mcp] ${message}\n`);
+  } catch {
+    // stderr closed: nothing safe left to report to.
+  }
 }
 
 const TOOLS = [
@@ -95,9 +108,9 @@ const TOOLS = [
   }
 ];
 
+// No `output` stream: readline must never echo anything onto stdout.
 const rl = readline.createInterface({
   input: process.stdin,
-  output: process.stdout,
   terminal: false
 });
 
@@ -124,6 +137,7 @@ rl.on('line', async (line) => {
 
     await handleRequest(request);
   } catch (err) {
+    logDiagnostic(`parse error: ${err.message}`);
     sendError(null, -32700, `Parse error: ${err.message}`);
   }
 });
@@ -271,7 +285,9 @@ function handleCancelNotification(params) {
     const child = activeProcesses.get(targetId);
     try {
       child.kill('SIGTERM');
-    } catch (e) {}
+    } catch (e) {
+      logDiagnostic(`cancel ${targetId}: ${e.message}`);
+    }
     activeProcesses.delete(targetId);
   }
 }
@@ -280,11 +296,19 @@ function cleanup() {
   for (const [id, child] of activeProcesses.entries()) {
     try {
       child.kill('SIGTERM');
-    } catch (e) {}
+    } catch (e) {
+      logDiagnostic(`cleanup ${id}: ${e.message}`);
+    }
   }
   activeProcesses.clear();
 }
 
+process.on('uncaughtException', (err) => {
+  logDiagnostic(`uncaught exception: ${err?.stack || err}`);
+});
+process.on('unhandledRejection', (err) => {
+  logDiagnostic(`unhandled rejection: ${err?.stack || err}`);
+});
 process.on('exit', cleanup);
 process.on('SIGINT', () => { cleanup(); process.exit(0); });
 process.on('SIGTERM', () => { cleanup(); process.exit(0); });

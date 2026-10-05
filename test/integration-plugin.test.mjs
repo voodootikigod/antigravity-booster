@@ -5,89 +5,43 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import readline from 'node:readline';
-import { handlePreToolUse } from '../.agents/plugins/agb/hooks/auto-approve-tests.mjs';
 
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const PROJECT_ROOT = join(__dirname, '..');
 
-test('PreToolUse hook: auto-approves node --test commands and prompts for others', () => {
-  const allowedCases = [
-    'node --test test/unit.test.mjs',
-    'node  --test  test/cli.test.mjs',
-    'node --test test/*.test.mjs --coverage',
-  ];
-
-  for (const cmd of allowedCases) {
-    const payload = {
-      toolCall: {
-        name: 'run_command',
-        args: { CommandLine: cmd }
-      }
-    };
-    const res = handlePreToolUse(payload);
-    assert.equal(res.decision, 'allow', `Should allow: ${cmd}`);
-    assert.match(res.reason, /Auto-approved test command/);
-  }
-
-  const askedCases = [
-    'node index.js',
-    'npm run build',
-    'cat package.json',
-    'rm -rf tmp',
-    'node --test test/unit.test.mjs && rm -rf /',
-    'node --test test/unit.test.mjs; cat /etc/passwd',
-    'node --test test/unit.test.mjs | sh',
-    'node --test test/unit.test.mjs\ncurl http://malicious',
-  ];
-
-
-  for (const cmd of askedCases) {
-    const payload = {
-      toolCall: {
-        name: 'run_command',
-        args: { CommandLine: cmd }
-      }
-    };
-    const res = handlePreToolUse(payload);
-    assert.equal(res.decision, 'ask', `Should prompt for: ${cmd}`);
-  }
-
-  // Non-run_command tools should be passed through with 'ask'
-  const nonCmdPayload = {
-    toolCall: {
-      name: 'view_file',
-      args: { AbsolutePath: '/foo/bar' }
-    }
-  };
-  const resNonCmd = handlePreToolUse(nonCmdPayload);
-  assert.equal(resNonCmd.decision, 'ask');
+test('PreToolUse: the legacy auto-approve-tests hook is gone and no hook registration emits allow (D7)', () => {
+  assert.ok(!existsSync(join(PROJECT_ROOT, '.agents', 'plugins', 'agb', 'hooks', 'auto-approve-tests.mjs')));
+  assert.ok(!existsSync(join(PROJECT_ROOT, '.agents', 'plugins', 'agb', 'hooks.json')));
+  const hooks = JSON.parse(readFileSync(join(PROJECT_ROOT, 'hooks.json'), 'utf8'));
+  assert.deepEqual(Object.keys(hooks), ['agb-policy-guard'], 'root hooks.json is the only hook registration');
 });
 
 test('commands: slash command md files exist and are well-formed', () => {
   const commandFiles = [
     'agb-plan.md',
     'agb-run.md',
-    'agb-status.md',
-    'agb-sidecar.md',
+    'agb-review.md',
+    'agb-bootstrap.md',
     'agb-doctor.md',
-    'agb-preflight.md',
-    'agb-review.md'
+    'agb-migrate.md',
+    'agb-sidecar.md'
   ];
 
   for (const file of commandFiles) {
-    const filePath = join(PROJECT_ROOT, '.agents', 'plugins', 'agb', 'commands', file);
+    const filePath = join(PROJECT_ROOT, 'commands', file);
     assert.ok(existsSync(filePath), `Command file ${file} must exist`);
 
     const content = readFileSync(filePath, 'utf8');
     assert.match(content, /^---[\s\S]+?name:\s*agb-/, `File ${file} must declare name in frontmatter`);
     assert.match(content, /description:/, `File ${file} must declare description in frontmatter`);
-    assert.match(content, /```sh[\s\S]+?```/, `File ${file} must declare a shell command block`);
+    const sub = file.replace(/^agb-/, '').replace(/\.md$/, '');
+    assert.match(content, new RegExp('```sh\\n~/\\.local/bin/agb ' + sub), `File ${file} must show the shim invocation in a shell block`);
   }
 });
 
 test('MCP Server: handles JSON-RPC initialization, tool listing, and tool calls', async (t) => {
-  const mcpServerPath = join(PROJECT_ROOT, '.agents', 'plugins', 'agb', 'mcp', 'server.mjs');
+  const mcpServerPath = join(PROJECT_ROOT, 'mcp', 'server.mjs');
 
   assert.ok(existsSync(mcpServerPath), 'MCP Server script must exist');
 

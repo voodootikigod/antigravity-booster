@@ -1,12 +1,6 @@
 ---
 name: agb-plan
-description: Compile an Antigravity brain plan or spec file into plan.json
+description: Compile an Antigravity brain plan or spec file into plan.json (deprecated legacy shim)
 ---
 
-# /agb-plan <id | spec.md> <repo-path> [options]
-
-Compiles a plan artifact (GUI brain ID or raw Markdown spec file) into an executable plan.json ticket DAG.
-
-```sh
-agb plan "$@"
-```
+Deprecated legacy shim: use the antigravity-booster plugin's root `commands/agb-plan.md` (`/agb-plan`) instead.
