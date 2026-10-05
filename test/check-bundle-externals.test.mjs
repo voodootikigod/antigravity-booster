@@ -26,3 +26,8 @@ test('findExternalSpecifiers: catches static, side-effect, re-export, dynamic an
   ].join('\n');
   assert.deepEqual(findExternalSpecifiers(src), ['@adlc/core', '@adlc/tickets', 'left-pad', 'minimatch', 'side-effect-pkg']);
 });
+
+test('DEFAULT_BUNDLES covers all three shipped bundles', async () => {
+  const { DEFAULT_BUNDLES } = await import('../scripts/check-bundle-externals.mjs');
+  assert.deepEqual(DEFAULT_BUNDLES, ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs']);
+});

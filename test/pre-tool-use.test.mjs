@@ -438,3 +438,52 @@ test('entry: worker env from the parent process is honoured', () => {
   const r = entry(JSON.stringify(payload('run_command', { CommandLine: 'make', Cwd: fx.active }, fx.active)), WORKER);
   assert.equal(JSON.parse(r.stdout.trim()).decision, 'deny');
 });
+
+// ---------- hollow-test survivors (P5) ----------
+
+test('Gate 1: a new file written through a symlinked directory resolves to the real rail path', async () => {
+  const { symlinkSync } = await import('node:fs');
+  symlinkSync(join(fx.active, 'lib'), join(fx.active, 'alias'), 'dir');
+  // lib/gates.mjs is a declared rail that does not exist yet.
+  const v = run('write_to_file', { TargetFile: join(fx.active, 'alias', 'gates.mjs') }, fx.active);
+  assert.equal(v.decision, 'deny');
+  assert.equal(v.reason, 'Target path matches frozen rail: lib/gates.mjs');
+});
+
+test('Shell: bracket globs are dynamic, so an inspection command using one is not Stage 1', () => {
+  assert.equal(shell('cat lib/lock.mj[s]', fx.active).decision, 'ask');
+});
+
+test('Shell: a pure reader with a write redirection is not Stage 1 inspection', () => {
+  assert.equal(shell('cat lib/feature.mjs > lib/copy.mjs', fx.active).decision, 'ask');
+  assert.equal(shell('cat lib/feature.mjs < lib/feature.mjs', fx.active).decision, 'pass', 'input redirection stays read-only');
+});
+
+test('Shell: a ~ or $HOME token outside protected roots is dynamic (A.6 item 6)', () => {
+  assert.equal(shell('cat ~/notes.txt', fx.active).decision, 'ask');
+  assert.equal(shell('cat ~/notes.txt', fx.plain).decision, 'pass');
+});
+
+test('Step 1: the generic `path` key of read tools is inspected for booster data', () => {
+  const p = join(fx.home, '.config/antigravity-booster/secret');
+  assert.equal(run('view_file', { path: p }, fx.plain).decision, 'deny');
+  assert.equal(run('view_file_outline', { path: p }, fx.plain).decision, 'deny');
+});
+
+test('Shell: every ticket lifecycle verb needs --authorize', () => {
+  for (const verb of ['complete', 'archive', 'update', 'edit', 'discard', 'restore']) {
+    assert.equal(shell(`adlc ticket ${verb} T1 --write`, fx.active).decision, 'deny', verb);
+  }
+});
+
+test('Shell: git status porcelain v1 and v2 are inspection', () => {
+  assert.equal(shell('git status --porcelain=v1', fx.active).decision, 'pass');
+  assert.equal(shell('git status --porcelain=v2', fx.active).decision, 'pass');
+  assert.equal(shell('git status --porcelain=v3', fx.active).decision, 'ask', 'unknown format is not whitelisted');
+});
+
+test('Context: a HOME that does not exist still recognises the canonical shim', () => {
+  const ghost = join(fx.base, 'no-such-home');
+  const v = evaluatePayload(payload('run_command', { CommandLine: `${join(ghost, '.local/bin/agb')} doctor`, Cwd: fx.plain }, fx.plain), { env: {}, home: ghost, platform: 'linux' });
+  assert.equal(v.decision, 'pass');
+});

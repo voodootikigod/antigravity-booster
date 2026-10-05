@@ -1337,3 +1337,9 @@ test('preventExecutableReplacement: verifies transitive dependency tree digests 
 
 
 
+
+test('PLUGIN_CONTRACT_STATUSES is the spec §4.4 flat enum', async () => {
+  const { PLUGIN_CONTRACT_STATUSES } = await import('../lib/adlc-bridge.mjs');
+  assert.deepEqual([...PLUGIN_CONTRACT_STATUSES], ['compatible', 'tolerant', 'incompatible', 'unreadable', 'corrupt']);
+  assert.ok(Object.isFrozen(PLUGIN_CONTRACT_STATUSES));
+});
