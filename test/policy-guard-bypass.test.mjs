@@ -287,3 +287,26 @@ test('R2 posture: naming a directory that contains a rail asks; destructive verb
 test('R2 usability: git log -<n> is inspection', () => {
   assert.equal(sh('git log --oneline -5', A), 'pass');
 });
+
+// ---- hollow-test survivors (round-2 mutation pass) ----
+test('R2 mutation: popd leaves the working directory unknown, so later commands fail closed', () => {
+  assert.equal(sh('popd && rm config.json', I), 'deny');
+});
+
+test('R2 mutation: prefix words are unwrapped, so builtin cd into the workspace re-anchors', () => {
+  assert.equal(sh('builtin cd lib && cat lock.mjs', A), 'pass');
+  assert.equal(sh('doas cd lib && echo x > ../.adlc/config.json', I), 'deny');
+});
+
+test('R2 mutation: every shell flavour is re-lexed', () => {
+  for (const shell of ['sh', 'bash', 'dash', 'zsh', 'ksh']) {
+    assert.equal(sh(`${shell} -c "rm -rf .git"`, I), 'deny', shell);
+  }
+});
+
+test('R2 mutation: allowlisted long commit flags stay routine', () => {
+  const commit = ['git', 'commit'].join(' ');
+  for (const flag of ['--signoff', '--quiet', '--verbose']) {
+    assert.equal(sh(`${commit} -m x ${flag}`, A), 'pass', flag);
+  }
+});

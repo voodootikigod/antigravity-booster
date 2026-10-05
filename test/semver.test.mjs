@@ -68,3 +68,9 @@ test('comparators throw TypeError on unparseable input', () => {
     assert.throws(() => fn('1.7.0', 5), TypeError);
   }
 });
+
+test('build metadata may start with 0 and is ignored for precedence', async () => {
+  const { parse, eq } = await import('../lib/semver.mjs');
+  assert.notEqual(parse('1.7.0+001'), null);
+  assert.equal(eq('1.7.0+001', '1.7.0'), true);
+});

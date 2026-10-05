@@ -146,3 +146,28 @@ test('throws on non-existent dir and on a non-directory', () => {
 test('empty directory yields a stable digest', () => {
   assert.equal(computeDirectoryDigest(tmp()), computeDirectoryDigest(tmp()));
 });
+
+test('golden: the record format is relpath NUL class NUL sha256 NUL, x for executables', async () => {
+  const { createHash } = await import('node:crypto');
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const { computeDirectoryDigest } = await import('../lib/digest.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'agb-digest-golden-'));
+  try {
+    writeFileSync(join(dir, 'a.sh'), 'run');
+    chmodSync(join(dir, 'a.sh'), 0o755);
+    writeFileSync(join(dir, 'b.txt'), 'data');
+    chmodSync(join(dir, 'b.txt'), 0o644);
+    const sha = (s) => createHash('sha256').update(s).digest('hex');
+    const expected = createHash('sha256').update(`a.sh\0x\0${sha('run')}\0b.txt\0f\0${sha('data')}\0`).digest('hex');
+    assert.equal(computeDirectoryDigest(dir), expected);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an empty dir argument is a TypeError, not a filesystem error', async () => {
+  const { computeDirectoryDigest } = await import('../lib/digest.mjs');
+  assert.throws(() => computeDirectoryDigest(''), TypeError);
+});
