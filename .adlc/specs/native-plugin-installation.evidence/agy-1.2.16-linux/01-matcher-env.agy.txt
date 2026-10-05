@@ -1,0 +1,15 @@
+### Output of [sample.txt](file://<work>/ws/sample.txt)
+
+```text
+hello
+```
+
+---
+
+### Output of `echo probe-ok`
+
+```text
+probe-ok
+```
+
+# exit=0 elapsed=11s

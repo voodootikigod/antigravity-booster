@@ -1,0 +1,27 @@
+{
+  "id": "T-PLUGIN-04-MIGRATE-ROLLBACK-DOCS",
+  "title": "Implement agb migrate with an atomic migration lock, snapshot/rollback state machine, legacy cleanup, and docs",
+  "category": "feature",
+  "body": "Implement Ticket 4 of the canonical spec .adlc/specs/native-plugin-installation.md (section 5 'Ticket 4', section 4.6) as amended by its NORMATIVE Appendix A (read it first; it overrides the body). Branch feat/t-plugin-04-migrate in worktree .worktrees/t-plugin-04, stacked on T-PLUGIN-03-DOCTOR-HANDSHAKE. lib/lock.mjs is FROZEN; the user-global migration lock lives in a new lib/migration-lock.mjs.\n\nBuild (test-first, every test under a temp HOME with test/fixtures/fake-agy; never touch the developer's real ~/.gemini):\n1. lib/migration-lock.mjs per section 4.6: atomic mkdir lock at ~/.gemini/antigravity-cli/plugin_data/antigravity-booster/.migration.lock.d/ with meta.json {pid,startTime,token,startedAt}; Linux startTime = /proc/<pid>/stat field 22 parsed after the last ')' and compared exactly; darwin = Date.parse(ps -p <pid> -o lstart=) with +/-1000ms tolerance; isAlive treats EPERM/unreadable as alive; ABA-safe rename reclaim that never rmSyncs a directory whose token is not its own; acquireMigrationLock, assertMigrationLockHeld, releaseMigrationLock, finishUninstall (Appendix A.4 item 23).\n2. agb migrate per section 4.6 steps and Appendix A.4 items 21-25: lock acquired before reading state and held through Step 6; state machine SNAPSHOT_CREATED -> SYMLINKS_RECORDED -> PLUGINS_STAGED -> MIGRATED with forward resumption; immutable pre-migration.baseline.json and baselineSnapshotDir; Appendix A D13 snapshot exclusions (node_modules/, .worktrees/, .git/ recorded as excludedPaths) and 100 MB post-exclusion cap; Appendix A.4 item 22 symlink policy (only booster/adlc-antigravity-targeted links unlinked; dangling links into deleted booster skills removed; user links untouched); shim ~/.local/bin/agb 0755; postMigrationSnapshots; completion notice.\n3. agb migrate --rollback per the Normative Rollback-from-Each-State Table, restores only from baselineSnapshotDir, --force-rollback when staged plugins differ from postMigrationSnapshots, loss-of-agb warning, detached uninstaller with 2.0s handover.ack and timeout handling; agb migrate --break-lock (--force skips the prompt only); agb migrate --finish-uninstall.\n4. Appendix A.6 items 18-19 (symlink ownership classification; fresh-token resume of ROLLED_BACK_PENDING_UNINSTALL).\n5. Delete all of .agents/ (Appendix A D9). Update README.md, USAGE.md, ARCHITECTURE.md: git-URL install + /agb-bootstrap as primary, npm + agb migrate as upgrade path (D10), the D3 command model, and the D4 residual risk (in user-launched agy -p sessions ask degrades to allow; booster protection there is deny-only; merge-time rails-guard is the backstop). CHANGELOG entry under Unreleased.\n\nAcceptance criteria:\n1. `npm test` passes with new tests: test/migration-lock.test.mjs (two-process live-holder refusal and dead-PID reclaim; three-process ABA case never removes a live lock; PID reuse with altered startTime reclaimed; /proc stat parsing with comm 'bash (subshell)'; --break-lock), test/migrate-rollback.test.mjs (one case per rollback-table row; fault injection at each state; interrupted --force then rollback restores baseline symlinks; fresh-install rollback leaves third-party import_manifest entries; handover ack and timeout paths; post-npm-uninstall rollback via the shim; post-migration modification requires --force-rollback; repeated migrate/--force/--rollback keeps the baseline immutable; self-install does not truncate the source; snapshot excludes node_modules/.worktrees/.git and enforces the cap).\n2. `test -d .agents` fails (directory removed) and `grep -rn '\\.agents/' README.md USAGE.md ARCHITECTURE.md package.json plugin.json` finds no live references.\n3. `node --test test/packaging.test.mjs test/plugin-layout.test.mjs` passes after the removal.\n4. `adlc rails-guard --base <T3 merge commit> --ticket T-PLUGIN-04-MIGRATE-ROLLBACK-DOCS` exits 0.\n5. `npm run build && git status --porcelain --untracked-files=all dist/ vendor/` prints nothing.\n6. `adlc hollow-test --test-cmd \"npm test\" --base <T3 merge commit>` has no survivors in lib/migration-lock.mjs.\n7. `npx adversarial-review --base <T3 merge commit>` exits 0.\n8. After merge and only with the owner's explicit go-ahead at that time: run agb migrate on the owner's machine, agb doctor, one live rail denial, agb migrate --rollback, re-migrate; record with `adlc gate-manifest record real-migration --ticket T-PLUGIN-04-MIGRATE-ROLLBACK-DOCS`.",
+  "scope": [
+    "lib/migration-lock.mjs",
+    "lib/migrate.mjs",
+    "bin/agb.mjs",
+    "dist/**",
+    ".agents/**",
+    "README.md",
+    "USAGE.md",
+    "ARCHITECTURE.md",
+    "CHANGELOG.md",
+    "package.json",
+    "test/**"
+  ],
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/adlc-bridge.mjs",
+    "bin/node-launcher.sh",
+    "bin/hook-runner.sh"
+  ],
+  "edges": []
+}

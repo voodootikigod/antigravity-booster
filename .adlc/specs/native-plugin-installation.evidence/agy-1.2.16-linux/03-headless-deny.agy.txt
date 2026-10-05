@@ -1,0 +1,12 @@
+When attempting to run the command `echo probe-deny`, the execution was blocked by a pre-tool hook with the following message:
+
+```text
+Encountered error in tool execution: tool call denied by pre-tool hook: probe deny
+```
+
+### Details:
+- **Command:** `echo probe-deny`
+- **Status:** Denied
+- **Denial Reason:** `tool call denied by pre-tool hook: probe deny`
+
+# exit=0 elapsed=13s

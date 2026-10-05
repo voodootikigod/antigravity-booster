@@ -1,0 +1,18 @@
+MCP cwd=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_ROOT=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_DATA=$HOME/.gemini/antigravity-cli/plugin_data/probe-hookenv argv=[$HOME/.gemini/config/plugins/probe-hookenv/bin/mcp-log.sh $HOME/.gemini/config/plugins/probe-hookenv/x]
+MCP cwd=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_ROOT=$HOME/.gemini/config/plugins/probe-hookenv PLUGIN_DATA=$HOME/.gemini/antigravity-cli/plugin_data/probe-hookenv argv=[$HOME/.gemini/config/plugins/probe-hookenv/bin/mcp-log.sh $HOME/.gemini/config/plugins/probe-hookenv/x]
+=== star
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=deny
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":2,"toolCall":{"args":{"CommandLine":"echo probe-deny","Cwd":"<work>/ws","WaitMsBeforeAsync":10000,"toolAction":"Running echo probe-deny","toolSummary":"Echo probe-deny"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
+=== regex
+cwd=$HOME/.gemini/config/plugins/probe-hookenv
+PLUGIN_ROOT=<unset>
+PLUGIN_DATA=<unset>
+AGB_HOOK_DISABLE=<unset>
+AGB_WORKER_TICKET=<unset>
+PROBE_DECISION=deny
+stdin={"artifactDirectoryPath":"$HOME/.gemini/antigravity-cli/brain/<id>","conversationId":"<id>","modelName":"gemini-3.8-flash-high","stepIdx":2,"toolCall":{"args":{"CommandLine":"echo probe-deny","Cwd":"<work>/ws","WaitMsBeforeAsync":10000,"toolAction":"Running echo probe-deny","toolSummary":"Echo probe-deny"},"name":"run_command"},"transcriptPath":"$HOME/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript_full.jsonl","workspacePaths":["<work>/ws"]}
