@@ -1,11 +1,11 @@
 // run_command classification (spec §4.5.1 Stages 1-5 as amended by Appendix A).
 // Pure function of (args, ctx); ctx supplies repo lookups so this module never
 // touches the ticket store itself.
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { lexCommandLine } from './shell-lexer.mjs';
 import { DESTRUCTIVE_ROOT_VERBS, PURE_READERS, TICKET_STORE_DIR } from './constants.mjs';
 import {
-  boosterDataRoots, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail,
+  boosterDataRoots, expandHome, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail,
   matchRoot, protectedRoots, repoRelative, resolveCandidate,
 } from './paths.mjs';
 import { ask, deny, PASS, mostRestrictive } from './verdict.mjs';
@@ -17,19 +17,39 @@ const GIT_READ_FLAGS = {
   show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/],
 };
 const GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o)$/;
-const LIFECYCLE_VERBS = new Set(['complete', 'archive', 'update', 'edit', 'discard', 'restore']);
+const LIFECYCLE_VERBS = new Set(['complete', 'archive', 'update', 'edit', 'discard', 'restore', 'store']);
+const DIR_CHANGE = new Set(['cd', 'pushd', 'popd']);
+const COMMIT_LONG_FLAGS = new Set(['--message', '--signoff', '--quiet', '--verbose']);
+
+/**
+ * Non-flag operands following an `adlc` (or `adlc-tickets`) executable
+ * anywhere in argv, so `npx adlc …`, `command adlc …` and global flags
+ * (`adlc --json ticket …`) are recognised (P5 prosecution M2).
+ */
+function adlcTicketOperands(argv) {
+  const i = argv.findIndex((t) => ['adlc', 'adlc-tickets'].includes(basename(t)));
+  if (i < 0) return null;
+  const operands = argv.slice(i + 1).filter((t) => !t.startsWith('-'));
+  return basename(argv[i]) === 'adlc-tickets' ? ['ticket', ...operands] : operands;
+}
 
 function hasWriteRedirect(sub) {
   return sub.redirects.some((r) => r.op.includes('>'));
 }
 
-/** Non-flag argv tokens, `--flag=value` values, and every redirection target. */
+/**
+ * Non-flag argv tokens, `--flag=value` values, values attached to short
+ * options (`-oFILE`, `-tDIR`; P5 prosecution H2), and every redirection
+ * target. Over-inclusion is deliberate: a candidate that is not really a path
+ * can only cause a fail-closed false positive.
+ */
 function candidateTokens(sub) {
   const out = [];
   for (const t of sub.argv.slice(1)) {
     if (t.startsWith('-')) {
       const eq = t.indexOf('=');
       if (eq > 0 && eq < t.length - 1) out.push(t.slice(eq + 1));
+      else if (!t.startsWith('--') && t.length > 2) out.push(t.slice(2));
     } else if (t.length > 0) {
       out.push(t);
     }
@@ -60,7 +80,7 @@ function shimForms(home, realHome) {
 export function isShimInvocation(argv, ctx) {
   if (shimForms(ctx.home, ctx.realHome).has(argv[0])) return true;
   if ((argv[0] === '/bin/sh' || argv[0] === 'sh') && argv[2] === 'dist/agb.mjs' && typeof argv[1] === 'string') {
-    const launcher = argv[1].replace(/^(~|\$HOME|\$\{HOME\})(?=\/)/, ctx.home);
+    const launcher = resolve(expandHome(argv[1], ctx.home)); // resolve() collapses ../ (P5 prosecution L1)
     const pluginsDir = join(ctx.home, '.gemini', 'config', 'plugins');
     return /\/antigravity-booster(-[^/]+)?\/bin\/node-launcher\.sh$/.test(launcher) && isWithin(launcher, pluginsDir, ctx.platform);
   }
@@ -105,14 +125,38 @@ function isRoutine(sub) {
     const paths = rest.filter((t) => t !== '--');
     return paths.length > 0 && paths.every((t) => !t.startsWith('-') && t !== '.' && t !== '..');
   }
-  if (a1 === 'commit') {
-    return rest.every((t) => {
-      if (/^--(amend|no-verify|all)$/.test(t)) return false;
-      if (/^-[A-Za-z]+$/.test(t) && /[an]/.test(t.slice(1))) return false;
-      return true;
-    });
-  }
+  if (a1 === 'commit') return isRoutineCommit(rest);
   return false;
+}
+
+/**
+ * D15 `git commit`: an allowlist, because git accepts any unambiguous
+ * abbreviation of a long option (`--amen`, `--no-veri`; P5 prosecution H4).
+ */
+function isRoutineCommit(args) {
+  let expectValue = false;
+  for (const t of args) {
+    if (expectValue) {
+      expectValue = false;
+      continue;
+    }
+    if (t === '--') continue;
+    if (t === '-m' || t === '--message') {
+      expectValue = true;
+      continue;
+    }
+    if (t.startsWith('--message=')) continue;
+    if (t.startsWith('--')) {
+      if (!COMMIT_LONG_FLAGS.has(t)) return false;
+      continue;
+    }
+    if (t.startsWith('-')) {
+      const flags = t.slice(1);
+      if (!/^[sqv]*m?$/.test(flags) || flags.length === 0) return false;
+      if (flags.endsWith('m')) expectValue = true;
+    }
+  }
+  return true;
 }
 
 function destructiveRootScope(argv) {
@@ -147,6 +191,11 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange }) {
     if (matchRoot(r, protectedRoots(ctx.home), ctx.platform) && (writeTargets.has(token) || !(stage1 || shim))) {
       return { verdict: deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden'), repos };
     }
+    // The shim is a protected FILE root: writing into its directory (`cp -t ~/.local/bin agb`) replaces it.
+    const shimDir = join(ctx.home, '.local', 'bin');
+    if (!(stage1 || shim) && [r.lexical, r.real].some((p) => p === shimDir || p === join(ctx.realHome, '.local', 'bin'))) {
+      return { verdict: deny('Writing into the directory that holds the agb terminal shim is forbidden'), repos };
+    }
     const repo = ctx.repoAt(r.real);
     repos.push(repo);
     if (!repo.adlc || stage1 || dirChange) continue;
@@ -165,13 +214,21 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx) {
   const scope = destructiveRootScope(sub.argv);
   if (!scope) return PASS;
   if (scope === 'repo') {
-    return cwdRepo.adlc && cwdRepo.activeRail ? deny('Repository-wide destructive git command in a repository with active frozen rails') : PASS;
+    // git clean can remove ignored trust-root state (.adlc/manifest.jsonl) in
+    // any ADLC repo; reset --hard rewrites tracked rails only where rails exist.
+    const isClean = sub.argv[1] === 'clean';
+    if (cwdRepo.adlc && (isClean || cwdRepo.activeRail)) return deny('Repository-wide destructive git command in an ADLC repository');
+    return PASS;
   }
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
+    if (protectedRoots(ctx.home).some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
+      return deny('Destructive command targets a directory containing platform configuration, plugins, or Node runtimes');
+    }
     for (const repo of ctx.knownRepos()) {
-      if (repo.adlc && repo.activeRail && isWithin(repo.root, r.real, ctx.platform)) {
-        return deny('Target path is the repository root (or its parent), which contains active frozen rails');
+      // The root of any ADLC repo holds the D1 trust root (P5 prosecution M1).
+      if (repo.adlc && isWithin(repo.root, r.real, ctx.platform)) {
+        return deny('Target path is an ADLC repository root (or its parent), which holds frozen trust-root state');
       }
     }
   }
@@ -182,12 +239,13 @@ function classifySubcommand(sub, cwd, cwdRepo, ctx) {
   const argv = sub.argv;
   const shim = isShimInvocation(argv, ctx);
   const stage1 = !shim && isStage1(sub);
-  const dirChange = ['cd', 'pushd', 'popd'].includes(argv[0]);
+  const dirChange = DIR_CHANGE.has(argv[0]);
   const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange });
   if (targetVerdict.decision === 'deny') return targetVerdict;
   const contextRepos = [cwdRepo, ...repos];
 
-  if (argv[0] === 'adlc' && argv[1] === 'ticket' && LIFECYCLE_VERBS.has(argv[2])) {
+  const ticketOps = adlcTicketOperands(argv);
+  if (ticketOps && ticketOps[0] === 'ticket' && LIFECYCLE_VERBS.has(ticketOps[1])) {
     if (!contextRepos.some((r) => r.adlc)) return PASS;
     if (!argv.includes('--authorize')) return deny('Ticket lifecycle change without --authorize is forbidden in-session');
     return ctx.headless ? deny('Headless worker cannot authorize a ticket lifecycle change') : ask('Authorized ticket lifecycle change requires operator confirmation');
@@ -201,7 +259,7 @@ function classifySubcommand(sub, cwd, cwdRepo, ctx) {
     if (ctx.headless) return deny('Headless agb worker cannot invoke the agb shim');
     return stage5(ctx, contextRepos, 'agb command in an active-rail ADLC repository requires operator confirmation');
   }
-  if (argv[0] === 'cd' || argv[0] === 'pushd' || argv[0] === 'popd') {
+  if (DIR_CHANGE.has(argv[0])) {
     return stage5(ctx, contextRepos, 'Directory change in an active-rail ADLC repository requires operator confirmation');
   }
   if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && isTestCommand(sub)) return PASS;
@@ -209,11 +267,18 @@ function classifySubcommand(sub, cwd, cwdRepo, ctx) {
   return stage5(ctx, contextRepos, 'Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation');
 }
 
-/** Compound `cd <dir> && …`: a literal cd into a workspace path re-anchors later subcommands (Stage 4). */
-function nextCwd(sub, cwd, ctx) {
-  if (sub.argv[0] !== 'cd' || sub.argv.length !== 2 || sub.dynamic || hasHomePrefix(sub.argv[1])) return null;
-  const target = resolve(cwd, sub.argv[1]);
-  return ctx.workspacePaths.some((w) => isWithin(target, w, ctx.platform)) ? target : null;
+/**
+ * Where a directory change leaves the shell, or null when it cannot be known
+ * statically (`cd -`, `popd`, a dynamic operand). Every literal form is
+ * followed, inside the workspace or not (P5 prosecution H1).
+ */
+function dirChangeTarget(sub, cwd, ctx) {
+  const [cmd, ...rest] = sub.argv;
+  if (sub.dynamic || cmd === 'popd') return null;
+  const operands = rest.filter((t) => !/^-[LPe@]+$/.test(t) && t !== '--');
+  if (operands.length === 0) return cmd === 'cd' ? ctx.home : null;
+  if (operands.length > 1 || operands[0] === '-' || /^[+-]\d+$/.test(operands[0])) return null;
+  return resolve(cwd, expandHome(operands[0], ctx.home));
 }
 
 export function classifyRunCommand(args, ctx) {
@@ -235,13 +300,21 @@ export function classifyRunCommand(args, ctx) {
   const verdicts = [];
   let current = cwd;
   const subs = lexed.subcommands;
-  for (let i = 0; i < subs.length; i += 1) {
-    const moved = subs.length > 1 ? nextCwd(subs[i], current, ctx) : null;
-    if (moved) {
-      current = moved;
+  for (const sub of subs) {
+    if (current === null) {
+      verdicts.push(deny('Working directory unknown after a directory change; later commands cannot be verified'));
       continue;
     }
-    verdicts.push(classifySubcommand(subs[i], current, ctx.repoAt(current), ctx));
+    if (DIR_CHANGE.has(sub.argv[0])) {
+      const target = dirChangeTarget(sub, current, ctx);
+      const intoWorkspace = target !== null && ctx.workspacePaths.some((w) => isWithin(target, w, ctx.platform));
+      // A literal cd into the workspace inside a compound command just re-anchors (Stage 4);
+      // anything else is itself classified (ask in active-rail interactive, deny headless).
+      if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx.repoAt(current), ctx));
+      current = target;
+      continue;
+    }
+    verdicts.push(classifySubcommand(sub, current, ctx.repoAt(current), ctx));
   }
   return mostRestrictive(verdicts);
 }

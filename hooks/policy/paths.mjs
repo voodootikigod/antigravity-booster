@@ -117,6 +117,11 @@ function isAncestor(rel, target, platform) {
  * (or is an ancestor of) an implicit rail, or an existing ticket shard.
  */
 export function matchImplicitRail(rel, repoRoot, platform) {
+  // A nested .adlc/ or .git below the root would re-root the repository for
+  // every later evaluation (P5 prosecution C1): never let one be created.
+  if (rel.split('/').slice(1).some((seg) => ['.adlc', '.git'].includes(fold(seg, platform)))) {
+    return 'nested .adlc/ or .git/ inside an ADLC repository';
+  }
   for (const dir of IMPLICIT_RAIL_DIRS) {
     if (covers(rel, dir, platform) || isAncestor(rel, dir, platform)) return `${dir}/**`;
   }
@@ -134,16 +139,33 @@ export function matchImplicitRail(rel, repoRoot, platform) {
   return null;
 }
 
-/** First declared rail matching `rel` in either direction (§4.5.1 Gate 1). */
+const GLOB_SEGMENT = /[*?[\]{}!]/;
+
+/** Leading glob-free segments of a rail pattern (`bin/**` -> `bin`). */
+export function railStaticPrefix(rail) {
+  const kept = [];
+  for (const seg of rail.split('/')) {
+    if (GLOB_SEGMENT.test(seg)) break;
+    kept.push(seg);
+  }
+  return kept.join('/');
+}
+
+/**
+ * First declared rail matching `rel` in either direction (§4.5.1 Gate 1):
+ * the path is inside the rail, matches its glob, or is a directory that
+ * contains it. Only ticket-declared rails are ever used as glob patterns;
+ * the agent-controlled path never is (P5 prosecution H5: a 64 KB path used
+ * as a pattern crashed the evaluator).
+ */
 export function matchDeclaredRail(rel, rails, platform) {
   const nocase = platform === 'darwin';
-  if (rel === '' && rails.length > 0) return rails[0];
   for (const rail of rails) {
+    const prefix = railStaticPrefix(rail);
     if (
       covers(rel, rail, platform) ||
-      isAncestor(rel, rail, platform) ||
-      minimatch(rel, rail, { dot: true, nocase }) ||
-      minimatch(rail, `${rel}/**`, { dot: true, nocase })
+      (prefix !== '' && (fold(rel, platform) === fold(prefix, platform) || isAncestor(rel, prefix, platform))) ||
+      minimatch(rel, rail, { dot: true, nocase })
     ) {
       return rail;
     }

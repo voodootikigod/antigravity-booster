@@ -4372,7 +4372,7 @@ function scopesOverlap(a, b) {
 }
 
 // lib/scheduler.mjs
-import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync6, rmSync as rmSync13, existsSync as existsSync26, readFileSync as readFileSync23, readdirSync as readdirSync10, realpathSync as realpathSync9, mkdirSync as mkdirSync17, lstatSync as lstatSync13, readlinkSync, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
+import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync6, rmSync as rmSync13, existsSync as existsSync26, readFileSync as readFileSync23, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync17, lstatSync as lstatSync13, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
 import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
 import { tmpdir as tmpdir8 } from "node:os";
@@ -5914,7 +5914,7 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
 }
 
 // lib/bootstrap.mjs
-import { existsSync as existsSync17, mkdirSync as mkdirSync8, readdirSync as readdirSync7, lstatSync as lstatSync8, symlinkSync as symlinkSync2, copyFileSync as copyFileSync3, rmSync as rmSync5, readFileSync as readFileSync15, appendFileSync } from "node:fs";
+import { existsSync as existsSync17, mkdirSync as mkdirSync8, readdirSync as readdirSync8, lstatSync as lstatSync8, symlinkSync as symlinkSync3, copyFileSync as copyFileSync4, rmSync as rmSync5, readFileSync as readFileSync15, appendFileSync } from "node:fs";
 import { join as join18, resolve as resolve8, dirname as dirname13 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 import { homedir as homedir3 } from "node:os";
@@ -5931,12 +5931,15 @@ import {
   realpathSync as realpathSync3,
   mkdirSync as mkdirSync7,
   mkdtempSync as mkdtempSync3,
-  cpSync as cpSync2,
   rmSync as rmSync4,
   writeFileSync as writeFileSync8,
   chmodSync as chmodSync2,
   renameSync as renameSync3,
-  statSync as statSync2
+  statSync as statSync2,
+  readdirSync as readdirSync7,
+  copyFileSync as copyFileSync3,
+  readlinkSync,
+  symlinkSync as symlinkSync2
 } from "node:fs";
 import { execFileSync as execFileSync5 } from "node:child_process";
 import { createHash as createHash3 } from "node:crypto";
@@ -6014,6 +6017,29 @@ function forwardToStderr(buf) {
 function isExcludedFromCopy(srcPath) {
   return INSTALL_COPY_EXCLUSIONS.includes(basename6(srcPath));
 }
+var isVanished = (err) => err?.code === "ENOENT";
+function copyPluginTree(src, dst) {
+  mkdirSync7(dst, { recursive: true });
+  let entries;
+  try {
+    entries = readdirSync7(src, { withFileTypes: true });
+  } catch (err) {
+    if (isVanished(err)) return;
+    throw err;
+  }
+  for (const entry of entries) {
+    const from = join17(src, entry.name);
+    const to = join17(dst, entry.name);
+    if (isExcludedFromCopy(from)) continue;
+    try {
+      if (entry.isSymbolicLink()) symlinkSync2(readlinkSync(from), to);
+      else if (entry.isDirectory()) copyPluginTree(from, to);
+      else if (entry.isFile()) copyFileSync3(from, to);
+    } catch (err) {
+      if (!isVanished(err)) throw err;
+    }
+  }
+}
 function safePluginInstall(sourceDir, targetPluginName, options = {}) {
   const home = options.home ?? homedir2();
   let tmpRoot;
@@ -6033,10 +6059,7 @@ function safePluginInstall(sourceDir, targetPluginName, options = {}) {
     }
     tmpRoot = mkdtempSync3(join17(options.tmpParent ?? tmpdir3(), "agy-staging-"));
     const tmpTarget = join17(tmpRoot, targetPluginName);
-    cpSync2(sourceDir, tmpTarget, {
-      recursive: true,
-      filter: (src) => !isExcludedFromCopy(src)
-    });
+    copyPluginTree(sourceDir, tmpTarget);
     const agyBin = options.agyBin ?? resolveAgyBinary(home);
     try {
       const out = execFileSync5(agyBin, ["plugin", "install", tmpTarget], {
@@ -6148,7 +6171,7 @@ function installTerminalShim({ home = homedir2(), force = false } = {}) {
     mkdirSync7(binDir, { recursive: true });
     const tmpPath = join17(binDir, `.agb.tmp-${process.pid}-${Date.now()}`);
     try {
-      writeFileSync8(tmpPath, TERMINAL_SHIM_CONTENT, { mode: 493 });
+      writeFileSync8(tmpPath, TERMINAL_SHIM_CONTENT, { mode: 493, flag: "wx" });
       chmodSync2(tmpPath, 493);
       renameSync3(tmpPath, shimPath);
     } catch (err) {
@@ -6185,13 +6208,13 @@ function isNpxTemp(filePath = fileURLToPath2(import.meta.url), env = process.env
 }
 function copyDirSync(src, dest) {
   mkdirSync8(dest, { recursive: true });
-  for (const entry of readdirSync7(src, { withFileTypes: true })) {
+  for (const entry of readdirSync8(src, { withFileTypes: true })) {
     const srcPath = join18(src, entry.name);
     const destPath = join18(dest, entry.name);
     if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath);
     } else {
-      copyFileSync3(srcPath, destPath);
+      copyFileSync4(srcPath, destPath);
     }
   }
 }
@@ -6283,6 +6306,22 @@ function installPlugin(pluginPath, agyBin, agyCheckFailed, pluginName = "adlc-an
   console.log(`installed ${pluginName} plugin`);
   return true;
 }
+function installBoosterPlugin({ home, agyBin, agyCheckFailed }) {
+  const runner = resolvePluginRunner(agyBin, agyCheckFailed);
+  if (!runner) {
+    console.error("warning: skipping antigravity-booster install because neither agy nor jetski CLI is found");
+    return false;
+  }
+  const source = resolveBoosterPluginPath();
+  if (runner.useJetski) return installPlugin(source, agyBin, agyCheckFailed, "antigravity-booster");
+  console.log(`installing plugin antigravity-booster from ${source} using ${runner.runnerBin}...`);
+  const res = safePluginInstall(source, "antigravity-booster", { home, agyBin: runner.runnerBin });
+  if (!res.ok) {
+    console.error(`error: failed to install antigravity-booster: ${res.error}`);
+    return false;
+  }
+  return true;
+}
 function installVendoredAdlcAntigravity({ home, forceReinstall, agyBin, agyCheckFailed }) {
   const pluginName = ADLC_ANTIGRAVITY_PLUGIN_NAME;
   const stagedDir = join18(pluginsDirFor(home), pluginName);
@@ -6351,7 +6390,7 @@ function bootstrap({
     } else {
       console.log("installation directory is stable: using symlinks for auto-upgrades");
     }
-    const skills = readdirSync7(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const skills = readdirSync8(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     for (const name of skills) {
       const src = join18(skillsSrc, name);
       const dst = join18(destination, name);
@@ -6378,7 +6417,7 @@ function bootstrap({
         }
       } else {
         try {
-          symlinkSync2(src, dst);
+          symlinkSync3(src, dst);
           console.log(`linked  ${name} -> ${dst}`);
         } catch (err) {
           console.error(`error: failed to symlink skill ${name}: ${err.message}`);
@@ -6391,8 +6430,7 @@ function bootstrap({
   if (!pluginInstallSuccess) {
     hasErrors = true;
   }
-  const boosterPluginPath = resolveBoosterPluginPath();
-  const boosterInstallSuccess = installPlugin(boosterPluginPath, resolvedAgyBin, agyCheckFailed, "antigravity-booster");
+  const boosterInstallSuccess = installBoosterPlugin({ home, agyBin: resolvedAgyBin, agyCheckFailed });
   if (!boosterInstallSuccess) {
     hasErrors = true;
   }
@@ -11338,7 +11376,7 @@ async function preflight(plan, opts = {}) {
 }
 
 // lib/brain.mjs
-import { readdirSync as readdirSync8, readFileSync as readFileSync19, statSync as statSync5, existsSync as existsSync22, writeFileSync as writeFileSync13, mkdirSync as mkdirSync13 } from "node:fs";
+import { readdirSync as readdirSync9, readFileSync as readFileSync19, statSync as statSync5, existsSync as existsSync22, writeFileSync as writeFileSync13, mkdirSync as mkdirSync13 } from "node:fs";
 import { join as join24, resolve as resolve12 } from "node:path";
 import { homedir as homedir6 } from "node:os";
 var jetskiBrain = join24(homedir6(), ".gemini", "jetski", "brain");
@@ -11359,7 +11397,7 @@ function listBrains(brainDir = BRAIN_DIR) {
   const results = [];
   for (const bDir of dirsToSearch) {
     if (!existsSync22(bDir)) continue;
-    for (const id of readdirSync8(bDir)) {
+    for (const id of readdirSync9(bDir)) {
       if (seen.has(id)) continue;
       const dir = join24(bDir, id);
       const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync22(join24(dir, f))).map((f) => ({ path: join24(dir, f), mtime: statSync5(join24(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
@@ -11519,10 +11557,10 @@ import {
   renameSync as renameSync5,
   unlinkSync as unlinkSync6,
   mkdirSync as mkdirSync14,
-  readdirSync as readdirSync9,
+  readdirSync as readdirSync10,
   rmSync as rmSync10,
-  symlinkSync as symlinkSync3,
-  cpSync as cpSync3,
+  symlinkSync as symlinkSync4,
+  cpSync as cpSync2,
   lstatSync as lstatSync12,
   realpathSync as realpathSync8
 } from "node:fs";
@@ -11764,10 +11802,10 @@ function createIntegrationWorktree(repo, token, base = "main") {
   const targetModules = join25(path2, "node_modules");
   if (existsSync23(repoModules) && !existsSync23(targetModules)) {
     try {
-      symlinkSync3(repoModules, targetModules, "junction");
+      symlinkSync4(repoModules, targetModules, "junction");
     } catch {
       try {
-        cpSync3(repoModules, targetModules, { recursive: true });
+        cpSync2(repoModules, targetModules, { recursive: true });
       } catch {
       }
     }
@@ -11779,7 +11817,7 @@ function reapIntegrationWorktrees(repo) {
   const dir = join25(repo, ".worktrees");
   if (!existsSync23(dir)) return;
   try {
-    const entries = readdirSync9(dir, { withFileTypes: true });
+    const entries = readdirSync10(dir, { withFileTypes: true });
     for (const ent of entries) {
       if (ent.isDirectory() && ent.name.startsWith("agb-integration-")) {
         const full = join25(dir, ent.name);
@@ -11798,7 +11836,7 @@ function reapIntegrationWorktrees(repo) {
   const attemptGitBase = join25(dir, ".attempt_git");
   if (existsSync23(attemptGitBase)) {
     try {
-      const attemptEntries = readdirSync9(attemptGitBase, { withFileTypes: true });
+      const attemptEntries = readdirSync10(attemptGitBase, { withFileTypes: true });
       for (const ent of attemptEntries) {
         const correspondingWt = join25(dir, ent.name);
         if (!existsSync23(correspondingWt)) {
@@ -11808,7 +11846,7 @@ function reapIntegrationWorktrees(repo) {
           }
         }
       }
-      if (readdirSync9(attemptGitBase).length === 0) {
+      if (readdirSync10(attemptGitBase).length === 0) {
         try {
           rmSync10(attemptGitBase, { recursive: true, force: true });
         } catch {
@@ -12693,7 +12731,7 @@ function hashDir(dir, filterFn = () => true) {
   let count = 0;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync10(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+      const entries = readdirSync11(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join29(d, ent.name);
@@ -12718,7 +12756,7 @@ function listObjects(objectsDir) {
   if (!existsSync26(objectsDir)) return set;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync10(d, { withFileTypes: true });
+      const entries = readdirSync11(d, { withFileTypes: true });
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join29(d, ent.name);
@@ -13192,7 +13230,7 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
   }
   const hooksDir = join29(resolvedTarget, "hooks");
   if (existsSync26(hooksDir)) {
-    const entries = readdirSync10(hooksDir);
+    const entries = readdirSync11(hooksDir);
     for (const ent of entries) {
       if (!ent.endsWith(".sample")) {
         throw new Error(`Security violation: unexpected hook file found in attempt git database: ${ent}`);
@@ -13297,7 +13335,7 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
         try {
           const st = lstatSync13(fullPath);
           if (st.isSymbolicLink()) {
-            const rawTarget = readlinkSync(fullPath);
+            const rawTarget = readlinkSync2(fullPath);
             let finalReal;
             try {
               finalReal = realpathSync9(fullPath);

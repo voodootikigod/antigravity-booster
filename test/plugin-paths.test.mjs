@@ -374,3 +374,32 @@ test('installTerminalShim: a directory in the way → {ok:false}, never throws',
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('copyPluginTree: relative symlinks stay relative, modes survive, exclusions apply at any depth', async () => {
+  const { copyPluginTree } = await import('../lib/plugin-paths.mjs');
+  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, readlinkSync, statSync, existsSync, rmSync, chmodSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(join(tmpdir(), 'agb-copytree-'));
+  try {
+    const src = join(root, 'src');
+    mkdirSync(join(src, 'bin'), { recursive: true });
+    mkdirSync(join(src, 'deep', 'node_modules', 'x'), { recursive: true });
+    mkdirSync(join(src, 'deep', '.git'), { recursive: true });
+    writeFileSync(join(src, 'bin', 'run.sh'), '#!/bin/sh\n');
+    chmodSync(join(src, 'bin', 'run.sh'), 0o755);
+    writeFileSync(join(src, 'deep', 'node_modules', 'x', 'i.js'), '');
+    symlinkSync('../bin/run.sh', join(src, 'deep', 'link'));
+    symlinkSync('missing-target', join(src, 'dangling'));
+    const dst = join(root, 'dst');
+    copyPluginTree(src, dst);
+    assert.equal(readlinkSync(join(dst, 'deep', 'link')), '../bin/run.sh', 'relative target kept verbatim');
+    assert.equal(readlinkSync(join(dst, 'dangling')), 'missing-target', 'dangling link copied, not followed');
+    assert.equal(statSync(join(dst, 'bin', 'run.sh')).mode & 0o777, 0o755);
+    assert.equal(existsSync(join(dst, 'deep', 'node_modules')), false);
+    assert.equal(existsSync(join(dst, 'deep', '.git')), false);
+    copyPluginTree(join(src, 'vanished-before-copy'), join(root, 'dst2')); // ENOENT source is tolerated
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

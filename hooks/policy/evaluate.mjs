@@ -18,6 +18,10 @@ import { classifyRunCommand } from './shell.mjs';
 import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
 
 const UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
+const FILE_URL = /^file:\/\//;
+
+/** Tools may name targets as file:// URLs; policy always evaluates the path (P5 prosecution M3). */
+const toPath = (value) => value.replace(FILE_URL, '');
 
 function realOr(p) {
   try {
@@ -86,7 +90,7 @@ function scanPathLike(value, out = [], key = null) {
 
 function readToolPaths(name, args) {
   const keys = READ_TOOL_PATH_SCHEMAS[name] ?? [];
-  return keys.map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map((v) => v.replace(/^file:\/\//, ''));
+  return keys.map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
 }
 
 /** Gate 1 for one resolved path inside the repo cache: implicit rails, shards, declared rails. */
@@ -123,7 +127,7 @@ function stepOne(name, args, ctx) {
   let candidates;
   if (READ_ONLY_TOOLS.has(name) || READ_TOOL_PATH_SCHEMAS[name]) candidates = readToolPaths(name, args);
   else if (TOOL_PATH_SCHEMAS[name]) {
-    candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === 'string');
+    candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === 'string').map(toPath);
   } else if (name === 'run_command') return PASS; // shell tokens are checked by the classifier
   else candidates = scanPathLike(args);
 
@@ -139,19 +143,34 @@ function stepOne(name, args, ctx) {
   return PASS;
 }
 
+/**
+ * A schema-violating call is judged by every path it could touch, not by the
+ * caller-controllable anchor (P5 prosecution H3, Appendix A.6 item 8): deny
+ * when any candidate lands in an ADLC repository or a protected root.
+ */
+function schemaViolationVerdict(name, args, reason, ctx) {
+  if (ctx.readonly) return deny(reason);
+  const required = (TOOL_PATH_SCHEMAS[name]?.required ?? []).map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0);
+  const anchorRepo = ctx.repoAt(ctx.anchor ?? '/');
+  if (anchorRepo.adlc && (anchorRepo.activeRail || ctx.workerTicket)) return deny(reason);
+  for (const token of [...required, ...scanPathLike(args)].map(toPath)) {
+    const r = resolveCandidate(token, ctx.anchor, ctx.home);
+    if (matchRoot(r, protectedRoots(ctx.home), ctx.platform) || ctx.repoAt(r.real).adlc) return deny(reason);
+  }
+  return PASS;
+}
+
 function evaluateFileTool(name, args, ctx) {
   const extracted = extractProbedPaths(name, args);
-  const contextRepo = ctx.repoAt(ctx.anchor ?? '/');
   if (!extracted || extracted.error) {
     const reason = extracted
       ? `Mutating tool argument schema violation: ${extracted.error}`
       : 'Unknown mutating tool in ADLC repository with active frozen rails; cannot verify target path safety';
-    if (ctx.readonly || (contextRepo.adlc && (contextRepo.activeRail || ctx.workerTicket))) return deny(reason);
-    return PASS;
+    return schemaViolationVerdict(name, args, reason, ctx);
   }
   if (ctx.readonly) return deny('Read-only agb worker session: file mutations are forbidden');
   const verdicts = [];
-  for (const token of extracted.paths) {
+  for (const token of extracted.paths.map(toPath)) {
     const r = resolveCandidate(token, ctx.anchor, ctx.home);
     const { verdict, repo, rel } = gateOnePath(r, ctx);
     if (verdict.decision !== 'pass') {

@@ -147,6 +147,10 @@ export function lexCommandLine(line) {
       if (/[0-9]/.test(line[j])) op += line[j++];
       op += line[j++];
       if (line[j] === '>' && op.endsWith('>')) op += line[j++];
+      // `>|` (noclobber override) and `<>` (read-write open) are write redirections:
+      // without this the target would start a new pipeline stage (P5 prosecution C2).
+      if (line[j] === '|' && op.endsWith('>')) op += line[j++];
+      else if (line[j] === '>' && op.endsWith('<')) op += line[j++];
       if (line[j] === '&') {
         // fd duplication (2>&1): not a file target
         op += line[j++];

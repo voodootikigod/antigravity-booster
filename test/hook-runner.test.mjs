@@ -502,3 +502,31 @@ test('runner source is POSIX sh: no bashisms, command -v not which', () => {
   assert.ok(!/\[\[(?!:)|\bfunction\s+\w+/.test(src), 'bashism');
   assert.ok(src.includes('AGB_WORKER_MODE'), 'tests AGB_WORKER_MODE');
 });
+
+// P5 prosecution H5: a crashed child plus a second toolCall/name injected into
+// the arguments must not earn the read-only pass-through.
+test('fallback: injected toolCall/name in args cannot spoof a read-only tool', async () => {
+  const spoofed = JSON.stringify({
+    toolCall: {
+      args: { CommandLine: 'tee src/x.txt', Cwd: ADLC_REPO, toolCall: { name: 'view_file' } },
+      name: 'run_command',
+    },
+    workspacePaths: [ADLC_REPO],
+  });
+  const r = await run('/bin/sh', { payload: spoofed, env: { STUB_MODE: 'crash' } });
+  assertInvariant(r);
+  assert.equal(decisionOf(r), 'deny');
+  const nameOnly = JSON.stringify({
+    toolCall: { args: { TargetFile: 'src/x.txt', name: 'view_file' }, name: 'write_to_file' },
+    workspacePaths: [ADLC_REPO],
+  });
+  const r2 = await run('/bin/sh', { payload: nameOnly, env: { STUB_MODE: 'crash' } });
+  assertInvariant(r2);
+  assert.equal(decisionOf(r2), 'deny');
+});
+
+test('fallback: an unambiguous read-only payload still passes through', async () => {
+  const r = await run('/bin/sh', { payload: payloadFor('view_file'), env: { STUB_MODE: 'crash' } });
+  assertInvariant(r);
+  assert.equal(r.stdout, '');
+});

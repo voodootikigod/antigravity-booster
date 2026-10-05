@@ -141,3 +141,25 @@ test('resolveBoosterPluginPath: resolves the antigravity-booster plugin root, ne
   assert.ok(!got.includes(join('.agents', 'plugins', 'agb')));
   assert.equal(JSON.parse(readFileSync(join(got, 'plugin.json'), 'utf8')).name, 'antigravity-booster');
 });
+
+// Appendix A.4 item 19 / A.6 item 16 (P5 prosecution gap): booster itself is
+// staged through safePluginInstall — a copy under the canonical name with no
+// node_modules/, .worktrees/ or .git/.
+test('bootstrap: booster is staged as antigravity-booster from an excluded copy', () => {
+  const ctx = setup();
+  try {
+    const r = runBootstrap(ctx);
+    assert.equal(r.status, 0, r.stderr);
+    const staged = join(ctx.home, '.gemini', 'config', 'plugins', 'antigravity-booster');
+    assert.equal(JSON.parse(readFileSync(join(staged, 'plugin.json'), 'utf8')).name, 'antigravity-booster');
+    for (const excluded of ['node_modules', '.git', '.worktrees']) {
+      assert.equal(existsSync(join(staged, excluded)), false, `${excluded} must not be staged`);
+    }
+    assert.ok(existsSync(join(staged, 'dist', 'hooks', 'pre-tool-use.bundle.mjs')), 'bundles are staged');
+    const boosterInstall = installs(ctx.state).find((l) => l.endsWith('/antigravity-booster'));
+    assert.ok(boosterInstall, 'agy was handed the staged copy named antigravity-booster');
+    assert.doesNotMatch(boosterInstall, /\.worktrees\/t-plugin-01$/, 'never the live checkout itself');
+  } finally {
+    ctx.cleanup();
+  }
+});

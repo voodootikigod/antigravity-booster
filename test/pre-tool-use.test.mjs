@@ -499,3 +499,32 @@ test('Step 1: every probed read-tool path key alias is inspected', () => {
     assert.equal(run(tool, { [key]: `file://${secret}` }, fx.plain).decision, 'deny', `${tool}.${key} file:// URL`);
   }
 });
+
+// ---------- inactive ADLC repo column (P5 prosecution: SHELL_TABLE lacked it) ----------
+// No declared rails: declared-rail denials vanish, the D1 trust root and repo root stay denied.
+const INACTIVE_EXPECT = {
+  'rm lib/lock.mjs': 'pass', 'echo x > lib/lock.mjs': 'pass', 'git checkout -- lib/lock.mjs': 'pass',
+  'rm .adlc/config.json': 'deny', 'rm -rf .': 'deny', 'git clean -fd': 'deny',
+  'node -e "require(1)"': 'pass', 'npm test': 'pass', 'git add .': 'pass', 'cd lib': 'pass',
+  'git status': 'pass', 'adlc ticket create --input t.json --write': 'pass',
+};
+for (const [cmd, expected] of Object.entries(INACTIVE_EXPECT)) {
+  test(`Shell table (inactive ADLC repo): ${cmd}`, () => {
+    assert.equal(shell(cmd, fx.inactive).decision, expected);
+  });
+}
+
+// ---------- darwin case folding (Appendix A.4 item 26) ----------
+const onDarwin = (name, args, ws) => evaluatePayload(payload(name, args, ws), { env: {}, home: fx.home, platform: 'darwin' }).decision;
+
+test('darwin: rail, trust-root and protected-root matching is case-insensitive', () => {
+  assert.equal(onDarwin('write_to_file', { TargetFile: join(fx.active, 'LIB', 'LOCK.MJS') }, fx.active), 'deny');
+  assert.equal(onDarwin('write_to_file', { TargetFile: join(fx.inactive, '.ADLC', 'Config.json') }, fx.inactive), 'deny');
+  assert.equal(onDarwin('write_to_file', { TargetFile: join(fx.home, '.Gemini', 'settings.json') }, fx.plain), 'deny');
+  assert.equal(onDarwin('run_command', { CommandLine: 'rm Lib/Lock.mjs', Cwd: fx.active }, fx.active), 'deny');
+});
+
+test('linux: the same case-variant paths are distinct files and pass', () => {
+  assert.equal(run('write_to_file', { TargetFile: join(fx.active, 'LIB', 'LOCK.MJS') }, fx.active).decision, 'pass');
+  assert.equal(run('write_to_file', { TargetFile: join(fx.home, '.Gemini', 'settings.json') }, fx.plain).decision, 'pass');
+});

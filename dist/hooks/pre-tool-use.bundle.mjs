@@ -331,11 +331,12 @@ var require_brace_expansion = __commonJS({
 
 // hooks/policy/evaluate.mjs
 import { realpathSync as realpathSync2 } from "node:fs";
-import { homedir } from "node:os";
+import { homedir as homedir2 } from "node:os";
 import { isAbsolute as isAbsolute5, resolve as resolve8 } from "node:path";
 
 // lib/active-rails.mjs
 import { existsSync as existsSync10, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname as dirname8, join as join8, resolve as resolve5 } from "node:path";
 
 // node_modules/@adlc/tickets/lib/pointer.mjs
@@ -1912,14 +1913,23 @@ function isDirectory(path2) {
     return false;
   }
 }
-function findAdlcRoot(targetPath) {
-  let curr = resolve5(targetPath);
+function walkUp(start, predicate) {
+  let curr = resolve5(start);
   for (; ; ) {
-    if (isDirectory(join8(curr, ".adlc"))) return curr;
+    if (predicate(curr)) return curr;
     const parent = dirname8(curr);
     if (parent === curr) return null;
     curr = parent;
   }
+}
+function findGitTop(targetPath) {
+  return walkUp(targetPath, (dir) => existsSync10(join8(dir, ".git")));
+}
+function findAdlcRoot(targetPath, { home = homedir() } = {}) {
+  const gitTop = findGitTop(targetPath);
+  if (gitTop) return isDirectory(join8(gitTop, ".adlc")) ? gitTop : null;
+  const homeDir = resolve5(home);
+  return walkUp(targetPath, (dir) => dir !== homeDir && dir !== "/" && isDirectory(join8(dir, ".adlc")));
 }
 function loadSnapshot(repoRoot) {
   try {
@@ -3468,6 +3478,9 @@ function isAncestor(rel, target, platform) {
   return r === "" || t.startsWith(r + "/");
 }
 function matchImplicitRail(rel, repoRoot, platform) {
+  if (rel.split("/").slice(1).some((seg) => [".adlc", ".git"].includes(fold(seg, platform)))) {
+    return "nested .adlc/ or .git/ inside an ADLC repository";
+  }
   for (const dir of IMPLICIT_RAIL_DIRS) {
     if (covers(rel, dir, platform) || isAncestor(rel, dir, platform)) return `${dir}/**`;
   }
@@ -3483,11 +3496,20 @@ function matchImplicitRail(rel, repoRoot, platform) {
   }
   return null;
 }
+var GLOB_SEGMENT = /[*?[\]{}!]/;
+function railStaticPrefix(rail) {
+  const kept = [];
+  for (const seg of rail.split("/")) {
+    if (GLOB_SEGMENT.test(seg)) break;
+    kept.push(seg);
+  }
+  return kept.join("/");
+}
 function matchDeclaredRail(rel, rails, platform) {
   const nocase = platform === "darwin";
-  if (rel === "" && rails.length > 0) return rails[0];
   for (const rail of rails) {
-    if (covers(rel, rail, platform) || isAncestor(rel, rail, platform) || minimatch(rel, rail, { dot: true, nocase }) || minimatch(rail, `${rel}/**`, { dot: true, nocase })) {
+    const prefix = railStaticPrefix(rail);
+    if (covers(rel, rail, platform) || prefix !== "" && (fold(rel, platform) === fold(prefix, platform) || isAncestor(rel, prefix, platform)) || minimatch(rel, rail, { dot: true, nocase })) {
       return rail;
     }
   }
@@ -3501,7 +3523,7 @@ function matchesScope(rel, scope, platform) {
 }
 
 // hooks/policy/shell.mjs
-import { isAbsolute as isAbsolute4, join as join10, resolve as resolve7 } from "node:path";
+import { basename as basename4, isAbsolute as isAbsolute4, join as join10, resolve as resolve7 } from "node:path";
 
 // hooks/policy/shell-lexer.mjs
 var GLOB_CHARS = /* @__PURE__ */ new Set(["*", "?", "["]);
@@ -3632,6 +3654,8 @@ function lexCommandLine(line) {
       if (/[0-9]/.test(line[j])) op += line[j++];
       op += line[j++];
       if (line[j] === ">" && op.endsWith(">")) op += line[j++];
+      if (line[j] === "|" && op.endsWith(">")) op += line[j++];
+      else if (line[j] === ">" && op.endsWith("<")) op += line[j++];
       if (line[j] === "&") {
         op += line[j++];
         while (/[0-9-]/.test(line[j] ?? "")) j += 1;
@@ -3688,7 +3712,15 @@ var GIT_READ_FLAGS = {
   show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/]
 };
 var GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o)$/;
-var LIFECYCLE_VERBS = /* @__PURE__ */ new Set(["complete", "archive", "update", "edit", "discard", "restore"]);
+var LIFECYCLE_VERBS = /* @__PURE__ */ new Set(["complete", "archive", "update", "edit", "discard", "restore", "store"]);
+var DIR_CHANGE = /* @__PURE__ */ new Set(["cd", "pushd", "popd"]);
+var COMMIT_LONG_FLAGS = /* @__PURE__ */ new Set(["--message", "--signoff", "--quiet", "--verbose"]);
+function adlcTicketOperands(argv) {
+  const i = argv.findIndex((t) => ["adlc", "adlc-tickets"].includes(basename4(t)));
+  if (i < 0) return null;
+  const operands = argv.slice(i + 1).filter((t) => !t.startsWith("-"));
+  return basename4(argv[i]) === "adlc-tickets" ? ["ticket", ...operands] : operands;
+}
 function hasWriteRedirect(sub) {
   return sub.redirects.some((r) => r.op.includes(">"));
 }
@@ -3698,6 +3730,7 @@ function candidateTokens(sub) {
     if (t.startsWith("-")) {
       const eq = t.indexOf("=");
       if (eq > 0 && eq < t.length - 1) out.push(t.slice(eq + 1));
+      else if (!t.startsWith("--") && t.length > 2) out.push(t.slice(2));
     } else if (t.length > 0) {
       out.push(t);
     }
@@ -3723,7 +3756,7 @@ function shimForms(home, realHome) {
 function isShimInvocation(argv, ctx) {
   if (shimForms(ctx.home, ctx.realHome).has(argv[0])) return true;
   if ((argv[0] === "/bin/sh" || argv[0] === "sh") && argv[2] === "dist/agb.mjs" && typeof argv[1] === "string") {
-    const launcher = argv[1].replace(/^(~|\$HOME|\$\{HOME\})(?=\/)/, ctx.home);
+    const launcher = resolve7(expandHome(argv[1], ctx.home));
     const pluginsDir = join10(ctx.home, ".gemini", "config", "plugins");
     return /\/antigravity-booster(-[^/]+)?\/bin\/node-launcher\.sh$/.test(launcher) && isWithin(launcher, pluginsDir, ctx.platform);
   }
@@ -3762,14 +3795,33 @@ function isRoutine(sub) {
     const paths = rest.filter((t) => t !== "--");
     return paths.length > 0 && paths.every((t) => !t.startsWith("-") && t !== "." && t !== "..");
   }
-  if (a1 === "commit") {
-    return rest.every((t) => {
-      if (/^--(amend|no-verify|all)$/.test(t)) return false;
-      if (/^-[A-Za-z]+$/.test(t) && /[an]/.test(t.slice(1))) return false;
-      return true;
-    });
-  }
+  if (a1 === "commit") return isRoutineCommit(rest);
   return false;
+}
+function isRoutineCommit(args) {
+  let expectValue = false;
+  for (const t of args) {
+    if (expectValue) {
+      expectValue = false;
+      continue;
+    }
+    if (t === "--") continue;
+    if (t === "-m" || t === "--message") {
+      expectValue = true;
+      continue;
+    }
+    if (t.startsWith("--message=")) continue;
+    if (t.startsWith("--")) {
+      if (!COMMIT_LONG_FLAGS.has(t)) return false;
+      continue;
+    }
+    if (t.startsWith("-")) {
+      const flags = t.slice(1);
+      if (!/^[sqv]*m?$/.test(flags) || flags.length === 0) return false;
+      if (flags.endsWith("m")) expectValue = true;
+    }
+  }
+  return true;
 }
 function destructiveRootScope(argv) {
   const [cmd, a1, ...rest] = argv;
@@ -3801,6 +3853,10 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange }) {
     if (matchRoot(r, protectedRoots(ctx.home), ctx.platform) && (writeTargets.has(token) || !(stage1 || shim))) {
       return { verdict: deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden"), repos };
     }
+    const shimDir = join10(ctx.home, ".local", "bin");
+    if (!(stage1 || shim) && [r.lexical, r.real].some((p) => p === shimDir || p === join10(ctx.realHome, ".local", "bin"))) {
+      return { verdict: deny("Writing into the directory that holds the agb terminal shim is forbidden"), repos };
+    }
     const repo = ctx.repoAt(r.real);
     repos.push(repo);
     if (!repo.adlc || stage1 || dirChange) continue;
@@ -3818,13 +3874,18 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx) {
   const scope = destructiveRootScope(sub.argv);
   if (!scope) return PASS;
   if (scope === "repo") {
-    return cwdRepo.adlc && cwdRepo.activeRail ? deny("Repository-wide destructive git command in a repository with active frozen rails") : PASS;
+    const isClean = sub.argv[1] === "clean";
+    if (cwdRepo.adlc && (isClean || cwdRepo.activeRail)) return deny("Repository-wide destructive git command in an ADLC repository");
+    return PASS;
   }
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
+    if (protectedRoots(ctx.home).some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
+      return deny("Destructive command targets a directory containing platform configuration, plugins, or Node runtimes");
+    }
     for (const repo of ctx.knownRepos()) {
-      if (repo.adlc && repo.activeRail && isWithin(repo.root, r.real, ctx.platform)) {
-        return deny("Target path is the repository root (or its parent), which contains active frozen rails");
+      if (repo.adlc && isWithin(repo.root, r.real, ctx.platform)) {
+        return deny("Target path is an ADLC repository root (or its parent), which holds frozen trust-root state");
       }
     }
   }
@@ -3834,11 +3895,12 @@ function classifySubcommand(sub, cwd, cwdRepo, ctx) {
   const argv = sub.argv;
   const shim = isShimInvocation(argv, ctx);
   const stage1 = !shim && isStage1(sub);
-  const dirChange = ["cd", "pushd", "popd"].includes(argv[0]);
+  const dirChange = DIR_CHANGE.has(argv[0]);
   const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange });
   if (targetVerdict.decision === "deny") return targetVerdict;
   const contextRepos = [cwdRepo, ...repos];
-  if (argv[0] === "adlc" && argv[1] === "ticket" && LIFECYCLE_VERBS.has(argv[2])) {
+  const ticketOps = adlcTicketOperands(argv);
+  if (ticketOps && ticketOps[0] === "ticket" && LIFECYCLE_VERBS.has(ticketOps[1])) {
     if (!contextRepos.some((r) => r.adlc)) return PASS;
     if (!argv.includes("--authorize")) return deny("Ticket lifecycle change without --authorize is forbidden in-session");
     return ctx.headless ? deny("Headless worker cannot authorize a ticket lifecycle change") : ask("Authorized ticket lifecycle change requires operator confirmation");
@@ -3852,17 +3914,20 @@ function classifySubcommand(sub, cwd, cwdRepo, ctx) {
     if (ctx.headless) return deny("Headless agb worker cannot invoke the agb shim");
     return stage5(ctx, contextRepos, "agb command in an active-rail ADLC repository requires operator confirmation");
   }
-  if (argv[0] === "cd" || argv[0] === "pushd" || argv[0] === "popd") {
+  if (DIR_CHANGE.has(argv[0])) {
     return stage5(ctx, contextRepos, "Directory change in an active-rail ADLC repository requires operator confirmation");
   }
   if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && isTestCommand(sub)) return PASS;
   if (!ctx.headless && contextRepos.some((r) => r.adlc && r.activeRail) && isRoutine(sub)) return PASS;
   return stage5(ctx, contextRepos, "Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation");
 }
-function nextCwd(sub, cwd, ctx) {
-  if (sub.argv[0] !== "cd" || sub.argv.length !== 2 || sub.dynamic || hasHomePrefix(sub.argv[1])) return null;
-  const target = resolve7(cwd, sub.argv[1]);
-  return ctx.workspacePaths.some((w) => isWithin(target, w, ctx.platform)) ? target : null;
+function dirChangeTarget(sub, cwd, ctx) {
+  const [cmd, ...rest] = sub.argv;
+  if (sub.dynamic || cmd === "popd") return null;
+  const operands = rest.filter((t) => !/^-[LPe@]+$/.test(t) && t !== "--");
+  if (operands.length === 0) return cmd === "cd" ? ctx.home : null;
+  if (operands.length > 1 || operands[0] === "-" || /^[+-]\d+$/.test(operands[0])) return null;
+  return resolve7(cwd, expandHome(operands[0], ctx.home));
 }
 function classifyRunCommand(args, ctx) {
   const line = args?.CommandLine;
@@ -3881,19 +3946,27 @@ function classifyRunCommand(args, ctx) {
   const verdicts = [];
   let current = cwd;
   const subs = lexed.subcommands;
-  for (let i = 0; i < subs.length; i += 1) {
-    const moved = subs.length > 1 ? nextCwd(subs[i], current, ctx) : null;
-    if (moved) {
-      current = moved;
+  for (const sub of subs) {
+    if (current === null) {
+      verdicts.push(deny("Working directory unknown after a directory change; later commands cannot be verified"));
       continue;
     }
-    verdicts.push(classifySubcommand(subs[i], current, ctx.repoAt(current), ctx));
+    if (DIR_CHANGE.has(sub.argv[0])) {
+      const target = dirChangeTarget(sub, current, ctx);
+      const intoWorkspace = target !== null && ctx.workspacePaths.some((w) => isWithin(target, w, ctx.platform));
+      if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx.repoAt(current), ctx));
+      current = target;
+      continue;
+    }
+    verdicts.push(classifySubcommand(sub, current, ctx.repoAt(current), ctx));
   }
   return mostRestrictive(verdicts);
 }
 
 // hooks/policy/evaluate.mjs
 var UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
+var FILE_URL = /^file:\/\//;
+var toPath = (value) => value.replace(FILE_URL, "");
 function realOr(p) {
   try {
     return realpathSync2(p);
@@ -3952,7 +4025,7 @@ function scanPathLike(value, out = [], key = null) {
 }
 function readToolPaths(name, args) {
   const keys = READ_TOOL_PATH_SCHEMAS[name] ?? [];
-  return keys.map((k) => args?.[k]).filter((v) => typeof v === "string" && v.length > 0).map((v) => v.replace(/^file:\/\//, ""));
+  return keys.map((k) => args?.[k]).filter((v) => typeof v === "string" && v.length > 0).map(toPath);
 }
 function gateOnePath(resolved, ctx, { rootIsTarget = true } = {}) {
   const repo = ctx.repoAt(resolved.real);
@@ -3985,7 +4058,7 @@ function stepOne(name, args, ctx) {
   let candidates;
   if (READ_ONLY_TOOLS.has(name) || READ_TOOL_PATH_SCHEMAS[name]) candidates = readToolPaths(name, args);
   else if (TOOL_PATH_SCHEMAS[name]) {
-    candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === "string");
+    candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === "string").map(toPath);
   } else if (name === "run_command") return PASS;
   else candidates = scanPathLike(args);
   for (const token of candidates) {
@@ -3999,17 +4072,26 @@ function stepOne(name, args, ctx) {
   }
   return PASS;
 }
+function schemaViolationVerdict(name, args, reason, ctx) {
+  if (ctx.readonly) return deny(reason);
+  const required = (TOOL_PATH_SCHEMAS[name]?.required ?? []).map((k) => args?.[k]).filter((v) => typeof v === "string" && v.length > 0);
+  const anchorRepo = ctx.repoAt(ctx.anchor ?? "/");
+  if (anchorRepo.adlc && (anchorRepo.activeRail || ctx.workerTicket)) return deny(reason);
+  for (const token of [...required, ...scanPathLike(args)].map(toPath)) {
+    const r = resolveCandidate(token, ctx.anchor, ctx.home);
+    if (matchRoot(r, protectedRoots(ctx.home), ctx.platform) || ctx.repoAt(r.real).adlc) return deny(reason);
+  }
+  return PASS;
+}
 function evaluateFileTool(name, args, ctx) {
   const extracted = extractProbedPaths(name, args);
-  const contextRepo = ctx.repoAt(ctx.anchor ?? "/");
   if (!extracted || extracted.error) {
     const reason = extracted ? `Mutating tool argument schema violation: ${extracted.error}` : "Unknown mutating tool in ADLC repository with active frozen rails; cannot verify target path safety";
-    if (ctx.readonly || contextRepo.adlc && (contextRepo.activeRail || ctx.workerTicket)) return deny(reason);
-    return PASS;
+    return schemaViolationVerdict(name, args, reason, ctx);
   }
   if (ctx.readonly) return deny("Read-only agb worker session: file mutations are forbidden");
   const verdicts = [];
-  for (const token of extracted.paths) {
+  for (const token of extracted.paths.map(toPath)) {
     const r = resolveCandidate(token, ctx.anchor, ctx.home);
     const { verdict, repo, rel } = gateOnePath(r, ctx);
     if (verdict.decision !== "pass") {
@@ -4049,7 +4131,7 @@ function evaluateUnknownTool(ctx) {
 }
 function buildContext(payload, options = {}) {
   const env = options.env ?? process.env;
-  const home = options.home ?? homedir();
+  const home = options.home ?? homedir2();
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : []).filter((p) => typeof p === "string" && isAbsolute5(p)).map((p) => resolve8(p));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);

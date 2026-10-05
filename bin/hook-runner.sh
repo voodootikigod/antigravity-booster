@@ -169,6 +169,14 @@ emit_fallback() {
     if [ -z "$TOOL_NAME" ]; then
       TOOL_NAME="$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP_FLAT" 2>/dev/null | head -n 1)"
     fi
+    # The greedy extraction above can be steered by a second "toolCall"/"name"
+    # injected into the tool's own arguments (P5 prosecution H5). Only an
+    # unambiguous payload may earn the read-only pass-through.
+    TOOLCALL_COUNT="$(grep -o '"toolCall"' "$TMP_FLAT" 2>/dev/null | wc -l | tr -d ' ')"
+    NAME_COUNT="$(grep -o '"name"[[:space:]]*:' "$TMP_FLAT" 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "$TOOLCALL_COUNT" != "1" ] || [ "$NAME_COUNT" != "1" ]; then
+      TOOL_NAME=""
+    fi
 
     IS_READ_ONLY=0
     case "$TOOL_NAME" in

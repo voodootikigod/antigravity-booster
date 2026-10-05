@@ -23,10 +23,8 @@ test('no hook source or shipped hook bundle can emit decision: allow', () => {
   for (const f of scanned) assert.doesNotMatch(readFileSync(f, 'utf8'), ALLOW, f);
 });
 
-test('hook-runner converts a child allow into its fail-safe instead of forwarding it', () => {
-  const runner = readFileSync(join(ROOT, 'bin', 'hook-runner.sh'), 'utf8');
-  assert.match(runner, /forbidden allow decision; converting to fallback/);
-});
+// Behavioural coverage of the runner converting a child `allow` into its
+// fail-safe lives in test/hook-runner.test.mjs (stub child emits allow).
 
 test('the legacy auto-approve hook is gone', () => {
   assert.equal(existsSync(join(ROOT, '.agents/plugins/agb/hooks/auto-approve-tests.mjs')), false);

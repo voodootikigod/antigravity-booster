@@ -835,7 +835,9 @@ test('bootstrap: agy plugin install invoked with the resolved plugin path', () =
     bootstrap({ destination: destDir, home: homeDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
     const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim().split('\n');
     assert.equal(installs[0], '.', 'agy plugin install received "." for adlc');
-    assert.equal(installs[1], '.', 'also installed booster plugin itself via "."');
+    // Booster itself is staged through safePluginInstall (Appendix A.4 item 19): agy
+    // receives a temp copy named antigravity-booster, never the checkout via ".".
+    assert.match(installs[1], /\/agy-staging-[^/]+\/antigravity-booster$/, 'booster installed from a safePluginInstall staging copy');
 
   } finally {
     if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
