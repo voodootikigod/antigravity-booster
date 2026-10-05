@@ -45,6 +45,14 @@ with two, both first-party.
 - **Undocumented commands.** Every dispatched command needs a row in the
   `COMMANDS` table in `bin/agb.mjs`; a test enforces it.
 
+## Committed bundles (`dist/`, `vendor/`)
+
+The plugin ships prebuilt bundles so `agy plugin install <git-url>` works without `npm install`. They are generated, never hand-edited:
+
+- After changing anything under `bin/`, `lib/`, `hooks/` or `mcp/`, run `npm run build` and commit `dist/` with the source change. CI rebuilds and fails on any drift.
+- When a rebase or restack conflicts inside `dist/` or `vendor/`, do not resolve the conflict by hand. Resolve the *source* conflicts, then run `npm run build` and commit the regenerated output. The CI drift gate is the arbiter.
+- `vendor/cache/adlc-antigravity-<version>.tgz` is the pristine npm tarball. CI re-downloads it and requires byte-identity; never edit or repack it.
+
 ## Do not bump the version in your PR
 
 Leave `package.json`'s `version` alone. Releases are cut separately: a release PR

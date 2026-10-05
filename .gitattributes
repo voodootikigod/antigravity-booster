@@ -1,0 +1,4 @@
+# Generated, committed plugin artifacts (spec Appendix A P2): never hand-merge.
+# Resolve source conflicts, then `npm run build` and commit the result.
+dist/** linguist-generated=true -diff
+vendor/** linguist-generated=true -diff
