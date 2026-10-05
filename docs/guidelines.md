@@ -11,9 +11,10 @@ This document details the architectural principles, behavioral guidelines, and c
 6. [Self-Orchestration Guidelines](#self-orchestration-guidelines)
 7. [Design Tradeoffs](#design-tradeoffs)
 8. [Live Rail Enforcement (ADLC P3)](#live-rail-enforcement-adlc-p3)
-9. [Gate Evidence (ADLC gate-manifest)](#gate-evidence-adlc-gate-manifest)
-10. [Review Self-Calibration (ADLC review-calibration)](#review-self-calibration-adlc-review-calibration--opt-in-not-automatic)
-11. [CI Self-Protection](#ci-self-protection)
+9. [Native Plugin Distribution (Doctrine Amendment)](#native-plugin-distribution-doctrine-amendment)
+10. [Gate Evidence (ADLC gate-manifest)](#gate-evidence-adlc-gate-manifest)
+11. [Review Self-Calibration (ADLC review-calibration)](#review-self-calibration-adlc-review-calibration--opt-in-not-automatic)
+12. [CI Self-Protection](#ci-self-protection)
 
 ---
 
@@ -196,6 +197,16 @@ Once per `runPlan` call, the scheduler checks whether live in-session rail enfor
 When enforcement is unavailable but not aborted, every builder worktree still gets its own ticket-store projection (written in kind: directory-store shards, or the legacy `tickets.json` where the target repo still carries one), but as a `planTicketToRailTicket` projection (`lib/adlc-bridge.mjs`) — id/title/scope/rails only, with `edges`/`body`/`duration` stripped, since a single-ticket store can't resolve edges to sibling tickets that aren't in it (dangling edges make the plugin's `loadTickets` fail closed and deny the whole build, not just rail paths). This is deliberately distinct from `planToAdlcTickets`, the full-DAG projection the `adlc` CLI consumes at plan-compile time. The builder's `agy --print` invocation is spawned with `ADLC_P4_ENFORCEMENT=1` and `ADLC_TICKET=<id>` set **for that spawn only** — `runAgy`'s `env` option merges onto `process.env`, it never mutates it, so concurrent tickets building in the same booster process never see each other's active-ticket signal.
 
 When either precondition fails (short of an incompatible-contract abort), the run does not abort — it degrades to the post-hoc check alone and says so explicitly via `report.enforcementAvailable` / `report.enforcementReason` (never a silent no-op). The post-hoc check (`lib/scheduler.mjs`'s `checkRailsGuard`) calls `adlc rails-guard --rails <globs> --base <ref>` directly — the same engine the plugin's hook uses — instead of a bespoke glob comparison, and works regardless of whether the target repo is ADLC-initialized (it takes `--rails` flags straight from the ticket, not `--tickets`).
+
+## Native Plugin Distribution (Doctrine Amendment)
+
+Approved by the owner on 2026-10-04 (spec `.adlc/specs/native-plugin-installation.md` §4.4 Decisions 1–3 and Appendix A D6; signed `spec-approval` for ticket `t-plugin-00-spec`). Booster ships as a native agy plugin installable from a git URL, where `npm install` never runs. Three rules change to make that safe:
+
+1. **Pristine registry artifacts may be vendored, never forks.** `vendor/cache/adlc-antigravity-<version>.tgz` is the unmodified `@adlc/antigravity` npm tarball. Its SHA-512 must equal the `package-lock.json` integrity, and CI re-downloads it with `npm pack` and requires byte-identity. `agb bootstrap` installs it with `agy plugin install` after verifying the digest and rejecting path-traversal entries. Unpacked, edited, or regenerated doctrine skills remain forbidden.
+2. **No production override paths.** In the bundled build (`__AGB_BUNDLED__ === true`), every development override (`ADLC_ANTIGRAVITY_PLUGIN_PATH`, sibling checkouts, `AGB_PLUGIN_DIR`, `ADLC_CLI_PATH`, `AGB_ADLC_BIN`, `AGB_ALLOW_*`, `AGB_DEV_*`) is ignored, which closes `.envrc`/`direnv` injection. Overrides remain available only to unbundled source runs.
+3. **Enforcement gates fail closed; audit gates degrade.** `gate-manifest` and `flail-detector` keep the "degrade, never crash" contract. `rails-guard` and the in-session PreToolUse policy guard fail closed when active tickets declare rails or the ticket store is unreadable: they deny rail mutations and block dispatch and merge. Functions still return `{ ok: false, ... }` instead of throwing; the caller decides to block.
+
+The in-session guard emits only `deny`, `ask`, or neutral pass-through, never `allow`. In headless `agy -p` sessions `ask` degrades to allow (measured on agy 1.2.16), so every agb-spawned session is marked as a worker (`AGB_WORKER_TICKET` / `AGB_WORKER_MODE=readonly`) and receives `deny` instead. The merge-time `adlc rails-guard` remains the unbypassable backstop.
 
 ## Gate Evidence (ADLC gate-manifest)
 
