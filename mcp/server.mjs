@@ -14,7 +14,6 @@ const activeProcesses = new Map();
 //    the sibling bundle `dist/agb.mjs` in the same staged plugin directory.
 // 2. Source checkout (`mcp/server.mjs`): the repository's `bin/agb.mjs`.
 // 3. Otherwise fall back to an `agb` on PATH.
-// eslint-disable-next-line no-undef
 const IS_BUNDLED = typeof __AGB_BUNDLED__ !== 'undefined' && __AGB_BUNDLED__ === true;
 
 export function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED) {

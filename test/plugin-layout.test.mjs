@@ -164,7 +164,6 @@ test('layout: agy plugin validate processes skills, agents, commands, mcpServers
     return;
   }
   const r = spawnSync('agy', ['plugin', 'validate', ROOT], { encoding: 'utf8', timeout: 60_000 });
-  // eslint-disable-next-line no-control-regex
   const out = `${r.stdout}${r.stderr}`.replace(/\x1b\[[0-9;]*m/g, '');
   assert.equal(r.status, 0, out);
   for (const category of ['skills', 'agents', 'commands', 'mcpServers', 'hooks']) {
