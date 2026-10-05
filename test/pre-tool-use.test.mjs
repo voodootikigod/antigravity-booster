@@ -487,3 +487,15 @@ test('Context: a HOME that does not exist still recognises the canonical shim', 
   const v = evaluatePayload(payload('run_command', { CommandLine: `${join(ghost, '.local/bin/agb')} doctor`, Cwd: fx.plain }, fx.plain), { env: {}, home: ghost, platform: 'linux' });
   assert.equal(v.decision, 'pass');
 });
+
+test('Step 1: every probed read-tool path key alias is inspected', () => {
+  const secret = join(fx.home, '.gemini/antigravity-cli/plugin_data/antigravity-booster/x');
+  const cases = [
+    ['read_notebook', 'path'], ['read_notebook', 'notebookPath'], ['read_resource', 'uri'], ['read_resource', 'Uri'],
+    ['read_browser_page', 'url'], ['read_browser_page', 'Url'], ['read_url_content', 'url'], ['read_url_content', 'Url'],
+  ];
+  for (const [tool, key] of cases) {
+    assert.equal(run(tool, { [key]: secret }, fx.plain).decision, 'deny', `${tool}.${key}`);
+    assert.equal(run(tool, { [key]: `file://${secret}` }, fx.plain).decision, 'deny', `${tool}.${key} file:// URL`);
+  }
+});
