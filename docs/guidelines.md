@@ -208,6 +208,19 @@ Approved by the owner on 2026-10-04 (spec `.adlc/specs/native-plugin-installatio
 
 The in-session guard emits only `deny`, `ask`, or neutral pass-through, never `allow`. In headless `agy -p` sessions `ask` degrades to allow (measured on agy 1.2.16), so every agb-spawned session is marked as a worker (`AGB_WORKER_TICKET` / `AGB_WORKER_MODE=readonly`) and receives `deny` instead. The merge-time `adlc rails-guard` remains the unbypassable backstop.
 
+### What the in-session guard guarantees, and what it does not
+
+Owner decision (2026-10-05), after two P5 prosecution rounds against the policy guard:
+
+- **File and MCP tools are exact and fail closed.** Writes, moves and deletes to a declared rail, to the ADLC trust root (`.adlc/config.json`, `.adlc/manifest.jsonl`, `.adlc/sessions.json`, ticket archive/transactions/leases, existing ticket shards, `.git/`), or to a platform-protected root (`~/.gemini`, `~/.local/bin/agb`, Node version managers) are denied. Symlinks are resolved even when dangling, and the repository root is the git top level holding `.adlc/` (else the outermost `.adlc/` below it), so decoy `.adlc`/`.git` directories cannot re-root the rails.
+- **Shell (`run_command`) classification is best-effort defense in depth.** A shell cannot be parsed soundly. The guard follows the common spellings (`cd` behind `builtin`/`command`/control words, `CDPATH`, `>|`, `>&file`, attached `-oFILE` values, `git` global options, globs and braces against the trust root, `$'…'`, `~user`, `sh -c`/`eval`). It fails closed when it cannot follow the working directory. Commands it does not recognise **ask** in repositories with active rails, and **pass** elsewhere.
+- **Known residual risks** (accepted; the merge-time `rails-guard` diff and the CI trust-root check catch any committed result):
+  - Arbitrary programs (`node -e`, `python -c`, compiled binaries, test suites) can write anything. They ask in active-rail interactive sessions, and pass in repositories without active rails.
+  - A command written to a script file, a `package.json` script or a git hook, then run, executes code the guard never saw. `npm run build` asks for this reason; `git commit` still passes and will run repository hooks.
+  - In `agy -p` (headless) sessions not started by `agb`, `ask` is honoured as allow (measured on agy 1.2.16 and 1.2.17). `agb`'s own sessions are always marked as workers and receive `deny` instead.
+  - `git config core.hooksPath`, `git update-ref`, `git gc --prune=now` and other low-level git plumbing are not specifically recognised.
+- **Platform note (agy 1.2.17):** agy now fails *closed* when a hook exits non-zero or times out (1.2.16 failed open). `bin/hook-runner.sh` always exits 0 and emits its own fallback decision, so booster's behaviour is unchanged, but a crashing hook would block every tool call. Never let the runner exit non-zero.
+
 ## Gate Evidence (ADLC gate-manifest)
 
 Every gate transition a scheduler run produces — the worktree build, the prosecution verdict, the post-merge build, a rollback — is recorded as append-only, hash-chained evidence via `adlc gate-manifest record <gate> --ticket <id> --data '<json>'` (`lib/scheduler.mjs`'s `recordGate`), not just a `.booster/report.json` log line. `adlc gate-manifest show` / `verify` reconstruct a run's full gate history from `<repo>/.adlc/manifest.jsonl` alone. Best-effort, like the other CLI integrations: a recording failure (`adlc` missing, `.adlc` unwritable) is caught and ignored — a broken audit trail must not itself fail a build/merge that otherwise succeeded.

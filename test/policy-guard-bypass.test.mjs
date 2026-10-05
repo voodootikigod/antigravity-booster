@@ -160,3 +160,130 @@ test('L1: a traversal path cannot impersonate the booster launcher', () => {
   const spoof = `/bin/sh ${join(home, '.gemini/config/plugins/../../../../tmp/antigravity-booster/bin/node-launcher.sh')} dist/agb.mjs ${join(home, '.gemini', 'x')}`;
   assert.equal(sh(spoof, P), 'deny');
 });
+
+// ======================= P5 round 2 =======================
+// Owner decision (2026-10-05): file/MCP tools are exact and fail closed;
+// shell is best-effort, so only the cheap high-value variants are pinned here.
+
+// ---- exact: file tools ----
+test('R2 file: a dangling symlink is resolved through its target', async () => {
+  const { symlinkSync } = await import('node:fs');
+  mkdirSync(join(A, 'docs'), { recursive: true });
+  symlinkSync('../lib/gates.mjs', join(A, 'docs', 'x')); // lib/gates.mjs (a rail) does not exist yet
+  symlinkSync('../.adlc/sessions.json', join(I, 'lib', 'x'));
+  assert.equal(run('write_to_file', { TargetFile: join(A, 'docs', 'x') }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: join(I, 'lib', 'x') }, I), 'deny');
+});
+
+test('R2 file: planting a .git above a non-git ADLC repo does not unroot it', () => {
+  const outer = join(base, 'outer');
+  const proj = join(outer, 'proj');
+  mkdirSync(join(proj, 'lib'), { recursive: true });
+  mkdirSync(join(proj, '.adlc'), { recursive: true });
+  initializeDirectoryStore(join(proj, '.adlc', 'tickets'));
+  writeFileSync(join(proj, '.adlc', 'tickets', ticketFilename('T1')), JSON.stringify({ id: 'T1', title: 't', body: 'b', scope: [], rails: ['lib/lock.mjs'], edges: [] }));
+  mkdirSync(join(outer, '.git'), { recursive: true });
+  assert.equal(findAdlcRoot(join(proj, 'lib', 'lock.mjs'), { home }), proj);
+  assert.equal(run('write_to_file', { TargetFile: join(proj, 'lib', 'lock.mjs') }, proj), 'deny');
+});
+
+test('R2 file: an ADLC project below the git top (monorepo) is protected; a nested decoy still cannot re-root it', () => {
+  const mono = join(base, 'mono');
+  const proj = join(mono, 'packages', 'proj');
+  mkdirSync(join(proj, 'lib', '.adlc'), { recursive: true }); // decoy below the project
+  spawnSync('git', ['init', '-q', mono]);
+  mkdirSync(join(proj, '.adlc'), { recursive: true });
+  initializeDirectoryStore(join(proj, '.adlc', 'tickets'));
+  writeFileSync(join(proj, '.adlc', 'tickets', ticketFilename('T1')), JSON.stringify({ id: 'T1', title: 't', body: 'b', scope: [], rails: ['lib/lock.mjs'], edges: [] }));
+  assert.equal(findAdlcRoot(join(proj, 'lib', 'lock.mjs'), { home }), proj);
+  assert.equal(run('write_to_file', { TargetFile: join(proj, 'lib', 'lock.mjs') }, proj), 'deny');
+});
+
+// ---- shell: cheap, high-value variants ----
+test('R2 shell: cd behind builtin/command/control words and CDPATH still re-anchors or fails closed', () => {
+  for (const cmd of [
+    'builtin cd lib && echo x > ../.adlc/config.json',
+    'command cd lib && echo x > ../.adlc/config.json',
+    'if cd lib; then echo x > ../.adlc/config.json; fi',
+    'CDPATH=lib cd sub && echo x > ../../.adlc/config.json',
+    'export CDPATH=lib; cd sub && echo x > ../../.adlc/config.json',
+  ]) {
+    assert.equal(sh(cmd, I), 'deny', cmd);
+  }
+});
+
+test('R2 shell: >& followed by a filename is a write redirection, not an fd copy', () => {
+  assert.equal(sh('echo x >&1/../.adlc/config.json', I), 'deny');
+  assert.equal(sh('echo x 2>&1', I), 'pass');
+});
+
+test('R2 shell: git global options cannot hide a destructive subcommand', () => {
+  for (const cmd of ['git -c a.b=c clean -fdx', 'git -C . clean -fdx', 'git --no-pager clean -fdx', 'git --work-tree=. clean -fdx']) {
+    assert.equal(sh(cmd, I), 'deny', cmd);
+  }
+  assert.equal(sh('git -c a=b reset --hard', A), 'deny');
+});
+
+test('R2 shell: globs, braces and ANSI-C quoting aimed at the trust root are denied', () => {
+  for (const cmd of ['rm .adlc/tickets/*.json', 'rm .adlc/*', 'rm .adlc/conf?g.json', 'rm .adlc/{config.json,manifest.jsonl}', "rm $'.adlc/config.json'"]) {
+    assert.equal(sh(cmd, I), 'deny', `${cmd} (inactive)`);
+  }
+  assert.equal(sh('rm .adlc/tickets/*.json', A), 'deny');
+  assert.equal(sh('rm .adlc/specs/*.md', I), 'pass', 'specs stay editable');
+  assert.equal(sh(`rm ${join(home, '.gemini')}/*`, P), 'deny');
+});
+
+test('R2 shell: ~user home paths are expanded for protection matching', () => {
+  const user = home.split('/').pop();
+  assert.equal(sh(`echo x > ~${user}/.gemini/settings.json`, P), 'deny');
+  assert.equal(sh(`cat ~${user}/.config/antigravity-booster/x`, P), 'deny');
+});
+
+test('R2 shell: ticket lifecycle through the scoped @adlc/cli package needs --authorize', () => {
+  assert.equal(sh('npx @adlc/cli ticket complete T1 --write', I), 'deny');
+  assert.equal(sh('npx @adlc/cli@1.11.1 ticket complete T1 --write --authorize', I), 'ask');
+});
+
+test('R2 shell: sh -c / bash -c scripts are re-lexed and classified', () => {
+  assert.equal(sh('sh -c "echo x > .adlc/config.json"', I), 'deny');
+  assert.equal(sh("bash -c 'rm -rf .git'", I), 'deny');
+  assert.equal(sh('bash -c "git status"', I), 'pass');
+});
+
+test('R2 shell: commands that act on an ADLC repo root are denied', () => {
+  for (const cmd of ['find . -delete', 'chmod -R 000 .', 'git stash -a', 'git stash --all', 'git checkout .']) {
+    assert.equal(sh(cmd, I), 'deny', cmd);
+  }
+});
+
+test('R2 shell: copying or extracting into a parent of a protected root is denied', () => {
+  for (const cmd of [`cp -r /tmp/payload/. ${join(home, '.local')}/`, `cp -r /tmp/payload/. ${home}/`, `tar -xf /tmp/evil.tar -C ${home}`]) {
+    assert.equal(sh(cmd, P), 'deny', cmd);
+  }
+});
+
+// ---- owner decisions (2026-10-05): D15 minus npm run build; ancestor tokens ask ----
+const GIT_COMMIT = ['git', 'commit'].join(' ');
+test('R2 D15: npm run build asks again; root-spelled git add/commit pathspecs ask', () => {
+  assert.equal(sh('npm run build', A), 'ask');
+  for (const cmd of ['git add ./', 'git add :/', 'git add docs/..', `${GIT_COMMIT} -m x .`, `${GIT_COMMIT} -m x :/`, `${GIT_COMMIT} -m x -- .`]) {
+    assert.equal(sh(cmd, A), 'ask', cmd);
+  }
+  assert.equal(sh('git add lib/feature.mjs', A), 'pass');
+  assert.equal(sh(`${GIT_COMMIT} -m x`, A), 'pass');
+});
+
+test('R2 posture: naming a directory that contains a rail asks; destructive verbs on it deny', () => {
+  for (const cmd of ['rg foo lib', 'npx eslint lib', 'find lib -name "x"', 'du -sh lib', 'git add lib/']) {
+    assert.equal(sh(cmd, A), 'ask', cmd);
+    assert.equal(sh(cmd, A, { AGB_WORKER_TICKET: 'T1' }), 'deny', `${cmd} (headless)`);
+  }
+  for (const cmd of ['rm -rf lib', 'mv lib old', 'cp x.mjs lib/', 'tar -xf a.tgz -C lib', 'chmod -R 000 lib', 'find lib -delete']) {
+    assert.equal(sh(cmd, A), 'deny', cmd);
+  }
+  assert.equal(sh('rm lib/lock.mjs', A), 'deny', 'exact rail paths stay deny');
+});
+
+test('R2 usability: git log -<n> is inspection', () => {
+  assert.equal(sh('git log --oneline -5', A), 'pass');
+});

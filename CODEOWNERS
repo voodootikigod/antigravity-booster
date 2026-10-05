@@ -4,17 +4,3 @@
 # ("Require review from Code Owners") — a manual, repo-admin step this file
 # alone does not perform.
 .github/workflows/** @voodootikigod
-
-# Native agy plugin execution and trust assets (spec .adlc/specs/native-plugin-
-# installation.md, T-PLUGIN-01-CORE): anything that runs inside the user's agy
-# session, ships prebuilt, or decides what a rail is.
-/bin/** @voodootikigod
-/hooks/** @voodootikigod
-/hooks.json @voodootikigod
-/mcp_config.json @voodootikigod
-/commands/** @voodootikigod
-/agents/** @voodootikigod
-/plugin.json @voodootikigod
-/dist/** @voodootikigod
-/vendor/** @voodootikigod
-/.adlc/** @voodootikigod

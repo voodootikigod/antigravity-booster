@@ -61,6 +61,21 @@ export function lexCommandLine(line) {
     const ch = line[i];
     const next = line[i + 1];
 
+    if (quote === "$'") {
+      // ANSI-C quoting: \n and \t decode; escapes that can spell arbitrary
+      // characters (\x, \u, \U, octal, \c) hide the token, so it is dynamic.
+      if (ch === "'") quote = null;
+      else if (ch === '\\' && next !== undefined) {
+        if (/[xuUc0-7]/.test(next)) {
+          tok.dynamic = true;
+          sub.dynamic = true;
+        }
+        add(next === 'n' ? '\n' : next === 't' ? '\t' : next);
+        i += 1;
+      } else add(ch);
+      i += 1;
+      continue;
+    }
     if (quote === "'") {
       if (ch === "'") quote = null;
       else add(ch);
@@ -82,6 +97,13 @@ export function lexCommandLine(line) {
     }
 
     // Unquoted context.
+    if (ch === '$' && next === "'") {
+      quote = "$'";
+      tok.quoted = true;
+      tok.started = true;
+      i += 2;
+      continue;
+    }
     if (ch === "'" || ch === '"') {
       quote = ch;
       tok.quoted = true;
@@ -152,12 +174,17 @@ export function lexCommandLine(line) {
       if (line[j] === '|' && op.endsWith('>')) op += line[j++];
       else if (line[j] === '>' && op.endsWith('<')) op += line[j++];
       if (line[j] === '&') {
-        // fd duplication (2>&1): not a file target
+        // `2>&1` / `>&-` duplicate a descriptor: no file target. But bash
+        // treats `>&1/../x` as a FILE named 1/../x (P5 round 2), so only an
+        // operand made purely of digits/'-' and followed by a delimiter is a dup.
+        let k = j + 1;
+        while (/[0-9-]/.test(line[k] ?? '')) k += 1;
+        if (k > j + 1 && (k >= line.length || /[\s;|&<>()]/.test(line[k]))) {
+          flushToken();
+          i = k;
+          continue;
+        }
         op += line[j++];
-        while (/[0-9-]/.test(line[j] ?? '')) j += 1;
-        flushToken();
-        i = j;
-        continue;
       }
       flushToken();
       pendingRedirect = op;

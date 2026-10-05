@@ -231,6 +231,7 @@ export function buildContext(payload, options = {}) {
     workspacePaths,
     workerTicket,
     readonly,
+    cdpath: Boolean(env.CDPATH),
     headless: Boolean(workerTicket) || readonly,
     anchor: cwd ?? workspacePaths[0] ?? null,
     ...makeRepoCache(),

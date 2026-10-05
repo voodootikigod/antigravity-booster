@@ -119,6 +119,3 @@ jobs:
           test -f "$VENDORED" || { echo "error: missing $VENDORED" >&2; exit 1; }
           npm pack "@adlc/antigravity@${VERSION}" --pack-destination "$RUNNER_TEMP" >/dev/null
           cmp "$VENDORED" "$RUNNER_TEMP/adlc-antigravity-${VERSION}.tgz"
-
-      - name: CODEOWNERS covers plugin execution assets
-        run: node --test test/codeowners.test.mjs

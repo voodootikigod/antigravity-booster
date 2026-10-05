@@ -1,40 +1,69 @@
 // Path resolution and matching for the PreToolUse policy guard.
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import { dirname, basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { minimatch } from 'minimatch';
 import { IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, TICKET_STORE_DIR } from './constants.mjs';
 
-const HOME_PREFIX = /^(~|\$HOME|\$\{HOME\})(?=\/|$)/;
+const HOME_PREFIX = /^(~[A-Za-z0-9._-]*|\$HOME|\$\{HOME\})(?=\/|$)/;
 
-/** Expand a leading `~`, `$HOME` or `${HOME}` (protection matching only, A.4 item 3). */
+/**
+ * Expand a leading `~`, `~user`, `$HOME` or `${HOME}` (protection matching
+ * only, A.4 item 3). `~user` maps to a sibling of the home directory, which
+ * is exact for the current user (P5 round 2) and conservative for others.
+ */
 export function expandHome(token, home) {
-  return token.replace(HOME_PREFIX, home);
+  return token.replace(HOME_PREFIX, (m) => (m.startsWith('~') && m.length > 1 ? join(dirname(home), m.slice(1)) : home));
 }
 
 export function hasHomePrefix(token) {
   return HOME_PREFIX.test(token);
 }
 
+function lstatOrNull(p) {
+  try {
+    return lstatSync(p);
+  } catch {
+    return null;
+  }
+}
+
+const MAX_SYMLINK_HOPS = 40;
+
 /**
- * Canonicalise a path that may not exist yet: realpath the deepest existing
- * ancestor and re-append the missing segments (spec §4.5.1 resolveSafeTarget).
+ * Canonicalise a path that may not exist yet (spec §4.5.1 resolveSafeTarget):
+ * find the deepest ancestor that exists *as a directory entry* (lstat, so a
+ * dangling symlink counts), follow it if it is a symlink — relative to the
+ * link's own directory — and repeat; then realpath the existing ancestor and
+ * re-append the missing segments. A dangling link therefore resolves to the
+ * file it would create (P5 round 2). A symlink loop returns the lexical path.
  */
 export function resolveSafeTarget(absPath) {
   let curr = resolve(absPath);
-  const missing = [];
-  while (!existsSync(curr)) {
-    const parent = dirname(curr);
-    if (parent === curr) break;
-    missing.unshift(basename(curr));
-    curr = parent;
+  for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop += 1) {
+    let probe = curr;
+    const missing = [];
+    let st = lstatOrNull(probe);
+    while (!st) {
+      const parent = dirname(probe);
+      if (parent === probe) break;
+      missing.unshift(basename(probe));
+      probe = parent;
+      st = lstatOrNull(probe);
+    }
+    if (st?.isSymbolicLink()) {
+      const target = resolve(dirname(probe), readlinkSync(probe));
+      curr = missing.length > 0 ? join(target, ...missing) : target;
+      continue;
+    }
+    let real = probe;
+    try {
+      real = realpathSync(probe);
+    } catch {
+      // Unreadable ancestor: fall back to the lexical path.
+    }
+    return missing.length > 0 ? join(real, ...missing) : real;
   }
-  let real = curr;
-  try {
-    real = realpathSync(curr);
-  } catch {
-    // Unreadable ancestor: fall back to the lexical path.
-  }
-  return missing.length > 0 ? join(real, ...missing) : real;
+  return resolve(absPath);
 }
 
 /** Resolve a candidate token against `base`, returning both lexical and real forms. */
@@ -182,4 +211,20 @@ export function matchesScope(rel, scope, platform) {
       entry.length > 0 &&
       (minimatch(rel, entry, { dot: true, nocase }) || covers(rel, entry.replace(/\/+$/, ''), platform)),
   );
+}
+
+/**
+ * For a path already matched by matchImplicitRail / matchDeclaredRail: is it
+ * only an ANCESTOR directory of the protected path (the protected path lies
+ * beneath it) rather than the protected path itself? Shell commands that
+ * merely name such a directory ask; destructive ones deny (owner decision
+ * 2026-10-05).
+ */
+export function isImplicitAncestorOnly(rel, platform) {
+  if (rel.split('/').slice(1).some((seg) => ['.adlc', '.git'].includes(fold(seg, platform)))) return false;
+  return ![...IMPLICIT_RAIL_DIRS, ...IMPLICIT_RAIL_FILES, TICKET_STORE_DIR].some((t) => covers(rel, t, platform));
+}
+
+export function isRailAncestorOnly(rel, rail, platform) {
+  return !covers(rel, rail, platform) && !minimatch(rel, rail, { dot: true, nocase: platform === 'darwin' });
 }

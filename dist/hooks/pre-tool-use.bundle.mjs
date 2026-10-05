@@ -1927,9 +1927,16 @@ function findGitTop(targetPath) {
 }
 function findAdlcRoot(targetPath, { home = homedir() } = {}) {
   const gitTop = findGitTop(targetPath);
-  if (gitTop) return isDirectory(join8(gitTop, ".adlc")) ? gitTop : null;
+  if (gitTop && isDirectory(join8(gitTop, ".adlc"))) return gitTop;
   const homeDir = resolve5(home);
-  return walkUp(targetPath, (dir) => dir !== homeDir && dir !== "/" && isDirectory(join8(dir, ".adlc")));
+  let outermost = null;
+  let curr = resolve5(targetPath);
+  for (; ; ) {
+    if (curr !== homeDir && curr !== "/" && isDirectory(join8(curr, ".adlc"))) outermost = curr;
+    const parent = dirname8(curr);
+    if (curr === gitTop || parent === curr) return outermost;
+    curr = parent;
+  }
 }
 function loadSnapshot(repoRoot) {
   try {
@@ -2055,11 +2062,10 @@ var EXCLUDED_CONTENT_KEYS = /* @__PURE__ */ new Set([
 var IMPLICIT_RAIL_DIRS = [".git", ".adlc/ticket-archive", ".adlc/ticket-transactions", ".adlc/leases"];
 var IMPLICIT_RAIL_FILES = [".adlc/config.json", ".adlc/manifest.jsonl", ".adlc/sessions.json"];
 var TICKET_STORE_DIR = ".adlc/tickets";
-var DESTRUCTIVE_ROOT_VERBS = /* @__PURE__ */ new Set(["rm", "mv"]);
 var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls"]);
 
 // hooks/policy/paths.mjs
-import { existsSync as existsSync11, realpathSync } from "node:fs";
+import { existsSync as existsSync11, lstatSync as lstatSync6, readlinkSync, realpathSync } from "node:fs";
 import { dirname as dirname9, basename as basename3, isAbsolute as isAbsolute3, join as join9, relative as relative3, resolve as resolve6, sep as sep3 } from "node:path";
 
 // node_modules/minimatch/dist/esm/index.js
@@ -3393,28 +3399,47 @@ minimatch.escape = escape;
 minimatch.unescape = unescape;
 
 // hooks/policy/paths.mjs
-var HOME_PREFIX = /^(~|\$HOME|\$\{HOME\})(?=\/|$)/;
+var HOME_PREFIX = /^(~[A-Za-z0-9._-]*|\$HOME|\$\{HOME\})(?=\/|$)/;
 function expandHome(token, home) {
-  return token.replace(HOME_PREFIX, home);
+  return token.replace(HOME_PREFIX, (m) => m.startsWith("~") && m.length > 1 ? join9(dirname9(home), m.slice(1)) : home);
 }
 function hasHomePrefix(token) {
   return HOME_PREFIX.test(token);
 }
+function lstatOrNull(p) {
+  try {
+    return lstatSync6(p);
+  } catch {
+    return null;
+  }
+}
+var MAX_SYMLINK_HOPS = 40;
 function resolveSafeTarget(absPath) {
   let curr = resolve6(absPath);
-  const missing = [];
-  while (!existsSync11(curr)) {
-    const parent = dirname9(curr);
-    if (parent === curr) break;
-    missing.unshift(basename3(curr));
-    curr = parent;
+  for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop += 1) {
+    let probe = curr;
+    const missing = [];
+    let st = lstatOrNull(probe);
+    while (!st) {
+      const parent = dirname9(probe);
+      if (parent === probe) break;
+      missing.unshift(basename3(probe));
+      probe = parent;
+      st = lstatOrNull(probe);
+    }
+    if (st?.isSymbolicLink()) {
+      const target = resolve6(dirname9(probe), readlinkSync(probe));
+      curr = missing.length > 0 ? join9(target, ...missing) : target;
+      continue;
+    }
+    let real = probe;
+    try {
+      real = realpathSync(probe);
+    } catch {
+    }
+    return missing.length > 0 ? join9(real, ...missing) : real;
   }
-  let real = curr;
-  try {
-    real = realpathSync(curr);
-  } catch {
-  }
-  return missing.length > 0 ? join9(real, ...missing) : real;
+  return resolve6(absPath);
 }
 function resolveCandidate(token, base, home) {
   const expanded = expandHome(token, home);
@@ -3521,9 +3546,17 @@ function matchesScope(rel, scope, platform) {
     (entry) => typeof entry === "string" && entry.length > 0 && (minimatch(rel, entry, { dot: true, nocase }) || covers(rel, entry.replace(/\/+$/, ""), platform))
   );
 }
+function isImplicitAncestorOnly(rel, platform) {
+  if (rel.split("/").slice(1).some((seg) => [".adlc", ".git"].includes(fold(seg, platform)))) return false;
+  return ![...IMPLICIT_RAIL_DIRS, ...IMPLICIT_RAIL_FILES, TICKET_STORE_DIR].some((t) => covers(rel, t, platform));
+}
+function isRailAncestorOnly(rel, rail, platform) {
+  return !covers(rel, rail, platform) && !minimatch(rel, rail, { dot: true, nocase: platform === "darwin" });
+}
 
 // hooks/policy/shell.mjs
-import { basename as basename4, isAbsolute as isAbsolute4, join as join10, resolve as resolve7 } from "node:path";
+import { readdirSync as readdirSync5 } from "node:fs";
+import { basename as basename4, dirname as dirname10, isAbsolute as isAbsolute4, join as join10, relative as relative4, resolve as resolve7, sep as sep4 } from "node:path";
 
 // hooks/policy/shell-lexer.mjs
 var GLOB_CHARS = /* @__PURE__ */ new Set(["*", "?", "["]);
@@ -3571,6 +3604,19 @@ function lexCommandLine(line) {
   while (i < line.length) {
     const ch = line[i];
     const next = line[i + 1];
+    if (quote === "$'") {
+      if (ch === "'") quote = null;
+      else if (ch === "\\" && next !== void 0) {
+        if (/[xuUc0-7]/.test(next)) {
+          tok.dynamic = true;
+          sub.dynamic = true;
+        }
+        add(next === "n" ? "\n" : next === "t" ? "	" : next);
+        i += 1;
+      } else add(ch);
+      i += 1;
+      continue;
+    }
     if (quote === "'") {
       if (ch === "'") quote = null;
       else add(ch);
@@ -3588,6 +3634,13 @@ function lexCommandLine(line) {
         add(ch);
       }
       i += 1;
+      continue;
+    }
+    if (ch === "$" && next === "'") {
+      quote = "$'";
+      tok.quoted = true;
+      tok.started = true;
+      i += 2;
       continue;
     }
     if (ch === "'" || ch === '"') {
@@ -3657,11 +3710,14 @@ function lexCommandLine(line) {
       if (line[j] === "|" && op.endsWith(">")) op += line[j++];
       else if (line[j] === ">" && op.endsWith("<")) op += line[j++];
       if (line[j] === "&") {
+        let k = j + 1;
+        while (/[0-9-]/.test(line[k] ?? "")) k += 1;
+        if (k > j + 1 && (k >= line.length || /[\s;|&<>()]/.test(line[k]))) {
+          flushToken();
+          i = k;
+          continue;
+        }
         op += line[j++];
-        while (/[0-9-]/.test(line[j] ?? "")) j += 1;
-        flushToken();
-        i = j;
-        continue;
       }
       flushToken();
       pendingRedirect = op;
@@ -3708,18 +3764,40 @@ function mostRestrictive(verdicts) {
 var GIT_READ_FLAGS = {
   status: [/^-s$/, /^--short$/, /^-b$/, /^--branch$/, /^--porcelain(=v[12])?$/, /^--ignored$/, /^-u(normal|all|no)?$/, /^--untracked-files(=.*)?$/],
   diff: [/^--staged$/, /^--cached$/, /^--stat$/, /^--name-only$/, /^--name-status$/, /^--color$/, /^--no-color$/, /^-p$/, /^-u$/, /^--$/],
-  log: [/^-n\d*$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
+  log: [/^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
   show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/]
 };
-var GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o)$/;
+var GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o.*)$/;
 var LIFECYCLE_VERBS = /* @__PURE__ */ new Set(["complete", "archive", "update", "edit", "discard", "restore", "store"]);
 var DIR_CHANGE = /* @__PURE__ */ new Set(["cd", "pushd", "popd"]);
 var COMMIT_LONG_FLAGS = /* @__PURE__ */ new Set(["--message", "--signoff", "--quiet", "--verbose"]);
-function adlcTicketOperands(argv) {
-  const i = argv.findIndex((t) => ["adlc", "adlc-tickets"].includes(basename4(t)));
-  if (i < 0) return null;
-  const operands = argv.slice(i + 1).filter((t) => !t.startsWith("-"));
-  return basename4(argv[i]) === "adlc-tickets" ? ["ticket", ...operands] : operands;
+var SHELLS = /* @__PURE__ */ new Set(["sh", "bash", "dash", "zsh", "ksh"]);
+var MAX_NESTING = 3;
+var MAX_PATTERN_LENGTH2 = 1024;
+var PREFIX_WORDS = /* @__PURE__ */ new Set(["builtin", "command", "exec", "time", "nohup", "nice", "!", "if", "then", "else", "elif", "do", "while", "until", "{", "sudo", "doas"]);
+var GLOB_CHARS2 = /[*?[{]/;
+function effectiveArgv(argv) {
+  let i = 0;
+  while (i < argv.length) {
+    const word = argv[i];
+    if (PREFIX_WORDS.has(word)) {
+      i += 1;
+    } else if (word === "env") {
+      i += 1;
+      while (i < argv.length && (argv[i].startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) i += 1;
+    } else {
+      break;
+    }
+  }
+  return argv.slice(i);
+}
+function gitSubcommand(argv) {
+  if (argv[0] !== "git") return null;
+  let i = 1;
+  while (i < argv.length && argv[i].startsWith("-")) {
+    i += ["-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--super-prefix"].includes(argv[i]) ? 2 : 1;
+  }
+  return { verb: argv[i], args: argv.slice(i + 1) };
 }
 function hasWriteRedirect(sub) {
   return sub.redirects.some((r) => r.op.includes(">"));
@@ -3738,8 +3816,23 @@ function candidateTokens(sub) {
   for (const r of sub.redirects) if (r.target) out.push(r.target);
   return out;
 }
-function isGitOutput(argv) {
-  return argv[0] === "git" && ["diff", "log"].includes(argv[1]) && argv.slice(2).some((t) => GIT_OUTPUT_FLAG.test(t));
+function verbClass(argv) {
+  const [cmd, ...rest] = argv;
+  const git = gitSubcommand(argv);
+  if (git) {
+    const { verb, args } = git;
+    if (verb === "clean") return { repoWide: "clean" };
+    if (verb === "reset" && args.includes("--hard")) return { repoWide: "reset" };
+    if (verb === "stash" && args.some((a) => ["-a", "--all", "-u", "--include-untracked"].includes(a))) return { repoWide: "clean" };
+    if (["checkout", "restore", "rm", "mv"].includes(verb)) return { deletes: true, writes: true };
+    return {};
+  }
+  if (cmd === "rm" || cmd === "mv" || cmd === "shred" || cmd === "unlink") return { deletes: true, writes: true };
+  if (cmd === "find" && rest.some((a) => ["-delete", "-exec", "-execdir", "-ok", "-okdir"].includes(a))) return { deletes: true, writes: true };
+  if ((cmd === "chmod" || cmd === "chown" || cmd === "chgrp") && rest.some((a) => /^-[a-zA-Z]*R/.test(a) || a === "--recursive")) return { deletes: true, writes: true };
+  if (cmd === "rsync") return rest.some((a) => a.startsWith("--delete")) ? { deletes: true, writes: true } : { writes: true };
+  if (["cp", "tar", "install", "ln", "unzip", "truncate", "dd", "tee", "chmod", "chown", "touch", "mkdir"].includes(cmd)) return { writes: true };
+  return {};
 }
 function isStage1(sub) {
   if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
@@ -3786,19 +3879,13 @@ function isTestCommand(sub) {
   if (cmd === "npm" && a1 === "run" && sub.argv.length === 3) return a2 === "test" || /^test:[\w.:-]+$/.test(a2);
   return cmd === "node" && a1 === "--test";
 }
-function isRoutine(sub) {
-  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
-  const [cmd, a1, ...rest] = sub.argv;
-  if (cmd === "npm") return a1 === "run" && rest.length === 1 && rest[0] === "build";
-  if (cmd !== "git") return false;
-  if (a1 === "add") {
-    const paths = rest.filter((t) => t !== "--");
-    return paths.length > 0 && paths.every((t) => !t.startsWith("-") && t !== "." && t !== "..");
-  }
-  if (a1 === "commit") return isRoutineCommit(rest);
-  return false;
+function isRootPathspec(token, cwd, ctx) {
+  if (token.startsWith(":")) return true;
+  const r = resolveCandidate(token, cwd, ctx.home);
+  const repo = ctx.repoAt(r.real);
+  return repo.adlc ? repoRelative(r.real, repo.root) === "" : false;
 }
-function isRoutineCommit(args) {
+function isRoutineCommit(args, cwd, ctx) {
   let expectValue = false;
   for (const t of args) {
     if (expectValue) {
@@ -3817,20 +3904,30 @@ function isRoutineCommit(args) {
     }
     if (t.startsWith("-")) {
       const flags = t.slice(1);
-      if (!/^[sqv]*m?$/.test(flags) || flags.length === 0) return false;
+      if (flags.length === 0 || !/^[sqv]*m?$/.test(flags)) return false;
       if (flags.endsWith("m")) expectValue = true;
+      continue;
     }
+    if (isRootPathspec(t, cwd, ctx)) return false;
   }
   return true;
 }
-function destructiveRootScope(argv) {
-  const [cmd, a1, ...rest] = argv;
-  if (DESTRUCTIVE_ROOT_VERBS.has(cmd)) return "paths";
-  if (cmd !== "git") return null;
-  if (a1 === "clean") return "repo";
-  if (a1 === "reset" && rest.includes("--hard")) return "repo";
-  if (a1 === "restore" || a1 === "checkout" && rest.includes("--")) return "paths";
-  return null;
+function isRoutine(sub, cwd, ctx) {
+  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
+  const [cmd, a1, ...rest] = sub.argv;
+  if (cmd !== "git") return false;
+  if (a1 === "add") {
+    const paths = rest.filter((t) => t !== "--");
+    return paths.length > 0 && paths.every((t) => !t.startsWith("-") && !isRootPathspec(t, cwd, ctx));
+  }
+  if (a1 === "commit") return isRoutineCommit(rest, cwd, ctx);
+  return false;
+}
+function adlcTicketOperands(argv) {
+  const i = argv.findIndex((t) => ["adlc", "adlc-tickets"].includes(basename4(t)) || /^@adlc\/cli(@[^/]+)?$/.test(t));
+  if (i < 0) return null;
+  const operands = argv.slice(i + 1).filter((t) => !t.startsWith("-"));
+  return basename4(argv[i]) === "adlc-tickets" ? ["ticket", ...operands] : operands;
 }
 function stage5(ctx, repos, reason) {
   if (ctx.readonly) return deny("Read-only agb worker session: only inspection commands are permitted");
@@ -3841,21 +3938,57 @@ function stage5(ctx, repos, reason) {
   if (adlcRepos.some((r) => r.activeRail)) return ask(reason);
   return PASS;
 }
-function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange }) {
+var askOrDeny = (ctx, reason) => ctx.headless ? deny(reason) : ask(reason);
+function trustRootSamples(repo) {
+  const samples = [...IMPLICIT_RAIL_FILES, ...IMPLICIT_RAIL_DIRS, ...IMPLICIT_RAIL_DIRS.map((d) => `${d}/x`), TICKET_STORE_DIR];
+  try {
+    for (const name of readdirSync5(join10(repo.root, TICKET_STORE_DIR))) samples.push(`${TICKET_STORE_DIR}/${name}`);
+  } catch {
+  }
+  return samples;
+}
+function globTargetVerdict(token, cwd, ctx) {
+  if (!GLOB_CHARS2.test(token)) return null;
+  if (token.length > MAX_PATTERN_LENGTH2) return deny("Over-long glob pattern in a shell command cannot be verified");
+  const absPattern = resolve7(cwd, expandHome(token, ctx.home));
+  const staticDir = dirname10(absPattern.slice(0, absPattern.search(GLOB_CHARS2) + 1));
+  const roots = protectedRoots(ctx.home);
+  if (roots.some((root) => isWithin(staticDir, root, ctx.platform) || staticDir !== "/" && isWithin(root, staticDir, ctx.platform))) {
+    return deny("Glob in a shell command reaches platform configuration, plugins, or Node runtimes");
+  }
+  const repo = ctx.repoAt(staticDir);
+  if (!repo.adlc) return null;
+  const relPattern = relative4(repo.root, absPattern).split(sep4).join("/");
+  if (relPattern.startsWith("..")) return null;
+  const nocase = ctx.platform === "darwin";
+  const hit = trustRootSamples(repo).find((p) => minimatch(p, relPattern, { nocase }));
+  if (hit) return deny(`Glob in a shell command can match the ADLC trust root: ${hit}`);
+  const rail = repo.activeRail && repo.store.ok ? repo.store.rails.find((r) => railStaticPrefix(r) === r && minimatch(r, relPattern, { nocase })) : null;
+  return rail ? deny(`Glob in a shell command can match frozen rail: ${rail}`) : null;
+}
+function writesIntoProtectedParent(r, ctx) {
+  return protectedRoots(ctx.home).some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
+}
+function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
   const writeTargets = new Set(sub.redirects.filter((r) => r.op.includes(">")).map((r) => r.target));
   const verdicts = [];
   const repos = [];
+  const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
     if (matchRoot(r, boosterDataRoots(ctx.home), ctx.platform)) {
       return { verdict: deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden"), repos };
     }
-    if (matchRoot(r, protectedRoots(ctx.home), ctx.platform) && (writeTargets.has(token) || !(stage1 || shim))) {
+    if ((writeTargets.has(token) || !(stage1 || shim)) && matchRoot(r, protectedRoots(ctx.home), ctx.platform)) {
       return { verdict: deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden"), repos };
     }
-    const shimDir = join10(ctx.home, ".local", "bin");
-    if (!(stage1 || shim) && [r.lexical, r.real].some((p) => p === shimDir || p === join10(ctx.realHome, ".local", "bin"))) {
-      return { verdict: deny("Writing into the directory that holds the agb terminal shim is forbidden"), repos };
+    if ((destructive || writeTargets.has(token)) && writesIntoProtectedParent(r, ctx)) {
+      return { verdict: deny("Command writes into a directory containing platform configuration, plugins, or Node runtimes"), repos };
+    }
+    const pureRead = PURE_READERS.has(sub.argv[0]) && !hasWriteRedirect(sub);
+    if (!stage1 && (!pureRead || writeTargets.has(token))) {
+      const glob = globTargetVerdict(token, cwd, ctx);
+      if (glob) return { verdict: glob, repos };
     }
     const repo = ctx.repoAt(r.real);
     repos.push(repo);
@@ -3863,24 +3996,34 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange }) {
     if (!repo.store.ok) return { verdict: deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified"), repos };
     const rel = repoRelative(r.real, repo.root);
     if (rel === null || rel === "") continue;
+    const hard = destructive || writeTargets.has(token);
     const implicit = matchImplicitRail(rel, repo.root, ctx.platform);
-    if (implicit) verdicts.push(deny(`Target path matches standing ADLC implicit rail: ${implicit}`));
+    if (implicit) {
+      verdicts.push(
+        hard || !isImplicitAncestorOnly(rel, ctx.platform) ? deny(`Target path matches standing ADLC implicit rail: ${implicit}`) : askOrDeny(ctx, `Command names a directory containing the ADLC trust root (${implicit})`)
+      );
+    }
     const rail = repo.activeRail ? matchDeclaredRail(rel, repo.store.rails, ctx.platform) : null;
-    if (rail) verdicts.push(deny(`Target path matches frozen rail: ${rail}`));
+    if (rail) {
+      verdicts.push(
+        hard || !isRailAncestorOnly(rel, rail, ctx.platform) ? deny(`Target path matches frozen rail: ${rail}`) : askOrDeny(ctx, `Command names a directory containing frozen rail: ${rail}`)
+      );
+    }
   }
   return { verdict: mostRestrictive(verdicts), repos };
 }
-function checkDestructiveRoot(sub, cwd, cwdRepo, ctx) {
-  const scope = destructiveRootScope(sub.argv);
-  if (!scope) return PASS;
-  if (scope === "repo") {
-    const isClean = sub.argv[1] === "clean";
-    if (cwdRepo.adlc && (isClean || cwdRepo.activeRail)) return deny("Repository-wide destructive git command in an ADLC repository");
+function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
+  if (verbs.repoWide) {
+    const touched = [cwdRepo, ...repos].filter((r) => r.adlc);
+    if (touched.some((r) => verbs.repoWide === "clean" || r.activeRail)) {
+      return deny("Repository-wide destructive git command in an ADLC repository");
+    }
     return PASS;
   }
+  if (!verbs.deletes) return PASS;
   for (const token of candidateTokens(sub)) {
     const r = resolveCandidate(token, cwd, ctx.home);
-    if (protectedRoots(ctx.home).some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
+    if (writesIntoProtectedParent(r, ctx)) {
       return deny("Destructive command targets a directory containing platform configuration, plugins, or Node runtimes");
     }
     for (const repo of ctx.knownRepos()) {
@@ -3891,43 +4034,90 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx) {
   }
   return PASS;
 }
-function classifySubcommand(sub, cwd, cwdRepo, ctx) {
+function inlineScript(argv) {
+  if (argv[0] === "eval") return argv.slice(1).join(" ");
+  if (!SHELLS.has(basename4(argv[0] ?? ""))) return null;
+  const flag = argv.findIndex((t, i) => i > 0 && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(t));
+  return flag > 0 && typeof argv[flag + 1] === "string" ? argv[flag + 1] : null;
+}
+function classifySubcommand(rawSub, cwd, ctx, depth) {
+  const sub = { ...rawSub, argv: effectiveArgv(rawSub.argv) };
   const argv = sub.argv;
+  if (argv.length === 0) return PASS;
+  const cwdRepo = ctx.repoAt(cwd);
+  const inline = inlineScript(argv);
+  if (inline !== null) {
+    if (depth >= MAX_NESTING) return deny("Nested shell scripts too deep to verify");
+    return classifyLine(inline, cwd, ctx, depth + 1);
+  }
+  const verbs = verbClass(argv);
   const shim = isShimInvocation(argv, ctx);
   const stage1 = !shim && isStage1(sub);
   const dirChange = DIR_CHANGE.has(argv[0]);
-  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange });
+  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs });
   if (targetVerdict.decision === "deny") return targetVerdict;
   const contextRepos = [cwdRepo, ...repos];
+  const finish = (v) => mostRestrictive([targetVerdict, v]);
   const ticketOps = adlcTicketOperands(argv);
   if (ticketOps && ticketOps[0] === "ticket" && LIFECYCLE_VERBS.has(ticketOps[1])) {
-    if (!contextRepos.some((r) => r.adlc)) return PASS;
+    if (!contextRepos.some((r) => r.adlc)) return finish(PASS);
     if (!argv.includes("--authorize")) return deny("Ticket lifecycle change without --authorize is forbidden in-session");
     return ctx.headless ? deny("Headless worker cannot authorize a ticket lifecycle change") : ask("Authorized ticket lifecycle change requires operator confirmation");
   }
-  if (stage1) return PASS;
-  if (isStage2(sub, cwd, ctx)) return PASS;
-  const destructive = checkDestructiveRoot(sub, cwd, cwdRepo, ctx);
+  if (stage1) return finish(PASS);
+  if (isStage2(sub, cwd, ctx)) return finish(PASS);
+  const destructive = checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos);
   if (destructive.decision === "deny") return destructive;
-  if (isGitOutput(argv)) return stage5(ctx, contextRepos, "git command writing --output requires operator confirmation");
+  const git = gitSubcommand(argv);
+  if (git && ["diff", "log"].includes(git.verb) && git.args.some((t) => GIT_OUTPUT_FLAG.test(t))) {
+    return finish(stage5(ctx, contextRepos, "git command writing --output requires operator confirmation"));
+  }
   if (shim) {
     if (ctx.headless) return deny("Headless agb worker cannot invoke the agb shim");
-    return stage5(ctx, contextRepos, "agb command in an active-rail ADLC repository requires operator confirmation");
+    return finish(stage5(ctx, contextRepos, "agb command in an active-rail ADLC repository requires operator confirmation"));
   }
-  if (DIR_CHANGE.has(argv[0])) {
-    return stage5(ctx, contextRepos, "Directory change in an active-rail ADLC repository requires operator confirmation");
-  }
-  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && isTestCommand(sub)) return PASS;
-  if (!ctx.headless && contextRepos.some((r) => r.adlc && r.activeRail) && isRoutine(sub)) return PASS;
-  return stage5(ctx, contextRepos, "Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation");
+  if (dirChange) return finish(stage5(ctx, contextRepos, "Directory change in an active-rail ADLC repository requires operator confirmation"));
+  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && isTestCommand(sub)) return finish(PASS);
+  if (!ctx.headless && contextRepos.some((r) => r.adlc && r.activeRail) && isRoutine(sub, cwd, ctx)) return finish(PASS);
+  return finish(stage5(ctx, contextRepos, "Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation"));
 }
-function dirChangeTarget(sub, cwd, ctx) {
-  const [cmd, ...rest] = sub.argv;
+function dirChangeTarget(sub, cwd, ctx, cdpath) {
+  const [cmd, ...rest] = effectiveArgv(sub.argv);
   if (sub.dynamic || cmd === "popd") return null;
   const operands = rest.filter((t) => !/^-[LPe@]+$/.test(t) && t !== "--");
   if (operands.length === 0) return cmd === "cd" ? ctx.home : null;
-  if (operands.length > 1 || operands[0] === "-" || /^[+-]\d+$/.test(operands[0])) return null;
-  return resolve7(cwd, expandHome(operands[0], ctx.home));
+  const op = operands[0];
+  if (operands.length > 1 || op === "-" || /^[+-]\d+$/.test(op)) return null;
+  const cdpathApplies = !op.startsWith("/") && !op.startsWith("./") && !op.startsWith("../") && op !== "." && op !== ".." && !hasHomePrefix(op);
+  if (cdpath && cdpathApplies) return null;
+  return resolve7(cwd, expandHome(op, ctx.home));
+}
+var setsCdpath = (sub) => [...sub.assignments, ...sub.argv].some((t) => /^CDPATH=/.test(t));
+function classifyLine(line, cwd, ctx, depth) {
+  const lexed = lexCommandLine(line);
+  if (!lexed.ok) return stage5(ctx, [ctx.repoAt(cwd)], "Shell command could not be parsed; operator confirmation required");
+  const verdicts = [];
+  let current = cwd;
+  let cdpath = ctx.cdpath;
+  const subs = lexed.subcommands;
+  for (const sub of subs) {
+    if (current === null) {
+      verdicts.push(deny("Working directory unknown after a directory change; later commands cannot be verified"));
+      continue;
+    }
+    if (setsCdpath(sub)) cdpath = true;
+    const argv = effectiveArgv(sub.argv);
+    if (DIR_CHANGE.has(argv[0])) {
+      const target = dirChangeTarget(sub, current, ctx, cdpath);
+      const intoWorkspace = target !== null && ctx.workspacePaths.some((w) => isWithin(target, w, ctx.platform));
+      if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx, depth));
+      current = target;
+      continue;
+    }
+    verdicts.push(classifySubcommand(sub, current, ctx, depth));
+    if (argv[0] === "eval" || inlineScript(argv) !== null || argv.some((t, i) => i > 0 && DIR_CHANGE.has(t))) current = null;
+  }
+  return mostRestrictive(verdicts);
 }
 function classifyRunCommand(args, ctx) {
   const line = args?.CommandLine;
@@ -3941,26 +4131,7 @@ function classifyRunCommand(args, ctx) {
   if (adlcContext && (!isAbsolute4(cwdRaw) || !insideWorkspace)) {
     return deny("Shell command working directory outside declared workspace paths in an ADLC repository is forbidden");
   }
-  const lexed = lexCommandLine(line);
-  if (!lexed.ok) return stage5(ctx, [cwdRepo], "Shell command could not be parsed; operator confirmation required");
-  const verdicts = [];
-  let current = cwd;
-  const subs = lexed.subcommands;
-  for (const sub of subs) {
-    if (current === null) {
-      verdicts.push(deny("Working directory unknown after a directory change; later commands cannot be verified"));
-      continue;
-    }
-    if (DIR_CHANGE.has(sub.argv[0])) {
-      const target = dirChangeTarget(sub, current, ctx);
-      const intoWorkspace = target !== null && ctx.workspacePaths.some((w) => isWithin(target, w, ctx.platform));
-      if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx.repoAt(current), ctx));
-      current = target;
-      continue;
-    }
-    verdicts.push(classifySubcommand(sub, current, ctx.repoAt(current), ctx));
-  }
-  return mostRestrictive(verdicts);
+  return classifyLine(line, cwd, ctx, 0);
 }
 
 // hooks/policy/evaluate.mjs
@@ -4144,6 +4315,7 @@ function buildContext(payload, options = {}) {
     workspacePaths,
     workerTicket,
     readonly,
+    cdpath: Boolean(env.CDPATH),
     headless: Boolean(workerTicket) || readonly,
     anchor: cwd ?? workspacePaths[0] ?? null,
     ...makeRepoCache()

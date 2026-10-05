@@ -186,7 +186,7 @@ emit_fallback() {
     esac
 
     TARGETS_PROTECTED=0
-    if grep -Eq '\.migration\.lock|plugin_data/antigravity-booster|\.config/antigravity-booster' "$TMP_IN" 2>/dev/null; then
+    if grep -Eq '\.migration\.lock|plugin_data/(\.?/)*antigravity-booster|\.config/(\.?/)*antigravity-booster' "$TMP_IN" 2>/dev/null; then
       TARGETS_PROTECTED=1
     fi
 

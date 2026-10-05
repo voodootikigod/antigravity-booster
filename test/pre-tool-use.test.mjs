@@ -251,7 +251,7 @@ const SHELL_TABLE = [
   ['node -e "require(1)"', 'ask', 'deny', 'pass'],
   ['python -c "print(1)"', 'ask', 'deny', 'pass'],
   ['echo $FOO', 'ask', 'deny', 'pass'],
-  ['rm lib/*.mjs', 'ask', 'deny', 'pass'],
+  ['rm lib/*.mjs', 'deny', 'deny', 'pass'], // the glob can expand to a rail (P5 round 2)
   ['patch -p1 < fix.diff', 'ask', 'deny', 'pass'],
   ['git apply fix.diff', 'ask', 'deny', 'pass'],
   ['git rebase main', 'ask', 'deny', 'pass'],
@@ -266,7 +266,7 @@ const SHELL_TABLE = [
   ['git commit --amend -m x', 'ask', 'deny', 'pass'],
   ['git commit -am x', 'ask', 'deny', 'pass'],
   ['git add .', 'ask', 'deny', 'pass'],
-  ['npm run build', 'pass', 'deny', 'pass'],
+  ['npm run build', 'ask', 'deny', 'pass'], // D15 amended 2026-10-05: runs package.json code
 ];
 
 for (const [cmd, interactive, worker, plain] of SHELL_TABLE) {
@@ -344,7 +344,7 @@ test('Shell: read-only worker mode permits only inspection', () => {
 });
 
 test('Shell: unlisted git flags and global options route to Stage 5', () => {
-  assert.equal(shell('git -C lib status', fx.active).decision, 'deny', '-C names a directory containing a rail (A.6 item 5)');
+  assert.equal(shell('git -C lib status', fx.active).decision, 'ask', '-C names a directory containing a rail: ask (owner decision 2026-10-05)');
   assert.equal(shell('git -C test status', fx.active).decision, 'ask');
   assert.equal(shell('git -c core.pager=evil log', fx.active).decision, 'ask');
   assert.equal(shell('FOO=1 git status', fx.active).decision, 'ask');
