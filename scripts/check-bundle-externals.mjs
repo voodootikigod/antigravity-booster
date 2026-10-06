@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { isBuiltin as nodeIsBuiltin, builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-export const DEFAULT_BUNDLES = ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs'];
+export const DEFAULT_BUNDLES = ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs'];
 
 const BUILTINS = new Set(builtinModules);
 
