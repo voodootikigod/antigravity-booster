@@ -16,27 +16,30 @@
   ],
   "author": "Chris Williams <chris@voodootikigod.com> (https://github.com/voodootikigod)",
   "bin": {
-    "agb": "bin/agb.mjs"
+    "agb": "dist/agb.mjs"
   },
   "files": [
     "bin/",
     "lib/",
     "skills/",
+    "commands/",
+    "agents/",
+    "hooks/",
+    "mcp/",
+    "dist/",
+    "vendor/",
     "sidecars/",
-    ".agents/",
-    "docs/",
+    "docs/calibration/",
     "templates/",
-    "plugin.json",
-    "!docs/fumadocs-plan.md",
-    "!docs/github-rulesets/"
+    "hooks.json",
+    "mcp_config.json",
+    "plugin.json"
   ],
-  "dependencies": {
-    "@adlc/antigravity": "^1.7.0",
-    "@adlc/cli": "1.11.1",
-    "@adlc/core": "^1.11.1",
-    "@adlc/tickets": "^1.11.1"
-  },
   "scripts": {
+    "build:agb": "esbuild bin/agb.mjs --bundle --platform=node --format=esm --outfile=dist/agb.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
+    "build:mcp": "esbuild mcp/server.mjs --bundle --platform=node --format=esm --outfile=dist/mcp-server.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
+    "build:hooks": "esbuild hooks/pre-tool-use.mjs --bundle --platform=node --format=esm --outfile=dist/hooks/pre-tool-use.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
+    "build": "npm run build:agb && npm run build:mcp && npm run build:hooks && node scripts/check-bundle-externals.mjs",
     "test": "node --test test/*.test.mjs",
     "coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' test/*.test.mjs",
     "coverage:check": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=86 test/*.test.mjs"
@@ -48,5 +51,13 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/voodootikigod/antigravity-booster.git"
+  },
+  "devDependencies": {
+    "@adlc/antigravity": "1.7.0",
+    "@adlc/cli": "1.11.1",
+    "@adlc/core": "1.11.1",
+    "@adlc/tickets": "1.11.1",
+    "esbuild": "0.28.2",
+    "minimatch": "10.0.1"
   }
 }

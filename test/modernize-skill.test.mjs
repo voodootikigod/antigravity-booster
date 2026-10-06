@@ -15,8 +15,9 @@ function makeTempDir(prefix = 'agb-mod-test-') {
 
 test('Modernize Skill: bootstrap discovery and linking', () => {
   const destDir = makeTempDir('agb-dest-skills-');
+  const homeDir = makeTempDir('agb-mod-home-');
   try {
-    bootstrap({ destination: destDir, agyBin: FAKE_AGY });
+    bootstrap({ destination: destDir, home: homeDir, agyBin: FAKE_AGY });
     const entries = readdirSync(destDir);
     assert.ok(entries.includes('modernize'), 'modernize skill directory was discovered and linked');
     const skillMdPath = join(destDir, 'modernize', 'SKILL.md');
@@ -25,6 +26,7 @@ test('Modernize Skill: bootstrap discovery and linking', () => {
     assert.match(content, /name:\s*modernize/);
   } finally {
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 

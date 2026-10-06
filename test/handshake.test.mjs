@@ -275,13 +275,14 @@ test('handshake: warns (does not silently proceed) when enforcement degrades on 
 
 test('bootstrap: incompatible installed plugin contract aborts loudly (exit 1)', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-handshake-bootstrap-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'agb-handshake-home-'));
   try {
     let thrown;
     try {
       execFileSync(process.execPath, [
         '-e',
         `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
-          `bootstrap({ destination: '${destDir}', pluginPath: '${PLUGIN_INCOMPATIBLE}', agyBin: '${FAKE_AGY}' }))`,
+          `bootstrap({ destination: '${destDir}', home: '${homeDir}', pluginPath: '${PLUGIN_INCOMPATIBLE}', agyBin: '${FAKE_AGY}' }))`,
       ], { stdio: 'pipe' });
     } catch (err) {
       thrown = err;
@@ -293,15 +294,18 @@ test('bootstrap: incompatible installed plugin contract aborts loudly (exit 1)',
     assert.equal(thrown.status, 1, 'aborts with exit 1');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 
 test('bootstrap: compatible installed plugin contract completes (links booster skills)', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-handshake-bootstrap-ok-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'agb-handshake-home-'));
   try {
-    bootstrap({ destination: destDir, pluginPath: PLUGIN_COMPATIBLE, agyBin: FAKE_AGY, force: true });
+    bootstrap({ destination: destDir, home: homeDir, pluginPath: PLUGIN_COMPATIBLE, agyBin: FAKE_AGY, force: true });
     assert.ok(existsSync(join(destDir, 'release')), 'booster-owned skills still installed');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });

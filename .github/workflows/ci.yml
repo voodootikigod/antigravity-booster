@@ -83,3 +83,39 @@ jobs:
 
       - name: Check coverage
         run: npm run coverage:check
+
+  plugin-integrity:
+    # Native agy plugin distribution guards (spec .adlc/specs/native-plugin-
+    # installation.md §4.1, Appendix A D6/P3). One canonical job: bundle bytes
+    # are compared here only, so a matrix leg can never flap the drift gate.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bundle drift gate (dist/ and vendor/ must match a fresh build)
+        run: |
+          npm run build
+          STATUS="$(git status --porcelain --untracked-files=all dist/ vendor/)"
+          if [ -n "$STATUS" ]; then
+            echo "error: committed dist/ or vendor/ is stale or has untracked files:" >&2
+            echo "$STATUS" >&2
+            exit 1
+          fi
+
+      - name: Shellcheck POSIX launchers
+        run: shellcheck -s sh bin/node-launcher.sh bin/hook-runner.sh
+
+      - name: Vendored @adlc/antigravity tarball is byte-identical to the npm release
+        run: |
+          VERSION="$(node -p "require('./package.json').devDependencies['@adlc/antigravity']")"
+          VENDORED="vendor/cache/adlc-antigravity-${VERSION}.tgz"
+          test -f "$VENDORED" || { echo "error: missing $VENDORED" >&2; exit 1; }
+          npm pack "@adlc/antigravity@${VERSION}" --pack-destination "$RUNNER_TEMP" >/dev/null
+          cmp "$VENDORED" "$RUNNER_TEMP/adlc-antigravity-${VERSION}.tgz"

@@ -1,12 +1,6 @@
 ---
 name: agb-status
-description: Render the live dashboard for a repo's current run
+description: Render the live dashboard for a repo's current run (deprecated legacy shim)
 ---
 
-# /agb-status [repo-path] [--watch] [--interval <ms>]
-
-Displays execution progress for an active or completed run.
-
-```sh
-agb status "$@"
-```
+Deprecated legacy shim: this command has no plugin equivalent; run `~/.local/bin/agb status` in a shell instead.

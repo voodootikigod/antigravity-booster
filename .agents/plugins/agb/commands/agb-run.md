@@ -1,12 +1,6 @@
 ---
 name: agb-run
-description: Execute a ticket DAG (build → gate → prosecute → merge)
+description: Execute a ticket DAG (build → gate → prosecute → merge) (deprecated legacy shim)
 ---
 
-# /agb-run <plan.json> [options]
-
-Executes the ticket DAG defined in plan.json.
-
-```sh
-agb run "$@"
-```
+Deprecated legacy shim: use the antigravity-booster plugin's root `commands/agb-run.md` (`/agb-run`) instead.

@@ -9,6 +9,17 @@ rather than enumerate.
 
 ## [Unreleased]
 
+### Added
+- **Native Antigravity plugin layout** (T-PLUGIN-01-CORE): `agy plugin install <git-url>` now stages a complete plugin with no `npm install`. Prebuilt bundles are committed under `dist/` (`agb.mjs`, `mcp-server.mjs`, `hooks/pre-tool-use.bundle.mjs`) and contain only Node built-ins. Root `commands/`, `agents/`, `hooks.json` and `mcp_config.json` replace `.agents/plugins/agb`, which remains as a hookless `agb-legacy-shim` until the migration ticket.
+- **Unified PreToolUse policy guard**: frozen rails and the ADLC trust root (`.adlc/config.json`, the manifest, ticket shards, `.git/`) are denied in-session. Unlisted shell commands `ask` in repos with active rails. Booster never emits `allow`. It runs behind `bin/hook-runner.sh`, a fail-safe runner with a 9 s watchdog, and `bin/node-launcher.sh`, which finds a trusted Node >= 22.19 under a stripped GUI PATH.
+- `agb bootstrap` installs `@adlc/antigravity` from the vendored, integrity-pinned npm tarball and writes the `~/.local/bin/agb` terminal shim. New `--force-reinstall` flag.
+- CI `plugin-integrity` job: bundle drift gate, shellcheck, and a byte-identity check of the vendored tarball against the npm release.
+
+### Changed
+- **The legacy `auto-approve-tests` hook is removed.** Interactive test runs in repos with active rails now ask for confirmation.
+- `package.json` `bin.agb` points at `dist/agb.mjs`, and `@adlc/*` are exact-pinned `devDependencies`.
+- AGENTS.md and docs/guidelines.md record the owner-approved doctrine amendment for vendoring pristine registry tarballs and fail-closed enforcement gates.
+
 ## [0.8.0] — 2026-10-03
 
 ### Added

@@ -1,12 +1,6 @@
 ---
 name: agb-sidecar
-description: Launch the HTTP server for the Antigravity Sidecar UI
+description: Launch the HTTP server for the Antigravity Sidecar UI (deprecated legacy shim)
 ---
 
-# /agb-sidecar [repo-path] [--port <port>]
-
-Launches the native web dashboard sidecar server.
-
-```sh
-agb sidecar "$@"
-```
+Deprecated legacy shim: use the antigravity-booster plugin's root `commands/agb-sidecar.md` (`/agb-sidecar`) instead.

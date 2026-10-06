@@ -15,9 +15,37 @@ if [ "$1" = "plugin" ]; then
           if [ -n "$FAKE_STATE_DIR" ]; then
             echo "$3" >> "$FAKE_STATE_DIR/plugin-installs"
           fi
+          # Optional snapshot of a temp tree at install time, so tests can
+          # observe staging/extraction dirs that the caller deletes afterwards.
+          if [ -n "$FAKE_STATE_DIR" ] && [ -n "$FAKE_AGY_SNAPSHOT_DIR" ]; then
+            find "$FAKE_AGY_SNAPSHOT_DIR" -mindepth 1 >> "$FAKE_STATE_DIR/install-snapshot" 2>/dev/null
+          fi
+          # Emulate real agy staging: copy <dir> into
+          # $HOME/.gemini/config/plugins/<basename>. Guarded so it ONLY ever
+          # writes under a temp HOME — never the developer's real ~/.gemini.
+          tmp_base="${TMPDIR:-/tmp}"
+          tmp_base="${tmp_base%/}"
+          case "$HOME" in
+            "$tmp_base"/*|/tmp/*)
+              if [ -d "$3" ] && [ "${FAKE_AGY_PLUGIN_MODE:-ok}" != "no-stage" ]; then
+                name=$(basename "$(CDPATH='' cd -- "$3" && pwd -P)")
+                dest="$HOME/.gemini/config/plugins/$name"
+                rm -rf "$dest"
+                mkdir -p "$HOME/.gemini/config/plugins"
+                cp -R "$3" "$dest"
+              fi ;;
+          esac
           echo "installed plugin from $3"
           exit 0 ;;
       esac ;;
+    validate)
+      dir="${3:-.}"
+      if [ -f "$dir/plugin.json" ]; then
+        echo "plugin at $dir is valid"
+        exit 0
+      fi
+      echo "error: no plugin.json in $dir" >&2
+      exit 1 ;;
   esac
 fi
 

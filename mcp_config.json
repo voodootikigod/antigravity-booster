@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agb": {
+      "command": "/bin/sh",
+      "args": ["${PLUGIN_ROOT}/bin/node-launcher.sh", "${PLUGIN_ROOT}/dist/mcp-server.mjs"]
+    }
+  }
+}

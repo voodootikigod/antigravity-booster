@@ -769,8 +769,22 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
   const libDir = join(isoRoot, 'lib');
   mkdirSync(libDir);
   const libSrc = fileURLToPath(new URL('../lib', import.meta.url));
-  for (const f of ['bootstrap.mjs', 'adlc-bridge.mjs']) {
+  for (const f of ['bootstrap.mjs', 'adlc-bridge.mjs', 'plugin-paths.mjs']) {
     writeFileSync(join(libDir, f), readFileSync(join(libSrc, f)));
+  }
+  // adlc-bridge statically imports @adlc/tickets (bundling), so the copy needs
+  // the repo's node_modules — linked entry by entry, EXCEPT @adlc/antigravity,
+  // which must stay unresolvable for the fallback branch under test.
+  const repoModules = fileURLToPath(new URL('../node_modules', import.meta.url));
+  const isoModules = join(isoRoot, 'node_modules');
+  mkdirSync(join(isoModules, '@adlc'), { recursive: true });
+  for (const entry of readdirSync(repoModules)) {
+    if (entry === '@adlc') continue;
+    symlinkSync(join(repoModules, entry), join(isoModules, entry));
+  }
+  for (const pkg of readdirSync(join(repoModules, '@adlc'))) {
+    if (pkg === 'antigravity') continue;
+    symlinkSync(join(repoModules, '@adlc', pkg), join(isoModules, '@adlc', pkg));
   }
   // repoRoot inside resolvePluginPath is `new URL('..', import.meta.url)` of the
   // copied bootstrap.mjs, i.e. isoRoot; the fallback resolves the sibling from there.
@@ -793,8 +807,9 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
 
 test('bootstrap: installs the adlc-antigravity plugin via `agy plugin install`, then links booster-owned skills', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-home-'));
   try {
-    bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
+    bootstrap({ destination: destDir, home: homeDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
     // Vendored ADLC-doctrine skill copies are gone from this repo — bootstrap
     // must not (and now cannot) install skills/adlc-doctrine etc.
     assert.ok(!existsSync(join(process.cwd(), 'skills', 'adlc-doctrine')));
@@ -806,23 +821,28 @@ test('bootstrap: installs the adlc-antigravity plugin via `agy plugin install`, 
     assert.ok(!existsSync(join(destDir, 'adlc-self-orchestrate')));
   } finally {
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 
 test('bootstrap: agy plugin install invoked with the resolved plugin path', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-home-'));
   const stateDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-state-'));
   const prevState = process.env.FAKE_STATE_DIR;
   process.env.FAKE_STATE_DIR = stateDir;
   try {
-    bootstrap({ destination: destDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
+    bootstrap({ destination: destDir, home: homeDir, pluginPath: FAKE_PLUGIN, agyBin: FAKE_AGY, force: true });
     const installs = readFileSync(join(stateDir, 'plugin-installs'), 'utf8').trim().split('\n');
     assert.equal(installs[0], '.', 'agy plugin install received "." for adlc');
-    assert.equal(installs[1], '.', 'also installed booster plugin itself via "."');
+    // Booster itself is staged through safePluginInstall (Appendix A.4 item 19): agy
+    // receives a temp copy named antigravity-booster, never the checkout via ".".
+    assert.match(installs[1], /\/agy-staging-[^/]+\/antigravity-booster$/, 'booster installed from a safePluginInstall staging copy');
 
   } finally {
     if (prevState === undefined) delete process.env.FAKE_STATE_DIR; else process.env.FAKE_STATE_DIR = prevState;
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
     rmSync(stateDir, { recursive: true, force: true });
   }
 });
@@ -830,6 +850,7 @@ test('bootstrap: agy plugin install invoked with the resolved plugin path', () =
 
 test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exist, but skill linking still performed', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-home-'));
   const missingPluginPath = join(destDir, 'does-not-exist');
   try {
     let out = '';
@@ -837,7 +858,7 @@ test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exis
       out = execFileSync(process.execPath, [
         '-e',
         `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
-          `bootstrap({ destination: '${destDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
+          `bootstrap({ destination: '${destDir}', home: '${homeDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
       ], { stdio: 'pipe' }).toString();
     }, /Command failed/, 'process.exit(1) surfaces as a non-zero exit, not a silent no-op');
     
@@ -845,18 +866,20 @@ test('bootstrap: fails loudly (non-zero exit) when the plugin path does not exis
     // But since assert.throws swallows the error object, we can catch it instead to inspect stderr.
   } finally {
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 
 test('bootstrap: fails loudly with clone URL when the plugin path does not exist, but skill linking still performed', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-home-'));
   const missingPluginPath = join(destDir, 'does-not-exist');
   try {
     try {
       execFileSync(process.execPath, [
         '-e',
         `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
-          `bootstrap({ destination: '${destDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
+          `bootstrap({ destination: '${destDir}', home: '${homeDir}', pluginPath: '${missingPluginPath}', agyBin: '${FAKE_AGY}' }))`,
       ], { stdio: 'pipe' });
       assert.fail('Should have thrown');
     } catch (err) {
@@ -870,21 +893,24 @@ test('bootstrap: fails loudly with clone URL when the plugin path does not exist
     assert.ok(linked.length > 0, 'at least one skill should be linked even on plugin failure');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 
 test('bootstrap: fails loudly when `agy plugin install` itself fails (e.g. agy too old for plugin install)', () => {
   const destDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-test-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'agb-bootstrap-home-'));
   try {
     assert.throws(() => {
       execFileSync(process.execPath, [
         '-e',
         `import('${new URL('../lib/bootstrap.mjs', import.meta.url)}').then(({ bootstrap }) => ` +
-          `bootstrap({ destination: '${destDir}', pluginPath: '${FAKE_PLUGIN}', agyBin: '${FAKE_AGY}' }))`,
+          `bootstrap({ destination: '${destDir}', home: '${homeDir}', pluginPath: '${FAKE_PLUGIN}', agyBin: '${FAKE_AGY}' }))`,
       ], { stdio: 'pipe', env: { ...process.env, FAKE_AGY_PLUGIN_MODE: 'fail' } });
     }, /Command failed/, 'a failing `agy plugin install` surfaces as a non-zero exit, not a silent no-op');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
+    rmSync(homeDir, { recursive: true, force: true });
   }
 });
 
@@ -1006,18 +1032,22 @@ test('brain: getActiveSessionId reads ANTIGRAVITY_CONVERSATION_ID', async () => 
   }
 });
 
-test('plugins: .agents/plugins/agb/plugin.json matches root plugin.json specification', () => {
+test('plugins: .agents/plugins/agb/plugin.json is the legacy shim, versioned with the root manifest', () => {
   const rootManifest = JSON.parse(readFileSync(new URL('../plugin.json', import.meta.url), 'utf8'));
   const agentManifestPath = new URL('../.agents/plugins/agb/plugin.json', import.meta.url);
   assert.ok(existsSync(agentManifestPath), '.agents/plugins/agb/plugin.json must exist');
   const agentManifest = JSON.parse(readFileSync(agentManifestPath, 'utf8'));
-  assert.equal(agentManifest.id, rootManifest.id, 'Plugin ID must match root manifest');
+  assert.equal(rootManifest.name, 'antigravity-booster', 'Root manifest is the antigravity-booster plugin');
+  assert.equal(agentManifest.name, 'agb-legacy-shim', 'Legacy manifest must not claim the antigravity-booster name');
   assert.equal(agentManifest.version, rootManifest.version, 'Plugin version must match root manifest');
 });
 
-test('agents: declarative agent manifests exist under .agents/agents/', () => {
+test('agents: subagents exist as agents/<name>.md (and legacy .agents/agents/ until T4)', () => {
   const roles = ['prosecutor', 'spec-linter', 'fleet-scheduler'];
   for (const role of roles) {
+    const agentMd = new URL(`../agents/${role}.md`, import.meta.url);
+    assert.ok(existsSync(agentMd), `agents/${role}.md must exist`);
+    assert.match(readFileSync(agentMd, 'utf8'), new RegExp(`^---\\nname: ${role}\\n`), `agents/${role}.md must declare its name`);
     const agentJson = new URL(`../.agents/agents/${role}/agent.json`, import.meta.url);
     const configYaml = new URL(`../.agents/agents/${role}/config.yaml`, import.meta.url);
     assert.ok(existsSync(agentJson), `.agents/agents/${role}/agent.json must exist`);

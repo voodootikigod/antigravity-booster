@@ -11,9 +11,10 @@ This document details the architectural principles, behavioral guidelines, and c
 6. [Self-Orchestration Guidelines](#self-orchestration-guidelines)
 7. [Design Tradeoffs](#design-tradeoffs)
 8. [Live Rail Enforcement (ADLC P3)](#live-rail-enforcement-adlc-p3)
-9. [Gate Evidence (ADLC gate-manifest)](#gate-evidence-adlc-gate-manifest)
-10. [Review Self-Calibration (ADLC review-calibration)](#review-self-calibration-adlc-review-calibration--opt-in-not-automatic)
-11. [CI Self-Protection](#ci-self-protection)
+9. [Native Plugin Distribution (Doctrine Amendment)](#native-plugin-distribution-doctrine-amendment)
+10. [Gate Evidence (ADLC gate-manifest)](#gate-evidence-adlc-gate-manifest)
+11. [Review Self-Calibration (ADLC review-calibration)](#review-self-calibration-adlc-review-calibration--opt-in-not-automatic)
+12. [CI Self-Protection](#ci-self-protection)
 
 ---
 
@@ -196,6 +197,31 @@ Once per `runPlan` call, the scheduler checks whether live in-session rail enfor
 When enforcement is unavailable but not aborted, every builder worktree still gets its own ticket-store projection (written in kind: directory-store shards, or the legacy `tickets.json` where the target repo still carries one), but as a `planTicketToRailTicket` projection (`lib/adlc-bridge.mjs`) — id/title/scope/rails only, with `edges`/`body`/`duration` stripped, since a single-ticket store can't resolve edges to sibling tickets that aren't in it (dangling edges make the plugin's `loadTickets` fail closed and deny the whole build, not just rail paths). This is deliberately distinct from `planToAdlcTickets`, the full-DAG projection the `adlc` CLI consumes at plan-compile time. The builder's `agy --print` invocation is spawned with `ADLC_P4_ENFORCEMENT=1` and `ADLC_TICKET=<id>` set **for that spawn only** — `runAgy`'s `env` option merges onto `process.env`, it never mutates it, so concurrent tickets building in the same booster process never see each other's active-ticket signal.
 
 When either precondition fails (short of an incompatible-contract abort), the run does not abort — it degrades to the post-hoc check alone and says so explicitly via `report.enforcementAvailable` / `report.enforcementReason` (never a silent no-op). The post-hoc check (`lib/scheduler.mjs`'s `checkRailsGuard`) calls `adlc rails-guard --rails <globs> --base <ref>` directly — the same engine the plugin's hook uses — instead of a bespoke glob comparison, and works regardless of whether the target repo is ADLC-initialized (it takes `--rails` flags straight from the ticket, not `--tickets`).
+
+## Native Plugin Distribution (Doctrine Amendment)
+
+Approved by the owner on 2026-10-04 (spec `.adlc/specs/native-plugin-installation.md` §4.4 Decisions 1–3 and Appendix A D6; signed `spec-approval` for ticket `t-plugin-00-spec`). Booster ships as a native agy plugin installable from a git URL, where `npm install` never runs. Three rules change to make that safe:
+
+1. **Pristine registry artifacts may be vendored, never forks.** `vendor/cache/adlc-antigravity-<version>.tgz` is the unmodified `@adlc/antigravity` npm tarball. Its SHA-512 must equal the `package-lock.json` integrity, and CI re-downloads it with `npm pack` and requires byte-identity. `agb bootstrap` installs it with `agy plugin install` after verifying the digest and rejecting path-traversal entries. Unpacked, edited, or regenerated doctrine skills remain forbidden.
+2. **No production override paths.** In the bundled build (`__AGB_BUNDLED__ === true`), every development override (`ADLC_ANTIGRAVITY_PLUGIN_PATH`, sibling checkouts, `AGB_PLUGIN_DIR`, `ADLC_CLI_PATH`, `AGB_ADLC_BIN`, `AGB_ALLOW_*`, `AGB_DEV_*`) is ignored, which closes `.envrc`/`direnv` injection. Overrides remain available only to unbundled source runs.
+3. **Enforcement gates fail closed; audit gates degrade.** `gate-manifest` and `flail-detector` keep the "degrade, never crash" contract. `rails-guard` and the in-session PreToolUse policy guard fail closed when active tickets declare rails or the ticket store is unreadable: they deny rail mutations and block dispatch and merge. Functions still return `{ ok: false, ... }` instead of throwing; the caller decides to block.
+
+The in-session guard emits only `deny`, `ask`, or neutral pass-through, never `allow`. In headless `agy -p` sessions `ask` degrades to allow (measured on agy 1.2.16), so every agb-spawned session is marked as a worker (`AGB_WORKER_TICKET` / `AGB_WORKER_MODE=readonly`) and receives `deny` instead. The merge-time `adlc rails-guard` remains the unbypassable backstop.
+
+### What the in-session guard guarantees, and what it does not
+
+Owner decision (2026-10-05), after two P5 prosecution rounds against the policy guard:
+
+- **File and MCP tools are exact and fail closed.** Writes, moves and deletes to a declared rail, to the ADLC trust root (`.adlc/config.json`, `.adlc/manifest.jsonl`, `.adlc/sessions.json`, ticket archive/transactions/leases, existing ticket shards, `.git/`), or to a platform-protected root (`~/.gemini`, `~/.local/bin/agb`, Node version managers) are denied. Paths are resolved physically, component by component, as the kernel does: dangling symlinks, links reached through linked directories, and `..` after a link all resolve to the real target, and `file:` URLs are decoded. Relative targets are judged against every anchor (`Cwd` and each workspace path). The repository root is the first git top holding `.adlc/`. A git top without `.adlc/` (a submodule, or a planted `.git`) does not stop the search, and without such a top the outermost `.adlc/` wins, so a decoy `.adlc`/`.git` cannot re-root the rails. Deleting or moving a directory that *contains* a workspace repository or a protected root is denied, and a new ticket shard may only be created as the canonical `<id>--<sha256(id)>.json` file for the ticket its content declares. Symlink loops and oversized paths are unresolvable and denied.
+- **Shell (`run_command`) classification is best-effort defense in depth.** A shell cannot be parsed soundly. The guard follows the common spellings (`cd` behind `builtin`/`command`/control words, `CDPATH`, `>|`, `>&file`, attached `-oFILE` values, `git` global options, globs and braces against the trust root, `$'…'`, `~user`, `sh -c`/`eval`). It fails closed when it cannot follow the working directory. Commands it does not recognise **ask** in repositories with active rails, and **pass** elsewhere.
+- **Known residual risks** (accepted; the merge-time `rails-guard` diff and the CI trust-root check catch any committed result):
+  - Arbitrary programs (`node -e`, `python -c`, compiled binaries, test suites) can write anything. They ask in active-rail interactive sessions, and pass in repositories without active rails.
+  - A command written to a script file, a `package.json` script or a git hook, then run, executes code the guard never saw. `npm run build` asks for this reason; `git commit` still passes and will run repository hooks.
+  - In `agy -p` (headless) sessions not started by `agb`, `ask` is honoured as allow (measured on agy 1.2.16 and 1.2.17). `agb`'s own sessions are always marked as workers and receive `deny` instead.
+  - `git config core.hooksPath`, `git update-ref`, `git gc --prune=now` and other low-level git plumbing are not specifically recognised.
+  - Deleting or moving a directory is checked for any `.adlc/` beneath it by a bounded scan. The scan does not descend into `node_modules/` or `.git/`, so an ADLC repository nested inside one of those is not detected. A directory too large to scan asks interactively and is denied headless; a directory with unreadable subdirectories is denied.
+  - Process-relative paths (`/proc/self/…`, `/dev/fd/…`) and `file:` URLs that carry a host, userinfo or port are never accepted as mutation targets, because the hook cannot know how the writing process would resolve them.
+- **Platform note (agy 1.2.17):** agy now fails *closed* when a hook exits non-zero or times out (1.2.16 failed open). `bin/hook-runner.sh` always exits 0 and emits its own fallback decision, so booster's behaviour is unchanged, but a crashing hook would block every tool call. Never let the runner exit non-zero.
 
 ## Gate Evidence (ADLC gate-manifest)
 

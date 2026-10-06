@@ -1,12 +1,6 @@
 ---
 name: agb-preflight
-description: Plan-time gates: scope overlap + coldstart check
+description: Plan-time gates: scope overlap + coldstart check (deprecated legacy shim)
 ---
 
-# /agb-preflight <plan.json> [--no-coldstart]
-
-Runs plan-level coldstart probes and forecasts scope overlaps between parallel tickets.
-
-```sh
-agb preflight "$@"
-```
+Deprecated legacy shim: this command has no plugin equivalent; run `~/.local/bin/agb preflight` in a shell instead.

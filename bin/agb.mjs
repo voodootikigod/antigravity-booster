@@ -48,7 +48,7 @@ const COMMANDS = {
   sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
-  bootstrap: { args: '', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
+  bootstrap: { args: '[--force] [--force-reinstall]', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
   pool: { args: 'drain [repo]', desc: 'safely drain active leases and reset coordinator' },
   tui: { args: '', desc: 'Removed. Use agb sidecar instead.' }
 };
@@ -287,7 +287,8 @@ try {
     console.log('plan valid');
   } else if (cmd === 'bootstrap' || cmd === 'setup' || cmd === 'install' || (cmd === 'skills' && ['install', 'setup', 'bootstrap'].includes(rest[0]))) {
     const force = rest.includes('--force') || rest.includes('-f');
-    bootstrap({ force });
+    const forceReinstall = rest.includes('--force-reinstall');
+    bootstrap({ force, forceReinstall });
   } else if (cmd === 'probe') {
     const widths = (rest[0] ?? '2,4,8').split(',').map(Number);
     const model = rest[1] ?? 'Gemini 3.5 Flash (Low)';
