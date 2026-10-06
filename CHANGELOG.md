@@ -14,11 +14,18 @@ rather than enumerate.
 - **Unified PreToolUse policy guard**: frozen rails and the ADLC trust root (`.adlc/config.json`, the manifest, ticket shards, `.git/`) are denied in-session. Unlisted shell commands `ask` in repos with active rails. Booster never emits `allow`. It runs behind `bin/hook-runner.sh`, a fail-safe runner with a 9 s watchdog, and `bin/node-launcher.sh`, which finds a trusted Node >= 22.19 under a stripped GUI PATH.
 - `agb bootstrap` installs `@adlc/antigravity` from the vendored, integrity-pinned npm tarball and writes the `~/.local/bin/agb` terminal shim. New `--force-reinstall` flag.
 - CI `plugin-integrity` job: bundle drift gate, shellcheck, and a byte-identity check of the vendored tarball against the npm release.
+- **Vendored `adlc` dispatcher** (T-PLUGIN-02-ADLC-BRIDGE): `vendor/adlc/` is a booster-owned static bundle of the 8 `adlc` verbs booster calls (`rails-guard`, `gate-manifest`, `flail-detector`, `hollow-test`, `consensus-fix`, `model-router`, `merge-forecast`, `ticket`), pinned at `@adlc/*` 1.11.1. It needs no `npm install` and does no runtime module lookup. The bundled plugin resolves `adlc` only from here. A digest mismatch fails closed with `vendored-adlc-tampered`, and every override env var is ignored.
+- `scripts/update-adlc-digests.mjs` re-pins the vendored digests, but only after checking each source package against its `package-lock.json` registry integrity.
+- **Enforcement gate**: when the target repo's active tickets or the plan declare rails, a run whose ticket store is unreadable or whose `adlc` cannot be authenticated dispatches nothing. A rails-guard operational error mid-run marks the run compromised and blocks every later merge. Audit-only gates (`gate-manifest`, `flail-detector`) still only warn. Rails from active store tickets are now enforced post-hoc alongside each plan ticket's own.
+- **Post-run integrity check**: before dispatch the scheduler snapshots both staged plugins and the host repo's git hooks dir. After each worker it re-checks them, and confirms the worktree still has hooks disabled. Any difference marks the run compromised (`report.compromised`) and blocks merge.
+- Every agb-spawned `agy` session is marked as a worker: builders get `AGB_WORKER_TICKET=<id>`, and review, prosecute, preflight, plan and brain get `AGB_WORKER_MODE=readonly`. Any other caller defaults to read-only.
 
 ### Changed
 - **The legacy `auto-approve-tests` hook is removed.** Interactive test runs in repos with active rails now ask for confirmation.
 - `package.json` `bin.agb` points at `dist/agb.mjs`, and `@adlc/*` are exact-pinned `devDependencies`.
 - AGENTS.md and docs/guidelines.md record the owner-approved doctrine amendment for vendoring pristine registry tarballs and fail-closed enforcement gates.
+- `readPluginContract` returns the spec §4.4 status set: `unreadable`, `corrupt` (invalid JSON, not an object, or no strict semver `version`), `tolerant` (no `adlcContract`; replaces `missing-field`), `compatible` and `incompatible`. Consumers keep their existing degrade behaviour.
+- In bundled mode `AGB_PLUGIN_DIR` is ignored. Unbundled runs can point the vendored-`adlc` lookup elsewhere with `AGB_PLUGIN_ROOT` (development and tests only).
 
 ## [0.8.0] — 2026-10-03
 
