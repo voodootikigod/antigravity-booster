@@ -206,3 +206,34 @@ test('enforcementGate: passes with an authenticated adlc, or with no rails anywh
   assert.deepEqual(enforcementGate({ activeRails: okStore(['A', 'B']), planRails: true, adlc: authed }), { ok: true, railsPresent: true, storeRails: ['A', 'B'] });
   assert.deepEqual(enforcementGate({ activeRails: okStore(), planRails: false, adlc: unauthed }), { ok: true, railsPresent: false, storeRails: [] });
 });
+
+import { isWellFormedRail } from '../lib/run-integrity.mjs';
+
+test('isWellFormedRail: blank or unbalanced globs are rejected, ordinary globs pass', () => {
+  for (const bad of ['', '   ', '[', 'a]', '{a', 'a}', '[]]', null, 3]) assert.equal(isWellFormedRail(bad), false, String(bad));
+  for (const good of ['RAIL.txt', 'lib/**', 'src/[ab].js', '*.{js,mjs}']) assert.equal(isWellFormedRail(good), true, good);
+});
+
+test('enforcementGate: a malformed rail blocks the run instead of silently enforcing nothing', () => {
+  const r = enforcementGate({ activeRails: okStore(), planRails: true, adlc: authed, rails: ['ok/**', '['] });
+  assert.equal(r.ok, false);
+  assert.match(r.reason, /malformed rail glob\(s\) \["\["\]/);
+});
+
+test('runPlan: a plan ticket with a malformed rail dispatches nothing', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-fc-state-'));
+  try {
+    await assert.rejects(
+      withEnv(trusted(state), () => runPlan({
+        repo, gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: [''] }],
+      }, quiet)),
+      /malformed rail glob/,
+    );
+    assert.equal(existsSync(join(state, 'builds')), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});

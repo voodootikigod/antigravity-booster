@@ -12822,7 +12822,24 @@ function verifyRunIntegrity(baseline, { cwd, worktree, worktreeHooksPath, home =
   }
   return reasons.length ? { ok: false, reasons } : { ok: true };
 }
-function enforcementGate({ activeRails, planRails, adlc }) {
+function isWellFormedRail(rail) {
+  if (typeof rail !== "string" || rail.trim() === "") return false;
+  let square = 0;
+  let curly = 0;
+  for (const ch of rail) {
+    if (ch === "[") square += 1;
+    else if (ch === "]") square -= 1;
+    else if (ch === "{") curly += 1;
+    else if (ch === "}") curly -= 1;
+    if (square < 0 || curly < 0) return false;
+  }
+  return square === 0 && curly === 0;
+}
+function enforcementGate({ activeRails, planRails, adlc, rails = [] }) {
+  const malformed = rails.filter((r) => !isWellFormedRail(r));
+  if (malformed.length) {
+    return { ok: false, reason: `enforcement gate: malformed rail glob(s) ${JSON.stringify(malformed)} would enforce nothing \u2014 refusing to dispatch or merge any ticket` };
+  }
   if (!activeRails.ok) {
     return { ok: false, reason: `enforcement gate: ticket store unreadable (${activeRails.error}) \u2014 refusing to dispatch or merge any ticket` };
   }
@@ -13712,7 +13729,15 @@ async function checkRailsGuard({ worktree, base, rails, adlcBin }) {
   const args = ["rails-guard", "--base", base, "--json"];
   for (const r of rails) args.push("--rails", r);
   try {
-    await execFileAuthenticatedAdlc(adlcBin, args, { cwd: worktree, timeout: RAILS_GUARD_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo: worktree });
+    const { stdout: stdout2 } = await execFileAuthenticatedAdlc(adlcBin, args, { cwd: worktree, timeout: RAILS_GUARD_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo: worktree });
+    let parsed = null;
+    try {
+      parsed = JSON.parse(stdout2);
+    } catch {
+    }
+    if (parsed?.railGlobError) {
+      return { violations: [`adlc rails-guard operational error: invalid rail glob: ${parsed.railGlobError}`], operationalError: true };
+    }
     return { violations: [] };
   } catch (err) {
     if (err.stdout) {
@@ -14043,10 +14068,12 @@ Fix: ${agyCheck.fix}`);
   if (!enforcement.available) {
     log2(`\u26A0 live rail enforcement unavailable: ${enforcement.reason}`);
   }
+  const activeRails = unionActiveRails(repo);
   const railGate = enforcementGate({
-    activeRails: unionActiveRails(repo),
+    activeRails,
     planRails: tickets.some((t) => Array.isArray(t.rails) && t.rails.length > 0),
-    adlc: resolvedAdlc
+    adlc: resolvedAdlc,
+    rails: [...tickets.flatMap((t) => t.rails ?? []), ...activeRails.ok ? activeRails.rails : []]
   });
   if (!railGate.ok) throw new Error(railGate.reason);
   const integrityBaseline = snapshotRunIntegrity({ cwd: repo });
@@ -14731,6 +14758,8 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
     async function integrate(t, worktree) {
       status.ticket(t.id, { phase: "merging" });
       const turn = mergeLock.then(async () => {
+        const atMerge = verifyRunIntegrity(integrityBaseline.snapshot, { cwd: repo, worktree, worktreeHooksPath: NULL_HOOKS_PATH2 });
+        if (!atMerge.ok) throw new Error(compromiseRun(atMerge.reasons.join("; ")));
         if (fleetAborted) {
           throw new Error(`fleet aborted: ${fleetAbortReason}`);
         }
@@ -15007,6 +15036,13 @@ ${g?.output?.slice(0, 300)}`);
     }
     activeChildren.clear();
     releaseLock();
+  }
+  if (!runCompromised) {
+    const final = verifyRunIntegrity(integrityBaseline.snapshot, { cwd: repo });
+    if (!final.ok) {
+      runCompromised = final.reasons.join("; ");
+      log2(`\u2717 run compromised: ${runCompromised}`);
+    }
   }
   const report = {
     runId,

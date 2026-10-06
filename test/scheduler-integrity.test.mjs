@@ -178,3 +178,44 @@ test('verifyRunIntegrity: an unverifiable state (not a git dir) is compromised, 
     rmSync(notGit, { recursive: true, force: true });
   }
 });
+
+test('a tamper after the builder check but before merge (here: a gate script) still blocks merge', async () => {
+  const repo = makeRepo();
+  const home = makeHome();
+  const state = mkdtempSync(join(tmpdir(), 'agb-integrity-state-'));
+  try {
+    const hook = join(repo, '.git', 'hooks', 'post-merge');
+    const report = await withEnv({
+      HOME: home, AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_ALLOW_CUSTOM_ADLC_CLI: '1',
+      FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0',
+    }, () => runPlan({
+      repo, gate: { test: `printf '#!/bin/sh\\n' > '${hook}'` },
+      tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+    }, quiet));
+    assert.equal(report.merged.length, 0, 'the merge-time re-check caught the late tamper');
+    assert.match(report.failed.T1, /run compromised: .*git hooks dir/);
+  } finally {
+    for (const d of [repo, home, state]) rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('a tamper that no per-ticket check observes is still reported as compromised', async () => {
+  const repo = makeRepo();
+  const home = makeHome();
+  const state = mkdtempSync(join(tmpdir(), 'agb-integrity-state-'));
+  try {
+    const plugin = join(home, '.gemini', 'config', 'plugins', 'adlc-antigravity', 'late.txt');
+    // The gate fails (no merge, so integrate never re-checks) after editing a staged plugin.
+    const report = await withEnv({
+      HOME: home, AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_ALLOW_CUSTOM_ADLC_CLI: '1',
+      FAKE_STATE_DIR: state, AGB_SANDBOX_GATES: '0',
+    }, () => runPlan({
+      repo, gate: { test: `echo x > '${plugin}'; exit 1` },
+      tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+    }, quiet));
+    assert.equal(report.merged.length, 0);
+    assert.match(report.compromised, /staged plugin adlc-antigravity changed/);
+  } finally {
+    for (const d of [repo, home, state]) rmSync(d, { recursive: true, force: true });
+  }
+});
