@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 const REQUIRED = [
   '.github/workflows/**', 'bin/**', 'hooks/**', 'hooks.json', 'mcp_config.json',
   'commands/**', 'agents/**', 'plugin.json', 'dist/**', 'vendor/**', '.adlc/**',
+  'lib/adlc-bridge.mjs', 'lib/run-integrity.mjs', 'scripts/update-adlc-digests.mjs',
 ];
 
 function parseCodeowners(text) {
