@@ -30,3 +30,15 @@ test('renderBlock output changes when any digest changes (drift is detectable)',
   const drifted = { ...KNOWN_VENDORED_ADLC, vendoredBundleSha256: '0'.repeat(64) };
   assert.notEqual(renderBlock(drifted), renderBlock(KNOWN_VENDORED_ADLC));
 });
+
+test('verifyAgainstLockfile: a package with no lockfile integrity is refused (never re-pinned)', async () => {
+  const { verifyAgainstLockfile } = await import('../scripts/update-adlc-digests.mjs');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(join(tmpdir(), 'agb-lock-'));
+  try {
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({ packages: { 'node_modules/@adlc/x': { version: '1.0.0' } } }));
+    assert.deepEqual(verifyAgainstLockfile('@adlc/x', { root }), { ok: false, error: '@adlc/x: no lockfile integrity' });
+    assert.equal(verifyAgainstLockfile('@adlc/absent', { root }).ok, false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
