@@ -253,3 +253,22 @@ test('rails-guard exit 0 with a railGlobError: the run is compromised, nothing m
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+for (const [mode, reason] of [['garbage', /unparseable --json output/], ['empty-fail', /exit without violations/]]) {
+  test(`rails-guard ${mode} output is an operational error: the run is compromised, nothing merges`, async () => {
+    const repo = makeRepo();
+    const state = mkdtempSync(join(tmpdir(), 'agb-fc-state-'));
+    try {
+      const report = await withEnv(trusted(state, { FAKE_RAILS_GUARD_MODE: mode }), () => runPlan({
+        repo, gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] }],
+      }, quiet));
+      assert.equal(report.merged.length, 0);
+      assert.match(report.failed.T1, /run compromised: /);
+      assert.match(report.failed.T1, reason);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(state, { recursive: true, force: true });
+    }
+  });
+}

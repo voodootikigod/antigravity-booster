@@ -228,8 +228,18 @@ $2"; shift 2 ;;
   if [ -n "$FAKE_STATE_DIR" ]; then
     printf 'base=%s rails=%s\n' "$base" "$(echo "$rails" | tr '\n' ',')" >> "$FAKE_STATE_DIR/rails-guard-invocations"
   fi
+  if [ "${FAKE_RAILS_GUARD_MODE:-}" = "garbage" ]; then
+    echo "not json"
+    exit 0
+  fi
+  if [ "${FAKE_RAILS_GUARD_MODE:-}" = "empty-fail" ]; then
+    echo '{"tool":"rails-guard","passed":false,"violations":[]}'
+    exit 2
+  fi
   if [ "${FAKE_RAILS_GUARD_MODE:-}" = "glob-error" ]; then
-    # Real rails-guard exits 0 with no violations when a rail glob is invalid.
+    # Defense in depth: real rails-guard 1.11.1 sets railGlobError only when no
+    # rails are given at all (booster always passes --rails), so this exit-0
+    # report is hypothetical; booster's isWellFormedRail pre-check is the gate.
     echo '{"tool":"rails-guard","passed":true,"violations":[],"railGlobError":"unbalanced ["}'
     exit 0
   fi
