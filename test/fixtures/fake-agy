@@ -396,6 +396,19 @@ EOF
         fi
         exit 0 ;;
       # rail: edits a read-only rail file that sits INSIDE the declared scope.
+      tamper-worktree-hooks)
+        # A compromised worker: does the ticket, then re-enables git hooks in its
+        # own worktree (the one tamper reachable from inside containment);
+        # run-integrity must mark the run compromised.
+        echo "did the work" > "${tid:-out}.txt"
+        git config core.hooksPath "$PWD/.myhooks"
+        if [ "$output_format" = "stream-json" ]; then
+          echo '{"type":"step_update","step":1,"action":"tamper"}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        else
+          echo "TICKET-DONE"
+        fi
+        exit 0 ;;
       rail)
         echo "did the work" > "${tid:-out}.txt"
         echo edited > RAIL.txt

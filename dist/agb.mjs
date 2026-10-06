@@ -236,12 +236,12 @@ watching (updated ${(/* @__PURE__ */ new Date()).toISOString()})`);
   };
   const initial = tick();
   if (initial !== false) return initial;
-  return new Promise((resolve16) => {
+  return new Promise((resolve18) => {
     const timer = setInterval(() => {
       const code = tick();
       if (code !== false) {
         clearInterval(timer);
-        resolve16(code);
+        resolve18(code);
       }
     }, intervalMs);
   });
@@ -351,12 +351,12 @@ __export(server_exports, {
   serveSidecar: () => serveSidecar
 });
 import { createServer } from "node:http";
-import { readFileSync as readFileSync24, statSync as statSync6, existsSync as existsSync27, openSync as openSync11, readSync as readSync4, closeSync as closeSync11, writeFileSync as writeFileSync18, mkdirSync as mkdirSync18, createReadStream } from "node:fs";
-import { join as join30, dirname as dirname19 } from "node:path";
+import { readFileSync as readFileSync24, statSync as statSync8, existsSync as existsSync29, openSync as openSync11, readSync as readSync4, closeSync as closeSync11, writeFileSync as writeFileSync18, mkdirSync as mkdirSync18, createReadStream } from "node:fs";
+import { join as join32, dirname as dirname20 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 function serveSidecar(repoPath, port = 3333, token = null) {
-  const runJsonPath = join30(repoPath, ".booster", "run.json");
+  const runJsonPath = join32(repoPath, ".booster", "run.json");
   const handleRequest = async (req, res) => {
     const hostHeader = req.headers.host || "";
     let hostname3 = "";
@@ -396,20 +396,20 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       let offset = Number(reqUrl.searchParams.get("offset")) || 0;
       let runId = null;
       let eventsPath = null;
-      if (existsSync27(runJsonPath)) {
+      if (existsSync29(runJsonPath)) {
         try {
           const run = JSON.parse(readFileSync24(runJsonPath, "utf8"));
           runId = String(run.runId || "").replace(/[^a-zA-Z0-9_-]/g, "");
-          eventsPath = join30(repoPath, ".booster", "logs", runId, "events.jsonl");
+          eventsPath = join32(repoPath, ".booster", "logs", runId, "events.jsonl");
         } catch (e) {
         }
       }
-      if (!eventsPath || !existsSync27(eventsPath)) {
+      if (!eventsPath || !existsSync29(eventsPath)) {
         res.writeHead(200, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ lines: [], newOffset: 0, runId, repo: repoPath }));
       }
       try {
-        const stats = statSync6(eventsPath);
+        const stats = statSync8(eventsPath);
         if (!Number.isFinite(offset) || offset < 0) offset = 0;
         let isReset = false;
         if (offset > stats.size) {
@@ -485,8 +485,8 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       res.writeHead(403);
       return res.end("Forbidden");
     }
-    const filePath = join30(__dirname, safePath);
-    if (!existsSync27(filePath)) {
+    const filePath = join32(__dirname, safePath);
+    if (!existsSync29(filePath)) {
       res.writeHead(404);
       return res.end("Not found");
     }
@@ -510,7 +510,7 @@ function serveSidecar(repoPath, port = 3333, token = null) {
     });
     s.pipe(res);
   };
-  return new Promise((resolve16, reject) => {
+  return new Promise((resolve18, reject) => {
     let isListening = false;
     const server = createServer(async (req, res) => {
       try {
@@ -533,20 +533,20 @@ function serveSidecar(repoPath, port = 3333, token = null) {
     server.listen(port, "127.0.0.1", () => {
       isListening = true;
       console.log(`AGB Sidecar Server running at http://127.0.0.1:${server.address().port}`);
-      resolve16(server);
+      resolve18(server);
     });
   });
 }
 var __dirname;
 var init_server = __esm({
   "sidecars/server.mjs"() {
-    __dirname = dirname19(fileURLToPath5(import.meta.url));
+    __dirname = dirname20(fileURLToPath5(import.meta.url));
   }
 });
 
 // bin/agb.mjs
-import { readFileSync as readFileSync25, writeFileSync as writeFileSync19, mkdirSync as mkdirSync19, appendFileSync as appendFileSync3, existsSync as existsSync28 } from "node:fs";
-import { resolve as resolve15, join as join31 } from "node:path";
+import { readFileSync as readFileSync25, writeFileSync as writeFileSync19, mkdirSync as mkdirSync19, appendFileSync as appendFileSync3, existsSync as existsSync30 } from "node:fs";
+import { resolve as resolve17, join as join33 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // node_modules/@adlc/tickets/index.mjs
@@ -4372,11 +4372,11 @@ function scopesOverlap(a, b) {
 }
 
 // lib/scheduler.mjs
-import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync6, rmSync as rmSync13, existsSync as existsSync26, readFileSync as readFileSync23, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync17, lstatSync as lstatSync13, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
-import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
+import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync6, rmSync as rmSync13, existsSync as existsSync28, readFileSync as readFileSync23, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync17, lstatSync as lstatSync13, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
+import { execFileSync as execFileSync12, execFile as execFile8 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
 import { tmpdir as tmpdir8 } from "node:os";
-import path2, { join as join29, resolve as resolve14, isAbsolute as isAbsolute8, dirname as dirname18, basename as basename8 } from "node:path";
+import path2, { join as join31, resolve as resolve16, isAbsolute as isAbsolute8, dirname as dirname19, basename as basename8 } from "node:path";
 import { pathToFileURL } from "node:url";
 import crypto5 from "node:crypto";
 
@@ -6267,7 +6267,7 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
     verified.seal?.release();
     return Promise.reject(err);
   }
-  return new Promise((resolve16, reject) => {
+  return new Promise((resolve18, reject) => {
     execFile(cmd2.command, cmd2.args, { ...options, ...cmd2.options }, (error, stdout2, stderr) => {
       try {
         verified.seal?.verifyUnchanged();
@@ -6287,7 +6287,7 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
         error.stderr = stderr;
         reject(error);
       } else {
-        resolve16({ stdout: stdout2, stderr });
+        resolve18({ stdout: stdout2, stderr });
       }
     });
   });
@@ -7210,9 +7210,9 @@ async function verifyWindowsSandboxActive({ cwd = process.cwd(), env = process.e
     socket.destroy();
   });
   try {
-    await new Promise((resolve16, reject) => {
+    await new Promise((resolve18, reject) => {
       server.once("error", reject);
-      server.listen(0, "127.0.0.1", resolve16);
+      server.listen(0, "127.0.0.1", resolve18);
     });
     const port = server.address().port;
     const probeHelper = isTestExecution(env) && env.AGB_SANDBOX_PROBE_HELPER ? env.AGB_SANDBOX_PROBE_HELPER : join19(dirname14(fileURLToPath3(import.meta.url)), "..", "lib", "sandbox-probe-helper.mjs");
@@ -9043,8 +9043,8 @@ var PoolSet = class {
       }
     }
     try {
-      await new Promise((resolve16, reject) => {
-        this.waiters[pool].push({ resolve: resolve16, reject });
+      await new Promise((resolve18, reject) => {
+        this.waiters[pool].push({ resolve: resolve18, reject });
         this.#ensureRemotePoll();
       });
     } finally {
@@ -9997,7 +9997,7 @@ async function runAgy({
       }
     }
   }
-  return new Promise((resolve16) => {
+  return new Promise((resolve18) => {
     const t0 = Date.now();
     let spawnEnv = {};
     const shouldSanitize = sanitizeEnv || isBuilder;
@@ -10459,7 +10459,7 @@ async function runAgy({
         }
         await appendFile(logFile, JSON.stringify(record) + "\n", { mode: 384 });
       }
-      resolve16(result);
+      resolve18(result);
     };
     p.stdout.on("data", (d) => {
       if (killReason) return;
@@ -11051,7 +11051,7 @@ function agySend({ apiKey, model, system, prompt }, env = process.env) {
 ---
 
 ${prompt}` : prompt;
-  return new Promise((resolve16, reject) => {
+  return new Promise((resolve18, reject) => {
     const p = spawn3(bin, args, { stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
     let err = "";
@@ -11064,7 +11064,7 @@ ${prompt}` : prompt;
       if (isAgyTimeout2(out)) {
         return reject(new Error("agy: timed out waiting for response"));
       }
-      resolve16({ text: out.replace(/\s+$/, ""), usage: null });
+      resolve18({ text: out.replace(/\s+$/, ""), usage: null });
     });
   });
 }
@@ -12720,13 +12720,126 @@ async function compilePlan(idOrPrefix, {
 // lib/scheduler.mjs
 init_status();
 
+// lib/active-rails.mjs
+import { existsSync as existsSync25, statSync as statSync6 } from "node:fs";
+import { dirname as dirname18, join as join28, resolve as resolve14 } from "node:path";
+var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
+function isActiveTicket(ticket) {
+  if (!ticket || typeof ticket !== "object") return true;
+  if (ticket.completed === true) return false;
+  return !INACTIVE_STATUSES.has(ticket.status);
+}
+function loadSnapshot(repoRoot) {
+  try {
+    return { ok: true, snapshot: loadTicketSnapshot({ root: repoRoot }) };
+  } catch (err) {
+    if (err?.code === "STORE_NOT_FOUND") return { ok: true, snapshot: null };
+    return { ok: false, error: `${err?.code ?? "ERROR"}: ${err?.message ?? String(err)}` };
+  }
+}
+function unionActiveRails(repoRoot) {
+  if (!existsSync25(join28(repoRoot, ".adlc"))) {
+    return { ok: true, adlc: false, hasActiveTickets: false, rails: [] };
+  }
+  const loaded = loadSnapshot(repoRoot);
+  if (!loaded.ok) return { ok: false, error: loaded.error, railsPresent: true };
+  const active = (loaded.snapshot?.tickets ?? []).filter(isActiveTicket);
+  const rails = /* @__PURE__ */ new Set();
+  for (const ticket of active) {
+    for (const rail of ticket.rails ?? []) {
+      if (typeof rail === "string" && rail.length > 0) rails.add(rail);
+    }
+  }
+  return { ok: true, adlc: true, hasActiveTickets: active.length > 0, rails: [...rails].sort() };
+}
+
+// lib/run-integrity.mjs
+import { execFileSync as execFileSync11 } from "node:child_process";
+import { existsSync as existsSync26, statSync as statSync7 } from "node:fs";
+import { homedir as homedir7 } from "node:os";
+import { join as join29, resolve as resolve15 } from "node:path";
+var GIT_TIMEOUT_MS = 1e4;
+var ABSENT2 = "absent";
+function digestOrAbsent(dir) {
+  if (!existsSync26(dir) || !statSync7(dir).isDirectory()) return ABSENT2;
+  return computeDirectoryDigest(dir);
+}
+function hooksDirFor(cwd) {
+  const out = execFileSync11("git", ["rev-parse", "--git-path", "hooks"], {
+    cwd,
+    encoding: "utf8",
+    timeout: GIT_TIMEOUT_MS,
+    stdio: ["ignore", "pipe", "pipe"]
+  }).trim();
+  return resolve15(cwd, out);
+}
+function snapshotRunIntegrity({ cwd, home = homedir7() } = {}) {
+  try {
+    const pluginsDir = pluginsDirFor(home);
+    const plugins = {};
+    for (const name of [BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME]) {
+      plugins[name] = digestOrAbsent(join29(pluginsDir, name));
+    }
+    const hooksPath = hooksDirFor(cwd);
+    return { ok: true, snapshot: { plugins, hooks: { path: hooksPath, digest: digestOrAbsent(hooksPath) } } };
+  } catch (err) {
+    return { ok: false, error: `integrity snapshot failed: ${err.message}` };
+  }
+}
+function diffRunIntegrity(before, after) {
+  const diffs = [];
+  for (const name of Object.keys(before.plugins)) {
+    if (before.plugins[name] !== after.plugins[name]) diffs.push(`staged plugin ${name} changed`);
+  }
+  if (before.hooks.path !== after.hooks.path) {
+    diffs.push(`git hooks dir redirected (${before.hooks.path} -> ${after.hooks.path})`);
+  } else if (before.hooks.digest !== after.hooks.digest) {
+    diffs.push(`git hooks dir ${before.hooks.path} changed`);
+  }
+  return diffs;
+}
+function configuredHooksPath(cwd) {
+  try {
+    return execFileSync11("git", ["config", "--get", "core.hooksPath"], {
+      cwd,
+      encoding: "utf8",
+      timeout: GIT_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "pipe"]
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+function verifyRunIntegrity(baseline, { cwd, worktree, worktreeHooksPath, home = homedir7() } = {}) {
+  const now = snapshotRunIntegrity({ cwd, home });
+  if (!now.ok) return { ok: false, reasons: [now.error] };
+  const reasons = diffRunIntegrity(baseline, now.snapshot);
+  if (worktree) {
+    const actual = configuredHooksPath(worktree);
+    if (actual !== worktreeHooksPath) {
+      reasons.push(`worktree core.hooksPath changed (expected ${worktreeHooksPath}, found ${actual ?? "unset"})`);
+    }
+  }
+  return reasons.length ? { ok: false, reasons } : { ok: true };
+}
+function enforcementGate({ activeRails, planRails, adlc }) {
+  if (!activeRails.ok) {
+    return { ok: false, reason: `enforcement gate: ticket store unreadable (${activeRails.error}) \u2014 refusing to dispatch or merge any ticket` };
+  }
+  const railsPresent = planRails || activeRails.rails.length > 0;
+  if (railsPresent && !adlc.ok) {
+    return { ok: false, reason: `enforcement gate: rails are declared but adlc is not authenticated (${adlc.error}) \u2014 refusing to dispatch or merge any ticket` };
+  }
+  return { ok: true, railsPresent, storeRails: activeRails.rails };
+}
+
 // lib/lock.mjs
-import { mkdirSync as mkdirSync16, rmSync as rmSync12, writeFileSync as writeFileSync16, readFileSync as readFileSync22, existsSync as existsSync25, renameSync as renameSync7 } from "node:fs";
-import { join as join28 } from "node:path";
+import { mkdirSync as mkdirSync16, rmSync as rmSync12, writeFileSync as writeFileSync16, readFileSync as readFileSync22, existsSync as existsSync27, renameSync as renameSync7 } from "node:fs";
+import { join as join30 } from "node:path";
 function acquireRepoLock(repo, { runId, pid = process.pid } = {}) {
-  const lockDir = join28(repo, ".booster", "run.lock.d");
-  const metaPath = join28(lockDir, "meta.json");
-  mkdirSync16(join28(repo, ".booster"), { recursive: true });
+  const lockDir = join30(repo, ".booster", "run.lock.d");
+  const metaPath = join30(lockDir, "meta.json");
+  mkdirSync16(join30(repo, ".booster"), { recursive: true });
   const token = `${pid}:${runId}:${process.hrtime.bigint()}`;
   const tryCreate = () => {
     try {
@@ -12749,7 +12862,7 @@ function acquireRepoLock(repo, { runId, pid = process.pid } = {}) {
     const moved = `${lockDir}.stale.${pid}.${process.hrtime.bigint()}`;
     try {
       renameSync7(lockDir, moved);
-      const grabbed = readMeta(join28(moved, "meta.json"));
+      const grabbed = readMeta(join30(moved, "meta.json"));
       const stillStale = grabbed && grabbed.token === holder.token && !isAlive(grabbed.pid);
       if (!stillStale) {
         try {
@@ -12801,7 +12914,7 @@ function acquireRepoLock(repo, { runId, pid = process.pid } = {}) {
 }
 function readMeta(metaPath) {
   try {
-    if (!existsSync25(metaPath)) return null;
+    if (!existsSync27(metaPath)) return null;
     return JSON.parse(readFileSync22(metaPath, "utf8"));
   } catch {
     return null;
@@ -12825,7 +12938,7 @@ function terminateProcessTree(child, sig = "SIGKILL") {
   if (pid) {
     if (process.platform === "win32") {
       try {
-        execFileSync11("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+        execFileSync12("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
       } catch {
       }
     } else {
@@ -12834,7 +12947,7 @@ function terminateProcessTree(child, sig = "SIGKILL") {
       } catch {
       }
       try {
-        const pids = execFileSync11("pgrep", ["-P", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
+        const pids = execFileSync12("pgrep", ["-P", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
         for (const pidStr of pids) {
           const subPid = Number(pidStr);
           if (subPid) {
@@ -12854,7 +12967,7 @@ function terminateProcessTree(child, sig = "SIGKILL") {
   }
 }
 function hashDir(dir, filterFn = () => true) {
-  if (!existsSync26(dir)) return null;
+  if (!existsSync28(dir)) return null;
   const hash = crypto5.createHash("sha256");
   let count = 0;
   const walk = (d, rel = "") => {
@@ -12862,7 +12975,7 @@ function hashDir(dir, filterFn = () => true) {
       const entries = readdirSync11(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
-        const full = join29(d, ent.name);
+        const full = join31(d, ent.name);
         if (ent.isDirectory()) {
           walk(full, entRel);
         } else if (ent.isFile()) {
@@ -12881,13 +12994,13 @@ function hashDir(dir, filterFn = () => true) {
 }
 function listObjects(objectsDir) {
   const set = /* @__PURE__ */ new Set();
-  if (!existsSync26(objectsDir)) return set;
+  if (!existsSync28(objectsDir)) return set;
   const walk = (d, rel = "") => {
     try {
       const entries = readdirSync11(d, { withFileTypes: true });
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
-        const full = join29(d, ent.name);
+        const full = join31(d, ent.name);
         if (ent.isDirectory() && ent.name !== "info") {
           walk(full, entRel);
         } else if (ent.isFile()) {
@@ -12902,35 +13015,35 @@ function listObjects(objectsDir) {
 }
 function getGitCommonDir(repo) {
   try {
-    const raw = execFileSync11("git", ["rev-parse", "--git-common-dir"], { cwd: repo, encoding: "utf8" }).trim();
-    return resolve14(repo, raw);
+    const raw = execFileSync12("git", ["rev-parse", "--git-common-dir"], { cwd: repo, encoding: "utf8" }).trim();
+    return resolve16(repo, raw);
   } catch {
-    return join29(repo, ".git");
+    return join31(repo, ".git");
   }
 }
 function snapshotRootGit(repo) {
-  const g = (...args) => execFileSync11("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  const g = (...args) => execFileSync12("git", args, { cwd: repo, encoding: "utf8" }).trim();
   const gitDir = getGitCommonDir(repo);
   const headSha = g("rev-parse", "HEAD");
-  const status = execFileSync11("git", ["status", "--porcelain=v1", "-z"], { cwd: repo });
+  const status = execFileSync12("git", ["status", "--porcelain=v1", "-z"], { cwd: repo });
   let refs = "";
   try {
-    refs = execFileSync11("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
+    refs = execFileSync12("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
   } catch {
   }
-  const configPath = join29(gitDir, "config");
-  const configHash = existsSync26(configPath) ? crypto5.createHash("sha256").update(readFileSync23(configPath)).digest("hex") : null;
-  const hooksHash = hashDir(join29(gitDir, "hooks"));
-  const indexPath = join29(gitDir, "index");
-  const indexHash = existsSync26(indexPath) ? crypto5.createHash("sha256").update(readFileSync23(indexPath)).digest("hex") : null;
-  const packedRefsPath = join29(gitDir, "packed-refs");
-  const packedRefsHash = existsSync26(packedRefsPath) ? crypto5.createHash("sha256").update(readFileSync23(packedRefsPath)).digest("hex") : null;
-  const infoHash = hashDir(join29(gitDir, "info"));
+  const configPath = join31(gitDir, "config");
+  const configHash = existsSync28(configPath) ? crypto5.createHash("sha256").update(readFileSync23(configPath)).digest("hex") : null;
+  const hooksHash = hashDir(join31(gitDir, "hooks"));
+  const indexPath = join31(gitDir, "index");
+  const indexHash = existsSync28(indexPath) ? crypto5.createHash("sha256").update(readFileSync23(indexPath)).digest("hex") : null;
+  const packedRefsPath = join31(gitDir, "packed-refs");
+  const packedRefsHash = existsSync28(packedRefsPath) ? crypto5.createHash("sha256").update(readFileSync23(packedRefsPath)).digest("hex") : null;
+  const infoHash = hashDir(join31(gitDir, "info"));
   const logsHash = hashDir(
-    join29(gitDir, "logs"),
+    join31(gitDir, "logs"),
     (rel) => !rel.startsWith("refs/namespaces/attempts") && !rel.startsWith("refs/heads/") && !rel.startsWith("refs/transactions") && !rel.startsWith("refs/quarantine") && rel !== "HEAD"
   );
-  const objectsManifest = listObjects(join29(gitDir, "objects"));
+  const objectsManifest = listObjects(join31(gitDir, "objects"));
   return {
     headSha,
     status,
@@ -12983,7 +13096,7 @@ function verifyRootGitIntegrity(repo, pre, {
       knownTicketIds.add(parts[1]);
     }
   }
-  const g = (...args) => execFileSync11("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  const g = (...args) => execFileSync12("git", args, { cwd: repo, encoding: "utf8" }).trim();
   const gitDir = getGitCommonDir(repo);
   const postHeadSha = g("rev-parse", "HEAD");
   let headMovedByMerge = false;
@@ -12994,7 +13107,7 @@ function verifyRootGitIntegrity(repo, pre, {
       return { ok: false, error: `Root HEAD moved from ${pre.headSha} to unproven commit ${postHeadSha}` };
     }
   }
-  const postStatus = execFileSync11("git", ["status", "--porcelain=v1", "-z"], { cwd: repo });
+  const postStatus = execFileSync12("git", ["status", "--porcelain=v1", "-z"], { cwd: repo });
   if (headMovedByMerge) {
     if (pre.status.length === 0 && postStatus.length !== 0) {
       return { ok: false, error: "Porcelain status altered in root repository" };
@@ -13002,33 +13115,33 @@ function verifyRootGitIntegrity(repo, pre, {
   } else if (!postStatus.equals(pre.status)) {
     return { ok: false, error: "Porcelain status altered in root repository" };
   }
-  const configPath = join29(gitDir, "config");
-  const postConfigHash = existsSync26(configPath) ? crypto5.createHash("sha256").update(readFileSync23(configPath)).digest("hex") : null;
+  const configPath = join31(gitDir, "config");
+  const postConfigHash = existsSync28(configPath) ? crypto5.createHash("sha256").update(readFileSync23(configPath)).digest("hex") : null;
   if (postConfigHash !== pre.configHash) {
     return { ok: false, error: "Root Git config altered" };
   }
-  const postHooksHash = hashDir(join29(gitDir, "hooks"));
+  const postHooksHash = hashDir(join31(gitDir, "hooks"));
   if (postHooksHash !== pre.hooksHash) {
     return { ok: false, error: "Root Git hooks altered" };
   }
   if (!headMovedByMerge) {
-    const indexPath = join29(gitDir, "index");
-    const postIndexHash = existsSync26(indexPath) ? crypto5.createHash("sha256").update(readFileSync23(indexPath)).digest("hex") : null;
+    const indexPath = join31(gitDir, "index");
+    const postIndexHash = existsSync28(indexPath) ? crypto5.createHash("sha256").update(readFileSync23(indexPath)).digest("hex") : null;
     if (postIndexHash !== pre.indexHash) {
       return { ok: false, error: "Root Git index altered" };
     }
   }
-  const packedRefsPath = join29(gitDir, "packed-refs");
-  const postPackedRefsHash = existsSync26(packedRefsPath) ? crypto5.createHash("sha256").update(readFileSync23(packedRefsPath)).digest("hex") : null;
+  const packedRefsPath = join31(gitDir, "packed-refs");
+  const postPackedRefsHash = existsSync28(packedRefsPath) ? crypto5.createHash("sha256").update(readFileSync23(packedRefsPath)).digest("hex") : null;
   if (postPackedRefsHash !== pre.packedRefsHash) {
     return { ok: false, error: "Root Git packed-refs altered" };
   }
-  const postInfoHash = hashDir(join29(gitDir, "info"));
+  const postInfoHash = hashDir(join31(gitDir, "info"));
   if (postInfoHash !== pre.infoHash) {
     return { ok: false, error: "Root Git info metadata altered" };
   }
   const postLogsHash = hashDir(
-    join29(gitDir, "logs"),
+    join31(gitDir, "logs"),
     (rel) => !rel.startsWith("refs/namespaces/attempts") && !rel.startsWith("refs/heads/") && !rel.startsWith("refs/transactions") && !rel.startsWith("refs/quarantine") && rel !== "HEAD"
   );
   if (postLogsHash !== pre.logsHash) {
@@ -13036,7 +13149,7 @@ function verifyRootGitIntegrity(repo, pre, {
   }
   let postRefsRaw = "";
   try {
-    postRefsRaw = execFileSync11("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
+    postRefsRaw = execFileSync12("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
   } catch {
   }
   const parseRefs = (raw) => {
@@ -13093,7 +13206,7 @@ function verifyRootGitIntegrity(repo, pre, {
           if (!isLegitimateOldSha) {
             for (const mSha of mergedShas) {
               try {
-                execFileSync11("git", ["merge-base", "--is-ancestor", sha, mSha], { cwd: repo });
+                execFileSync12("git", ["merge-base", "--is-ancestor", sha, mSha], { cwd: repo });
                 isLegitimateOldSha = true;
                 break;
               } catch {
@@ -13119,7 +13232,7 @@ function verifyRootGitIntegrity(repo, pre, {
       if (candidateSha) {
         let isReachable = false;
         try {
-          execFileSync11("git", ["merge-base", "--is-ancestor", postSha, candidateSha], { cwd: repo });
+          execFileSync12("git", ["merge-base", "--is-ancestor", postSha, candidateSha], { cwd: repo });
           isReachable = true;
         } catch {
         }
@@ -13173,7 +13286,7 @@ function verifyRootGitIntegrity(repo, pre, {
         if (candidateSha && sha !== candidateSha) {
           let isReachable = false;
           try {
-            execFileSync11("git", ["merge-base", "--is-ancestor", sha, candidateSha], { cwd: repo });
+            execFileSync12("git", ["merge-base", "--is-ancestor", sha, candidateSha], { cwd: repo });
             isReachable = true;
           } catch {
           }
@@ -13185,14 +13298,14 @@ function verifyRootGitIntegrity(repo, pre, {
         if (sha !== pre.headSha && !mergedShas.has(sha)) {
           let isLegitimate = false;
           try {
-            execFileSync11("git", ["merge-base", "--is-ancestor", pre.headSha, sha], { cwd: repo });
+            execFileSync12("git", ["merge-base", "--is-ancestor", pre.headSha, sha], { cwd: repo });
             isLegitimate = true;
           } catch {
           }
           if (!isLegitimate) {
             for (const mSha of mergedShas) {
               try {
-                execFileSync11("git", ["merge-base", "--is-ancestor", mSha, sha], { cwd: repo });
+                execFileSync12("git", ["merge-base", "--is-ancestor", mSha, sha], { cwd: repo });
                 isLegitimate = true;
                 break;
               } catch {
@@ -13208,7 +13321,7 @@ function verifyRootGitIntegrity(repo, pre, {
     }
     return { ok: false, error: `Unauthorized new protected ref created: ${name}` };
   }
-  const postObjectsManifest = listObjects(join29(gitDir, "objects"));
+  const postObjectsManifest = listObjects(join31(gitDir, "objects"));
   const newObjects = [];
   for (const obj of postObjectsManifest) {
     if (!pre.objectsManifest.has(obj)) {
@@ -13227,7 +13340,7 @@ function verifyRootGitIntegrity(repo, pre, {
         "--glob=refs/quarantine",
         `refs/heads/${base}`
       );
-      const out = execFileSync11("git", revListArgs, { cwd: repo, encoding: "utf8" });
+      const out = execFileSync12("git", revListArgs, { cwd: repo, encoding: "utf8" });
       for (const line of out.split("\n").filter(Boolean)) {
         const sha = line.trim().split(/\s+/)[0];
         if (sha && sha.length >= 4) {
@@ -13240,10 +13353,10 @@ function verifyRootGitIntegrity(repo, pre, {
       if (newObj.startsWith("pack/")) {
         const packRel = newObj.slice("pack/".length);
         if (packRel.endsWith(".pack")) {
-          const packFullPath = join29(gitDir, "objects", newObj);
+          const packFullPath = join31(gitDir, "objects", newObj);
           let verifyOut = "";
           try {
-            verifyOut = execFileSync11("git", ["verify-pack", "-v", packFullPath], { cwd: repo, encoding: "utf8" });
+            verifyOut = execFileSync12("git", ["verify-pack", "-v", packFullPath], { cwd: repo, encoding: "utf8" });
           } catch (err) {
             return { ok: false, error: `Unauthorized or invalid pack file detected: ${newObj} (${err.message})` };
           }
@@ -13260,7 +13373,7 @@ function verifyRootGitIntegrity(repo, pre, {
           continue;
         } else if (/\.(idx|rev|mtimes|bitmap)$/.test(packRel)) {
           const matchingPack = packRel.replace(/\.(idx|rev|mtimes|bitmap)$/, ".pack");
-          if (!existsSync26(join29(gitDir, "objects", "pack", matchingPack))) {
+          if (!existsSync28(join31(gitDir, "objects", "pack", matchingPack))) {
             return { ok: false, error: `Unauthorized stray pack metadata file without matching pack: ${newObj}` };
           }
           continue;
@@ -13300,45 +13413,45 @@ function safeWriteWorktreeFile(filePath, content) {
   }
 }
 function setupAttemptGitDatabase(repo, worktreePath, baseRef) {
-  const g = (cwd, ...args) => execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, ...args], { cwd, encoding: "utf8" }).trim();
+  const g = (cwd, ...args) => execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, ...args], { cwd, encoding: "utf8" }).trim();
   const baseSha = g(repo, "rev-parse", baseRef);
-  const gitDir = join29(repo, ".worktrees", ".attempt_git", path2.basename(worktreePath));
-  if (existsSync26(gitDir)) {
+  const gitDir = join31(repo, ".worktrees", ".attempt_git", path2.basename(worktreePath));
+  if (existsSync28(gitDir)) {
     try {
       rmSync13(gitDir, { recursive: true, force: true });
     } catch {
     }
   }
   mkdirSync17(gitDir, { recursive: true });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "init", "-q", "--bare", "-b", "candidate", gitDir]);
-  const altDir = join29(gitDir, "objects", "info");
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "init", "-q", "--bare", "-b", "candidate", gitDir]);
+  const altDir = join31(gitDir, "objects", "info");
   mkdirSync17(altDir, { recursive: true });
-  writeFileSync17(join29(altDir, "alternates"), join29(getGitCommonDir(repo), "objects") + "\n");
-  const hooksDir = join29(gitDir, "hooks");
-  if (existsSync26(hooksDir)) {
+  writeFileSync17(join31(altDir, "alternates"), join31(getGitCommonDir(repo), "objects") + "\n");
+  const hooksDir = join31(gitDir, "hooks");
+  if (existsSync28(hooksDir)) {
     try {
       rmSync13(hooksDir, { recursive: true, force: true });
     } catch {
     }
   }
   mkdirSync17(hooksDir, { recursive: true });
-  const gitEntry = join29(worktreePath, ".git");
+  const gitEntry = join31(worktreePath, ".git");
   safeWriteWorktreeFile(gitEntry, `gitdir: ${gitDir}
 `);
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.bare", "false"], { cwd: worktreePath });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "reset", "--hard", baseSha], { cwd: worktreePath });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.worktreeConfig", "true"], { cwd: worktreePath });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.hooksPath", NULL_HOOKS_PATH2], { cwd: worktreePath });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.hooksPath", NULL_HOOKS_PATH2], { cwd: gitDir });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "user.name", "agb-builder"], { cwd: worktreePath });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "user.email", "agb@local"], { cwd: worktreePath });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "commit.gpgsign", "false"], { cwd: worktreePath });
-  execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "update-ref", `refs/heads/${baseRef}`, baseSha], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.bare", "false"], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "reset", "--hard", baseSha], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.worktreeConfig", "true"], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.hooksPath", NULL_HOOKS_PATH2], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "core.hooksPath", NULL_HOOKS_PATH2], { cwd: gitDir });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "user.name", "agb-builder"], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "user.email", "agb@local"], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "config", "commit.gpgsign", "false"], { cwd: worktreePath });
+  execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "update-ref", `refs/heads/${baseRef}`, baseSha], { cwd: worktreePath });
   return { baseSha, gitDir };
 }
 function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
-  const gitEntry = join29(worktreePath, ".git");
-  if (!existsSync26(gitEntry)) {
+  const gitEntry = join31(worktreePath, ".git");
+  if (!existsSync28(gitEntry)) {
     throw new Error(`Security violation: worktree .git pointer missing at ${gitEntry}`);
   }
   const stat = lstatSync13(gitEntry);
@@ -13351,13 +13464,13 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
     throw new Error(`Security violation: worktree .git pointer at ${gitEntry} has invalid format: ${content}`);
   }
   const target = match[1].trim();
-  const resolvedTarget = resolve14(worktreePath, target);
-  const resolvedExpected = resolve14(expectedGitDir);
+  const resolvedTarget = resolve16(worktreePath, target);
+  const resolvedExpected = resolve16(expectedGitDir);
   if (resolvedTarget !== resolvedExpected) {
     throw new Error(`Security violation: worktree .git pointer at ${gitEntry} redirected to ${resolvedTarget}, expected ${resolvedExpected}`);
   }
-  const hooksDir = join29(resolvedTarget, "hooks");
-  if (existsSync26(hooksDir)) {
+  const hooksDir = join31(resolvedTarget, "hooks");
+  if (existsSync28(hooksDir)) {
     const entries = readdirSync11(hooksDir);
     for (const ent of entries) {
       if (!ent.endsWith(".sample")) {
@@ -13366,7 +13479,7 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
     }
   }
   try {
-    const hp = execFileSync11("git", ["config", "--get", "core.hooksPath"], { cwd: worktreePath, encoding: "utf8" }).trim();
+    const hp = execFileSync12("git", ["config", "--get", "core.hooksPath"], { cwd: worktreePath, encoding: "utf8" }).trim();
     if (hp && hp !== "/dev/null" && hp !== "NUL") {
       throw new Error(`Security violation: core.hooksPath tampered with: ${hp}`);
     }
@@ -13380,8 +13493,8 @@ function hostMediatedFetch(repo, worktreePath, attemptNamespace, expectedGitDir 
     verifyWorktreeGitPointer(worktreePath, expectedGitDir);
   }
   const destRef = `refs/namespaces/${attemptNamespace}/refs/heads/candidate`;
-  const gitUrl = pathToFileURL(join29(worktreePath, ".git")).href;
-  execFileSync11(
+  const gitUrl = pathToFileURL(join31(worktreePath, ".git")).href;
+  execFileSync12(
     "git",
     [
       "-c",
@@ -13394,15 +13507,15 @@ function hostMediatedFetch(repo, worktreePath, attemptNamespace, expectedGitDir 
     ],
     { cwd: repo }
   );
-  return execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rev-parse", destRef], { cwd: repo, encoding: "utf8" }).trim();
+  return execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rev-parse", destRef], { cwd: repo, encoding: "utf8" }).trim();
 }
 function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
-  const g = (cwd, ...args) => execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, ...args], { cwd, encoding: "utf8" }).trim();
-  const statusOut = execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "status", "--porcelain=v1", "-z"], { cwd: worktreePath });
+  const g = (cwd, ...args) => execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, ...args], { cwd, encoding: "utf8" }).trim();
+  const statusOut = execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "status", "--porcelain=v1", "-z"], { cwd: worktreePath });
   if (statusOut.length > 0) {
-    execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "add", "-A", "--", ":(exclude)AGENTS.md", ":(exclude).adlc/tickets.json", ":(exclude).adlc/tickets", ":(exclude).agb_home", ":(exclude).agb_home/**"], { cwd: worktreePath });
+    execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "add", "-A", "--", ":(exclude)AGENTS.md", ":(exclude).adlc/tickets.json", ":(exclude).adlc/tickets", ":(exclude).agb_home", ":(exclude).agb_home/**"], { cwd: worktreePath });
     try {
-      execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "commit", "--no-verify", "--no-gpg-sign", "-q", "-m", "agb: candidate attempt commit"], { cwd: worktreePath });
+      execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "commit", "--no-verify", "--no-gpg-sign", "-q", "-m", "agb: candidate attempt commit"], { cwd: worktreePath });
     } catch {
     }
   }
@@ -13410,7 +13523,7 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
   if (headSha === baseRefSha) {
     return { ok: false, kind: "empty_diff", error: "zero changes against baseline commit" };
   }
-  const diffTreeBuf = execFileSync11(
+  const diffTreeBuf = execFileSync12(
     "git",
     ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "diff-tree", "-r", "--name-status", "-M", "-C", "-z", baseRefSha, "HEAD"],
     { cwd: worktreePath }
@@ -13454,12 +13567,12 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
       const isDeletedOrSrc = rec.status === "D" || (rec.status === "R" || rec.status === "C") && p === rec.src;
       if (isDeletedOrSrc) {
         try {
-          execFileSync11("git", ["cat-file", "-e", `${baseRefSha}:${p}`], { cwd: repo });
+          execFileSync12("git", ["cat-file", "-e", `${baseRefSha}:${p}`], { cwd: repo });
         } catch {
           return { ok: false, kind: "scope_violation", error: `Deleted path did not exist in baseline: ${p}` };
         }
       } else {
-        const fullPath = join29(worktreePath, p);
+        const fullPath = join31(worktreePath, p);
         try {
           const st = lstatSync13(fullPath);
           if (st.isSymbolicLink()) {
@@ -13501,17 +13614,17 @@ var execFileP6 = promisify7(execFile8);
 var RAILS_GUARD_TIMEOUT_MS = 3e4;
 var FLAIL_DETECTOR_TIMEOUT_MS = 15e3;
 async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
-  if (!existsSync26(logFile)) return { detected: false, signals: [] };
+  if (!existsSync28(logFile)) return { detected: false, signals: [] };
   let tmpDirToClean = null;
   let targetFile = logFile;
   if (logFile.endsWith(".jsonl")) {
     const { readFileSync: readFileSync26, writeFileSync: writeFileSync20 } = await import("node:fs");
     const { tmpdir: tmpdir9 } = await import("node:os");
-    const { join: join32 } = await import("node:path");
+    const { join: join34 } = await import("node:path");
     const { randomUUID: randomUUID7 } = await import("node:crypto");
     try {
       const lines = readFileSync26(logFile, "utf8").trim().split("\n").filter(Boolean);
-      targetFile = join32(tmpdir9(), `flail-${randomUUID7()}.log`);
+      targetFile = join34(tmpdir9(), `flail-${randomUUID7()}.log`);
       tmpDirToClean = targetFile;
       let legacyContent = "";
       for (const line of lines) {
@@ -13609,11 +13722,11 @@ async function checkRailsGuard({ worktree, base, rails, adlcBin }) {
       } catch {
       }
     }
-    return { violations: [`adlc rails-guard operational error: ${err.message}`] };
+    return { violations: [`adlc rails-guard operational error: ${err.message}`], operationalError: true };
   }
 }
 function checkEnforcementAvailable(repo) {
-  if (!existsSync26(join29(repo, ".adlc"))) {
+  if (!existsSync28(join31(repo, ".adlc"))) {
     return { available: false, reason: "target repo is not ADLC-initialized (no .adlc/ directory) \u2014 live rail enforcement disabled, post-hoc adlc rails-guard still runs" };
   }
   const contract = readPluginContract();
@@ -13639,7 +13752,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
   const readRes = readIntegrationJournal(repo);
   const currentBaseSha = (() => {
     try {
-      return execFileSync11("git", ["rev-parse", `refs/heads/${base}`], { cwd: repo, encoding: "utf8" }).trim();
+      return execFileSync12("git", ["rev-parse", `refs/heads/${base}`], { cwd: repo, encoding: "utf8" }).trim();
     } catch {
       return null;
     }
@@ -13649,7 +13762,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
     let orphanMarkerSha = null;
     let orphanTicketId = null;
     try {
-      const showRef = execFileSync11("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
+      const showRef = execFileSync12("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
       for (const line of showRef.split("\n").filter(Boolean)) {
         const [sha, ref] = line.trim().split(/\s+/);
         if (ref.startsWith("refs/transactions/")) {
@@ -13665,18 +13778,18 @@ async function reconcileIntegrationJournal(repo, base = "main") {
     if (orphanMarkerRef) {
       if (currentBaseSha && currentBaseSha === orphanMarkerSha) {
         try {
-          execFileSync11("git", ["update-ref", "-d", orphanMarkerRef], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", orphanMarkerRef], { cwd: repo });
         } catch {
         }
         reapIntegrationWorktrees(repo);
         return { ok: true, status: "reconciled", action: "finalized_orphan_marker" };
       } else {
         try {
-          execFileSync11("git", ["update-ref", `refs/quarantine/agb-${orphanTicketId || "unknown"}-failed-crash`, orphanMarkerSha], { cwd: repo });
+          execFileSync12("git", ["update-ref", `refs/quarantine/agb-${orphanTicketId || "unknown"}-failed-crash`, orphanMarkerSha], { cwd: repo });
         } catch {
         }
         try {
-          execFileSync11("git", ["update-ref", "-d", orphanMarkerRef], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", orphanMarkerRef], { cwd: repo });
         } catch {
         }
         reapIntegrationWorktrees(repo);
@@ -13692,7 +13805,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
     let markerSha2 = null;
     let markerTicketId = null;
     try {
-      const showRef = execFileSync11("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
+      const showRef = execFileSync12("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
       for (const line of showRef.split("\n").filter(Boolean)) {
         const [sha, ref] = line.trim().split(/\s+/);
         if (ref.startsWith("refs/transactions/")) {
@@ -13708,18 +13821,18 @@ async function reconcileIntegrationJournal(repo, base = "main") {
     if (markerRef2) {
       if (currentBaseSha && currentBaseSha === markerSha2) {
         try {
-          execFileSync11("git", ["update-ref", "-d", markerRef2], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", markerRef2], { cwd: repo });
         } catch {
         }
         reapIntegrationWorktrees(repo);
         return { ok: true, status: "reconciled", action: "finalized_corrupt_journal" };
       } else {
         try {
-          execFileSync11("git", ["update-ref", `refs/quarantine/agb-${markerTicketId || "unknown"}-failed-crash`, markerSha2], { cwd: repo });
+          execFileSync12("git", ["update-ref", `refs/quarantine/agb-${markerTicketId || "unknown"}-failed-crash`, markerSha2], { cwd: repo });
         } catch {
         }
         try {
-          execFileSync11("git", ["update-ref", "-d", markerRef2], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", markerRef2], { cwd: repo });
         } catch {
         }
         reapIntegrationWorktrees(repo);
@@ -13733,18 +13846,18 @@ async function reconcileIntegrationJournal(repo, base = "main") {
   const markerRef = `refs/transactions/${ticketId}/${transactionToken}`;
   let markerSha = null;
   try {
-    markerSha = execFileSync11("git", ["rev-parse", "--verify", markerRef], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    markerSha = execFileSync12("git", ["rev-parse", "--verify", markerRef], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   } catch {
   }
   if (!Object.values(JOURNAL_PHASES).includes(phase)) {
     quarantineIntegrationJournal(repo, "unsupported_phase");
     if (markerSha) {
       try {
-        execFileSync11("git", ["update-ref", `refs/quarantine/agb-${(ticketId || "unknown").toLowerCase()}-unsupported-phase`, markerSha], { cwd: repo });
+        execFileSync12("git", ["update-ref", `refs/quarantine/agb-${(ticketId || "unknown").toLowerCase()}-unsupported-phase`, markerSha], { cwd: repo });
       } catch {
       }
       try {
-        execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+        execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
       } catch {
       }
     }
@@ -13761,13 +13874,13 @@ async function reconcileIntegrationJournal(repo, base = "main") {
     }
     if (candidateSha) {
       try {
-        execFileSync11("git", ["update-ref", `refs/quarantine/agb-${ticketId.toLowerCase()}-failed-crash`, candidateSha], { cwd: repo });
+        execFileSync12("git", ["update-ref", `refs/quarantine/agb-${ticketId.toLowerCase()}-failed-crash`, candidateSha], { cwd: repo });
       } catch {
       }
     }
     if (markerSha) {
       try {
-        execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+        execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
       } catch {
       }
     }
@@ -13778,7 +13891,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
   if (phase === JOURNAL_PHASES.GATES_PASSED) {
     if (markerSha && markerSha === candidateSha) {
       try {
-        execFileSync11("git", ["merge-base", "--is-ancestor", preMergeSha, candidateSha], { cwd: repo });
+        execFileSync12("git", ["merge-base", "--is-ancestor", preMergeSha, candidateSha], { cwd: repo });
       } catch {
         quarantineIntegrationJournal(repo, "unproven_candidate");
         const err3 = new Error(`Cannot recover journal: candidate ${candidateSha} is not a valid descendant of preMergeSha ${preMergeSha}.`);
@@ -13788,7 +13901,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
       if (currentBaseSha === candidateSha) {
         writeIntegrationJournal(repo, { ...readRes.journal, phase: JOURNAL_PHASES.FINALIZED, timestamp: Date.now() });
         try {
-          execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
         } catch {
         }
         unlinkIntegrationJournal(repo);
@@ -13796,10 +13909,10 @@ async function reconcileIntegrationJournal(repo, base = "main") {
         return { ok: true, status: "reconciled", action: "finalized_gates_passed", ticketId };
       }
       if (currentBaseSha === preMergeSha) {
-        execFileSync11("git", ["update-ref", `refs/heads/${base}`, candidateSha, preMergeSha], { cwd: repo });
+        execFileSync12("git", ["update-ref", `refs/heads/${base}`, candidateSha, preMergeSha], { cwd: repo });
         writeIntegrationJournal(repo, { ...readRes.journal, phase: JOURNAL_PHASES.FINALIZED, timestamp: Date.now() });
         try {
-          execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
         } catch {
         }
         unlinkIntegrationJournal(repo);
@@ -13818,7 +13931,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
   }
   if (phase === JOURNAL_PHASES.REF_ADVANCED) {
     try {
-      execFileSync11("git", ["merge-base", "--is-ancestor", preMergeSha, candidateSha], { cwd: repo });
+      execFileSync12("git", ["merge-base", "--is-ancestor", preMergeSha, candidateSha], { cwd: repo });
     } catch {
       quarantineIntegrationJournal(repo, "unproven_candidate");
       const err3 = new Error(`Cannot recover journal: candidate ${candidateSha} is not a valid descendant of preMergeSha ${preMergeSha}.`);
@@ -13829,7 +13942,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
       writeIntegrationJournal(repo, { ...readRes.journal, phase: JOURNAL_PHASES.FINALIZED, timestamp: Date.now() });
       if (markerSha) {
         try {
-          execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
         } catch {
         }
       }
@@ -13844,11 +13957,11 @@ async function reconcileIntegrationJournal(repo, base = "main") {
         err3.kind = "unproven_ref_advancement_requires_operator";
         throw err3;
       }
-      execFileSync11("git", ["update-ref", `refs/heads/${base}`, candidateSha, preMergeSha], { cwd: repo });
+      execFileSync12("git", ["update-ref", `refs/heads/${base}`, candidateSha, preMergeSha], { cwd: repo });
       writeIntegrationJournal(repo, { ...readRes.journal, phase: JOURNAL_PHASES.FINALIZED, timestamp: Date.now() });
       if (markerSha) {
         try {
-          execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
         } catch {
         }
       }
@@ -13863,7 +13976,7 @@ async function reconcileIntegrationJournal(repo, base = "main") {
   if (phase === JOURNAL_PHASES.FINALIZED) {
     if (markerSha) {
       try {
-        execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+        execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
       } catch {
       }
     }
@@ -13911,8 +14024,8 @@ Fix: ${agyCheck.fix}`);
     }
   }
   const NPM_GATE_RE = /^npm (test|run [a-zA-Z0-9_:-]+)$/;
-  const basePkgPath = join29(repo, "package.json");
-  if (existsSync26(basePkgPath) || process.env.AGB_STRICT_GATES === "1") {
+  const basePkgPath = join31(repo, "package.json");
+  if (existsSync28(basePkgPath) || process.env.AGB_STRICT_GATES === "1") {
     for (const cmd2 of [gate?.build, gate?.test].filter(Boolean)) {
       if (!NPM_GATE_RE.test(cmd2)) {
         throw new Error(`gate command must match ${NPM_GATE_RE} (got '${cmd2}')`);
@@ -13930,6 +14043,15 @@ Fix: ${agyCheck.fix}`);
   if (!enforcement.available) {
     log2(`\u26A0 live rail enforcement unavailable: ${enforcement.reason}`);
   }
+  const railGate = enforcementGate({
+    activeRails: unionActiveRails(repo),
+    planRails: tickets.some((t) => Array.isArray(t.rails) && t.rails.length > 0),
+    adlc: resolvedAdlc
+  });
+  if (!railGate.ok) throw new Error(railGate.reason);
+  const integrityBaseline = snapshotRunIntegrity({ cwd: repo });
+  if (!integrityBaseline.ok) throw new Error(`enforcement gate: ${integrityBaseline.error}`);
+  let runCompromised = null;
   ensureGitignore(repo);
   if (isDirty(repo)) {
     if (process.env.AGB_ALLOW_DIRTY !== "1") {
@@ -13942,7 +14064,7 @@ Fix: ${agyCheck.fix}`);
   const finalProject = project2 ?? `agb-${runId}`;
   const status = new RunStatus(repo, runId);
   const safeRunId = runId.replace(/[\/\\]/g, "_");
-  const logDir = join29(repo, ".booster", "logs", safeRunId);
+  const logDir = join31(repo, ".booster", "logs", safeRunId);
   const merged = /* @__PURE__ */ new Set();
   const mergedShas = /* @__PURE__ */ new Set();
   const failed = /* @__PURE__ */ new Map();
@@ -13953,7 +14075,12 @@ Fix: ${agyCheck.fix}`);
   let fleetAbortReason = null;
   const releaseLock = acquireRepoLock(repo, { runId });
   try {
-    let abortFleet = function(reason) {
+    let compromiseRun = function(reason) {
+      const message = `run compromised: ${reason}`;
+      runCompromised ??= reason;
+      abortFleet(message);
+      return message;
+    }, abortFleet = function(reason) {
       if (fleetAborted) return;
       fleetAborted = true;
       fleetAbortReason = reason;
@@ -14108,7 +14235,7 @@ Fix: ${agyCheck.fix}`);
           sandbox: true,
           timeout: BUILD_TIMEOUT,
           outputFormat: "stream-json",
-          logFile: join29(logDir, `${safeId}.jsonl`),
+          logFile: join31(logDir, `${safeId}.jsonl`),
           // Scoped to THIS spawn only (runAgy merges onto process.env, never
           // mutates it) — concurrent tickets building in the same booster
           // process must not see each other's active-ticket signal.
@@ -14153,7 +14280,7 @@ Fix: ${agyCheck.fix}`);
         ticketId: t.id
       });
       status.pools(pools.snapshot());
-      const scratch = mkdtempSync6(join29(tmpdir8(), "agb-prosecute-"));
+      const scratch = mkdtempSync6(join31(tmpdir8(), "agb-prosecute-"));
       const safeId = t.id.replace(/[\/\\]/g, "_");
       if (release.isActive && !release.isActive()) {
         rmSync13(scratch, { recursive: true, force: true });
@@ -14169,7 +14296,7 @@ Fix: ${agyCheck.fix}`);
           diff: branchDiff(worktree, base),
           model: activeProsecutor,
           cwd: scratch,
-          logFile: join29(logDir, `${safeId}.jsonl`),
+          logFile: join31(logDir, `${safeId}.jsonl`),
           worktree,
           testCmd: gate?.test,
           base,
@@ -14219,7 +14346,7 @@ Fix: ${agyCheck.fix}`);
         let prompt = builderPrompt(t);
         let lastFailure = "";
         const safeId = t.id.replace(/[\/\\]/g, "_");
-        const buildLogFile = join29(logDir, `${safeId}.jsonl`);
+        const buildLogFile = join31(logDir, `${safeId}.jsonl`);
         while (strikes < 2) {
           if (fleetAborted) {
             throw new Error(`fleet aborted: ${fleetAbortReason}`);
@@ -14235,20 +14362,20 @@ Fix: ${agyCheck.fix}`);
           try {
             const preSnapshot = snapshotRootGit(repo);
             const { baseSha: baseRefSha, gitDir: expectedGitDir } = setupAttemptGitDatabase(repo, worktree, base);
-            safeWriteWorktreeFile(join29(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
+            safeWriteWorktreeFile(join31(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
             const safeResetToBase = () => {
               try {
                 verifyWorktreeGitPointer(worktree, expectedGitDir);
               } catch {
                 try {
-                  safeWriteWorktreeFile(join29(worktree, ".git"), `gitdir: ${expectedGitDir}
+                  safeWriteWorktreeFile(join31(worktree, ".git"), `gitdir: ${expectedGitDir}
 `);
                 } catch {
                 }
               }
               resetToBase(worktree, base);
               try {
-                safeWriteWorktreeFile(join29(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
+                safeWriteWorktreeFile(join31(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
               } catch {
               }
             };
@@ -14287,7 +14414,7 @@ Fix: ${agyCheck.fix}`);
             } catch (err) {
               strikeError = `worktree gitdir tampering: ${err.message}`;
               try {
-                safeWriteWorktreeFile(join29(worktree, ".git"), `gitdir: ${expectedGitDir}
+                safeWriteWorktreeFile(join31(worktree, ".git"), `gitdir: ${expectedGitDir}
 `);
               } catch {
               }
@@ -14321,6 +14448,14 @@ Fix: ${agyCheck.fix}`);
               lastFailure = strikeError;
               status.strike(t.id, { model, error: strikeError, strikes });
               abortFleet(strikeError);
+              throw new Error(strikeError);
+            }
+            const integrity = verifyRunIntegrity(integrityBaseline.snapshot, { cwd: repo, worktree, worktreeHooksPath: NULL_HOOKS_PATH2 });
+            if (!integrity.ok) {
+              strikes = 2;
+              strikeError = compromiseRun(integrity.reasons.join("; "));
+              lastFailure = strikeError;
+              status.strike(t.id, { model, error: strikeError, strikes });
               throw new Error(strikeError);
             }
             const isBlocked = /TICKET-BLOCKED/.test(build.output) || build.events?.some((e) => e.action === "blocked" || /blocked/i.test(e.action));
@@ -14398,8 +14533,15 @@ Fix: ${agyCheck.fix}`);
                 }
               } else {
                 const changed = scopeCheck.changedFiles;
-                const rails = t.rails ?? [];
+                const rails = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate.storeRails])];
                 const railCheck = rails.length ? await checkRailsGuard({ worktree, base, rails, adlcBin: runAdlcBin }) : { violations: [] };
+                if (railCheck.operationalError) {
+                  strikes = 2;
+                  strikeError = compromiseRun(railCheck.violations.join(", "));
+                  lastFailure = strikeError;
+                  status.strike(t.id, { model, error: strikeError, strikes });
+                  throw new Error(strikeError);
+                }
                 if (railCheck.violations.length) {
                   strikes += 1;
                   strikeError = `rail violation (read-only paths edited, per adlc rails-guard): ${railCheck.violations.join(", ")}`;
@@ -14407,10 +14549,10 @@ Fix: ${agyCheck.fix}`);
                 } else {
                   let gateIntegrityError = null;
                   try {
-                    const basePkgPath2 = join29(repo, "package.json");
-                    const candPkgPath = join29(worktree, "package.json");
-                    if (existsSync26(basePkgPath2)) {
-                      if (!existsSync26(candPkgPath)) {
+                    const basePkgPath2 = join31(repo, "package.json");
+                    const candPkgPath = join31(worktree, "package.json");
+                    if (existsSync28(basePkgPath2)) {
+                      if (!existsSync28(candPkgPath)) {
                         throw new Error("candidate deleted package.json while baseline repository requires it");
                       }
                       const basePkg = JSON.parse(readFileSync23(basePkgPath2, "utf8"));
@@ -14479,7 +14621,7 @@ ${JSON.stringify(blocking, null, 2)}`;
                         } catch (err) {
                           cfFailureReason = `consensus-fix worktree gitdir tampering: ${err.message}`;
                           try {
-                            safeWriteWorktreeFile(join29(worktree, ".git"), `gitdir: ${expectedGitDir}
+                            safeWriteWorktreeFile(join31(worktree, ".git"), `gitdir: ${expectedGitDir}
 `);
                           } catch {
                           }
@@ -14498,10 +14640,10 @@ ${JSON.stringify(blocking, null, 2)}`;
                             } else {
                               let cfGateIntegrityError = null;
                               try {
-                                const basePkgPath2 = join29(repo, "package.json");
-                                const candPkgPath = join29(worktree, "package.json");
-                                if (existsSync26(basePkgPath2)) {
-                                  if (!existsSync26(candPkgPath)) {
+                                const basePkgPath2 = join31(repo, "package.json");
+                                const candPkgPath = join31(worktree, "package.json");
+                                if (existsSync28(basePkgPath2)) {
+                                  if (!existsSync28(candPkgPath)) {
                                     throw new Error("candidate deleted package.json while baseline repository requires it");
                                   }
                                   const basePkg = JSON.parse(readFileSync23(basePkgPath2, "utf8"));
@@ -14550,7 +14692,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           } finally {
             activeAttemptNamespaces.delete(attemptSlug);
             try {
-              execFileSync11("git", ["update-ref", "-d", attemptRef], { cwd: repo });
+              execFileSync12("git", ["update-ref", "-d", attemptRef], { cwd: repo });
             } catch {
             }
           }
@@ -14560,7 +14702,8 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
         }
         throw new Error(lastFailure ?? "two strikes exhausted");
       } catch (err) {
-        const reason = fleetAborted && !String(err.message ?? "").startsWith("root integrity violation:") ? `fleet aborted: ${fleetAbortReason}` : String(err.message ?? err);
+        const ownReason = /^(root integrity violation|run compromised):/.test(String(err.message ?? ""));
+        const reason = fleetAborted && !ownReason ? `fleet aborted: ${fleetAbortReason}` : String(err.message ?? err);
         failed.set(t.id, reason);
         status.ticket(t.id, { phase: "failed", detail: reason.slice(0, 200) });
         log2(`\u2717 ${t.id}: ${reason}`);
@@ -14575,7 +14718,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             } catch {
             }
           }
-          const gitDir = join29(repo, ".worktrees", ".attempt_git", path2.basename(worktree));
+          const gitDir = join31(repo, ".worktrees", ".attempt_git", path2.basename(worktree));
           try {
             rmSync13(gitDir, { recursive: true, force: true });
           } catch {
@@ -14601,18 +14744,18 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
         }
         const headBefore = currentHead(repo);
         discardProjection(worktree);
-        execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "update-ref", `refs/heads/${base}`, headBefore], { cwd: worktree });
+        execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "update-ref", `refs/heads/${base}`, headBefore], { cwd: worktree });
         try {
-          execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rebase", base], { cwd: worktree });
+          execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rebase", base], { cwd: worktree });
         } catch (err) {
           try {
-            execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rebase", "--abort"], { cwd: worktree });
+            execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rebase", "--abort"], { cwd: worktree });
           } catch {
           }
           try {
-            const candSha = execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rev-parse", "HEAD"], { cwd: worktree, encoding: "utf8" }).trim();
+            const candSha = execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "rev-parse", "HEAD"], { cwd: worktree, encoding: "utf8" }).trim();
             if (candSha) {
-              execFileSync11("git", ["update-ref", `refs/quarantine/agb-${t.id.toLowerCase()}-failed-conflict`, candSha], { cwd: repo });
+              execFileSync12("git", ["update-ref", `refs/quarantine/agb-${t.id.toLowerCase()}-failed-conflict`, candSha], { cwd: repo });
             }
           } catch {
           }
@@ -14621,7 +14764,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           throw conflictErr;
         }
         const tempRef = `refs/namespaces/attempts/${t.id.toLowerCase()}/rebased`;
-        execFileSync11(
+        execFileSync12(
           "git",
           [
             "-c",
@@ -14629,14 +14772,14 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             "fetch",
             "--no-tags",
             "--no-write-fetch-head",
-            pathToFileURL(join29(worktree, ".git")).href,
+            pathToFileURL(join31(worktree, ".git")).href,
             `HEAD:${tempRef}`
           ],
           { cwd: repo }
         );
-        const rebasedSha = execFileSync11("git", ["rev-parse", tempRef], { cwd: repo, encoding: "utf8" }).trim();
+        const rebasedSha = execFileSync12("git", ["rev-parse", tempRef], { cwd: repo, encoding: "utf8" }).trim();
         try {
-          execFileSync11("git", ["update-ref", "-d", tempRef], { cwd: repo });
+          execFileSync12("git", ["update-ref", "-d", tempRef], { cwd: repo });
         } catch {
         }
         if (rebasedSha === headBefore) {
@@ -14644,13 +14787,13 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           emptyErr.kind = "empty_diff";
           throw emptyErr;
         }
-        const diffTree = execFileSync11("git", ["diff-tree", "-r", "--name-status", "-M", "-C", "-z", headBefore, rebasedSha], { cwd: repo }).toString("utf8");
+        const diffTree = execFileSync12("git", ["diff-tree", "-r", "--name-status", "-M", "-C", "-z", headBefore, rebasedSha], { cwd: repo }).toString("utf8");
         if (!diffTree.trim()) {
           const emptyErr = new Error(`anti-no-op gate failed: zero changes against baseline commit ${headBefore}`);
           emptyErr.kind = "empty_diff";
           throw emptyErr;
         }
-        const canAdvisorySync = currentBranch2(repo) === base && execFileSync11("git", ["status", "--porcelain=v1", "-z"], { cwd: repo }).length === 0 && execFileSync11("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim() === headBefore;
+        const canAdvisorySync = currentBranch2(repo) === base && execFileSync12("git", ["status", "--porcelain=v1", "-z"], { cwd: repo }).length === 0 && execFileSync12("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim() === headBefore;
         const transactionToken = crypto5.randomUUID();
         const agbRef = `refs/heads/agb/${t.id.toLowerCase()}`;
         const markerRef = `refs/transactions/${t.id}/${transactionToken}`;
@@ -14667,19 +14810,19 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
         };
         try {
           integrationPath = createIntegrationWorktree(repo, transactionToken, base);
-          execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "reset", "--hard", rebasedSha], { cwd: integrationPath });
+          execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "reset", "--hard", rebasedSha], { cwd: integrationPath });
           writeIntegrationJournal(repo, journalData);
           journalWritten = true;
           let hasBaselineTests = false;
           try {
-            execFileSync11("git", ["cat-file", "-e", `${headBefore}:test`], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
+            execFileSync12("git", ["cat-file", "-e", `${headBefore}:test`], { cwd: repo, stdio: ["ignore", "pipe", "pipe"] });
             hasBaselineTests = true;
           } catch {
           }
-          const basePkgPath2 = join29(repo, "package.json");
-          const candPkgPath = join29(integrationPath, "package.json");
-          if (existsSync26(basePkgPath2)) {
-            if (!existsSync26(candPkgPath)) {
+          const basePkgPath2 = join31(repo, "package.json");
+          const candPkgPath = join31(integrationPath, "package.json");
+          if (existsSync28(basePkgPath2)) {
+            if (!existsSync28(candPkgPath)) {
               const err = new Error("candidate deleted package.json while baseline repository requires it");
               err.kind = "post_merge_gate_failure";
               throw err;
@@ -14691,7 +14834,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             }
           }
           if (hasBaselineTests && gate?.test) {
-            execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "checkout", headBefore, "--", "test"], { cwd: integrationPath });
+            execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "checkout", headBefore, "--", "test"], { cwd: integrationPath });
             const pass1 = await runGates({ test: gate.test }, integrationPath, { sandbox: true });
             if (!pass1.ok) {
               const g = pass1.results.at(-1);
@@ -14700,7 +14843,7 @@ ${g?.output?.slice(0, 300)}`);
               pass1Err.kind = "post_merge_gate_failure";
               throw pass1Err;
             }
-            execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "reset", "--hard", rebasedSha], { cwd: integrationPath });
+            execFileSync12("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "reset", "--hard", rebasedSha], { cwd: integrationPath });
           }
           const post = await runGates(gate, integrationPath, { sandbox: true });
           await recordGate({ repo, gateName: "post-merge-build", ticketId: t.id, data: { ok: post.ok }, adlcBin: runAdlcBin });
@@ -14711,7 +14854,7 @@ ${g?.output?.slice(0, 300)}`);
             postErr.kind = "post_merge_gate_failure";
             throw postErr;
           }
-          const diffFiles = execFileSync11("git", ["diff-tree", "-r", "--name-only", "-z", headBefore, rebasedSha], { cwd: repo }).toString("utf8").split("\0").filter(Boolean);
+          const diffFiles = execFileSync12("git", ["diff-tree", "-r", "--name-only", "-z", headBefore, rebasedSha], { cwd: repo }).toString("utf8").split("\0").filter(Boolean);
           const modifiedTests = diffFiles.filter((p) => p.startsWith("test/"));
           if (modifiedTests.length > 0 && gate?.test) {
             try {
@@ -14733,8 +14876,8 @@ ${g?.output?.slice(0, 300)}`);
           journalData.phase = JOURNAL_PHASES.GATES_PASSED;
           journalData.timestamp = Date.now();
           writeIntegrationJournal(repo, journalData);
-          execFileSync11("git", ["update-ref", markerRef, rebasedSha], { cwd: repo });
-          execFileSync11("git", ["update-ref", `refs/heads/${base}`, rebasedSha, headBefore], { cwd: repo });
+          execFileSync12("git", ["update-ref", markerRef, rebasedSha], { cwd: repo });
+          execFileSync12("git", ["update-ref", `refs/heads/${base}`, rebasedSha, headBefore], { cwd: repo });
           baseRefAdvanced = true;
           journalData.phase = JOURNAL_PHASES.REF_ADVANCED;
           journalData.timestamp = Date.now();
@@ -14743,7 +14886,7 @@ ${g?.output?.slice(0, 300)}`);
           journalData.timestamp = Date.now();
           writeIntegrationJournal(repo, journalData);
           try {
-            execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+            execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
           } catch {
           }
           try {
@@ -14760,15 +14903,15 @@ ${g?.output?.slice(0, 300)}`);
           if (!baseRefAdvanced) {
             await recordGate({ repo, gateName: "rollback", ticketId: t.id, data: { reason: String(err.message ?? err).slice(0, 300) }, adlcBin: runAdlcBin });
             try {
-              execFileSync11("git", ["update-ref", `refs/quarantine/agb-${t.id.toLowerCase()}-failed-post-merge`, rebasedSha], { cwd: repo });
+              execFileSync12("git", ["update-ref", `refs/quarantine/agb-${t.id.toLowerCase()}-failed-post-merge`, rebasedSha], { cwd: repo });
             } catch {
             }
             try {
-              execFileSync11("git", ["update-ref", "-d", markerRef], { cwd: repo });
+              execFileSync12("git", ["update-ref", "-d", markerRef], { cwd: repo });
             } catch {
             }
             try {
-              execFileSync11("git", ["update-ref", "-d", agbRef], { cwd: repo });
+              execFileSync12("git", ["update-ref", "-d", agbRef], { cwd: repo });
             } catch {
             }
             if (journalWritten) {
@@ -14808,7 +14951,7 @@ ${g?.output?.slice(0, 300)}`);
         merged.add(t.id);
         mergedShas.add(rebasedSha);
         try {
-          execFileSync11("git", ["update-ref", `refs/heads/agb/${t.id.toLowerCase()}`, rebasedSha], { cwd: repo });
+          execFileSync12("git", ["update-ref", `refs/heads/agb/${t.id.toLowerCase()}`, rebasedSha], { cwd: repo });
         } catch {
         }
         try {
@@ -14819,7 +14962,7 @@ ${g?.output?.slice(0, 300)}`);
           } catch {
           }
         }
-        const gitDir = join29(repo, ".worktrees", ".attempt_git", path2.basename(worktree));
+        const gitDir = join31(repo, ".worktrees", ".attempt_git", path2.basename(worktree));
         try {
           rmSync13(gitDir, { recursive: true, force: true });
         } catch {
@@ -14830,15 +14973,15 @@ ${g?.output?.slice(0, 300)}`);
           let isCleanNow = false;
           try {
             if (canAdvisorySync && currentBranch2(repo) === base) {
-              execFileSync11("git", ["diff-files", "--quiet"], { cwd: repo, stdio: "ignore" });
-              execFileSync11("git", ["diff-index", "--cached", "--quiet", headBefore], { cwd: repo, stdio: "ignore" });
+              execFileSync12("git", ["diff-files", "--quiet"], { cwd: repo, stdio: "ignore" });
+              execFileSync12("git", ["diff-index", "--cached", "--quiet", headBefore], { cwd: repo, stdio: "ignore" });
               isCleanNow = true;
             }
           } catch {
             isCleanNow = false;
           }
           if (isCleanNow) {
-            execFileSync11("git", ["read-tree", "-u", "-m", headBefore, rebasedSha], { cwd: repo });
+            execFileSync12("git", ["read-tree", "-u", "-m", headBefore, rebasedSha], { cwd: repo });
           } else {
             const onBranch3 = currentBranch2(repo);
             log2(`Notice: baseRef advanced to ${rebasedSha}. Root working tree was not updated (uncommitted changes or active branch '${onBranch3}'). Run 'git checkout ${base} && git merge --ff-only' when ready.`);
@@ -14871,22 +15014,23 @@ ${g?.output?.slice(0, 300)}`);
     failed: Object.fromEntries(failed),
     requests: pools.snapshot().requests,
     enforcementAvailable: enforcement.available,
-    enforcementReason: enforcement.reason
+    enforcementReason: enforcement.reason,
+    compromised: runCompromised
   };
   status.report(report);
   return report;
 }
 function currentHead(repo) {
-  return execFileSync11("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+  return execFileSync12("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
 }
 
 // bin/agb.mjs
 init_status();
 
 // lib/sweep.mjs
-import { execFileSync as execFileSync12 } from "node:child_process";
+import { execFileSync as execFileSync13 } from "node:child_process";
 function expandTargets(repo, glob) {
-  const out = execFileSync12("git", ["ls-files", "--", glob], { cwd: repo, encoding: "utf8" });
+  const out = execFileSync13("git", ["ls-files", "--", glob], { cwd: repo, encoding: "utf8" });
   return out.split("\n").filter(Boolean);
 }
 function fill(template, target, i) {
@@ -14921,7 +15065,7 @@ This is one item of a ${resolved.length}-target sweep. Touch only your target; i
 }
 
 // lib/review.mjs
-import { execFileSync as execFileSync13, execFile as execFile9 } from "node:child_process";
+import { execFileSync as execFileSync14, execFile as execFile9 } from "node:child_process";
 import { promisify as promisify8 } from "node:util";
 import { randomUUID as randomUUID6 } from "node:crypto";
 var execFileP7 = promisify8(execFile9);
@@ -14980,7 +15124,7 @@ Respond with ONLY:
 }
 function reviewDiff(repo, ref) {
   const args = ref ? ["diff", ref] : ["diff", "HEAD"];
-  return execFileSync13("git", args, { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync14("git", args, { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 }
 var key = (f) => `${f.file}|${(f.claim ?? "").slice(0, 80).toLowerCase()}`;
 async function reviewFleet({
@@ -15152,7 +15296,7 @@ if (!COMMANDS[cmd] && cmd !== "setup" && cmd !== "install" && cmd !== "skills") 
 function loadPlan(path3) {
   const plan = JSON.parse(readFileSync25(path3, "utf8"));
   const errors = validatePlan(plan);
-  if (plan.repo) plan.repo = resolve15(plan.repo);
+  if (plan.repo) plan.repo = resolve17(plan.repo);
   return { plan, errors };
 }
 try {
@@ -15167,7 +15311,7 @@ try {
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === "sweep") {
     const spec = JSON.parse(readFileSync25(rest[0] ?? "sweep.json", "utf8"));
-    if (spec.repo) spec.repo = resolve15(spec.repo);
+    if (spec.repo) spec.repo = resolve17(spec.repo);
     const plan = sweepToPlan(spec, { project });
     const errors = validatePlan(plan);
     if (errors.length) {
@@ -15179,7 +15323,7 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === "review") {
-    const repo = resolve15(rest[0] ?? ".");
+    const repo = resolve17(rest[0] ?? ".");
     const ref = rest[1];
     const diff = reviewDiff(repo, ref);
     if (!diff.trim()) {
@@ -15204,7 +15348,7 @@ try {
       console.error("plan invalid:\n  " + errors.join("\n  "));
       process.exit(1);
     }
-    const targetRepo = resolve15(plan.repo ?? ".");
+    const targetRepo = resolve17(plan.repo ?? ".");
     const skipColdstart = rest.includes("--no-coldstart");
     const pools = new PoolSet(void 0, { repo: targetRepo });
     if (!skipColdstart) {
@@ -15229,11 +15373,11 @@ try {
       console.error("usage: agb plan <brain-id-or-prefix | spec.md> <repo-path> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]");
       process.exit(1);
     }
-    if (existsSync28(out) && !rest.includes("--force")) {
+    if (existsSync30(out) && !rest.includes("--force")) {
       console.error(`plan: ${out} already exists \u2014 pass --force to overwrite (compiled plans are disposable, hand-written ones may not be)`);
       process.exit(1);
     }
-    const targetRepo = resolve15(repo);
+    const targetRepo = resolve17(repo);
     const pools = new PoolSet(void 0, { repo: targetRepo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
     if (!quotaRes.ok) {
@@ -15281,7 +15425,7 @@ try {
       process.exit(1);
     }
     console.error("import-brain is deprecated \u2014 use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)");
-    const targetRepo = resolve15(repo);
+    const targetRepo = resolve17(repo);
     const pools = new PoolSet(void 0, { repo: targetRepo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
     if (!quotaRes.ok) {
@@ -15303,10 +15447,10 @@ try {
     }
     if (isWatch) {
       const { watchStatus: watchStatus2 } = await Promise.resolve().then(() => (init_status(), status_exports));
-      const code = await watchStatus2(resolve15(positional[0] ?? "."), intervalMs);
+      const code = await watchStatus2(resolve17(positional[0] ?? "."), intervalMs);
       process.exitCode = code;
     } else {
-      console.log(renderStatus(resolve15(positional[0] ?? ".")));
+      console.log(renderStatus(resolve17(positional[0] ?? ".")));
     }
   } else if (cmd === "tui") {
     console.error("The TUI has been removed. Use the native sidecar dashboard instead (`agb sidecar`).");
@@ -15355,7 +15499,7 @@ try {
       try {
         const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
         const calDir = process.env.AGB_CALIBRATION_DIR ?? fileURLToPath6(new URL("../docs/calibration/", import.meta.url));
-        const calFile = join31(calDir, `probe-${day}.md`);
+        const calFile = join33(calDir, `probe-${day}.md`);
         const table = [
           `## ${model} \u2014 probed ${(/* @__PURE__ */ new Date()).toISOString()}`,
           "",
@@ -15365,7 +15509,7 @@ try {
           ""
         ].join("\n");
         mkdirSync19(calDir, { recursive: true });
-        appendFileSync3(calFile, (existsSync28(calFile) ? "\n" : `# Pool probe \u2014 ${day}
+        appendFileSync3(calFile, (existsSync30(calFile) ? "\n" : `# Pool probe \u2014 ${day}
 
 `) + table);
         console.error(`probe: appended ${rows.length} row(s) to ${calFile}`);
@@ -15394,34 +15538,34 @@ try {
       }
     }
     const repoDir = String(positional[0] || ".");
-    const repo = resolve15(process.cwd(), repoDir);
+    const repo = resolve17(process.cwd(), repoDir);
     const { serveSidecar: serveSidecar2 } = await Promise.resolve().then(() => (init_server(), server_exports));
     const { randomBytes: randomBytes3 } = await import("node:crypto");
     const { writeFileSync: writeFileSync20, mkdirSync: mkdirSync20, rmSync: rmSync14 } = await import("node:fs");
-    const { execFileSync: execFileSync14 } = await import("node:child_process");
-    const { join: join32 } = await import("node:path");
-    const { homedir: homedir7 } = await import("node:os");
+    const { execFileSync: execFileSync15 } = await import("node:child_process");
+    const { join: join34 } = await import("node:path");
+    const { homedir: homedir8 } = await import("node:os");
     const port = portStr ? Number(portStr) : 3333;
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       console.error(`agb: invalid port '${portStr}'`);
       process.exit(1);
     }
     const token = randomBytes3(16).toString("hex");
-    const server = await serveSidecar2(resolve15(positional[0] ?? "."), port, token);
+    const server = await serveSidecar2(resolve17(positional[0] ?? "."), port, token);
     const actualPort = server.address().port;
     let pluginDir;
     let createdDir = false;
     let wroteManifests = false;
     try {
-      pluginDir = process.env.AGB_PLUGIN_DIR || join32(homedir7(), ".gemini", `agb-sidecar-plugin-${process.pid}-${actualPort}`);
-      if (!existsSync28(pluginDir)) {
+      pluginDir = process.env.AGB_PLUGIN_DIR || join34(homedir8(), ".gemini", `agb-sidecar-plugin-${process.pid}-${actualPort}`);
+      if (!existsSync30(pluginDir)) {
         mkdirSync20(pluginDir, { recursive: true, mode: 448 });
         createdDir = true;
-      } else if (existsSync28(join32(pluginDir, "plugin.json")) || existsSync28(join32(pluginDir, "sidecars", "agb.json"))) {
+      } else if (existsSync30(join34(pluginDir, "plugin.json")) || existsSync30(join34(pluginDir, "sidecars", "agb.json"))) {
         throw new Error(`AGB_PLUGIN_DIR (${pluginDir}) already contains plugin.json or sidecars/agb.json. To prevent data loss, agb will not overwrite an existing plugin manifest. Clear the directory or unset AGB_PLUGIN_DIR.`);
       }
-      if (!existsSync28(join32(pluginDir, "sidecars"))) {
-        mkdirSync20(join32(pluginDir, "sidecars"), { recursive: true, mode: 448 });
+      if (!existsSync30(join34(pluginDir, "sidecars"))) {
+        mkdirSync20(join34(pluginDir, "sidecars"), { recursive: true, mode: 448 });
       }
       const manifest = {
         id: "agb-dashboard",
@@ -15430,9 +15574,9 @@ try {
         icon: "activity",
         description: "Visualizes parallel build-outs orchestrated by Antigravity Booster."
       };
-      writeFileSync20(join32(pluginDir, "sidecars", "agb.json"), JSON.stringify(manifest, null, 2) + "\n", { mode: 384 });
+      writeFileSync20(join34(pluginDir, "sidecars", "agb.json"), JSON.stringify(manifest, null, 2) + "\n", { mode: 384 });
       const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
-      writeFileSync20(join32(pluginDir, "plugin.json"), JSON.stringify({
+      writeFileSync20(join34(pluginDir, "plugin.json"), JSON.stringify({
         id: pluginId,
         name: "AGB Dynamic Sidecar",
         version: "1.0.0",
@@ -15447,15 +15591,15 @@ try {
         try {
           server.close();
           try {
-            execFileSync14(agyBin, ["plugin", "uninstall", pluginId], { stdio: "ignore" });
+            execFileSync15(agyBin, ["plugin", "uninstall", pluginId], { stdio: "ignore" });
           } catch (e) {
           }
           if (pluginDir) {
             if (createdDir) {
               rmSync14(pluginDir, { recursive: true, force: true });
             } else if (wroteManifests) {
-              rmSync14(join32(pluginDir, "sidecars", "agb.json"), { force: true });
-              rmSync14(join32(pluginDir, "plugin.json"), { force: true });
+              rmSync14(join34(pluginDir, "sidecars", "agb.json"), { force: true });
+              rmSync14(join34(pluginDir, "plugin.json"), { force: true });
             }
           }
         } catch (e) {
@@ -15468,7 +15612,7 @@ try {
       process.on("SIGINT", () => cleanup(130));
       process.on("SIGTERM", () => cleanup(143));
       process.on("exit", onExitCleanup);
-      execFileSync14(agyBin, ["plugin", "install", pluginDir], { stdio: "inherit" });
+      execFileSync15(agyBin, ["plugin", "install", pluginDir], { stdio: "inherit" });
       console.log("Successfully registered the dynamic sidecar plugin with Antigravity.");
     } catch (e) {
       console.warn(`Warning: Could not automatically register the sidecar plugin with agy: ${e.message}`);
@@ -15477,7 +15621,7 @@ try {
   } else if (cmd === "pool") {
     const sub = rest[0];
     if (sub === "drain") {
-      const repo = resolve15(rest[1] ?? ".");
+      const repo = resolve17(rest[1] ?? ".");
       const res = await drainPools(repo);
       console.log(JSON.stringify(res, null, 2));
       process.exit(0);

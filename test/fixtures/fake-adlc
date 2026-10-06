@@ -228,6 +228,10 @@ $2"; shift 2 ;;
   if [ -n "$FAKE_STATE_DIR" ]; then
     printf 'base=%s rails=%s\n' "$base" "$(echo "$rails" | tr '\n' ',')" >> "$FAKE_STATE_DIR/rails-guard-invocations"
   fi
+  if [ "${FAKE_RAILS_GUARD_MODE:-}" = "error" ]; then
+    echo "rails-guard: simulated operational failure" >&2
+    exit 1
+  fi
   changed=$(git diff --name-only "$base" 2>/dev/null)
   violations=""
   echo "$rails" | while IFS= read -r glob; do
