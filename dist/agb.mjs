@@ -13730,10 +13730,11 @@ async function checkRailsGuard({ worktree, base, rails, adlcBin }) {
   for (const r of rails) args.push("--rails", r);
   try {
     const { stdout: stdout2 } = await execFileAuthenticatedAdlc(adlcBin, args, { cwd: worktree, timeout: RAILS_GUARD_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo: worktree });
-    let parsed = null;
+    let parsed;
     try {
       parsed = JSON.parse(stdout2);
     } catch {
+      return { violations: ["adlc rails-guard operational error: unparseable --json output"], operationalError: true };
     }
     if (parsed?.railGlobError) {
       return { violations: [`adlc rails-guard operational error: invalid rail glob: ${parsed.railGlobError}`], operationalError: true };
@@ -13743,7 +13744,11 @@ async function checkRailsGuard({ worktree, base, rails, adlcBin }) {
     if (err.stdout) {
       try {
         const parsed = JSON.parse(err.stdout);
-        return { violations: (parsed.violations ?? []).map((v) => v.file ?? JSON.stringify(v)) };
+        const violations = (parsed.violations ?? []).map((v) => v.file ?? JSON.stringify(v));
+        if (violations.length === 0 || parsed.railGlobError) {
+          return { violations: [`adlc rails-guard operational error: exit without violations${parsed.railGlobError ? ` (invalid rail glob: ${parsed.railGlobError})` : ""}`], operationalError: true };
+        }
+        return { violations };
       } catch {
       }
     }

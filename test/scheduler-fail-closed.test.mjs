@@ -210,7 +210,7 @@ test('enforcementGate: passes with an authenticated adlc, or with no rails anywh
 import { isWellFormedRail } from '../lib/run-integrity.mjs';
 
 test('isWellFormedRail: blank or unbalanced globs are rejected, ordinary globs pass', () => {
-  for (const bad of ['', '   ', '[', 'a]', '{a', 'a}', '[]]', null, 3]) assert.equal(isWellFormedRail(bad), false, String(bad));
+  for (const bad of ['', '   ', '[', 'a]', '{a', 'a}', '[]]', ']a[', '}a{', null, 3]) assert.equal(isWellFormedRail(bad), false, String(bad));
   for (const good of ['RAIL.txt', 'lib/**', 'src/[ab].js', '*.{js,mjs}']) assert.equal(isWellFormedRail(good), true, good);
 });
 
@@ -232,6 +232,22 @@ test('runPlan: a plan ticket with a malformed rail dispatches nothing', async ()
       /malformed rail glob/,
     );
     assert.equal(existsSync(join(state, 'builds')), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('rails-guard exit 0 with a railGlobError: the run is compromised, nothing merges', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-fc-state-'));
+  try {
+    const report = await withEnv(trusted(state, { FAKE_RAILS_GUARD_MODE: 'glob-error' }), () => runPlan({
+      repo, gate: { test: 'true' },
+      tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] }],
+    }, quiet));
+    assert.equal(report.merged.length, 0);
+    assert.match(report.failed.T1, /run compromised: .*invalid rail glob: unbalanced \[/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });

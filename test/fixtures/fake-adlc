@@ -228,6 +228,11 @@ $2"; shift 2 ;;
   if [ -n "$FAKE_STATE_DIR" ]; then
     printf 'base=%s rails=%s\n' "$base" "$(echo "$rails" | tr '\n' ',')" >> "$FAKE_STATE_DIR/rails-guard-invocations"
   fi
+  if [ "${FAKE_RAILS_GUARD_MODE:-}" = "glob-error" ]; then
+    # Real rails-guard exits 0 with no violations when a rail glob is invalid.
+    echo '{"tool":"rails-guard","passed":true,"violations":[],"railGlobError":"unbalanced ["}'
+    exit 0
+  fi
   if [ "${FAKE_RAILS_GUARD_MODE:-}" = "error" ]; then
     echo "rails-guard: simulated operational failure" >&2
     exit 1
