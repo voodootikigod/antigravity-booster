@@ -6,7 +6,7 @@
 // Usage: node scripts/check-bundle-externals.mjs [bundle ...]
 // Exit 0 = clean, 1 = an external specifier or a missing bundle was found.
 import { readFileSync } from 'node:fs';
-import { builtinModules } from 'node:module';
+import { isBuiltin as nodeIsBuiltin, builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_BUNDLES = ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs'];
@@ -25,6 +25,7 @@ const SPECIFIER_PATTERNS = [
 ];
 
 export function isBuiltin(specifier) {
+  if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;
   if (specifier.startsWith('node:')) return BUILTINS.has(specifier.slice(5)) || BUILTINS.has(specifier);
   return BUILTINS.has(specifier) || BUILTINS.has(specifier.split('/')[0]);
 }

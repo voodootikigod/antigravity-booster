@@ -257,7 +257,7 @@ emit_fallback() {
 
 trap emit_fallback EXIT HUP INT TERM
 
-LAUNCHER_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P 2>/dev/null || true)"
+LAUNCHER_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
 PLUGIN_ROOT="$(dirname -- "$LAUNCHER_DIR")"
 [ -n "$PLUGIN_ROOT" ] || emit_fallback
 
@@ -273,11 +273,19 @@ MAIN_PID=$$
   _CPID=""
   [ -f "$TMP_STDIN_PID" ] && _SPID="$(cat "$TMP_STDIN_PID" 2>/dev/null || true)"
   [ -f "$TMP_PID" ] && _CPID="$(cat "$TMP_PID" 2>/dev/null || true)"
-  [ -n "$_SPID" ] && kill -0 "$_SPID" 2>/dev/null && kill -TERM "$_SPID" 2>/dev/null || true
-  [ -n "$_CPID" ] && kill -0 "$_CPID" 2>/dev/null && kill -TERM "$_CPID" 2>/dev/null || true
+  if [ -n "$_SPID" ] && kill -0 "$_SPID" 2>/dev/null; then
+    kill -TERM "$_SPID" 2>/dev/null || true
+  fi
+  if [ -n "$_CPID" ] && kill -0 "$_CPID" 2>/dev/null; then
+    kill -TERM "$_CPID" 2>/dev/null || true
+  fi
   sleep 1
-  [ -n "$_SPID" ] && kill -0 "$_SPID" 2>/dev/null && kill -KILL "$_SPID" 2>/dev/null || true
-  [ -n "$_CPID" ] && kill -0 "$_CPID" 2>/dev/null && kill -KILL "$_CPID" 2>/dev/null || true
+  if [ -n "$_SPID" ] && kill -0 "$_SPID" 2>/dev/null; then
+    kill -KILL "$_SPID" 2>/dev/null || true
+  fi
+  if [ -n "$_CPID" ] && kill -0 "$_CPID" 2>/dev/null; then
+    kill -KILL "$_CPID" 2>/dev/null || true
+  fi
   # Signal parent hook runner to trigger emit_fallback immediately
   kill -TERM "$MAIN_PID" 2>/dev/null || true
 ) &
