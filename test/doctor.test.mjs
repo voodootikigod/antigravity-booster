@@ -6,6 +6,10 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
 
+// AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
+// adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
+process.env.AGB_PLUGIN_ROOT ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'agb-no-vendor-'));
+
 test('checkNodeVersion: passes on v18+', async () => {
   const res = await checkNodeVersion();
   // Assume tests run on v18+
