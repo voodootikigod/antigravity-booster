@@ -4393,6 +4393,25 @@ import crypto3 from "node:crypto";
 import { execFile as execFile2, execFileSync as execFileSync7, execSync as execSync2 } from "child_process";
 import { promisify } from "util";
 
+// lib/semver.mjs
+var NUM = "(0|[1-9]\\d*)";
+var PRE_ID = "(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)";
+var BUILD_ID = "[0-9A-Za-z-]+";
+var RE = new RegExp(
+  `^${NUM}\\.${NUM}\\.${NUM}(?:-(${PRE_ID}(?:\\.${PRE_ID})*))?(?:\\+(${BUILD_ID}(?:\\.${BUILD_ID})*))?$`
+);
+function parse(v) {
+  if (typeof v !== "string") return null;
+  const m = RE.exec(v);
+  if (!m) return null;
+  return {
+    major: Number(m[1]),
+    minor: Number(m[2]),
+    patch: Number(m[3]),
+    prerelease: m[4] === void 0 ? [] : m[4].split(".")
+  };
+}
+
 // lib/adlc-bridge.mjs
 import { writeFileSync as writeFileSync7, mkdirSync as mkdirSync6, readFileSync as readFileSync13, existsSync as existsSync15, readdirSync as readdirSync6, rmSync as rmSync3, lstatSync as lstatSync7, realpathSync as realpathSync2, openSync as openSync5, readSync as readSync3, closeSync as closeSync5, statSync, fstatSync as fstatSync2, chmodSync, copyFileSync as copyFileSync2, cpSync, symlinkSync, mkdtempSync as mkdtempSync2, constants } from "node:fs";
 import { join as join16, dirname as dirname11, relative as relative5, resolve as resolve7, isAbsolute as isAbsolute4, basename as basename5 } from "node:path";
@@ -4409,16 +4428,29 @@ function pluginManifestDir() {
 }
 function readPluginContract({ dir } = {}) {
   const path2 = join16(dir ?? pluginManifestDir(), "plugin.json");
-  let manifest;
+  let text;
   try {
-    manifest = JSON.parse(readFileSync13(path2, "utf8"));
+    text = readFileSync13(path2, "utf8");
   } catch (err) {
     return { status: "unreadable", error: `plugin manifest at ${path2}: ${err.code ?? err.message}` };
   }
-  const contract = manifest?.adlcContract;
-  if (!Number.isInteger(contract)) return { status: "missing-field" };
-  if (contract === SUPPORTED_PLUGIN_CONTRACT) return { status: "compatible", contract };
-  return { status: "incompatible", contract };
+  let manifest;
+  try {
+    manifest = JSON.parse(text);
+  } catch (err) {
+    return { status: "corrupt", error: `plugin manifest at ${path2} is not valid JSON: ${err.message}` };
+  }
+  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+    return { status: "corrupt", error: `plugin manifest at ${path2} is not a JSON object` };
+  }
+  const version = manifest.version;
+  if (typeof version !== "string" || parse(version) === null) {
+    return { status: "corrupt", error: `plugin manifest at ${path2} has no semver version` };
+  }
+  if (!Object.hasOwn(manifest, "adlcContract")) return { status: "tolerant", version };
+  const contract = manifest.adlcContract;
+  if (contract === SUPPORTED_PLUGIN_CONTRACT) return { status: "compatible", contract, version };
+  return { status: "incompatible", contract, version };
 }
 function planTicketToAdlcTicket(t) {
   return {
@@ -6262,11 +6294,12 @@ function reportAdlcContract(pluginName, dir) {
     case "incompatible":
       console.error(`error: installed ${pluginName} plugin declares adlcContract ${contract.contract}, but this antigravity-booster projects contract ${SUPPORTED_PLUGIN_CONTRACT}`);
       return false;
-    case "missing-field":
+    case "tolerant":
       console.warn(`warning: installed ${pluginName} plugin manifest declares no adlcContract field (older plugin) \u2014 cannot confirm it speaks booster contract ${SUPPORTED_PLUGIN_CONTRACT}; live rail enforcement will run in tolerant/degraded mode. Upgrade the plugin to enable the version handshake.`);
       console.log(installedLine);
       return true;
     case "unreadable":
+    case "corrupt":
     default:
       console.warn(`warning: could not read the installed ${pluginName} plugin manifest (${contract.error}) \u2014 proceeding, but the contract handshake could not be verified`);
       console.log(installedLine);
@@ -6527,13 +6560,13 @@ async function checkPlugin({ env = process.env } = {}) {
     const pluginPath = resolvePluginPath();
     if (!pluginPath) throw new Error("not found");
     const contract = readPluginContract({ dir: pluginPath });
-    if (contract.status === "missing-field") {
+    if (contract.status === "tolerant") {
       return { name: "adlc-antigravity plugin", level: "warn", detail: "installed (legacy version)", fix: "Upgrade @adlc/antigravity to enable live rail enforcement." };
     }
     if (contract.status === "incompatible") {
       return { name: "adlc-antigravity plugin", level: "fail", detail: `unsupported contract v${contract.contract}`, fix: "Install a compatible version of @adlc/antigravity." };
     }
-    if (contract.status === "unreadable") {
+    if (contract.status === "unreadable" || contract.status === "corrupt") {
       throw new Error(contract.error || "unreadable manifest");
     }
     return { name: "adlc-antigravity plugin", level: "pass", detail: "installed and compatible", fix: null };
@@ -9265,6 +9298,7 @@ async function runAgy({
   containment = true,
   sanitizeEnv = false,
   onSpawn,
+  worker,
   platform: platform2 = process.platform
 }) {
   if (!model || !prompt) throw new Error("runAgy: model and prompt are required");
@@ -9906,6 +9940,11 @@ async function runAgy({
     } else {
       spawnEnv = { ...process.env, ...env || {} };
     }
+    delete spawnEnv.AGB_WORKER_TICKET;
+    delete spawnEnv.AGB_WORKER_MODE;
+    const workerTicket = typeof worker?.ticket === "string" ? worker.ticket.trim() : "";
+    if (workerTicket) spawnEnv.AGB_WORKER_TICKET = workerTicket;
+    else spawnEnv.AGB_WORKER_MODE = "readonly";
     if (!isTestExecution(effectiveEnv)) {
       for (const k of Object.keys(spawnEnv)) {
         if (k.startsWith("FAKE_")) delete spawnEnv[k];
@@ -11168,6 +11207,7 @@ async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd,
     role: "prosecutor",
     outputFormat: "json",
     jsonSchema: PROSECUTION_VERDICT_SCHEMA,
+    worker: { mode: "readonly" },
     onSpawn
   });
   if (!res.ok) return { verdict: "error", model, findings: [], error: res.error, hollowTest, kind: res.kind };
@@ -11332,7 +11372,8 @@ async function coldstartTickets(tickets, gate, { pools, model = COLDSTART_MODEL,
           timeout: "4m",
           project: project2,
           outputFormat: "json",
-          jsonSchema: COLDSTART_SCHEMA
+          jsonSchema: COLDSTART_SCHEMA,
+          worker: { mode: "readonly" }
         });
         if (!res.ok) return { id: t.id, error: res.error, gaps: [] };
         const data = res.data ?? extractJson(res.output);
@@ -11505,7 +11546,8 @@ async function brainToPlan(idOrPrefix, { repo, gate, model = "gemini-3.1-pro-hig
       timeout: "5m",
       project: finalProject,
       outputFormat: "json",
-      jsonSchema: BRAIN_PLAN_SCHEMA
+      jsonSchema: BRAIN_PLAN_SCHEMA,
+      worker: { mode: "readonly" }
     });
   } finally {
     await release();
@@ -12318,7 +12360,8 @@ async function premortemPlan(plan, brain, { pools, model = PREMORTEM_MODEL, proj
       timeout: "5m",
       project: project2,
       outputFormat: "json",
-      jsonSchema: PREMORTEM_SCHEMA
+      jsonSchema: PREMORTEM_SCHEMA,
+      worker: { mode: "readonly" }
     });
     if (!res.ok) {
       const isUnparseable = res.kind === "schema_violation" || /invalid json/i.test(res.error || "");
@@ -12419,7 +12462,8 @@ async function parallaxEdges(plan, {
           timeout: "4m",
           project: project2,
           outputFormat: "json",
-          jsonSchema: PARALLAX_READER_SCHEMA
+          jsonSchema: PARALLAX_READER_SCHEMA,
+          worker: { mode: "readonly" }
         });
         if (!res.ok) return { error: res.error };
         const data = res.data ?? extractJson(res.output);
@@ -12446,7 +12490,8 @@ async function parallaxEdges(plan, {
         timeout: "4m",
         project: project2,
         outputFormat: "json",
-        jsonSchema: PARALLAX_JUDGE_SCHEMA
+        jsonSchema: PARALLAX_JUDGE_SCHEMA,
+        worker: { mode: "readonly" }
       });
       if (!res.ok) return { edge, error: res.error };
       const data = res.data ?? extractJson(res.output);
@@ -13498,9 +13543,10 @@ function checkEnforcementAvailable(repo) {
         abort: true,
         reason: `installed adlc-antigravity plugin declares adlcContract ${contract.contract}, but this antigravity-booster projects contract ${SUPPORTED_PLUGIN_CONTRACT} \u2014 refusing to run: a version-skewed plugin would enforce a different tickets/hook contract than the booster generates. ` + (contract.contract > SUPPORTED_PLUGIN_CONTRACT ? "Upgrade antigravity-booster so it speaks the newer plugin contract." : "Upgrade the adlc-antigravity plugin (agb bootstrap) so it speaks the contract this booster projects.")
       };
-    case "missing-field":
+    case "tolerant":
       return { available: false, reason: `installed adlc-antigravity plugin manifest declares no adlcContract field (older plugin) \u2014 cannot confirm it speaks booster contract ${SUPPORTED_PLUGIN_CONTRACT}; live rail enforcement disabled, post-hoc adlc rails-guard still runs` };
     case "unreadable":
+    case "corrupt":
     default:
       return { available: false, reason: `adlc-antigravity plugin manifest unreadable (${contract.error}) \u2014 treating as not installed; live rail enforcement disabled, post-hoc adlc rails-guard still runs` };
   }
@@ -13987,6 +14033,7 @@ Fix: ${agyCheck.fix}`);
           project: finalProject,
           strike,
           role: "builder",
+          worker: { ticket: ticketId ?? t.id },
           repo: targetRepo ?? repo,
           ticketId: ticketId ?? t.id,
           token,
@@ -14902,7 +14949,8 @@ async function reviewFleet({
             timeout: "5m",
             project: finalProject,
             outputFormat: "json",
-            jsonSchema: REVIEW_FINDINGS_SCHEMA
+            jsonSchema: REVIEW_FINDINGS_SCHEMA,
+            worker: { mode: "readonly" }
           });
           if (!res.ok) return { lens, model, error: res.error, findings: [] };
           try {

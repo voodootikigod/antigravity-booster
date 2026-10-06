@@ -80,7 +80,7 @@ const oneTicket = [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.t
 test('readPluginContract: adlcContract === supported → compatible', () => {
   assert.deepEqual(
     readPluginContract({ dir: PLUGIN_COMPATIBLE }),
-    { status: 'compatible', contract: SUPPORTED_PLUGIN_CONTRACT },
+    { status: 'compatible', contract: SUPPORTED_PLUGIN_CONTRACT, version: '1.2.0' },
   );
 });
 
@@ -91,8 +91,8 @@ test('readPluginContract: present integer != supported → incompatible (loud-ab
   assert.notEqual(r.contract, SUPPORTED_PLUGIN_CONTRACT);
 });
 
-test('readPluginContract: no adlcContract field (older plugin) → missing-field (degrade)', () => {
-  assert.equal(readPluginContract({ dir: PLUGIN_MISSING_FIELD }).status, 'missing-field');
+test('readPluginContract: no adlcContract field (older plugin) → tolerant (degrade)', () => {
+  assert.equal(readPluginContract({ dir: PLUGIN_MISSING_FIELD }).status, 'tolerant');
 });
 
 test('readPluginContract: absent manifest → unreadable (degrade), never throws', () => {
@@ -101,8 +101,40 @@ test('readPluginContract: absent manifest → unreadable (degrade), never throws
   assert.ok(r.error, 'carries an error string for the warn message');
 });
 
-test('readPluginContract: malformed JSON manifest → unreadable (degrade), never throws', () => {
-  assert.equal(readPluginContract({ dir: PLUGIN_MALFORMED }).status, 'unreadable');
+test('readPluginContract: malformed JSON manifest → corrupt (degrade), never throws', () => {
+  const r = readPluginContract({ dir: PLUGIN_MALFORMED });
+  assert.equal(r.status, 'corrupt');
+  assert.ok(r.error);
+});
+
+test('readPluginContract: every status is one of PLUGIN_CONTRACT_STATUSES (spec §4.4 flat enum)', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { PLUGIN_CONTRACT_STATUSES } = await import('../lib/adlc-bridge.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'agb-contract-'));
+  const status = (manifest) => {
+    writeFileSync(join(dir, 'plugin.json'), typeof manifest === 'string' ? manifest : JSON.stringify(manifest));
+    return readPluginContract({ dir }).status;
+  };
+  try {
+    assert.equal(status({ name: 'a', version: '1.7.0', adlcContract: 1 }), 'compatible');
+    assert.equal(status({ name: 'a', version: '1.7.0' }), 'tolerant');
+    assert.equal(status({ name: 'a', version: '1.7.0', adlcContract: 2 }), 'incompatible');
+    assert.equal(status({ name: 'a', version: '1.7.0', adlcContract: '1' }), 'incompatible', 'present but not === 1');
+    assert.equal(status({ name: 'a', adlcContract: 1 }), 'corrupt', 'missing version');
+    assert.equal(status({ name: 'a', version: '1.7', adlcContract: 1 }), 'corrupt', 'non-semver version');
+    assert.equal(status('[1,2]'), 'corrupt', 'non-object manifest');
+    for (const s of ['compatible', 'tolerant', 'incompatible', 'corrupt']) assert.ok(PLUGIN_CONTRACT_STATUSES.includes(s));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('no source still uses the retired missing-field status', async () => {
+  const { spawnSync } = await import('node:child_process');
+  // grep exits 1 when nothing matches: that is the passing case.
+  const r = spawnSync('grep', ['-rln', 'missing-field', 'lib', 'bin', 'mcp', 'hooks'], { cwd: new URL('..', import.meta.url).pathname, encoding: 'utf8' });
+  assert.equal(r.status, 1, `still referenced in: ${r.stdout}`);
 });
 
 test('readPluginContract: AGB_PLUGIN_DIR overrides the default base dir', () =>

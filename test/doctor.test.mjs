@@ -123,7 +123,7 @@ test('checkPlugin: passes when compatible', async () => {
   const d = mkdtempSync(join(tmpdir(), 'agb-test-plugin-compatible-'));
   const orig = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
   try {
-    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ adlcContract: 1 }));
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ version: '1.7.0', adlcContract: 1 }));
     process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = d;
     const res = await checkPlugin({ env: process.env });
     assert.equal(res.level, 'pass');
@@ -138,7 +138,7 @@ test('checkPlugin: fails when incompatible', async () => {
   const d = mkdtempSync(join(tmpdir(), 'agb-test-plugin-incompat-'));
   const orig = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
   try {
-    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ adlcContract: 999 }));
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ version: '1.7.0', adlcContract: 999 }));
     process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = d;
     const res = await checkPlugin({ env: process.env });
     assert.equal(res.level, 'fail');
