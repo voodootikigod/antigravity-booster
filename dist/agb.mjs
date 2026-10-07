@@ -6998,22 +6998,75 @@ function preventExecutableReplacement(target, opts = {}) {
     throw err;
   }
 }
+function unsafeVendoredPath(pluginRoot) {
+  const uid = typeof process.getuid === "function" ? process.getuid() : null;
+  const vendorDir = join17(pluginRoot, "vendor", "adlc");
+  const paths2 = [
+    pluginRoot,
+    join17(pluginRoot, "vendor"),
+    vendorDir,
+    join17(vendorDir, "bin"),
+    join17(vendorDir, "bin", "adlc.mjs"),
+    join17(vendorDir, "dist"),
+    join17(vendorDir, "dist", "adlc.bundle.mjs")
+  ];
+  for (const p of paths2) {
+    let st;
+    try {
+      st = lstatSync7(p);
+    } catch {
+      return `${p} is unreadable`;
+    }
+    if (st.isSymbolicLink()) return `${p} is a symlink`;
+    if (uid !== null && st.uid !== uid && st.uid !== 0) return `${p} is owned by uid ${st.uid}`;
+    if (process.platform !== "win32" && st.mode & 2) return `${p} is world-writable`;
+  }
+  return null;
+}
+function sameRealPath(a, b) {
+  try {
+    return realpathSync3(a) === realpathSync3(b);
+  } catch {
+    return false;
+  }
+}
+function revalidateVendoredAdlc(binaryPath, { bundled, pluginRoot }) {
+  const vendoredBinary = pluginRoot ? join17(pluginRoot, "vendor", "adlc", "bin", "adlc.mjs") : null;
+  const isVendored = Boolean(binaryPath && vendoredBinary && sameRealPath(binaryPath, vendoredBinary));
+  if (!bundled && !isVendored) return null;
+  if (!pluginRoot) return { ok: false, error: "vendored adlc missing: booster plugin root not found" };
+  const v = resolveVendoredAdlc(pluginRoot);
+  if (!v) return { ok: false, error: `vendored adlc missing under ${pluginRoot}/vendor/adlc` };
+  if (!v.ok) return v;
+  const unsafe = unsafeVendoredPath(pluginRoot);
+  if (unsafe) return { ok: false, error: `vendored adlc is not safe to run: ${unsafe}` };
+  if (binaryPath && !sameRealPath(binaryPath, v.binary)) {
+    return { ok: false, error: `adlc binary ${binaryPath} is not the vendored adlc; the bundled plugin runs only vendor/adlc` };
+  }
+  return { ...v, target: v.binary };
+}
 function revalidateAdlcBinary(binaryPath, {
   repo = process.cwd(),
   env = process.env,
   minVersion = MIN_ADLC_CLI_VERSION,
   allowCustom = false,
   allowSystem = false,
-  lockExecutable = false
+  lockExecutable = false,
+  bundled = IS_BUNDLED,
+  pluginRoot = defaultPluginRoot(env, bundled)
 } = {}) {
+  const vendored = revalidateVendoredAdlc(binaryPath, { bundled, pluginRoot });
+  if (vendored) return vendored;
   recoverStaleExecutableLocks();
   let candidate = binaryPath;
   if (!candidate) {
-    const resolved = resolveAdlcBinary({ repo, env, minVersion, allowCustom, allowSystem });
+    const resolved = resolveAdlcBinary({ repo, env, minVersion, allowCustom, allowSystem, bundled, pluginRoot });
     if (!resolved.ok) {
       return resolved;
     }
     candidate = resolved.binary;
+    const resolvedVendored = revalidateVendoredAdlc(candidate, { bundled, pluginRoot });
+    if (resolvedVendored) return resolvedVendored;
   }
   try {
     const pathSecurity = isTemporaryOrWorldWritablePath(candidate);
@@ -7209,9 +7262,11 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
   env = process.env,
   minVersion = MIN_ADLC_CLI_VERSION,
   allowCustom = false,
-  allowSystem = false
+  allowSystem = false,
+  bundled = IS_BUNDLED,
+  pluginRoot = defaultPluginRoot(env, bundled)
 } = {}) {
-  const verified = revalidateAdlcBinary(binaryPath, { repo, env, minVersion, allowCustom, allowSystem, lockExecutable: true });
+  const verified = revalidateAdlcBinary(binaryPath, { repo, env, minVersion, allowCustom, allowSystem, lockExecutable: true, bundled, pluginRoot });
   if (!verified.ok) {
     const err = new Error(`Authenticated ADLC binary verification failed: ${verified.error}`);
     err.code = "EAUTH";
