@@ -11,6 +11,8 @@ if [ "$1" = "plugin" ]; then
     install)
       case "${FAKE_AGY_PLUGIN_MODE:-ok}" in
         fail) echo "boom: simulated plugin install failure" >&2; exit 1 ;;
+        # tamper-stage: stage the copy, then add a stray file (post-install
+        # verification must catch a staged tree that is not pristine).
         *)
           if [ -n "$FAKE_STATE_DIR" ]; then
             echo "$3" >> "$FAKE_STATE_DIR/plugin-installs"
@@ -26,18 +28,40 @@ if [ "$1" = "plugin" ]; then
           tmp_base="${TMPDIR:-/tmp}"
           tmp_base="${tmp_base%/}"
           case "$HOME" in
-            "$tmp_base"/*|/tmp/*)
+            "$tmp_base"/*|/tmp/*|/var/folders/*|/private/var/folders/*)
               if [ -d "$3" ] && [ "${FAKE_AGY_PLUGIN_MODE:-ok}" != "no-stage" ]; then
                 name=$(basename "$(CDPATH='' cd -- "$3" && pwd -P)")
                 dest="$HOME/.gemini/config/plugins/$name"
                 rm -rf "$dest"
                 mkdir -p "$HOME/.gemini/config/plugins"
                 cp -R "$3" "$dest"
+                if [ "${FAKE_AGY_PLUGIN_MODE:-ok}" = "tamper-stage" ]; then
+                  echo tampered >> "$dest/plugin.json.tampered"
+                fi
               fi ;;
           esac
           echo "installed plugin from $3"
           exit 0 ;;
       esac ;;
+    uninstall)
+      # Emulate real agy: remove $HOME/.gemini/config/plugins/<name>. Same
+      # temp-HOME guard as install — never touches the developer's ~/.gemini.
+      tmp_base="${TMPDIR:-/tmp}"
+      tmp_base="${tmp_base%/}"
+      case "$3" in ""|*/*|.|..) echo "error: invalid plugin name '$3'" >&2; exit 1 ;; esac
+      case "$HOME" in
+        "$tmp_base"/*|/tmp/*|/var/folders/*|/private/var/folders/*)
+          if [ -d "$HOME/.gemini/config/plugins/$3" ]; then
+            rm -rf "$HOME/.gemini/config/plugins/$3"
+            [ -n "$FAKE_STATE_DIR" ] && echo "$3" >> "$FAKE_STATE_DIR/plugin-uninstalls"
+            echo "uninstalled plugin $3"
+            exit 0
+          fi
+          echo "error: plugin $3 is not installed" >&2
+          exit 1 ;;
+      esac
+      echo "fake-agy: refusing to uninstall outside a temp HOME" >&2
+      exit 1 ;;
     validate)
       dir="${3:-.}"
       if [ -f "$dir/plugin.json" ]; then

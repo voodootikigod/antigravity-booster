@@ -20,12 +20,23 @@ rather than enumerate.
 - **Post-run integrity check**: before dispatch the scheduler snapshots both staged plugins and the host repo's git hooks dir. After each worker it re-checks them, and confirms the worktree still has hooks disabled. Any difference marks the run compromised (`report.compromised`) and blocks merge.
 - Every agb-spawned `agy` session is marked as a worker: builders get `AGB_WORKER_TICKET=<id>`, and review, prosecute, preflight, plan and brain get `AGB_WORKER_MODE=readonly`. Any other caller defaults to read-only.
 
+- **Plugin decision table** (T-PLUGIN-03-DOCTOR-HANDSHAKE): `agb bootstrap` and `agb doctor` evaluate the staged `adlc-antigravity` plugin with one shared evaluator, following the spec §4.4 decision table. The checks run in order: is the manifest valid, is the plugin older than the bundled 1.7.0, does the pinned tree digest match, and finally what contract a newer version declares.
+  - Doctor reports `not-installed`, `corrupt-manifest`, `outdated-plugin`, `corrupt-tree`, `incompatible-contract`, `compatible`, `compatible (newer-unpinned: vX)` or `tolerant (unconfirmed-contract)`.
+  - Bootstrap installs, upgrades, reinstalls, keeps, or refuses to touch the plugin to match that row. It re-checks every install, which must end up on a passing row.
+- **Policy guard self-test**: `agb doctor` runs the exact `hooks.json` command under `PATH=/usr/bin:/bin` against a temporary repo that rails `lib/lock.mjs`.
+  - The write to the rail must be denied with the exact reason, and a write to a non-rail file must produce empty output and exit 0.
+  - Doctor records `rails-guard-health.json` as an informational log only. Nothing reads it.
+- `agb doctor` now warns about an npm-global `agb` on PATH (prefer `~/.local/bin/agb`), about uses of the `AGB_HOOK_DISABLE` killswitch logged in `hooks.log`, and about leftover `probe-*` plugins.
+
 ### Changed
 - **The legacy `auto-approve-tests` hook is removed.** Interactive test runs in repos with active rails now ask for confirmation.
 - `package.json` `bin.agb` points at `dist/agb.mjs`, and `@adlc/*` are exact-pinned `devDependencies`.
 - AGENTS.md and docs/guidelines.md record the owner-approved doctrine amendment for vendoring pristine registry tarballs and fail-closed enforcement gates.
 - `readPluginContract` returns the spec §4.4 status set: `unreadable`, `corrupt` (invalid JSON, not an object, or no strict semver `version`), `tolerant` (no `adlcContract`; replaces `missing-field`), `compatible` and `incompatible`. Consumers keep their existing degrade behaviour.
 - In bundled mode `AGB_PLUGIN_DIR` is ignored. Unbundled runs can point the vendored-`adlc` lookup elsewhere with `AGB_PLUGIN_ROOT` (development and tests only).
+- `agb doctor` exits 1 (was 2) when any check fails. It now checks the staged plugin under `~/.gemini/config/plugins/adlc-antigravity` rather than the npm or sibling source copy.
+- An already-staged `adlc-antigravity` is no longer left in place unconditionally. Bootstrap now follows the decision table, so it upgrades an older or tampered plugin automatically, and refuses to touch a corrupt manifest or a newer incompatible plugin unless `--force-reinstall` is given.
+- `ADLC_ANTIGRAVITY_PLUGIN_PATH` is honoured only in unbundled runs with `AGB_DEV_ALLOW_UNVERIFIED_PLUGIN=1`.
 
 ## [0.8.0] — 2026-10-03
 

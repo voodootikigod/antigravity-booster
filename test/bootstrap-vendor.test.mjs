@@ -49,7 +49,7 @@ test('bootstrap: fresh HOME installs vendored adlc-antigravity 1.7.0 and writes 
     assert.equal(r.status, 0, r.stderr);
     const manifest = JSON.parse(readFileSync(join(stagedAdlc(ctx.home), 'plugin.json'), 'utf8'));
     assert.equal(manifest.version, '1.7.0');
-    assert.match(r.stdout, /installed adlc-antigravity plugin — plugin contract 1/);
+    assert.match(r.stdout, /installed adlc-antigravity: compatible/);
     assert.ok(installs(ctx.state)[0].endsWith('/adlc-antigravity'), 'agy got the staged adlc-antigravity copy');
 
     assert.equal(readFileSync(shimPath(ctx.home), 'utf8'), TERMINAL_SHIM_CONTENT);
@@ -60,7 +60,7 @@ test('bootstrap: fresh HOME installs vendored adlc-antigravity 1.7.0 and writes 
   }
 });
 
-test('bootstrap: an already-staged adlc-antigravity is left alone (notice) unless --force-reinstall', () => {
+test('bootstrap: an already-staged newer adlc-antigravity is kept (notice) unless --force-reinstall', () => {
   const ctx = setup();
   try {
     mkdirSync(stagedAdlc(ctx.home), { recursive: true });
@@ -69,7 +69,7 @@ test('bootstrap: an already-staged adlc-antigravity is left alone (notice) unles
 
     const r = runBootstrap(ctx);
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /notice: adlc-antigravity is already installed/);
+    assert.match(r.stdout, /notice: keeping adlc-antigravity 9\.9\.9: compatible \(newer-unpinned: v9\.9\.9\)/);
     assert.ok(!installs(ctx.state).some((p) => p.endsWith('/adlc-antigravity')), 'no adlc reinstall');
     assert.equal(JSON.parse(readFileSync(join(stagedAdlc(ctx.home), 'plugin.json'), 'utf8')).version, '9.9.9');
 

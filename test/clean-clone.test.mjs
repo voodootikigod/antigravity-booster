@@ -52,9 +52,9 @@ test('every agb subcommand answers --help with exit 0 and no side effects', () =
 
 test('doctor on an empty HOME fails cleanly (no uncaught exception)', () => {
   const r = agb(['doctor']);
-  assert.notEqual(r.status, 0, 'adlc-antigravity is not installed');
+  assert.equal(r.status, 1, 'doctor exits 1 on a failing check (spec §4.4)');
   assert.doesNotMatch(r.stderr + r.stdout, CRASH);
-  assert.match(r.stdout + r.stderr, /adlc-antigravity/);
+  assert.match(r.stdout, /adlc-antigravity plugin\s*\|\s*FAIL\s*\|\s*not-installed/);
 });
 
 test('MCP server answers initialize and tools/list with clean JSON-RPC on stdout', async () => {
