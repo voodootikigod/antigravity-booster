@@ -103,54 +103,13 @@ test('layout: agents/ holds the 3 converted subagents with name/description/tool
   }
 });
 
-test('layout: agents/*.md preserve the legacy config.yaml system_prompt and tools verbatim', () => {
-  for (const file of EXPECTED_AGENTS) {
-    const name = file.replace(/\.md$/, '');
-    const legacy = join(ROOT, '.agents', 'agents', name, 'config.yaml');
-    if (!existsSync(legacy)) continue; // T4 deletes .agents/
-    const yaml = readFileSync(legacy, 'utf8');
-    const prompt = JSON.parse(/system_prompt:\s*(".*")\s*$/m.exec(yaml)[1]);
-    const legacyTools = [...yaml.matchAll(/^\s*-\s*"([^"]+)"\s*$/gm)].map((m) => m[1]);
-    const fm = parseFrontmatter(readFileSync(join(ROOT, 'agents', file), 'utf8'));
-    assert.equal(fm.body.trim(), prompt);
-    assert.deepEqual(fm.fields.tools.split(',').map((t) => t.trim()), legacyTools);
-  }
-});
-
 test('layout: MCP server source lives at mcp/server.mjs', () => {
   assert.ok(existsSync(join(ROOT, 'mcp', 'server.mjs')));
 });
 
-test('layout: legacy .agents/plugins/agb is a thin proxy shim (no hooks, no MCP, D7)', () => {
-  const shim = join(ROOT, '.agents', 'plugins', 'agb');
-  const manifest = JSON.parse(readFileSync(join(shim, 'plugin.json'), 'utf8'));
-  assert.equal(manifest.name, 'agb-legacy-shim');
-  for (const gone of ['hooks.json', 'hooks', 'mcp_config.json', 'mcp']) {
-    assert.ok(!existsSync(join(shim, gone)), `legacy shim must not ship ${gone}`);
-  }
-  assert.ok(
-    !existsSync(join(shim, 'hooks', 'auto-approve-tests.mjs')),
-    'auto-approve-tests.mjs must be removed (D7: booster never emits allow)',
-  );
-  assert.ok(statSync(join(shim, 'sidecars')).isDirectory(), 'legacy sidecars/ stays until T4');
-});
-
-test('layout: legacy shim commands are one-line pointers, never executable code', () => {
-  const dir = join(ROOT, '.agents', 'plugins', 'agb', 'commands');
-  const rootCommands = new Set(readdirSync(join(ROOT, 'commands')));
-  for (const file of readdirSync(dir)) {
-    const fm = parseFrontmatter(readFileSync(join(dir, file), 'utf8'));
-    assert.ok(fm, `${file} must keep frontmatter`);
-    const lines = fm.body.split('\n').filter((l) => l.trim());
-    assert.equal(lines.length, 1, `${file} body must be a single pointer line`);
-    assert.ok(!fm.body.includes('```'), `${file} must not contain a code block`);
-    if (rootCommands.has(file)) {
-      assert.ok(lines[0].includes(`commands/${file}`), `${file} must point at root commands/${file}`);
-    } else {
-      const sub = file.replace(/^agb-/, '').replace(/\.md$/, '');
-      assert.ok(lines[0].includes(`~/.local/bin/agb ${sub}`), `${file} must point at ~/.local/bin/agb ${sub}`);
-    }
-  }
+test('layout: the legacy .agents/ tree is gone (Appendix A D9); top-level sidecars/ is the dashboard source', () => {
+  assert.equal(existsSync(join(ROOT, '.agents')), false);
+  assert.ok(statSync(join(ROOT, 'sidecars')).isDirectory());
 });
 
 function agyAvailable() {

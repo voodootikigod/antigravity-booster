@@ -15,6 +15,313 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// lib/digest.mjs
+import { createHash as createHash3 } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+function collect(root, rel, excluded, out) {
+  const abs = rel ? path.join(root, ...rel) : root;
+  for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+    if (excluded.has(entry.name)) continue;
+    const segs = [...rel, entry.name];
+    const relpath = segs.join("/");
+    const full = path.join(root, ...segs);
+    if (entry.isSymbolicLink()) {
+      out.push({ relpath, payload: `l\0${fs.readlinkSync(full)}` });
+    } else if (entry.isDirectory()) {
+      collect(root, segs, excluded, out);
+    } else if (entry.isFile()) {
+      const cls = fs.statSync(full).mode & EXEC_BITS ? "x" : "f";
+      const h = createHash3("sha256").update(fs.readFileSync(full)).digest("hex");
+      out.push({ relpath, payload: `${cls}\0${h}` });
+    }
+  }
+}
+function computeDirectoryDigest(dir, { exclude = [] } = {}) {
+  if (typeof dir !== "string" || !dir) throw new TypeError("dir must be a non-empty string");
+  if (!fs.statSync(dir).isDirectory()) throw new Error(`Not a directory: ${dir}`);
+  const records = [];
+  collect(dir, [], new Set(exclude), records);
+  records.sort((a, b) => Buffer.compare(Buffer.from(a.relpath), Buffer.from(b.relpath)));
+  const hash = createHash3("sha256");
+  for (const r of records) hash.update(`${r.relpath}\0${r.payload}\0`);
+  return hash.digest("hex");
+}
+var EXEC_BITS;
+var init_digest = __esm({
+  "lib/digest.mjs"() {
+    EXEC_BITS = 73;
+  }
+});
+
+// lib/plugin-paths.mjs
+import { fileURLToPath } from "node:url";
+import { join as join16, dirname as dirname11, basename as basename5 } from "node:path";
+import { homedir, tmpdir as tmpdir2 } from "node:os";
+import {
+  existsSync as existsSync15,
+  readFileSync as readFileSync13,
+  realpathSync as realpathSync2,
+  mkdirSync as mkdirSync6,
+  mkdtempSync as mkdtempSync2,
+  rmSync as rmSync3,
+  writeFileSync as writeFileSync7,
+  chmodSync,
+  renameSync as renameSync3,
+  statSync,
+  readdirSync as readdirSync6,
+  copyFileSync as copyFileSync2,
+  readlinkSync,
+  symlinkSync
+} from "node:fs";
+import { execFileSync as execFileSync4 } from "node:child_process";
+import { createHash as createHash4 } from "node:crypto";
+function isBoosterPluginName(name) {
+  return typeof name === "string" && (name === BOOSTER_PLUGIN_NAME || name.startsWith(`${BOOSTER_PLUGIN_NAME}-`));
+}
+function resolvePluginRoot(startDir = dirname11(fileURLToPath(import.meta.url))) {
+  let curr = startDir;
+  while (curr && curr !== dirname11(curr)) {
+    const manifest = join16(curr, "plugin.json");
+    if (existsSync15(manifest)) {
+      try {
+        const parsed = JSON.parse(readFileSync13(manifest, "utf8"));
+        if (isBoosterPluginName(parsed?.name)) {
+          const canonicalRoot = curr;
+          if (process.env.PLUGIN_ROOT) {
+            try {
+              if (realpathSync2(process.env.PLUGIN_ROOT) === realpathSync2(canonicalRoot)) {
+                return process.env.PLUGIN_ROOT;
+              }
+            } catch {
+            }
+          }
+          return canonicalRoot;
+        }
+      } catch {
+      }
+    }
+    curr = dirname11(curr);
+  }
+  throw new Error(`Could not resolve antigravity-booster plugin root containing valid plugin.json from ${startDir}`);
+}
+function resolveAssetPath(relPath) {
+  return join16(resolvePluginRoot(), relPath);
+}
+function resolveAgyBinary(home = homedir()) {
+  const candidates = [
+    join16(home, ".local", "bin", "agy"),
+    "/opt/homebrew/bin/agy",
+    "/usr/local/bin/agy",
+    "/usr/bin/agy"
+  ];
+  for (const c of candidates) {
+    if (existsSync15(c)) return c;
+  }
+  return "agy";
+}
+function resolveTarBinary() {
+  for (const bin of ["/usr/bin/tar", "/bin/tar"]) {
+    if (existsSync15(bin)) return bin;
+  }
+  return "tar";
+}
+function pluginsDirFor(home = homedir()) {
+  return join16(home, ".gemini", "config", "plugins");
+}
+function childEnv(home) {
+  return home ? { ...process.env, HOME: home } : process.env;
+}
+function forwardToStderr(buf) {
+  if (buf && buf.length > 0) process.stderr.write(buf);
+}
+function isExcludedFromCopy(srcPath) {
+  return INSTALL_COPY_EXCLUSIONS.includes(basename5(srcPath));
+}
+function copyPluginTree(src, dst) {
+  mkdirSync6(dst, { recursive: true });
+  let entries;
+  try {
+    entries = readdirSync6(src, { withFileTypes: true });
+  } catch (err) {
+    if (isVanished(err)) return;
+    throw err;
+  }
+  for (const entry of entries) {
+    const from = join16(src, entry.name);
+    const to = join16(dst, entry.name);
+    if (isExcludedFromCopy(from)) continue;
+    try {
+      if (entry.isSymbolicLink()) symlinkSync(readlinkSync(from), to);
+      else if (entry.isDirectory()) copyPluginTree(from, to);
+      else if (entry.isFile()) copyFileSync2(from, to);
+    } catch (err) {
+      if (!isVanished(err)) throw err;
+    }
+  }
+}
+function safePluginInstall(sourceDir, targetPluginName, options = {}) {
+  const home = options.home ?? homedir();
+  let tmpRoot;
+  try {
+    if (!sourceDir || !existsSync15(sourceDir)) {
+      return { ok: false, error: `Source directory does not exist: ${sourceDir}` };
+    }
+    if (!targetPluginName || targetPluginName !== basename5(targetPluginName) || targetPluginName.startsWith(".")) {
+      return { ok: false, error: `Invalid target plugin name: ${targetPluginName}` };
+    }
+    const pluginsParent = pluginsDirFor(home);
+    mkdirSync6(pluginsParent, { recursive: true });
+    const stagedDir = join16(pluginsParent, targetPluginName);
+    if (existsSync15(stagedDir) && realpathSync2(sourceDir) === realpathSync2(stagedDir)) {
+      log(`${targetPluginName} is already running from staged plugin directory; skipping self-install.`);
+      return { ok: true, skipped: true };
+    }
+    tmpRoot = mkdtempSync2(join16(options.tmpParent ?? tmpdir2(), "agy-staging-"));
+    const tmpTarget = join16(tmpRoot, targetPluginName);
+    copyPluginTree(sourceDir, tmpTarget);
+    const agyBin = options.agyBin ?? resolveAgyBinary(home);
+    try {
+      const out = execFileSync4(agyBin, ["plugin", "install", tmpTarget], {
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: AGY_INSTALL_TIMEOUT_MS,
+        env: childEnv(options.home)
+      });
+      forwardToStderr(out);
+    } catch (err) {
+      forwardToStderr(err.stdout);
+      forwardToStderr(err.stderr);
+      return { ok: false, error: `agy plugin install failed for ${targetPluginName}: ${err.message}` };
+    }
+    if (!existsSync15(join16(stagedDir, "plugin.json"))) {
+      return { ok: false, error: `agy plugin install reported success but ${join16(stagedDir, "plugin.json")} is missing` };
+    }
+    return { ok: true, skipped: false };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    if (tmpRoot) rmSync3(tmpRoot, { recursive: true, force: true });
+  }
+}
+function sha512Integrity(file) {
+  return "sha512-" + createHash4("sha512").update(readFileSync13(file)).digest("base64");
+}
+function validateTarEntries(tarBin, tarballPath) {
+  const listOut = execFileSync4(tarBin, ["-tzf", tarballPath], {
+    encoding: "utf8",
+    timeout: TAR_LIST_TIMEOUT_MS,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  for (const entry of listOut.split("\n")) {
+    const trimmed2 = entry.trim();
+    if (!trimmed2) continue;
+    if (!trimmed2.startsWith("package/") || trimmed2.includes("..") || trimmed2.startsWith("/")) {
+      return `Invalid entry path in tarball: ${trimmed2}`;
+    }
+  }
+  const verbose = execFileSync4(tarBin, ["-tvzf", tarballPath], {
+    encoding: "utf8",
+    timeout: TAR_LIST_TIMEOUT_MS,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  for (const line of verbose.split("\n")) {
+    if (line.startsWith("l") || line.startsWith("h")) {
+      return `Link entries are not allowed in tarball: ${line.trim()}`;
+    }
+  }
+  return null;
+}
+function installPluginTarball({ tarballPath, integrity, pluginName, home, agyBin, tmpParent, tamperedError } = {}) {
+  let tmpRoot;
+  try {
+    if (!tarballPath || !existsSync15(tarballPath)) {
+      return { ok: false, error: `Vendored tarball missing: ${tarballPath}` };
+    }
+    if (sha512Integrity(tarballPath) !== integrity) {
+      return { ok: false, error: tamperedError ?? `tarball-integrity-mismatch: ${tarballPath}` };
+    }
+    const tarBin = resolveTarBinary();
+    const invalid3 = validateTarEntries(tarBin, tarballPath);
+    if (invalid3) return { ok: false, error: invalid3 };
+    tmpRoot = mkdtempSync2(join16(tmpParent ?? tmpdir2(), "agy-adlc-staging-"));
+    const extractDir = join16(tmpRoot, pluginName);
+    mkdirSync6(extractDir, { recursive: true });
+    execFileSync4(tarBin, ["-xzf", tarballPath, "-C", extractDir, "--strip-components=1"], {
+      timeout: TAR_EXTRACT_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    return safePluginInstall(extractDir, pluginName, { home, agyBin, tmpParent });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    if (tmpRoot) rmSync3(tmpRoot, { recursive: true, force: true });
+  }
+}
+function installAdlcAntigravityFromVendor(options = {}) {
+  try {
+    const tarballPath = options.tarballPath ?? resolveAssetPath(VENDORED_ADLC_ANTIGRAVITY_TARBALL);
+    return installPluginTarball({
+      tarballPath,
+      integrity: PINNED_ADLC_ANTIGRAVITY_INTEGRITY,
+      pluginName: ADLC_ANTIGRAVITY_PLUGIN_NAME,
+      home: options.home,
+      agyBin: options.agyBin,
+      tmpParent: options.tmpParent,
+      tamperedError: "vendored-adlc-antigravity-tampered"
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+function installTerminalShim({ home = homedir(), force = false } = {}) {
+  const binDir = join16(home, ".local", "bin");
+  const shimPath = join16(binDir, "agb");
+  try {
+    if (existsSync15(shimPath)) {
+      const current = readFileSync13(shimPath, "utf8");
+      if (current === TERMINAL_SHIM_CONTENT) {
+        if ((statSync(shimPath).mode & 511) !== 493) chmodSync(shimPath, 493);
+        return { ok: true, action: "unchanged", path: shimPath };
+      }
+      if (!force) {
+        log(`warning: ${shimPath} exists with different content; leaving it untouched (re-run with --force-reinstall to overwrite)`);
+        return { ok: true, action: "skipped", path: shimPath };
+      }
+    }
+    mkdirSync6(binDir, { recursive: true });
+    const tmpPath = join16(binDir, `.agb.tmp-${process.pid}-${Date.now()}`);
+    try {
+      writeFileSync7(tmpPath, TERMINAL_SHIM_CONTENT, { mode: 493, flag: "wx" });
+      chmodSync(tmpPath, 493);
+      renameSync3(tmpPath, shimPath);
+    } catch (err) {
+      rmSync3(tmpPath, { force: true });
+      throw err;
+    }
+    return { ok: true, action: "written", path: shimPath };
+  } catch (err) {
+    return { ok: false, error: `could not install terminal shim at ${shimPath}: ${err.message}` };
+  }
+}
+var BUNDLED_ADLC_ANTIGRAVITY_VERSION, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, VENDORED_ADLC_ANTIGRAVITY_TARBALL, BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, INSTALL_COPY_EXCLUSIONS, AGY_INSTALL_TIMEOUT_MS, TAR_LIST_TIMEOUT_MS, TAR_EXTRACT_TIMEOUT_MS, TERMINAL_SHIM_CONTENT, log, isVanished;
+var init_plugin_paths = __esm({
+  "lib/plugin-paths.mjs"() {
+    BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
+    PINNED_ADLC_ANTIGRAVITY_INTEGRITY = "sha512-vCI7U5AeAkTuvzyXH59JdVyjy7Qj6abKhopUkM/ydGhKhU2wL7GD1eeXjPT2N2mmGENfeijbdks2Ez3X/hQZWA==";
+    VENDORED_ADLC_ANTIGRAVITY_TARBALL = `vendor/cache/adlc-antigravity-${BUNDLED_ADLC_ANTIGRAVITY_VERSION}.tgz`;
+    BOOSTER_PLUGIN_NAME = "antigravity-booster";
+    ADLC_ANTIGRAVITY_PLUGIN_NAME = "adlc-antigravity";
+    INSTALL_COPY_EXCLUSIONS = Object.freeze(["node_modules", ".worktrees", ".git"]);
+    AGY_INSTALL_TIMEOUT_MS = 6e4;
+    TAR_LIST_TIMEOUT_MS = 15e3;
+    TAR_EXTRACT_TIMEOUT_MS = 3e4;
+    TERMINAL_SHIM_CONTENT = '#!/bin/sh\nexec /bin/sh "${HOME}/.gemini/config/plugins/antigravity-booster/bin/node-launcher.sh" dist/agb.mjs "$@"\n';
+    log = (msg) => process.stderr.write(`${msg}
+`);
+    isVanished = (err) => err?.code === "ENOENT";
+  }
+});
+
 // lib/status.mjs
 var status_exports = {};
 __export(status_exports, {
@@ -236,12 +543,12 @@ watching (updated ${(/* @__PURE__ */ new Date()).toISOString()})`);
   };
   const initial = tick();
   if (initial !== false) return initial;
-  return new Promise((resolve18) => {
+  return new Promise((resolve19) => {
     const timer = setInterval(() => {
       const code = tick();
       if (code !== false) {
         clearInterval(timer);
-        resolve18(code);
+        resolve19(code);
       }
     }, intervalMs);
   });
@@ -345,18 +652,921 @@ var init_status = __esm({
   }
 });
 
+// lib/migration-lock.mjs
+import {
+  mkdirSync as mkdirSync18,
+  readFileSync as readFileSync24,
+  writeFileSync as writeFileSync18,
+  renameSync as renameSync8,
+  rmSync as rmSync14,
+  existsSync as existsSync29
+} from "node:fs";
+import { join as join32, basename as basename9 } from "node:path";
+import { homedir as homedir8 } from "node:os";
+import { execFileSync as execFileSync15 } from "node:child_process";
+import { randomBytes as randomBytes3 } from "node:crypto";
+function boosterDataDir2(home = homedir8()) {
+  return join32(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster");
+}
+function migrationLockDir(home = homedir8()) {
+  return join32(boosterDataDir2(home), MIGRATION_LOCK_DIRNAME);
+}
+function migrationStatePath(home = homedir8()) {
+  return join32(boosterDataDir2(home), MIGRATION_STATE_FILENAME);
+}
+function parseProcStatStartTime(content) {
+  if (typeof content !== "string") return null;
+  const lastParen = content.lastIndexOf(")");
+  if (lastParen === -1) return null;
+  const fields = content.slice(lastParen + 1).trim().split(/\s+/);
+  const ticks = fields[19];
+  return ticks && /^\d+$/.test(ticks) ? ticks : null;
+}
+function getProcessStartTime3(pid, deps = defaultDeps()) {
+  try {
+    if (deps.platform === "linux") return parseProcStatStartTime(deps.readFile(`/proc/${pid}/stat`));
+    if (deps.platform === "darwin") {
+      const parsed = Date.parse(String(deps.exec("ps", ["-p", String(pid), "-o", "lstart="]) ?? "").trim());
+      return Number.isFinite(parsed) ? Math.floor(parsed) : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function isAlive2(holder, deps = defaultDeps()) {
+  if (!holder || typeof holder.pid !== "number" || !Number.isInteger(holder.pid) || holder.pid <= 0) return false;
+  try {
+    deps.kill(holder.pid, 0);
+  } catch (err) {
+    return err?.code !== "ESRCH";
+  }
+  const current = getProcessStartTime3(holder.pid, deps);
+  if (current === null || holder.startTime === void 0 || holder.startTime === null) return true;
+  if (deps.platform === "linux") return String(current) === String(holder.startTime);
+  const recorded = Number(holder.startTime);
+  return Number.isFinite(recorded) && Math.abs(Number(current) - recorded) <= DARWIN_START_TOLERANCE_MS;
+}
+function readLockMeta(lockDir) {
+  try {
+    const meta = JSON.parse(readFileSync24(join32(lockDir, "meta.json"), "utf8"));
+    return meta && typeof meta === "object" ? meta : null;
+  } catch {
+    return null;
+  }
+}
+function writeMetaAtomic(lockDir, meta) {
+  const tmp = join32(lockDir, `.meta.${process.pid}.${randomBytes3(4).toString("hex")}`);
+  writeFileSync18(tmp, JSON.stringify(meta), { mode: 384 });
+  renameSync8(tmp, join32(lockDir, "meta.json"));
+}
+function newToken(pid) {
+  return `${pid}:${Date.now()}:${randomBytes3(8).toString("hex")}`;
+}
+function holderMessage(holder) {
+  return `another agb migration holds the lock (pid ${holder?.pid ?? "unknown"}, started ${holder?.startedAt ?? "unknown"}). Wait for it to finish, or run \`agb migrate --break-lock\` if it is wedged.`;
+}
+function reclaimDeadLock(lockDir, holder, deps) {
+  const moved = `${lockDir}.stale.${process.pid}.${process.hrtime.bigint()}`;
+  try {
+    renameSync8(lockDir, moved);
+  } catch (err) {
+    if (err.code === "ENOENT") return;
+    throw err;
+  }
+  const grabbed = readLockMeta(moved);
+  if (grabbed && holder && grabbed.token === holder.token && !isAlive2(grabbed, deps)) {
+    rmSync14(moved, { recursive: true, force: true });
+    return;
+  }
+  try {
+    renameSync8(moved, lockDir);
+  } catch {
+  }
+  throw new MigrationLockError(holderMessage(grabbed ?? holder), "LOCK_HELD");
+}
+function acquireMigrationLock({ home = homedir8(), deps = defaultDeps(), maxAttempts = 3 } = {}) {
+  const lockDir = migrationLockDir(home);
+  mkdirSync18(boosterDataDir2(home), { recursive: true });
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      mkdirSync18(lockDir);
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      const holder = readLockMeta(lockDir);
+      if (holder === null) {
+        throw new MigrationLockError(holderMessage(null), "LOCK_HELD");
+      }
+      if (isAlive2(holder, deps)) throw new MigrationLockError(holderMessage(holder), "LOCK_HELD");
+      reclaimDeadLock(lockDir, holder, deps);
+      continue;
+    }
+    const token = newToken(process.pid);
+    writeMetaAtomic(lockDir, {
+      pid: process.pid,
+      startTime: getProcessStartTime3(process.pid, deps),
+      token,
+      startedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    return { lockDir, token, home };
+  }
+  throw new MigrationLockError("could not acquire the migration lock after repeated reclaim attempts; retry", "LOCK_CONTENDED");
+}
+function assertMigrationLockHeld(handle) {
+  const meta = handle?.lockDir ? readLockMeta(handle.lockDir) : null;
+  if (!meta || !handle.token || meta.token !== handle.token) {
+    throw new MigrationLockError("migration lock lost or replaced; halting before any further change", "LOCK_LOST");
+  }
+}
+function releaseMigrationLock(handle) {
+  const meta = handle?.lockDir ? readLockMeta(handle.lockDir) : null;
+  if (meta && meta.token === handle.token) {
+    rmSync14(handle.lockDir, { recursive: true, force: true });
+    return true;
+  }
+  return false;
+}
+function adoptMigrationLock({ home = homedir8(), token, deps = defaultDeps() } = {}) {
+  const lockDir = migrationLockDir(home);
+  const meta = readLockMeta(lockDir);
+  if (!meta || !token || meta.token !== token) {
+    throw new MigrationLockError("handover token does not match the migration lock", "TOKEN_MISMATCH");
+  }
+  writeMetaAtomic(lockDir, { ...meta, pid: process.pid, startTime: getProcessStartTime3(process.pid, deps), adoptedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  return { lockDir, token, home };
+}
+function invalidateMigrationLockToken(handle) {
+  const meta = handle?.lockDir ? readLockMeta(handle.lockDir) : null;
+  if (!meta || meta.token !== handle.token) return false;
+  writeMetaAtomic(handle.lockDir, { ...meta, token: `invalidated:${meta.token}` });
+  return true;
+}
+function breakMigrationLock({ home = homedir8(), confirmed = false, expectToken, deps = defaultDeps() } = {}) {
+  const lockDir = migrationLockDir(home);
+  if (!existsSync29(lockDir)) return { present: false, removed: false, holder: null, alive: false };
+  const holder = readLockMeta(lockDir);
+  const alive = holder ? isAlive2(holder, deps) : false;
+  if (!confirmed) return { present: true, removed: false, holder, alive };
+  if (expectToken !== void 0 && (holder?.token ?? null) !== expectToken) return { present: true, removed: false, holder, alive };
+  rmSync14(lockDir, { recursive: true, force: true });
+  return { present: true, removed: true, holder, alive };
+}
+function readMigrationState(home = homedir8()) {
+  const p = migrationStatePath(home);
+  if (!existsSync29(p)) return null;
+  const parsed = JSON.parse(readFileSync24(p, "utf8"));
+  if (!parsed || typeof parsed !== "object" || typeof parsed.state !== "string") {
+    throw new MigrationLockError(`${p} is not a valid migration state file`, "STATE_CORRUPT");
+  }
+  return parsed;
+}
+function writeMigrationState(home, state) {
+  const p = migrationStatePath(home);
+  mkdirSync18(boosterDataDir2(home), { recursive: true });
+  const tmp = `${p}.${process.pid}.${randomBytes3(4).toString("hex")}.tmp`;
+  writeFileSync18(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 384 });
+  renameSync8(tmp, p);
+  return state;
+}
+function clearMigrationState(home) {
+  rmSync14(migrationStatePath(home), { force: true });
+}
+function removeImportEntry(home, name) {
+  const p = join32(home, ".gemini", "config", "import_manifest.json");
+  if (!existsSync29(p)) return;
+  const m = JSON.parse(readFileSync24(p, "utf8"));
+  if (!Array.isArray(m?.imports)) return;
+  const kept = m.imports.filter((e) => e?.name !== name);
+  if (kept.length === m.imports.length) return;
+  const tmp = `${p}.${process.pid}.tmp`;
+  writeFileSync18(tmp, JSON.stringify({ ...m, imports: kept }, null, 2) + "\n");
+  renameSync8(tmp, p);
+}
+function removeUninstallerDir(dir) {
+  if (dir && basename9(dir).startsWith(UNINSTALLER_DIR_PREFIX)) rmSync14(dir, { recursive: true, force: true });
+}
+function finishUninstall({ home = homedir8(), token, uninstallerDir, agyBin, baseline, deps = defaultDeps(), uninstall } = {}) {
+  let handle;
+  try {
+    const state = readMigrationState(home);
+    if (state?.state !== "ROLLED_BACK_PENDING_UNINSTALL") {
+      return { ok: false, error: `refusing --finish-uninstall: state is ${state?.state ?? "INITIAL"}, not ROLLED_BACK_PENDING_UNINSTALL` };
+    }
+    if (baseline !== void 0 && baseline !== join32(state.baselineSnapshotDir ?? "", "pre-migration.baseline.json")) {
+      return { ok: false, error: `refusing --finish-uninstall: --baseline ${baseline} is not this migration's baseline` };
+    }
+    handle = adoptMigrationLock({ home, token, deps });
+    if (uninstallerDir) writeFileSync18(join32(uninstallerDir, "handover.ack"), `${process.pid}
+`);
+    const pluginDir = join32(home, ".gemini", "config", "plugins", "antigravity-booster");
+    if (existsSync29(pluginDir)) {
+      assertMigrationLockHeld(handle);
+      const run = uninstall ?? (() => execFileSync15(agyBin, ["plugin", "uninstall", "antigravity-booster"], {
+        stdio: ["ignore", "ignore", "pipe"],
+        env: { ...process.env, HOME: home },
+        timeout: 6e4
+      }));
+      try {
+        run();
+      } catch (err) {
+        return { ok: false, error: `agy plugin uninstall antigravity-booster failed: ${err.message}` };
+      }
+      rmSync14(pluginDir, { recursive: true, force: true });
+    }
+    removeImportEntry(home, "antigravity-booster");
+    assertMigrationLockHeld(handle);
+    writeMigrationState(home, { ...state, state: "ROLLED_BACK", rolledBackAt: (/* @__PURE__ */ new Date()).toISOString() });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  } finally {
+    if (handle) {
+      releaseMigrationLock(handle);
+      removeUninstallerDir(uninstallerDir);
+    }
+  }
+}
+var MIGRATION_LOCK_DIRNAME, MIGRATION_STATE_FILENAME, DARWIN_START_TOLERANCE_MS, MigrationLockError, defaultDeps, UNINSTALLER_DIR_PREFIX;
+var init_migration_lock = __esm({
+  "lib/migration-lock.mjs"() {
+    MIGRATION_LOCK_DIRNAME = ".migration.lock.d";
+    MIGRATION_STATE_FILENAME = "migration-state.json";
+    DARWIN_START_TOLERANCE_MS = 1e3;
+    MigrationLockError = class extends Error {
+      constructor(message, code) {
+        super(message);
+        this.name = "MigrationLockError";
+        this.code = code;
+      }
+    };
+    defaultDeps = () => ({
+      platform: process.platform,
+      readFile: (p) => readFileSync24(p, "utf8"),
+      exec: (cmd2, args) => execFileSync15(cmd2, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }),
+      kill: (pid, sig) => process.kill(pid, sig)
+    });
+    UNINSTALLER_DIR_PREFIX = "agb-uninstall-";
+  }
+});
+
+// lib/migrate.mjs
+var migrate_exports = {};
+__export(migrate_exports, {
+  HANDOVER_TIMEOUT_MS: () => HANDOVER_TIMEOUT_MS,
+  SNAPSHOT_SIZE_CAP_BYTES: () => SNAPSHOT_SIZE_CAP_BYTES,
+  breakLock: () => breakLock,
+  finishUninstallCommand: () => finishUninstallCommand,
+  isOwnedSkillLink: () => isOwnedSkillLink,
+  migrate: () => migrate,
+  parseValidateOutput: () => parseValidateOutput,
+  scanSkillSymlinks: () => scanSkillSymlinks,
+  treeSize: () => treeSize
+});
+import {
+  existsSync as existsSync30,
+  readFileSync as readFileSync25,
+  writeFileSync as writeFileSync19,
+  mkdirSync as mkdirSync19,
+  rmSync as rmSync15,
+  readdirSync as readdirSync13,
+  lstatSync as lstatSync14,
+  readlinkSync as readlinkSync3,
+  symlinkSync as symlinkSync5,
+  unlinkSync as unlinkSync8,
+  renameSync as renameSync9,
+  chmodSync as chmodSync4,
+  copyFileSync as copyFileSync5,
+  realpathSync as realpathSync10,
+  statSync as statSync8,
+  mkdtempSync as mkdtempSync8
+} from "node:fs";
+import { join as join33, dirname as dirname20, resolve as resolve17, sep as sep4, isAbsolute as isAbsolute9, delimiter } from "node:path";
+import { homedir as homedir9, tmpdir as tmpdir9 } from "node:os";
+import { execFileSync as execFileSync16, spawn as spawn4 } from "node:child_process";
+import { randomBytes as randomBytes4 } from "node:crypto";
+function paths(home) {
+  const data = boosterDataDir2(home);
+  return {
+    data,
+    snapshots: join33(data, "snapshots"),
+    plugins: pluginsDirFor(home),
+    importManifest: join33(home, ".gemini", "config", "import_manifest.json"),
+    skills: join33(home, ".gemini", "skills"),
+    shim: join33(home, ".local", "bin", "agb")
+  };
+}
+function newSnapshotDir(p) {
+  const stamp = `${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}-${randomBytes4(3).toString("hex")}`;
+  const dir = join33(p.snapshots, stamp);
+  mkdirSync19(dir, { recursive: true });
+  return dir;
+}
+function readJson(file, fallback) {
+  try {
+    return JSON.parse(readFileSync25(file, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+function writeJsonAtomic(file, value, mode = 420) {
+  mkdirSync19(dirname20(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${randomBytes4(3).toString("hex")}.tmp`;
+  writeFileSync19(tmp, JSON.stringify(value, null, 2) + "\n", { mode });
+  renameSync9(tmp, file);
+}
+function treeSize(dir) {
+  let total = 0;
+  for (const e of readdirSync13(dir, { withFileTypes: true })) {
+    if (INSTALL_COPY_EXCLUSIONS.includes(e.name)) continue;
+    const full = join33(dir, e.name);
+    if (e.isDirectory()) total += treeSize(full);
+    else if (e.isFile()) total += statSync8(full).size;
+  }
+  return total;
+}
+function digestOrNull(dir) {
+  try {
+    return existsSync30(dir) ? computeDirectoryDigest(dir) : null;
+  } catch {
+    return null;
+  }
+}
+function parseValidateOutput(text) {
+  const counts = {};
+  const clean = String(text ?? "").replace(ANSI_SGR, "");
+  for (const m of clean.matchAll(/^\s*✔\s+(\w+)\s*:\s*(\d+)\s+processed/gm)) counts[m[1]] = Number(m[2]);
+  return counts;
+}
+function agyValidate(agyBin, dir, home) {
+  try {
+    const out = execFileSync16(agyBin, ["plugin", "validate", dir], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 6e4,
+      env: { ...process.env, HOME: home }
+    });
+    return { ok: true, counts: parseValidateOutput(out) };
+  } catch (err) {
+    return { ok: false, error: `agy plugin validate ${dir} failed: ${String(err.stderr || err.message).trim()}` };
+  }
+}
+function validateBooster(agyBin, dir, home) {
+  const v = agyValidate(agyBin, dir, home);
+  if (!v.ok) return v;
+  const missing = BOOSTER_CATEGORIES.filter((c) => !(v.counts[c] > 0));
+  return missing.length ? { ok: false, error: `agy plugin validate ${dir} is missing component categories: ${missing.join(", ")}` } : v;
+}
+function readImports(p) {
+  if (!existsSync30(p.importManifest)) return null;
+  let m;
+  try {
+    m = JSON.parse(readFileSync25(p.importManifest, "utf8"));
+  } catch (e) {
+    throw new MigrateError(`${p.importManifest} is not valid JSON (${e.message}); fix or restore it, then re-run`);
+  }
+  if (!m || typeof m !== "object" || !Array.isArray(m.imports)) {
+    throw new MigrateError(`${p.importManifest} has no imports[] array; fix or restore it, then re-run`);
+  }
+  return m;
+}
+function ourEntries(p) {
+  return (readImports(p)?.imports ?? []).filter((e) => PLUGIN_NAMES.includes(e?.name));
+}
+function restoreImportEntries(p, entries, { keep = [] } = {}) {
+  const m = readImports(p);
+  if (!m && entries.length === 0) return;
+  const base = m ?? { imports: [] };
+  const others = base.imports.filter((e) => !PLUGIN_NAMES.includes(e?.name) || keep.includes(e?.name));
+  const restored = entries.filter((e) => !keep.includes(e?.name));
+  writeJsonAtomic(p.importManifest, { ...base, imports: [...others, ...restored] });
+}
+function scanSkillSymlinks(skillsDir) {
+  if (!existsSync30(skillsDir)) return [];
+  const links = [];
+  for (const e of readdirSync13(skillsDir, { withFileTypes: true })) {
+    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync3(join33(skillsDir, e.name)) });
+  }
+  return links.sort((a, b) => a.name.localeCompare(b.name));
+}
+function npmGlobalRoot() {
+  try {
+    return execFileSync16("npm", ["root", "-g"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 1e4 }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+function realOrResolved(p) {
+  try {
+    return realpathSync10(p);
+  } catch {
+    return p;
+  }
+}
+function boosterCheckoutFor(target) {
+  let dir = dirname20(target);
+  while (dir && dir !== dirname20(dir)) {
+    const pkg = join33(dir, "package.json");
+    if (existsSync30(pkg) && readJson(pkg, {})?.name === BOOSTER_PLUGIN_NAME) return dir;
+    dir = dirname20(dir);
+  }
+  return null;
+}
+function isOwnedSkillLink(link, { skillsDir, home, npmRoot }) {
+  const raw = isAbsolute9(link.target) ? link.target : resolve17(skillsDir, link.target);
+  const target = realOrResolved(raw);
+  const roots = [
+    join33(pluginsDirFor(home), BOOSTER_PLUGIN_NAME),
+    join33(pluginsDirFor(home), ADLC_ANTIGRAVITY_PLUGIN_NAME)
+  ];
+  if (npmRoot) roots.push(join33(npmRoot, BOOSTER_PLUGIN_NAME));
+  if ([raw, target].some((t) => roots.some((r) => isUnder(t, realOrResolved(r)) || isUnder(t, r)))) return true;
+  if ([raw, target].some((t) => t.split(sep4).join("/").includes("/node_modules/@adlc/antigravity/") || t.split(sep4).join("/").endsWith("/node_modules/@adlc/antigravity"))) return true;
+  for (const t of [raw, target]) {
+    const checkout = boosterCheckoutFor(t);
+    if (checkout && isUnder(t, join33(checkout, "skills"))) return true;
+  }
+  return false;
+}
+function recreateSymlinks(p, links, log2) {
+  mkdirSync19(p.skills, { recursive: true });
+  for (const { name, target } of links) {
+    const at = join33(p.skills, name);
+    let present = false;
+    try {
+      lstatSync14(at);
+      present = true;
+    } catch {
+    }
+    if (present) continue;
+    const resolved = isAbsolute9(target) ? target : resolve17(p.skills, target);
+    if (!existsSync30(resolved)) {
+      log2(`Notice: Symlink target ${target} missing; skipping dangling link`);
+      continue;
+    }
+    symlinkSync5(target, at);
+  }
+}
+function restorePluginDir(p, name, fromDir) {
+  const dest = join33(p.plugins, name);
+  const tmp = join33(p.plugins, `.${name}.restore-${process.pid}-${randomBytes4(3).toString("hex")}`);
+  mkdirSync19(p.plugins, { recursive: true });
+  copyPluginTree(fromDir, tmp);
+  rmSync15(dest, { recursive: true, force: true });
+  renameSync9(tmp, dest);
+}
+function agyUninstall(agyBin, name, home) {
+  execFileSync16(agyBin, ["plugin", "uninstall", name], {
+    stdio: ["ignore", "ignore", "pipe"],
+    timeout: 6e4,
+    env: { ...process.env, HOME: home }
+  });
+}
+function step3Snapshot(ctx, state) {
+  const { p, home } = ctx;
+  for (const name of PLUGIN_NAMES) {
+    const dir = join33(p.plugins, name);
+    if (existsSync30(dir) && treeSize(dir) > SNAPSHOT_SIZE_CAP_BYTES) {
+      throw new MigrateError(`staged plugin ${dir} exceeds ${SNAPSHOT_SIZE_CAP_BYTES / 1024 / 1024} MB after excluding ${INSTALL_COPY_EXCLUSIONS.join(", ")}; remove large files from it (or reinstall it cleanly) and re-run agb migrate`);
+    }
+  }
+  for (const name of PLUGIN_NAMES) {
+    const present = INSTALL_COPY_EXCLUSIONS.filter((x) => existsSync30(join33(p.plugins, name, x)));
+    if (present.length) {
+      ctx.warn(`warning: ${join33(p.plugins, name)} contains ${present.join(", ")}; these are not snapshotted (spec D13) and will not come back on rollback. Copy them elsewhere first if you need them.`);
+    }
+  }
+  const snap = newSnapshotDir(p);
+  const plugins = {};
+  for (const name of PLUGIN_NAMES) {
+    const dir = join33(p.plugins, name);
+    plugins[name] = { previouslyAbsent: !existsSync30(dir) };
+    if (existsSync30(dir)) copyPluginTree(dir, join33(snap, "plugins", name));
+  }
+  const shimPreviouslyAbsent = !existsSync30(p.shim);
+  if (!shimPreviouslyAbsent) {
+    mkdirSync19(join33(snap, "shim"), { recursive: true });
+    copyFileSync5(p.shim, join33(snap, "shim", "agb"));
+  }
+  const importEntries = ourEntries(p);
+  writeJsonAtomic(join33(snap, "import_manifest.json"), { imports: importEntries });
+  const links = scanSkillSymlinks(p.skills);
+  const next = { ...state ?? {}, snapshotDir: snap, startedAt: (/* @__PURE__ */ new Date()).toISOString() };
+  if (!next.baselineSnapshotDir) {
+    const baseline = {
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      plugins,
+      shimPreviouslyAbsent,
+      importEntries,
+      originalSkillSymlinks: links,
+      excludedPaths: [...INSTALL_COPY_EXCLUSIONS]
+    };
+    const file = join33(snap, "pre-migration.baseline.json");
+    writeFileSync19(file, JSON.stringify(baseline, null, 2) + "\n", { mode: 292, flag: "wx" });
+    next.baselineSnapshotDir = snap;
+    next.hasEverMigrated = false;
+  }
+  return writeMigrationState(home, { ...next, state: "SNAPSHOT_CREATED" });
+}
+function step4RecordSymlinks(ctx, state) {
+  const { p, home } = ctx;
+  const baseline = readBaseline(state);
+  const opts = { skillsDir: p.skills, home, npmRoot: ctx.npmRoot };
+  const owned = scanSkillSymlinks(p.skills).filter((l) => isOwnedSkillLink(l, opts));
+  const known = new Set(baseline.originalSkillSymlinks.map((l) => `${l.name}\0${l.target}`));
+  const secondary = owned.filter((l) => !known.has(`${l.name}\0${l.target}`));
+  return writeMigrationState(home, {
+    ...state,
+    state: "SYMLINKS_RECORDED",
+    recordedSymlinks: owned,
+    ...secondary.length ? { secondarySymlinks: [...state.secondarySymlinks ?? [], ...secondary] } : {}
+  });
+}
+function step5Stage(ctx, state) {
+  const { p, home, agyBin, lock } = ctx;
+  assertMigrationLockHeld(lock);
+  state = writeMigrationState(home, { ...state, stagingStarted: true });
+  const r1 = ctx.installBooster(ctx.pluginRoot, BOOSTER_PLUGIN_NAME, { home, agyBin });
+  if (!r1?.ok) throw new MigrateError(`installing antigravity-booster failed: ${r1?.error ?? "unknown error"}`);
+  const r2 = ctx.installAdlc({ home, agyBin });
+  if (!r2?.ok) throw new MigrateError(`installing adlc-antigravity failed: ${r2?.error ?? "unknown error"}`);
+  const vb = validateBooster(agyBin, join33(p.plugins, BOOSTER_PLUGIN_NAME), home);
+  if (!vb.ok) throw new MigrateError(vb.error);
+  const va = agyValidate(agyBin, join33(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME), home);
+  if (!va.ok) throw new MigrateError(va.error);
+  const names = new Set(ourEntries(p).map((e) => e.name));
+  const missing = PLUGIN_NAMES.filter((n) => !names.has(n));
+  if (missing.length) throw new MigrateError(`${p.importManifest} has no entry for: ${missing.join(", ")}`);
+  assertMigrationLockHeld(lock);
+  return writeMigrationState(home, { ...state, state: "PLUGINS_STAGED" });
+}
+function step6Finalize(ctx, state) {
+  const { p, home, lock } = ctx;
+  assertMigrationLockHeld(lock);
+  for (const { name, target } of state.recordedSymlinks ?? []) {
+    const at = join33(p.skills, name);
+    try {
+      if (lstatSync14(at).isSymbolicLink() && readlinkSync3(at) === target) unlinkSync8(at);
+    } catch {
+    }
+  }
+  const shim = installTerminalShim({ home, force: true });
+  if (!shim.ok) throw new MigrateError(shim.error);
+  const adlcManifest = readJson(join33(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME, "plugin.json"), {});
+  assertMigrationLockHeld(lock);
+  return writeMigrationState(home, {
+    ...state,
+    state: "MIGRATED",
+    hasEverMigrated: true,
+    postMigrationSnapshots: {
+      boosterDigest: digestOrNull(join33(p.plugins, BOOSTER_PLUGIN_NAME)),
+      adlcAntigravityDigest: digestOrNull(join33(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME)),
+      adlcAntigravityVersion: adlcManifest?.version ?? BUNDLED_ADLC_ANTIGRAVITY_VERSION,
+      migratedAt: (/* @__PURE__ */ new Date()).toISOString()
+    }
+  });
+}
+function readBaseline(state) {
+  const file = join33(state?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
+  const b = readJson(file, null);
+  if (!b || typeof b !== "object" || !b.plugins || !Array.isArray(b.originalSkillSymlinks)) {
+    throw new MigrateError(`baseline snapshot ${file} is missing or unreadable; refusing to continue`);
+  }
+  return b;
+}
+function defaultUninstallerArgv(home) {
+  const staged = join33(pluginsDirFor(home), BOOSTER_PLUGIN_NAME);
+  return { argv: ["/bin/sh", join33(staged, "bin", "node-launcher.sh"), "dist/agb.mjs"], cwd: staged };
+}
+async function handOverUninstall(ctx) {
+  const { home, lock, agyBin, log: log2, err } = ctx;
+  const dir = mkdtempSync8(join33(ctx.tmpParent ?? tmpdir9(), UNINSTALLER_DIR_PREFIX));
+  chmodSync4(dir, 448);
+  const launcher = ctx.uninstaller ?? defaultUninstallerArgv(home);
+  const baselineFile = join33(readMigrationState(home)?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
+  const args = [
+    ...launcher.argv,
+    "migrate",
+    "--finish-uninstall",
+    "--baseline",
+    baselineFile,
+    "--token",
+    lock.token,
+    "--uninstaller-dir",
+    dir,
+    "--agy-bin",
+    agyBin
+  ];
+  const quoted = args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(" ");
+  const script = join33(dir, "uninstall.sh");
+  writeFileSync19(script, `#!/bin/sh
+cd '${String(launcher.cwd ?? home).replace(/'/g, `'\\''`)}' || exit 1
+exec ${quoted}
+`, { mode: 448 });
+  const child = spawn4("/bin/sh", [script], { detached: true, stdio: "ignore", env: { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} } });
+  let exited = false;
+  const exitedP = new Promise((r) => child.on("exit", () => {
+    exited = true;
+    r();
+  }));
+  child.unref();
+  const deadline = Date.now() + (ctx.handoverTimeoutMs ?? HANDOVER_TIMEOUT_MS);
+  let acked = false;
+  while (Date.now() < deadline) {
+    if (!existsSync30(dir)) {
+      if (readMigrationState(home)?.state === "ROLLED_BACK") {
+        log2("Rollback complete: antigravity-booster uninstalled.");
+        return 0;
+      }
+      err("error: the detached uninstaller could not remove antigravity-booster; state is ROLLED_BACK_PENDING_UNINSTALL. Re-run `agb migrate --rollback` to retry.");
+      return 1;
+    }
+    if (existsSync30(join33(dir, "handover.ack")) && !acked) {
+      acked = true;
+      log2("The detached uninstaller has taken over the lock and is removing antigravity-booster.");
+    }
+    await sleep3(50);
+  }
+  if (acked) {
+    log2("If it fails, state stays ROLLED_BACK_PENDING_UNINSTALL and `agb migrate --rollback` retries.");
+    return 0;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+  }
+  if (!exited) await Promise.race([exitedP, sleep3(5e3)]);
+  invalidateMigrationLockToken(lock);
+  rmSync15(lock.lockDir, { recursive: true, force: true });
+  rmSync15(dir, { recursive: true, force: true });
+  err("error: the detached uninstaller did not acknowledge the lock handover within 2.0s; state is ROLLED_BACK_PENDING_UNINSTALL. Re-run `agb migrate --rollback` to retry.");
+  return 1;
+}
+function agbElsewhereOnPath(p, env) {
+  for (const d of String(env.PATH ?? "").split(delimiter).filter(Boolean)) {
+    const c = join33(d, "agb");
+    if (existsSync30(c) && realOrResolved(c) !== realOrResolved(p.shim)) return true;
+  }
+  return false;
+}
+async function restoreFromBaseline(ctx, state) {
+  const { p, home, lock, agyBin, log: log2, warn } = ctx;
+  const baseline = readBaseline(state);
+  const base = state.baselineSnapshotDir;
+  const boosterWasAbsent = baseline.plugins[BOOSTER_PLUGIN_NAME]?.previouslyAbsent === true;
+  if (boosterWasAbsent && baseline.shimPreviouslyAbsent && !agbElsewhereOnPath(p, ctx.env)) {
+    warn("WARNING: after this rollback no `agb` command will remain on PATH (antigravity-booster was not installed before migration). Reinstall with `npm install -g antigravity-booster` or the git-URL plugin install.");
+  }
+  assertMigrationLockHeld(lock);
+  state = writeMigrationState(home, { ...state, state: "ROLLBACK_IN_PROGRESS", rollbackStartedAt: (/* @__PURE__ */ new Date()).toISOString() });
+  recreateSymlinks(p, baseline.originalSkillSymlinks, log2);
+  assertMigrationLockHeld(lock);
+  if (baseline.shimPreviouslyAbsent) rmSync15(p.shim, { force: true });
+  else {
+    mkdirSync19(dirname20(p.shim), { recursive: true });
+    copyFileSync5(join33(base, "shim", "agb"), p.shim);
+    chmodSync4(p.shim, 493);
+  }
+  assertMigrationLockHeld(lock);
+  const adlc = ADLC_ANTIGRAVITY_PLUGIN_NAME;
+  if (baseline.plugins[adlc]?.previouslyAbsent) {
+    if (existsSync30(join33(p.plugins, adlc))) {
+      try {
+        agyUninstall(agyBin, adlc, home);
+      } catch (e) {
+        warn(`warning: agy plugin uninstall ${adlc} failed (${e.message}); removing its directory`);
+      }
+      rmSync15(join33(p.plugins, adlc), { recursive: true, force: true });
+    }
+  } else restorePluginDir(p, adlc, join33(base, "plugins", adlc));
+  if (!boosterWasAbsent) restorePluginDir(p, BOOSTER_PLUGIN_NAME, join33(base, "plugins", BOOSTER_PLUGIN_NAME));
+  assertMigrationLockHeld(lock);
+  restoreImportEntries(p, baseline.importEntries ?? [], { keep: boosterWasAbsent ? [BOOSTER_PLUGIN_NAME] : [] });
+  for (const name of PLUGIN_NAMES) {
+    const dir = join33(p.plugins, name);
+    if (existsSync30(dir) && !(name === BOOSTER_PLUGIN_NAME && boosterWasAbsent)) {
+      const v = agyValidate(agyBin, dir, home);
+      if (!v.ok) warn(`warning: restored ${name} did not validate: ${v.error}`);
+    }
+  }
+  if (!boosterWasAbsent) {
+    writeMigrationState(home, { ...state, state: "ROLLED_BACK", rolledBackAt: (/* @__PURE__ */ new Date()).toISOString() });
+    log2("Rollback complete: pre-migration plugins, terminal shim and skill links restored.");
+    return 0;
+  }
+  writeMigrationState(home, { ...state, state: "ROLLED_BACK_PENDING_UNINSTALL" });
+  ctx.keepLock = true;
+  return handOverUninstall(ctx);
+}
+function modifiedSinceMigration(ctx, state) {
+  const snap = state.postMigrationSnapshots ?? {};
+  const changed = [];
+  if (digestOrNull(join33(ctx.p.plugins, BOOSTER_PLUGIN_NAME)) !== snap.boosterDigest) changed.push(BOOSTER_PLUGIN_NAME);
+  if (digestOrNull(join33(ctx.p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME)) !== snap.adlcAntigravityDigest) changed.push(ADLC_ANTIGRAVITY_PLUGIN_NAME);
+  return changed;
+}
+async function rollbackLocked(ctx) {
+  const { home, log: log2, err } = ctx;
+  const state = readMigrationState(home);
+  if (!state) {
+    log2("No migration in progress or completed to roll back");
+    return 0;
+  }
+  switch (state.state) {
+    case "ROLLED_BACK":
+      log2("System is already rolled back to baseline");
+      return 0;
+    case "ROLLED_BACK_PENDING_UNINSTALL":
+      ctx.keepLock = true;
+      return handOverUninstall(ctx);
+    case "MIGRATED": {
+      const changed = modifiedSinceMigration(ctx, state);
+      if (changed.length && !ctx.forceRollback) {
+        err(`error: staged plugins changed since migration (${changed.join(", ")}). Rolling back would discard those changes; re-run with --force-rollback to proceed.`);
+        return 1;
+      }
+      return restoreFromBaseline(ctx, state);
+    }
+    default:
+      if (VIRGIN_RESET_STATES.has(state.state) && !state.hasEverMigrated && !state.stagingStarted) {
+        assertMigrationLockHeld(ctx.lock);
+        if (state.snapshotDir && isUnder(resolve17(state.snapshotDir), ctx.p.snapshots)) rmSync15(state.snapshotDir, { recursive: true, force: true });
+        clearMigrationState(home);
+        log2("Rolled back an incomplete migration: nothing live had changed; snapshot and state cleared.");
+        return 0;
+      }
+      return restoreFromBaseline(ctx, state);
+  }
+}
+async function migrateLocked(ctx) {
+  const { home, log: log2, err, p } = ctx;
+  const crashed = (s) => {
+    if (ctx.crashAfter === s.state) throw new MigrateError(`simulated crash after ${s.state}`);
+    return s;
+  };
+  let state = readMigrationState(home);
+  switch (state?.state) {
+    case void 0:
+      break;
+    case "MIGRATED":
+      if (!ctx.force) {
+        err("Migration already completed. Use --force to re-run, or --rollback to restore pre-migration state.");
+        return 1;
+      }
+      state = crashed(step3Snapshot(ctx, state));
+      break;
+    case "ROLLBACK_IN_PROGRESS":
+      err("Rollback was previously interrupted. Run 'agb migrate --rollback' to complete restoration before re-running migration.");
+      return 1;
+    case "ROLLED_BACK_PENDING_UNINSTALL":
+      if (existsSync30(join33(p.plugins, BOOSTER_PLUGIN_NAME))) {
+        log2("Notice: a previous rollback did not finish uninstalling antigravity-booster; finishing it now. Re-run `agb migrate` afterwards.");
+        ctx.keepLock = true;
+        return handOverUninstall(ctx);
+      }
+      state = writeMigrationState(home, { ...state, state: "ROLLED_BACK" });
+    // falls through: booster already gone, start clean
+    case "ROLLED_BACK":
+      writeJsonAtomic(join33(p.snapshots, `archived-state-${Date.now()}.json`), state);
+      clearMigrationState(home);
+      state = null;
+      break;
+    case "SNAPSHOT_CREATED":
+    case "SYMLINKS_RECORDED":
+    case "PLUGINS_STAGED":
+      log2(`Resuming migration from ${state.state}.`);
+      break;
+    default:
+      err(`error: unknown migration state ${JSON.stringify(state.state)}; run \`agb migrate --rollback\` or inspect ${p.data}`);
+      return 1;
+  }
+  if (!state) state = crashed(step3Snapshot(ctx, null));
+  if (state.state === "SNAPSHOT_CREATED") state = crashed(step4RecordSymlinks(ctx, state));
+  if (state.state === "SYMLINKS_RECORDED") state = crashed(step5Stage(ctx, state));
+  if (state.state === "PLUGINS_STAGED") state = step6Finalize(ctx, state);
+  log2(COMPLETION_NOTICE);
+  return 0;
+}
+function buildContext(opts) {
+  const home = opts.home ?? homedir9();
+  const out = opts.log ?? ((m) => process.stdout.write(`${m}
+`));
+  const errOut = opts.err ?? ((m) => process.stderr.write(`${m}
+`));
+  return {
+    ...opts,
+    home,
+    p: paths(home),
+    agyBin: opts.agyBin ?? resolveAgyBinary(home),
+    env: opts.env ?? process.env,
+    log: out,
+    err: errOut,
+    warn: opts.warn ?? errOut,
+    npmRoot: "npmRoot" in opts ? opts.npmRoot : npmGlobalRoot(),
+    installBooster: opts.installBooster ?? safePluginInstall,
+    installAdlc: opts.installAdlc ?? installAdlcAntigravityFromVendor
+  };
+}
+async function migrate(opts = {}) {
+  const ctx = buildContext(opts);
+  try {
+    ctx.pluginRoot = opts.pluginRoot ?? resolvePluginRoot();
+    if (!opts.rollback) {
+      const pre = validateBooster(ctx.agyBin, ctx.pluginRoot, ctx.home);
+      if (!pre.ok) {
+        ctx.err(`error: pre-flight validation failed: ${pre.error}`);
+        return 1;
+      }
+    }
+    ctx.lock = acquireMigrationLock({ home: ctx.home });
+  } catch (e) {
+    ctx.err(`error: ${e.message}`);
+    return 1;
+  }
+  try {
+    return opts.rollback ? await rollbackLocked(ctx) : await migrateLocked(ctx);
+  } catch (e) {
+    ctx.err(`error: ${e.message}`);
+    return 1;
+  } finally {
+    if (!ctx.keepLock) releaseMigrationLock(ctx.lock);
+  }
+}
+async function breakLock({ home = homedir9(), force = false, confirm, log: log2, err, deps } = {}) {
+  const out = log2 ?? ((m) => process.stdout.write(`${m}
+`));
+  const errOut = err ?? ((m) => process.stderr.write(`${m}
+`));
+  try {
+    const preview = breakMigrationLock({ home, deps });
+    if (!preview.present) {
+      out("No migration lock is held.");
+      return 0;
+    }
+    const h = preview.holder;
+    out(`Migration lock held by pid ${h?.pid ?? "unknown"} (started ${h?.startedAt ?? "unknown"}).`);
+    if (preview.alive) errOut(`WARNING: process ${h.pid} still appears to be running. Breaking its lock can corrupt an in-flight migration.`);
+    if (!force) {
+      const ok2 = confirm ? await confirm("Break the migration lock? [y/N] ") : false;
+      if (!ok2) {
+        errOut("Lock left in place (pass --force to skip the prompt).");
+        return 1;
+      }
+    }
+    const done = breakMigrationLock({ home, confirmed: true, expectToken: h?.token ?? null, deps });
+    if (!done.removed) {
+      errOut("error: the migration lock changed hands while waiting for confirmation; left in place. Re-run --break-lock.");
+      return 1;
+    }
+    out("Migration lock removed. Re-run `agb migrate` or `agb migrate --rollback`.");
+    return 0;
+  } catch (e) {
+    errOut(`error: ${e.message}`);
+    return 1;
+  }
+}
+function finishUninstallCommand({ home = homedir9(), token, uninstallerDir, agyBin, baseline, err } = {}) {
+  if (!baseline) {
+    (err ?? ((m) => process.stderr.write(`${m}
+`)))("error: --finish-uninstall requires --baseline <pre-migration.baseline.json>");
+    return 1;
+  }
+  const r = finishUninstall({ home, token, uninstallerDir, baseline, agyBin: agyBin ?? resolveAgyBinary(home) });
+  if (!r.ok) (err ?? ((m) => process.stderr.write(`${m}
+`)))(`error: ${r.error}`);
+  return r.ok ? 0 : 1;
+}
+var SNAPSHOT_SIZE_CAP_BYTES, HANDOVER_TIMEOUT_MS, PLUGIN_NAMES, BOOSTER_CATEGORIES, ANSI_SGR, VIRGIN_RESET_STATES, COMPLETION_NOTICE, MigrateError, isUnder, sleep3;
+var init_migrate = __esm({
+  "lib/migrate.mjs"() {
+    init_migration_lock();
+    init_plugin_paths();
+    init_digest();
+    SNAPSHOT_SIZE_CAP_BYTES = 100 * 1024 * 1024;
+    HANDOVER_TIMEOUT_MS = 2e3;
+    PLUGIN_NAMES = [BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME];
+    BOOSTER_CATEGORIES = ["skills", "agents", "commands", "mcpServers", "hooks"];
+    ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+    VIRGIN_RESET_STATES = /* @__PURE__ */ new Set(["SNAPSHOT_CREATED", "SYMLINKS_RECORDED"]);
+    COMPLETION_NOTICE = "Migration successful. Global npm package may be uninstalled: npm uninstall -g antigravity-booster. CLI commands remain available via ~/.local/bin/agb and slash commands (/agb-doctor, /agb-bootstrap, /agb-migrate).";
+    MigrateError = class extends Error {
+    };
+    isUnder = (child, parent) => child === parent || child.startsWith(parent.endsWith(sep4) ? parent : parent + sep4);
+    sleep3 = (ms) => new Promise((r) => setTimeout(r, ms));
+  }
+});
+
 // sidecars/server.mjs
 var server_exports = {};
 __export(server_exports, {
   serveSidecar: () => serveSidecar
 });
 import { createServer } from "node:http";
-import { readFileSync as readFileSync24, statSync as statSync8, existsSync as existsSync29, openSync as openSync11, readSync as readSync4, closeSync as closeSync11, writeFileSync as writeFileSync18, mkdirSync as mkdirSync18, createReadStream } from "node:fs";
-import { join as join32, dirname as dirname20 } from "node:path";
+import { readFileSync as readFileSync26, statSync as statSync9, existsSync as existsSync31, openSync as openSync11, readSync as readSync4, closeSync as closeSync11, writeFileSync as writeFileSync20, mkdirSync as mkdirSync20, createReadStream } from "node:fs";
+import { join as join34, dirname as dirname21 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 function serveSidecar(repoPath, port = 3333, token = null) {
-  const runJsonPath = join32(repoPath, ".booster", "run.json");
+  const runJsonPath = join34(repoPath, ".booster", "run.json");
   const handleRequest = async (req, res) => {
     const hostHeader = req.headers.host || "";
     let hostname3 = "";
@@ -396,20 +1606,20 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       let offset = Number(reqUrl.searchParams.get("offset")) || 0;
       let runId = null;
       let eventsPath = null;
-      if (existsSync29(runJsonPath)) {
+      if (existsSync31(runJsonPath)) {
         try {
-          const run = JSON.parse(readFileSync24(runJsonPath, "utf8"));
+          const run = JSON.parse(readFileSync26(runJsonPath, "utf8"));
           runId = String(run.runId || "").replace(/[^a-zA-Z0-9_-]/g, "");
-          eventsPath = join32(repoPath, ".booster", "logs", runId, "events.jsonl");
+          eventsPath = join34(repoPath, ".booster", "logs", runId, "events.jsonl");
         } catch (e) {
         }
       }
-      if (!eventsPath || !existsSync29(eventsPath)) {
+      if (!eventsPath || !existsSync31(eventsPath)) {
         res.writeHead(200, { "Content-Type": "application/json" });
         return res.end(JSON.stringify({ lines: [], newOffset: 0, runId, repo: repoPath }));
       }
       try {
-        const stats = statSync8(eventsPath);
+        const stats = statSync9(eventsPath);
         if (!Number.isFinite(offset) || offset < 0) offset = 0;
         let isReset = false;
         if (offset > stats.size) {
@@ -485,8 +1695,8 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       res.writeHead(403);
       return res.end("Forbidden");
     }
-    const filePath = join32(__dirname, safePath);
-    if (!existsSync29(filePath)) {
+    const filePath = join34(__dirname, safePath);
+    if (!existsSync31(filePath)) {
       res.writeHead(404);
       return res.end("Not found");
     }
@@ -497,7 +1707,7 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;";
       res.setHeader("Content-Security-Policy", csp);
       res.setHeader("Content-Type", contentType);
-      let html = readFileSync24(filePath, "utf8");
+      let html = readFileSync26(filePath, "utf8");
       return res.end(html);
     }
     res.setHeader("Content-Type", contentType);
@@ -510,7 +1720,7 @@ function serveSidecar(repoPath, port = 3333, token = null) {
     });
     s.pipe(res);
   };
-  return new Promise((resolve18, reject) => {
+  return new Promise((resolve19, reject) => {
     let isListening = false;
     const server = createServer(async (req, res) => {
       try {
@@ -533,20 +1743,20 @@ function serveSidecar(repoPath, port = 3333, token = null) {
     server.listen(port, "127.0.0.1", () => {
       isListening = true;
       console.log(`AGB Sidecar Server running at http://127.0.0.1:${server.address().port}`);
-      resolve18(server);
+      resolve19(server);
     });
   });
 }
 var __dirname;
 var init_server = __esm({
   "sidecars/server.mjs"() {
-    __dirname = dirname20(fileURLToPath5(import.meta.url));
+    __dirname = dirname21(fileURLToPath5(import.meta.url));
   }
 });
 
 // bin/agb.mjs
-import { readFileSync as readFileSync25, writeFileSync as writeFileSync19, mkdirSync as mkdirSync19, appendFileSync as appendFileSync3, existsSync as existsSync30 } from "node:fs";
-import { resolve as resolve17, join as join33 } from "node:path";
+import { readFileSync as readFileSync27, writeFileSync as writeFileSync21, mkdirSync as mkdirSync21, appendFileSync as appendFileSync3, existsSync as existsSync32 } from "node:fs";
+import { resolve as resolve18, join as join35 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // node_modules/@adlc/tickets/index.mjs
@@ -4153,7 +5363,7 @@ async function offerLegacyMigration(store, root, flags = {}, {
 `),
   ask,
   plan = migrationPlan,
-  migrate = migrateLegacyStore,
+  migrate: migrate2 = migrateLegacyStore,
   detect = detectTicketStore,
   key: key2 = null,
   allowUnsigned = false
@@ -4172,7 +5382,7 @@ async function offerLegacyMigration(store, root, flags = {}, {
     }
   }
   if (!/^y(?:es)?$/i.test(String(answer ?? "").trim())) return store;
-  migrate(root, { write: true, yes: true, key: key2, allowUnsigned });
+  migrate2(root, { write: true, yes: true, key: key2, allowUnsigned });
   return detect({ root, ticketStore: flags["ticket-store"], legacyTickets: flags.tickets });
 }
 
@@ -4393,302 +5603,9 @@ import crypto3 from "node:crypto";
 import { execFile as execFile2, execFileSync as execFileSync6, execSync, spawnSync as spawnSync3 } from "child_process";
 import { promisify } from "util";
 
-// lib/digest.mjs
-import { createHash as createHash3 } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-var EXEC_BITS = 73;
-function collect(root, rel, excluded, out) {
-  const abs = rel ? path.join(root, ...rel) : root;
-  for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
-    if (excluded.has(entry.name)) continue;
-    const segs = [...rel, entry.name];
-    const relpath = segs.join("/");
-    const full = path.join(root, ...segs);
-    if (entry.isSymbolicLink()) {
-      out.push({ relpath, payload: `l\0${fs.readlinkSync(full)}` });
-    } else if (entry.isDirectory()) {
-      collect(root, segs, excluded, out);
-    } else if (entry.isFile()) {
-      const cls = fs.statSync(full).mode & EXEC_BITS ? "x" : "f";
-      const h = createHash3("sha256").update(fs.readFileSync(full)).digest("hex");
-      out.push({ relpath, payload: `${cls}\0${h}` });
-    }
-  }
-}
-function computeDirectoryDigest(dir, { exclude = [] } = {}) {
-  if (typeof dir !== "string" || !dir) throw new TypeError("dir must be a non-empty string");
-  if (!fs.statSync(dir).isDirectory()) throw new Error(`Not a directory: ${dir}`);
-  const records = [];
-  collect(dir, [], new Set(exclude), records);
-  records.sort((a, b) => Buffer.compare(Buffer.from(a.relpath), Buffer.from(b.relpath)));
-  const hash = createHash3("sha256");
-  for (const r of records) hash.update(`${r.relpath}\0${r.payload}\0`);
-  return hash.digest("hex");
-}
-
-// lib/plugin-paths.mjs
-import { fileURLToPath } from "node:url";
-import { join as join16, dirname as dirname11, basename as basename5 } from "node:path";
-import { homedir, tmpdir as tmpdir2 } from "node:os";
-import {
-  existsSync as existsSync15,
-  readFileSync as readFileSync13,
-  realpathSync as realpathSync2,
-  mkdirSync as mkdirSync6,
-  mkdtempSync as mkdtempSync2,
-  rmSync as rmSync3,
-  writeFileSync as writeFileSync7,
-  chmodSync,
-  renameSync as renameSync3,
-  statSync,
-  readdirSync as readdirSync6,
-  copyFileSync as copyFileSync2,
-  readlinkSync,
-  symlinkSync
-} from "node:fs";
-import { execFileSync as execFileSync4 } from "node:child_process";
-import { createHash as createHash4 } from "node:crypto";
-var BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
-var PINNED_ADLC_ANTIGRAVITY_INTEGRITY = "sha512-vCI7U5AeAkTuvzyXH59JdVyjy7Qj6abKhopUkM/ydGhKhU2wL7GD1eeXjPT2N2mmGENfeijbdks2Ez3X/hQZWA==";
-var VENDORED_ADLC_ANTIGRAVITY_TARBALL = `vendor/cache/adlc-antigravity-${BUNDLED_ADLC_ANTIGRAVITY_VERSION}.tgz`;
-var BOOSTER_PLUGIN_NAME = "antigravity-booster";
-var ADLC_ANTIGRAVITY_PLUGIN_NAME = "adlc-antigravity";
-var INSTALL_COPY_EXCLUSIONS = Object.freeze(["node_modules", ".worktrees", ".git"]);
-var AGY_INSTALL_TIMEOUT_MS = 6e4;
-var TAR_LIST_TIMEOUT_MS = 15e3;
-var TAR_EXTRACT_TIMEOUT_MS = 3e4;
-var TERMINAL_SHIM_CONTENT = '#!/bin/sh\nexec /bin/sh "${HOME}/.gemini/config/plugins/antigravity-booster/bin/node-launcher.sh" dist/agb.mjs "$@"\n';
-var log = (msg) => process.stderr.write(`${msg}
-`);
-function isBoosterPluginName(name) {
-  return typeof name === "string" && (name === BOOSTER_PLUGIN_NAME || name.startsWith(`${BOOSTER_PLUGIN_NAME}-`));
-}
-function resolvePluginRoot(startDir = dirname11(fileURLToPath(import.meta.url))) {
-  let curr = startDir;
-  while (curr && curr !== dirname11(curr)) {
-    const manifest = join16(curr, "plugin.json");
-    if (existsSync15(manifest)) {
-      try {
-        const parsed = JSON.parse(readFileSync13(manifest, "utf8"));
-        if (isBoosterPluginName(parsed?.name)) {
-          const canonicalRoot = curr;
-          if (process.env.PLUGIN_ROOT) {
-            try {
-              if (realpathSync2(process.env.PLUGIN_ROOT) === realpathSync2(canonicalRoot)) {
-                return process.env.PLUGIN_ROOT;
-              }
-            } catch {
-            }
-          }
-          return canonicalRoot;
-        }
-      } catch {
-      }
-    }
-    curr = dirname11(curr);
-  }
-  throw new Error(`Could not resolve antigravity-booster plugin root containing valid plugin.json from ${startDir}`);
-}
-function resolveAssetPath(relPath) {
-  return join16(resolvePluginRoot(), relPath);
-}
-function resolveAgyBinary(home = homedir()) {
-  const candidates = [
-    join16(home, ".local", "bin", "agy"),
-    "/opt/homebrew/bin/agy",
-    "/usr/local/bin/agy",
-    "/usr/bin/agy"
-  ];
-  for (const c of candidates) {
-    if (existsSync15(c)) return c;
-  }
-  return "agy";
-}
-function resolveTarBinary() {
-  for (const bin of ["/usr/bin/tar", "/bin/tar"]) {
-    if (existsSync15(bin)) return bin;
-  }
-  return "tar";
-}
-function pluginsDirFor(home = homedir()) {
-  return join16(home, ".gemini", "config", "plugins");
-}
-function childEnv(home) {
-  return home ? { ...process.env, HOME: home } : process.env;
-}
-function forwardToStderr(buf) {
-  if (buf && buf.length > 0) process.stderr.write(buf);
-}
-function isExcludedFromCopy(srcPath) {
-  return INSTALL_COPY_EXCLUSIONS.includes(basename5(srcPath));
-}
-var isVanished = (err) => err?.code === "ENOENT";
-function copyPluginTree(src, dst) {
-  mkdirSync6(dst, { recursive: true });
-  let entries;
-  try {
-    entries = readdirSync6(src, { withFileTypes: true });
-  } catch (err) {
-    if (isVanished(err)) return;
-    throw err;
-  }
-  for (const entry of entries) {
-    const from = join16(src, entry.name);
-    const to = join16(dst, entry.name);
-    if (isExcludedFromCopy(from)) continue;
-    try {
-      if (entry.isSymbolicLink()) symlinkSync(readlinkSync(from), to);
-      else if (entry.isDirectory()) copyPluginTree(from, to);
-      else if (entry.isFile()) copyFileSync2(from, to);
-    } catch (err) {
-      if (!isVanished(err)) throw err;
-    }
-  }
-}
-function safePluginInstall(sourceDir, targetPluginName, options = {}) {
-  const home = options.home ?? homedir();
-  let tmpRoot;
-  try {
-    if (!sourceDir || !existsSync15(sourceDir)) {
-      return { ok: false, error: `Source directory does not exist: ${sourceDir}` };
-    }
-    if (!targetPluginName || targetPluginName !== basename5(targetPluginName) || targetPluginName.startsWith(".")) {
-      return { ok: false, error: `Invalid target plugin name: ${targetPluginName}` };
-    }
-    const pluginsParent = pluginsDirFor(home);
-    mkdirSync6(pluginsParent, { recursive: true });
-    const stagedDir = join16(pluginsParent, targetPluginName);
-    if (existsSync15(stagedDir) && realpathSync2(sourceDir) === realpathSync2(stagedDir)) {
-      log(`${targetPluginName} is already running from staged plugin directory; skipping self-install.`);
-      return { ok: true, skipped: true };
-    }
-    tmpRoot = mkdtempSync2(join16(options.tmpParent ?? tmpdir2(), "agy-staging-"));
-    const tmpTarget = join16(tmpRoot, targetPluginName);
-    copyPluginTree(sourceDir, tmpTarget);
-    const agyBin = options.agyBin ?? resolveAgyBinary(home);
-    try {
-      const out = execFileSync4(agyBin, ["plugin", "install", tmpTarget], {
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: AGY_INSTALL_TIMEOUT_MS,
-        env: childEnv(options.home)
-      });
-      forwardToStderr(out);
-    } catch (err) {
-      forwardToStderr(err.stdout);
-      forwardToStderr(err.stderr);
-      return { ok: false, error: `agy plugin install failed for ${targetPluginName}: ${err.message}` };
-    }
-    if (!existsSync15(join16(stagedDir, "plugin.json"))) {
-      return { ok: false, error: `agy plugin install reported success but ${join16(stagedDir, "plugin.json")} is missing` };
-    }
-    return { ok: true, skipped: false };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  } finally {
-    if (tmpRoot) rmSync3(tmpRoot, { recursive: true, force: true });
-  }
-}
-function sha512Integrity(file) {
-  return "sha512-" + createHash4("sha512").update(readFileSync13(file)).digest("base64");
-}
-function validateTarEntries(tarBin, tarballPath) {
-  const listOut = execFileSync4(tarBin, ["-tzf", tarballPath], {
-    encoding: "utf8",
-    timeout: TAR_LIST_TIMEOUT_MS,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  for (const entry of listOut.split("\n")) {
-    const trimmed2 = entry.trim();
-    if (!trimmed2) continue;
-    if (!trimmed2.startsWith("package/") || trimmed2.includes("..") || trimmed2.startsWith("/")) {
-      return `Invalid entry path in tarball: ${trimmed2}`;
-    }
-  }
-  const verbose = execFileSync4(tarBin, ["-tvzf", tarballPath], {
-    encoding: "utf8",
-    timeout: TAR_LIST_TIMEOUT_MS,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  for (const line of verbose.split("\n")) {
-    if (line.startsWith("l") || line.startsWith("h")) {
-      return `Link entries are not allowed in tarball: ${line.trim()}`;
-    }
-  }
-  return null;
-}
-function installPluginTarball({ tarballPath, integrity, pluginName, home, agyBin, tmpParent, tamperedError } = {}) {
-  let tmpRoot;
-  try {
-    if (!tarballPath || !existsSync15(tarballPath)) {
-      return { ok: false, error: `Vendored tarball missing: ${tarballPath}` };
-    }
-    if (sha512Integrity(tarballPath) !== integrity) {
-      return { ok: false, error: tamperedError ?? `tarball-integrity-mismatch: ${tarballPath}` };
-    }
-    const tarBin = resolveTarBinary();
-    const invalid3 = validateTarEntries(tarBin, tarballPath);
-    if (invalid3) return { ok: false, error: invalid3 };
-    tmpRoot = mkdtempSync2(join16(tmpParent ?? tmpdir2(), "agy-adlc-staging-"));
-    const extractDir = join16(tmpRoot, pluginName);
-    mkdirSync6(extractDir, { recursive: true });
-    execFileSync4(tarBin, ["-xzf", tarballPath, "-C", extractDir, "--strip-components=1"], {
-      timeout: TAR_EXTRACT_TIMEOUT_MS,
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    return safePluginInstall(extractDir, pluginName, { home, agyBin, tmpParent });
-  } catch (err) {
-    return { ok: false, error: err.message };
-  } finally {
-    if (tmpRoot) rmSync3(tmpRoot, { recursive: true, force: true });
-  }
-}
-function installAdlcAntigravityFromVendor(options = {}) {
-  try {
-    const tarballPath = options.tarballPath ?? resolveAssetPath(VENDORED_ADLC_ANTIGRAVITY_TARBALL);
-    return installPluginTarball({
-      tarballPath,
-      integrity: PINNED_ADLC_ANTIGRAVITY_INTEGRITY,
-      pluginName: ADLC_ANTIGRAVITY_PLUGIN_NAME,
-      home: options.home,
-      agyBin: options.agyBin,
-      tmpParent: options.tmpParent,
-      tamperedError: "vendored-adlc-antigravity-tampered"
-    });
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-}
-function installTerminalShim({ home = homedir(), force = false } = {}) {
-  const binDir = join16(home, ".local", "bin");
-  const shimPath = join16(binDir, "agb");
-  try {
-    if (existsSync15(shimPath)) {
-      const current = readFileSync13(shimPath, "utf8");
-      if (current === TERMINAL_SHIM_CONTENT) {
-        if ((statSync(shimPath).mode & 511) !== 493) chmodSync(shimPath, 493);
-        return { ok: true, action: "unchanged", path: shimPath };
-      }
-      if (!force) {
-        log(`warning: ${shimPath} exists with different content; leaving it untouched (re-run with --force-reinstall to overwrite)`);
-        return { ok: true, action: "skipped", path: shimPath };
-      }
-    }
-    mkdirSync6(binDir, { recursive: true });
-    const tmpPath = join16(binDir, `.agb.tmp-${process.pid}-${Date.now()}`);
-    try {
-      writeFileSync7(tmpPath, TERMINAL_SHIM_CONTENT, { mode: 493, flag: "wx" });
-      chmodSync(tmpPath, 493);
-      renameSync3(tmpPath, shimPath);
-    } catch (err) {
-      rmSync3(tmpPath, { force: true });
-      throw err;
-    }
-    return { ok: true, action: "written", path: shimPath };
-  } catch (err) {
-    return { ok: false, error: `could not install terminal shim at ${shimPath}: ${err.message}` };
-  }
-}
+// lib/adlc-bridge.mjs
+init_digest();
+init_plugin_paths();
 
 // lib/semver.mjs
 var NUM = "(0|[1-9]\\d*)";
@@ -6309,7 +7226,7 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
     verified.seal?.release();
     return Promise.reject(err);
   }
-  return new Promise((resolve18, reject) => {
+  return new Promise((resolve19, reject) => {
     execFile(cmd2.command, cmd2.args, { ...options, ...cmd2.options }, (error, stdout2, stderr) => {
       try {
         verified.seal?.verifyUnchanged();
@@ -6329,13 +7246,15 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
         error.stderr = stderr;
         reject(error);
       } else {
-        resolve18({ stdout: stdout2, stderr });
+        resolve19({ stdout: stdout2, stderr });
       }
     });
   });
 }
 
 // lib/doctor.mjs
+init_plugin_paths();
+init_digest();
 import { existsSync as existsSync17, readFileSync as readFileSync15, readdirSync as readdirSync8, mkdtempSync as mkdtempSync4, writeFileSync as writeFileSync9, openSync as openSync6, closeSync as closeSync6, writeSync, fsyncSync as fsyncSync3, realpathSync as realpathSync4, mkdirSync as mkdirSync8, rmSync as rmSync5, unlinkSync as unlinkSync3, lstatSync as lstatSync8, statSync as statSync3, truncateSync, constants as constants2 } from "fs";
 import { homedir as homedir3, tmpdir as tmpdir4 } from "os";
 import { join as join18, dirname as dirname13, relative as relative6, resolve as resolve8, isAbsolute as isAbsolute5 } from "path";
@@ -7149,9 +8068,9 @@ async function verifyWindowsSandboxActive({ cwd = process.cwd(), env = process.e
     socket.destroy();
   });
   try {
-    await new Promise((resolve18, reject) => {
+    await new Promise((resolve19, reject) => {
       server.once("error", reject);
-      server.listen(0, "127.0.0.1", resolve18);
+      server.listen(0, "127.0.0.1", resolve19);
     });
     const port = server.address().port;
     const probeHelper = isTestExecution(env) && env.AGB_SANDBOX_PROBE_HELPER ? env.AGB_SANDBOX_PROBE_HELPER : join18(dirname13(fileURLToPath2(import.meta.url)), "..", "lib", "sandbox-probe-helper.mjs");
@@ -8231,8 +9150,8 @@ function writeLeaseHeartbeat(repo, leaseId, ownerToken, timestamp) {
   if (existsSync18(leasesDir)) {
     const realLeases = realpathSync5(leasesDir);
     const isWin = process.platform === "win32";
-    const sep4 = isWin ? "\\" : "/";
-    if (!realLeases.startsWith(realRepo + sep4) && realLeases !== realRepo) {
+    const sep5 = isWin ? "\\" : "/";
+    if (!realLeases.startsWith(realRepo + sep5) && realLeases !== realRepo) {
       throw new Error(`refusing to write lease heartbeat outside repository: ${realLeases}`);
     }
   }
@@ -8244,8 +9163,8 @@ function writeLeaseHeartbeat(repo, leaseId, ownerToken, timestamp) {
     }
     const realLeases = realpathSync5(leasesDir);
     const isWin = process.platform === "win32";
-    const sep4 = isWin ? "\\" : "/";
-    if (!realLeases.startsWith(realRepo + sep4) && realLeases !== realRepo) {
+    const sep5 = isWin ? "\\" : "/";
+    if (!realLeases.startsWith(realRepo + sep5) && realLeases !== realRepo) {
       throw new Error(`refusing to write lease heartbeat outside repository: ${realLeases}`);
     }
     safeWriteHeartbeatFile(primaryPath, { ownerToken, timestamp });
@@ -8986,8 +9905,8 @@ var PoolSet = class {
       }
     }
     try {
-      await new Promise((resolve18, reject) => {
-        this.waiters[pool].push({ resolve: resolve18, reject });
+      await new Promise((resolve19, reject) => {
+        this.waiters[pool].push({ resolve: resolve19, reject });
         this.#ensureRemotePoll();
       });
     } finally {
@@ -9940,7 +10859,7 @@ async function runAgy({
       }
     }
   }
-  return new Promise((resolve18) => {
+  return new Promise((resolve19) => {
     const t0 = Date.now();
     let spawnEnv = {};
     const shouldSanitize = sanitizeEnv || isBuilder;
@@ -10402,7 +11321,7 @@ async function runAgy({
         }
         await appendFile(logFile, JSON.stringify(record) + "\n", { mode: 384 });
       }
-      resolve18(result);
+      resolve19(result);
     };
     p.stdout.on("data", (d) => {
       if (killReason) return;
@@ -10994,7 +11913,7 @@ function agySend({ apiKey, model, system, prompt }, env = process.env) {
 ---
 
 ${prompt}` : prompt;
-  return new Promise((resolve18, reject) => {
+  return new Promise((resolve19, reject) => {
     const p = spawn3(bin, args, { stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
     let err = "";
@@ -11007,7 +11926,7 @@ ${prompt}` : prompt;
       if (isAgyTimeout2(out)) {
         return reject(new Error("agy: timed out waiting for response"));
       }
-      resolve18({ text: out.replace(/\s+$/, ""), usage: null });
+      resolve19({ text: out.replace(/\s+$/, ""), usage: null });
     });
   });
 }
@@ -12697,6 +13616,8 @@ function unionActiveRails(repoRoot) {
 }
 
 // lib/run-integrity.mjs
+init_digest();
+init_plugin_paths();
 import { execFileSync as execFileSync10 } from "node:child_process";
 import { existsSync as existsSync25, statSync as statSync7 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
@@ -13578,13 +14499,13 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   let tmpDirToClean = null;
   let targetFile = logFile;
   if (logFile.endsWith(".jsonl")) {
-    const { readFileSync: readFileSync26, writeFileSync: writeFileSync20 } = await import("node:fs");
-    const { tmpdir: tmpdir9 } = await import("node:os");
-    const { join: join34 } = await import("node:path");
+    const { readFileSync: readFileSync28, writeFileSync: writeFileSync22 } = await import("node:fs");
+    const { tmpdir: tmpdir10 } = await import("node:os");
+    const { join: join36 } = await import("node:path");
     const { randomUUID: randomUUID7 } = await import("node:crypto");
     try {
-      const lines = readFileSync26(logFile, "utf8").trim().split("\n").filter(Boolean);
-      targetFile = join34(tmpdir9(), `flail-${randomUUID7()}.log`);
+      const lines = readFileSync28(logFile, "utf8").trim().split("\n").filter(Boolean);
+      targetFile = join36(tmpdir10(), `flail-${randomUUID7()}.log`);
       tmpDirToClean = targetFile;
       let legacyContent = "";
       for (const line of lines) {
@@ -13599,7 +14520,7 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
         } catch {
         }
       }
-      writeFileSync20(targetFile, legacyContent, { mode: 384 });
+      writeFileSync22(targetFile, legacyContent, { mode: 384 });
     } catch {
     }
   }
@@ -13621,9 +14542,9 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
     return { detected: false, signals: [], error: err.message };
   } finally {
     if (tmpDirToClean) {
-      const { rmSync: rmSync14 } = await import("node:fs");
+      const { rmSync: rmSync16 } = await import("node:fs");
       try {
-        rmSync14(tmpDirToClean, { recursive: true, force: true });
+        rmSync16(tmpDirToClean, { recursive: true, force: true });
       } catch {
       }
     }
@@ -15206,6 +16127,7 @@ import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { homedir as homedir7 } from "node:os";
 import { execSync as execSync2, execFileSync as execFileSync14 } from "node:child_process";
 import { createRequire } from "node:module";
+init_plugin_paths();
 var require2 = createRequire(import.meta.url);
 function isNpxTemp(filePath = fileURLToPath4(import.meta.url), env = process.env) {
   const path3 = require2("node:path");
@@ -15508,6 +16430,11 @@ var COMMANDS = {
   probe: { args: "[widths]", desc: "measure pool concurrency/latency, print JSON lines" },
   validate: { args: "<plan>", desc: "validate a plan file without running anything" },
   bootstrap: { args: "[--force] [--force-reinstall]", desc: "wire ADLC skills into ~/.gemini/skills (aliases: setup, install)" },
+  migrate: {
+    args: "[--rollback]",
+    desc: "move an npm-global/checkout install onto the native agy plugin, or roll it back",
+    flags: "--force (re-run after MIGRATED) --rollback --force-rollback --break-lock [--force]"
+  },
   pool: { args: "drain [repo]", desc: "safely drain active leases and reset coordinator" },
   tui: { args: "", desc: "Removed. Use agb sidecar instead." }
 };
@@ -15529,7 +16456,7 @@ function printCmdUsage(name) {
   if (c.flags) console.log(`  Flags: ${c.flags}`);
 }
 if (cmd === "--version" || cmd === "-v" || cmd === "version") {
-  const pkg = JSON.parse(readFileSync25(fileURLToPath6(new URL("../package.json", import.meta.url)), "utf8"));
+  const pkg = JSON.parse(readFileSync27(fileURLToPath6(new URL("../package.json", import.meta.url)), "utf8"));
   console.log(pkg.version);
   process.exit(0);
 }
@@ -15556,9 +16483,9 @@ if (!COMMANDS[cmd] && cmd !== "setup" && cmd !== "install" && cmd !== "skills") 
   process.exit(1);
 }
 function loadPlan(path3) {
-  const plan = JSON.parse(readFileSync25(path3, "utf8"));
+  const plan = JSON.parse(readFileSync27(path3, "utf8"));
   const errors = validatePlan(plan);
-  if (plan.repo) plan.repo = resolve17(plan.repo);
+  if (plan.repo) plan.repo = resolve18(plan.repo);
   return { plan, errors };
 }
 try {
@@ -15572,8 +16499,8 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === "sweep") {
-    const spec = JSON.parse(readFileSync25(rest[0] ?? "sweep.json", "utf8"));
-    if (spec.repo) spec.repo = resolve17(spec.repo);
+    const spec = JSON.parse(readFileSync27(rest[0] ?? "sweep.json", "utf8"));
+    if (spec.repo) spec.repo = resolve18(spec.repo);
     const plan = sweepToPlan(spec, { project });
     const errors = validatePlan(plan);
     if (errors.length) {
@@ -15585,7 +16512,7 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length ? 2 : 0);
   } else if (cmd === "review") {
-    const repo = resolve17(rest[0] ?? ".");
+    const repo = resolve18(rest[0] ?? ".");
     const ref = rest[1];
     const diff = reviewDiff(repo, ref);
     if (!diff.trim()) {
@@ -15610,7 +16537,7 @@ try {
       console.error("plan invalid:\n  " + errors.join("\n  "));
       process.exit(1);
     }
-    const targetRepo = resolve17(plan.repo ?? ".");
+    const targetRepo = resolve18(plan.repo ?? ".");
     const skipColdstart = rest.includes("--no-coldstart");
     const pools = new PoolSet(void 0, { repo: targetRepo });
     if (!skipColdstart) {
@@ -15635,11 +16562,11 @@ try {
       console.error("usage: agb plan <brain-id-or-prefix | spec.md> <repo-path> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]");
       process.exit(1);
     }
-    if (existsSync30(out) && !rest.includes("--force")) {
+    if (existsSync32(out) && !rest.includes("--force")) {
       console.error(`plan: ${out} already exists \u2014 pass --force to overwrite (compiled plans are disposable, hand-written ones may not be)`);
       process.exit(1);
     }
-    const targetRepo = resolve17(repo);
+    const targetRepo = resolve18(repo);
     const pools = new PoolSet(void 0, { repo: targetRepo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
     if (!quotaRes.ok) {
@@ -15666,7 +16593,7 @@ try {
       }
       process.exit(2);
     }
-    writeFileSync19(out, JSON.stringify(result.plan, null, 2) + "\n");
+    writeFileSync21(out, JSON.stringify(result.plan, null, 2) + "\n");
     if (result.brain.sourceType === "local-spec") {
       console.error(`plan: ${result.plan.tickets.length} ticket(s) compiled from spec '${result.brain.title}' \u2192 ${out}`);
     } else {
@@ -15687,7 +16614,7 @@ try {
       process.exit(1);
     }
     console.error("import-brain is deprecated \u2014 use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)");
-    const targetRepo = resolve17(repo);
+    const targetRepo = resolve18(repo);
     const pools = new PoolSet(void 0, { repo: targetRepo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
     if (!quotaRes.ok) {
@@ -15709,10 +16636,10 @@ try {
     }
     if (isWatch) {
       const { watchStatus: watchStatus2 } = await Promise.resolve().then(() => (init_status(), status_exports));
-      const code = await watchStatus2(resolve17(positional[0] ?? "."), intervalMs);
+      const code = await watchStatus2(resolve18(positional[0] ?? "."), intervalMs);
       process.exitCode = code;
     } else {
-      console.log(renderStatus(resolve17(positional[0] ?? ".")));
+      console.log(renderStatus(resolve18(positional[0] ?? ".")));
     }
   } else if (cmd === "tui") {
     console.error("The TUI has been removed. Use the native sidecar dashboard instead (`agb sidecar`).");
@@ -15730,6 +16657,39 @@ try {
     const force = rest.includes("--force") || rest.includes("-f");
     const forceReinstall = rest.includes("--force-reinstall");
     bootstrap({ force, forceReinstall });
+  } else if (cmd === "migrate") {
+    const { migrate: migrate2, breakLock: breakLock2, finishUninstallCommand: finishUninstallCommand2 } = await Promise.resolve().then(() => (init_migrate(), migrate_exports));
+    const flagValue = (name) => {
+      const i = rest.indexOf(name);
+      return i >= 0 ? rest[i + 1] : void 0;
+    };
+    const force = rest.includes("--force");
+    if (rest.includes("--finish-uninstall")) {
+      process.exitCode = finishUninstallCommand2({
+        token: flagValue("--token"),
+        uninstallerDir: flagValue("--uninstaller-dir"),
+        agyBin: flagValue("--agy-bin"),
+        baseline: flagValue("--baseline")
+      });
+    } else if (rest.includes("--break-lock")) {
+      const confirm = async (question) => {
+        if (!process.stdin.isTTY) return false;
+        const { createInterface: createInterface2 } = await import("node:readline/promises");
+        const rl = createInterface2({ input: process.stdin, output: process.stderr });
+        try {
+          return /^y(es)?$/i.test((await rl.question(question)).trim());
+        } finally {
+          rl.close();
+        }
+      };
+      process.exitCode = await breakLock2({ force, confirm });
+    } else {
+      process.exitCode = await migrate2({
+        force,
+        rollback: rest.includes("--rollback"),
+        forceRollback: rest.includes("--force-rollback")
+      });
+    }
   } else if (cmd === "probe") {
     const widths = (rest[0] ?? "2,4,8").split(",").map(Number);
     const model = rest[1] ?? "Gemini 3.5 Flash (Low)";
@@ -15761,7 +16721,7 @@ try {
       try {
         const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
         const calDir = process.env.AGB_CALIBRATION_DIR ?? fileURLToPath6(new URL("../docs/calibration/", import.meta.url));
-        const calFile = join33(calDir, `probe-${day}.md`);
+        const calFile = join35(calDir, `probe-${day}.md`);
         const table = [
           `## ${model} \u2014 probed ${(/* @__PURE__ */ new Date()).toISOString()}`,
           "",
@@ -15770,8 +16730,8 @@ try {
           ...rows.map((r) => `| ${r.width} | ${r.ok}/${r.width} | ${r.wall_ms} | ${r.median_ms} | ${r.max_ms} |`),
           ""
         ].join("\n");
-        mkdirSync19(calDir, { recursive: true });
-        appendFileSync3(calFile, (existsSync30(calFile) ? "\n" : `# Pool probe \u2014 ${day}
+        mkdirSync21(calDir, { recursive: true });
+        appendFileSync3(calFile, (existsSync32(calFile) ? "\n" : `# Pool probe \u2014 ${day}
 
 `) + table);
         console.error(`probe: appended ${rows.length} row(s) to ${calFile}`);
@@ -15800,34 +16760,34 @@ try {
       }
     }
     const repoDir = String(positional[0] || ".");
-    const repo = resolve17(process.cwd(), repoDir);
+    const repo = resolve18(process.cwd(), repoDir);
     const { serveSidecar: serveSidecar2 } = await Promise.resolve().then(() => (init_server(), server_exports));
-    const { randomBytes: randomBytes3 } = await import("node:crypto");
-    const { writeFileSync: writeFileSync20, mkdirSync: mkdirSync20, rmSync: rmSync14 } = await import("node:fs");
-    const { execFileSync: execFileSync15 } = await import("node:child_process");
-    const { join: join34 } = await import("node:path");
-    const { homedir: homedir8 } = await import("node:os");
+    const { randomBytes: randomBytes5 } = await import("node:crypto");
+    const { writeFileSync: writeFileSync22, mkdirSync: mkdirSync22, rmSync: rmSync16 } = await import("node:fs");
+    const { execFileSync: execFileSync17 } = await import("node:child_process");
+    const { join: join36 } = await import("node:path");
+    const { homedir: homedir10 } = await import("node:os");
     const port = portStr ? Number(portStr) : 3333;
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       console.error(`agb: invalid port '${portStr}'`);
       process.exit(1);
     }
-    const token = randomBytes3(16).toString("hex");
-    const server = await serveSidecar2(resolve17(positional[0] ?? "."), port, token);
+    const token = randomBytes5(16).toString("hex");
+    const server = await serveSidecar2(resolve18(positional[0] ?? "."), port, token);
     const actualPort = server.address().port;
     let pluginDir;
     let createdDir = false;
     let wroteManifests = false;
     try {
-      pluginDir = process.env.AGB_PLUGIN_DIR || join34(homedir8(), ".gemini", `agb-sidecar-plugin-${process.pid}-${actualPort}`);
-      if (!existsSync30(pluginDir)) {
-        mkdirSync20(pluginDir, { recursive: true, mode: 448 });
+      pluginDir = process.env.AGB_PLUGIN_DIR || join36(homedir10(), ".gemini", `agb-sidecar-plugin-${process.pid}-${actualPort}`);
+      if (!existsSync32(pluginDir)) {
+        mkdirSync22(pluginDir, { recursive: true, mode: 448 });
         createdDir = true;
-      } else if (existsSync30(join34(pluginDir, "plugin.json")) || existsSync30(join34(pluginDir, "sidecars", "agb.json"))) {
+      } else if (existsSync32(join36(pluginDir, "plugin.json")) || existsSync32(join36(pluginDir, "sidecars", "agb.json"))) {
         throw new Error(`AGB_PLUGIN_DIR (${pluginDir}) already contains plugin.json or sidecars/agb.json. To prevent data loss, agb will not overwrite an existing plugin manifest. Clear the directory or unset AGB_PLUGIN_DIR.`);
       }
-      if (!existsSync30(join34(pluginDir, "sidecars"))) {
-        mkdirSync20(join34(pluginDir, "sidecars"), { recursive: true, mode: 448 });
+      if (!existsSync32(join36(pluginDir, "sidecars"))) {
+        mkdirSync22(join36(pluginDir, "sidecars"), { recursive: true, mode: 448 });
       }
       const manifest = {
         id: "agb-dashboard",
@@ -15836,9 +16796,9 @@ try {
         icon: "activity",
         description: "Visualizes parallel build-outs orchestrated by Antigravity Booster."
       };
-      writeFileSync20(join34(pluginDir, "sidecars", "agb.json"), JSON.stringify(manifest, null, 2) + "\n", { mode: 384 });
+      writeFileSync22(join36(pluginDir, "sidecars", "agb.json"), JSON.stringify(manifest, null, 2) + "\n", { mode: 384 });
       const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
-      writeFileSync20(join34(pluginDir, "plugin.json"), JSON.stringify({
+      writeFileSync22(join36(pluginDir, "plugin.json"), JSON.stringify({
         id: pluginId,
         name: "AGB Dynamic Sidecar",
         version: "1.0.0",
@@ -15853,15 +16813,15 @@ try {
         try {
           server.close();
           try {
-            execFileSync15(agyBin, ["plugin", "uninstall", pluginId], { stdio: "ignore" });
+            execFileSync17(agyBin, ["plugin", "uninstall", pluginId], { stdio: "ignore" });
           } catch (e) {
           }
           if (pluginDir) {
             if (createdDir) {
-              rmSync14(pluginDir, { recursive: true, force: true });
+              rmSync16(pluginDir, { recursive: true, force: true });
             } else if (wroteManifests) {
-              rmSync14(join34(pluginDir, "sidecars", "agb.json"), { force: true });
-              rmSync14(join34(pluginDir, "plugin.json"), { force: true });
+              rmSync16(join36(pluginDir, "sidecars", "agb.json"), { force: true });
+              rmSync16(join36(pluginDir, "plugin.json"), { force: true });
             }
           }
         } catch (e) {
@@ -15874,7 +16834,7 @@ try {
       process.on("SIGINT", () => cleanup(130));
       process.on("SIGTERM", () => cleanup(143));
       process.on("exit", onExitCleanup);
-      execFileSync15(agyBin, ["plugin", "install", pluginDir], { stdio: "inherit" });
+      execFileSync17(agyBin, ["plugin", "install", pluginDir], { stdio: "inherit" });
       console.log("Successfully registered the dynamic sidecar plugin with Antigravity.");
     } catch (e) {
       console.warn(`Warning: Could not automatically register the sidecar plugin with agy: ${e.message}`);
@@ -15883,7 +16843,7 @@ try {
   } else if (cmd === "pool") {
     const sub = rest[0];
     if (sub === "drain") {
-      const repo = resolve17(rest[1] ?? ".");
+      const repo = resolve18(rest[1] ?? ".");
       const res = await drainPools(repo);
       console.log(JSON.stringify(res, null, 2));
       process.exit(0);

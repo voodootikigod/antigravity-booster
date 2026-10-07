@@ -1,9 +1,0 @@
-{
-  "id": "agb-dashboard",
-  "name": "agb-dashboard",
-  "version": "0.8.0",
-  "description": "AGB Visual Dashboard UI Plugin",
-  "sidecars": [
-    "sidecars/agb-dashboard"
-  ]
-}

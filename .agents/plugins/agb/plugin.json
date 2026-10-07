@@ -1,6 +1,0 @@
-{
-  "name": "agb-legacy-shim",
-  "version": "0.8.0",
-  "description": "Deprecated legacy proxy for antigravity-booster. Commands point at the root plugin's commands; hooks and MCP are registered only by the root plugin. Removed in T4.",
-  "author": "Chris Williams <chris@voodootikigod.com>"
-}

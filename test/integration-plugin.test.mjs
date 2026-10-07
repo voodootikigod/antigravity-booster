@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -45,9 +46,14 @@ test('MCP Server: handles JSON-RPC initialization, tool listing, and tool calls'
 
   assert.ok(existsSync(mcpServerPath), 'MCP Server script must exist');
 
+  // agb_doctor runs the real doctor (including its policy-guard self-test,
+  // which writes a health log under HOME): never against the developer's HOME.
+  const home = mkdtempSync(join(tmpdir(), 'agb-mcp-home-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
   const child = spawn(process.execPath, [mcpServerPath], {
     stdio: ['pipe', 'pipe', 'inherit'],
-    cwd: PROJECT_ROOT
+    cwd: PROJECT_ROOT,
+    env: { ...process.env, HOME: home },
   });
 
   const reader = readline.createInterface({
