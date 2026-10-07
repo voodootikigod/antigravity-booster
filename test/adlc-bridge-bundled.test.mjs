@@ -135,7 +135,7 @@ test('spawn (bundled): any candidate other than the vendored binary is refused',
   const missing = revalidateAdlcBinary(other, { bundled: true, pluginRoot: fakePluginRoot('spawn-novendor', { vendor: false }), env: {} });
   assert.equal(missing.ok, false);
   assert.match(missing.error, /vendored adlc missing/);
-  assert.match(revalidateAdlcBinary(other, { bundled: true, pluginRoot: null, env: {} }).error, /plugin root not found/);
+  assert.deepEqual(revalidateAdlcBinary(other, { bundled: true, pluginRoot: null, env: {} }), { ok: false, error: 'vendored adlc missing: booster plugin root not found' });
 });
 
 test('doctor: the adlc CLI check passes against a plugin root with the pinned vendored adlc', async () => {
