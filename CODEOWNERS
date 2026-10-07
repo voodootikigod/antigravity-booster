@@ -18,3 +18,10 @@
 /dist/** @voodootikigod
 /vendor/** @voodootikigod
 /.adlc/** @voodootikigod
+
+# ADLC bridge trust assets (T-PLUGIN-02-ADLC-BRIDGE): adlc resolution and the
+# pinned vendored-adlc digests, the fail-closed enforcement gate and post-run
+# integrity check, and the script that re-pins those digests.
+/lib/adlc-bridge.mjs @voodootikigod
+/lib/run-integrity.mjs @voodootikigod
+/scripts/update-adlc-digests.mjs @voodootikigod
