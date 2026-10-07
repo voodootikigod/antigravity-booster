@@ -43,6 +43,25 @@ if [ "$1" = "plugin" ]; then
           echo "installed plugin from $3"
           exit 0 ;;
       esac ;;
+    uninstall)
+      # Emulate real agy: remove $HOME/.gemini/config/plugins/<name>. Same
+      # temp-HOME guard as install — never touches the developer's ~/.gemini.
+      tmp_base="${TMPDIR:-/tmp}"
+      tmp_base="${tmp_base%/}"
+      case "$3" in ""|*/*|.|..) echo "error: invalid plugin name '$3'" >&2; exit 1 ;; esac
+      case "$HOME" in
+        "$tmp_base"/*|/tmp/*)
+          if [ -d "$HOME/.gemini/config/plugins/$3" ]; then
+            rm -rf "$HOME/.gemini/config/plugins/$3"
+            [ -n "$FAKE_STATE_DIR" ] && echo "$3" >> "$FAKE_STATE_DIR/plugin-uninstalls"
+            echo "uninstalled plugin $3"
+            exit 0
+          fi
+          echo "error: plugin $3 is not installed" >&2
+          exit 1 ;;
+      esac
+      echo "fake-agy: refusing to uninstall outside a temp HOME" >&2
+      exit 1 ;;
     validate)
       dir="${3:-.}"
       if [ -f "$dir/plugin.json" ]; then

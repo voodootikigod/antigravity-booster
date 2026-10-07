@@ -210,3 +210,16 @@ test('a git ls-files copy with no node_modules installs from the vendor cache; d
     assert.doesNotMatch(doc.stderr, /Error:|at .*\.mjs:\d+/);
   } finally { ctx.cleanup(); }
 });
+
+test('fake-agy emulates plugin uninstall under a temp HOME only', () => {
+  const ctx = setup();
+  try {
+    assert.equal(runBootstrap(ctx).status, 0);
+    const env = { ...process.env, HOME: ctx.home, FAKE_STATE_DIR: ctx.state };
+    const ok = spawnSync(FAKE_AGY, ['plugin', 'uninstall', 'adlc-antigravity'], { encoding: 'utf8', env });
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(existsSync(staged(ctx)), false);
+    assert.equal(spawnSync(FAKE_AGY, ['plugin', 'uninstall', 'adlc-antigravity'], { env }).status, 1, 'absent plugin');
+    assert.equal(spawnSync(FAKE_AGY, ['plugin', 'uninstall', '../x'], { env }).status, 1, 'path-like name rejected');
+  } finally { ctx.cleanup(); }
+});

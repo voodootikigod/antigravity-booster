@@ -4372,7 +4372,7 @@ function scopesOverlap(a, b) {
 }
 
 // lib/scheduler.mjs
-import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync6, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync10, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync12, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
+import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync12, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
 import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
 import { tmpdir as tmpdir8 } from "node:os";
@@ -4382,7 +4382,7 @@ import crypto5 from "node:crypto";
 
 // lib/agy.mjs
 import { spawn as spawn2, execFileSync as execFileSync8 } from "node:child_process";
-import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync4, lstatSync as lstatSync10 } from "node:fs";
+import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { tmpdir as tmpdir6, homedir as homedir4 } from "node:os";
 import { dirname as dirname15, join as join20, resolve as resolve10, relative as relative7, isAbsolute as isAbsolute6 } from "node:path";
@@ -4390,7 +4390,7 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 import crypto3 from "node:crypto";
 
 // lib/doctor.mjs
-import { execFile as execFile2, execFileSync as execFileSync6, execSync } from "child_process";
+import { execFile as execFile2, execFileSync as execFileSync6, execSync, spawnSync as spawnSync3 } from "child_process";
 import { promisify } from "util";
 
 // lib/digest.mjs
@@ -6335,7 +6335,7 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
 }
 
 // lib/doctor.mjs
-import { existsSync as existsSync17, readFileSync as readFileSync15, writeFileSync as writeFileSync9, openSync as openSync6, closeSync as closeSync6, writeSync, fsyncSync as fsyncSync3, realpathSync as realpathSync4, mkdirSync as mkdirSync8, rmSync as rmSync5, unlinkSync as unlinkSync3, lstatSync as lstatSync8, statSync as statSync3, truncateSync, constants as constants2 } from "fs";
+import { existsSync as existsSync17, readFileSync as readFileSync15, readdirSync as readdirSync8, mkdtempSync as mkdtempSync4, writeFileSync as writeFileSync9, openSync as openSync6, closeSync as closeSync6, writeSync, fsyncSync as fsyncSync3, realpathSync as realpathSync4, mkdirSync as mkdirSync8, rmSync as rmSync5, unlinkSync as unlinkSync3, lstatSync as lstatSync8, statSync as statSync3, truncateSync, constants as constants2 } from "fs";
 import { homedir as homedir3, tmpdir as tmpdir4 } from "os";
 import { join as join18, dirname as dirname13, relative as relative6, resolve as resolve8, isAbsolute as isAbsolute5 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
@@ -6461,6 +6461,133 @@ async function checkPlugin({ home = homedir3() } = {}) {
   }
   const level = r.report.startsWith("tolerant") ? "warn" : "pass";
   return { name, level, detail: r.report, fix: level === "warn" ? "Upgrade the plugin to one that declares adlcContract 1." : null, row: r };
+}
+var SELFTEST_RAIL = "lib/lock.mjs";
+var SELFTEST_REASON = `Target path matches frozen rail: ${SELFTEST_RAIL}`;
+var MINIMAL_PATH = "/usr/bin:/bin";
+var HOOK_TIMEOUT_MS = 15e3;
+var sha256File2 = (p) => crypto2.createHash("sha256").update(readFileSync15(p)).digest("hex");
+function boosterDataDir(home = homedir3()) {
+  return join18(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster");
+}
+function healthLogPath(home = homedir3()) {
+  return join18(boosterDataDir(home), "rails-guard-health.json");
+}
+function hookCommand(pluginRoot) {
+  const hooks = JSON.parse(readFileSync15(join18(pluginRoot, "hooks.json"), "utf8"));
+  const command = hooks?.["agb-policy-guard"]?.PreToolUse?.[0]?.hooks?.[0]?.command;
+  if (typeof command !== "string" || !command) throw new Error("hooks.json declares no agb-policy-guard PreToolUse command");
+  return command;
+}
+function selftestRepo(dir) {
+  const repo = join18(dir, "repo");
+  mkdirSync8(join18(repo, ".adlc"), { recursive: true });
+  execFileSync6("git", ["init", "-q", repo], { stdio: "ignore" });
+  initializeDirectoryStore(join18(repo, ".adlc", "tickets"));
+  writeFileSync9(
+    join18(repo, ".adlc", "tickets", ticketFilename("AGB-SELFTEST")),
+    JSON.stringify({ id: "AGB-SELFTEST", title: "doctor self-test", body: "fixture", scope: [], rails: [SELFTEST_RAIL], edges: [] })
+  );
+  return repo;
+}
+function runHook(command, pluginRoot, home, repo, relPath) {
+  const payload = { toolCall: { name: "write_to_file", args: { TargetFile: join18(repo, relPath) } }, workspacePaths: [repo] };
+  return spawnSync3("/bin/sh", ["-c", command], {
+    cwd: pluginRoot,
+    input: JSON.stringify(payload),
+    encoding: "utf8",
+    env: { PATH: MINIMAL_PATH, HOME: home },
+    timeout: HOOK_TIMEOUT_MS
+  });
+}
+function railVerdict(r) {
+  const lines = (r.stdout ?? "").split("\n").filter((l) => l.trim());
+  if (r.status !== 0 || lines.length !== 1) return `rail payload: expected one JSON line and exit 0, got exit ${r.status} with ${lines.length} line(s)`;
+  let out;
+  try {
+    out = JSON.parse(lines[0]);
+  } catch {
+    return "rail payload: output is not JSON";
+  }
+  if (out.decision !== "deny") return `rail payload: expected deny, got ${JSON.stringify(out.decision)}`;
+  if (!String(out.reason ?? "").includes(SELFTEST_REASON)) return `rail payload: reason lacks '${SELFTEST_REASON}'`;
+  return null;
+}
+function nonRailVerdict(r) {
+  if (r.status === 0 && (r.stdout ?? "") === "") return null;
+  return `non-rail payload: expected empty stdout and exit 0, got exit ${r.status} and ${JSON.stringify((r.stdout ?? "").trim()).slice(0, 120)}`;
+}
+function writeHealthLog(home, pluginRoot, railsTrusted) {
+  try {
+    mkdirSync8(boosterDataDir(home), { recursive: true });
+    writeFileSync9(healthLogPath(home), JSON.stringify({
+      nodeSha256: sha256File2(realpathSync4(process.execPath)),
+      bundleSha256: sha256File2(join18(pluginRoot, "dist", "hooks", "pre-tool-use.bundle.mjs")),
+      hooksSha256: sha256File2(join18(pluginRoot, "hooks.json")),
+      railsTrusted,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    }, null, 2) + "\n");
+  } catch {
+  }
+}
+function checkPolicyGuard({ pluginRoot, home = homedir3() } = {}) {
+  const name = "Policy guard self-test";
+  const fix = "Run `agb bootstrap --force-reinstall` and check hooks.log.";
+  let dir;
+  try {
+    const root = pluginRoot ?? resolvePluginRoot();
+    const command = hookCommand(root);
+    dir = mkdtempSync4(join18(tmpdir4(), "agb-doctor-selftest-"));
+    const repo = selftestRepo(dir);
+    const failure = railVerdict(runHook(command, root, home, repo, SELFTEST_RAIL)) ?? nonRailVerdict(runHook(command, root, home, repo, "lib/foo.mjs"));
+    writeHealthLog(home, root, !failure && evaluateStagedAdlcPlugin({ home }).railsTrusted);
+    if (failure) return { name, level: "fail", detail: failure, fix };
+    return { name, level: "pass", detail: `denies ${SELFTEST_RAIL} under PATH=${MINIMAL_PATH}`, fix: null };
+  } catch (err) {
+    return { name, level: "fail", detail: `self-test could not run: ${err.message}`, fix };
+  } finally {
+    if (dir) rmSync5(dir, { recursive: true, force: true });
+  }
+}
+function checkSecondaryInstall({ home = homedir3(), env = process.env } = {}) {
+  const name = "agb install";
+  const shim = join18(home, ".local", "bin", "agb");
+  const real = (p) => {
+    try {
+      return realpathSync4(p);
+    } catch {
+      return p;
+    }
+  };
+  const shimReal = real(shim);
+  const others = /* @__PURE__ */ new Set();
+  for (const dir of String(env.PATH ?? "").split(":").filter(Boolean)) {
+    const candidate = join18(dir, "agb");
+    if (existsSync17(candidate) && real(candidate) !== shimReal) others.add(candidate);
+  }
+  if (others.size === 0) return { name, level: "pass", detail: existsSync17(shim) ? shim : "no agb on PATH", fix: null };
+  return { name, level: "warn", detail: `secondary install detected: ${[...others].join(", ")}`, fix: "prefer ~/.local/bin/agb (npm is a secondary channel)" };
+}
+function checkKillswitchUsage({ home = homedir3() } = {}) {
+  const name = "Hook killswitch";
+  let text = "";
+  try {
+    text = readFileSync15(join18(boosterDataDir(home), "logs", "hooks.log"), "utf8");
+  } catch {
+  }
+  const count = text.split("\n").filter((l) => l.includes("[CRITICAL NOTICE] AGB_HOOK_DISABLE is active")).length;
+  if (count === 0) return { name, level: "pass", detail: "never used", fix: null };
+  return { name, level: "warn", detail: `${count} AGB_HOOK_DISABLE bypass notice(s) in hooks.log`, fix: "Unset AGB_HOOK_DISABLE; the rails guard is bypassed while it is set." };
+}
+function checkProbePlugins({ home = homedir3() } = {}) {
+  const name = "Probe plugins";
+  let probes = [];
+  try {
+    probes = readdirSync8(pluginsDirFor(home)).filter((n) => n.startsWith("probe-"));
+  } catch {
+  }
+  if (probes.length === 0) return { name, level: "pass", detail: "none installed", fix: null };
+  return { name, level: "warn", detail: `installed: ${probes.join(", ")}`, fix: `Run \`agy plugin uninstall ${probes[0]}\` for each probe plugin.` };
 }
 async function checkAdlcBinary({ env = process.env, cwd = process.cwd() } = {}) {
   const localPkgDir = join18(cwd, "node_modules", "@adlc", "cli");
@@ -7360,7 +7487,11 @@ async function runDoctor(opts = {}) {
     checkAdlcBinary(opts),
     checkSandbox(opts),
     checkBrainDir(opts),
-    checkTicketStore(opts)
+    checkTicketStore(opts),
+    checkPolicyGuard(opts),
+    checkSecondaryInstall(opts),
+    checkKillswitchUsage(opts),
+    checkProbePlugins(opts)
   ];
   const results = await Promise.allSettled(checks);
   let failed = false;
@@ -9300,7 +9431,7 @@ async function runAgy({
         } catch {
           realAllowedDir = resolve10(allowedDir);
         }
-        bwrapTempDir = mkdtempSync4(join20(tmpdir6(), "agb-bwrap-tmp-"));
+        bwrapTempDir = mkdtempSync5(join20(tmpdir6(), "agb-bwrap-tmp-"));
         launchBin = "bwrap";
         launchArgs = [
           "--dev",
@@ -9624,7 +9755,7 @@ async function runAgy({
         } else {
           const secureBase = join20(homedir4(), ".adlc", "tmp");
           mkdirSync10(secureBase, { recursive: true, mode: 448 });
-          argsTempDir = mkdtempSync4(join20(secureBase, "agb-args-"));
+          argsTempDir = mkdtempSync5(join20(secureBase, "agb-args-"));
           try {
             if (process.platform === "win32") {
               execFileSync8("icacls.exe", [argsTempDir, "/inheritance:r", "/grant:r", `${process.env.USERNAME || "CURRENT_USER"}:(OI)(CI)F`], { stdio: "ignore" });
@@ -10698,9 +10829,9 @@ verdict "ship" is a fully acceptable answer.`;
 }
 
 // lib/gates.mjs
-import { execFile as execFile4, spawnSync as spawnSync3 } from "node:child_process";
+import { execFile as execFile4, spawnSync as spawnSync4 } from "node:child_process";
 import { promisify as promisify3 } from "node:util";
-import { writeFileSync as writeFileSync12, mkdtempSync as mkdtempSync5, rmSync as rmSync8, realpathSync as realpathSync7, existsSync as existsSync20, mkdirSync as mkdirSync11 } from "node:fs";
+import { writeFileSync as writeFileSync12, mkdtempSync as mkdtempSync6, rmSync as rmSync8, realpathSync as realpathSync7, existsSync as existsSync20, mkdirSync as mkdirSync11 } from "node:fs";
 import { tmpdir as tmpdir7, platform } from "node:os";
 import { join as join21 } from "node:path";
 var execFileP2 = promisify3(execFile4);
@@ -10756,7 +10887,7 @@ function gateSandboxAvailable(env = process.env) {
   if (platform() === "darwin") return true;
   if (platform() === "linux") {
     try {
-      const res = spawnSync3("which", ["bwrap"], { env });
+      const res = spawnSync4("which", ["bwrap"], { env });
       return res.status === 0;
     } catch {
       return false;
@@ -10785,12 +10916,12 @@ async function runGate(name, cmd2, cwd, { timeoutMs = 6e5, sandbox = false, env 
   const sandboxed = sandbox && gateSandboxEnabled(env);
   if (sandboxed) {
     if (platform() === "darwin") {
-      const dir = mkdtempSync5(join21(tmpdir7(), "agb-sbpl-"));
+      const dir = mkdtempSync6(join21(tmpdir7(), "agb-sbpl-"));
       profileFile = join21(dir, "gate.sb");
       writeFileSync12(profileFile, sandboxProfile(cwd));
       argv = ["sandbox-exec", ["-f", profileFile, "/bin/sh", "-c", cmd2]];
     } else if (platform() === "linux") {
-      emptyRoDir = mkdtempSync5(join21(tmpdir7(), "agb-empty-ro-"));
+      emptyRoDir = mkdtempSync6(join21(tmpdir7(), "agb-empty-ro-"));
       argv = ["bwrap", linuxBwrapArgs(cwd, cmd2, emptyRoDir)];
     }
   }
@@ -11305,7 +11436,7 @@ async function preflight(plan, opts = {}) {
 }
 
 // lib/brain.mjs
-import { readdirSync as readdirSync8, readFileSync as readFileSync18, statSync as statSync5, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
+import { readdirSync as readdirSync9, readFileSync as readFileSync18, statSync as statSync5, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
 import { join as join23, resolve as resolve11 } from "node:path";
 import { homedir as homedir5 } from "node:os";
 var jetskiBrain = join23(homedir5(), ".gemini", "jetski", "brain");
@@ -11326,7 +11457,7 @@ function listBrains(brainDir = BRAIN_DIR) {
   const results = [];
   for (const bDir of dirsToSearch) {
     if (!existsSync21(bDir)) continue;
-    for (const id of readdirSync8(bDir)) {
+    for (const id of readdirSync9(bDir)) {
       if (seen.has(id)) continue;
       const dir = join23(bDir, id);
       const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync21(join23(dir, f))).map((f) => ({ path: join23(dir, f), mtime: statSync5(join23(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
@@ -11487,7 +11618,7 @@ import {
   renameSync as renameSync5,
   unlinkSync as unlinkSync6,
   mkdirSync as mkdirSync13,
-  readdirSync as readdirSync9,
+  readdirSync as readdirSync10,
   rmSync as rmSync9,
   symlinkSync as symlinkSync3,
   cpSync as cpSync2,
@@ -11747,7 +11878,7 @@ function reapIntegrationWorktrees(repo) {
   const dir = join24(repo, ".worktrees");
   if (!existsSync22(dir)) return;
   try {
-    const entries = readdirSync9(dir, { withFileTypes: true });
+    const entries = readdirSync10(dir, { withFileTypes: true });
     for (const ent of entries) {
       if (ent.isDirectory() && ent.name.startsWith("agb-integration-")) {
         const full = join24(dir, ent.name);
@@ -11766,7 +11897,7 @@ function reapIntegrationWorktrees(repo) {
   const attemptGitBase = join24(dir, ".attempt_git");
   if (existsSync22(attemptGitBase)) {
     try {
-      const attemptEntries = readdirSync9(attemptGitBase, { withFileTypes: true });
+      const attemptEntries = readdirSync10(attemptGitBase, { withFileTypes: true });
       for (const ent of attemptEntries) {
         const correspondingWt = join24(dir, ent.name);
         if (!existsSync22(correspondingWt)) {
@@ -11776,7 +11907,7 @@ function reapIntegrationWorktrees(repo) {
           }
         }
       }
-      if (readdirSync9(attemptGitBase).length === 0) {
+      if (readdirSync10(attemptGitBase).length === 0) {
         try {
           rmSync9(attemptGitBase, { recursive: true, force: true });
         } catch {
@@ -12794,7 +12925,7 @@ function hashDir(dir, filterFn = () => true) {
   let count = 0;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync10(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+      const entries = readdirSync11(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join30(d, ent.name);
@@ -12819,7 +12950,7 @@ function listObjects(objectsDir) {
   if (!existsSync27(objectsDir)) return set;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync10(d, { withFileTypes: true });
+      const entries = readdirSync11(d, { withFileTypes: true });
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join30(d, ent.name);
@@ -13293,7 +13424,7 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
   }
   const hooksDir = join30(resolvedTarget, "hooks");
   if (existsSync27(hooksDir)) {
-    const entries = readdirSync10(hooksDir);
+    const entries = readdirSync11(hooksDir);
     for (const ent of entries) {
       if (!ent.endsWith(".sample")) {
         throw new Error(`Security violation: unexpected hook file found in attempt git database: ${ent}`);
@@ -14117,7 +14248,7 @@ Fix: ${agyCheck.fix}`);
         ticketId: t.id
       });
       status.pools(pools.snapshot());
-      const scratch = mkdtempSync6(join30(tmpdir8(), "agb-prosecute-"));
+      const scratch = mkdtempSync7(join30(tmpdir8(), "agb-prosecute-"));
       const safeId = t.id.replace(/[\/\\]/g, "_");
       if (release.isActive && !release.isActive()) {
         rmSync12(scratch, { recursive: true, force: true });
@@ -15062,7 +15193,7 @@ async function reviewFleet({
 }
 
 // lib/bootstrap.mjs
-import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync11, lstatSync as lstatSync13, symlinkSync as symlinkSync4, copyFileSync as copyFileSync4, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
+import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync12, lstatSync as lstatSync13, symlinkSync as symlinkSync4, copyFileSync as copyFileSync4, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
 import { join as join31, resolve as resolve16, dirname as dirname19 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { homedir as homedir7 } from "node:os";
@@ -15090,7 +15221,7 @@ function isNpxTemp(filePath = fileURLToPath4(import.meta.url), env = process.env
 }
 function copyDirSync(src, dest) {
   mkdirSync17(dest, { recursive: true });
-  for (const entry of readdirSync11(src, { withFileTypes: true })) {
+  for (const entry of readdirSync12(src, { withFileTypes: true })) {
     const srcPath = join31(src, entry.name);
     const destPath = join31(dest, entry.name);
     if (entry.isDirectory()) {
@@ -15273,7 +15404,7 @@ function bootstrap({
     } else {
       console.log("installation directory is stable: using symlinks for auto-upgrades");
     }
-    const skills = readdirSync11(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const skills = readdirSync12(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     for (const name of skills) {
       const src = join31(skillsSrc, name);
       const dst = join31(destination, name);
