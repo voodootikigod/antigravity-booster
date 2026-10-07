@@ -872,8 +872,8 @@ function finishUninstall({ home = homedir8(), token, uninstallerDir, agyBin, bas
         return { ok: false, error: `agy plugin uninstall antigravity-booster failed: ${err.message}` };
       }
       rmSync14(pluginDir, { recursive: true, force: true });
-      removeImportEntry(home, "antigravity-booster");
     }
+    removeImportEntry(home, "antigravity-booster");
     assertMigrationLockHeld(handle);
     writeMigrationState(home, { ...state, state: "ROLLED_BACK", rolledBackAt: (/* @__PURE__ */ new Date()).toISOString() });
     return { ok: true };
@@ -1525,6 +1525,11 @@ async function breakLock({ home = homedir9(), force = false, confirm, log: log2,
   }
 }
 function finishUninstallCommand({ home = homedir9(), token, uninstallerDir, agyBin, baseline, err } = {}) {
+  if (!baseline) {
+    (err ?? ((m) => process.stderr.write(`${m}
+`)))("error: --finish-uninstall requires --baseline <pre-migration.baseline.json>");
+    return 1;
+  }
   const r = finishUninstall({ home, token, uninstallerDir, baseline, agyBin: agyBin ?? resolveAgyBinary(home) });
   if (!r.ok) (err ?? ((m) => process.stderr.write(`${m}
 `)))(`error: ${r.error}`);

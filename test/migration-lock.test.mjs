@@ -396,3 +396,14 @@ test('break-lock with expectToken removes only the previewed holder; --baseline 
     assert.deepEqual(finishUninstall({ home, token: h2.token, baseline: '/b/pre-migration.baseline.json', uninstall: () => {} }), { ok: true });
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+test('finishUninstall cleans a stale booster import entry even when the plugin dir is already gone', () => {
+  const { home, plugin, uninstallerDir } = pendingHome();
+  try {
+    rmSync(plugin, { recursive: true });
+    const h = acquireMigrationLock({ home });
+    assert.deepEqual(finishUninstall({ home, token: h.token, uninstallerDir, uninstall: () => {} }), { ok: true });
+    const imports = JSON.parse(readFileSync(join(home, '.gemini', 'config', 'import_manifest.json'), 'utf8')).imports;
+    assert.deepEqual(imports, [{ name: 'third-party' }]);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});

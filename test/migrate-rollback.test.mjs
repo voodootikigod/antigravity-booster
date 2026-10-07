@@ -647,9 +647,13 @@ test('CLI: --finish-uninstall reads flag values in any position (token first)', 
   try {
     writeMigrationState(ctx.home, { state: 'ROLLED_BACK_PENDING_UNINSTALL' });
     const h = acquireMigrationLock({ home: ctx.home });
-    const r = spawnSync(process.execPath, [join(ROOT, 'bin', 'agb.mjs'), 'migrate', '--token', h.token, '--finish-uninstall', '--agy-bin', FAKE_AGY], {
+    const cli = (extra) => spawnSync(process.execPath, [join(ROOT, 'bin', 'agb.mjs'), 'migrate', '--token', h.token, '--finish-uninstall', '--agy-bin', FAKE_AGY, ...extra], {
       encoding: 'utf8', env: { ...process.env, HOME: ctx.home },
     });
+    const missing = cli([]);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /requires --baseline/);
+    const r = cli(['--baseline', 'pre-migration.baseline.json']);
     assert.equal(r.status, 0, r.stderr);
     assert.equal(state(ctx).state, 'ROLLED_BACK');
   } finally { ctx.cleanup(); }
@@ -780,5 +784,37 @@ test('D13 warning: excluded paths inside a staged plugin are named as not restor
     mkdirSync(join(ctx.plugins, 'antigravity-booster', '.git'));
     assert.equal(await run(ctx), 0);
     assert.match(ctx.errs.join('\n'), /antigravity-booster contains \.git; these are not snapshotted \(spec D13\) and will not come back on rollback/);
+  } finally { ctx.cleanup(); }
+});
+
+test('slow uninstall: a child that acked but is still running at the deadline keeps the lock and is not killed (exit 0)', async () => {
+  const ctx = setup();
+  try {
+    assert.equal(await run(ctx), 0);
+    const pidFile = join(ctx.root, 'slow.pid');
+    // Stand-in child: adopt via the real CLI path is too fast, so emulate: write
+    // the ack into the uninstaller dir (the arg after --uninstaller-dir) and keep running.
+    const slow = { argv: ['/bin/sh', '-c',
+      `echo $$ > '${pidFile}'; while [ "$1" != --uninstaller-dir ]; do shift; done; touch "$2/handover.ack"; exec sleep 30`, 'stub'], cwd: ctx.root };
+    assert.equal(await run(ctx, { rollback: true, uninstaller: slow, handoverTimeoutMs: 800 }), 0, ctx.errs.join('\n'));
+    assert.match(ctx.logs.join('\n'), /taken over the lock/);
+    const pid = Number(readFileSync(pidFile, 'utf8'));
+    assert.doesNotThrow(() => process.kill(pid, 0), 'acked child left running');
+    assert.ok(existsSync(migrationLockDir(ctx.home)), 'lock not released by the parent');
+    process.kill(-pid, 'SIGKILL');
+  } finally { ctx.cleanup(); }
+});
+
+test('hasEverMigrated alone (no stagingStarted) forces a full baseline restore, not a virgin reset', async () => {
+  const ctx = setup({ preStaged: true, shim: 'orig\n' });
+  try {
+    assert.equal(await run(ctx), 0);
+    assert.equal(await run(ctx, { force: true, crashAfter: 'SNAPSHOT_CREATED' }), 1);
+    const { stagingStarted, ...rest } = state(ctx);
+    assert.equal(stagingStarted, true);
+    writeMigrationState(ctx.home, rest);
+    assert.equal(await run(ctx, { rollback: true }), 0, ctx.errs.join('\n'));
+    assert.equal(state(ctx).state, 'ROLLED_BACK');
+    assert.equal(readFileSync(ctx.shim, 'utf8'), 'orig\n');
   } finally { ctx.cleanup(); }
 });
