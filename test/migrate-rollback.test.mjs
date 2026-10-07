@@ -654,3 +654,131 @@ test('CLI: --finish-uninstall reads flag values in any position (token first)', 
     assert.equal(state(ctx).state, 'ROLLED_BACK');
   } finally { ctx.cleanup(); }
 });
+
+// ---------------------------------------------------------------------------
+// Prosecution round 1 regressions
+// ---------------------------------------------------------------------------
+
+test('C1: a Step 5 failure after the live install is rolled back from the baseline, never virgin-reset', async () => {
+  const ctx = setup({ preStaged: true });
+  try {
+    const before = computeDirectoryDigest(join(ctx.plugins, 'antigravity-booster'));
+    let code;
+    try {
+      code = await run(ctx, { installAdlc: (o) => { process.env.FAKE_AGY_VALIDATE_MODE = 'fail'; return { ok: true, o }; } });
+    } finally { delete process.env.FAKE_AGY_VALIDATE_MODE; }
+    assert.equal(code, 1);
+    assert.equal(state(ctx).state, 'SYMLINKS_RECORDED');
+    assert.equal(state(ctx).stagingStarted, true);
+    assert.equal(existsSync(join(ctx.plugins, 'antigravity-booster', 'old.txt')), false, 'live plugin was replaced');
+    assert.equal(await run(ctx, { rollback: true }), 0, ctx.errs.join('\n'));
+    assert.equal(state(ctx).state, 'ROLLED_BACK');
+    assert.equal(computeDirectoryDigest(join(ctx.plugins, 'antigravity-booster')), before, 'previous plugin restored');
+    assert.ok(existsSync(baselineFile(ctx)), 'baseline kept');
+  } finally { ctx.cleanup(); }
+});
+
+test('H1: an unreadable or shapeless import_manifest.json is refused, never rewritten', async () => {
+  for (const bad of ['{"imports":[{"name":"third-party"}],}', '{"imports":{}}']) {
+    const ctx = setup({ preStaged: true });
+    try {
+      assert.equal(await run(ctx), 0);
+      writeFileSync(ctx.importManifest, bad);
+      assert.equal(await run(ctx, { rollback: true, forceRollback: true }), 1);
+      assert.match(ctx.errs.at(-1), /import_manifest\.json (is not valid JSON|has no imports\[\] array)/);
+      assert.equal(readFileSync(ctx.importManifest, 'utf8'), bad, 'manifest untouched');
+      assert.equal(state(ctx).state, 'ROLLBACK_IN_PROGRESS', 'resumable');
+    } finally { ctx.cleanup(); }
+  }
+  const fwd = setup();
+  try {
+    writeFileSync(fwd.importManifest, 'nope');
+    assert.equal(await run(fwd), 1);
+    assert.equal(readFileSync(fwd.importManifest, 'utf8'), 'nope');
+  } finally { fwd.cleanup(); }
+});
+
+test('M4: a lock lost mid-rollback halts before the shim and plugins are touched', async () => {
+  const ctx = setup({ preStaged: true, shim: 'orig\n' });
+  try {
+    assert.equal(await run(ctx), 0);
+    rmSync(join(ctx.src, 'skills', 's1'), { recursive: true }); // a link target goes missing → notice during link restore
+    const lockDir = migrationLockDir(ctx.home);
+    const steal = (m) => {
+      ctx.logs.push(m);
+      if (m.startsWith('Notice: Symlink target')) {
+        const meta = JSON.parse(readFileSync(join(lockDir, 'meta.json'), 'utf8'));
+        writeFileSync(join(lockDir, 'meta.json'), JSON.stringify({ ...meta, token: 'thief' }));
+      }
+    };
+    assert.equal(await run(ctx, { rollback: true, log: steal }), 1);
+    assert.match(ctx.errs.at(-1), /lock lost or replaced/);
+    assert.equal(readFileSync(ctx.shim, 'utf8'), TERMINAL_SHIM_CONTENT, 'shim not restored after the lock was lost');
+    assert.equal(existsSync(join(ctx.plugins, 'antigravity-booster', 'old.txt')), false, 'plugins not restored');
+    assert.equal(JSON.parse(readFileSync(join(lockDir, 'meta.json'), 'utf8')).token, 'thief', "the new holder's lock is not released");
+  } finally { ctx.cleanup(); }
+});
+
+test('M5: Step 6 only unlinks a recorded name that is still the same symlink', async () => {
+  const ctx = setup();
+  try {
+    assert.equal(await run(ctx, { crashAfter: 'SYMLINKS_RECORDED' }), 1);
+    rmSync(join(ctx.skills, 's1'));
+    writeFileSync(join(ctx.skills, 's1'), 'user file now');
+    rmSync(join(ctx.skills, 'adlc-doctrine'));
+    symlinkSync(ctx.userSkill, join(ctx.skills, 'adlc-doctrine'));
+    assert.equal(await run(ctx), 0, ctx.errs.join('\n'));
+    assert.equal(readFileSync(join(ctx.skills, 's1'), 'utf8'), 'user file now');
+    assert.equal(readlinkSync(join(ctx.skills, 'adlc-doctrine')), ctx.userSkill, 'retargeted link left alone');
+  } finally { ctx.cleanup(); }
+});
+
+test('M10: a state snapshotDir outside the snapshots dir is never removed by a virgin reset', async () => {
+  const ctx = setup();
+  try {
+    const foreign = join(ctx.root, 'precious');
+    mkdirSync(foreign);
+    writeFileSync(join(foreign, 'keep'), 'x');
+    writeMigrationState(ctx.home, { state: 'SNAPSHOT_CREATED', hasEverMigrated: false, snapshotDir: foreign });
+    assert.equal(await run(ctx, { rollback: true }), 0);
+    assert.ok(existsSync(join(foreign, 'keep')));
+    assert.equal(state(ctx), null);
+  } finally { ctx.cleanup(); }
+});
+
+test('M9: on handover timeout the child is reaped before rollback returns', async () => {
+  const ctx = setup();
+  try {
+    assert.equal(await run(ctx), 0);
+    const pidFile = join(ctx.root, 'child.pid');
+    const stubborn = { argv: ['/bin/sh', '-c', `echo $$ > '${pidFile}'; exec sleep 30`, 'stub'], cwd: ctx.root };
+    assert.equal(await run(ctx, { rollback: true, uninstaller: stubborn }), 1);
+    const pid = Number(readFileSync(pidFile, 'utf8'));
+    assert.throws(() => process.kill(pid, 0), (e) => e.code === 'ESRCH', 'child killed and reaped, not a zombie');
+  } finally { ctx.cleanup(); }
+});
+
+test('MEDIUM-1: a fast uninstaller failure is reported (exit 1, PENDING kept), not claimed as success', async () => {
+  const ctx = setup();
+  try {
+    assert.equal(await run(ctx), 0);
+    const failingAgy = join(ctx.root, 'agy-fail');
+    writeFileSync(failingAgy, '#!/bin/sh\n[ "$2" = uninstall ] && [ "$3" = antigravity-booster ] && exit 3\nexec "$REAL_AGY" "$@"\n', { mode: 0o755 });
+    process.env.REAL_AGY = FAKE_AGY;
+    let code;
+    try { code = await run(ctx, { rollback: true, agyBin: failingAgy }); } finally { delete process.env.REAL_AGY; }
+    assert.equal(code, 1);
+    assert.match(ctx.errs.at(-1), /could not remove antigravity-booster; state is ROLLED_BACK_PENDING_UNINSTALL/);
+    assert.equal(state(ctx).state, 'ROLLED_BACK_PENDING_UNINSTALL');
+    assert.equal(existsSync(migrationLockDir(ctx.home)), false);
+  } finally { ctx.cleanup(); }
+});
+
+test('D13 warning: excluded paths inside a staged plugin are named as not restorable', async () => {
+  const ctx = setup({ preStaged: true });
+  try {
+    mkdirSync(join(ctx.plugins, 'antigravity-booster', '.git'));
+    assert.equal(await run(ctx), 0);
+    assert.match(ctx.errs.join('\n'), /antigravity-booster contains \.git; these are not snapshotted \(spec D13\) and will not come back on rollback/);
+  } finally { ctx.cleanup(); }
+});

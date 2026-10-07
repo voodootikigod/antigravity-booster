@@ -359,3 +359,40 @@ test('finishUninstall never deletes a directory it did not create (only agb-unin
     rmSync(uninstallerDir, { recursive: true, force: true });
   }
 });
+
+test('M1 (ABA): a lock swapped for a different, also-dead token between inspect and rename is put back, not removed', () => {
+  const home = freshHome();
+  try {
+    const lockDir = plantLock(home, { pid: 999997, startTime: '1', token: 'X', startedAt: 'then' });
+    let swapped = false;
+    const deps = {
+      platform: 'linux',
+      readFile: () => `1 (x) ${Array.from({ length: 19 }, () => '0').join(' ')} 1 0`,
+      kill: (pid) => {
+        if (!swapped && pid === 999997) {
+          swapped = true;
+          writeFileSync(join(lockDir, 'meta.json'), JSON.stringify({ pid: 999996, startTime: '1', token: 'Y', startedAt: 'now' }));
+        }
+        esrch();
+      },
+    };
+    assert.throws(() => acquireMigrationLock({ home, deps }), (e) => e.code === 'LOCK_HELD');
+    assert.equal(readLockMeta(lockDir).token, 'Y', 'the uninspected holder Y was never removed');
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('break-lock with expectToken removes only the previewed holder; --baseline must match the state', () => {
+  const home = freshHome();
+  try {
+    const h = acquireMigrationLock({ home });
+    assert.equal(breakMigrationLock({ home, confirmed: true, expectToken: 'someone-else' }).removed, false);
+    assert.ok(existsSync(h.lockDir));
+    assert.equal(breakMigrationLock({ home, confirmed: true, expectToken: h.token }).removed, true);
+    writeMigrationState(home, { state: 'ROLLED_BACK_PENDING_UNINSTALL', baselineSnapshotDir: '/b' });
+    const h2 = acquireMigrationLock({ home });
+    const r = finishUninstall({ home, token: h2.token, baseline: '/other/pre-migration.baseline.json', uninstall: () => assert.fail('no') });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /is not this migration's baseline/);
+    assert.deepEqual(finishUninstall({ home, token: h2.token, baseline: '/b/pre-migration.baseline.json', uninstall: () => {} }), { ok: true });
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});

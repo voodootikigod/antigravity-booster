@@ -301,6 +301,7 @@ try {
     if (rest.includes('--finish-uninstall')) {
       process.exitCode = finishUninstallCommand({
         token: flagValue('--token'), uninstallerDir: flagValue('--uninstaller-dir'), agyBin: flagValue('--agy-bin'),
+        baseline: flagValue('--baseline'),
       });
     } else if (rest.includes('--break-lock')) {
       const confirm = async (question) => {

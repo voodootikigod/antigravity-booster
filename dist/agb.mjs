@@ -801,12 +801,13 @@ function invalidateMigrationLockToken(handle) {
   writeMetaAtomic(handle.lockDir, { ...meta, token: `invalidated:${meta.token}` });
   return true;
 }
-function breakMigrationLock({ home = homedir8(), confirmed = false, deps = defaultDeps() } = {}) {
+function breakMigrationLock({ home = homedir8(), confirmed = false, expectToken, deps = defaultDeps() } = {}) {
   const lockDir = migrationLockDir(home);
   if (!existsSync29(lockDir)) return { present: false, removed: false, holder: null, alive: false };
   const holder = readLockMeta(lockDir);
   const alive = holder ? isAlive2(holder, deps) : false;
   if (!confirmed) return { present: true, removed: false, holder, alive };
+  if (expectToken !== void 0 && (holder?.token ?? null) !== expectToken) return { present: true, removed: false, holder, alive };
   rmSync14(lockDir, { recursive: true, force: true });
   return { present: true, removed: true, holder, alive };
 }
@@ -844,12 +845,15 @@ function removeImportEntry(home, name) {
 function removeUninstallerDir(dir) {
   if (dir && basename9(dir).startsWith(UNINSTALLER_DIR_PREFIX)) rmSync14(dir, { recursive: true, force: true });
 }
-function finishUninstall({ home = homedir8(), token, uninstallerDir, agyBin, deps = defaultDeps(), uninstall } = {}) {
+function finishUninstall({ home = homedir8(), token, uninstallerDir, agyBin, baseline, deps = defaultDeps(), uninstall } = {}) {
   let handle;
   try {
     const state = readMigrationState(home);
     if (state?.state !== "ROLLED_BACK_PENDING_UNINSTALL") {
       return { ok: false, error: `refusing --finish-uninstall: state is ${state?.state ?? "INITIAL"}, not ROLLED_BACK_PENDING_UNINSTALL` };
+    }
+    if (baseline !== void 0 && baseline !== join32(state.baselineSnapshotDir ?? "", "pre-migration.baseline.json")) {
+      return { ok: false, error: `refusing --finish-uninstall: --baseline ${baseline} is not this migration's baseline` };
     }
     handle = adoptMigrationLock({ home, token, deps });
     if (uninstallerDir) writeFileSync18(join32(uninstallerDir, "handover.ack"), `${process.pid}
@@ -1013,8 +1017,17 @@ function validateBooster(agyBin, dir, home) {
   return missing.length ? { ok: false, error: `agy plugin validate ${dir} is missing component categories: ${missing.join(", ")}` } : v;
 }
 function readImports(p) {
-  const m = readJson(p.importManifest, null);
-  return Array.isArray(m?.imports) ? m : null;
+  if (!existsSync30(p.importManifest)) return null;
+  let m;
+  try {
+    m = JSON.parse(readFileSync25(p.importManifest, "utf8"));
+  } catch (e) {
+    throw new MigrateError(`${p.importManifest} is not valid JSON (${e.message}); fix or restore it, then re-run`);
+  }
+  if (!m || typeof m !== "object" || !Array.isArray(m.imports)) {
+    throw new MigrateError(`${p.importManifest} has no imports[] array; fix or restore it, then re-run`);
+  }
+  return m;
 }
 function ourEntries(p) {
   return (readImports(p)?.imports ?? []).filter((e) => PLUGIN_NAMES.includes(e?.name));
@@ -1116,6 +1129,12 @@ function step3Snapshot(ctx, state) {
       throw new MigrateError(`staged plugin ${dir} exceeds ${SNAPSHOT_SIZE_CAP_BYTES / 1024 / 1024} MB after excluding ${INSTALL_COPY_EXCLUSIONS.join(", ")}; remove large files from it (or reinstall it cleanly) and re-run agb migrate`);
     }
   }
+  for (const name of PLUGIN_NAMES) {
+    const present = INSTALL_COPY_EXCLUSIONS.filter((x) => existsSync30(join33(p.plugins, name, x)));
+    if (present.length) {
+      ctx.warn(`warning: ${join33(p.plugins, name)} contains ${present.join(", ")}; these are not snapshotted (spec D13) and will not come back on rollback. Copy them elsewhere first if you need them.`);
+    }
+  }
   const snap = newSnapshotDir(p);
   const plugins = {};
   for (const name of PLUGIN_NAMES) {
@@ -1165,6 +1184,7 @@ function step4RecordSymlinks(ctx, state) {
 function step5Stage(ctx, state) {
   const { p, home, agyBin, lock } = ctx;
   assertMigrationLockHeld(lock);
+  state = writeMigrationState(home, { ...state, stagingStarted: true });
   const r1 = ctx.installBooster(ctx.pluginRoot, BOOSTER_PLUGIN_NAME, { home, agyBin });
   if (!r1?.ok) throw new MigrateError(`installing antigravity-booster failed: ${r1?.error ?? "unknown error"}`);
   const r2 = ctx.installAdlc({ home, agyBin });
@@ -1222,7 +1242,20 @@ async function handOverUninstall(ctx) {
   const dir = mkdtempSync8(join33(ctx.tmpParent ?? tmpdir9(), UNINSTALLER_DIR_PREFIX));
   chmodSync4(dir, 448);
   const launcher = ctx.uninstaller ?? defaultUninstallerArgv(home);
-  const args = [...launcher.argv, "migrate", "--finish-uninstall", "--token", lock.token, "--uninstaller-dir", dir, "--agy-bin", agyBin];
+  const baselineFile = join33(readMigrationState(home)?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
+  const args = [
+    ...launcher.argv,
+    "migrate",
+    "--finish-uninstall",
+    "--baseline",
+    baselineFile,
+    "--token",
+    lock.token,
+    "--uninstaller-dir",
+    dir,
+    "--agy-bin",
+    agyBin
+  ];
   const quoted = args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(" ");
   const script = join33(dir, "uninstall.sh");
   writeFileSync19(script, `#!/bin/sh
@@ -1237,12 +1270,25 @@ exec ${quoted}
   }));
   child.unref();
   const deadline = Date.now() + (ctx.handoverTimeoutMs ?? HANDOVER_TIMEOUT_MS);
+  let acked = false;
   while (Date.now() < deadline) {
-    if (existsSync30(join33(dir, "handover.ack")) || !existsSync30(dir)) {
-      log2("Rollback restored the baseline; the detached uninstaller is removing antigravity-booster.");
-      return 0;
+    if (!existsSync30(dir)) {
+      if (readMigrationState(home)?.state === "ROLLED_BACK") {
+        log2("Rollback complete: antigravity-booster uninstalled.");
+        return 0;
+      }
+      err("error: the detached uninstaller could not remove antigravity-booster; state is ROLLED_BACK_PENDING_UNINSTALL. Re-run `agb migrate --rollback` to retry.");
+      return 1;
+    }
+    if (existsSync30(join33(dir, "handover.ack")) && !acked) {
+      acked = true;
+      log2("The detached uninstaller has taken over the lock and is removing antigravity-booster.");
     }
     await sleep3(50);
+  }
+  if (acked) {
+    log2("If it fails, state stays ROLLED_BACK_PENDING_UNINSTALL and `agb migrate --rollback` retries.");
+    return 0;
   }
   try {
     process.kill(-child.pid, "SIGKILL");
@@ -1341,7 +1387,7 @@ async function rollbackLocked(ctx) {
       return restoreFromBaseline(ctx, state);
     }
     default:
-      if (VIRGIN_RESET_STATES.has(state.state) && !state.hasEverMigrated) {
+      if (VIRGIN_RESET_STATES.has(state.state) && !state.hasEverMigrated && !state.stagingStarted) {
         assertMigrationLockHeld(ctx.lock);
         if (state.snapshotDir && isUnder(resolve17(state.snapshotDir), ctx.p.snapshots)) rmSync15(state.snapshotDir, { recursive: true, force: true });
         clearMigrationState(home);
@@ -1466,7 +1512,11 @@ async function breakLock({ home = homedir9(), force = false, confirm, log: log2,
         return 1;
       }
     }
-    breakMigrationLock({ home, confirmed: true, deps });
+    const done = breakMigrationLock({ home, confirmed: true, expectToken: h?.token ?? null, deps });
+    if (!done.removed) {
+      errOut("error: the migration lock changed hands while waiting for confirmation; left in place. Re-run --break-lock.");
+      return 1;
+    }
     out("Migration lock removed. Re-run `agb migrate` or `agb migrate --rollback`.");
     return 0;
   } catch (e) {
@@ -1474,8 +1524,8 @@ async function breakLock({ home = homedir9(), force = false, confirm, log: log2,
     return 1;
   }
 }
-function finishUninstallCommand({ home = homedir9(), token, uninstallerDir, agyBin, err } = {}) {
-  const r = finishUninstall({ home, token, uninstallerDir, agyBin: agyBin ?? resolveAgyBinary(home) });
+function finishUninstallCommand({ home = homedir9(), token, uninstallerDir, agyBin, baseline, err } = {}) {
+  const r = finishUninstall({ home, token, uninstallerDir, baseline, agyBin: agyBin ?? resolveAgyBinary(home) });
   if (!r.ok) (err ?? ((m) => process.stderr.write(`${m}
 `)))(`error: ${r.error}`);
   return r.ok ? 0 : 1;
@@ -16613,7 +16663,8 @@ try {
       process.exitCode = finishUninstallCommand2({
         token: flagValue("--token"),
         uninstallerDir: flagValue("--uninstaller-dir"),
-        agyBin: flagValue("--agy-bin")
+        agyBin: flagValue("--agy-bin"),
+        baseline: flagValue("--baseline")
       });
     } else if (rest.includes("--break-lock")) {
       const confirm = async (question) => {
