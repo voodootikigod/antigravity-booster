@@ -169,3 +169,15 @@ test('P4: an installed probe-* plugin is a warning', () => {
   assert.equal(r.level, 'warn');
   assert.match(r.detail, /probe-deny/);
 });
+
+test('policy guard self-test names a missing or non-string hooks.json command precisely', () => {
+  for (const command of [undefined, '', 42]) {
+    const root = pluginRoot();
+    const hooks = JSON.parse(readFileSync(join(root, 'hooks.json'), 'utf8'));
+    hooks['agb-policy-guard'].PreToolUse[0].hooks[0].command = command;
+    writeFileSync(join(root, 'hooks.json'), JSON.stringify(hooks));
+    const r = checkPolicyGuard({ pluginRoot: root, home: freshHome() });
+    assert.equal(r.level, 'fail');
+    assert.match(r.detail, /hooks\.json declares no agb-policy-guard PreToolUse command/, String(command));
+  }
+});

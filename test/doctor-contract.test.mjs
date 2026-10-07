@@ -153,6 +153,9 @@ test('checkPlugin reports the evaluator row: fail for exit-1 rows, pass/warn for
       const c = await checkPlugin({ home });
       assert.equal(c.level, level, `${detail}`);
       assert.match(c.detail, detail);
+      if (level === 'pass') assert.equal(c.fix, null, 'a passing row carries no fix');
+      else assert.ok(c.fix, 'a warn/fail row tells the operator what to do');
+      if (level === 'warn') assert.match(c.fix, /adlcContract 1/);
     } finally { rmSync(home, { recursive: true, force: true }); }
   }
 });
