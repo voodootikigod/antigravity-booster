@@ -1,6 +1,15 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-07T17:12:13.042Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "4e57abc7a2c2f428c9119a44f1aedd3a4100b7cfb8986340c0c0d12e5c6306bc",
+    "ticketHash": "6cf0a63a8f2d490ed89151b29819ce8eb4a55fbbd6a0704abce07c9747dfc74b",
+    "version": 1
+  },
   "body": "Found during the T-PLUGIN-04 real-machine migration (gate-manifest seq 193). In the installed (bundled) plugin, agb doctor reports adlc CLI FAIL: \"ADLC executable failed revalidation before spawn: expected package name @adlc/cli but found @adlc/cli-vendored-by-antigravity-booster\". resolveAdlcBinary correctly returns Tier 1 (vendor/adlc, spec §4.2, Appendix A D12, A.6 item 12), but execFileAuthenticatedAdlc calls revalidateAdlcBinary, which has no vendored branch and only authenticates an @adlc/cli npm package. Every adlc call (scheduler rails-guard/gate-manifest, review, plan, preflight, prosecute, doctor) therefore fails in the bundled plugin; with active rails agb run fails closed and dispatches nothing. Unbundled tests never spawned the vendored binary through this path.\n\nFix in lib/adlc-bridge.mjs: revalidateAdlcBinary gains bundled (default IS_BUNDLED) and pluginRoot (default defaultPluginRoot) options, threaded from execFileAuthenticatedAdlc. When bundled, or when the candidate realpath equals <pluginRoot>/vendor/adlc/bin/adlc.mjs, re-run resolveVendoredAdlc(pluginRoot) (all pinned digests) immediately before spawn: absent/tampered -> { ok:false } (fail closed, no fallthrough); in the bundled build any candidate other than the vendored binary is refused. Otherwise the existing npm-package path is unchanged.\n\nAcceptance criteria:\n1. New tests in test/adlc-bridge.test.mjs: unbundled run with a plugin root containing the real vendor/adlc spawns `adlc --version` through execFileAuthenticatedAdlc and gets 1.11.1; bundled:true likewise; a tampered vendored file (copy of vendor/ in a temp plugin root, one byte changed) is refused before spawn; bundled:true with a non-vendored candidate is refused; the existing npm-package revalidation tests still pass.\n2. Doctor adlc CLI check passes against a temp plugin root with the real vendor/adlc (test/doctor*.test.mjs).\n3. `npm test` passes on Node 24 and 22; `npm run build` leaves dist/ and vendor/ unchanged after committing the rebuilt bundles.\n4. `adlc rails-guard --base <main> --ticket T-PLUGIN-05-VENDORED-ADLC-SPAWN` exits 0; hollow-test on changed lines has no unexplained survivors; adversarial-review exits 0.\n5. After merge, with the owner go-ahead: re-run bootstrap/migrate --force on the owner machine and confirm agb doctor adlc CLI PASS.",
   "category": "bug",
+  "completed": true,
   "edges": [],
   "id": "T-PLUGIN-05-VENDORED-ADLC-SPAWN",
   "rails": [
