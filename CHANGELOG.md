@@ -32,6 +32,9 @@ rather than enumerate.
 - `lib/migration-lock.mjs`: a user-global lock that detects PID reuse by process start time and reclaims a dead holder with an ABA-safe rename. A live holder is never stolen. `agb migrate --break-lock` clears a wedged lock after confirmation.
 - README, USAGE and ARCHITECTURE document the git-URL install, `agb migrate`, the slash-command model, and the print-mode residual risk (`agy -p` turns `ask` into allow, so in-session protection there is deny-only).
 
+### Fixed
+- **The installed plugin can run `adlc` again** (T-PLUGIN-05-VENDORED-ADLC-SPAWN, found by the real-machine migration). The check every `adlc` call makes just before spawning only accepted an `@adlc/cli` npm package, so it rejected booster's own vendored copy (`@adlc/cli-vendored-by-antigravity-booster`). As a result `agb run`, review, plan, preflight, prosecute and doctor's `adlc CLI` check all failed in the bundled plugin. The spawn-time check now re-verifies the vendored copy against its pinned digests, and in the bundled plugin it refuses any other binary.
+
 ### Removed
 - The legacy `.agents/` tree (`agb-legacy-shim` plugin, old agent configs and the duplicate dashboard sidecars). The root `commands/`, `agents/` and top-level `sidecars/` are the only sources.
 

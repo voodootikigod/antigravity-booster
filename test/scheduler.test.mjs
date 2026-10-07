@@ -225,8 +225,11 @@ test('runPlan: fails closed when hollow-test binary is unavailable for modified 
     // The builder will modify test/sample.test.js under FAKE_BUILDER_MODE=mod-test.
     // Without an authenticated adlc binary available, hollow-test cannot run.
     // The integration MUST fail closed with post_merge_gate_failure.
+    // A plugin root with no vendor/adlc makes "unavailable" explicit (the
+    // checkout's own vendored adlc would otherwise authenticate and run).
+    const noVendor = mkdtempSync(join(tmpdir(), 'agb-no-vendor-'));
     const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'mod-test', AGB_SANDBOX_GATES: '0' },
+      { AGB_AGY_BIN: FAKE_AGY, FAKE_BUILDER_MODE: 'mod-test', AGB_SANDBOX_GATES: '0', AGB_PLUGIN_ROOT: noVendor },
       () => runPlan({
         repo,
         gate: { test: 'node test/sample.test.js' },

@@ -6,7 +6,7 @@ import { cpSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, appendFileSync, 
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { resolveAdlcBinary, KNOWN_VENDORED_ADLC, STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS } from '../lib/adlc-bridge.mjs';
+import { resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, KNOWN_VENDORED_ADLC, STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS } from '../lib/adlc-bridge.mjs';
 import { computeDirectoryDigest } from '../lib/digest.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -95,4 +95,54 @@ test('bundled mode ignores the AGB_PLUGIN_ROOT dev override', () => {
   assert.notEqual(dev.source, 'vendored', 'unbundled honours the override (no vendor/adlc there)');
   const bundled = resolveAdlcBinary({ repo: ROOT, env: { AGB_PLUGIN_ROOT: noVendor }, bundled: true });
   assert.equal(bundled.source, 'vendored', 'bundled ignores it and uses the real plugin root');
+});
+
+// T-PLUGIN-05: the spawn-time revalidation must accept the pinned vendored adlc
+// (real-machine migration, gate-manifest seq 193: every adlc call failed in the
+// installed plugin with "expected package name @adlc/cli").
+for (const bundled of [false, true]) {
+  test(`spawn: the vendored adlc runs through execFileAuthenticatedAdlc (bundled: ${bundled})`, async () => {
+    const pluginRoot = fakePluginRoot(`spawn-ok-${bundled}`);
+    const r = resolveAdlcBinary({ bundled, pluginRoot, env: {} });
+    assert.equal(r.ok, true, r.error);
+    const { stdout } = await execFileAuthenticatedAdlc(r.binary, ['--version'], {}, { bundled, pluginRoot, env: {} });
+    assert.match(stdout, new RegExp(KNOWN_VENDORED_ADLC.version.replace(/\./g, '\\.')));
+    const v = revalidateAdlcBinary(r.binary, { bundled, pluginRoot, env: {} });
+    assert.equal(v.ok, true, v.error);
+    assert.equal(v.source, 'vendored');
+  });
+}
+
+test('spawn: a vendored file tampered after resolution is refused before spawn', async () => {
+  const pluginRoot = fakePluginRoot('spawn-tampered');
+  const r = resolveAdlcBinary({ bundled: true, pluginRoot, env: {} });
+  assert.equal(r.ok, true);
+  appendFileSync(join(pluginRoot, 'vendor', 'adlc', 'dist', 'adlc.bundle.mjs'), '\n// tampered after resolve\n');
+  await assert.rejects(execFileAuthenticatedAdlc(r.binary, ['--version'], {}, { bundled: true, pluginRoot, env: {} }),
+    (e) => e.code === 'EAUTH' && /vendored-adlc-tampered/.test(e.message));
+  for (const bundled of [false, true]) {
+    assert.deepEqual(revalidateAdlcBinary(r.binary, { bundled, pluginRoot, env: {} }), { ok: false, error: 'vendored-adlc-tampered' });
+  }
+});
+
+test('spawn (bundled): any candidate other than the vendored binary is refused', () => {
+  const pluginRoot = fakePluginRoot('spawn-other');
+  const other = join(pluginRoot, 'other-adlc.mjs');
+  writeFileSync(other, 'console.log(1)');
+  const v = revalidateAdlcBinary(other, { bundled: true, pluginRoot, env: {} });
+  assert.equal(v.ok, false);
+  assert.match(v.error, /not the vendored adlc/);
+  const missing = revalidateAdlcBinary(other, { bundled: true, pluginRoot: fakePluginRoot('spawn-novendor', { vendor: false }), env: {} });
+  assert.equal(missing.ok, false);
+  assert.match(missing.error, /vendored adlc missing/);
+  assert.match(revalidateAdlcBinary(other, { bundled: true, pluginRoot: null, env: {} }).error, /plugin root not found/);
+});
+
+test('doctor: the adlc CLI check passes against a plugin root with the pinned vendored adlc', async () => {
+  const { checkAdlcBinary } = await import('../lib/doctor.mjs');
+  const pluginRoot = fakePluginRoot('doctor-vendored');
+  const repo = mkdtempSync(join(base, 'repo-'));
+  const r = await checkAdlcBinary({ env: { PATH: process.env.PATH, AGB_PLUGIN_ROOT: pluginRoot }, cwd: repo });
+  assert.equal(r.level, 'pass', JSON.stringify(r));
+  assert.match(r.detail, new RegExp(KNOWN_VENDORED_ADLC.version.replace(/\./g, '\\.')));
 });

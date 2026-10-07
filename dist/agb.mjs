@@ -6998,14 +6998,38 @@ function preventExecutableReplacement(target, opts = {}) {
     throw err;
   }
 }
+function sameRealPath(a, b) {
+  try {
+    return realpathSync3(a) === realpathSync3(b);
+  } catch {
+    return false;
+  }
+}
+function revalidateVendoredAdlc(binaryPath, { bundled, pluginRoot }) {
+  const vendoredBinary = pluginRoot ? join17(pluginRoot, "vendor", "adlc", "bin", "adlc.mjs") : null;
+  const isVendored = Boolean(binaryPath && vendoredBinary && sameRealPath(binaryPath, vendoredBinary));
+  if (!bundled && !isVendored) return null;
+  if (!pluginRoot) return { ok: false, error: "vendored adlc missing: booster plugin root not found" };
+  const v = resolveVendoredAdlc(pluginRoot);
+  if (!v) return { ok: false, error: `vendored adlc missing under ${pluginRoot}/vendor/adlc` };
+  if (!v.ok) return v;
+  if (binaryPath && !sameRealPath(binaryPath, v.binary)) {
+    return { ok: false, error: `adlc binary ${binaryPath} is not the vendored adlc; the bundled plugin runs only vendor/adlc` };
+  }
+  return { ...v, target: v.binary };
+}
 function revalidateAdlcBinary(binaryPath, {
   repo = process.cwd(),
   env = process.env,
   minVersion = MIN_ADLC_CLI_VERSION,
   allowCustom = false,
   allowSystem = false,
-  lockExecutable = false
+  lockExecutable = false,
+  bundled = IS_BUNDLED,
+  pluginRoot = defaultPluginRoot(env, bundled)
 } = {}) {
+  const vendored = revalidateVendoredAdlc(binaryPath, { bundled, pluginRoot });
+  if (vendored) return vendored;
   recoverStaleExecutableLocks();
   let candidate = binaryPath;
   if (!candidate) {
@@ -7209,9 +7233,11 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
   env = process.env,
   minVersion = MIN_ADLC_CLI_VERSION,
   allowCustom = false,
-  allowSystem = false
+  allowSystem = false,
+  bundled = IS_BUNDLED,
+  pluginRoot = defaultPluginRoot(env, bundled)
 } = {}) {
-  const verified = revalidateAdlcBinary(binaryPath, { repo, env, minVersion, allowCustom, allowSystem, lockExecutable: true });
+  const verified = revalidateAdlcBinary(binaryPath, { repo, env, minVersion, allowCustom, allowSystem, lockExecutable: true, bundled, pluginRoot });
   if (!verified.ok) {
     const err = new Error(`Authenticated ADLC binary verification failed: ${verified.error}`);
     err.code = "EAUTH";
