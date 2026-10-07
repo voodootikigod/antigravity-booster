@@ -6500,7 +6500,10 @@ function runHook(command, pluginRoot, home, repo, relPath) {
     cwd: pluginRoot,
     input: JSON.stringify(payload),
     encoding: "utf8",
-    env: { PATH: MINIMAL_PATH, HOME: home },
+    // NODE_V8_COVERAGE is pinned empty: Node re-injects it into an explicit
+    // env when the key is absent, which would leak instrumentation into the
+    // otherwise minimal hook environment.
+    env: { PATH: MINIMAL_PATH, HOME: home, NODE_V8_COVERAGE: "" },
     timeout: HOOK_TIMEOUT_MS
   });
 }

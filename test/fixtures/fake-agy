@@ -28,7 +28,7 @@ if [ "$1" = "plugin" ]; then
           tmp_base="${TMPDIR:-/tmp}"
           tmp_base="${tmp_base%/}"
           case "$HOME" in
-            "$tmp_base"/*|/tmp/*)
+            "$tmp_base"/*|/tmp/*|/var/folders/*|/private/var/folders/*)
               if [ -d "$3" ] && [ "${FAKE_AGY_PLUGIN_MODE:-ok}" != "no-stage" ]; then
                 name=$(basename "$(CDPATH='' cd -- "$3" && pwd -P)")
                 dest="$HOME/.gemini/config/plugins/$name"
@@ -50,7 +50,7 @@ if [ "$1" = "plugin" ]; then
       tmp_base="${tmp_base%/}"
       case "$3" in ""|*/*|.|..) echo "error: invalid plugin name '$3'" >&2; exit 1 ;; esac
       case "$HOME" in
-        "$tmp_base"/*|/tmp/*)
+        "$tmp_base"/*|/tmp/*|/var/folders/*|/private/var/folders/*)
           if [ -d "$HOME/.gemini/config/plugins/$3" ]; then
             rm -rf "$HOME/.gemini/config/plugins/$3"
             [ -n "$FAKE_STATE_DIR" ] && echo "$3" >> "$FAKE_STATE_DIR/plugin-uninstalls"
