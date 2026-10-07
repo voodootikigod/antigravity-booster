@@ -276,7 +276,7 @@ function pendingHome() {
     imports: [{ name: 'antigravity-booster' }, { name: 'third-party' }],
   }));
   writeMigrationState(home, { state: 'ROLLED_BACK_PENDING_UNINSTALL', baselineSnapshotDir: '/b' });
-  const uninstallerDir = mkdtempSync(join(tmpdir(), 'agb-uninst-'));
+  const uninstallerDir = mkdtempSync(join(tmpdir(), 'agb-uninstall-'));
   return { home, plugin, uninstallerDir };
 }
 
@@ -289,6 +289,7 @@ test('finishUninstall: refuses outside ROLLED_BACK_PENDING_UNINSTALL or with a w
     assert.match(wrong.error, /does not match/);
     assert.equal(readMigrationState(home).state, 'ROLLED_BACK_PENDING_UNINSTALL');
     assert.equal(readLockMeta(h.lockDir).token, h.token, 'a refused child never releases the parent lock');
+    assert.ok(existsSync(uninstallerDir), 'a refused child never deletes the uninstaller dir');
     writeMigrationState(home, { state: 'MIGRATED' });
     const r = finishUninstall({ home, token: h.token, uninstall: () => assert.fail('must not run') });
     assert.equal(r.ok, false);
@@ -340,4 +341,21 @@ test('finishUninstall: booster already gone → ROLLED_BACK without running unin
     assert.deepEqual(r, { ok: true });
     assert.equal(readMigrationState(home).state, 'ROLLED_BACK');
   } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test('finishUninstall never deletes a directory it did not create (only agb-uninstall-*)', () => {
+  const { home, uninstallerDir } = pendingHome();
+  const foreign = mkdtempSync(join(tmpdir(), 'precious-'));
+  try {
+    writeFileSync(join(foreign, 'keep'), 'x');
+    const h = acquireMigrationLock({ home });
+    const r = finishUninstall({ home, token: h.token, uninstallerDir: foreign, uninstall: () => {} });
+    assert.deepEqual(r, { ok: true });
+    assert.ok(existsSync(join(foreign, 'keep')), 'foreign directory untouched');
+    assert.equal(existsSync(join(foreign, 'handover.ack')), true);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(foreign, { recursive: true, force: true });
+    rmSync(uninstallerDir, { recursive: true, force: true });
+  }
 });

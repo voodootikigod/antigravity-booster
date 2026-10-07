@@ -6,6 +6,22 @@
 # Plugin subcommands are argv-based (no stdin payload) — handle them before
 # the unconditional `cat` below, which would otherwise block callers that
 # invoke this fixture with stdio:'inherit' and no stdin to pipe.
+# Emulate agy's ~/.gemini/config/import_manifest.json bookkeeping (temp HOME
+# only; callers already passed the temp-HOME guard).
+fake_import_entry() {
+  [ -n "${FAKE_AGY_NO_IMPORT_MANIFEST:-}" ] && return 0
+  node -e '
+    const fs = require("fs"); const p = process.argv[1]; const op = process.argv[2]; const name = process.argv[3];
+    let m = { imports: [] };
+    try { m = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
+    if (!Array.isArray(m.imports)) m.imports = [];
+    m.imports = m.imports.filter((e) => e && e.name !== name);
+    if (op === "add") m.imports.push({ name, source: "antigravity", importedAt: new Date().toISOString(), components: ["skills"] });
+    fs.mkdirSync(require("path").dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(m, null, 2));
+  ' "$HOME/.gemini/config/import_manifest.json" "$1" "$2"
+}
+
 if [ "$1" = "plugin" ]; then
   case "$2" in
     install)
@@ -38,6 +54,7 @@ if [ "$1" = "plugin" ]; then
                 if [ "${FAKE_AGY_PLUGIN_MODE:-ok}" = "tamper-stage" ]; then
                   echo tampered >> "$dest/plugin.json.tampered"
                 fi
+                fake_import_entry add "$name"
               fi ;;
           esac
           echo "installed plugin from $3"
@@ -53,6 +70,7 @@ if [ "$1" = "plugin" ]; then
         "$tmp_base"/*|/tmp/*|/var/folders/*|/private/var/folders/*)
           if [ -d "$HOME/.gemini/config/plugins/$3" ]; then
             rm -rf "$HOME/.gemini/config/plugins/$3"
+            fake_import_entry remove "$3"
             [ -n "$FAKE_STATE_DIR" ] && echo "$3" >> "$FAKE_STATE_DIR/plugin-uninstalls"
             echo "uninstalled plugin $3"
             exit 0
@@ -64,8 +82,18 @@ if [ "$1" = "plugin" ]; then
       exit 1 ;;
     validate)
       dir="${3:-.}"
+      if [ "${FAKE_AGY_VALIDATE_MODE:-ok}" = "fail" ]; then
+        echo "error: simulated validate failure for $dir" >&2
+        exit 1
+      fi
       if [ -f "$dir/plugin.json" ]; then
-        echo "plugin at $dir is valid"
+        # Mirror real agy: one line per component category.
+        echo "  [ok]    $dir"
+        if [ -d "$dir/skills" ]; then echo "          ✔ skills      : 1 processed"; else echo "          - skills      : skipped (not found)"; fi
+        if [ -d "$dir/agents" ]; then echo "          ✔ agents      : 1 processed"; else echo "          - agents      : skipped (not found)"; fi
+        if [ -d "$dir/commands" ]; then echo "          ✔ commands    : 1 processed (converted to skills)"; else echo "          - commands    : skipped (not found)"; fi
+        if [ -f "$dir/mcp_config.json" ]; then echo "          ✔ mcpServers  : 1 processed"; else echo "          - mcpServers  : skipped (not found)"; fi
+        if [ -f "$dir/hooks.json" ]; then echo "          ✔ hooks       : 1 processed"; else echo "          - hooks       : skipped (not found)"; fi
         exit 0
       fi
       echo "error: no plugin.json in $dir" >&2

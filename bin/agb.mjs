@@ -49,6 +49,11 @@ const COMMANDS = {
   probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '[--force] [--force-reinstall]', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
+  migrate: {
+    args: '[--rollback]',
+    desc: 'move an npm-global/checkout install onto the native agy plugin, or roll it back',
+    flags: '--force (re-run after MIGRATED) --rollback --force-rollback --break-lock [--force]'
+  },
   pool: { args: 'drain [repo]', desc: 'safely drain active leases and reset coordinator' },
   tui: { args: '', desc: 'Removed. Use agb sidecar instead.' }
 };
@@ -289,6 +294,27 @@ try {
     const force = rest.includes('--force') || rest.includes('-f');
     const forceReinstall = rest.includes('--force-reinstall');
     bootstrap({ force, forceReinstall });
+  } else if (cmd === 'migrate') {
+    const { migrate, breakLock, finishUninstallCommand } = await import('../lib/migrate.mjs');
+    const flagValue = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
+    const force = rest.includes('--force');
+    if (rest.includes('--finish-uninstall')) {
+      process.exitCode = finishUninstallCommand({
+        token: flagValue('--token'), uninstallerDir: flagValue('--uninstaller-dir'), agyBin: flagValue('--agy-bin'),
+      });
+    } else if (rest.includes('--break-lock')) {
+      const confirm = async (question) => {
+        if (!process.stdin.isTTY) return false;
+        const { createInterface } = await import('node:readline/promises');
+        const rl = createInterface({ input: process.stdin, output: process.stderr });
+        try { return /^y(es)?$/i.test((await rl.question(question)).trim()); } finally { rl.close(); }
+      };
+      process.exitCode = await breakLock({ force, confirm });
+    } else {
+      process.exitCode = await migrate({
+        force, rollback: rest.includes('--rollback'), forceRollback: rest.includes('--force-rollback'),
+      });
+    }
   } else if (cmd === 'probe') {
     const widths = (rest[0] ?? '2,4,8').split(',').map(Number);
     const model = rest[1] ?? 'Gemini 3.5 Flash (Low)';
