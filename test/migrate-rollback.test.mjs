@@ -617,3 +617,40 @@ test('CLI: agb migrate --break-lock --force clears an orphaned lock and runs no 
     assert.equal(noTty.status, 0, 'no lock present → nothing to confirm');
   } finally { ctx.cleanup(); }
 });
+
+test('pre-flight: a source without hooks.json is missing the hooks category', async () => {
+  const ctx = setup();
+  try {
+    rmSync(join(ctx.src, 'hooks.json'));
+    assert.equal(await run(ctx), 1);
+    assert.match(ctx.errs.join('\n'), /missing component categories: hooks$/m);
+  } finally { ctx.cleanup(); }
+});
+
+test('CLI: --break-lock without --force and without a TTY refuses and keeps the lock', () => {
+  const ctx = setup();
+  try {
+    const dir = migrationLockDir(ctx.home);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'meta.json'), JSON.stringify({ pid: 999999, token: 't', startedAt: 'then' }));
+    const r = spawnSync(process.execPath, [join(ROOT, 'bin', 'agb.mjs'), 'migrate', '--break-lock'], {
+      encoding: 'utf8', env: { ...process.env, HOME: ctx.home }, input: 'y\n',
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /Lock left in place/);
+    assert.ok(existsSync(dir));
+  } finally { ctx.cleanup(); }
+});
+
+test('CLI: --finish-uninstall reads flag values in any position (token first)', () => {
+  const ctx = setup();
+  try {
+    writeMigrationState(ctx.home, { state: 'ROLLED_BACK_PENDING_UNINSTALL' });
+    const h = acquireMigrationLock({ home: ctx.home });
+    const r = spawnSync(process.execPath, [join(ROOT, 'bin', 'agb.mjs'), 'migrate', '--token', h.token, '--finish-uninstall', '--agy-bin', FAKE_AGY], {
+      encoding: 'utf8', env: { ...process.env, HOME: ctx.home },
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(state(ctx).state, 'ROLLED_BACK');
+  } finally { ctx.cleanup(); }
+});
