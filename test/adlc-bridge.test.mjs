@@ -13,6 +13,10 @@ import { ticketFilename } from '@adlc/tickets';
 import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
+// AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
+// adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
+process.env.AGB_PLUGIN_ROOT ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'agb-no-vendor-'));
+
 // Local port of the adlc-antigravity plugin's tickets validation rules
 // (plugins/adlc-antigravity/core-inline.mjs loadTickets) — replicated, NOT
 // imported, so the suite stays fully offline (AGENTS.md: no sibling-checkout

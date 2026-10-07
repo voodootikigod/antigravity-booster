@@ -39,10 +39,11 @@
     "build:agb": "esbuild bin/agb.mjs --bundle --platform=node --format=esm --outfile=dist/agb.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
     "build:mcp": "esbuild mcp/server.mjs --bundle --platform=node --format=esm --outfile=dist/mcp-server.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
     "build:hooks": "esbuild hooks/pre-tool-use.mjs --bundle --platform=node --format=esm --outfile=dist/hooks/pre-tool-use.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
-    "build": "npm run build:agb && npm run build:mcp && npm run build:hooks && node scripts/check-bundle-externals.mjs",
+    "build": "npm run build:agb && npm run build:mcp && npm run build:hooks && npm run vendor:bundle && node scripts/check-bundle-externals.mjs",
     "test": "node --test test/*.test.mjs",
     "coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' test/*.test.mjs",
-    "coverage:check": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=86 test/*.test.mjs"
+    "coverage:check": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=86 test/*.test.mjs",
+    "vendor:bundle": "esbuild vendor/adlc/src/dispatch.mjs --bundle --platform=node --format=esm --outfile=vendor/adlc/dist/adlc.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --log-level=warning"
   },
   "engines": {
     "node": ">=22.19.0"
@@ -55,7 +56,14 @@
   "devDependencies": {
     "@adlc/antigravity": "1.7.0",
     "@adlc/cli": "1.11.1",
+    "@adlc/consensus-fix": "1.11.1",
     "@adlc/core": "1.11.1",
+    "@adlc/flail-detector": "1.11.1",
+    "@adlc/gate-manifest": "1.11.1",
+    "@adlc/hollow-test": "1.11.1",
+    "@adlc/merge-forecast": "1.11.1",
+    "@adlc/model-router": "1.11.1",
+    "@adlc/rails-guard": "1.11.1",
     "@adlc/tickets": "1.11.1",
     "esbuild": "0.28.2",
     "minimatch": "10.0.1"

@@ -6,6 +6,10 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
 
+// AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
+// adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
+process.env.AGB_PLUGIN_ROOT ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'agb-no-vendor-'));
+
 test('checkNodeVersion: passes on v18+', async () => {
   const res = await checkNodeVersion();
   // Assume tests run on v18+
@@ -123,7 +127,7 @@ test('checkPlugin: passes when compatible', async () => {
   const d = mkdtempSync(join(tmpdir(), 'agb-test-plugin-compatible-'));
   const orig = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
   try {
-    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ adlcContract: 1 }));
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ version: '1.7.0', adlcContract: 1 }));
     process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = d;
     const res = await checkPlugin({ env: process.env });
     assert.equal(res.level, 'pass');
@@ -138,7 +142,7 @@ test('checkPlugin: fails when incompatible', async () => {
   const d = mkdtempSync(join(tmpdir(), 'agb-test-plugin-incompat-'));
   const orig = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
   try {
-    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ adlcContract: 999 }));
+    writeFileSync(join(d, 'plugin.json'), JSON.stringify({ version: '1.7.0', adlcContract: 999 }));
     process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = d;
     const res = await checkPlugin({ env: process.env });
     assert.equal(res.level, 'fail');

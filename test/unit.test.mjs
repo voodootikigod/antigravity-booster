@@ -21,6 +21,10 @@ import {
 } from '../lib/worktrees.mjs';
 import { bootstrap, resolvePluginPath } from '../lib/bootstrap.mjs';
 
+// AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
+// adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
+process.env.AGB_PLUGIN_ROOT ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'agb-no-vendor-'));
+
 delete process.env.AGB_PROVIDER;
 process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_unit_test.json');
 
@@ -769,7 +773,7 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
   const libDir = join(isoRoot, 'lib');
   mkdirSync(libDir);
   const libSrc = fileURLToPath(new URL('../lib', import.meta.url));
-  for (const f of ['bootstrap.mjs', 'adlc-bridge.mjs', 'plugin-paths.mjs']) {
+  for (const f of ['bootstrap.mjs', 'adlc-bridge.mjs', 'plugin-paths.mjs', 'semver.mjs', 'digest.mjs']) {
     writeFileSync(join(libDir, f), readFileSync(join(libSrc, f)));
   }
   // adlc-bridge statically imports @adlc/tickets (bundling), so the copy needs

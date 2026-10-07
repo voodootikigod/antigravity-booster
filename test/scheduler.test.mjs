@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ticketFilename } from '@adlc/tickets';
+import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 
 import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/scheduler.mjs';
 import { reapIntegrationWorktrees, resetToBase, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
@@ -441,9 +441,11 @@ test('runPlan: warns if dirty repo and AGB_ALLOW_DIRTY=1', async () => {
 test('runPlan: accepts clean repository with untracked projected ticket store without AGB_ALLOW_DIRTY=1', async () => {
   const repo = makeRepo();
   try {
-    mkdirSync(join(repo, '.adlc', 'tickets'), { recursive: true });
-    writeFileSync(join(repo, '.adlc', 'tickets', '.store.json'), JSON.stringify({ backend: 'dir' }));
-    writeFileSync(join(repo, '.adlc', 'tickets', 'T1.json'), JSON.stringify({ id: 'T1', title: 'a' }));
+    // A real (valid) projected store, untracked: the dirty-tree check must ignore
+    // it, and the §4.2 gate reads it cleanly (an invalid store fails closed).
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    initializeDirectoryStore(join(repo, '.adlc', 'tickets'));
+    writeFileSync(join(repo, '.adlc', 'tickets', ticketFilename('T1')), JSON.stringify({ id: 'T1', title: 'a', body: 'b', scope: [], rails: [], edges: [] }));
     const report = await withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
       runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, quiet)
     );
