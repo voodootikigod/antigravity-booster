@@ -2,7 +2,7 @@
 // pinning, and fail-closed tamper handling (spec §4.2, Appendix A D12, A.6 12–13).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, appendFileSync, realpathSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, appendFileSync, realpathSync, symlinkSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -145,4 +145,24 @@ test('doctor: the adlc CLI check passes against a plugin root with the pinned ve
   const r = await checkAdlcBinary({ env: { PATH: process.env.PATH, AGB_PLUGIN_ROOT: pluginRoot }, cwd: repo });
   assert.equal(r.level, 'pass', JSON.stringify(r));
   assert.match(r.detail, new RegExp(KNOWN_VENDORED_ADLC.version.replace(/\./g, '\\.')));
+});
+
+test('spawn: a symlink to the vendored binary spawns the verified path; null candidate resolves to vendored', () => {
+  const pluginRoot = fakePluginRoot('spawn-symlink');
+  const link = join(base, 'adlc-link.mjs');
+  symlinkSync(join(pluginRoot, 'vendor', 'adlc', 'bin', 'adlc.mjs'), link);
+  const v = revalidateAdlcBinary(link, { bundled: false, pluginRoot, env: {} });
+  assert.equal(v.ok, true, v.error);
+  assert.equal(v.target, join(pluginRoot, 'vendor', 'adlc', 'bin', 'adlc.mjs'));
+  const n = revalidateAdlcBinary(null, { bundled: false, pluginRoot, env: {} });
+  assert.equal(n.ok, true, n.error);
+  assert.equal(n.source, 'vendored');
+});
+
+test('spawn: a world-writable vendored path is refused (no pin copy protects it)', { skip: process.platform === 'win32' }, () => {
+  const pluginRoot = fakePluginRoot('spawn-writable');
+  chmodSync(join(pluginRoot, 'vendor', 'adlc', 'dist'), 0o777);
+  const v = revalidateAdlcBinary(null, { bundled: true, pluginRoot, env: {} });
+  assert.equal(v.ok, false);
+  assert.match(v.error, /dist is world-writable/);
 });
