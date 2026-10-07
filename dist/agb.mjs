@@ -989,7 +989,7 @@ function digestOrNull(dir) {
 }
 function parseValidateOutput(text) {
   const counts = {};
-  const clean = String(text ?? "").replace(/\x1b\[[0-9;]*m/g, "");
+  const clean = String(text ?? "").replace(ANSI_SGR, "");
   for (const m of clean.matchAll(/^\s*✔\s+(\w+)\s*:\s*(\d+)\s+processed/gm)) counts[m[1]] = Number(m[2]);
   return counts;
 }
@@ -1480,7 +1480,7 @@ function finishUninstallCommand({ home = homedir9(), token, uninstallerDir, agyB
 `)))(`error: ${r.error}`);
   return r.ok ? 0 : 1;
 }
-var SNAPSHOT_SIZE_CAP_BYTES, HANDOVER_TIMEOUT_MS, PLUGIN_NAMES, BOOSTER_CATEGORIES, VIRGIN_RESET_STATES, COMPLETION_NOTICE, MigrateError, isUnder, sleep3;
+var SNAPSHOT_SIZE_CAP_BYTES, HANDOVER_TIMEOUT_MS, PLUGIN_NAMES, BOOSTER_CATEGORIES, ANSI_SGR, VIRGIN_RESET_STATES, COMPLETION_NOTICE, MigrateError, isUnder, sleep3;
 var init_migrate = __esm({
   "lib/migrate.mjs"() {
     init_migration_lock();
@@ -1490,6 +1490,7 @@ var init_migrate = __esm({
     HANDOVER_TIMEOUT_MS = 2e3;
     PLUGIN_NAMES = [BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME];
     BOOSTER_CATEGORIES = ["skills", "agents", "commands", "mcpServers", "hooks"];
+    ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
     VIRGIN_RESET_STATES = /* @__PURE__ */ new Set(["SNAPSHOT_CREATED", "SYMLINKS_RECORDED"]);
     COMPLETION_NOTICE = "Migration successful. Global npm package may be uninstalled: npm uninstall -g antigravity-booster. CLI commands remain available via ~/.local/bin/agb and slash commands (/agb-doctor, /agb-bootstrap, /agb-migrate).";
     MigrateError = class extends Error {
