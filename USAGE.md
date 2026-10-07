@@ -34,25 +34,27 @@
 
 ### 1. Installation
 
-Install globally via npm or link from source:
+Install the native Antigravity plugin from git (recommended). Nothing needs `npm install`: the runtime is prebuilt under `dist/` and `vendor/`.
 
 ```bash
-# Global install via npm
-npm install -g antigravity-booster
-
-# Or link from a local clone
-git clone git@github.com:voodootikigod/antigravity-booster.git
-cd antigravity-booster
-npm link
+agy plugin install https://github.com/voodootikigod/antigravity-booster.git
 ```
+
+The npm package remains a secondary channel (`npm install -g antigravity-booster`, or `npm link` from a clone). To move an npm-global or checkout install onto the plugin, use [`agb migrate`](#agb-migrate).
 
 ### 2. Bootstrapping
 
-Run [`agb bootstrap`](lib/bootstrap.mjs) to install the `@adlc/antigravity` plugin and link ADLC skills into `~/.gemini/skills`:
+The terminal shim does not exist until the first bootstrap, so run that once from a terminal:
 
 ```bash
-agb bootstrap
+/bin/sh "$HOME/.gemini/config/plugins/antigravity-booster/bin/node-launcher.sh" dist/agb.mjs bootstrap
 ```
+
+[`agb bootstrap`](lib/bootstrap.mjs) installs the integrity-pinned `adlc-antigravity` plugin and writes `~/.local/bin/agb`. After that, use `agb …` from a terminal or the slash commands inside Antigravity.
+
+**How slash commands run.** Antigravity converts `commands/*.md` into instructions for the model rather than executing them. Each `/agb-*` command tells the model to run `~/.local/bin/agb <subcommand>` with your arguments, so it goes through the same policy guard as any other shell command (`ask` in an interactive session in a repo with active rails, pass-through elsewhere).
+
+**Residual risk in print mode.** In user-launched `agy -p` sessions Antigravity turns `ask` into allow. Booster's in-session protection there is deny-only: frozen-rail and protected-root denials still hold, but commands that would have asked are run. `agb run` marks its own workers (`AGB_WORKER_TICKET` / `AGB_WORKER_MODE`), so they get deny instead of ask. The merge-time `adlc rails-guard` remains the backstop.
 
 ### 3. Diagnostic Health Check
 
@@ -75,6 +77,31 @@ agb bootstrap [--force]
 ```
 
 - `--force`: Overwrites existing skill symlinks.
+
+---
+
+### `agb migrate`
+
+Moves an npm-global or checkout install onto the native plugin, with a snapshot you can always roll back to.
+
+```bash
+agb migrate [--force]
+agb migrate --rollback [--force-rollback]
+agb migrate --break-lock [--force]
+```
+
+Migration runs in resumable steps, recorded in `~/.gemini/antigravity-cli/plugin_data/antigravity-booster/migration-state.json`:
+
+1. **Snapshot**: copies the staged `antigravity-booster` and `adlc-antigravity` plugins (excluding `node_modules/`, `.worktrees/` and `.git/`; a plugin still over 100 MB is refused), the existing `~/.local/bin/agb`, the plugins' `import_manifest.json` entries and every `~/.gemini/skills` symlink. The first run also writes a read-only `pre-migration.baseline.json`, which later runs never change.
+2. **Record links**: notes which skill links point into booster or adlc-antigravity (the npm package, a booster checkout's `skills/`, `@adlc/antigravity`, or the staged plugins). Links to your own skills are never touched.
+3. **Stage**: installs both plugins and checks them with `agy plugin validate` and `import_manifest.json`. A failure stops here with nothing unlinked.
+4. **Finish**: removes the recorded links, writes the terminal shim and records digests of the staged plugins.
+
+Re-running after an interruption continues from the last completed step. After a completed migration, `--force` re-runs it; the original baseline is kept.
+
+`--rollback` restores the pre-migration baseline: plugins, terminal shim, import entries and skill links (a link whose target no longer exists is skipped with a notice). If the staged plugins changed since migration, it refuses unless you pass `--force-rollback`. If booster was not installed before migration, a detached uninstaller removes it after rollback, and you are warned if no `agb` will remain on your `PATH`.
+
+Both directions take a user-wide lock. A lock left behind by a process that died is reclaimed automatically; a wedged one can be cleared with `--break-lock` (asks for confirmation unless `--force`).
 
 ---
 

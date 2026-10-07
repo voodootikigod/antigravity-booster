@@ -133,7 +133,7 @@ graph TD
 
 | Module | Core Responsibility | Key Exported Functions / Classes |
 | :--- | :--- | :--- |
-| [`bin/agb.mjs`](bin/agb.mjs) | CLI Entry point & subcommand dispatcher | Subcommands: `bootstrap`, `brains`, `plan`, `validate`, `preflight`, `run`, `sweep`, `review`, `doctor`, `status`, `sidecar`, `probe` |
+| [`bin/agb.mjs`](bin/agb.mjs) | CLI Entry point & subcommand dispatcher | Subcommands: `bootstrap`, `migrate`, `brains`, `plan`, `validate`, `preflight`, `run`, `sweep`, `review`, `doctor`, `status`, `sidecar`, `probe` |
 | [`lib/scheduler.mjs`](lib/scheduler.mjs) | Ticket DAG execution, rebase/merge, rollback, 2-strike flail handling | `runPlan()`, `executeTicket()`, `rebaseAndMerge()` |
 | [`lib/pools.mjs`](lib/pools.mjs) | Per-model-family semaphore pools and rate limiting | `PoolManager`, `acquirePool()`, `releasePool()` |
 | [`lib/agy.mjs`](lib/agy.mjs) | Completer invocation for `agy` CLI | `runAgy()`, `poolOf()`, `familyOf()`, `isAgyTimeout()` |
@@ -145,6 +145,8 @@ graph TD
 | [`lib/lock.mjs`](lib/lock.mjs) | Target repository cross-process locking | `acquireRepoLock()`, `releaseRepoLock()`, `assertStillHeld()` |
 | [`lib/doctor.mjs`](lib/doctor.mjs) | Environment, tool binary, and auth diagnostics | `runDoctor()`, `checkAgyAuth()`, `checkSandbox()` |
 | [`lib/bootstrap.mjs`](lib/bootstrap.mjs) | Installation of plugins, skills, and sidecar integration | `bootstrap()`, `resolvePluginPath()` |
+| [`lib/migrate.mjs`](lib/migrate.mjs) | `agb migrate`: snapshot → record links → stage → finish state machine and the rollback-from-each-state table | `migrate()`, `breakLock()`, `isOwnedSkillLink()` |
+| [`lib/migration-lock.mjs`](lib/migration-lock.mjs) | User-global migration lock (PID-reuse aware, ABA-safe reclaim), state file, detached uninstaller | `acquireMigrationLock()`, `assertMigrationLockHeld()`, `finishUninstall()` |
 | [`sidecars/server.mjs`](sidecars/server.mjs) | Native dashboard REST/WebSocket telemetry sidecar | `startSidecarServer()` |
 
 ---
@@ -264,6 +266,12 @@ If any violation occurs, the ticket is immediately aborted with a sandbox securi
 - **Integration Journal (`.adlc/integration_journal.jsonl`)**: Tracks phase transitions across merge, rebase, and gate execution with atomic markers (`TRANSACTION_BEGIN`, `TRANSACTION_COMMIT`). In the event of an ungraceful termination or crash, stale or partial transactions roll back automatically, and unsupported phase states are safely quarantined.
 - **Approved Pinned Executable Cache (`~/.adlc/pinned/`)**: When resolving and pinning `@adlc/cli` or tool shims, binaries are staged in a dedicated, permission-restricted (`0o700`) user directory rather than system temporary directories, avoiding execution blocks on Linux filesystems mounted with `noexec`.
 
+### 5.5 Native Plugin Install, Migration & In-Session Policy Guard
+
+- **Plugin distribution**: booster installs with `agy plugin install <git-url>`. The runtime is prebuilt (`dist/`), `adlc` is a vendored static dispatcher (`vendor/adlc/`), and `adlc-antigravity` is the pristine, integrity-pinned npm tarball in `vendor/cache/`. Slash commands are model instructions that run the terminal shim `~/.local/bin/agb`.
+- **Policy guard**: `hooks.json` runs `bin/hook-runner.sh` → `dist/hooks/pre-tool-use.bundle.mjs` on every tool call. It denies writes to frozen rails, the ADLC trust root and booster's own data, asks before unlisted shell commands in repos with active rails, and never emits `allow`. In user-launched `agy -p` sessions Antigravity turns `ask` into allow, so protection there is deny-only; merge-time `adlc rails-guard` is the backstop.
+- **Migration**: `agb migrate` moves an npm-global or checkout install onto the plugin through recorded, resumable states (`SNAPSHOT_CREATED` → `SYMLINKS_RECORDED` → `PLUGINS_STAGED` → `MIGRATED`). The first run writes an immutable `pre-migration.baseline.json`; every rollback restores from it, so repeated `--force` runs never lose the original state. A user-global lock in `lib/migration-lock.mjs` (separate from the repo lock in `lib/lock.mjs`) serialises migrate and rollback; a dead holder is reclaimed by an atomic rename, and a live one is never stolen. When booster was not installed before migration, rollback hands the held lock to a detached `migrate --finish-uninstall` child, because the parent may be running from the directory being removed.
+
 ---
 
 ## 6. File & Directory Artifact Layout
@@ -288,3 +296,18 @@ If any violation occurs, the ticket is immediately aborted with a sandbox securi
     └── agb-<runId>-<ticketId>/     # Isolated git worktrees during active runs
 ```
 
+User-global plugin state (outside any repository):
+
+```
+~/.gemini/
+├── config/
+│   ├── plugins/antigravity-booster/      # Staged booster plugin
+│   ├── plugins/adlc-antigravity/         # Staged companion plugin (pinned 1.7.0)
+│   └── import_manifest.json              # agy's plugin registry
+└── antigravity-cli/plugin_data/antigravity-booster/
+    ├── migration-state.json              # agb migrate state machine
+    ├── .migration.lock.d/                # User-global migration lock
+    ├── rails-guard-health.json           # Doctor self-test log (informational)
+    └── snapshots/<stamp>/                # Migration snapshots + pre-migration.baseline.json
+~/.local/bin/agb                          # Terminal shim
+```

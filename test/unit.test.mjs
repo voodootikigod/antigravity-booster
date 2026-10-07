@@ -990,32 +990,6 @@ test('bootstrap: isNpxTemp recognizes actual npx cache and ignores temp substrin
   assert.equal(isNpxTemp('/private/var/folders/something/agb/lib/bootstrap.mjs', {}), true, 'macOS /private/var/folders is treated as temp');
 });
 
-test('sidecar: workspace manifests conform to specification and contain portable paths', () => {
-  const manifestPaths = [
-    new URL('../.agents/sidecars/agb-dashboard/sidecar.json', import.meta.url),
-    new URL('../.agents/plugins/agb/sidecars/dashboard/sidecar.json', import.meta.url),
-    new URL('../.agents/plugins/agb-dashboard/sidecars/agb-dashboard/sidecar.json', import.meta.url),
-  ];
-
-  for (const manifestPath of manifestPaths) {
-    if (!existsSync(manifestPath)) continue;
-    const manifestContent = readFileSync(manifestPath, 'utf8');
-    assert.ok(!manifestContent.includes('/Users/voodootikigod/'), `Manifest at ${manifestPath.pathname} must not contain hardcoded developer paths`);
-    assert.ok(!manifestContent.includes('/Users/'), `Manifest at ${manifestPath.pathname} must not contain hardcoded user home paths`);
-
-    const manifest = JSON.parse(manifestContent);
-    assert.equal(manifest.has_web_ui, true, 'has_web_ui must be true');
-    assert.ok(manifest.ui_config, 'ui_config must be present');
-    assert.ok(Array.isArray(manifest.ui_config.views), 'ui_config.views must be an array');
-
-    if (Array.isArray(manifest.args)) {
-      for (const arg of manifest.args) {
-        assert.ok(!arg.startsWith('/Users/'), `arg '${arg}' must not be a hardcoded user path`);
-      }
-    }
-  }
-});
-
 test('agy: parseTimeoutMs handles formatted string and numeric inputs', async () => {
   const { parseTimeoutMs } = await import('../lib/agy.mjs');
   assert.equal(parseTimeoutMs('30s'), 30000);
@@ -1036,27 +1010,13 @@ test('brain: getActiveSessionId reads ANTIGRAVITY_CONVERSATION_ID', async () => 
   }
 });
 
-test('plugins: .agents/plugins/agb/plugin.json is the legacy shim, versioned with the root manifest', () => {
-  const rootManifest = JSON.parse(readFileSync(new URL('../plugin.json', import.meta.url), 'utf8'));
-  const agentManifestPath = new URL('../.agents/plugins/agb/plugin.json', import.meta.url);
-  assert.ok(existsSync(agentManifestPath), '.agents/plugins/agb/plugin.json must exist');
-  const agentManifest = JSON.parse(readFileSync(agentManifestPath, 'utf8'));
-  assert.equal(rootManifest.name, 'antigravity-booster', 'Root manifest is the antigravity-booster plugin');
-  assert.equal(agentManifest.name, 'agb-legacy-shim', 'Legacy manifest must not claim the antigravity-booster name');
-  assert.equal(agentManifest.version, rootManifest.version, 'Plugin version must match root manifest');
-});
-
-test('agents: subagents exist as agents/<name>.md (and legacy .agents/agents/ until T4)', () => {
-  const roles = ['prosecutor', 'spec-linter', 'fleet-scheduler'];
-  for (const role of roles) {
+test('agents: subagents exist only as agents/<name>.md (the legacy .agents/ tree is removed)', () => {
+  for (const role of ['prosecutor', 'spec-linter', 'fleet-scheduler']) {
     const agentMd = new URL(`../agents/${role}.md`, import.meta.url);
     assert.ok(existsSync(agentMd), `agents/${role}.md must exist`);
     assert.match(readFileSync(agentMd, 'utf8'), new RegExp(`^---\\nname: ${role}\\n`), `agents/${role}.md must declare its name`);
-    const agentJson = new URL(`../.agents/agents/${role}/agent.json`, import.meta.url);
-    const configYaml = new URL(`../.agents/agents/${role}/config.yaml`, import.meta.url);
-    assert.ok(existsSync(agentJson), `.agents/agents/${role}/agent.json must exist`);
-    assert.ok(existsSync(configYaml), `.agents/agents/${role}/config.yaml must exist`);
   }
+  assert.equal(existsSync(new URL('../.agents', import.meta.url)), false);
 });
 
 test('standalone commands: reviewFleet, preflight, compilePlan, and brainToPlan require successful quota refresh', async () => {

@@ -76,20 +76,27 @@ Before starting, ensure you have **Node >= 22.19**, the **Antigravity CLI (`agy 
 
 *(Sandboxing: macOS Seatbelt, Linux Bubblewrap [`bwrap`] with read-only system root and credential masking, and Windows AppContainer with differential probing are enabled by default. Run `agb doctor` to verify your platform's sandbox capabilities.)*
 
-### 1. Install & Bootstrap
-We recommend installing `agb` globally. The `bootstrap` command is mandatory as it installs the `adlc-antigravity` plugin and links the booster's ADLC skills.
+### 1. Install the plugin & bootstrap
+`agb` ships as a native Antigravity plugin. Install it straight from git — no `npm install` is needed, because the runtime is prebuilt under `dist/` and the `adlc-antigravity` companion plugin is vendored:
 
 ```sh
-npm install -g antigravity-booster
-agb bootstrap
+agy plugin install https://github.com/voodootikigod/antigravity-booster.git
+/bin/sh "$HOME/.gemini/config/plugins/antigravity-booster/bin/node-launcher.sh" dist/agb.mjs bootstrap
 ```
+
+Bootstrap installs the integrity-pinned `adlc-antigravity` plugin and writes the terminal shim `~/.local/bin/agb`. From then on run `agb` (with `~/.local/bin` on your `PATH`) or the slash commands inside Antigravity.
 
 Then, start the sidecar dashboard to register the UI with Antigravity:
 
 ```bash
 agb sidecar .
 ```
-*(Alternatively, use zero-install with `npx antigravity-booster bootstrap`, or `npm link` from source.)*
+
+**Upgrading from the npm package.** `npm install -g antigravity-booster` still works as a secondary channel. To move an existing npm-global or checkout install onto the plugin, run `agb migrate`. It snapshots your current plugins, shim and skill links first, so `agb migrate --rollback` can always restore them (see [USAGE.md](USAGE.md#agb-migrate)). `agb doctor` warns while a second, npm-global `agb` is still on your `PATH`.
+
+**Slash commands.** `/agb-run`, `/agb-doctor`, `/agb-migrate` and the rest are instructions to the model: each one tells it to run `~/.local/bin/agb <subcommand>` with your arguments. Antigravity does not execute command code blocks itself, so the shim must exist (run bootstrap first).
+
+**Security note (headless sessions).** In interactive sessions the policy guard denies writes to frozen rails and asks before unlisted shell commands in repos with active rails. In a user-launched `agy -p` (print mode) session, Antigravity treats `ask` as allow, so there booster's in-session protection is **deny-only**: rail and protected-root denials still hold, but commands that would have prompted run. Workers that `agb run` launches are always marked as workers and get deny instead of ask. The merge-time `adlc rails-guard` check remains the backstop for anything that slips through.
 
 ### 2. Verify Setup
 Run the diagnostic tool to ensure your dependencies and quota are ready:

@@ -27,6 +27,13 @@ rather than enumerate.
   - The write to the rail must be denied with the exact reason, and a write to a non-rail file must produce empty output and exit 0.
   - Doctor records `rails-guard-health.json` as an informational log only. Nothing reads it.
 - `agb doctor` now warns about an npm-global `agb` on PATH (prefer `~/.local/bin/agb`), about uses of the `AGB_HOOK_DISABLE` killswitch logged in `hooks.log`, and about leftover `probe-*` plugins.
+- **`agb migrate`** (T-PLUGIN-04-MIGRATE-ROLLBACK-DOCS) moves an npm-global or checkout install onto the native plugin through resumable recorded states. It snapshots the staged plugins (excluding `node_modules/`, `.worktrees/` and `.git/`, capped at 100 MB), the terminal shim, the plugins' `import_manifest.json` entries and every `~/.gemini/skills` link, and writes a read-only `pre-migration.baseline.json` once. Only links into booster or adlc-antigravity are removed; links to your own skills are never touched.
+- **`agb migrate --rollback`** follows the spec's rollback-from-each-state table and restores only from the baseline. It needs `--force-rollback` when the staged plugins changed after migration, warns when no `agb` will remain on PATH, and hands the held lock to a detached `--finish-uninstall` child (2.0 s acknowledgement, otherwise the child is killed and the lock released) when booster was not installed before.
+- `lib/migration-lock.mjs`: a user-global lock that detects PID reuse by process start time and reclaims a dead holder with an ABA-safe rename. A live holder is never stolen. `agb migrate --break-lock` clears a wedged lock after confirmation.
+- README, USAGE and ARCHITECTURE document the git-URL install, `agb migrate`, the slash-command model, and the print-mode residual risk (`agy -p` turns `ask` into allow, so in-session protection there is deny-only).
+
+### Removed
+- The legacy `.agents/` tree (`agb-legacy-shim` plugin, old agent configs and the duplicate dashboard sidecars). The root `commands/`, `agents/` and top-level `sidecars/` are the only sources.
 
 ### Changed
 - **The legacy `auto-approve-tests` hook is removed.** Interactive test runs in repos with active rails now ask for confirmation.
