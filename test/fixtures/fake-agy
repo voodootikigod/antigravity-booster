@@ -11,6 +11,8 @@ if [ "$1" = "plugin" ]; then
     install)
       case "${FAKE_AGY_PLUGIN_MODE:-ok}" in
         fail) echo "boom: simulated plugin install failure" >&2; exit 1 ;;
+        # tamper-stage: stage the copy, then add a stray file (post-install
+        # verification must catch a staged tree that is not pristine).
         *)
           if [ -n "$FAKE_STATE_DIR" ]; then
             echo "$3" >> "$FAKE_STATE_DIR/plugin-installs"
@@ -33,6 +35,9 @@ if [ "$1" = "plugin" ]; then
                 rm -rf "$dest"
                 mkdir -p "$HOME/.gemini/config/plugins"
                 cp -R "$3" "$dest"
+                if [ "${FAKE_AGY_PLUGIN_MODE:-ok}" = "tamper-stage" ]; then
+                  echo tampered >> "$dest/plugin.json.tampered"
+                fi
               fi ;;
           esac
           echo "installed plugin from $3"
