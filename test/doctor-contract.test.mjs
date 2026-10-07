@@ -159,3 +159,26 @@ test('checkPlugin reports the evaluator row: fail for exit-1 rows, pass/warn for
     } finally { rmSync(home, { recursive: true, force: true }); }
   }
 });
+
+test('the bundled version is always digest-pinned; an unpinned bundled version fails closed as corrupt-tree', async () => {
+  const { BUNDLED_ADLC_ANTIGRAVITY_VERSION } = await import('../lib/plugin-paths.mjs');
+  const { STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS } = await import('../lib/adlc-bridge.mjs');
+  assert.ok(Object.hasOwn(STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS, BUNDLED_ADLC_ANTIGRAVITY_VERSION));
+  withHome((home) => {
+    stagePristine(home);
+    const r = evaluateStagedAdlcPlugin({ home, stagedDigests: {} });
+    assert.equal(r.report, 'corrupt-tree');
+    assert.equal(r.bootstrapAction, 'reinstall');
+    assert.equal(r.railsTrusted, false);
+  });
+});
+
+test('a pinned tree whose digest cannot be computed (unreadable file) is corrupt-tree, never trusted', { skip: process.getuid?.() === 0 && 'root reads everything' }, () => withHome((home) => {
+  const dir = stagePristine(home);
+  chmodSync(join(dir, 'README.md'), 0o000);
+  try {
+    const r = evaluateStagedAdlcPlugin({ home });
+    assert.equal(r.report, 'corrupt-tree');
+    assert.equal(r.railsTrusted, false);
+  } finally { chmodSync(join(dir, 'README.md'), 0o644); }
+}));

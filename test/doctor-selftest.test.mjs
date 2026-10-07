@@ -181,3 +181,77 @@ test('policy guard self-test names a missing or non-string hooks.json command pr
     assert.match(r.detail, /hooks\.json declares no agb-policy-guard PreToolUse command/, String(command));
   }
 });
+
+// A plugin root whose hooks.json command runs a stub script DIRECTLY (no
+// hook-runner normalisation), so doctor's own output checks are exercised.
+function directRoot(script) {
+  const root = pluginRoot();
+  writeFileSync(join(root, 'bin', 'stub.sh'), script);
+  const hooks = JSON.parse(readFileSync(join(root, 'hooks.json'), 'utf8'));
+  hooks['agb-policy-guard'].PreToolUse[0].hooks[0].command = '/bin/sh bin/stub.sh';
+  writeFileSync(join(root, 'hooks.json'), JSON.stringify(hooks));
+  return root;
+}
+const DENY = `{"decision":"deny","reason":"Target path matches frozen rail: lib/lock.mjs"}`;
+// Deny the rail payload correctly; behave per $NONRAIL for anything else.
+const stub = ({ rail = `echo '${DENY}'`, nonrail = 'exit 0' } = {}) =>
+  `#!/bin/sh\ninput=$(cat)\ncase "$input" in *lock.mjs*) ${rail} ;; *) ${nonrail} ;; esac\n`;
+
+test('self-test passes a correct direct guard (baseline for the cases below)', () => {
+  assert.equal(checkPolicyGuard({ pluginRoot: directRoot(stub()), home: freshHome() }).level, 'pass');
+});
+
+test('self-test runs the hook with PATH exactly /usr/bin:/bin', () => {
+  const root = directRoot(stub({ rail: `[ "$PATH" = /usr/bin:/bin ] && echo '${DENY}'` }));
+  assert.equal(checkPolicyGuard({ pluginRoot: root, home: freshHome() }).level, 'pass');
+  const saved = process.env.PATH;
+  try {
+    // An inherited PATH must not leak in: the stub only denies under the minimal PATH.
+    process.env.PATH = `/opt/elsewhere:${saved}`;
+    assert.equal(checkPolicyGuard({ pluginRoot: root, home: freshHome() }).level, 'pass');
+  } finally { process.env.PATH = saved; }
+});
+
+for (const [label, rail] of [
+  ['a correct deny line but a non-zero exit (agy fails open)', `echo '${DENY}'; exit 1`],
+  ['a correct deny line followed by a second line', `echo '${DENY}'; echo extra`],
+  ['allow carrying the exact rail reason', `echo '{"decision":"allow","reason":"Target path matches frozen rail: lib/lock.mjs"}'`],
+]) {
+  test(`self-test fails on ${label}`, () => {
+    const r = checkPolicyGuard({ pluginRoot: directRoot(stub({ rail })), home: freshHome() });
+    assert.equal(r.level, 'fail');
+    assert.match(r.detail, /rail payload/);
+  });
+}
+
+test('self-test fails when the non-rail payload exits non-zero with empty output', () => {
+  const r = checkPolicyGuard({ pluginRoot: directRoot(stub({ nonrail: 'exit 1' })), home: freshHome() });
+  assert.equal(r.level, 'fail');
+  assert.match(r.detail, /non-rail payload/);
+});
+
+test('self-test leaves no temp fixture repo behind, on pass and on fail', () => {
+  const tmp = join(base, `tmpdir-${n++}`);
+  mkdirSync(tmp);
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = tmp;
+  try {
+    checkPolicyGuard({ pluginRoot: pluginRoot(), home: freshHome() });
+    checkPolicyGuard({ pluginRoot: directRoot(stub({ rail: 'exit 1' })), home: freshHome() });
+    assert.deepEqual(readdirSync(tmp).filter((f) => f.startsWith('agb-doctor-selftest-')), []);
+  } finally {
+    if (saved === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = saved;
+  }
+});
+
+test('D15/P4 matchers are exact: unrelated log lines and *probe* names that are not probe-* do not count', () => {
+  const home = freshHome();
+  const log = join(home, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
+  mkdirSync(join(log, '..'), { recursive: true });
+  writeFileSync(log, 'note: AGB_HOOK_DISABLE was unset by the operator\nAGB_HOOK_DISABLE mentioned in a fallback reason\n');
+  assert.equal(checkKillswitchUsage({ home }).level, 'pass');
+  for (const name of ['my-probe', 'probe', 'antigravity-probe-x']) {
+    mkdirSync(join(home, '.gemini', 'config', 'plugins', name), { recursive: true });
+  }
+  assert.equal(checkProbePlugins({ home }).level, 'pass');
+});

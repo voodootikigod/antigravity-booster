@@ -4749,6 +4749,7 @@ function compare(a, b) {
   return cmpNum(px.length, py.length);
 }
 var lt = (a, b) => compare(a, b) < 0;
+var eq = (a, b) => compare(a, b) === 0;
 
 // lib/adlc-bridge.mjs
 import { writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync14, existsSync as existsSync16, readdirSync as readdirSync7, rmSync as rmSync4, lstatSync as lstatSync7, realpathSync as realpathSync3, openSync as openSync5, readSync as readSync3, closeSync as closeSync5, statSync as statSync2, fstatSync as fstatSync2, chmodSync as chmodSync2, copyFileSync as copyFileSync3, cpSync, symlinkSync as symlinkSync2, mkdtempSync as mkdtempSync3, constants } from "node:fs";
@@ -6437,6 +6438,9 @@ function evaluateStagedAdlcPlugin({
       return row("incompatible-contract", { doctorExit: 1, bootstrapAction: "reinstall", bootstrapExit: 0 }, info);
     }
     return row("compatible", { doctorExit: 0, bootstrapAction: "preserve", bootstrapExit: 0, railsTrusted: true }, info);
+  }
+  if (eq(version, bundledVersion)) {
+    return row("corrupt-tree", { doctorExit: 1, bootstrapAction: "reinstall", bootstrapExit: 0 }, { ...info, detail: `no pinned digest for bundled ${bundledVersion}` });
   }
   if (contract.status === "compatible") {
     return row(`compatible (newer-unpinned: v${version})`, { doctorExit: 0, bootstrapAction: "preserve", bootstrapExit: 0 }, info);
