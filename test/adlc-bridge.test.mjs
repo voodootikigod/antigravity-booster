@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, execAuthenticatedAdlc, spawnAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
@@ -1347,3 +1347,45 @@ test('PLUGIN_CONTRACT_STATUSES is the spec §4.4 flat enum', async () => {
   assert.deepEqual([...PLUGIN_CONTRACT_STATUSES], ['compatible', 'tolerant', 'incompatible', 'unreadable', 'corrupt']);
   assert.ok(Object.isFrozen(PLUGIN_CONTRACT_STATUSES));
 });
+
+// The three authenticated-spawn wrappers must run the child from the sealed,
+// pinned copy of the CLI, never from the path that was authenticated on disk.
+// A NODE_OPTIONS --require probe records the child's entry script.
+function withArgvProbe(fn) {
+  const root = mkdtempSync(join(process.cwd(), '.test-seal-wrapper-'));
+  const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
+  mkdirSync(pkgDir, { recursive: true });
+  cpSync(join(process.cwd(), 'node_modules', '@adlc', 'cli'), pkgDir, { recursive: true });
+  const probe = join(root, 'argv-probe.cjs');
+  const out = join(root, 'argv.txt');
+  writeFileSync(probe, `require('node:fs').writeFileSync(${JSON.stringify(out)}, process.argv[1]);\n`);
+  const resolved = resolveAdlcBinary({ repo: root });
+  assert.equal(resolved.ok, true, resolved.error);
+  const options = { env: { ...process.env, NODE_OPTIONS: `--require=${probe}` } };
+  const ranFrom = () => readFileSync(out, 'utf8');
+  return Promise.resolve().then(() => fn({ root, binary: resolved.binary, options, ranFrom }))
+    .finally(() => rmSync(root, { recursive: true, force: true }));
+}
+
+function assertRanPinned(ranFrom, root) {
+  const entry = ranFrom();
+  assert.ok(!entry.startsWith(realpathSync(root)) && !entry.startsWith(root),
+    `child must run the pinned copy, not the on-disk CLI: ${entry}`);
+}
+
+test('execAuthenticatedAdlc: child runs from the pinned executable', () => withArgvProbe(({ root, binary, options, ranFrom }) => {
+  execAuthenticatedAdlc(binary, ['--version'], { ...options, stdio: 'pipe' }, { repo: root });
+  assertRanPinned(ranFrom, root);
+}));
+
+test('execFileAuthenticatedAdlc: child runs from the pinned executable', () => withArgvProbe(async ({ root, binary, options, ranFrom }) => {
+  await execFileAuthenticatedAdlc(binary, ['--version'], options, { repo: root });
+  assertRanPinned(ranFrom, root);
+}));
+
+test('spawnAuthenticatedAdlc: child runs from the pinned executable', () => withArgvProbe(async ({ root, binary, options, ranFrom }) => {
+  const child = spawnAuthenticatedAdlc(binary, ['--version'], { ...options, stdio: 'ignore' }, { repo: root });
+  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', resolve); });
+  assert.equal(code, 0);
+  assertRanPinned(ranFrom, root);
+}));
