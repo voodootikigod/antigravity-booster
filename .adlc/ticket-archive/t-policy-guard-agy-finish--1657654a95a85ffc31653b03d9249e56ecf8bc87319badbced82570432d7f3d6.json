@@ -1,6 +1,15 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-08T11:24:20.097Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "a177dc8f2780080095ad64997a02977178ab6a0d94b090029901c5fe50d7f158",
+    "ticketHash": "7abb8d9d1a77a8ee12c79f254f76448d99b624100361f5b615acb36c3cee431f",
+    "version": 1
+  },
   "body": "Problem: with --json-schema, agy 1.3.1 returns the model's structured answer through its terminal tool `finish` (CORTEX_STEP_TYPE_FINISH; args carry the answer plus toolAction/toolSummary). The booster PreToolUse guard (hooks/policy/evaluate.mjs) has no category for it, so it falls to evaluateUnknownTool: denied in read-only worker sessions (AGB_WORKER_MODE), denied for headless builder workers in ADLC repos, and denied in any repo with active rails. stepOne also scans finish args for path-like tokens, so an answer mentioning a protected path would be denied. Effect since the native-plugin migration made the guard live: every read-only structured call (preflight coldstart, plan, review, prosecution) loops 4 turns and returns no structured_output ('agy JSON response envelope missing required structured_output'). Repro: raw `agy --print ... --json-schema ...` works; adding only AGB_WORKER_MODE=readonly fails; agy log shows the model reporting finish denied.\n\nFix: add AGY_CONTROL_TOOLS = new Set(['finish']) in hooks/policy/constants.mjs (comment: terminal step with no filesystem/network side effect; its args are the model's answer text, not paths). In evaluatePayload return PASS for control tools before stepOne (so answer text is not path-scanned). Do not add other step types without evidence. Tests in test/pre-tool-use.test.mjs: finish passes in read-only mode, in headless builder mode in an ADLC repo, and in an active-rail repo; finish whose answer text names a rail path / .adlc/config.json / ~/.gemini/config still passes; a lookalike name (e.g. 'finish_task', 'Finish') is still treated as unknown and denied in read-only mode. Rebuild dist (dist/hooks/pre-tool-use.bundle.mjs). CHANGELOG Fixed entry. Also archive the completed T-HOOK-RUNNER-ESCALATION-BUDGET ticket (merged #81). Acceptance: npm test green; real `agb preflight` on a one-ticket plan returns coldstart gaps under the installed guard after re-migrate.",
   "category": "bugfix",
+  "completed": true,
   "edges": [],
   "id": "T-POLICY-GUARD-AGY-FINISH",
   "rails": [
