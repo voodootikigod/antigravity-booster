@@ -13,6 +13,12 @@ export const ORCHESTRATION_TOOLS = new Set([
   'invoke_subagent', 'define_subagent', 'manage_subagents', 'schedule', 'send_message',
 ]);
 
+// agy control steps with no filesystem, shell or network effect. `finish`
+// (CORTEX_STEP_TYPE_FINISH) ends the turn and, under --json-schema, carries the
+// model's structured answer; its args are answer text, never paths, so they are
+// not path-scanned. Add a step here only with evidence it has no side effect.
+export const AGY_CONTROL_TOOLS = new Set(['finish']);
+
 export const BOOSTER_MCP_SERVER = 'agb';
 export const BOOSTER_MCP_TOOLS = new Set([
   'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_review',

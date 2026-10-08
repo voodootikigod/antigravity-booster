@@ -12,7 +12,7 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
-  BOOSTER_MCP_SERVER, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
+  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
   PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS,
 } from './constants.mjs';
 import {
@@ -468,6 +468,8 @@ export function evaluatePayload(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== 'string' || name.length === 0) return deny('Malformed PreToolUse payload: missing tool name');
   const args = payload.toolCall.args ?? {};
+  // Before Step 1: a control step's args are the model's answer, not paths.
+  if (AGY_CONTROL_TOOLS.has(name)) return PASS;
   beginEvaluation();
   const ctx = buildContext(payload, options);
 
