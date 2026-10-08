@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseQuotaProbeOutput,
+  probeQuota,
   computeEffectivePercent,
   computeScaledCap,
   computeQuotaResumption,
@@ -36,6 +37,7 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 function futureIso(seconds) {
   return new Date(Date.now() + seconds * 1000).toISOString();
@@ -1747,3 +1749,114 @@ test('withLockSync and withLock: do not retry callback errors with code EEXIST a
 });
 
 
+
+// --- T-QUOTA-PROBE-AGY-JSON: the real agy 1.3.1 `/quota --output-format json` envelope ---
+const QUOTA_FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
+const iso = (s) => new Date(Date.now() + s * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+// Shape captured from agy 1.3.1 (descriptions trimmed).
+function envelope({ gemini = {}, claude = {}, status = 'SUCCESS' } = {}) {
+  const bucket = (id, window, fraction, reset) => ({ id, name: `${window} limit`, window, remaining_fraction: fraction, reset_time: reset });
+  return {
+    conversation_id: '', status, response: 'Gemini Models\tWeekly Limit Remaining\t98%\t...\n',
+    command: { name: 'usage', data: { groups: [
+      { name: 'Gemini Models', buckets: gemini.buckets ?? [bucket('gemini-weekly', 'weekly', 0.9814785122871399, iso(86400 * 4)), bucket('gemini-5h', '5h', 1, iso(3600))] },
+      { name: 'Claude and GPT models', buckets: claude.buckets ?? [bucket('3p-weekly', 'weekly', 0.5, iso(86400 * 7)), bucket('3p-5h', '5h', 0.25, iso(3600))] },
+    ] } },
+  };
+}
+const parse = (o) => parseQuotaProbeOutput(JSON.stringify(o));
+
+test('agy envelope: maps groups/buckets onto the pool windows, fraction -> percent', () => {
+  const q = parse(envelope());
+  assert.equal(q.gemini.weeklyRemainingPercent, 98.14785122871399);
+  assert.equal(q.gemini.fiveHourRemainingPercent, 100);
+  assert.equal(q.claude_gpt.weeklyRemainingPercent, 50);
+  assert.equal(q.claude_gpt.fiveHourRemainingPercent, 25);
+  assert.match(q.gemini.fiveHourResetTime, /Z$/);
+  assert.equal(q['claude-gpt'], q.claude_gpt);
+});
+
+test('agy envelope: the 1.3.1 plain-text table is rejected, not guessed at', () => {
+  const tsv = 'Gemini Models\tWeekly Limit Remaining\t98%\t2026-10-11T20:22:21Z\n';
+  assert.throws(() => parseQuotaProbeOutput(tsv), (e) => e.kind === 'quota_parse_failure');
+});
+
+test('agy envelope: a non-SUCCESS status or missing groups fails closed', () => {
+  assert.throws(() => parse(envelope({ status: 'ERROR' })), (e) => e.kind === 'quota_parse_failure' && /status/.test(e.message));
+  const noGroups = envelope();
+  noGroups.command.data = {};
+  assert.throws(() => parse(noGroups), (e) => e.kind === 'quota_parse_failure' && /groups/.test(e.message));
+});
+
+test('agy envelope: group cardinality and names keep the ambiguous_quota_pools rule', () => {
+  const one = envelope();
+  one.command.data.groups.pop();
+  assert.throws(() => parse(one), (e) => e.kind === 'ambiguous_quota_pools');
+  const renamed = envelope();
+  renamed.command.data.groups[1].name = 'Other';
+  assert.throws(() => parse(renamed), (e) => e.kind === 'ambiguous_quota_pools');
+});
+
+test('agy envelope: a missing or duplicated window fails closed', () => {
+  const b = (window) => ({ window, remaining_fraction: 1, reset_time: iso(3600) });
+  assert.throws(() => parse(envelope({ gemini: { buckets: [b('weekly')] } })), (e) => e.kind === 'quota_parse_failure' && /5h/.test(e.message));
+  assert.throws(() => parse(envelope({ gemini: { buckets: [b('weekly'), b('5h'), b('5h')] } })), (e) => e.kind === 'quota_parse_failure' && /5h/.test(e.message));
+  assert.throws(() => parse(envelope({ claude: { buckets: 'nope' } })), (e) => e.kind === 'quota_parse_failure');
+});
+
+test('agy envelope: remaining_fraction must be a finite number in [0, 1]', () => {
+  for (const bad of [1.01, -0.01, '0.5', null, Number.NaN]) {
+    const buckets = [{ window: 'weekly', remaining_fraction: 1, reset_time: iso(86400) }, { window: '5h', remaining_fraction: bad, reset_time: iso(3600) }];
+    assert.throws(() => parse(envelope({ gemini: { buckets } })), (e) => e.kind === 'invalid_quota_percentage', String(bad));
+  }
+  const edge = [{ window: 'weekly', remaining_fraction: 0, reset_time: iso(86400) }, { window: '5h', remaining_fraction: 1, reset_time: iso(3600) }];
+  assert.equal(parse(envelope({ gemini: { buckets: edge } })).gemini.weeklyRemainingPercent, 0);
+});
+
+test('agy envelope: reset_time goes through the strict RFC 3339 UTC + future check', () => {
+  const buckets = [{ window: 'weekly', remaining_fraction: 1, reset_time: '2026-10-11T20:22:21+02:00' }, { window: '5h', remaining_fraction: 1, reset_time: iso(3600) }];
+  assert.throws(() => parse(envelope({ gemini: { buckets } })), (e) => e.kind === 'invalid_quota_timestamp');
+  const past = [{ window: 'weekly', remaining_fraction: 1, reset_time: '2020-01-01T00:00:00Z' }, { window: '5h', remaining_fraction: 1, reset_time: iso(3600) }];
+  assert.throws(() => parse(envelope({ gemini: { buckets: past } })), (e) => e.kind === 'invalid_quota_timestamp');
+});
+
+test('probeQuota asks agy for --output-format json (fake-agy prints the real text table otherwise)', async () => {
+  const q = await probeQuota(QUOTA_FAKE_AGY);
+  assert.equal(q.gemini.fiveHourRemainingPercent, 100);
+  assert.equal(typeof q.claude_gpt.weeklyRemainingPercent, 'number');
+});
+
+test('agy envelope: a half-envelope (status only, or command only) is judged as an envelope', () => {
+  assert.throws(() => parseQuotaProbeOutput(JSON.stringify({ status: 'SUCCESS' })), (e) => e.kind === 'quota_parse_failure' && /command\.data\.groups/.test(e.message));
+  const { status, ...noStatus } = envelope();
+  assert.throws(() => parse(noStatus), (e) => e.kind === 'quota_parse_failure' && /status is not SUCCESS/.test(e.message));
+});
+
+test('agy envelope: a null bucket or an unmodelled window fails closed', () => {
+  const ok = [{ window: 'weekly', remaining_fraction: 1, reset_time: iso(86400) }, { window: '5h', remaining_fraction: 1, reset_time: iso(3600) }];
+  assert.throws(() => parse(envelope({ gemini: { buckets: [...ok, null] } })), (e) => e.kind === 'quota_parse_failure' && /unrecognized bucket window/.test(e.message));
+  assert.throws(() => parse(envelope({ claude: { buckets: [...ok, { window: 'daily', remaining_fraction: 0, reset_time: iso(60) }] } })), (e) => e.kind === 'quota_parse_failure' && /"daily"/.test(e.message));
+});
+
+test('probeQuota: a hung agy is killed at the timeout and reported as a probe failure', async () => {
+  const saved = process.env.FAKE_AGY_QUOTA_MODE;
+  process.env.FAKE_AGY_QUOTA_MODE = 'hang';
+  try {
+    const started = Date.now();
+    await assert.rejects(probeQuota(QUOTA_FAKE_AGY, { timeoutMs: 300 }), (e) => e.kind === 'quota_probe_failure');
+    assert.ok(Date.now() - started < 4000, 'the probe must not wait for the hung agy to finish');
+  } finally {
+    if (saved === undefined) delete process.env.FAKE_AGY_QUOTA_MODE; else process.env.FAKE_AGY_QUOTA_MODE = saved;
+  }
+});
+
+test('probeQuota: with no binary argument it uses AGB_AGY_BIN', async () => {
+  const saved = process.env.AGB_AGY_BIN;
+  process.env.AGB_AGY_BIN = QUOTA_FAKE_AGY;
+  try {
+    assert.equal((await probeQuota()).gemini.weeklyRemainingPercent, 100);
+  } finally {
+    if (saved === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = saved;
+  }
+});

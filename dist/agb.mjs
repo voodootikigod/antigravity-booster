@@ -9001,6 +9001,38 @@ function writeV2State(v2State) {
     totalReserved
   });
 }
+var AGY_QUOTA_WINDOWS = { "5h": "fiveHour", weekly: "weekly" };
+function quotaParseFailure(message, kind = "quota_parse_failure") {
+  const err = new Error(message);
+  err.kind = kind;
+  return err;
+}
+function poolsFromAgyEnvelope(data) {
+  if (data.status !== "SUCCESS") throw quotaParseFailure(`Quota probe envelope status is not SUCCESS: ${data.status}`);
+  const groups = data.command?.data?.groups;
+  if (!Array.isArray(groups)) throw quotaParseFailure("Quota probe envelope missing command.data.groups array");
+  return groups.map((group) => {
+    const name = group?.name;
+    if (!Array.isArray(group?.buckets)) throw quotaParseFailure(`Quota group ${name} has no buckets array`);
+    const unknown = group.buckets.filter((b) => !Object.hasOwn(AGY_QUOTA_WINDOWS, b?.window));
+    if (unknown.length) {
+      throw quotaParseFailure(`Quota group ${name} has unrecognized bucket window(s): ${JSON.stringify(unknown.map((b) => b?.window ?? null))}`);
+    }
+    const pool = { name };
+    for (const [window, key2] of Object.entries(AGY_QUOTA_WINDOWS)) {
+      const matches = group.buckets.filter((b) => b?.window === window);
+      if (matches.length !== 1) {
+        throw quotaParseFailure(`Quota group ${name} must have exactly one '${window}' bucket, found ${matches.length}`);
+      }
+      const fraction = matches[0].remaining_fraction;
+      if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) {
+        throw quotaParseFailure(`Invalid remaining_fraction in ${name}.${window}: ${fraction}`, "invalid_quota_percentage");
+      }
+      pool[key2] = { remainingPercent: fraction * 100, resetTime: matches[0].reset_time };
+    }
+    return pool;
+  });
+}
 function parseQuotaProbeOutput(stdout2) {
   if (typeof stdout2 !== "string" || !stdout2.trim()) {
     const err = new Error("Quota probe output is empty or not a string");
@@ -9020,7 +9052,7 @@ function parseQuotaProbeOutput(stdout2) {
     err.kind = "quota_parse_failure";
     throw err;
   }
-  const pools = data.pools;
+  const pools = "command" in data || "status" in data ? poolsFromAgyEnvelope(data) : data.pools;
   if (!Array.isArray(pools)) {
     const err = new Error("Quota probe output missing pools array");
     err.kind = "quota_parse_failure";
@@ -9654,11 +9686,12 @@ function tierCandidates(tier, poolHint) {
     return fam === poolHint;
   });
 }
-async function probeQuota(agyBin = process.env.AGB_AGY_BIN || "agy") {
+var QUOTA_PROBE_TIMEOUT_MS = 3e4;
+async function probeQuota(agyBin = process.env.AGB_AGY_BIN || "agy", { timeoutMs = QUOTA_PROBE_TIMEOUT_MS } = {}) {
   try {
-    const { stdout: stdout2 } = await execFileP(agyBin, ["-p", "/quota"], {
+    const { stdout: stdout2 } = await execFileP(agyBin, ["-p", "/quota", "--output-format", "json"], {
       encoding: "utf8",
-      timeout: 1e4,
+      timeout: timeoutMs,
       stdio: ["ignore", "pipe", "ignore"]
     });
     return parseQuotaProbeOutput(stdout2);
