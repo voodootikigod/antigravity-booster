@@ -1850,3 +1850,13 @@ test('probeQuota: a hung agy is killed at the timeout and reported as a probe fa
     if (saved === undefined) delete process.env.FAKE_AGY_QUOTA_MODE; else process.env.FAKE_AGY_QUOTA_MODE = saved;
   }
 });
+
+test('probeQuota: with no binary argument it uses AGB_AGY_BIN', async () => {
+  const saved = process.env.AGB_AGY_BIN;
+  process.env.AGB_AGY_BIN = QUOTA_FAKE_AGY;
+  try {
+    assert.equal((await probeQuota()).gemini.weeklyRemainingPercent, 100);
+  } finally {
+    if (saved === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = saved;
+  }
+});
