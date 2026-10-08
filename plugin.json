@@ -1,6 +1,6 @@
 {
   "name": "antigravity-booster",
-  "version": "0.8.0",
+  "version": "1.0.0",
   "description": "Antigravity Booster orchestrator integration for Google Antigravity (agy CLI): quota-pool-aware scheduling, worktree fleets, cross-model prosecution, deterministic gates",
   "author": "Chris Williams <chris@voodootikigod.com>"
 }

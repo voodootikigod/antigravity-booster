@@ -1,13 +1,28 @@
 # Changelog
 
-Notable changes to `antigravity-booster`. This project is pre-1.0 — see
-[Stability](README.md#stability).
+Notable changes to `antigravity-booster`. Versioning follows semver from
+1.0.0 — see [Stability](README.md#stability).
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Entries before 0.4.0 were reconstructed from git history, so they summarise
 rather than enumerate.
 
 ## [Unreleased]
+
+## [1.0.0] — 2026-10-08
+
+**booster is now a native Antigravity plugin.** Install it with
+`agy plugin install <git-url>`, with no `npm install` step. Existing npm-global
+or checkout installs move over with `agb migrate`, and `agb migrate --rollback`
+reverses that. A unified PreToolUse policy guard now enforces frozen rails and
+the ADLC trust root inside every `agy` session. `adlc` ships vendored and
+digest-pinned, so the plugin is self-contained. This release was validated with
+a full migrate, doctor, live rail denial, rollback and re-migrate cycle on a
+real machine against agy 1.3.1.
+
+**Breaking:** the legacy `auto-approve-tests` hook and the `.agents/` tree are
+gone, `agb doctor` exits 1 (was 2) on failure, and `bin.agb` now points at
+`dist/agb.mjs`. See Removed and Changed below.
 
 ### Added
 - **Native Antigravity plugin layout** (T-PLUGIN-01-CORE): `agy plugin install <git-url>` now stages a complete plugin with no `npm install`. Prebuilt bundles are committed under `dist/` (`agb.mjs`, `mcp-server.mjs`, `hooks/pre-tool-use.bundle.mjs`) and contain only Node built-ins. Root `commands/`, `agents/`, `hooks.json` and `mcp_config.json` replace `.agents/plugins/agb`, which remains as a hookless `agb-legacy-shim` until the migration ticket.

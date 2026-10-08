@@ -344,10 +344,10 @@ Calibration: [probes-2026-07-14.md](docs/calibration/probes-2026-07-14.md)
 
 ## Stability
 
-Pre-1.0 and versioned with semver's pre-1.0 latitude: **minor versions may carry
-breaking changes**, patch versions will not. Pin a minor (`~0.3.0`) if you need
-the CLI surface, the `plan.json` schema, or the `.booster/` artifact layout to
-hold still. Breaking changes are called out in [CHANGELOG.md](CHANGELOG.md).
+Versioned with [semver](https://semver.org) since 1.0.0: **breaking changes
+only in a major version**. The CLI surface, the `plan.json` schema and the
+`.booster/` artifact layout hold still within a major (`^1.0.0`). Breaking
+changes are called out in [CHANGELOG.md](CHANGELOG.md).
 
 Only the latest published version receives fixes, including security fixes.
 
