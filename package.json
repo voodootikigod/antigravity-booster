@@ -1,6 +1,6 @@
 {
   "name": "antigravity-booster",
-  "version": "0.8.0",
+  "version": "1.0.0",
   "description": "Orchestrates Google Antigravity for large parallel build-outs",
   "type": "module",
   "keywords": [
