@@ -1,0 +1,20 @@
+{
+  "body": "Problem: probeQuota (lib/pools.mjs) runs `agy -p /quota` and JSON.parses stdout expecting an invented {pools:[{name,fiveHour:{remainingPercent,resetTime},weekly:{...}}]} shape. Real agy 1.3.1 prints tab-separated text (`Gemini Models\\tWeekly Limit Remaining\\t98%\\t<iso>`), so every probe fails and preflight/plan/review/brain/scheduler halt with 'quota telemetry unavailable from agy'. test/fixtures/fake-agy emits the same invented JSON, so the suite never saw the mismatch.\n\nFix: probeQuota passes `--output-format json`. Real 1.3.1 then prints one JSON object {status:'SUCCESS', command:{name:'usage', data:{groups:[{name:'Gemini Models'|'Claude and GPT models', buckets:[{id, window:'weekly'|'5h', remaining_fraction:0..1, reset_time:RFC3339 UTC}]}]}}}. parseQuotaProbeOutput accepts this envelope: requires status SUCCESS and command.data.groups array; requires exactly one bucket per window ('5h' -> fiveHour, 'weekly' -> weekly) per group (missing or duplicate window fails closed with quota_parse_failure); remaining_fraction must be a finite number in [0,1] (else invalid_quota_percentage) and is converted to percent (x100); reset_time goes through the existing strict RFC3339-UTC + future-ordering check. Group cardinality/name rules (exactly one 'Gemini Models' and one 'Claude and GPT models') stay as-is (ambiguous_quota_pools). The legacy internal pools shape stays accepted so existing tests keep pinning the validators. Raise the probe timeout from 10s to 30s (real call measured ~5s). fake-agy: without --output-format json emit the real TSV text; with it, emit the real envelope (captured from agy 1.3.1). Tests: parse the captured real envelope; TSV stdout is rejected; each new fail-closed branch; probeQuota passes the flag end-to-end through fake-agy. Rebuild dist. CHANGELOG Fixed entry. Acceptance: npm test green; real `agb` preflight quota probe succeeds against agy 1.3.1.",
+  "category": "fix",
+  "edges": [],
+  "id": "T-QUOTA-PROBE-AGY-JSON",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "bin/node-launcher.sh",
+    "bin/hook-runner.sh"
+  ],
+  "scope": [
+    "lib/pools.mjs",
+    "test/pools.test.mjs",
+    "test/fixtures/fake-agy",
+    "dist/**",
+    "CHANGELOG.md"
+  ],
+  "title": "Quota probe parses the real agy 1.3.1 /quota output"
+}

@@ -33,6 +33,7 @@ rather than enumerate.
 - README, USAGE and ARCHITECTURE document the git-URL install, `agb migrate`, the slash-command model, and the print-mode residual risk (`agy -p` turns `ask` into allow, so in-session protection there is deny-only).
 
 ### Fixed
+- **Quota probe works against real agy 1.3.1** (T-QUOTA-PROBE-AGY-JSON): `agy -p /quota` prints a plain-text table, so every probe failed to parse and preflight, plan, review and dispatch halted with "quota telemetry unavailable from agy". The probe now passes `--output-format json` and reads `command.data.groups[].buckets[]`. A missing or duplicate window, a non-SUCCESS status, or a `remaining_fraction` outside [0, 1] still fails closed. The probe timeout rose from 10 s to 30 s. `test/fixtures/fake-agy` now prints the real formats.
 - **The installed plugin can run `adlc` again** (T-PLUGIN-05-VENDORED-ADLC-SPAWN, found by the real-machine migration). The check every `adlc` call makes just before spawning only accepted an `@adlc/cli` npm package, so it rejected booster's own vendored copy (`@adlc/cli-vendored-by-antigravity-booster`). As a result `agb run`, review, plan, preflight, prosecute and doctor's `adlc CLI` check all failed in the bundled plugin. The spawn-time check now re-verifies the vendored copy against its pinned digests, and in the bundled plugin it refuses any other binary.
 
 ### Removed
