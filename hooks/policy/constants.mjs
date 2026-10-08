@@ -16,7 +16,9 @@ export const ORCHESTRATION_TOOLS = new Set([
 // agy control steps with no filesystem, shell or network effect. `finish`
 // (CORTEX_STEP_TYPE_FINISH) ends the turn and, under --json-schema, carries the
 // model's structured answer; its args are answer text, never paths, so they are
-// not path-scanned. Add a step here only with evidence it has no side effect.
+// not path-scanned. Verified against agy 1.3.1 (no file/attachment fields on
+// FinishToolConfig); re-check on agy upgrades. Add a step here only with
+// evidence it has no side effect.
 export const AGY_CONTROL_TOOLS = new Set(['finish']);
 
 export const BOOSTER_MCP_SERVER = 'agb';
