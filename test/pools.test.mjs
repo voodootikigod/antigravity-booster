@@ -1826,3 +1826,9 @@ test('probeQuota asks agy for --output-format json (fake-agy prints the real tex
   assert.equal(q.gemini.fiveHourRemainingPercent, 100);
   assert.equal(typeof q.claude_gpt.weeklyRemainingPercent, 'number');
 });
+
+test('agy envelope: a half-envelope (status only, or command only) is judged as an envelope', () => {
+  assert.throws(() => parseQuotaProbeOutput(JSON.stringify({ status: 'SUCCESS' })), (e) => e.kind === 'quota_parse_failure' && /command\.data\.groups/.test(e.message));
+  const { status, ...noStatus } = envelope();
+  assert.throws(() => parse(noStatus), (e) => e.kind === 'quota_parse_failure' && /status is not SUCCESS/.test(e.message));
+});
