@@ -453,11 +453,14 @@ for (const [label, shell] of SHELLS) {
       assert.ok(r.ms <= 3500, `took ${r.ms}ms`);
     });
 
-    test('child ignoring SIGTERM is escalated and fallback still emitted within timeout + 1.5s', async () => {
+    // timeout (2s) + the watchdog's 1s SIGTERM->SIGKILL grace is 3s by design; the
+    // ceiling leaves CI runners 1.5s of spawn jitter (agy's real deadline is 15s).
+    test('child ignoring SIGTERM is escalated to SIGKILL and fallback emitted within timeout + 2.5s', async () => {
       const r = await go({ payload: payloadFor(SHELL_TOOL), args: ['--timeout', '2'], env: { STUB_MODE: 'hang_ignore_term' } });
       assertInvariant(r);
       assert.equal(decisionOf(r), 'ask');
-      assert.ok(r.ms <= 3500, `took ${r.ms}ms`);
+      assert.ok(r.ms >= 2900, `emitted before the 1s SIGKILL escalation could run: ${r.ms}ms`);
+      assert.ok(r.ms <= 4500, `took ${r.ms}ms`);
     });
 
     test('unclosed stdin (writer holds pipe open) still emits fallback within the deadline', async () => {
