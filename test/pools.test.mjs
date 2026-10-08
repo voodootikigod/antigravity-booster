@@ -1832,3 +1832,21 @@ test('agy envelope: a half-envelope (status only, or command only) is judged as 
   const { status, ...noStatus } = envelope();
   assert.throws(() => parse(noStatus), (e) => e.kind === 'quota_parse_failure' && /status is not SUCCESS/.test(e.message));
 });
+
+test('agy envelope: a null bucket or an unmodelled window fails closed', () => {
+  const ok = [{ window: 'weekly', remaining_fraction: 1, reset_time: iso(86400) }, { window: '5h', remaining_fraction: 1, reset_time: iso(3600) }];
+  assert.throws(() => parse(envelope({ gemini: { buckets: [...ok, null] } })), (e) => e.kind === 'quota_parse_failure' && /unrecognized bucket window/.test(e.message));
+  assert.throws(() => parse(envelope({ claude: { buckets: [...ok, { window: 'daily', remaining_fraction: 0, reset_time: iso(60) }] } })), (e) => e.kind === 'quota_parse_failure' && /"daily"/.test(e.message));
+});
+
+test('probeQuota: a hung agy is killed at the timeout and reported as a probe failure', async () => {
+  const saved = process.env.FAKE_AGY_QUOTA_MODE;
+  process.env.FAKE_AGY_QUOTA_MODE = 'hang';
+  try {
+    const started = Date.now();
+    await assert.rejects(probeQuota(QUOTA_FAKE_AGY, { timeoutMs: 300 }), (e) => e.kind === 'quota_probe_failure');
+    assert.ok(Date.now() - started < 4000, 'the probe must not wait for the hung agy to finish');
+  } finally {
+    if (saved === undefined) delete process.env.FAKE_AGY_QUOTA_MODE; else process.env.FAKE_AGY_QUOTA_MODE = saved;
+  }
+});

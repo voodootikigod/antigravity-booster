@@ -9014,6 +9014,10 @@ function poolsFromAgyEnvelope(data) {
   return groups.map((group) => {
     const name = group?.name;
     if (!Array.isArray(group?.buckets)) throw quotaParseFailure(`Quota group ${name} has no buckets array`);
+    const unknown = group.buckets.filter((b) => !Object.hasOwn(AGY_QUOTA_WINDOWS, b?.window));
+    if (unknown.length) {
+      throw quotaParseFailure(`Quota group ${name} has unrecognized bucket window(s): ${JSON.stringify(unknown.map((b) => b?.window ?? null))}`);
+    }
     const pool = { name };
     for (const [window, key2] of Object.entries(AGY_QUOTA_WINDOWS)) {
       const matches = group.buckets.filter((b) => b?.window === window);
@@ -9683,11 +9687,11 @@ function tierCandidates(tier, poolHint) {
   });
 }
 var QUOTA_PROBE_TIMEOUT_MS = 3e4;
-async function probeQuota(agyBin = process.env.AGB_AGY_BIN || "agy") {
+async function probeQuota(agyBin = process.env.AGB_AGY_BIN || "agy", { timeoutMs = QUOTA_PROBE_TIMEOUT_MS } = {}) {
   try {
     const { stdout: stdout2 } = await execFileP(agyBin, ["-p", "/quota", "--output-format", "json"], {
       encoding: "utf8",
-      timeout: QUOTA_PROBE_TIMEOUT_MS,
+      timeout: timeoutMs,
       stdio: ["ignore", "pipe", "ignore"]
     });
     return parseQuotaProbeOutput(stdout2);

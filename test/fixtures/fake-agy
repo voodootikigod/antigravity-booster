@@ -105,6 +105,7 @@ if [ "$1" = "-p" ] && [ "$2" = "/quota" ]; then
   case "${FAKE_AGY_QUOTA_MODE:-ok}" in
     fail) echo "boom: simulated quota probe failure" >&2; exit 1 ;;
     unparseable) echo "invalid json" ; exit 0 ;;
+    hang) sleep 5 ; exit 0 ;;
     *)
       future_5h=$(date -u -d "+5 hours" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v+5H +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "2029-01-01T00:00:00Z")
       future_weekly=$(date -u -d "+7 days" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -v+7d +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "2029-01-01T00:00:00Z")
