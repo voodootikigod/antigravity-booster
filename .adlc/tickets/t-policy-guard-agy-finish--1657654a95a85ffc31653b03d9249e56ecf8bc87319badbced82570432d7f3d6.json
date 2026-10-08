@@ -1,0 +1,22 @@
+{
+  "body": "Problem: with --json-schema, agy 1.3.1 returns the model's structured answer through its terminal tool `finish` (CORTEX_STEP_TYPE_FINISH; args carry the answer plus toolAction/toolSummary). The booster PreToolUse guard (hooks/policy/evaluate.mjs) has no category for it, so it falls to evaluateUnknownTool: denied in read-only worker sessions (AGB_WORKER_MODE), denied for headless builder workers in ADLC repos, and denied in any repo with active rails. stepOne also scans finish args for path-like tokens, so an answer mentioning a protected path would be denied. Effect since the native-plugin migration made the guard live: every read-only structured call (preflight coldstart, plan, review, prosecution) loops 4 turns and returns no structured_output ('agy JSON response envelope missing required structured_output'). Repro: raw `agy --print ... --json-schema ...` works; adding only AGB_WORKER_MODE=readonly fails; agy log shows the model reporting finish denied.\n\nFix: add AGY_CONTROL_TOOLS = new Set(['finish']) in hooks/policy/constants.mjs (comment: terminal step with no filesystem/network side effect; its args are the model's answer text, not paths). In evaluatePayload return PASS for control tools before stepOne (so answer text is not path-scanned). Do not add other step types without evidence. Tests in test/pre-tool-use.test.mjs: finish passes in read-only mode, in headless builder mode in an ADLC repo, and in an active-rail repo; finish whose answer text names a rail path / .adlc/config.json / ~/.gemini/config still passes; a lookalike name (e.g. 'finish_task', 'Finish') is still treated as unknown and denied in read-only mode. Rebuild dist (dist/hooks/pre-tool-use.bundle.mjs). CHANGELOG Fixed entry. Also archive the completed T-HOOK-RUNNER-ESCALATION-BUDGET ticket (merged #81). Acceptance: npm test green; real `agb preflight` on a one-ticket plan returns coldstart gaps under the installed guard after re-migrate.",
+  "category": "bugfix",
+  "edges": [],
+  "id": "T-POLICY-GUARD-AGY-FINISH",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "bin/node-launcher.sh",
+    "bin/hook-runner.sh"
+  ],
+  "scope": [
+    "hooks/policy/constants.mjs",
+    "hooks/policy/evaluate.mjs",
+    "test/pre-tool-use.test.mjs",
+    "dist/**",
+    "CHANGELOG.md",
+    ".adlc/tickets/**",
+    ".adlc/ticket-archive/**"
+  ],
+  "title": "Policy guard lets agy's terminal finish step through (structured output works under the live guard)"
+}

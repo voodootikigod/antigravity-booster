@@ -1981,6 +1981,7 @@ var ORCHESTRATION_TOOLS = /* @__PURE__ */ new Set([
   "schedule",
   "send_message"
 ]);
+var AGY_CONTROL_TOOLS = /* @__PURE__ */ new Set(["finish"]);
 var BOOSTER_MCP_SERVER = "agb";
 var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
   "agb_plan",
@@ -4528,6 +4529,7 @@ function evaluatePayload(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== "string" || name.length === 0) return deny("Malformed PreToolUse payload: missing tool name");
   const args = payload.toolCall.args ?? {};
+  if (AGY_CONTROL_TOOLS.has(name)) return PASS;
   beginEvaluation();
   const ctx = buildContext(payload, options);
   const step1 = stepOne(name, args, ctx);

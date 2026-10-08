@@ -529,3 +529,36 @@ test('linux: the same case-variant paths are distinct files and pass', () => {
   assert.equal(run('write_to_file', { TargetFile: join(fx.active, 'LIB', 'LOCK.MJS') }, fx.active).decision, 'pass');
   assert.equal(run('write_to_file', { TargetFile: join(fx.home, '.Gemini', 'settings.json') }, fx.plain).decision, 'pass');
 });
+
+// ---------- agy control steps (T-POLICY-GUARD-AGY-FINISH) ----------
+// agy 1.3.1 returns a --json-schema answer through its terminal `finish` step;
+// denying it made every structured read-only call loop and return nothing.
+
+test('finish passes for read-only workers, headless builders and active-rail sessions', () => {
+  const args = { gaps: [], toolAction: 'Reporting gaps', toolSummary: 'Report gaps' };
+  for (const [ws, env] of [[fx.active, READONLY], [fx.plain, READONLY], [fx.active, WORKER], [fx.active, INTERACTIVE], [fx.inactive, READONLY]]) {
+    assert.equal(run('finish', args, ws, env).decision, 'pass', `${ws} ${JSON.stringify(env)}`);
+  }
+});
+
+test('finish answer text naming protected paths is not path-scanned', () => {
+  const gaps = ['lib/lock.mjs is a frozen rail', `${fx.active}/.adlc/config.json`, join(fx.home, '.gemini/config/plugins/x'),
+    join(fx.home, '.gemini/antigravity-cli/plugin_data/antigravity-booster/rails-guard-health.json')];
+  for (const env of [READONLY, WORKER, INTERACTIVE]) {
+    assert.equal(run('finish', { gaps, toolSummary: 'Report gaps' }, fx.active, env).decision, 'pass', JSON.stringify(env));
+  }
+});
+
+test('finish lookalikes are still unknown tools and denied in read-only sessions', () => {
+  for (const name of ['finish_task', 'Finish', 'FINISH', ' finish', 'mcp__x__finish']) {
+    assert.equal(run(name, { gaps: [] }, fx.plain, READONLY).decision, 'deny', name);
+  }
+});
+
+test('entry: a read-only worker finish step prints nothing (pass), a lookalike is denied', () => {
+  const ok = entry(JSON.stringify(payload('finish', { gaps: ['lib/lock.mjs'], toolSummary: 'Report gaps' }, fx.active)), READONLY);
+  assert.equal(ok.status, 0);
+  assert.equal(ok.stdout, '');
+  const bad = entry(JSON.stringify(payload('finish_task', { gaps: [] }, fx.active)), READONLY);
+  assert.equal(JSON.parse(bad.stdout.trim()).decision, 'deny');
+});
