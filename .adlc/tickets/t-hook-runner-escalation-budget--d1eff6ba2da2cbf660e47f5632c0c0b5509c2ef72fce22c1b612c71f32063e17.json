@@ -1,0 +1,16 @@
+{
+  "body": "test/hook-runner.test.mjs 'child ignoring SIGTERM is escalated and fallback still emitted within timeout + 1.5s' asserts r.ms <= 3500 with --timeout 2. By design (bin/hook-runner.sh watchdog) the path is timeout (2s) + 1s SIGTERM->SIGKILL grace before emit, leaving 500ms for bash startup/spawn; a loaded macOS CI runner took 3601ms (run 37764224856, PR #80, a ticket-only change). The real limit is agy's 15s hook deadline (production budget ~10.5s), so the test ceiling is test slack, not a contract. Change only this test: ceiling = timeout + 2.5s (4500ms), and add a lower bound r.ms >= 2900 so the test proves the 1s SIGKILL escalation actually happened (the current test never checks that). Rename to reflect the new bound. bin/hook-runner.sh is a rail and must not change. Acceptance: test passes; planting 'sleep 1' removal is not possible without touching the rail, so prove the lower bound by asserting it against the existing hang (non-ignoring) case would be wrong — instead verify the new bound holds on Linux locally across 10 runs.",
+  "category": "test",
+  "edges": [],
+  "id": "T-HOOK-RUNNER-ESCALATION-BUDGET",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "bin/node-launcher.sh",
+    "bin/hook-runner.sh"
+  ],
+  "scope": [
+    "test/hook-runner.test.mjs"
+  ],
+  "title": "De-flake the hook-runner SIGTERM-escalation latency test"
+}
