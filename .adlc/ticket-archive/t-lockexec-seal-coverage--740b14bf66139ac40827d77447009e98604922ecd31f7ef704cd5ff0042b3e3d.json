@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-09T13:46:18.364Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "1a33db653acfbf2ca09484198ae76a125cac7f55d852722669dd6a0f46eb66f3",
+    "ticketHash": "cd2ae9eff07245903d05c50a603cb7d24d246087dd370df1b69f2a8d58518645",
+    "version": 1
+  },
   "body": "spawnAuthenticatedAdlc, execAuthenticatedAdlc and execFileAuthenticatedAdlc in lib/adlc-bridge.mjs each call revalidateAdlcBinary with lockExecutable: true so the child runs from a pinned, read-only copy of the authenticated ADLC CLI. Hollow-test found that flipping any of those to false survives the suite. Add tests in test/adlc-bridge.test.mjs that run each wrapper against a copied @adlc/cli in a temp repo with a NODE_OPTIONS --require probe recording process.argv[1] of the child, and assert the child executed the pinned copy (not the original path under the temp repo). No production code change.",
+  "completed": true,
   "edges": [],
   "id": "T-LOCKEXEC-SEAL-COVERAGE",
   "rails": [
