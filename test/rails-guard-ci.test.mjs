@@ -167,8 +167,8 @@ test('pass: complete+archive via the real adlc ticket CLI (#86 shape)', withRepo
   r.git('update-ref', 'refs/remotes/origin/main', 'main');
   r.git('branch', '-f', 'pr', 'main');
   r.git('checkout', '-q', 'pr');
-  sh(r.dir, adlc, ['ticket', 'complete', 'T-A', '--write', '--authorize']);
-  sh(r.dir, adlc, ['ticket', 'archive', 'T-A', '--write', '--authorize']);
+  sh(r.dir, adlc, ['ticket', 'complete', 'T-A', '--write', '--authorize', '--allow-unsigned']);
+  sh(r.dir, adlc, ['ticket', 'archive', 'T-A', '--write', '--authorize', '--allow-unsigned']);
   r.rm('.adlc/manifest.jsonl').rm('.adlc/ticket-transactions').rm('.adlc/tickets.lock');
   r.merge();
   expect(r, 0, /1 active ticket\(s\), 0 archived/);

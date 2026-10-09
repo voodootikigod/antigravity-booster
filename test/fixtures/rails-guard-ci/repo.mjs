@@ -14,7 +14,10 @@ export const ROOT = join(HERE, '..', '..', '..');
 export const GUARD = join(ROOT, 'scripts', 'rails-guard-ci.mjs');
 const FAKE_ADLC = join(ROOT, 'test', 'fixtures', 'fake-adlc');
 
-const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' };
+// Drop the developer's ADLC_* settings (e.g. ADLC_MANIFEST_KEY) so fixtures
+// behave identically locally and in CI.
+const HOST_ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('ADLC_')));
+const GIT_ENV = { ...HOST_ENV, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', LC_ALL: 'C' };
 
 export function sh(cwd, cmd, args, { allowFail = false, env = GIT_ENV, input } = {}) {
   const r = spawnSync(cmd, args, { cwd, env, encoding: 'utf8', input });
