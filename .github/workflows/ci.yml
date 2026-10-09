@@ -24,6 +24,10 @@ jobs:
     name: test (${{ matrix.os }}, node ${{ matrix.node-version }})
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Full history: test/rails-guard-ci.test.mjs replays real archive PRs
+          # (#82/#83/#86) through the guard; it skips on a shallow clone.
+          fetch-depth: 0
 
       - name: Install Bubblewrap (Linux Sandbox)
         if: runner.os == 'Linux'
@@ -44,7 +48,7 @@ jobs:
         # live `adlc coldstart` smoke check, mechanical rails-guard wiring)
         # rather than the fake-adlc fixture — same pinned version as
         # adlc-rails-guard.yml.
-        run: npm install -g --ignore-scripts @adlc/cli@1.6.0
+        run: npm install -g --ignore-scripts @adlc/cli@1.11.1
 
       - name: Install dependencies
         # ci, not install: fail on a lockfile that has drifted from
@@ -76,7 +80,7 @@ jobs:
           node-version: 22
 
       - name: Install the ADLC toolkit
-        run: npm install -g --ignore-scripts @adlc/cli@1.6.0
+        run: npm install -g --ignore-scripts @adlc/cli@1.11.1
 
       - name: Install dependencies
         run: npm ci

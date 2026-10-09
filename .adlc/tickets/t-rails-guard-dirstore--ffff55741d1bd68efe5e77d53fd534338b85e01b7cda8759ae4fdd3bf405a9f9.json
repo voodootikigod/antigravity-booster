@@ -1,0 +1,20 @@
+{
+  "body": "Problem: .github/workflows/adlc-rails-guard.yml 'Rail-freeze gate' (L329-431) reads rails only from the retired legacy .adlc/tickets.json. Since #61 (1016b06) that file is absent on main, so every CI run logs 'no .adlc/tickets.json ... protecting ADLC trust roots only' and no ticket rails are enforced. L403 also crashes on unparseable HEAD JSON instead of failing closed.\n\nDo:\n1. Create scripts/rails-guard-ci.mjs (zero-dep, node: built-ins only, exports evaluate/loadStore/checkDirTransitions/verifyArchive/ticketFilename/ticketHash/canonicalJson/main). Implement the design in the PR description: rails = union of rails over base-tip active shards with completed !== true; allowed transitions are unchanged, complete-in-place (+completed:true only), and archive-to-.adlc/ticket-archive/<same filename> with a verified _adlcArchive envelope (key allowlist, version 1, reason completed, ticketHash recomputed, contract equal to base plus completed:true). Also require the ticket to be unchanged between the merge-base and the base tip for complete/archive, no inbound edges, base archive shards immutable, no unpaired archive shards, no restore. Store/manifest/mode/filename/size/count/rail-string anomalies exit 1 at base and exit 2 at HEAD. Keep the legacy tickets.json semantics unchanged; both stores present exits 1. Read HEAD only via git ls-tree/cat-file, run git diff with --no-ext-diff --no-textconv, and scrub the environment. Exit 0 pass, 1 operational, 2 deny; nothing throws uncaught. No environment-variable overrides.\n2. Replace the Rail-freeze gate step with the version that runs `git show origin/$BASE_REF:scripts/rails-guard-ci.mjs` from $RUNNER_TEMP under `env -i`. When base lacks the script, run the HEAD copy with --bootstrap-unverified, which always exits 2. Bump @adlc/cli to 1.11.1 in adlc-rails-guard.yml and ci.yml (match the package-lock integrity) and fix the stale version comment. Leave the bootstrap-acknowledgement step untouched. Keep the trigger as pull_request.\n3. Add test/rails-guard-ci.test.mjs plus test/fixtures/rails-guard-ci/ (throwaway git repos with commit.gpgsign=false and a synthesized PR merge commit; extend test/fixtures/fake-adlc with a rails-guard subcommand). Cover parity with @adlc/tickets (T-LOCKEXEC-SEAL-COVERAGE -> 740b14bf...e3d), loading the real repo store, every pass/deny/fail case, the merge hazard, trust roots, the base-copy-runs property, YAML lint, and a replay of #86/#83/#82.\n4. Run npm test and show the output; run adlc hollow-test --test-cmd \"npm test\" --base main and kill the survivors; record adlc gate-manifest.\n\nConstraints: do NOT modify .adlc/config.json (never touch acknowledgedNewRailBypass or trustedCodeownersAttested), lib/lock.mjs, lib/gates.mjs, CODEOWNERS, or any ruleset. The PR's own rails-guard check is red BY DESIGN (it edits trust roots); say so in the PR body with the log excerpt. Merge is the owner's P6 decision. Do not merge or push to main.",
+  "edges": [],
+  "id": "T-RAILS-GUARD-DIRSTORE",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "scripts/rails-guard-ci.mjs",
+    ".github/workflows/adlc-rails-guard.yml",
+    ".github/workflows/ci.yml",
+    "test/rails-guard-ci.test.mjs",
+    "test/fixtures/rails-guard-ci/**",
+    "test/fixtures/fake-adlc"
+  ],
+  "title": "fix(ci): rails-guard enforces rails from the .adlc/tickets/ directory store (base-run guard script)"
+}
