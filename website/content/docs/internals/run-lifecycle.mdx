@@ -25,9 +25,7 @@ flowchart LR
 
 `runPlan` refuses a plan whose ticket DAG has a cycle, checks the `agy` binary, verifies the rails enforcement gate, snapshots run integrity, and refuses a dirty checkout unless `AGB_ALLOW_DIRTY=1` ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1289-L1392)). It then takes the per-repo run lock (`.booster/run.lock.d/`), reconciles any [integration journal](/docs/internals/integration-journal) left by a crashed run, reaps stale integration worktrees, reconciles quota leases and refreshes quota telemetry ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1412-L1420)).
 
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 7)">
-The `AGB_ALLOW_DIRTY` error and warning text ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1384-L1391)) says a failed merge or gate will hard-reset the repository and discard uncommitted changes. At v1.0.0 that does not happen to your checkout: hard resets run only inside the ticket worktree and the integration worktree, and the base branch moves by compare-and-swap `update-ref`. Uncommitted changes are left alone, but they are not part of the run's base. The message will be corrected.
-</Callout>
+With `AGB_ALLOW_DIRTY=1`, uncommitted changes in your checkout are left untouched: hard resets run only inside the ticket worktree and the integration worktree, and the base branch moves by compare-and-swap `update-ref`. Those changes are not part of the run's base, and the error and warning text says so.
 
 ## One ticket, step by step
 

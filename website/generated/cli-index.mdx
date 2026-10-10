@@ -8,7 +8,7 @@
 | agb plan | &lt;id &#124; spec.md&gt; &lt;repo&gt; | compile an Antigravity brain plan or spec file into plan.json |
 | agb pool | drain [repo] | safely drain active leases and reset coordinator |
 | agb preflight | &lt;plan.json&gt; | plan-time gates: scope overlap + coldstart |
-| agb probe | [widths] | measure pool concurrency/latency, print JSON lines |
+| agb probe | [widths] | measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-&lt;day&gt;.md |
 | agb review | [repo] [ref] | read-only lens fleet over a diff, loop-until-dry |
 | agb run | &lt;plan.json&gt; | execute a ticket DAG (build → gate → prosecute → merge) |
 | agb sidecar | [repo] | launch the HTTP server for the Antigravity Sidecar UI |

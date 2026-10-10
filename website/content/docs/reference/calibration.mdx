@@ -28,9 +28,7 @@ A plan's `caps` object is merged over these, per pool ([PoolSet](https://github.
 
 The 2026-06-11 report is kept unchanged in the repository as a historical record; only this page marks it superseded.
 
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 5)">
-File names do not line up. The committed reports are named `probes-<date>.md`, but `agb probe` writes `probe-<date>.md` (singular) ([C7](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L350)), and the comment above `DEFAULT_CAPS` cites `docs/calibration/probe-2026-07-14.md`, a file that does not exist ([C7](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L69)). The intended source is `probes-2026-07-14.md`. Rename new probe output to the `probes-` form before committing it.
-</Callout>
+`agb probe` writes its output as `probes-<date>.md`, the same naming as the committed reports (v1.0.0 wrote the singular `probe-<date>.md`: [C7](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L350)), and the comment above `DEFAULT_CAPS` cites `docs/calibration/probes-2026-07-14.md`.
 
 ## Running a probe
 
@@ -44,9 +42,7 @@ For each width the probe sends that many concurrent `Reply with exactly: PONG-<i
 
 If at least one request succeeded, the rows are appended as a Markdown table to the day's calibration file. If every request failed, nothing is written, so garbage latencies never become calibration data ([write guard](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L344-L367)). A write failure (for example a read-only install prefix) is reported but does not change the exit code.
 
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 6)">
-Without `AGB_CALIBRATION_DIR`, `agb probe` writes to `docs/calibration/` relative to the agb installation, not to your current directory ([default dir](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L348-L349)). For an installed plugin that is inside the plugin directory. Set `AGB_CALIBRATION_DIR` to choose where the report goes.
-</Callout>
+The report goes to `AGB_CALIBRATION_DIR` if it is set, otherwise to `docs/calibration/` under the current working directory, so running `agb probe` from your repository root puts the report in that repository.
 
 ## When to re-probe
 

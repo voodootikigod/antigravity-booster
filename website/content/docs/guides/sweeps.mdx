@@ -57,7 +57,7 @@ agb sweep sweep.json      # defaults to ./sweep.json
 
 The generated plan is validated with the same rules as `agb run`; an invalid sweep exits `1`, and the run exits `2` if any target failed ([sweep exit codes](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L137-L145)). The schema is in [Sweep schema](/docs/reference/sweep-schema).
 
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 1)">`agb sweep` passes the global `--project` value to `sweepToPlan`, which only accepts `targets` and silently drops it ([call site](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L136), [signature](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L36)). The value is still forwarded to the run itself, so builder sessions use it; do not rely on the sweep conversion step honouring it.</Callout>
+A global `--project <name>` applies to the whole sweep: it is passed to the run, so every builder and prosecutor session uses it.
 
 ### Tips for sweeps
 

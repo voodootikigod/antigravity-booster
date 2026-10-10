@@ -8,9 +8,7 @@ The plugin registers an MCP server named `agb` (see [Plugin layout](/docs/refere
 
 ## Server
 
-The server answers `initialize` with protocol version `2024-11-05` and `serverInfo.name` `antigravity-booster-mcp`.
-
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 3)">`serverInfo.version` is hard-coded to `0.7.0` ([C6](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L153-L156)); it does not report the plugin's `package.json` version. Use `agb --version` to see the installed version.</Callout>
+The server answers `initialize` with protocol version `2024-11-05` and `serverInfo.name` `antigravity-booster-mcp`. `serverInfo.version` is read from the plugin's `package.json`, the same source `agb --version` uses (v1.0.0 hard-coded `0.7.0` instead: [C6](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L153-L156)).
 
 Child processes are started with `AGB_PROVIDER=jetski` added to the environment ([spawn environment](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L204-L206)). Unknown tools return JSON-RPC error `-32602`, unknown methods `-32601`.
 
@@ -18,7 +16,7 @@ Child processes are started with `AGB_PROVIDER=jetski` added to the environment 
 
 The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
 
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 2)">The `concurrency` parameter of `agb_run` is ignored. The server forwards it as an extra command-line flag ([C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)), but `agb run` reads only the plan path ([run reads only the plan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L124-L125)). Concurrency comes from the plan's `caps` and `concurrencyCap`.</Callout>
+<Callout type="info" title="agb_run takes only a plan">`agb run` has no concurrency flag, so `agb_run` accepts no `concurrency` parameter: a call that supplies one returns a tool error naming it (v1.0.0 forwarded it to `agb run`, which ignored it: [C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)). Concurrency comes from the plan's `caps` and `concurrencyCap`.</Callout>
 
 <include>../../../generated/mcp-tools.mdx</include>
 
