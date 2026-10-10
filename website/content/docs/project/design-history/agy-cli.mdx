@@ -5,7 +5,7 @@ claims: [C34]
 ---
 
 <Callout type="info" title="Historical, superseded">
-This is a research note kept for design history. It does not describe current behavior; the current docs, starting at [Concepts](/docs/concepts/overview), do. Source: [docs/archive/research/agy-cli.md](https://github.com/voodootikigod/antigravity-booster/blob/main/docs/archive/research/agy-cli.md).
+This is a research note kept for design history. It does not describe current behavior; the current docs, starting at [Concepts](/docs/concepts/overview), do. Source: [docs/research/agy-cli.md](https://github.com/voodootikigod/antigravity-booster/blob/main/docs/research/agy-cli.md).
 
 **Correction (C34):** the "conversation id is not obtainable" finding applies to plain-text `--print` output only. agy's `--output-format json` envelope carries `conversation_id`, and agb runs agy with `json` / `stream-json` output, keeping the parsed envelope on the result ([C34](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L1123)) and the stream-json events and terminal result ([lib/agy.mjs#L1116](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L1116)). agb v1.0.0 does not itself read or store the id. See [agy integration](/docs/reference/agy-integration).
 </Callout>

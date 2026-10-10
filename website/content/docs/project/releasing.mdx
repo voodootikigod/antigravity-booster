@@ -18,7 +18,7 @@ flowchart LR
 
 ## The release skill
 
-[`skills/release`](https://github.com/voodootikigod/antigravity-booster/blob/main/skills/release/SKILL.md) runs the maintainer side. It checks for a clean, up-to-date `main`, a `repository.url`, no `file:` dependencies and a passing `npm test`. Then it bumps the version with `npm version --no-git-tag-version` and moves the `[Unreleased]` changelog entries under the new version. The bump lands through a PR because `main` is protected. After the merge, the maintainer tags the merged commit and pushes the tag.
+[`skills/release`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/release/SKILL.md) runs the maintainer side. It checks for a clean, up-to-date `main`, a `repository.url`, no `file:` dependencies and a passing `npm test`. Then it bumps the version with `npm version --no-git-tag-version` and moves the `[Unreleased]` changelog entries under the new version. The bump lands through a PR because `main` is protected. After the merge, the maintainer tags the merged commit and pushes the tag.
 
 <Callout type="info">
 The generic release skill expects a project profile at `.claude/release-profile.md`. This repository does not have that file.
@@ -36,8 +36,8 @@ Pushing a `v*` tag is the only trigger for [`publish.yml`](https://github.com/vo
 
 ## Rulesets
 
-[`docs/github-rulesets/`](https://github.com/voodootikigod/antigravity-booster/blob/main/docs/github-rulesets/README.md) keeps the publish gates in version control. The `release-tag-ruleset.json` file lets only admins create, delete or move `refs/tags/v*` tags. `apply.sh` sets up the `npm-publish` environment and applies that ruleset. Branch protection for `main` is configured by hand in GitHub and is not in this directory.
+[`docs/github-rulesets/`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/docs/github-rulesets/README.md) keeps the publish gates in version control. The `release-tag-ruleset.json` file lets only admins create, delete or move `refs/tags/v*` tags. `apply.sh` sets up the `npm-publish` environment and applies that ruleset. Branch protection for `main` is configured by hand in GitHub and is not in this directory.
 
 ## Release drift
 
-[`release-drift.yml`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/release-drift.yml#L21) runs once a day and on demand. It runs [`scripts/release-drift.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/release-drift.yml#L50) to catch a version that reached `main` but never reached npm: either a publish waiting for an approval nobody gave, or a bump with no tag pushed. A grace window ([90 minutes](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/release-drift.mjs#L21)) keeps a healthy release in progress from being reported.
+[`release-drift.yml`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/release-drift.yml#L21) runs once a day and on demand. It runs [`scripts/release-drift.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/release-drift.mjs) ([release-drift.yml#L50](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/release-drift.yml#L50)) to catch a version that reached `main` but never reached npm: either a publish waiting for an approval nobody gave, or a bump with no tag pushed. A grace window ([90 minutes](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/release-drift.mjs#L21)) keeps a healthy release in progress from being reported.

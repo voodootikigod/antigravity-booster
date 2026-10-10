@@ -16,7 +16,7 @@ The rails of every active ticket are combined, and those paths are frozen. Two l
 - **In session:** the PreToolUse policy guard blocks edits to frozen paths before they happen ([Policy guard](/docs/internals/policy-guard)).
 - **In CI:** [`adlc-rails-guard.yml`](https://github.com/voodootikigod/antigravity-booster/blob/main/.github/workflows/adlc-rails-guard.yml) runs on every pull request. It runs `adlc rails-guard` against the rails declared by active tickets on the trusted base branch, so a write the hook missed is still rejected.
 
-Two files are always treated as rails here: `lib/lock.mjs` (merge-lock correctness) and `lib/gates.mjs` (sandbox enforcement). To check a change locally, run `adlc rails-guard --base <ref> --rails <globs>`.
+Rails come only from the `rails` arrays of active tickets; no path is frozen automatically. By convention, [AGENTS.md](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/AGENTS.md) names `lib/lock.mjs` (merge-lock correctness) and `lib/gates.mjs` (sandbox enforcement) as standing candidate rails: treat them as read-only unless a ticket's scope covers them, and declare them in a ticket's `rails` to have them enforced. To check a change locally, run `adlc rails-guard --base <ref> --rails <globs>`.
 
 <Callout type="info">
 CI reads rails from the `.adlc/tickets/` directory store since #87 ([scripts/rails-guard-ci.mjs](https://github.com/voodootikigod/antigravity-booster/blob/a99b3cd/scripts/rails-guard-ci.mjs#L256)), which landed after v1.0.0. At v1.0.0 the workflow read only the legacy `.adlc/tickets.json`.
@@ -26,7 +26,7 @@ CI reads rails from the `.adlc/tickets/` directory store since #87 ([scripts/rai
 
 A pull request runs the workflow files from its own branch, so a PR could otherwise disable the gate that checks it. Three things prevent this:
 
-- [CODEOWNERS](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/CODEOWNERS#L6) assigns `.github/workflows/**`, the bundles, hooks, `.adlc/**` and the ADLC bridge files to the owner. Branch protection on `main` requires Code Owner review and applies to admins too.
+- [CODEOWNERS](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/CODEOWNERS#L6-L27) assigns `.github/workflows/**`, the bundles, hooks, `.adlc/**` and the ADLC bridge files to the owner. Per [AGENTS.md](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/AGENTS.md), branch protection on `main` requires Code Owner review and applies to admins too (a repository setting, not something in the code).
 - The rails-guard job treats `.adlc/config.json`, `CODEOWNERS` and its own workflow and script as fixed trust roots ([adlc-rails-guard.yml#L384](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/adlc-rails-guard.yml#L384)).
 - [`ci.yml`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/ci.yml#L102) rebuilds `dist/` and `vendor/` and fails if they differ from the committed copies. It also checks that the vendored `@adlc/antigravity` tarball is byte-identical to the npm release ([ci.yml#L115](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/ci.yml#L115)).
 
