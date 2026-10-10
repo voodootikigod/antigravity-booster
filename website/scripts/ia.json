@@ -1,12 +1,10 @@
 {
   "pages": [
     "index",
-    "---Getting Started---",
     {
       "dir": "getting-started",
       "pages": ["installation", "bootstrap", "quickstart", "upgrading-from-npm", "verify"]
     },
-    "---Concepts---",
     {
       "dir": "concepts",
       "pages": [
@@ -20,7 +18,6 @@
         "gate-evidence"
       ]
     },
-    "---Guides---",
     {
       "dir": "guides",
       "pages": [
@@ -33,7 +30,6 @@
         "headless-and-mcp"
       ]
     },
-    "---Reference---",
     {
       "dir": "reference",
       "pages": [
@@ -75,7 +71,6 @@
         "security"
       ]
     },
-    "---Internals---",
     {
       "dir": "internals",
       "pages": [
@@ -89,7 +84,6 @@
         "module-map"
       ]
     },
-    "---Project---",
     {
       "dir": "project",
       "pages": [

@@ -2,11 +2,202 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
+/* The Flight Director's Console. Tokens mirror DESIGN.md; edit both together. */
+
+@theme {
+  --font-sans: "Google Sans Flex Variable", "Google Sans Flex", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Google Sans Code Variable", "Google Sans Code", ui-monospace, "SFMono-Regular", monospace;
+
+  --color-fd-background: #f8f9fc;
+  --color-fd-foreground: #121317;
+  --color-fd-muted: #eff2f7;
+  --color-fd-muted-foreground: #45474d;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #121317;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #121317;
+  --color-fd-border: #e1e6ec;
+  --color-fd-primary: #121317;
+  --color-fd-primary-foreground: #f8f9fc;
+  --color-fd-secondary: #eff2f7;
+  --color-fd-secondary-foreground: #121317;
+  --color-fd-accent: #eff2f7;
+  --color-fd-accent-foreground: #121317;
+  --color-fd-ring: #3279f9;
+  --color-fd-overlay: rgb(18 19 23 / 0.24);
+
+  --color-go: #3279f9;
+  --color-link: #1f63d6;
+  --color-caption: #5b5e66;
+  --color-telemetry: #121317;
+  --color-telemetry-ink: #b2bbc5;
+
+  --ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.dark {
+  --color-fd-background: #121317;
+  --color-fd-foreground: #e6eaf0;
+  --color-fd-muted: #212226;
+  --color-fd-muted-foreground: #b2bbc5;
+  --color-fd-popover: #18191d;
+  --color-fd-popover-foreground: #e6eaf0;
+  --color-fd-card: #18191d;
+  --color-fd-card-foreground: #e6eaf0;
+  --color-fd-border: #2f3034;
+  --color-fd-primary: #e6eaf0;
+  --color-fd-primary-foreground: #121317;
+  --color-fd-secondary: #212226;
+  --color-fd-secondary-foreground: #e6eaf0;
+  --color-fd-accent: #212226;
+  --color-fd-accent-foreground: #e6eaf0;
+  --color-fd-ring: #3279f9;
+  --color-fd-overlay: rgb(0 0 0 / 0.5);
+
+  --color-link: #7ea8ff;
+  --color-caption: #9aa3ae;
+  --color-telemetry: #0c0d10;
+}
+
+.dark #nd-sidebar {
+  --color-fd-muted: #212226;
+  --color-fd-secondary: #212226;
+  --color-fd-muted-foreground: #b2bbc5;
+}
+
 html {
   scrollbar-gutter: stable;
+  font-family: var(--font-sans);
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
+}
+
+body {
+  letter-spacing: 0.01em;
+}
+
+/* Headings: tight Antigravity tracking, instrument-ink weight. */
+.prose :where(h1, h2, h3, h4) {
+  font-weight: 500;
+  color: var(--color-fd-foreground);
+}
+.prose :where(h2) {
+  letter-spacing: -0.012em;
+}
+#nd-page h1 {
+  font-weight: 500;
+  letter-spacing: -0.024em;
+}
+
+/* Body prose: readable measure. */
+.prose :where(p, li) {
+  max-width: 72ch;
+}
+
+/* The Readout Rule: every value a reader copies is set in the code face. */
+:where(code, kbd, pre, samp) {
+  font-family: var(--font-mono);
+  font-feature-settings: "calt" 0;
+}
+.prose :where(:not(pre) > code) {
+  font-size: 0.875em;
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--color-fd-border);
+  background: var(--color-fd-muted);
+}
+.prose :where(:not(pre) > code)::before,
+.prose :where(:not(pre) > code)::after {
+  content: none;
+}
+
+/* Links: Link Blue text, never Go Blue. */
+.prose :where(a:not([data-card])) {
+  color: var(--color-link);
+  text-decoration-color: color-mix(in oklab, var(--color-link) 40%, transparent);
+  text-underline-offset: 3px;
+  transition: text-decoration-color 150ms var(--ease-out-quint);
+}
+.prose :where(a:not([data-card])):hover {
+  text-decoration-color: var(--color-link);
+}
+
+/* Evidence Tag: pinned-source links visibly carry their proof. */
+.prose a[href*="/blob/v1.0.0/"]::after,
+.prose a[href*="antigravity-booster/blob/"][href*="#L"]::after {
+  content: "src";
+  display: inline-block;
+  margin-inline-start: 0.35em;
+  padding: 0 0.4em;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: 0.15em;
+  color: var(--color-fd-muted-foreground);
+  background: var(--color-fd-muted);
+  border: 1px solid var(--color-fd-border);
+}
+
+/* Tables: ruled instrument panels. */
+.prose :where(table) {
+  font-size: 0.9375rem;
+}
+.prose :where(thead th) {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-caption);
+}
+
+/* Focus: Go Blue ring everywhere. */
+:where(a, button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-go);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Console callouts: toned panel, full hairline border tinted by role, leading role icon. */
+[data-callout] {
+  --role: var(--color-go);
+  background: color-mix(in oklab, var(--role) 5%, var(--color-fd-card));
+  border-color: color-mix(in oklab, var(--role) 28%, var(--color-fd-border));
+}
+[data-callout="warning"] {
+  --role: oklch(0.72 0.15 70);
+}
+[data-callout="error"] {
+  --role: oklch(0.6 0.2 25);
+}
+[data-callout="success"] {
+  --role: oklch(0.62 0.14 150);
+}
+[data-callout="idea"] {
+  --role: oklch(0.7 0.14 85);
+}
+[data-callout] .callout-icon {
+  color: color-mix(in oklab, var(--role) 85%, var(--color-fd-foreground));
+  background: color-mix(in oklab, var(--role) 14%, transparent);
 }

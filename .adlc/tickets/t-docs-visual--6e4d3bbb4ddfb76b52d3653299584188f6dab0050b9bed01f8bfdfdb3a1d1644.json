@@ -1,0 +1,25 @@
+{
+  "body": "Replace the stock Fumadocs look with a design system inspired by antigravity.google but with agb's own identity (owner direction 2026-10-10, via /impeccable). Record strategy in website/PRODUCT.md and the visual system in website/DESIGN.md (Stitch format). Implement: Google Sans Flex + Google Sans Code self-hosted via @fontsource-variable packages (exact pins, no build-time network); console token palette in website/app/global.css (cool tinted neutrals, Go Blue #3279f9 as indicator only, Link Blue #1f63d6 / #7ea8ff for AA link text) for light and dark; Readout Rule (mono for code/values), evidence 'src' tags on pinned-source links, ruled table headers, Go Blue focus rings, reduced-motion kill switch; a console Callout component replacing Fumadocs' side-striped callout; agb mark + wordmark in the nav; telemetry strip keeping the exact text 'These docs track main. Latest release: vX.Y.Z.' (check-site e); a redesigned landing page (display headline, copyable install command, flight-sequence section, ruled route list). Remove the six root sidebar separators that duplicated folder names (content/docs/meta.json, scripts/ia.json, spec 4 tree). Verify: cd website && npm ci && npm run build && npm run check:site && npm test && node scripts/check-all.mjs && npm run lint all pass; root npm test passes. Archive this ticket after merge.",
+  "edges": [],
+  "id": "T-DOCS-VISUAL",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "website/PRODUCT.md",
+    "website/DESIGN.md",
+    "website/app/**",
+    "website/components/**",
+    "website/lib/layout.shared.tsx",
+    "website/package.json",
+    "website/package-lock.json",
+    "website/biome.json",
+    "website/content/docs/meta.json",
+    "website/scripts/ia.json",
+    ".adlc/specs/docs-site.md"
+  ],
+  "title": "Restyle the docs site in an Antigravity-inspired visual language (The Flight Director's Console)"
+}

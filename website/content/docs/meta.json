@@ -1,17 +1,3 @@
 {
-  "pages": [
-    "index",
-    "---Getting Started---",
-    "getting-started",
-    "---Concepts---",
-    "concepts",
-    "---Guides---",
-    "guides",
-    "---Reference---",
-    "reference",
-    "---Internals---",
-    "internals",
-    "---Project---",
-    "project"
-  ]
+  "pages": ["index", "getting-started", "concepts", "guides", "reference", "internals", "project"]
 }
