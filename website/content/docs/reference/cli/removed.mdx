@@ -1,6 +1,22 @@
 ---
-title: "Removed commands"
-placeholder: true
+title: "Removed and deprecated"
+description: "Commands and flags that were removed or deprecated, and what to use instead."
 ---
 
-This page is being written.
+These commands and flags still exist in the code only to print a pointer to their replacement. The table is generated from the `COMMANDS` table and the removal messages in `bin/agb.mjs`.
+
+<include>../../../../generated/cli-removed.mdx</include>
+
+## agb tui
+
+<include>../../../../generated/cli-tui.mdx</include>
+
+Running it prints that the TUI was removed and exits 1 ([tui handler](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L281-L283)). Use [`agb sidecar`](/docs/reference/cli/sidecar).
+
+## The status UI flag
+
+The terminal UI flag of `agb status` exits 1 with the same pointer ([flag removal](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L269-L272)).
+
+## agb import-brain
+
+Deprecated, still functional. See [agb import-brain](/docs/reference/cli/import-brain).

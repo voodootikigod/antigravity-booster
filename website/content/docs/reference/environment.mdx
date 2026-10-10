@@ -1,6 +1,22 @@
 ---
 title: "Environment variables"
-placeholder: true
+description: "Every environment variable agb reads, generated from env-docs.json and checked against the source."
+claims: [C2, C3, C8, C17, C18, C19]
 ---
 
-This page is being written.
+This list is generated from [`website/env-docs.json`](https://github.com/voodootikigod/antigravity-booster/blob/main/website/env-docs.json). The generator scans every `AGB_*`, `ADLC_*` and `ANTIGRAVITY_*` token in `lib/`, `bin/`, `mcp/`, `hooks/`, `sidecars/` and root `scripts/`, and fails when a token in the code is undocumented or a documented name is no longer in the code. Variables that are only read under test are tracked but not shown.
+
+The **Bundled** column says whether the published plugin honours the variable. The bundled build (`__AGB_BUNDLED__` set by esbuild) ignores developer overrides so a stray `.envrc` cannot redirect plugin or CLI resolution.
+
+<include>../../../generated/environment.mdx</include>
+
+## Notes and evidence
+
+- **No stream-cap variables.** Stream limits are hard-coded: 1 MB per line, 50 MB per stream and 5 MB of consecutive unparseable output ([C2](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L18-L20)). There is no environment variable for them.
+- **Timeouts.** `AGB_BUILD_TIMEOUT` defaults to `5m` ([C19](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L822)); for stream-json output an empty or `0` timeout means no wall-clock limit ([unlimited stream-json](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L249)). `AGB_BUILD_MAX_TIMEOUT` (default `30m`) and the `AGB_EVENT_PROGRESS_TIMEOUT` no-progress watchdog (default `5m`) still apply ([ceiling and watchdog](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L910-L911)).
+- **`ANTIGRAVITY_SIDECAR_WEB_PORT` is real** and security-relevant: it selects jetski mode and the port in the sidecar launcher ([C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/jetski-launcher.mjs#L8-L9)) and, when set, the server skips its token check for the dashboard and the event stream ([token check skipped](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L32-L46)). See [Security](/docs/reference/security).
+- **`AGB_REQUIRE_DRIVER_SIGNATURE=1`** makes the Windows doctor sandbox check require a signed driver attestation ([C8](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L982)).
+- **`AGB_PLUGIN_DIR`** is not the ADLC plugin source path. `agb sidecar` writes its manifest there ([C17](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L408)), and the unbundled companion-plugin handshake reads its installed manifest from there ([handshake manifest dir](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L61-L65)). The ADLC plugin source is `ADLC_ANTIGRAVITY_PLUGIN_PATH`.
+- **Custom ADLC CLI.** `ADLC_CLI_PATH` and `AGB_ADLC_BIN` are honoured only with `AGB_ALLOW_CUSTOM_ADLC_CLI=1` ([C18](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L852-L860)), and never in the bundled build, which resolves only the vendored ADLC ([bundled early return](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L848-L851)).
+- **Secrets are not forwarded.** `ADLC_ADMIN_KEY`, `ADLC_MANIFEST_KEY` and any name matching the sensitive-key pattern are stripped from builder agy processes ([FORBIDDEN_SECRETS](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L30-L41)).
+- **Bundled guards.** `ADLC_ANTIGRAVITY_PLUGIN_PATH` and `AGB_DEV_ALLOW_UNVERIFIED_PLUGIN` ([bootstrap guard](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L248)), `AGB_PLUGIN_ROOT` ([plugin root guard](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L816)) and the custom/system ADLC switches are ignored when bundled.

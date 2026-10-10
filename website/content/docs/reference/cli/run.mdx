@@ -1,6 +1,32 @@
 ---
 title: "agb run"
-placeholder: true
+description: "Execute a ticket DAG: build, gate, prosecute and merge every ticket in plan.json."
+claims: [C5, C9, C10]
 ---
 
-This page is being written.
+`agb run` executes a compiled `plan.json`: each ticket is built in its own git worktree, gated, prosecuted and merged. The plan defaults to `plan.json` in the current directory.
+
+## Synopsis
+
+<include>../../../../generated/cli-run.mdx</include>
+
+The only option besides the plan path is the global `--project` flag. Concurrency is not a command-line option: it comes from the plan's `caps` and `concurrencyCap` fields ([C9](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L34), [run dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L123-L132)). See [Plan schema](/docs/reference/plan-schema).
+
+## What it does
+
+1. Loads the plan and validates it with the same checks as [`agb validate`](/docs/reference/cli/validate) ([loadPlan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L113-L121)).
+2. Builds each ticket in a worktree at `.worktrees/agb-<id>` on branch `agb/<id>`, where `<id>` is the ticket id lowercased ([C5](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L119-L121)).
+3. Runs post-merge gates in a disposable integration worktree named `agb-integration-<first 8 characters of the run token>` ([integration worktree](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L279-L282)).
+4. Prints the run report as JSON on stdout.
+
+The lifecycle is described in [Run lifecycle](/docs/internals/run-lifecycle).
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Every ticket merged. |
+| 1 | The plan is invalid (errors printed to stderr) or an internal error occurred. |
+| 2 | At least one ticket failed (the report's `failed` map is not empty). |
+
+Evidence: [C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L125-L132).

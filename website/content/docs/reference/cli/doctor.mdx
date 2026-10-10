@@ -1,6 +1,14 @@
 ---
 title: "agb doctor"
-placeholder: true
+description: "Verify the environment: Node, agy and its authentication, sandboxing, the ADLC toolkit and the plugin install."
 ---
 
-This page is being written.
+`agb doctor` runs the environment checks and prints each result with a suggested fix. It takes no arguments.
+
+## Synopsis
+
+<include>../../../../generated/cli-doctor.mdx</include>
+
+## Behavior
+
+The exit code is whatever `runDoctor` returns ([doctor dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L284-L285)). Checks include the agy version floor `1.2.6` ([MIN_AGY_VERSION](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26)), agy authentication, the sandbox, the ADLC CLI, the staged plugin and the ticket store. Every check id and its fix text is documented in [Verify your install](/docs/getting-started/verify).

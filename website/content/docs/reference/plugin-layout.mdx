@@ -1,6 +1,17 @@
 ---
 title: "Plugin layout"
-placeholder: true
+description: "What the installed antigravity-booster plugin contains, generated from plugin.json, hooks.json, mcp_config.json and package.json files."
 ---
 
-This page is being written.
+`agy plugin install` stages the repository as a plugin. Prebuilt bundles are committed under `dist/`, so the install needs no `npm install`. Everything below is generated from the manifests and directory listings in the repository.
+
+<include>../../../generated/plugin-layout.mdx</include>
+
+## How the pieces connect
+
+- **PreToolUse hook**: `hooks.json` runs `bin/hook-runner.sh` with the bundled policy guard `dist/hooks/pre-tool-use.bundle.mjs` on every tool call. The runner fails closed: an unparseable payload or a headless worker gets a deny decision ([fail-safe decisions](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/hook-runner.sh#L205-L218)). See [Rail enforcement](/docs/concepts/rail-enforcement) and [Policy guard](/docs/internals/policy-guard).
+- **MCP server**: `mcp_config.json` starts `dist/mcp-server.mjs` through `bin/node-launcher.sh`, which locates a usable Node runtime. See [MCP tools](/docs/reference/mcp-tools).
+- **Vendored ADLC**: `vendor/adlc` is the pinned ADLC CLI the bundled build uses exclusively, and `vendor/cache` holds the pristine npm tarball of the companion plugin. See [Plugin and migration](/docs/internals/plugin-and-migration) and [Build and bundle](/docs/internals/build-and-bundle).
+- **Sidecar**: `sidecars/` holds the dashboard server and its static UI, started by [`agb sidecar`](/docs/reference/cli/sidecar).
+
+The terminal shim `~/.local/bin/agb` is written by bootstrap, not shipped in the plugin directory.

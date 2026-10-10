@@ -1,0 +1,38 @@
+| Module | Exports |
+| --- | --- |
+| bin/agb.mjs | (no exports: entry point) |
+| hooks/policy/constants.mjs | AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_TOOLS, DESTRUCTIVE_ROOT_VERBS, EXCLUDED_CONTENT_KEYS, IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, ORCHESTRATION_TOOLS, PATH_MUTATING_TOOLS, PURE_READERS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS |
+| hooks/policy/evaluate.mjs | buildContext, evaluatePayload, extractProbedPaths, isBoosterMcpTool |
+| hooks/policy/paths.mjs | beginEvaluation, boosterDataRoots, expandHome, hasHomePrefix, isImplicitAncestorOnly, isMagicPath, isRailAncestorOnly, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot, matchesScope, physicalResolve, protectedRoots, railStaticPrefix, repoRelative, resolveCandidate, resolveSafeTarget |
+| hooks/policy/shell-lexer.mjs | lexCommandLine |
+| hooks/policy/shell.mjs | classifyRunCommand, isShimInvocation |
+| hooks/policy/verdict.mjs | PASS, ask, deny, mostRestrictive |
+| hooks/pre-tool-use.mjs | (no exports: entry point) |
+| lib/active-rails.mjs | findAdlcRoot, findGitTop, isActiveTicket, resolveTicket, unionActiveRails |
+| lib/adlc-bridge.mjs | IS_BUNDLED, KNOWN_ADLC_DEPENDENCY_DIGESTS, KNOWN_ADLC_DIGESTS, KNOWN_VENDORED_ADLC, MIN_ADLC_CLI_VERSION, PLUGIN_CONTRACT_STATUSES, STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS, SUPPORTED_PLUGIN_CONTRACT, authenticateAdlcPackage, computePackageTreeDigest, detectTicketStoreBackend, execAuthenticatedAdlc, execFileAuthenticatedAdlc, getApprovedLocksDir, getApprovedPinnedBase, isTemporaryOrWorldWritablePath, parseSemver, pinExecutable, planTicketToAdlcTicket, planTicketToRailTicket, planToAdlcTickets, pluginManifestDir, preventExecutableReplacement, readPluginContract, recoverStaleExecutableLocks, resolveAdlcBinary, resolveExecutionCommand, resolveVendoredAdlc, revalidateAdlcBinary, semverGte, spawnAuthenticatedAdlc, writeAdlcTickets |
+| lib/agy.mjs | BRAIN_PLAN_SCHEMA, COLDSTART_VERDICT_SCHEMA, DANGEROUS_RUNTIME_ENV_VARS, ENV_ALLOWLIST, FORBIDDEN_SECRETS, MAX_CONSECUTIVE_GARBAGE_BYTES, MAX_STREAM_LINE_BYTES, MAX_STREAM_TOTAL_BYTES, MODELS, MODEL_ALIASES, PARALLAX_VERDICT_SCHEMA, PROSECUTION_VERDICT_SCHEMA, QUOTA_RESPONSE_SCHEMA, SENSITIVE_KEY_PATTERN, STREAM_EVENT_SCHEMA, checkKernelContainment, familyOf, isAgyTimeout, isAllowedEnvVar, isTestExecution, parseTimeoutMs, poolOf, resolveModelSlug, runAgy, validateJsonSchema, verifySandboxBypassAttestation |
+| lib/bootstrap.mjs | bootstrap, isNpxTemp, resolveBoosterPluginPath, resolvePluginPath |
+| lib/brain.mjs | BRAIN_DIR, brainToPlan, getActiveSessionId, listBrains, readBrain |
+| lib/charters.mjs | builderAgentsMd, builderPrompt, fixPrompt, prosecutionPrompt, regenPrompt |
+| lib/digest.mjs | computeDirectoryDigest |
+| lib/doctor.mjs | MIN_AGY_VERSION, boosterDataDir, checkAdlcBinary, checkAgyAuth, checkAgyBinary, checkBrainDir, checkKernelContainment, checkKillswitchUsage, checkNodeVersion, checkPlugin, checkPolicyGuard, checkProbePlugins, checkSandbox, checkSecondaryInstall, checkTicketStore, evaluateStagedAdlcPlugin, healthLogPath, isTestExecution, runDoctor, verifyWindowsSandboxActive, verifyWindowsSandboxAttestation |
+| lib/gates.mjs | gateSandboxAvailable, gateSandboxEnabled, linuxBwrapArgs, runGate, runGates, sandboxProfile |
+| lib/lock.mjs | acquireRepoLock |
+| lib/migrate.mjs | HANDOVER_TIMEOUT_MS, SNAPSHOT_SIZE_CAP_BYTES, breakLock, finishUninstallCommand, isOwnedSkillLink, migrate, parseValidateOutput, scanSkillSymlinks, treeSize |
+| lib/migration-lock.mjs | MIGRATION_LOCK_DIRNAME, MIGRATION_STATE_FILENAME, MigrationLockError, UNINSTALLER_DIR_PREFIX, acquireMigrationLock, adoptMigrationLock, assertMigrationLockHeld, boosterDataDir, breakMigrationLock, clearMigrationState, finishUninstall, getProcessStartTime, invalidateMigrationLockToken, isAlive, migrationLockDir, migrationStatePath, parseProcStatStartTime, readLockMeta, readMigrationState, releaseMigrationLock, writeMigrationState |
+| lib/plan.mjs | PARALLAX_JUDGE_SCHEMA, PARALLAX_READER_SCHEMA, PATHSPEC_RE, PREMORTEM_SCHEMA, TICKET_ID_RE, applyModelRouterTiers, compilePlan, normalizePathspec, parallaxEdges, planEdges, premortemPlan, validatePathspec, validatePlan, verifyGateScriptIntegrity |
+| lib/plugin-paths.mjs | ADLC_ANTIGRAVITY_PLUGIN_NAME, AGY_INSTALL_TIMEOUT_MS, BOOSTER_PLUGIN_NAME, BUNDLED_ADLC_ANTIGRAVITY_VERSION, INSTALL_COPY_EXCLUSIONS, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, TERMINAL_SHIM_CONTENT, VENDORED_ADLC_ANTIGRAVITY_TARBALL, copyPluginTree, installAdlcAntigravityFromVendor, installPluginTarball, installTerminalShim, isBoosterPluginName, pluginsDirFor, resolveAgyBinary, resolveAssetPath, resolvePluginRoot, resolveTarBinary, safePluginInstall |
+| lib/pools.mjs | ActiveV2LeasesPresentError, BASE_CAPS, DEFAULT_CAPS, HEARTBEAT_INTERVAL_MS, LEASE_TTL_MS, LegacyFleetActiveError, PROSECUTORS, PoolSet, RFC3339_UTC_RE, TIER_CANDIDATES, acquireLease, assertNoActiveLegacyFleet, canonicalPoolOf, computeEffectivePercent, computeQuotaResumption, computeScaledCap, drainPools, getLockFile, getProcessStartTime, getStateFile, getV2StateFile, isLeaseActive, isProcessAlive, parseQuotaProbeOutput, poolOf, probeQuota, readSharedState, readV2State, reconcileLeases, registerLeaseWorkerPid, releaseLease, renewLease, safeWriteHeartbeatFile, terminateWorkerTree, tierCandidates, upstreamPoolOf, withLock, withLockSync, writeSharedState, writeV2State |
+| lib/preflight.mjs | COLDSTART_SCHEMA, applyMergeForecast, coldstartTickets, forecastOverlaps, preflight |
+| lib/prosecute.mjs | blockingFindings, prosecute, runHollowTest |
+| lib/review.mjs | LENSES, REVIEW_FINDINGS_SCHEMA, reviewCalibration, reviewDiff, reviewFleet |
+| lib/run-integrity.mjs | ABSENT, diffRunIntegrity, enforcementGate, hooksDirFor, isWellFormedRail, snapshotRunIntegrity, verifyRunIntegrity |
+| lib/sandbox-probe-helper.mjs | runSandboxProbe |
+| lib/scheduler.mjs | checkEnforcementAvailable, checkFlailDetector, getGitCommonDir, hostMediatedFetch, reconcileIntegrationJournal, runPlan, safeWriteWorktreeFile, setupAttemptGitDatabase, snapshotRootGit, terminateProcessTree, verifyRootGitIntegrity, verifyScopeAndAntiNoOp, verifyWorktreeGitPointer |
+| lib/semver.mjs | compare, eq, gt, gte, lt, parse |
+| lib/status.mjs | RunStatus, renderStatus, watchStatus |
+| lib/sweep.mjs | expandTargets, sweepToPlan |
+| lib/worktrees.mjs | JOURNAL_PHASES, abortAnyMerge, assertSafeAdlcDir, branchDiff, changedFiles, commitAll, createIntegrationWorktree, createWorktree, currentBranch, deleteBranch, discardProjection, ensureGitignore, isDirty, isMidMerge, mergeWorktree, pruneWorktrees, quarantineIntegrationJournal, readIntegrationJournal, reapIntegrationWorktrees, removeWorktree, resetToBase, unlinkIntegrationJournal, validateWorktreeRoot, writeIntegrationJournal |
+| mcp/server.mjs | resolveAgbEntry |
+| sidecars/jetski-launcher.mjs | (no exports: entry point) |
+| sidecars/server.mjs | serveSidecar |

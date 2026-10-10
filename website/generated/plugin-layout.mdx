@@ -1,0 +1,62 @@
+**plugin.json**
+
+| Field | Value |
+| --- | --- |
+| author | Chris Williams &lt;chris@voodootikigod.com&gt; |
+| description | Antigravity Booster orchestrator integration for Google Antigravity (agy CLI): quota-pool-aware scheduling, worktree fleets, cross-model prosecution, deterministic gates |
+| name | antigravity-booster |
+| version | 1.0.0 |
+
+**hooks.json**
+
+| Hook group | Event | Matcher | Command | Timeout (s) |
+| --- | --- | --- | --- | --- |
+| agb-policy-guard | PreToolUse | * | /bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs | 15 |
+
+**mcp_config.json**
+
+| Server | Command |
+| --- | --- |
+| agb | /bin/sh $&#123;PLUGIN_ROOT&#125;/bin/node-launcher.sh $&#123;PLUGIN_ROOT&#125;/dist/mcp-server.mjs |
+
+**package.json files** (what the plugin ships)
+
+| Path |
+| --- |
+| agents/ |
+| bin/ |
+| commands/ |
+| dist/ |
+| docs/calibration/ |
+| hooks.json |
+| hooks/ |
+| lib/ |
+| mcp/ |
+| mcp_config.json |
+| plugin.json |
+| sidecars/ |
+| skills/ |
+| templates/ |
+| vendor/ |
+
+**Shipped directories**
+
+| Path | Kind |
+| --- | --- |
+| templates/plan.example.json | file |
+| sidecars/app.js | file |
+| sidecars/index.html | file |
+| sidecars/jetski-launcher.mjs | file |
+| sidecars/server.mjs | file |
+| sidecars/style.css | file |
+| dist/agb.mjs | file |
+| dist/hooks/ | directory |
+| dist/hooks/pre-tool-use.bundle.mjs | file |
+| dist/mcp-server.mjs | file |
+| vendor/adlc/ | directory |
+| vendor/adlc/bin/ | directory |
+| vendor/adlc/dist/ | directory |
+| vendor/adlc/package.json | file |
+| vendor/adlc/src/ | directory |
+| vendor/cache/ | directory |
+| vendor/cache/adlc-antigravity-1.7.0.tgz | file |

@@ -1,0 +1,41 @@
+**`agb_doctor`**: Run diagnostic health check for tools, auth, and sandbox setup
+
+No parameters.
+
+**`agb_plan`**: Compile an Antigravity brain plan or spec file into plan.json
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| force | boolean | no | Force overwrite the output file if it exists |
+| noColdstart | boolean | no | Skip coldstart plan gate |
+| noParallax | boolean | no | Skip parallax spec ambiguity check |
+| noPremortem | boolean | no | Skip premortem advisory risk gate |
+| out | string | no | Custom output file path (default plan.json) |
+| repo | string | yes | Absolute path to the target repository |
+| spec | string | yes | Brain ID, prefix, or spec.md path to compile |
+
+**`agb_preflight`**: Run plan-level coldstart probes and forecast scope overlaps
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| plan | string | yes | Path to plan.json file |
+
+**`agb_review`**: Deploy a read-only fleet of models to audit changes
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| ref | string | no | Optional diff reference range (e.g. main...HEAD) |
+| repo | string | yes | Path to target repository |
+
+**`agb_run`**: Execute a compiled ticket DAG plan.json
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| concurrency | integer | no | Override default concurrency cap |
+| plan | string | yes | Path to plan.json file |
+
+**`agb_status`**: Get execution status of a booster run in the target repository
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| repo | string | yes | Path to target repository |

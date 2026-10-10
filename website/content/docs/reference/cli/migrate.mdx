@@ -1,6 +1,27 @@
 ---
 title: "agb migrate"
-placeholder: true
+description: "Move an npm-global or checkout install onto the native agy plugin, or roll it back."
+claims: [C15]
 ---
 
-This page is being written.
+`agb migrate` moves an existing npm-global or source-checkout installation onto the native `antigravity-booster` agy plugin, and can roll that move back. Migration is resumable: re-running it continues from the recorded state.
+
+## Synopsis
+
+<include>../../../../generated/cli-migrate.mdx</include>
+
+## Modes
+
+| Invocation | Effect |
+| --- | --- |
+| `agb migrate` | Run or resume the migration. |
+| `agb migrate --force` | Re-run after the state is already `MIGRATED`. |
+| `agb migrate --rollback` | Roll the migration back. |
+| `agb migrate --force-rollback` | Roll back even when the recorded state would refuse. |
+| `agb migrate --break-lock` | Break a stale migration lock after an interactive confirmation (refused when stdin is not a TTY); `--force` skips the confirmation. |
+
+Evidence: [C15](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L51-L55) (the `COMMANDS` entry), [migrate dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L297-L318).
+
+An internal `--finish-uninstall` mode (with `--token`, `--uninstaller-dir`, `--agy-bin`, `--baseline`) is used by the detached uninstaller during rollback and is not meant to be run by hand ([finish-uninstall](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L301-L305)).
+
+The state machine (`SNAPSHOT_CREATED`, `SYMLINKS_RECORDED`, `PLUGINS_STAGED`, `MIGRATED`, rollback states) is described in [Upgrading from npm](/docs/getting-started/upgrading-from-npm) and [Plugin and migration](/docs/internals/plugin-and-migration).

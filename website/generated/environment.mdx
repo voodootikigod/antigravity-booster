@@ -1,0 +1,81 @@
+**Core**
+
+| Name | Default | Description | Bundled |
+| --- | --- | --- | --- |
+| AGB_AGY_BIN | agy | Path or name of the agy executable used for builds, quota telemetry, doctor checks and bootstrap. | honoured |
+| AGB_ALLOW_DIRTY | unset | Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start). | honoured |
+| AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
+| AGB_BUILD_TIMEOUT | 5m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
+| AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
+| AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
+| AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. The MCP server sets it to jetski for the agb processes it spawns. | honoured |
+| AGB_SESSION_ID | unset | Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes. | honoured |
+| AGB_TARGET_REPO | unset | Extra directory bin/node-launcher.sh searches when locating a project-local Node runtime. | honoured |
+| AGB_WORKER_MODE | set by agb | Set by agb on read-only worker agy processes (value readonly). The PreToolUse guard denies mutations and never prompts while it is set. | honoured |
+| AGB_WORKER_TICKET | set by agb | Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts. | honoured |
+| ANTIGRAVITY_CONVERSATION_ID | set by Antigravity | Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes. | honoured |
+
+**Plugin resolution**
+
+| Name | Default | Description | Bundled |
+| --- | --- | --- | --- |
+| ADLC_ANTIGRAVITY_PLUGIN_NAME | adlc-antigravity | Not read from the environment: a source constant in lib/plugin-paths.mjs naming the companion plugin's directory under the agy plugins folder. | honoured |
+| ADLC_ANTIGRAVITY_PLUGIN_PATH | unset | Source checkout of the adlc-antigravity plugin to install from. Honoured by bootstrap only in unbundled runs and only together with AGB_DEV_ALLOW_UNVERIFIED_PLUGIN=1. | ignored |
+| AGB_DEV_ALLOW_UNVERIFIED_PLUGIN | unset | Set to 1 (unbundled runs only) to let bootstrap install an unverified companion plugin from ADLC_ANTIGRAVITY_PLUGIN_PATH. | ignored |
+| AGB_PLUGIN_DIR | ~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-&lt;pid&gt;-&lt;port&gt; (sidecar) | Two readers: the companion-plugin handshake manifest directory (ignored by the bundled build) and the directory agb sidecar writes its plugin manifest into (honoured in every build). | honoured |
+| AGB_PLUGIN_ROOT | the booster plugin root | Plugin root holding vendor/adlc, used to find the vendored adlc CLI. Unbundled runs only. | ignored |
+
+**Sandbox and gates**
+
+| Name | Default | Description | Bundled |
+| --- | --- | --- | --- |
+| AGB_HOOK_DISABLE | unset | Any non-empty value bypasses the PreToolUse rails guard. Each bypass is logged to hooks.log and agb doctor warns about it. | honoured |
+| AGB_REQUIRE_DRIVER_SIGNATURE | unset | Set to 1 to make the Windows doctor sandbox check require a signed driver attestation in the probe output. | honoured |
+| AGB_SANDBOX_GATES | on | Set to 0 to run gate commands without the OS sandbox (an explicit acknowledgement of host risk). | honoured |
+| AGB_SANDBOX_PROBE_CMD | unset | Doctor sandbox-probe command override. Restricted to test execution; otherwise the check fails. | honoured |
+| AGB_SANDBOX_PROBE_HELPER | unset | Helper script passed to the doctor sandbox probe. Honoured only during test execution. | honoured |
+| AGB_STRICT_GATES | on in plan; off in run unless the repo has package.json | Plan compilation uses strict gates unless set to 0. At run time, 1 forces gate commands to match the npm pattern even without a package.json. | honoured |
+
+**Pools and quota**
+
+| Name | Default | Description | Bundled |
+| --- | --- | --- | --- |
+| AGB_POOLS_DIR | unset | Directory for the shared pool state, v2 state and lock files. | honoured |
+| AGB_POOLS_LOCK | derived | Explicit pool lock file path (otherwise derived from AGB_POOLS_DIR or AGB_QUOTA_STATE). | honoured |
+| AGB_POOLS_V2 | derived | Explicit v2 pool state file path (otherwise derived from AGB_POOLS_DIR or AGB_QUOTA_STATE). | honoured |
+| AGB_QUOTA_STATE | derived | Explicit shared quota state file path; the v2 and lock paths are derived from it when not set. | honoured |
+| AGB_QUOTA_TIMEOUT_MS | unset (wait for reset) | Maximum milliseconds a ticket waits for a quota reset before failing. | honoured |
+
+**Sidecar**
+
+| Name | Default | Description | Bundled |
+| --- | --- | --- | --- |
+| AGB_SIDECAR_PORT | 3333 | Default port for agb sidecar; --port overrides it. | honoured |
+| ANTIGRAVITY_SIDECAR_WEB_PORT | unset (launcher port 3333) | Selects jetski mode in the sidecar launcher and sets its port. Security: Setting it disables token auth on the sidecar dashboard and event stream: any local client can read run data. | honoured |
+
+**Paths**
+
+| Name | Default | Description | Bundled |
+| --- | --- | --- | --- |
+| AGB_ARTIFACT_DIR | active brain dir, else &lt;repo&gt;/.booster | Where agb writes plan artifacts. | honoured |
+| AGB_BRAIN_DIR | ~/.gemini/antigravity/brain | Antigravity brain directory searched for plans. | honoured |
+| AGB_CALIBRATION_DIR | the plugin's docs/calibration/ | Where agb probe appends its probe-&lt;day&gt;.md calibration file. | honoured |
+| AGB_EXEC_CACHE_DIR | under AGB_HOME_DIR | Cache directory for authenticated executables. | honoured |
+| AGB_EXEC_LOCKS_DIR | under AGB_HOME_DIR | Directory for executable lock records; stale locks with a dead PID are recovered. | honoured |
+| AGB_HOME_DIR | the OS home directory | Home directory override for agb's per-user state. | honoured |
+
+**ADLC toolkit**
+
+| Name | Default | Description | Bundled |
+| --- | --- | --- | --- |
+| ADLC_ADMIN_KEY | unset | HMAC key used to verify a Windows sandbox-bypass attestation. Treated as a secret: never forwarded to builder agy processes. | honoured |
+| ADLC_CLI_PATH | unset | Custom adlc executable. Honoured only with AGB_ALLOW_CUSTOM_ADLC_CLI=1 in unbundled runs; the bundled build uses only the vendored adlc. | ignored |
+| ADLC_MANIFEST_KEY | unset | Key used by adlc gate-manifest. Treated as a secret: never forwarded to builder agy processes. | honoured |
+| ADLC_P4_ENFORCEMENT | set by agb | Set to 1 by the scheduler on builder processes when rail enforcement is available, enabling the PreToolUse rails hook. | honoured |
+| ADLC_PROVIDER | unset | Read by the @adlc tools, not by agb. Bootstrap suggests ADLC_PROVIDER=agy to run them on Antigravity quota. | honoured |
+| ADLC_TICKET | set by agb | Set by the scheduler on builder processes to the ticket id whose rails the PreToolUse hook enforces. | honoured |
+| ADLC_TICKET_STORE | unset | Ticket-store path override the PreToolUse guard also protects. | honoured |
+| ADLC_TICKETS | unset | Alternative ticket-store path the PreToolUse guard also protects. | honoured |
+| AGB_ADLC_BIN | unset | Alias of ADLC_CLI_PATH with the same restrictions (AGB_ALLOW_CUSTOM_ADLC_CLI=1, unbundled only). | ignored |
+| AGB_ALLOW_CUSTOM_ADLC_CLI | unset | Set to 1 to honour ADLC_CLI_PATH / AGB_ADLC_BIN in unbundled runs. The path must pass the temporary/world-writable path checks. | ignored |
+| AGB_ALLOW_SYSTEM_ADLC | unset | Set to 1 to let unbundled runs fall back to an adlc found on the system PATH. | ignored |

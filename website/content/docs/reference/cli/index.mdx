@@ -1,6 +1,25 @@
 ---
 title: "CLI"
-placeholder: true
+description: "Every agb command, alias, global flag and exit code, generated from the COMMANDS table in bin/agb.mjs."
 ---
 
-This page is being written.
+`agb` is the command-line entry point of the plugin. The table below is generated from the `COMMANDS` object in [bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L33-L59) and the help, version and alias handling around it, so it always matches the code. Each command has its own page in this section; removed and deprecated commands are on [Removed and deprecated](/docs/reference/cli/removed).
+
+## Commands
+
+<include>../../../../generated/cli-index.mdx</include>
+
+## Help and version
+
+- `agb`, `agb help`, `agb --help` and `agb -h` print the full usage; `agb help <command>` prints one command's usage ([help dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L88-L96)).
+- `<command> --help` or `-h` after any command prints that command's usage; the `setup`, `install` and `skills` aliases print the bootstrap usage ([per-command help](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L98-L104)).
+- `agb --version`, `agb -v` and `agb version` print the `version` field of the plugin's `package.json` ([version handling](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L82-L85)).
+- An unknown command prints an error and exits 1 ([unknown command](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L106-L111)).
+
+## Global flag
+
+`--project <name>` is removed from the argument list before the command is parsed, so it can appear anywhere on the command line ([global --project parsing](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L21-L30)). Its value is passed to the commands that start agy sessions.
+
+## Exit codes
+
+The usage banner states the general contract (0 pass, 2 gate failure or findings, 1 usage or internal error). The exact codes for each command are on its page and in [Exit and error codes](/docs/reference/exit-and-error-codes).

@@ -1,6 +1,15 @@
 ---
 title: "Skills"
-placeholder: true
+description: "The skills bundled with the plugin, generated from skills/*/SKILL.md."
 ---
 
-This page is being written.
+Each folder under [`skills/`](https://github.com/voodootikigod/antigravity-booster/blob/main/skills) is one skill with a `SKILL.md` and optional `scripts/`. The table is generated from each `SKILL.md` frontmatter and its `scripts/` listing.
+
+<include>../../../generated/skills.mdx</include>
+
+## Notes
+
+- **modernize** audits this plugin against the latest agy and ADLC releases and produces a modernization ticket DAG; its probe logic is in `scripts/audit.mjs` ([modernize frontmatter](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/modernize/SKILL.md#L1-L8)).
+- **release** is marked internal: it is the maintainers' release procedure for this repository, not something plugin users run ([release frontmatter](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/release/SKILL.md#L1-L9)). The process is documented in [Releasing](/docs/project/releasing).
+
+The ADLC doctrine skills (spec, ticket, prosecute and others) are not part of this plugin: they come from the `adlc-antigravity` companion plugin that [`agb bootstrap`](/docs/reference/cli/bootstrap) installs.

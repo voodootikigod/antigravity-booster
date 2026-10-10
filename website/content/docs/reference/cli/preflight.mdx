@@ -1,6 +1,22 @@
 ---
 title: "agb preflight"
-placeholder: true
+description: "Plan-time gates: scope overlap and per-ticket coldstart, before any build is spent."
+claims: [C14]
 ---
 
-This page is being written.
+`agb preflight` runs the plan-time gates against a `plan.json` without building anything.
+
+## Synopsis
+
+<include>../../../../generated/cli-preflight.mdx</include>
+
+## What it checks
+
+- **Scope overlap**: a deterministic pairwise check of declared ticket scopes; overlapping parallel tickets are a hard veto ([forecastOverlaps](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/preflight.mjs#L111)).
+- **Coldstart**: each ticket is sent to a cheap model in a fresh context, which lists what is missing to execute it ([coldstartTickets](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/preflight.mjs#L139)).
+
+Before coldstart, the command refreshes quota telemetry from agy and exits 1 if it is unavailable. `--no-coldstart` skips both the quota refresh and coldstart ([C14](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L172-L181)). Preflight does not check whether models respond; that is what the quota refresh and [`agb probe`](/docs/reference/cli/probe) report on.
+
+## Exit codes
+
+0 when every gate passes, 2 when any gate fails, 1 for an invalid plan or missing quota telemetry ([preflight exit](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L182-L184)).

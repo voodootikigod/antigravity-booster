@@ -1,6 +1,29 @@
 ---
 title: "agb plan"
-placeholder: true
+description: "Compile an Antigravity brain plan or a Markdown spec into plan.json, behind the plan-boundary gates."
+claims: [C13]
 ---
 
-This page is being written.
+`agb plan` compiles a plan artifact into an executable `plan.json`. The first argument is an Antigravity brain id (or a unique prefix) or the path to a Markdown spec; the second is the target repository.
+
+## Synopsis
+
+<include>../../../../generated/cli-plan.mdx</include>
+
+## Flags
+
+- `--out <file>` sets the output path (default `plan.json`).
+- `--force` overwrites an existing output file; without it the command exits 1 rather than replace a hand-written plan ([C13](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L197-L203)).
+- `--no-coldstart`, `--no-parallax` and `--no-premortem` skip the corresponding gate ([gate switches](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L211-L219)).
+
+## Gates
+
+Compilation converts the artifact, validates it, then runs the scope-overlap, coldstart and parallax gates in a feedback loop. The premortem runs once on the surviving plan and is **advisory**: its risks are printed but never block ([premortem is advisory](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L20), [scope-overlap gate](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L619)). See [Plan boundary](/docs/concepts/plan-boundary).
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Plan written; the next step is printed (`agb run <out>`). |
+| 1 | Usage error, existing output without `--force`, or quota telemetry unavailable. |
+| 2 | Blocking findings: the plan was not compiled ([blocking exit](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L222-L230)). |

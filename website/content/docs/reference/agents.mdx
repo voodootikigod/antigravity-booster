@@ -1,6 +1,10 @@
 ---
 title: "Agents"
-placeholder: true
+description: "The subagent definitions the plugin ships, generated from agents/*.md."
 ---
 
-This page is being written.
+The plugin ships agent definitions in [`agents/`](https://github.com/voodootikigod/antigravity-booster/blob/main/agents). Each is a Markdown file whose frontmatter gives the agent's name, description and the tools it may use; the body is its charter. The table is generated from that frontmatter.
+
+<include>../../../generated/agents.mdx</include>
+
+All shipped agents are limited to read-only tools (`grep_search`, `find_by_name`, `view_file`): they inspect and judge, they do not edit ([prosecutor frontmatter](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/agents/prosecutor.md#L1-L5)). The actual prosecution of a build is done by the orchestrator with a cross-model prosecutor; see [Prosecution](/docs/concepts/prosecution).
