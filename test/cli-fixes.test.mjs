@@ -2,7 +2,7 @@
 // Fixture repos are throwaway, offline, and never sign commits.
 import { test, after } from 'node:test';
 import assert from 'node:assert';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -103,4 +103,14 @@ test('item 2: agb_run without concurrency spawns agb run', async () => {
 test('item 3: MCP serverInfo.version equals root package.json version', async () => {
   const res = await mcpExchange([{ id: 4, method: 'initialize', params: {} }]);
   assert.equal(res.get(4).result.serverInfo.version, ROOT_PKG.version);
+});
+
+test('item 4: usage and unknown-command output contain no literal backslash-n', () => {
+  const help = execFileSync(process.execPath, [AGB_BIN, '--help'], { encoding: 'utf8' });
+  assert(help.includes('Exit codes:'), 'usage text not printed');
+  assert.equal(help.includes('\\n'), false, 'usage output contains a literal \\n');
+  const r = spawnSync(process.execPath, [AGB_BIN, 'definitely-not-a-command'], { encoding: 'utf8' });
+  assert.equal(r.status, 1);
+  assert(r.stderr.includes("unknown command 'definitely-not-a-command'"));
+  assert.equal(r.stderr.includes('\\n'), false, 'unknown-command output contains a literal \\n');
 });

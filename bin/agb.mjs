@@ -59,14 +59,14 @@ const COMMANDS = {
 };
 
 function printUsage() {
-  console.log('agb — Antigravity Booster orchestrator.\\n');
+  console.log('agb — Antigravity Booster orchestrator.\n');
   for (const [name, c] of Object.entries(COMMANDS)) {
     const cmdStr = `  agb ${name} ${c.args}`.padEnd(45);
     console.log(`${cmdStr} ${c.desc}`);
     if (c.extended) console.log(`                                              ${c.extended}`);
     if (c.flags) console.log(`                                              (flags: ${c.flags})`);
   }
-  console.log('\\nExit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.');
+  console.log('\nExit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.');
 }
 
 function printCmdUsage(name) {
@@ -104,7 +104,7 @@ if (rest.includes('--help') || rest.includes('-h')) {
 }
 
 if (!COMMANDS[cmd] && cmd !== 'setup' && cmd !== 'install' && cmd !== 'skills') {
-  console.error(`agb: unknown command '${cmd}'\\n`);
+  console.error(`agb: unknown command '${cmd}'\n`);
   console.error(`Usage: agb <command> ...`);
   console.error(`Run 'agb --help' for a list of commands.`);
   process.exit(1);
@@ -481,7 +481,7 @@ try {
       process.exit(1);
     }
   } else {
-    console.error(`agb: unknown command '${cmd}'\\n`);
+    console.error(`agb: unknown command '${cmd}'\n`);
     console.error(`Usage: agb <command> ...`);
     console.error(`Run 'agb --help' for a list of commands.`);
     process.exit(1);
