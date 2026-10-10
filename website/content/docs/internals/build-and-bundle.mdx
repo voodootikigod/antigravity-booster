@@ -1,7 +1,77 @@
 ---
 title: "Build and bundle"
-description: "esbuild bundles, __AGB_BUNDLED__ and the dist/vendor drift gate"
-placeholder: true
+description: "How npm run build produces the committed esbuild bundles in dist/ and vendor/, what __AGB_BUNDLED__ changes, and the gates that keep the bundles honest."
 ---
 
-This page is being written.
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+The plugin is installed from a git URL with `agy plugin install`, and that path never runs `npm install`. So everything the plugin executes at runtime is a **committed, self-contained esbuild bundle** that imports only Node built-ins. The source in `bin/`, `lib/`, `hooks/` and `mcp/` is what you edit and test; the bundles are what users run.
+
+## Bundles
+
+`npm run build` runs these steps in order and stops at the first failure ([package.json#L39-L42](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L39-L42), plus `vendor:bundle` at [package.json#L46](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L46)):
+
+| Script | Entry point | Output | `__AGB_BUNDLED__` |
+|---|---|---|---|
+| `build:agb` | `bin/agb.mjs` | `dist/agb.mjs` | `true` |
+| `build:mcp` | `mcp/server.mjs` | `dist/mcp-server.mjs` | `true` |
+| `build:hooks` | `hooks/pre-tool-use.mjs` | `dist/hooks/pre-tool-use.bundle.mjs` | `true` |
+| `vendor:bundle` | `vendor/adlc/src/dispatch.mjs` | `vendor/adlc/dist/adlc.bundle.mjs` | not defined |
+| (check) | `node scripts/check-bundle-externals.mjs` | | |
+
+All four esbuild runs use `--bundle --platform=node --format=esm` and the same banner, which recreates `require` for any CommonJS dependency pulled into the ESM bundle:
+
+```js
+import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);
+```
+
+The plugin's manifests point at the bundles: `hooks.json` runs `dist/hooks/pre-tool-use.bundle.mjs` through `bin/hook-runner.sh`, and the terminal shim at `~/.local/bin/agb` runs `dist/agb.mjs` through `bin/node-launcher.sh` ([lib/plugin-paths.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plugin-paths.mjs#L39-L41)). The launcher looks for Node 22.19.0 or later on `PATH` and in the usual install prefixes, and exits 86 if it finds none, so the hook runner can tell a missing runtime from a crash ([bin/node-launcher.sh](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/node-launcher.sh#L166-L168)).
+
+## `__AGB_BUNDLED__`
+
+The three plugin bundles are built with `--define:__AGB_BUNDLED__=true`. esbuild replaces the identifier with the literal at build time; in a source run it is simply undefined. Code reads it through one guarded constant, `IS_BUNDLED` ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L338-L342)), and the MCP server has its own copy ([mcp/server.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L17)).
+
+In bundled mode the developer overrides for the companion plugin location, the installed-plugin manifest directory and a custom `adlc` binary are ignored, and only the digest-pinned vendored `adlc` is used. The full list is in [Plugin and migration](/docs/internals/plugin-and-migration#bundled-mode). This is why `npm test`, which runs the source, can use fixtures and environment overrides that a user's installed plugin will never honor.
+
+`vendor:bundle` does not define the flag: the vendored `adlc` is ADLC's own code, not booster code.
+
+## The vendored `adlc`
+
+`vendor/adlc/` is a booster-owned bundle of the ADLC tools agb shells out to (rails-guard, gate-manifest, flail-detector, hollow-test, consensus-fix, model-router, merge-forecast, tickets), with `vendor/adlc/bin/adlc.mjs` as its entry. Its version, binary hash, bundle hash and tree digest are pinned in `KNOWN_VENDORED_ADLC`; a mismatch at resolution time fails closed as `vendored-adlc-tampered` ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L344-L355)).
+
+`scripts/update-adlc-digests.mjs` verifies those pins, and with `--write` refreshes them. It first checks that every bundled `@adlc/*` package in `node_modules` matches its `package-lock.json` registry integrity, so a locally modified dependency can never be pinned ([scripts/update-adlc-digests.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/update-adlc-digests.mjs#L1-L11)).
+
+`vendor/cache/adlc-antigravity-<version>.tgz` is different: it is the unmodified npm release tarball of the companion plugin, not a build output. See [vendored tarball pinning](/docs/internals/plugin-and-migration#vendored-tarball-pinning).
+
+## `scripts/check-bundle-externals.mjs`
+
+The last build step asserts that each bundle imports nothing but Node built-ins. By default it checks `dist/agb.mjs`, `dist/mcp-server.mjs`, `dist/hooks/pre-tool-use.bundle.mjs` and `vendor/adlc/dist/adlc.bundle.mjs`; pass paths to check others. It scans for static `import`/`export ... from`, dynamic `import("x")` and `require("x")` specifiers and fails if any is not a built-in, or if a bundle is missing ([scripts/check-bundle-externals.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/check-bundle-externals.mjs#L12-L64)). A dependency that esbuild could not inline, or one marked external by mistake, would break a git-URL install, and this check catches it at build time.
+
+## The drift gate
+
+Because the bundles are committed, they can fall behind the source. CI's `plugin-integrity` job rebuilds from a clean `npm ci` and fails if anything under `dist/` or `vendor/` changed or appeared ([.github/workflows/ci.yml](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/ci.yml#L102-L110)):
+
+```sh
+npm run build
+STATUS="$(git status --porcelain --untracked-files=all dist/ vendor/)"
+[ -z "$STATUS" ] || exit 1
+```
+
+The same job runs `shellcheck -s sh` on both POSIX launchers and checks that the vendored companion tarball is byte-identical to `npm pack` of the pinned version. It runs on a single Node version, so bundle bytes are compared in one place only.
+
+## Changing source
+
+<Steps>
+<Step>
+Edit `bin/`, `lib/`, `hooks/` or `mcp/` and run `npm test` (the suite runs the source, not the bundles).
+</Step>
+<Step>
+Run `npm run build`. It must finish with `check-bundle-externals` reporting every bundle as Node built-ins only.
+</Step>
+<Step>
+Commit the source and the regenerated `dist/` (and `vendor/`, if it changed) together. `git status --porcelain dist/ vendor/` should be empty afterwards.
+</Step>
+<Step>
+If you changed a CLI flag, environment variable, export or MCP tool, also run `cd website && npm run gen` and commit `website/generated/`, so the [reference pages](/docs/reference/environment) stay in sync.
+</Step>
+</Steps>
