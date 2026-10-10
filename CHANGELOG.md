@@ -9,9 +9,23 @@ rather than enumerate.
 
 ## [Unreleased]
 
-### Docs
+## [1.1.0] — 2026-10-10
 
-- The docs now live at https://www.agybooster.com/docs. `README.md` is slimmed to the pitch, install, stability and contribution basics; `USAGE.md`, `ARCHITECTURE.md` and the long-form `docs/*.md` guides are stubs that link to the site pages covering each section; `docs/fumadocs-plan.md` is removed; stale sandbox, dependency and version claims in `CONTRIBUTING.md` and `SECURITY.md` are corrected.
+**The docs moved to [agybooster.com](https://www.agybooster.com/docs)**, and two
+long-standing merge-lock defects are closed. No breaking changes.
+
+### Added
+- **Docs site** (T-DOCS-*): a Fumadocs site under `website/`, deployed on Vercel at https://www.agybooster.com. Get-started, concepts, guides, internals, project and reference sections; the reference pages are generated from the CLI and checked for drift. The `docs.yml` workflow verifies generated-reference drift, builds the site and lints links on every PR, with every action SHA-pinned and no secrets. Dependabot keeps the website and Actions groups updated weekly.
+- **`modernize` skill audit upgrades** (T-MODERNIZE-STREAMLINE-PRUNING): Stage 2 now runs codeweight budget checks across `lib/` and surfaces deprecation candidates; Stage 3 computes a dynamic delta matrix by probing the live `agy` models and flags against `lib/agy.mjs` instead of comparing static text, and adds a Deprecation & Codeweight Pruning pillar. The skill formalises its adversarial-review-and-fix loop and reuses `isProcessAlive` / `getProcessStartTime` from `lib/pools.mjs` instead of carrying its own copies.
+
+### Fixed
+- **Stale-lock reclaim could produce two winners** (T-LOCK-RECLAIM-RACE, KNOWN DEFECT #54): two processes reclaiming the same dead holder could both acquire the run lock. Reclaim now runs under an atomic `mkdir` of `run.lock.d.reclaim`, re-reads the stale holder inside that critical section, and never moves the canonical lock aside. A deterministic interleaving test pins the fix.
+- **macOS timing bugs** (T-MACOS-TIMING-FIXES): `withLockSync` / `withLock` could time out early on macOS, and `bin/hook-runner.sh`'s watchdog could kill a stale PID that had been reused by another process. The runner now re-checks the child PID before killing and removes its pidfile.
+- **CI rails-guard enforced no ticket rails** (T-RAILS-GUARD-DIRSTORE): since the move to the `.adlc/tickets/` directory store, `main` has no `tickets.json`, so the CI rail-freeze gate fell back to an empty ticket list. A zero-dependency `scripts/rails-guard-ci.mjs` now runs from the base branch's copy, unions rails across active base shards, allows only the complete-in-place and verified-archive ticket transitions, and fails closed. Its entry check also compared a symlink-resolved path with an unresolved one, which on macOS (`/var` vs `/private/var`) made it exit 0 without running; it now compares realpaths.
+- `test/hook-runner` unclosed-stdin latency tests no longer flake on macOS CI (T-HOOK-RUNNER-STDIN-BUDGET).
+
+### Docs
+- `README.md` is slimmed to the pitch, install, stability and contribution basics; `USAGE.md`, `ARCHITECTURE.md`, `AGENTS.md` and the long-form `docs/*.md` guides are stubs that link to the site pages covering each section; `docs/fumadocs-plan.md` is removed; stale sandbox, dependency, version and test-count claims in `CONTRIBUTING.md`, `SECURITY.md` and `AGENTS.md` are corrected.
 
 ## [1.0.0] — 2026-10-08
 
@@ -262,7 +276,8 @@ than a sibling checkout.
 First public release: ticket-DAG scheduler, quota-pool-aware dispatch, worktree
 fleets, cross-model prosecution, and deterministic gates.
 
-[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/voodootikigod/antigravity-booster/compare/v1.0.0...v1.1.0
 [0.4.3]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.0...v0.4.1
