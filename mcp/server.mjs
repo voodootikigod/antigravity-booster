@@ -2,11 +2,23 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const activeProcesses = new Map();
+
+// Same version source as `agb --version`: the manifest one level up. Both
+// `mcp/server.mjs` and the bundled `dist/mcp-server.mjs` sit one directory
+// below the package root, so this resolves bundled and unbundled alike.
+function readPackageVersion() {
+  try {
+    return JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
+  } catch (err) {
+    logDiagnostic(`could not read package.json version: ${err.message}`);
+    return 'unknown';
+  }
+}
 
 
 // Resolution of the agb CLI entry point (spec §4.1):
@@ -151,7 +163,7 @@ async function handleRequest(req) {
       },
       serverInfo: {
         name: 'antigravity-booster-mcp',
-        version: '0.7.0'
+        version: readPackageVersion()
       }
     });
     return;

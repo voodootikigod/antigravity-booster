@@ -51,7 +51,7 @@ test('item 1: agb sweep --project passes the project to every agy invocation', (
 
 // --- MCP server (items 2, 3) ---
 const MCP_SERVER = fileURLToPath(new URL('../mcp/server.mjs', import.meta.url));
-
+const ROOT_PKG = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
 
 /** Send JSON-RPC requests to a fresh MCP server; resolve with responses keyed by id. */
 function mcpExchange(requests, { timeoutMs = 30000 } = {}) {
@@ -98,4 +98,9 @@ test('item 2: agb_run without concurrency spawns agb run', async () => {
   const text = res.get(3).result.content[0].text;
   assert.match(text, /nope\.json/, `agb run did not execute: ${text.slice(0, 300)}`);
   assert.doesNotMatch(text, /concurrency/);
+});
+
+test('item 3: MCP serverInfo.version equals root package.json version', async () => {
+  const res = await mcpExchange([{ id: 4, method: 'initialize', params: {} }]);
+  assert.equal(res.get(4).result.serverInfo.version, ROOT_PKG.version);
 });
