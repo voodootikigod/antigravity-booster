@@ -347,7 +347,7 @@ try {
         const day = new Date().toISOString().slice(0, 10);
         const calDir = process.env.AGB_CALIBRATION_DIR ??
           fileURLToPath(new URL('../docs/calibration/', import.meta.url));
-        const calFile = join(calDir, `probe-${day}.md`);
+        const calFile = join(calDir, `probes-${day}.md`);
         const table = [
           `## ${model} — probed ${new Date().toISOString()}`,
           '',

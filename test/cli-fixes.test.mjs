@@ -3,7 +3,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -113,4 +113,30 @@ test('item 4: usage and unknown-command output contain no literal backslash-n', 
   assert.equal(r.status, 1);
   assert(r.stderr.includes("unknown command 'definitely-not-a-command'"));
   assert.equal(r.stderr.includes('\\n'), false, 'unknown-command output contains a literal \\n');
+});
+
+// --- probe (items 5, 6) ---
+function runProbe({ cwd, calDir }) {
+  const env = { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGB_QUOTA_STATE: join(TMP, 'pools-probe.json') };
+  delete env.AGB_CALIBRATION_DIR;
+  if (calDir) env.AGB_CALIBRATION_DIR = calDir;
+  return spawnSync(process.execPath, [AGB_BIN, 'probe', '2'], { cwd, env, encoding: 'utf8' });
+}
+
+test('item 5: probe writes probes-<day>.md (the committed naming), not probe-<day>.md', () => {
+  const calDir = join(TMP, 'cal-5');
+  const r = runProbe({ cwd: TMP, calDir });
+  assert.equal(r.status, 0, r.stderr);
+  const files = readdirSync(calDir);
+  assert.equal(files.length, 1, `expected one calibration file, got ${files}`);
+  assert.match(files[0], /^probes-\d{4}-\d{2}-\d{2}\.md$/);
+});
+
+test('item 5: pools.mjs cites a committed calibration file', () => {
+  const src = readFileSync(fileURLToPath(new URL('../lib/pools.mjs', import.meta.url)), 'utf8');
+  const cited = [...src.matchAll(/docs\/calibration\/([\w.-]+\.md)/g)].map((m) => m[1]);
+  assert(cited.length > 0, 'no calibration citation found');
+  for (const f of cited) {
+    assert(existsSync(fileURLToPath(new URL(`../docs/calibration/${f}`, import.meta.url))), `cited file missing: ${f}`);
+  }
 });
