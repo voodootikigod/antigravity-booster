@@ -1,7 +1,51 @@
 ---
 title: "Review"
-description: "agb review fleet, ref forms and exit semantics"
-placeholder: true
+description: "Run agb review: a read-only lens fleet over a diff that loops until dry, with ref forms and exit semantics."
+claims: [C11]
 ---
 
-This page is being written.
+`agb review` prosecutes an existing diff without building or merging anything. It is the review-fleet workload: point it at a repo and a ref, and a set of lens prompts reviews the diff in parallel, round after round, until no new findings appear.
+
+## Run it
+
+```bash
+agb review                       # current directory, uncommitted changes vs HEAD
+agb review /path/to/repo         # another repo
+agb review . main...HEAD         # everything on this branch since it left main
+```
+
+Both arguments are optional: the repo defaults to `.` and is resolved to an absolute path (repo default: [C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L146-L148)). The flags are listed in the [review CLI reference](/docs/reference/cli/review). Inside Antigravity the same command is available as `/agb-review` and the `agb_review` MCP tool (see [Headless and MCP](/docs/guides/headless-and-mcp)).
+
+## Ref forms
+
+The ref is passed straight to `git diff <ref>`; without one, `agb` runs `git diff HEAD` ([reviewDiff](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L70-L73)).
+
+| You pass | Diff reviewed |
+| --- | --- |
+| *(nothing)* | Uncommitted changes to tracked files against `HEAD` (staged and unstaged; untracked files are not included) |
+| `main...HEAD` | Changes on the current branch since its merge base with `main` (a PR-style diff) |
+| `A..B` | Changes between two commits |
+| `<sha>` | Changes from that commit to the working tree |
+
+If the diff is empty, `agb review` prints `review: empty diff — nothing to prosecute` and exits `0` without calling any model ([empty diff](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L149-L153)).
+
+## What the fleet does
+
+1. **Quota first.** Quota telemetry is refreshed from `agy`. If it is unavailable, the command exits `1` before any review runs ([quota check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L154-L159)).
+2. **Lenses.** Each round runs four lenses in parallel: `correctness`, `security`, `tests` and `contracts` ([lenses](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L17-L22)). From the CLI, lenses alternate between `gemini-3.8-flash-high` and `gemini-3.1-pro-high`, and every lens runs as a read-only worker with a JSON findings schema ([lens dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L110-L131)).
+3. **Dedupe.** Findings are keyed by file plus the start of the claim; only new findings count.
+4. **Loop until dry.** The fleet stops after **2** consecutive rounds with no new findings, or after **5** rounds ([defaults](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L86-L91)). A round where any lens errored is not a dry round, so a rate-limited model cannot fake convergence ([error rounds](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L152-L163)).
+
+The result is printed as JSON on stdout: `findings` (each with `lens`, `model` and `family` added), `rounds`, `requests` and `converged`. Progress lines go to stderr.
+
+## Exit semantics
+
+| Exit | When |
+| --- | --- |
+| `0` | Empty diff, or the fleet converged with no `critical` or `high` findings |
+| `1` | Quota telemetry unavailable, or another error |
+| `2` | Any `critical` or `high` finding, **or** the fleet did not converge |
+
+Evidence: [exit logic](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L160-L164). When it does not converge, `agb` prints `review: did NOT converge — diff too large or contested; split it`. Treat that as a signal to review smaller slices, not to rerun the same diff.
+
+<Callout type="info">`agb review` never writes to the repo. To act on findings, fix them yourself or turn them into tickets. For prosecution inside a run, see [Prosecution](/docs/concepts/prosecution).</Callout>

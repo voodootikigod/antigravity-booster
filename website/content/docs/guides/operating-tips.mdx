@@ -1,7 +1,49 @@
 ---
 title: "Operating tips"
-description: "Quotas, blocked tickets, pool drain and dirty repos"
-placeholder: true
+description: "Living with quotas, handling blocked tickets, draining pools, and why agb wants a clean repo."
+claims: [C24]
 ---
 
-This page is being written.
+Practical notes for running `agb` day to day. For the concepts behind them see [Pools and tiers](/docs/concepts/pools-and-tiers) and [Run lifecycle](/docs/internals/run-lifecycle).
+
+## Quotas
+
+`agb` reads quota telemetry from `agy` and sizes the fleet from it.
+
+- **Commands that spend quota check it first.** `plan`, `preflight` (unless `--no-coldstart`), `review` and `import-brain` refresh telemetry and exit `1` with `quota telemetry unavailable from agy` if they cannot ([plan check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L204-L211)).
+- **Caps shrink as quota drains.** The effective percentage for each upstream family (Gemini, and Claude plus GPT-OSS) is the lower of the 5-hour and weekly remaining figures ([effective percent](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L724-L726)). Each pool's cap is the smaller of your configured cap and the scaled cap, and recovers as quota returns ([cap scaling](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1420-L1438)). Default caps are `gemini-flash` 8, `gemini-pro` 4, `claude` 4, `gpt-oss` 2 ([DEFAULT_CAPS](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L71-L76)); override them with `caps` in the plan.
+- **A depleted pool fails fast.** If a pool's cap drops to 0, queued requests for it are aborted rather than left hanging ([depleted pool](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1463-L1468)).
+- **A failed probe stops dispatch.** When a quota probe fails, the circuit breaker trips, `CRITICAL: Quota probe failed; fleet dispatch suspended` is logged, and the state is shared with other `agb` processes ([circuit breaker](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1502-L1522)).
+
+Tips: run large fan-outs early in a quota window; give mechanical tickets `tier: "cheap"` so they draw from the wide Flash pool; use `agb probe` to measure real concurrency (see [Calibration](/docs/reference/calibration)).
+
+## Blocked tickets
+
+A ticket can end up blocked two ways.
+
+**The agent gave up.** A builder that prints `TICKET-BLOCKED: <reason>` consumes a strike, and its worktree is reset to the base for the retry ([blocked agent](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1825-L1832)). With two strikes per ticket, a second block fails the ticket with `agent blocked: <reason>`. A blocked agent almost always means the ticket body is missing context or the scope excludes a file it needs: fix the ticket, not the model.
+
+**A predecessor failed.** Tickets downstream of a failed ticket never start; they are recorded in the report's `failed` map as `blocked by failed predecessor` and shown with phase `blocked` ([predecessor block](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2382-L2389)).
+
+To recover: fix the failing ticket's body or scope, remove tickets that already merged from `plan.json` (and the edges pointing from them), and run again. Watch progress with `agb status --watch` or the [sidecar dashboard](/docs/guides/sidecar-dashboard).
+
+## Pool drain
+
+`agb` coordinates concurrent processes through shared lease state. If a crashed or legacy (v0.7) process left leases behind, a new run can refuse to start with a message telling you to run `agb pool drain` ([legacy fleet message](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L41), [active leases message](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L51)).
+
+```bash
+agb pool drain            # repo defaults to .
+agb pool drain /path/to/repo
+```
+
+Drain marks the coordinator `DRAINING` (no new dispatch while it runs), signals remaining workers, settles their leases within a short grace period, and resets the coordinator; it prints a JSON result and exits `0` ([drainPools](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1139-L1173), [command](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L472-L481)). Run it only when no legitimate run is in progress.
+
+## Dirty repos
+
+`agb run` (and `agb sweep`) refuse to start when the target repo has uncommitted changes, and refuse to merge a ticket if the repo becomes dirty mid-run ([start guard](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1383-L1388), [mid-run guard](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2124-L2126)). They also require the plan's `base` branch to be checked out. Commit or stash first.
+
+What `agb` actually does to your branch: each merge happens in a separate integration worktree, post-merge gates run there, and the base ref advances only through a compare-and-swap `update-ref` from the exact commit it started from (integration worktree and CAS: [C24](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2196-L2200), CAS advance: [C24](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2283-L2285)). Integration worktrees are named `.worktrees/agb-integration-<token8>` (integration worktree: [C24](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L277-L281)). A failed integration leaves the base ref where it was and quarantines the candidate under `refs/quarantine/`; there is no automatic hard reset or clean of your checkout.
+
+`AGB_ALLOW_DIRTY=1` skips the clean-tree guard. Use it only when you understand that `agb` still advances the checked-out branch underneath your uncommitted work.
+
+<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 7)">With `AGB_ALLOW_DIRTY=1`, `agb run` logs a warning that a hard reset will run and permanently discard uncommitted changes if a merge or post-merge gate fails, and the refusal message without it gives the same reason ([warning text](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1384-L1392)). That text predates the integration-worktree design described above and overstates what a failed merge does; the guard itself is still worth honouring.</Callout>

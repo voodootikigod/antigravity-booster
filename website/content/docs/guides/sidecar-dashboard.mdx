@@ -1,7 +1,65 @@
 ---
 title: "Sidecar dashboard"
-description: "agb sidecar, the token URL and port settings"
-placeholder: true
+description: "Run agb sidecar to watch a run in Antigravity: the token URL, port selection, cleanup, and the jetski-mode security note."
+claims: [C16, C3]
 ---
 
-This page is being written.
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+The sidecar is a small local web dashboard that streams a run's events into an Antigravity sidecar panel. It replaces the removed terminal UI: `agb tui` and the old TUI flag of `agb status` now just point here. It is opt-in: `agb bootstrap` does not install it; you start it when you want it.
+
+## Start it
+
+<Steps>
+<Step>
+
+### Launch the server
+
+```bash
+agb sidecar                 # repo defaults to the current directory
+agb sidecar /path/to/repo --port 4000
+```
+
+The repo argument is optional and defaults to `.`. The port comes from `--port`, else `AGB_SIDECAR_PORT`, else `3333`; it must be an integer from 0 to 65535, and `0` asks the OS for a free port ([port selection](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L368-L398)). Any other `--` flag is rejected. The server binds to `127.0.0.1` only and prints `AGB Sidecar Server running at http://127.0.0.1:<port>` ([listen](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L203-L206)).
+
+</Step>
+<Step>
+
+### The token URL
+
+Each launch generates a fresh random token, 16 bytes as hex, and the dashboard URL is `http://127.0.0.1:<port>/?token=<token>` (token and URL: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L399-L424)). Nothing is written to the repo: the token lives only in the sidecar manifest described below. Requests to `/` and `/index.html` need the token as `?token=`; the `/events` stream accepts it as `?token=` or as an `Authorization: Bearer` header. Comparisons are constant-time ([token checks](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L24-L48)).
+
+</Step>
+<Step>
+
+### Registration with Antigravity
+
+`agb sidecar` writes a dynamic plugin (`plugin.json` plus `sidecars/agb.json` carrying the token URL, mode `0600`) and runs `agy plugin install` on it. The directory is `AGB_PLUGIN_DIR` if set, otherwise `~/.gemini/agb-sidecar-plugin-<pid>-<port>` (manifest directory: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L407-L433)). If `AGB_PLUGIN_DIR` already holds a `plugin.json` or `sidecars/agb.json`, it refuses to overwrite it. If registration fails, the server keeps running and prints the manifest directory so you can register it by hand ([fallback](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L463-L466)).
+
+</Step>
+<Step>
+
+### Watch a run
+
+Start a run in another terminal (`agb run plan.json`). The dashboard reads `.booster/run.json` to find the current `runId` and tails `.booster/logs/<runId>/events.jsonl` ([event source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L50-L60)).
+
+</Step>
+</Steps>
+
+## Stopping
+
+Press Ctrl+C or send SIGTERM. On exit the server closes, runs `agy plugin uninstall` for the dynamic plugin, and removes the manifest (the whole directory if `agb sidecar` created it, only the two files if you supplied `AGB_PLUGIN_DIR`). The process exits `130` on SIGINT and `143` on SIGTERM (signal exit codes: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L438-L459)).
+
+## What the server serves
+
+- Only `/`, `/index.html`, `/app.js`, `/style.css` and `/events`; any other path is `403` ([allowlist](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L142-L149)).
+- Requests whose `Host` is not `127.0.0.1`, `localhost` or `::1` are rejected with `403` ([host check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L13-L22)).
+- `/app.js` and `/style.css` are served without a token check.
+
+## Jetski mode and ANTIGRAVITY_SIDECAR_WEB_PORT
+
+`ANTIGRAVITY_SIDECAR_WEB_PORT` is a real variable. When it is set, the bundled `sidecars/jetski-launcher.mjs` runs in jetski mode and listens on that port (default `3333`) (jetski mode: [C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/jetski-launcher.mjs#L8-L9)).
+
+<Callout type="warn" title="Setting ANTIGRAVITY_SIDECAR_WEB_PORT disables the token check">When `ANTIGRAVITY_SIDECAR_WEB_PORT` is present in the server's environment, a missing or wrong token is accepted on both `/` and `/events` (token bypass: [C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L32), [/events bypass](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L43)). Any local process that can reach the port can then read your run's events. Do not export it in a shell where you run `agb sidecar`. The threat model is in [Security](/docs/reference/security).</Callout>
+
+See also the [sidecar CLI reference](/docs/reference/cli/sidecar) and [Environment](/docs/reference/environment).
