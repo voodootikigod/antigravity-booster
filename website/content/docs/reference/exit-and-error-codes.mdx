@@ -1,6 +1,77 @@
 ---
 title: "Exit and error codes"
-placeholder: true
+description: "Every agb exit code per command, and the error classes and kinds users see."
+claims: [C10]
 ---
 
-This page is being written.
+agb uses three exit codes consistently:
+
+- **0**: success, or nothing to do.
+- **1**: the command could not do its job: bad input, invalid plan for `run`, missing quota telemetry, an unexpected exception.
+- **2**: the command ran, and the result is a failure verdict: tickets failed, blocking findings, an invalid plan for `validate`.
+
+Any exception that reaches the top level prints `agb: <message>` and exits 1 ([top-level catch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L489-L492)).
+
+## Per command
+
+| Command | Code | Meaning |
+|---|---|---|
+| `--version`, `--help`, `<cmd> --help` | 0 | Printed version or usage ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L82-L103)). |
+| unknown command | 1 | `agb: unknown command` ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L106-L111)). |
+| `run` | 0 | Every ticket merged. |
+| | 1 | Plan invalid ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L125-L129)), or the run could not start (lock held, no quota telemetry). |
+| | 2 | At least one ticket in `report.failed` ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L132)). |
+| `sweep` | 0 / 1 / 2 | Same as `run`; 1 also covers an invalid sweep spec ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L133-L145)). |
+| `validate` | 0 | Prints `plan valid`. |
+| | 2 | Plan invalid; errors on stderr ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L286-L292)). Note this differs from `run`, which uses 1. |
+| | 1 | Plan file missing or not JSON (top-level catch). |
+| `preflight` | 0 / 2 | Preflight passed / found blocking issues ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L184)). |
+| | 1 | Plan invalid, or quota telemetry unavailable (skipped with `--no-coldstart`) ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L165-L181)). |
+| `review` | 0 | Converged with no critical or high finding, or empty diff. |
+| | 2 | A critical or high finding, or the review did not converge ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L162-L164)). |
+| | 1 | Quota telemetry unavailable. |
+| `plan` | 0 | Plan compiled and written. |
+| | 1 | Bad arguments, output file exists without `--force`, or no quota telemetry ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L194-L210)). |
+| | 2 | Blocking plan-gate findings; nothing written ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L220-L230)). |
+| `import-brain` | 0 / 1 | Deprecated; 1 on bad arguments or no telemetry. |
+| `status` | 0 | Rendered once. |
+| | 1 | `--ui` given (removed) ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L269-L272)). |
+| `status --watch` | 0 / 2 | Exits when the run finishes: 2 if any ticket failed ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L186)). |
+| `tui` | 1 | Removed; points to `agb sidecar`. |
+| `doctor` | 0 / 1 | 1 if any check has level `fail` or errored ([runDoctor](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1265)). |
+| `migrate` (all modes) | 0 / 1 | Return value of `migrate`, `breakLock` or `finishUninstallCommand`: 0 on success or nothing to do, 1 on refusal or failure ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L640-L710)). |
+| `probe` | 0 | Even when every request failed (rows are just not recorded). |
+| `sidecar` | 1 | Missing or invalid `--port`, or unknown flag ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L372-L398)). |
+| | 130 / 143 | Stopped by SIGINT / SIGTERM after cleanup ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L462-L463)). |
+| `pool drain` | 0 / 1 | Drained / unknown subcommand ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L472-L482)). |
+| `bootstrap`, `brains` | 0 | Errors surface through the top-level catch (1). |
+
+## Error classes
+
+These named errors can reach the terminal as `agb: <message>`.
+
+| Class | `code` | When |
+|---|---|---|
+| `LegacyFleetActiveError` | `ERR_LEGACY_FLEET_ACTIVE` | A v0.7 coordinator is still active in the shared pool state ([pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L39-L47)). Wait for it or run `agb pool drain`. |
+| `ActiveV2LeasesPresentError` | `ERR_ACTIVE_V2_LEASES_PRESENT` | An older binary started while v2 leases are active ([pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L49-L57)). |
+| `MigrationLockError` | varies | The `agb migrate` lock is held or cannot be taken ([migration-lock.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migration-lock.mjs#L27-L33)). See [Upgrading from npm](/docs/getting-started/upgrading-from-npm). |
+
+The repository run lock throws a plain `Error`: `another agb run holds the lock on <repo> (pid …, run …)` ([lock.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/lock.mjs#L60)).
+
+## Ticket failure kinds
+
+A ticket that fails does not abort the run; its reason lands in `report.failed`. Internally, errors carry a `kind` that tells you which stage failed. Kinds set by the scheduler and plan checks include:
+
+| Kind | Meaning |
+|---|---|
+| `merge_conflict` | The ticket branch did not merge cleanly onto the advanced base. |
+| `post_merge_gate_failure` | Gates passed in the worktree but failed after integration; the merge is rolled back. |
+| `empty_diff` | The builder produced no change. |
+| `gate_script_tampering` | The ticket changed the gate script or one it delegates to ([plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L114-L119)). |
+| `lease_revoked` | The pool lease ended (pool draining) before the builder spawned. |
+| `external_ref_divergence`, `unexpected_base_ref_mutation` | The base branch moved outside agb during a merge transaction. |
+| `unproven_candidate_requires_operator`, `unproven_ref_advancement_requires_operator` | Crash recovery could not prove a ref is legitimate; a human must decide. |
+| `integration_finalization_failure`, `unsupported_journal_phase` | Merge journal finalization or recovery failed. |
+| `circuit_breaker_tripped` | Quota telemetry failed repeatedly; dispatch is suspended ([pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1353-L1354)). |
+
+agy call failures have their own kinds (`timeout`, `server`, `spawn`, `containment_unavailable`, `envelope_error`, `schema_violation`); see [agy integration](/docs/reference/agy-integration).

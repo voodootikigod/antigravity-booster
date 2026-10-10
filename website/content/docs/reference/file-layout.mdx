@@ -1,7 +1,78 @@
 ---
 title: "File layout"
-description: "Target repo .booster/ and .adlc/; user-global ~/.gemini and ~/.adlc"
-placeholder: true
+description: "What agb writes in the target repo (.booster/, .worktrees/, .adlc/) and under your home directory."
+claims: [C25]
 ---
 
-This page is being written.
+agb keeps run state next to the code it builds, in three repo-local directories, plus a handful of user-global paths under your home directory. On first run agb appends the entries it needs to the target repo's `.gitignore` and commits them ([ensureGitignore](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L20-L40)): `.worktrees/`, `.booster/` and `.adlc/*`, with the ticket store, archive, specs and `.adlc/config.json` re-included so they stay tracked.
+
+## Target repository
+
+```text
+<repo>/
+├── .booster/                         run state (gitignored, owner-only)
+│   ├── run.lock.d/
+│   │   └── meta.json                 per-repo run lock holder
+│   ├── run.json                      live run state
+│   ├── report.json                   final report of the last run
+│   └── logs/<runId>/
+│       ├── events.jsonl              run event stream
+│       └── <ticket>.jsonl            agy transcript per ticket
+├── .worktrees/                       gitignored
+│   ├── agb-<ticket id, lowercased>/  one worktree per ticket
+│   ├── agb-integration-<8 hex>/      disposable merge worktrees
+│   └── .attempt_git/                 per-attempt git state
+└── .adlc/
+    ├── tickets/  or  tickets.json    ticket store (tracked)
+    ├── ticket-archive/               archived tickets (tracked)
+    ├── config.json                   ADLC trust root (tracked)
+    ├── integration_journal.json      merge transaction journal
+    ├── leases/                       pool lease heartbeats
+    ├── graph-coupling.json           input to adlc merge-forecast
+    └── manifest.jsonl                gate evidence (gate-manifest)
+```
+
+### `.booster/`
+
+| Path | Written by | Notes |
+|---|---|---|
+| `run.lock.d/meta.json` | `acquireRepoLock` | One `agb run` per repository at a time. The lock is a directory, created atomically; `meta.json` records the holder's pid and run id so a stale lock from a dead process can be reclaimed ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/lock.mjs#L33-L34)). |
+| `run.json` | `RunStatus.flush` | Rewritten atomically (temp file plus rename) on every phase change; read by `agb status` and the sidecar dashboard ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L53)). |
+| `report.json` | `RunStatus.report` | Same object `agb run` prints on stdout ([report write](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L120)). |
+| `logs/<runId>/events.jsonl` | `RunStatus.appendEvent` | Append-only event stream ([events path](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L98)). |
+| `logs/<runId>/<ticket>.jsonl` | `runAgy` | One JSON line per agy invocation for that ticket ([transcript path](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1399)). |
+
+The run id has the form `run-<base36 timestamp>` ([runId](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1395)). Formats are on [Log formats](/docs/reference/log-formats).
+
+`.booster/`, `.booster/logs/` and each run's log directory are forced to mode `0700`, and files are written `0600`, because transcripts can quote repository contents ([ownerOnlyDir](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L34-L48)). On filesystems without POSIX modes agb warns once instead of failing.
+
+### `.worktrees/`
+
+Each ticket builds in `.worktrees/agb-<id>` on branch `agb/<id>`, with the id lowercased ([createWorktree](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L119-L121)). A leftover worktree and branch with the same name from an earlier run are removed first. Merges happen in disposable `.worktrees/agb-integration-<token>` worktrees, so the main checkout is not used for integration ([integration worktree](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L281)); orphans are reaped at the next run's start. agb refuses to run if `.worktrees` is a symlink, not a directory, or resolves outside the repository ([validateWorktreeRoot](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L90-L108)).
+
+### `.adlc/`
+
+- **Ticket store.** Either the directory store `.adlc/tickets/` (one JSON shard per ticket) or the legacy single file `.adlc/tickets.json`. `agb doctor` fails when both exist, because the plugin fails closed in that state ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1159-L1163)).
+- **`integration_journal.json`.** The merge transaction journal, written atomically (temp file, fsync, rename) ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L388)). Its phases are `PREPARED`, `GATES_PASSED`, `REF_ADVANCED` and `FINALIZED` ([JOURNAL_PHASES](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L268-L273)). At startup, `reconcileIntegrationJournal` rolls back or completes whatever a crashed run left behind. See [Integration journal](/docs/internals/integration-journal).
+- **`leases/`.** One `<leaseId>.heartbeat` per pool lease held by a live builder ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L776)). Inside the builder sandbox this directory is masked with a tmpfs so a builder cannot forge leases ([bwrap mount](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L393-L398)).
+- **`graph-coupling.json`.** Optional coupling data passed to `adlc merge-forecast` ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/preflight.mjs#L38)).
+- **`config.json`.** The ADLC trust root (sandbox attestation, attested flags). Humans edit it; agb only reads it. See [Security](/docs/reference/security).
+- **`manifest.jsonl`.** Append-only gate evidence written through `adlc gate-manifest`. See [Gate evidence](/docs/concepts/gate-evidence).
+
+## User-global paths
+
+`AGB_HOME_DIR`, where noted, replaces your home directory; it defaults to `os.homedir()`.
+
+| Path | Purpose | Source |
+|---|---|---|
+| `~/.gemini/config/plugins/adlc-antigravity` | Installed companion ADLC plugin. The only location the bundled build resolves it from. | [adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L64), [pluginsDirFor](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plugin-paths.mjs#L102-L104) |
+| `~/.gemini/antigravity-cli/plugin_data/antigravity-booster/` | Booster data: migration lock and state, `rails-guard-health.json` diagnostic log. | [boosterDataDir](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migration-lock.mjs#L35-L45), [healthLogPath](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L183-L185) |
+| `~/.gemini/antigravity/brain/`, `~/.gemini/jetski/brain/` | Antigravity plan conversations read by `agb plan` and `agb brains`. | [brain.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/brain.mjs#L15-L16) |
+| `~/.gemini/agb-sidecar-plugin-<pid>-<port>/` | Temporary plugin manifest `agb sidecar` registers, removed on exit (`AGB_PLUGIN_DIR` overrides). | [bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L408) |
+| `~/.local/bin/agb` | Terminal shim installed by `agb bootstrap`; left alone if it has different content unless `--force-reinstall`. | [installTerminalShim](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plugin-paths.mjs#L297-L310) |
+| `~/.local/bin/agy` | First candidate when resolving the agy binary, before Homebrew and system paths. | [resolveAgyBinary](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plugin-paths.mjs#L82-L93) |
+| `$AGB_HOME_DIR/.adlc/pinned`, `$AGB_HOME_DIR/.adlc/locks` | Pinned copies and locks for the authenticated ADLC binary (`AGB_EXEC_CACHE_DIR`, `AGB_EXEC_LOCKS_DIR` override). | [adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L1122-L1145) |
+| `~/.adlc/tmp` | Private temp base for sandboxed builder launches. | [agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L667) |
+| `$TMPDIR/agb_pools_shared.json`, `agb_pools_v2.json` | Cross-process pool quota and lease state (`AGB_POOLS_DIR`, `AGB_QUOTA_STATE`, `AGB_POOLS_V2` override). | [getStateFile](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L110-L120) |
+
+All override variables are listed in [Environment variables](/docs/reference/environment).

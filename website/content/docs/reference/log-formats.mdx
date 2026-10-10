@@ -1,7 +1,105 @@
 ---
 title: "Log formats"
-description: "events.jsonl, transcripts, run.json and the report shape"
-placeholder: true
+description: "events.jsonl event types, per-ticket transcripts, run.json and the run report."
 ---
 
-This page is being written.
+Every `agb run` (and `agb sweep`) leaves four kinds of record under `.booster/` in the target repository. All are JSON, written owner-only. Paths are on [File layout](/docs/reference/file-layout).
+
+| File | Shape | Writer |
+|---|---|---|
+| `.booster/logs/<runId>/events.jsonl` | one event object per line, append-only | [`RunStatus.appendEvent`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L96-L110) |
+| `.booster/logs/<runId>/<ticket>.jsonl` | one transcript record per agy invocation | [`runAgy`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L1206-L1216) |
+| `.booster/run.json` | single object, rewritten atomically | [`RunStatus.flush`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L124-L131) |
+| `.booster/report.json` | single object, written once at the end | [`RunStatus.report`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L113-L122) |
+
+## events.jsonl
+
+Every event has `ts` (ISO 8601), `runId` and `type`. There are four types.
+
+### `phase`
+
+Emitted on every ticket update ([`ticket()`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L67-L82)).
+
+| Field | Present when | Meaning |
+|---|---|---|
+| `ticket` | always | Ticket id. |
+| `to` | the phase changed | New phase. |
+| `from` | the ticket had a previous phase | Old phase. |
+| `detail` | given | Free-text detail (failure reason, merge sha and so on). |
+| `model` | given | Model working the ticket. |
+| `strikes` | given | Strike count so far. |
+
+Phases the scheduler sets are `pending`, `building`, `gating`, `prosecuting`, `fixing`, `merging`, `merged`, `failed`, `blocked` and `paused`.
+
+```json
+{"ts":"2026-07-14T14:09:16.252Z","runId":"run-lq2x1k","type":"phase","ticket":"T1","to":"gating","from":"building"}
+```
+
+### `pool`
+
+A snapshot of pool state whenever leases change ([`pools()`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L84-L88)). `pools` is the `PoolSet.snapshot()` object: caps, in-flight and request counts per pool.
+
+### `strike`
+
+A failed build attempt ([`strike()`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L90-L94)): `ticket`, `model`, `error`, `strikes`.
+
+### `report`
+
+The last event of a completed run: `done: true` and `report`, the same object as `report.json` ([`report()`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L121)).
+
+`agb status --watch` tails this file and exits when it sees the report ([watchStatus](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L176-L210)). The sidecar dashboard streams it to the browser over `/events` ([server](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L59)).
+
+## Ticket transcripts
+
+Each line of `<ticket>.jsonl` records one agy call made for that ticket, builder or fixer ([log file per ticket](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1584)):
+
+| Field | Meaning |
+|---|---|
+| `ts` | When the call finished. |
+| `model` | Model slug requested. |
+| `cwd` | Worktree the call ran in. |
+| `strike` | Attempt number. |
+| `ms` | Wall time. |
+| `prompt` | The full prompt sent. |
+| `output` | The full agy stdout. With stream-json this is the raw event stream. |
+| `ok` | Whether the call succeeded. |
+| `role` | `builder` for build calls. |
+| `kind`, `error` | Only when `ok` is false: the failure class (`timeout`, `server`, `spawn`, `schema_violation`, and so on) and message. |
+
+<Callout type="warn" title="Transcripts can contain secrets">
+`prompt` and `output` are stored verbatim. A model that reads a `.env` can quote it into its output. Treat `.booster/` as sensitive. See [Security](/docs/reference/security).
+</Callout>
+
+## run.json
+
+The live state of the current or last run ([RunStatus constructor](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L51-L63)):
+
+```json
+{
+  "runId": "run-lq2x1k",
+  "repo": "/abs/path/to/repo",
+  "startedAt": "2026-07-14T14:09:00.000Z",
+  "updatedAt": "2026-07-14T14:12:41.000Z",
+  "done": false,
+  "tickets": {
+    "T1": { "phase": "gating", "model": "gemini-3.8-flash-low", "strikes": 0, "updatedAt": "..." }
+  },
+  "pools": { }
+}
+```
+
+`tickets.<id>` merges every patch the scheduler sends (`phase`, `detail`, `model`, `strikes`, `error`) with its own `updatedAt`. When the run ends, `done` becomes `true` and `report` holds the report object.
+
+## Report
+
+`agb run` prints the report on stdout and writes it to `.booster/report.json` ([report object](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2418-L2427)):
+
+| Key | Type | Meaning |
+|---|---|---|
+| `runId` | string | Run id. |
+| `merged` | string[] | Ticket ids merged into the base branch. |
+| `failed` | object | Ticket id to failure reason. Non-empty means exit code 2. |
+| `requests` | object | agy requests made per pool. |
+| `enforcementAvailable` | boolean | Whether live rail enforcement by the companion plugin was active. |
+| `enforcementReason` | string | Why enforcement was or was not available. |
+| `compromised` | string or null | Set when the run-integrity check found tampering (for example hooks or git config changed during the run). |
