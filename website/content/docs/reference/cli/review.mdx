@@ -1,6 +1,28 @@
 ---
 title: "agb review"
-placeholder: true
+description: "Run a read-only lens fleet over a diff until no new findings appear."
+claims: [C11]
 ---
 
-This page is being written.
+`agb review` prosecutes a diff with a read-only fleet of model "lenses" and loops until the review converges.
+
+## Synopsis
+
+<include>../../../../generated/cli-review.mdx</include>
+
+## Arguments
+
+- `repo` is optional and defaults to the current directory ([C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L147)).
+- `ref` is optional: a range such as `main...HEAD` or a SHA range. Without it, uncommitted changes are reviewed against `HEAD` ([ref handling](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L148-L149)).
+
+An empty diff exits 0 with nothing to review. Quota telemetry must be available.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Converged with no critical or high findings. |
+| 2 | Critical or high findings, or the review did not converge (split the diff). |
+| 1 | Quota telemetry unavailable, or an internal error. |
+
+Evidence: [review exit](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L160-L163). See the [Review guide](/docs/guides/review).

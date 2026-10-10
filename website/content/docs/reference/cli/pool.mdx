@@ -1,6 +1,16 @@
 ---
 title: "agb pool"
-placeholder: true
+description: "Drain active pool leases and reset the coordinator."
 ---
 
-This page is being written.
+`agb pool drain` safely drains active quota-pool leases and resets the shared pool coordinator.
+
+## Synopsis
+
+<include>../../../../generated/cli-pool.mdx</include>
+
+## Behavior
+
+`drain` is the only subcommand; anything else exits 1 with a usage message. `repo` defaults to the current directory. The result is printed as JSON and the command exits 0 ([pool dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L472-L482)). Draining first marks the shared state `DRAINING` under the pool lock ([drainPools](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1139-L1144)).
+
+See [Pools and tiers](/docs/concepts/pools-and-tiers) and [Operating tips](/docs/guides/operating-tips).

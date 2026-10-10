@@ -1,6 +1,36 @@
 ---
 title: "MCP tools"
-placeholder: true
+description: "The tools exposed by the agb MCP server, generated from the TOOLS array in mcp/server.mjs."
+claims: [C6, C33]
 ---
 
-This page is being written.
+The plugin registers an MCP server named `agb` (see [Plugin layout](/docs/reference/plugin-layout)). It speaks JSON-RPC over stdio and exposes a small set of tools, each of which runs the matching [CLI](/docs/reference/cli) command as a child process and returns its output.
+
+## Server
+
+The server answers `initialize` with protocol version `2024-11-05` and `serverInfo.name` `antigravity-booster-mcp`.
+
+<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 3)">`serverInfo.version` is hard-coded to `0.7.0` ([C6](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L153-L156)); it does not report the plugin's `package.json` version. Use `agb --version` to see the installed version.</Callout>
+
+Child processes are started with `AGB_PROVIDER=jetski` added to the environment ([spawn environment](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L204-L206)). Unknown tools return JSON-RPC error `-32602`, unknown methods `-32601`.
+
+## Tools
+
+The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
+
+<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 2)">The `concurrency` parameter of `agb_run` is ignored. The server forwards it as an extra command-line flag ([C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)), but `agb run` reads only the plan path ([run reads only the plan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L124-L125)). Concurrency comes from the plan's `caps` and `concurrencyCap`.</Callout>
+
+<include>../../../generated/mcp-tools.mdx</include>
+
+## Mapping to the CLI
+
+| Tool | Runs |
+| --- | --- |
+| `agb_plan` | `agb plan <spec> <repo>` plus `--out`, `--force`, `--no-coldstart`, `--no-parallax`, `--no-premortem` |
+| `agb_run` | `agb run <plan>` |
+| `agb_preflight` | `agb preflight <plan>` |
+| `agb_status` | `agb status <repo>` |
+| `agb_doctor` | `agb doctor` |
+| `agb_review` | `agb review <repo> [ref]` |
+
+Evidence: [tool dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L178-L196). The server resolves the CLI to the sibling `dist/agb.mjs` in the bundled plugin, `bin/agb.mjs` in a source checkout, or `agb` on `PATH` ([resolveAgbEntry](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L19-L23)). See [Headless and MCP](/docs/guides/headless-and-mcp).

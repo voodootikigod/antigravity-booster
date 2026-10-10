@@ -1,6 +1,20 @@
 ---
 title: "agb sweep"
-placeholder: true
+description: "Apply one operation to many targets by converting a sweep spec into a plan and running it."
 ---
 
-This page is being written.
+`agb sweep` converts a sweep spec (one operation template applied to many targets) into a plan and runs it with the same engine as [`agb run`](/docs/reference/cli/run). The spec defaults to `sweep.json`.
+
+<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 1)">The global `--project` value is passed to `sweepToPlan` ([sweep conversion](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L136)), but `sweepToPlan` accepts only a `targets` option ([sweepToPlan signature](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L36)), so the value is dropped while the sweep is converted to a plan. It is still passed to the run itself.</Callout>
+
+## Synopsis
+
+<include>../../../../generated/cli-sweep.mdx</include>
+
+## Behavior
+
+- The spec's `repo` is resolved to an absolute path, the spec is converted with `sweepToPlan`, and the resulting plan is validated like any other plan ([sweep dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L133-L145)).
+- `operation` must contain `{target}`, and targets come from `targets[]` or `targetGlob` ([sweep validation](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L37-L42)). The full format is in [Sweep schema](/docs/reference/sweep-schema).
+- Exit codes match `agb run`: 1 for an invalid sweep, 2 when any target fails, 0 otherwise.
+
+See the [Sweeps guide](/docs/guides/sweeps).

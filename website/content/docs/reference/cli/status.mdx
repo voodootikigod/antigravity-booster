@@ -1,6 +1,18 @@
 ---
 title: "agb status"
-placeholder: true
+description: "Render the dashboard for a repository's current run, once or continuously."
+claims: [C11]
 ---
 
-This page is being written.
+`agb status` renders the current run's dashboard for a repository.
+
+## Synopsis
+
+<include>../../../../generated/cli-status.mdx</include>
+
+## Arguments and flags
+
+- `repo` is optional and defaults to the current directory ([C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L274-L280)).
+- `--watch` re-renders until the run ends; `--interval <ms>` sets the refresh period, default 1000 ms ([interval default](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L263-L267)).
+
+The old terminal UI flag was removed; passing it exits 1 with a pointer to `agb sidecar` (see [Removed and deprecated](/docs/reference/cli/removed)). For a browser dashboard use [`agb sidecar`](/docs/reference/cli/sidecar).

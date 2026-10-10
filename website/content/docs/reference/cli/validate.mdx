@@ -1,6 +1,25 @@
 ---
 title: "agb validate"
-placeholder: true
+description: "Validate a plan file without running anything."
+claims: [C10]
 ---
 
-This page is being written.
+`agb validate` runs the plan checks that `agb run` and `agb preflight` run before doing any work, and nothing else. The plan defaults to `plan.json`.
+
+## Synopsis
+
+<include>../../../../generated/cli-validate.mdx</include>
+
+## Behavior
+
+The plan is checked with `validatePlan` from `lib/plan.mjs`, which includes the cross-ticket and routability checks ([loadPlan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L113-L121)). The rules are listed in [Plan schema](/docs/reference/plan-schema).
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Prints `plan valid`. |
+| 2 | The plan is invalid; errors are printed to stderr ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L286-L292)). |
+| 1 | The file cannot be read or parsed. |
+
+Note that `agb run` exits 1, not 2, for the same invalid plan.

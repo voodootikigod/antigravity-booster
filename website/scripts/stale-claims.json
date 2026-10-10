@@ -1,0 +1,74 @@
+[
+  {
+    "id": "C1",
+    "pattern": "agy[^\\n]{0,20}1\\.2\\.8"
+  },
+  {
+    "id": "C2",
+    "pattern": "AGB_STREAM_(TIMEOUT|LINE_CAP|TOTAL_CAP)"
+  },
+  {
+    "id": "C5",
+    "pattern": "agb-<runId>"
+  },
+  {
+    "id": "C9",
+    "pattern": "agb run[^\\n]*--(concurrency|dry-run)"
+  },
+  {
+    "id": "C11",
+    "pattern": "status[^\\n]*--ui"
+  },
+  {
+    "id": "C14",
+    "pattern": "model liveness"
+  },
+  {
+    "id": "C16",
+    "pattern": "\\.booster/token"
+  },
+  {
+    "id": "C19",
+    "pattern": "hard platform cap"
+  },
+  {
+    "id": "C20",
+    "pattern": "and vice versa"
+  },
+  {
+    "id": "C22",
+    "pattern": "AppContainer"
+  },
+  {
+    "id": "C24",
+    "pattern": "git (reset --hard|clean -fd)"
+  },
+  {
+    "id": "C25",
+    "pattern": "\\.booster/(lock|status)\\.json|integration_journal\\.jsonl|TRANSACTION_BEGIN"
+  },
+  {
+    "id": "C26",
+    "pattern": "PoolManager|prosecuteDiff|startSidecarServer"
+  },
+  {
+    "id": "C28",
+    "pattern": "two first-party"
+  },
+  {
+    "id": "C29",
+    "pattern": "pre-1\\.0"
+  },
+  {
+    "id": "C30",
+    "pattern": "[0-9]{3,} (tests|passing)"
+  },
+  {
+    "id": "C31",
+    "pattern": "npm (i|install) -g @adlc/cli"
+  },
+  {
+    "id": "C32",
+    "pattern": "registers sidecar"
+  }
+]

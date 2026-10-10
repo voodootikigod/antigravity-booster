@@ -1,6 +1,14 @@
 ---
 title: "agb import-brain"
-placeholder: true
+description: "Deprecated raw one-shot conversion of a brain into a plan; use agb plan."
 ---
 
-This page is being written.
+<Callout type="info" title="Deprecated">Use [`agb plan`](/docs/reference/cli/plan), which adds the plan gates, the feedback loop and provenance.</Callout>
+
+`agb import-brain` converts a brain into a plan in one shot and prints it to stdout, with no gates. It prints a deprecation notice on every run ([deprecation notice](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L246-L251)).
+
+## Synopsis
+
+<include>../../../../generated/cli-import-brain.mdx</include>
+
+Both arguments are required; quota telemetry must be available.

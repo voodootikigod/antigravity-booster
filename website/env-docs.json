@@ -1,0 +1,363 @@
+{
+  "vars": [
+    {
+      "name": "AGB_AGY_BIN",
+      "group": "core",
+      "default": "agy",
+      "bundledIgnored": false,
+      "description": "Path or name of the agy executable used for builds, quota telemetry, doctor checks and bootstrap."
+    },
+    {
+      "name": "AGB_ALLOW_DIRTY",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start)."
+    },
+    {
+      "name": "AGB_BUILD_TIMEOUT",
+      "group": "core",
+      "default": "5m",
+      "bundledIgnored": false,
+      "description": "Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply."
+    },
+    {
+      "name": "AGB_BUILD_MAX_TIMEOUT",
+      "group": "core",
+      "default": "30m",
+      "bundledIgnored": false,
+      "description": "Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0."
+    },
+    {
+      "name": "AGB_EVENT_PROGRESS_TIMEOUT",
+      "group": "core",
+      "default": "5m",
+      "bundledIgnored": false,
+      "description": "No-progress watchdog: an agy stream that emits no events for this long is terminated."
+    },
+    {
+      "name": "AGB_KILL_GRACE_MS",
+      "group": "core",
+      "default": "15000",
+      "bundledIgnored": false,
+      "description": "Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree."
+    },
+    {
+      "name": "AGB_PROVIDER",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. The MCP server sets it to jetski for the agb processes it spawns."
+    },
+    {
+      "name": "AGB_SESSION_ID",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes."
+    },
+    {
+      "name": "ANTIGRAVITY_CONVERSATION_ID",
+      "group": "core",
+      "default": "set by Antigravity",
+      "bundledIgnored": false,
+      "description": "Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes."
+    },
+    {
+      "name": "AGB_TARGET_REPO",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Extra directory bin/node-launcher.sh searches when locating a project-local Node runtime."
+    },
+    {
+      "name": "AGB_WORKER_MODE",
+      "group": "core",
+      "default": "set by agb",
+      "bundledIgnored": false,
+      "description": "Set by agb on read-only worker agy processes (value readonly). The PreToolUse guard denies mutations and never prompts while it is set."
+    },
+    {
+      "name": "AGB_WORKER_TICKET",
+      "group": "core",
+      "default": "set by agb",
+      "bundledIgnored": false,
+      "description": "Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts."
+    },
+
+    {
+      "name": "ADLC_ANTIGRAVITY_PLUGIN_NAME",
+      "group": "plugin-resolution",
+      "default": "adlc-antigravity",
+      "bundledIgnored": false,
+      "description": "Not read from the environment: a source constant in lib/plugin-paths.mjs naming the companion plugin's directory under the agy plugins folder."
+    },
+    {
+      "name": "ADLC_ANTIGRAVITY_PLUGIN_PATH",
+      "group": "plugin-resolution",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Source checkout of the adlc-antigravity plugin to install from. Honoured by bootstrap only in unbundled runs and only together with AGB_DEV_ALLOW_UNVERIFIED_PLUGIN=1."
+    },
+    {
+      "name": "AGB_DEV_ALLOW_UNVERIFIED_PLUGIN",
+      "group": "plugin-resolution",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Set to 1 (unbundled runs only) to let bootstrap install an unverified companion plugin from ADLC_ANTIGRAVITY_PLUGIN_PATH."
+    },
+    {
+      "name": "AGB_PLUGIN_DIR",
+      "group": "plugin-resolution",
+      "default": "~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-<pid>-<port> (sidecar)",
+      "bundledIgnored": false,
+      "description": "Two readers: the companion-plugin handshake manifest directory (ignored by the bundled build) and the directory agb sidecar writes its plugin manifest into (honoured in every build)."
+    },
+    {
+      "name": "AGB_PLUGIN_ROOT",
+      "group": "plugin-resolution",
+      "default": "the booster plugin root",
+      "bundledIgnored": true,
+      "description": "Plugin root holding vendor/adlc, used to find the vendored adlc CLI. Unbundled runs only."
+    },
+
+    {
+      "name": "ADLC_CLI_PATH",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Custom adlc executable. Honoured only with AGB_ALLOW_CUSTOM_ADLC_CLI=1 in unbundled runs; the bundled build uses only the vendored adlc."
+    },
+    {
+      "name": "AGB_ADLC_BIN",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Alias of ADLC_CLI_PATH with the same restrictions (AGB_ALLOW_CUSTOM_ADLC_CLI=1, unbundled only)."
+    },
+    {
+      "name": "AGB_ALLOW_CUSTOM_ADLC_CLI",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Set to 1 to honour ADLC_CLI_PATH / AGB_ADLC_BIN in unbundled runs. The path must pass the temporary/world-writable path checks."
+    },
+    {
+      "name": "AGB_ALLOW_SYSTEM_ADLC",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Set to 1 to let unbundled runs fall back to an adlc found on the system PATH."
+    },
+    {
+      "name": "ADLC_ADMIN_KEY",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "HMAC key used to verify a Windows sandbox-bypass attestation. Treated as a secret: never forwarded to builder agy processes."
+    },
+    {
+      "name": "ADLC_MANIFEST_KEY",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Key used by adlc gate-manifest. Treated as a secret: never forwarded to builder agy processes."
+    },
+    {
+      "name": "ADLC_P4_ENFORCEMENT",
+      "group": "adlc",
+      "default": "set by agb",
+      "bundledIgnored": false,
+      "description": "Set to 1 by the scheduler on builder processes when rail enforcement is available, enabling the PreToolUse rails hook."
+    },
+    {
+      "name": "ADLC_PROVIDER",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Read by the @adlc tools, not by agb. Bootstrap suggests ADLC_PROVIDER=agy to run them on Antigravity quota."
+    },
+    {
+      "name": "ADLC_TICKET",
+      "group": "adlc",
+      "default": "set by agb",
+      "bundledIgnored": false,
+      "description": "Set by the scheduler on builder processes to the ticket id whose rails the PreToolUse hook enforces."
+    },
+    {
+      "name": "ADLC_TICKETS",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Alternative ticket-store path the PreToolUse guard also protects."
+    },
+    {
+      "name": "ADLC_TICKET_STORE",
+      "group": "adlc",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Ticket-store path override the PreToolUse guard also protects."
+    },
+
+    {
+      "name": "AGB_HOOK_DISABLE",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Any non-empty value bypasses the PreToolUse rails guard. Each bypass is logged to hooks.log and agb doctor warns about it."
+    },
+    {
+      "name": "AGB_REQUIRE_DRIVER_SIGNATURE",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to make the Windows doctor sandbox check require a signed driver attestation in the probe output."
+    },
+    {
+      "name": "AGB_SANDBOX_GATES",
+      "group": "sandbox-and-gates",
+      "default": "on",
+      "bundledIgnored": false,
+      "description": "Set to 0 to run gate commands without the OS sandbox (an explicit acknowledgement of host risk)."
+    },
+    {
+      "name": "AGB_SANDBOX_PROBE_CMD",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Doctor sandbox-probe command override. Restricted to test execution; otherwise the check fails."
+    },
+    {
+      "name": "AGB_SANDBOX_PROBE_HELPER",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Helper script passed to the doctor sandbox probe. Honoured only during test execution."
+    },
+    {
+      "name": "AGB_STRICT_GATES",
+      "group": "sandbox-and-gates",
+      "default": "on in plan; off in run unless the repo has package.json",
+      "bundledIgnored": false,
+      "description": "Plan compilation uses strict gates unless set to 0. At run time, 1 forces gate commands to match the npm pattern even without a package.json."
+    },
+
+    {
+      "name": "AGB_POOLS_DIR",
+      "group": "pools-and-quota",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Directory for the shared pool state, v2 state and lock files."
+    },
+    {
+      "name": "AGB_POOLS_LOCK",
+      "group": "pools-and-quota",
+      "default": "derived",
+      "bundledIgnored": false,
+      "description": "Explicit pool lock file path (otherwise derived from AGB_POOLS_DIR or AGB_QUOTA_STATE)."
+    },
+    {
+      "name": "AGB_POOLS_V2",
+      "group": "pools-and-quota",
+      "default": "derived",
+      "bundledIgnored": false,
+      "description": "Explicit v2 pool state file path (otherwise derived from AGB_POOLS_DIR or AGB_QUOTA_STATE)."
+    },
+    {
+      "name": "AGB_QUOTA_STATE",
+      "group": "pools-and-quota",
+      "default": "derived",
+      "bundledIgnored": false,
+      "description": "Explicit shared quota state file path; the v2 and lock paths are derived from it when not set."
+    },
+    {
+      "name": "AGB_QUOTA_TIMEOUT_MS",
+      "group": "pools-and-quota",
+      "default": "unset (wait for reset)",
+      "bundledIgnored": false,
+      "description": "Maximum milliseconds a ticket waits for a quota reset before failing."
+    },
+
+    {
+      "name": "AGB_SIDECAR_PORT",
+      "group": "sidecar",
+      "default": "3333",
+      "bundledIgnored": false,
+      "description": "Default port for agb sidecar; --port overrides it."
+    },
+    {
+      "name": "ANTIGRAVITY_SIDECAR_WEB_PORT",
+      "group": "sidecar",
+      "default": "unset (launcher port 3333)",
+      "bundledIgnored": false,
+      "description": "Selects jetski mode in the sidecar launcher and sets its port.",
+      "security": "Setting it disables token auth on the sidecar dashboard and event stream: any local client can read run data."
+    },
+
+    {
+      "name": "AGB_ARTIFACT_DIR",
+      "group": "paths",
+      "default": "active brain dir, else <repo>/.booster",
+      "bundledIgnored": false,
+      "description": "Where agb writes plan artifacts."
+    },
+    {
+      "name": "AGB_BRAIN_DIR",
+      "group": "paths",
+      "default": "~/.gemini/antigravity/brain",
+      "bundledIgnored": false,
+      "description": "Antigravity brain directory searched for plans."
+    },
+    {
+      "name": "AGB_CALIBRATION_DIR",
+      "group": "paths",
+      "default": "the plugin's docs/calibration/",
+      "bundledIgnored": false,
+      "description": "Where agb probe appends its probe-<day>.md calibration file."
+    },
+    {
+      "name": "AGB_EXEC_CACHE_DIR",
+      "group": "paths",
+      "default": "under AGB_HOME_DIR",
+      "bundledIgnored": false,
+      "description": "Cache directory for authenticated executables."
+    },
+    {
+      "name": "AGB_EXEC_LOCKS_DIR",
+      "group": "paths",
+      "default": "under AGB_HOME_DIR",
+      "bundledIgnored": false,
+      "description": "Directory for executable lock records; stale locks with a dead PID are recovered."
+    },
+    {
+      "name": "AGB_HOME_DIR",
+      "group": "paths",
+      "default": "the OS home directory",
+      "bundledIgnored": false,
+      "description": "Home directory override for agb's per-user state."
+    },
+
+    {
+      "name": "AGB_MOCK_CONTAINMENT_MECHANISM",
+      "group": "internal/test-only",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Test double for kernel containment detection."
+    },
+    {
+      "name": "AGB_MOCK_CONTAINMENT_UNAVAILABLE",
+      "group": "internal/test-only",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Test double: report kernel containment unavailable."
+    },
+    {
+      "name": "AGB_MOCK_WIN_CANARY",
+      "group": "internal/test-only",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Test double for the Windows sandbox canary path."
+    }
+  ],
+  "ignore": []
+}

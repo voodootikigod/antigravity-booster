@@ -1,0 +1,32 @@
+| Command | Arguments | Description |
+| --- | --- | --- |
+| agb bootstrap | [--force] [--force-reinstall] | wire ADLC skills into ~/.gemini/skills (aliases: setup, install) |
+| agb brains | — | list Antigravity plan artifacts (GUI + agy sessions) |
+| agb doctor | — | verify your environment and tools |
+| agb import-brain | &lt;id&gt; &lt;repo&gt; | DEPRECATED: raw one-shot conversion (use agb plan) |
+| agb migrate | [--rollback] | move an npm-global/checkout install onto the native agy plugin, or roll it back |
+| agb plan | &lt;id &#124; spec.md&gt; &lt;repo&gt; | compile an Antigravity brain plan or spec file into plan.json |
+| agb pool | drain [repo] | safely drain active leases and reset coordinator |
+| agb preflight | &lt;plan.json&gt; | plan-time gates: scope overlap + coldstart |
+| agb probe | [widths] | measure pool concurrency/latency, print JSON lines |
+| agb review | [repo] [ref] | read-only lens fleet over a diff, loop-until-dry |
+| agb run | &lt;plan.json&gt; | execute a ticket DAG (build → gate → prosecute → merge) |
+| agb sidecar | [repo] | launch the HTTP server for the Antigravity Sidecar UI |
+| agb status | [repo] | render the live dashboard for a repo's current run |
+| agb sweep | &lt;sweep.json&gt; | same operation × many targets, then run |
+| agb tui | — | Removed. Use agb sidecar instead. |
+| agb validate | &lt;plan&gt; | validate a plan file without running anything |
+| agb help &#124; --help &#124; -h [command] | — | print usage, or one command’s usage |
+| agb --version &#124; -v &#124; version | — | print the installed version |
+
+| Global flag | Argument | Description |
+| --- | --- | --- |
+| --project | &lt;name&gt; | forwarded as the agy project for the sessions the command starts |
+
+| Alias | Runs |
+| --- | --- |
+| agb setup | agb bootstrap |
+| agb install | agb bootstrap |
+| agb skills install&#124;setup&#124;bootstrap | agb bootstrap |
+
+Exit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.

@@ -1,6 +1,16 @@
 ---
 title: "agb bootstrap"
-placeholder: true
+description: "Install or refresh the ADLC companion plugin, skills and the agb terminal shim."
 ---
 
-This page is being written.
+`agb bootstrap` installs or repairs the companion ADLC plugin, wires the ADLC skills into `~/.gemini/skills` and installs the `~/.local/bin/agb` terminal shim. It is safe to re-run.
+
+## Synopsis
+
+<include>../../../../generated/cli-bootstrap.mdx</include>
+
+## Flags
+
+- `--force` (or `-f`) and `--force-reinstall` are passed to the bootstrap routine ([bootstrap dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L293-L296)). `--force-reinstall` replaces an existing companion plugin or a modified shim.
+
+The aliases `agb setup`, `agb install` and `agb skills install|setup|bootstrap` run the same command. Bootstrap does not install the sidecar; that is opt-in with [`agb sidecar`](/docs/reference/cli/sidecar). The full walkthrough is in [Bootstrap](/docs/getting-started/bootstrap).

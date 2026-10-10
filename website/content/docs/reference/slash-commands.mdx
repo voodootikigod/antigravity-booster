@@ -1,6 +1,16 @@
 ---
 title: "Slash commands"
-placeholder: true
+description: "The /agb-* commands the plugin adds to Antigravity, generated from commands/*.md."
 ---
 
-This page is being written.
+The plugin ships one slash command per Markdown file in [`commands/`](https://github.com/voodootikigod/antigravity-booster/blob/main/commands). Each command tells the agent to run the `~/.local/bin/agb` terminal shim with the user's arguments, so every slash command is a thin wrapper around the [CLI](/docs/reference/cli) command of the same name. The table is generated from each file's frontmatter and its H1 usage line.
+
+<include>../../../generated/slash-commands.mdx</include>
+
+## How they run
+
+- The agent runs `~/.local/bin/agb <command> ...` from the user's workspace, passing arguments through unchanged, and reports the output and exit code (0 pass, 2 gate failure or findings, 1 usage or internal error) ([agb-run instructions](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/commands/agb-run.md#L12-L20)).
+- If the shim is missing, the agent stops and asks the user to bootstrap once from a terminal ([missing shim](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/commands/agb-run.md#L22-L28)). See [Bootstrap](/docs/getting-started/bootstrap).
+- When the `agb` MCP server is connected, the agent may call the matching MCP tool instead (see [MCP tools](/docs/reference/mcp-tools)).
+
+Slash commands run in the interactive session; see [Headless and MCP](/docs/guides/headless-and-mcp) for print mode.

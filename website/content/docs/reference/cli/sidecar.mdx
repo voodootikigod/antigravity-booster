@@ -1,6 +1,22 @@
 ---
 title: "agb sidecar"
-placeholder: true
+description: "Launch the local HTTP server behind the Antigravity Sidecar dashboard."
+claims: [C11]
 ---
 
-This page is being written.
+`agb sidecar` starts the dashboard server for a repository and registers it with Antigravity.
+
+## Synopsis
+
+<include>../../../../generated/cli-sidecar.mdx</include>
+
+## Arguments and flags
+
+- `repo` is optional and defaults to the current directory ([C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L386-L387)).
+- `--port <port>` sets the port; `AGB_SIDECAR_PORT` is the default source and `3333` the fallback. Any other flag, or `--port` without a value, exits 1 ([flag parsing](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L369-L384), [port default](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L394-L398)).
+
+## Behavior
+
+The server is started with a random 16-byte hex token ([token](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L399-L400)). It writes a sidecar plugin manifest into `AGB_PLUGIN_DIR`, or into `~/.gemini/agb-sidecar-plugin-<pid>-<port>` when that is unset, and refuses to overwrite an existing manifest ([manifest directory](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L408-L414)).
+
+Security, the token URL and the `ANTIGRAVITY_SIDECAR_WEB_PORT` caveat are covered in the [Sidecar dashboard guide](/docs/guides/sidecar-dashboard) and [Security](/docs/reference/security).
