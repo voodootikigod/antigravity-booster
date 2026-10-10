@@ -1,0 +1,16 @@
+{
+  "body": "DIAGNOSTIC draft PR, never merged. On macOS CI, test/hook-runner.test.mjs 'child ignoring SIGTERM is escalated to SIGKILL...' intermittently sees the hook-runner exit null/SIGKILL at ~3.2s. Add test/fixtures/kill-tracer.cjs (loaded via NODE_OPTIONS=--require) that wraps process.kill, ChildProcess.prototype.kill and child_process spawn/exec variants (flagging kill/pkill invocations), appending JSON lines {ts,pid,ppid,target,signal,stack} to $KILL_TRACE_DIR/<pid>.jsonl and recording each spawned child's pid (pgid when detached). Add .github/workflows/macos-sigkill-probe.yml (pull_request on the two probe files, macos-latest, contents: read, SHA-pinned actions) that runs the full root suite (node --test test/*.test.mjs) 15 times with the tracer and ps -axo pid,ppid,pgid,command snapshots, never failing early, then prints which runs failed the test and every SIGKILL / negative-pid kill whose target matches a hook-runner pid or pgid. Validate YAML with npx --yes yaml@2 valid; root npm test must stay green. Never touch lib/lock.mjs, lib/gates.mjs, .adlc/config.json, CODEOWNERS.",
+  "edges": [],
+  "id": "T-MACOS-SIGKILL-PROBE",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    ".github/workflows/macos-sigkill-probe.yml",
+    "test/fixtures/kill-tracer.cjs"
+  ],
+  "title": "Diagnostic macOS probe: find who SIGKILLs the hook-runner in test/hook-runner.test.mjs"
+}

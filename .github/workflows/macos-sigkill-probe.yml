@@ -1,0 +1,103 @@
+# DIAGNOSTIC ONLY (T-MACOS-SIGKILL-PROBE): never merged. Hunts the intermittent
+# macOS SIGKILL of the hook-runner in test/hook-runner.test.mjs ("child ignoring
+# SIGTERM is escalated to SIGKILL...") by running the full root suite 15 times
+# with test/fixtures/kill-tracer.cjs preloaded into every node process.
+name: macOS SIGKILL probe
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/macos-sigkill-probe.yml"
+      - "test/fixtures/kill-tracer.cjs"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - name: Run the full suite 15x with the kill tracer
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          OUT="$RUNNER_TEMP/probe"
+          mkdir -p "$OUT"
+          for i in $(seq 1 15); do
+            RUN="$OUT/run-$i"
+            mkdir -p "$RUN/trace"
+            ( while true; do { date +%s%3N 2>/dev/null || date +%s; ps -axo pid,ppid,pgid,command; echo ---; } >> "$RUN/ps.txt"; sleep 0.5; done ) &
+            PS_PID=$!
+            KILL_TRACE_DIR="$RUN/trace" NODE_OPTIONS="--require=$GITHUB_WORKSPACE/test/fixtures/kill-tracer.cjs" \
+              env -u ADLC_MANIFEST_KEY node --test test/*.test.mjs > "$RUN/test.log" 2>&1
+            echo "$?" > "$RUN/exit"
+            kill "$PS_PID" 2>/dev/null; wait "$PS_PID" 2>/dev/null
+            echo "run $i exit $(cat "$RUN/exit")"
+          done
+          exit 0
+      - name: Report
+        if: always()
+        shell: bash
+        run: |
+          node - "$RUNNER_TEMP/probe" <<'JS'
+          const fs = require('fs'), path = require('path');
+          const root = process.argv[2];
+          const runs = fs.readdirSync(root).filter((d) => d.startsWith('run-')).sort((a, b) => +a.slice(4) - +b.slice(4));
+          const failed = [];
+          for (const r of runs) {
+            const dir = path.join(root, r);
+            const log = fs.existsSync(path.join(dir, 'test.log')) ? fs.readFileSync(path.join(dir, 'test.log'), 'utf8') : '';
+            const hit = log.split('\n').some((l) => /(not ok|✖).*child ignoring SIGTERM/.test(l));
+            if (hit) failed.push(r);
+            const recs = [];
+            const tdir = path.join(dir, 'trace');
+            for (const f of fs.existsSync(tdir) ? fs.readdirSync(tdir) : []) {
+              for (const line of fs.readFileSync(path.join(tdir, f), 'utf8').split('\n')) {
+                if (line) { try { recs.push(JSON.parse(line)); } catch {} }
+              }
+            }
+            // hook-runner pids from spawn records; pgids from spawn records + ps snapshots.
+            const pids = new Set(), pgids = new Set();
+            for (const x of recs) {
+              if (x.type === 'spawn' && x.childPid && (x.args || []).some((a) => /hook-runner\.sh/.test(a))) {
+                pids.add(x.childPid); if (x.pgid) pgids.add(x.pgid);
+              }
+            }
+            const ps = fs.existsSync(path.join(dir, 'ps.txt')) ? fs.readFileSync(path.join(dir, 'ps.txt'), 'utf8') : '';
+            for (const l of ps.split('\n')) {
+              const m = l.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*hook-runner\.sh.*)$/);
+              if (m) { pids.add(+m[1]); pgids.add(+m[3]); }
+            }
+            const matches = recs.filter((x) => {
+              if (x.type !== 'kill' && x.type !== 'kill-cmd') return false;
+              const targets = [].concat(x.target ?? []).map(Number);
+              const sig = String(x.signal);
+              const interesting = /KILL|^9$/.test(sig) || targets.some((t) => t < 0 || t === 0);
+              const hits = targets.some((t) => pids.has(t) || pids.has(-t) || pgids.has(-t) || t === 0) || x.type === 'kill-cmd';
+              return interesting && hits;
+            });
+            console.log(`\n=== ${r}: exit ${fs.readFileSync(path.join(dir, 'exit'), 'utf8').trim()} test458=${hit ? 'FAILED' : 'ok'} records=${recs.length} hookRunnerPids=${pids.size} pgids=${[...pgids].join(',')}`);
+            for (const m of matches) console.log(JSON.stringify(m));
+            if (hit) {
+              const ctx = log.split('\n'); const i = ctx.findIndex((l) => /child ignoring SIGTERM/.test(l));
+              console.log(ctx.slice(Math.max(0, i - 5), i + 25).join('\n'));
+            }
+          }
+          console.log(`\nRuns that failed test 458: ${failed.length ? failed.join(', ') : 'none'}`);
+          JS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: sigkill-probe
+          path: ${{ runner.temp }}/probe
+          retention-days: 7
