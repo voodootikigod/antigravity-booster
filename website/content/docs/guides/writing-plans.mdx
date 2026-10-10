@@ -48,9 +48,9 @@ These are checked by `validatePlan`, shared by `agb validate`, `agb run` and the
 | `scope` is a non-empty array of globs | An empty scope would disable the out-of-scope check ([scope and rails](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L291-L312)) |
 | `rails` (optional) are valid pathspecs | Paths the ticket must not edit |
 | `tier` is `cheap`, `mid` or `frontier` (default `mid`) | Selects the candidate models |
-| `pool_hint` is `gemini`, `claude`, `claude-gpt`, `gpt-oss` or `auto` | Filters the tier's candidates; the combination must leave at least one ([tier/hint check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L313-L321)) |
+| `pool_hint` is `gemini`, `claude`, `claude-gpt`, `gpt-oss` or `auto` | Filters the tier's candidates; the combination must leave at least one ([tier/hint check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L313-L321)). `gpt-oss` passes the enum check but no tier has a GPT-OSS candidate, so it is always rejected |
 
-<Callout type="warn" title="Tier and hint combinations">The `cheap` and `mid` tiers contain only Gemini models, so `tier: "cheap"` with `pool_hint: "claude"` is rejected at validation time ([tier candidates](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L80-L100), [tierCandidates](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1302-L1314)). Claude and GPT-OSS builders are only reachable through `frontier` (`claude-sonnet-4-6`, `claude-opus-4-6-thinking`).</Callout>
+<Callout type="warn" title="Tier and hint combinations">The `cheap` and `mid` tiers contain only Gemini models, so `tier: "cheap"` with `pool_hint: "claude"` is rejected at validation time ([tier candidates](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L80-L100), [tierCandidates](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1302-L1314)). Claude builders are only reachable through `frontier` (`claude-sonnet-4-6`, `claude-opus-4-6-thinking`). No tier lists a GPT-OSS model, so `pool_hint: "gpt-oss"` fails validation with every tier; GPT-OSS appears only as a prosecutor ([PROSECUTORS](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L108)).</Callout>
 
 ## Edges
 
