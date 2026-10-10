@@ -174,6 +174,16 @@ test('item 6: AGB_CALIBRATION_DIR overrides the default probe dir', () => {
   assert.equal(existsSync(join(cwd, 'docs')), false, 'default dir must not be used when overridden');
 });
 
+test('item 6: empty AGB_CALIBRATION_DIR falls back to <cwd>/docs/calibration', () => {
+  const cwd = join(TMP, 'probe-cwd-empty');
+  mkdirSync(cwd, { recursive: true });
+  const env = { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGB_QUOTA_STATE: join(TMP, 'pools-probe.json'), AGB_CALIBRATION_DIR: '' };
+  const r = spawnSync(process.execPath, [AGB_BIN, 'probe', '2'], { cwd, env, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(readdirSync(cwd), ['docs'], 'empty AGB_CALIBRATION_DIR must not write into the bare cwd');
+  assert.equal(readdirSync(join(cwd, 'docs', 'calibration')).length, 1);
+});
+
 test('item 6: probe help text names the default calibration dir', () => {
   const out = execFileSync(process.execPath, [AGB_BIN, 'help', 'probe'], { encoding: 'utf8' });
   assert.match(out, /AGB_CALIBRATION_DIR/);
