@@ -19,7 +19,7 @@ In order ([`bootstrap()` in lib/bootstrap.mjs](https://github.com/voodootikigod/
 3. **Installs the `adlc-antigravity` companion plugin** from the vendored, integrity-pinned release tarball ([L357](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L357)). It supplies the ADLC doctrine skills and the rails-guard hook.
 4. **Installs the `antigravity-booster` plugin itself** ([L363](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L363)).
 5. **Writes the terminal shim** `~/.local/bin/agb` ([L372](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L372)). The shim's write rules are described under [Installation](/docs/getting-started/installation#how-the-shim-behaves).
-6. Prints `bootstrap complete!`, the hint `export ADLC_PROVIDER=agy` (which runs `@adlc` tools on Antigravity quota), and how to start the sidecar.
+6. Prints `bootstrap complete!`, the hint `export ADLC_PROVIDER=agy` (which runs `@adlc` tools on Antigravity quota), and, unless it is running from an `npx` temporary install, a hint for starting the sidecar (`agb sidecar <repo-path>`, [L390](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L390)).
 
 If any step fails, bootstrap keeps going and exits with code `1` at the end ([L396](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L396)).
 
