@@ -1,0 +1,15 @@
+{
+  "body": "Strengthen test/lock-reclaim.test.mjs so three surviving mutants of lib/lock.mjs reclaim are killed: (1) removing the .reclaim mutex dir before rmSync(lockDir) — add a test hooking fs.rmSync asserting the mutex dir exists when lockDir is deleted; (2) dropping the token comparison in the under-mutex re-read — add a test where the holder is swapped for a different-token, also-dead holder after the first probe and reclaim must abort leaving it intact; (3) dropping the isAlive re-probe — add a pid-reuse test where the same-token pid reports alive on the second probe and reclaim must abort. Hooks via process.kill/fs + syncBuiltinESMExports, no machine dependencies. Prove each test fails against its mutant (LOCK_MODULE_UNDER_TEST) and run env -u ADLC_MANIFEST_KEY npm test green. No lib/ changes.",
+  "edges": [],
+  "id": "T-LOCK-RECLAIM-TESTS",
+  "rails": [
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS",
+    "lib/lock.mjs"
+  ],
+  "scope": [
+    "test/lock-reclaim.test.mjs"
+  ],
+  "title": "Pin the stale-lock reclaim critical section with mutation-killing tests"
+}

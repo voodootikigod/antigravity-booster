@@ -98,3 +98,81 @@ test('a leftover reclaim mutex makes reclaim fail safe with "being reclaimed"', 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// Run fn with process.kill / fs hooks installed, restoring them afterwards.
+function withHooks(hooks, fn) {
+  const saved = hooks.map(([owner, name]) => [owner, name, owner[name]]);
+  for (const [owner, name, impl] of hooks) owner[name] = impl(owner[name]);
+  syncBuiltinESMExports();
+  try { return fn(); } finally {
+    for (const [owner, name, orig] of saved) owner[name] = orig;
+    syncBuiltinESMExports();
+  }
+}
+
+test('the reclaim mutex is still held when the stale lock dir is deleted', () => {
+  const { repo, lockDir } = staleRepo();
+  const reclaimDir = `${lockDir}.reclaim`;
+  const observed = [];
+  let release;
+  try {
+    withHooks([[fs, 'rmSync', (real) => function (p, ...rest) {
+      if (p === lockDir) observed.push(existsSync(reclaimDir));
+      return real.call(fs, p, ...rest);
+    }]], () => { release = acquireRepoLock(repo, { runId: 'reclaimer' }); });
+    assert.deepEqual(observed, [true],
+      'rmSync(lockDir) must run exactly once, while the reclaim mutex dir still exists');
+    assert.equal(existsSync(reclaimDir), false, 'reclaim mutex dir must be cleaned up afterwards');
+  } finally {
+    release?.();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('reclaim aborts when the holder changed to a different, also-dead holder before the mutex re-read', () => {
+  const { repo, lockDir } = staleRepo();
+  const OTHER_DEAD = DEAD_PID + 2;
+  const replacement = { pid: OTHER_DEAD, runId: 'other', token: 'other-token' };
+  let swapped = false;
+  try {
+    withHooks([[process, 'kill', (real) => function (p, sig) {
+      // After our first liveness probe of the stale holder, another reclaimer
+      // installs its own lock and dies too (different token, dead pid).
+      if (!swapped && p === DEAD_PID) {
+        swapped = true;
+        writeFileSync(join(lockDir, 'meta.json'), JSON.stringify(replacement));
+      }
+      return real.call(process, p, sig);
+    }]], () => {
+      assert.throws(() => acquireRepoLock(repo, { runId: 'late' }), /reclaimed by another run/);
+    });
+    assert.equal(swapped, true);
+    assert.equal(JSON.parse(fs.readFileSync(join(lockDir, 'meta.json'), 'utf8')).token, 'other-token',
+      'a lock whose token differs from the dead snapshot must not be deleted');
+    assert.equal(existsSync(`${lockDir}.reclaim`), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('reclaim aborts when the same-token holder pid is alive again at the mutex re-read (pid reuse)', () => {
+  const { repo, lockDir } = staleRepo();
+  let probes = 0;
+  try {
+    withHooks([[process, 'kill', (real) => function (p, sig) {
+      if (p === DEAD_PID) {
+        probes += 1;
+        if (probes > 1) return true; // pid reused: now reports alive
+      }
+      return real.call(process, p, sig);
+    }]], () => {
+      assert.throws(() => acquireRepoLock(repo, { runId: 'late' }), /reclaimed by another run/);
+    });
+    assert.equal(probes, 2, 'the pid must be re-probed under the mutex');
+    assert.equal(JSON.parse(fs.readFileSync(join(lockDir, 'meta.json'), 'utf8')).token, 'stale-token',
+      'a lock whose pid is alive again must not be deleted');
+    assert.equal(existsSync(`${lockDir}.reclaim`), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
