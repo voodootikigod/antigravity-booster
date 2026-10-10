@@ -1,6 +1,15 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-10T14:48:36.058Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "7ad99d9180e6a40ab40fa95ca210d8ef4b038b7e2954fdc6566e974d82c8491f",
+    "ticketHash": "06e68aec5e2f431a912b7de12d35fa64dd63d499b17ce0e2fb9780c229c39684",
+    "version": 1
+  },
   "body": "Fix KNOWN DEFECT #54 in lib/lock.mjs: when two processes reclaim the same stale (dead-pid) run lock, the rename-aside reclaim leaves the canonical path empty, so a third caller (or a late reclaimer) can acquire and two runs both win. Fix: serialize reclaim through a separate atomic mutex, mkdir of `${lockDir}.reclaim`; inside it re-read the meta and only delete the canonical lock dir if the token still matches the dead snapshot and the pid is still dead; always remove the mutex in finally. EEXIST on the mutex throws a clear 'being reclaimed by another run ... remove <dir> if no reclaim is in progress' error. Rewrite the KNOWN DEFECT header, residual-risk note and reclaim comments to describe the protocol and its liveness caveat (a reclaimer killed while holding the mutex leaves the dir; later reclaims fail safe until it is removed). Tests in test/lock-reclaim.test.mjs: a deterministic hook-based interleaving (patch process.kill / fs.readFileSync + syncBuiltinESMExports) asserting exactly one winner and no leftover .reclaim dir; a leftover .reclaim dir makes acquire throw 'being reclaimed'. Prove the interleaving test fails against the pre-fix lib/lock.mjs. test/security.test.mjs stale-reclaim stress test must keep passing. Run env -u ADLC_MANIFEST_KEY npm test.",
   "category": "bugfix",
+  "completed": true,
   "edges": [],
   "id": "T-LOCK-RECLAIM-RACE",
   "rails": [

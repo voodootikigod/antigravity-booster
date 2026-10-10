@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-10T14:48:37.092Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "5a08db3a2019f89ec6dd590a029e96fe88b278731069926f5ac01d69ceec3244",
+    "ticketHash": "4dbd09a3974cded893dbcede26b92fed01bb80d12e0dd67eea7f199ddfadfb38",
+    "version": 1
+  },
   "body": "Two timing fixes. (1) lib/pools.mjs withLockSync/withLock armed the deadline before getProcessStartTime(process.pid), which on darwin shells out to ps and can consume a short (50ms) timeout before any lock wait. Compute the deadline after the lookup; add a startTimeLookup option seam and a test that injects a lookup slower than timeoutMs and asserts the lock is still acquired. (2) bin/hook-runner.sh watchdog caches pidfile contents before SIGTERM and SIGKILLs 1s later after only kill -0, so a reaped and recycled pid can be killed. Re-read pidfiles before SIGKILL and kill only if unchanged; remove the child pidfile right after wait returns (stdin pidfile already was). Deterministic regression test in test/hook-runner.test.mjs: victim process records SIGTERM to a marker, test then removes the pidfile, asserts victim survives; runs under /bin/sh, dash, bash. Rebuild dist if shipped code changes. Done when env -u ADLC_MANIFEST_KEY npm test is green.",
+  "completed": true,
   "edges": [],
   "id": "T-MACOS-TIMING-FIXES",
   "rails": [
