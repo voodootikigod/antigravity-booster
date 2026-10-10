@@ -1,7 +1,43 @@
 ---
 title: "Introduction"
 description: "Why agb exists and how the docs are organized"
-placeholder: true
 ---
 
-This page is being written.
+`antigravity-booster` (`agb`) makes Google Antigravity (the `agy` CLI and the desktop app) work for large parallel build-outs. It applies the [Agentic Development Lifecycle (ADLC)](https://github.com/voodootikigod/adlc/blob/main/ADLC.md) on top of Antigravity: deterministic orchestration, scheduling that knows about quota pools, cross-model prosecution, and validation built from gates, covering everything from the plan to the merge.
+
+## Why
+
+Antigravity gives you a generous model quota (not an infinite one) split across **independent per-model pools**. Running work in parallel by hand is slow, and unsupervised agents burn through quota fast. `agb` turns that quota into a disciplined fleet:
+
+- **Code handles control flow, models handle judgment.** A Node scheduler dispatches `agy` workers, and no model ever decides the order work runs in.
+- **Quota pools multiply concurrency.** The Gemini Flash, Gemini Pro and Claude pools throttle and meter independently. The scheduler holds a semaphore per pool and routes tiers across them. See [Pools and tiers](/docs/concepts/pools-and-tiers).
+- **Cross-model prosecution.** A model from a different family than the builder prosecutes each diff under a refute charter with a JSON verdict contract, and `adlc hollow-test` mutation evidence backs it up. Critical and high findings block the merge. See [Prosecution](/docs/concepts/prosecution).
+- **Deterministic gates.** Build and test commands gate every ticket in its own worktree, then again after the merge on the base branch. A failed post-merge gate reverts the merge. See [Gates and sandboxing](/docs/concepts/gates-and-sandboxing).
+- **Two-strike regeneration, informed by `adlc flail-detector`.** A worker that is flailing gets regenerated, not coached. "Flailing" is a diagnosed signal (repeated errors, scope violations, edit churn), not a raw failure count.
+- **Frozen rails.** Paths a ticket declares as `rails` cannot be edited while it is in flight. This is enforced in-session by the policy guard and at merge by `adlc rails-guard`. See [Rail enforcement](/docs/concepts/rail-enforcement).
+
+Planning stays in Antigravity. `agb plan` compiles the brain artifact (or a Markdown spec) Antigravity produces into a gated `plan.json`, and `agb run` executes it. See [Plan boundary](/docs/concepts/plan-boundary).
+
+<Mermaid
+  chart={`flowchart LR
+  A[Antigravity plan mode / spec.md] -->|agb plan| B[plan.json]
+  B -->|agb run| C[Per-ticket worktrees]
+  C --> D[Gates]
+  D --> E[Cross-model prosecution]
+  E --> F[Merge + post-merge gate]`}
+/>
+
+## How these docs are organized
+
+<Cards>
+  <Card title="Getting Started" href="/docs/getting-started/installation" description="Install the plugin, bootstrap, run your first plan, and verify your environment." />
+  <Card title="Concepts" href="/docs/concepts/overview" description="The four layers, quota pools, gates, prosecution and rail enforcement." />
+  <Card title="Guides" href="/docs/guides/walkthrough" description="Task-oriented walkthroughs: writing plans, sweeps, review, the sidecar dashboard." />
+  <Card title="Reference" href="/docs/reference/cli" description="Every command, flag, schema, environment variable and exit code." />
+  <Card title="Internals" href="/docs/internals/architecture" description="How agb is built: run lifecycle, integration journal, plugin and migration." />
+  <Card title="Project" href="/docs/project/stability" description="Stability policy, contributing, releasing and design history." />
+</Cards>
+
+<Callout type="info" title="New here?">
+  Start with [Installation](/docs/getting-started/installation), then [Quickstart](/docs/getting-started/quickstart). If you already have the npm package installed, read [Upgrading from npm](/docs/getting-started/upgrading-from-npm).
+</Callout>

@@ -1,7 +1,102 @@
 ---
 title: "Installation"
 description: "Prerequisites (agy >= 1.2.6, Node >= 22.19.0), agy plugin install and the ~/.local/bin/agb shim"
-placeholder: true
+claims: [C1]
 ---
 
-This page is being written.
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+`agb` ships as a native Antigravity plugin. You install it with `agy`, then run bootstrap once to install the companion plugin and the `agb` terminal command.
+
+## Prerequisites
+
+| Requirement | Minimum | Where it is enforced |
+| --- | --- | --- |
+| Node.js | `>= 22.19.0` | `engines.node` in [package.json](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L48-L50) |
+| Antigravity CLI (`agy`) | `>= 1.2.6`, authenticated, on your `PATH` | `MIN_AGY_VERSION` in lib/doctor.mjs ([C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26)) |
+| git | any recent version | the target repository must be a git repo |
+| Sandbox | macOS `sandbox-exec`, or Linux `bwrap` (bubblewrap) | checked by [`agb doctor`](/docs/getting-started/verify) |
+
+The `agy` minimum exists because `agb` drives workers with `--output-format stream-json`. Older versions fail the doctor check with `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L47)).
+
+## Install
+
+<Steps>
+<Step>
+
+### Install the plugin from git
+
+```sh
+agy plugin install https://github.com/voodootikigod/antigravity-booster.git
+```
+
+You don't need `npm install`: the runtime ships prebuilt under `dist/`, and the `adlc-antigravity` companion plugin ships as a vendored release tarball.
+
+</Step>
+<Step>
+
+### Run bootstrap through the plugin launcher
+
+The `agb` command does not exist yet, so run bootstrap through the launcher inside the installed plugin:
+
+```sh
+/bin/sh "$HOME/.gemini/config/plugins/antigravity-booster/bin/node-launcher.sh" dist/agb.mjs bootstrap
+```
+
+[Bootstrap](/docs/getting-started/bootstrap) installs the integrity-pinned `adlc-antigravity` plugin and writes the terminal shim.
+
+</Step>
+<Step>
+
+### Put `~/.local/bin` on your PATH
+
+Bootstrap writes the terminal shim to `~/.local/bin/agb` with mode `0755` ([`installTerminalShim`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plugin-paths.mjs#L297-L299), called from [lib/bootstrap.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L372)). Make sure that directory is on your `PATH`:
+
+<Tabs items={['bash / zsh', 'fish']}>
+<Tab value="bash / zsh">
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+</Tab>
+<Tab value="fish">
+
+```sh
+fish_add_path ~/.local/bin
+```
+
+</Tab>
+</Tabs>
+
+The Antigravity slash commands (`/agb-run`, `/agb-doctor`, `/agb-migrate`, ...) tell the model to run `~/.local/bin/agb <subcommand>`, so they also depend on the shim.
+
+</Step>
+<Step>
+
+### Verify
+
+```sh
+agb doctor
+```
+
+See [Verify your setup](/docs/getting-started/verify) for what each check means.
+
+</Step>
+</Steps>
+
+## How the shim behaves
+
+- If the shim is missing, bootstrap writes it.
+- If it is already byte-identical, bootstrap leaves it alone (and fixes its mode if needed).
+- If it exists with different content, bootstrap prints a warning and skips it unless you pass `--force-reinstall` ([lib/plugin-paths.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plugin-paths.mjs#L302-L311)).
+
+<Callout type="info" title="npm is a secondary channel">
+  `npm install -g antigravity-booster` still works, but the plugin plus `~/.local/bin/agb` is the primary install. `agb doctor` warns when another `agb` on your `PATH` resolves somewhere other than the shim ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L281-L282)). To move an existing npm install onto the plugin, see [Upgrading from npm](/docs/getting-started/upgrading-from-npm).
+</Callout>
+
+## Next steps
+
+- [Bootstrap](/docs/getting-started/bootstrap): what bootstrap does and its flags.
+- [Quickstart](/docs/getting-started/quickstart): compile and run your first plan.

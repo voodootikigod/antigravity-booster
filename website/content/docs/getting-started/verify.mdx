@@ -1,7 +1,111 @@
 ---
-title: "Verify"
-description: "Each agb doctor check and its fix text"
-placeholder: true
+title: "Verify your setup"
+description: "agb doctor: every check, what it means, and the exact fix text"
+claims: [C1, C31]
 ---
 
-This page is being written.
+`agb doctor` checks your environment and prints one row per check:
+
+```text
+<name>                    | PASS   | <detail>                       | <fix>
+```
+
+The level is `PASS`, `WARN` or `FAIL`. Doctor exits `1` if any check is `FAIL`, or if a check itself throws (it then prints `Error check failed: <reason>` in place of a table row), and `0` otherwise. Warnings never change the exit code ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1229-L1265)).
+
+```sh
+agb doctor
+```
+
+## Checks
+
+The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1229-L1242)). Fix text is quoted verbatim from lib/doctor.mjs at v1.0.0.
+
+| Name | Levels | Fix text | Source |
+| --- | --- | --- | --- |
+| `Node.js` | pass / fail | `Upgrade Node.js to v18 or newer.` | [L20-L23](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L20-L23) |
+| `agy CLI` | pass / fail | Too old: `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` Unparseable version: `Ensure agy outputs standard SemVer version string.` Missing: `Install Google Antigravity CLI and ensure it is on PATH.` | [C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26), [L35-L54](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L35-L54) |
+| `agy Auth` | pass / fail | ``Run `agy login` to authenticate.`` | [L71-L75](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L71-L75) |
+| `adlc-antigravity plugin` | pass / warn / fail | See [plugin states](#adlc-antigravity-plugin) | [L151-L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L166) |
+| `adlc CLI` | pass / warn / fail | See [adlc CLI](#adlc-cli) | [L315-L354](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L315-L354) |
+| `Sandbox` | pass / fail | See [Sandbox](#sandbox) | [L1086-L1146](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1086-L1146) |
+| `Brain Dir` | pass / warn | `Run an agy session to initialize the brain directory.` (`AGB_BRAIN_DIR` overrides the default `~/.gemini/antigravity/brain`) | [L1150-L1154](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1150-L1154) |
+| `Ticket Store` | pass / warn / fail | See [Ticket store](#ticket-store) | [L1157-L1194](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1157-L1194) |
+| `Policy guard self-test` | pass / fail | ``Run `agb bootstrap --force-reinstall` and check hooks.log.`` | [L251](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L251) |
+| `agb install` | pass / warn | `prefer ~/.local/bin/agb (npm is a secondary channel)` | [L281-L282](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L281-L282) |
+| `Hook killswitch` | pass / warn | `Unset AGB_HOOK_DISABLE; the rails guard is bypassed while it is set.` | [L291-L292](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L291-L292) |
+| `Probe plugins` | pass / warn | ``Run `agy plugin uninstall <first probe>` for each probe plugin.`` | [L300-L301](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L300-L301) |
+
+<Callout type="info" title="Node version">
+  The doctor check passes on Node 18 or newer, but `agb` itself requires Node `>= 22.19.0` (`engines.node`, see [Installation](/docs/getting-started/installation#prerequisites)). Treat 22.19.0 as the real minimum.
+</Callout>
+
+### adlc-antigravity plugin
+
+Doctor evaluates the staged companion plugin under `~/.gemini/config/plugins/adlc-antigravity`. A failing state reports one of these values as its detail ([L151-L157](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L157)):
+
+| Detail | Fix text |
+| --- | --- |
+| `not-installed` | ``Run `agb bootstrap` to install the bundled plugin.`` |
+| `corrupt-manifest` | ``Run `agb bootstrap --force-reinstall`.`` |
+| `outdated-plugin` | ``Run `agb bootstrap` to upgrade to the bundled plugin.`` |
+| `corrupt-tree` | ``Run `agb bootstrap` to reinstall the pristine plugin.`` |
+| `incompatible-contract` | ``Run `agb bootstrap --force-reinstall` to install the bundled plugin.`` |
+
+When the plugin does not declare its contract (a "tolerant" state), doctor warns with `Upgrade the plugin to one that declares adlcContract 1.` ([L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L166)).
+
+### adlc CLI
+
+Doctor looks for `@adlc/cli` (`node_modules/.bin/adlc` in the current directory, or the resolved binary) and reports one of the following ([C31](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L325)):
+
+| Situation | Level | Fix text |
+| --- | --- | --- |
+| Package manifest authentication failed | fail | ``Repair or reinstall @adlc/cli (>= <MIN_ADLC_CLI_VERSION>).`` |
+| Not found (detail `not found (will be installed by bootstrap)`) | warn | ``Run `npm install @adlc/cli` or `npx agb bootstrap`.`` |
+| Version below the minimum | fail | ``Upgrade @adlc/cli to >= <MIN_ADLC_CLI_VERSION>.`` |
+| Execution failed | fail | ``Ensure @adlc/cli executable at <bin> has execute permissions and a valid Node interpreter.`` |
+| Binary resolved but could not be probed, with no path to report | warn | `adlc CLI is optional but recommended. Install it if you want local ADLC gate execution.` |
+
+Install `@adlc/cli` locally (`npm install @adlc/cli`), not globally. Contributors to this repository get it through `npm ci`.
+
+### Sandbox
+
+Gates run inside a kernel sandbox, and doctor checks the one for your platform ([`checkSandbox`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1086)). `AGB_SANDBOX_GATES=0` bypasses it and reports `bypassed via env`.
+
+| Platform | Detail | Level | Fix text |
+| --- | --- | --- | --- |
+| macOS | `sandbox-exec available` | pass | — |
+| macOS | `sandbox-exec missing or unusable` | fail | `macOS sandbox-exec is missing or unusable. Set AGB_SANDBOX_GATES=0 to bypass.` |
+| Linux | `bwrap available` | pass | — |
+| Linux (`bwrap_unusable`) | `bwrap unusable (namespace probe failed)` | fail | `Linux bubblewrap (bwrap) is installed but unusable (user namespaces may be disabled or restricted in container). Enable unprivileged user namespaces or set AGB_SANDBOX_GATES=0 to bypass.` |
+| Linux (`bwrap_missing`) | `bwrap missing` | fail | `Linux bubblewrap (bwrap) is missing. apt install bubblewrap or set AGB_SANDBOX_GATES=0 to bypass.` |
+| Windows | `bypassed via verified HMAC attestation` | pass | — |
+| Windows | `attestation rejected: <reason>` | fail | `Repair or update sandboxBypassAttestation in .adlc/config.json.` |
+| Windows | `malformed config: <error>` | fail | `Repair .adlc/config.json.` |
+| Other (and Windows without an attestation) | `unsupported platform: <platform>` | fail | `Sandbox is only supported on macOS, Linux, and Windows. Set AGB_SANDBOX_GATES=0 to bypass.` |
+
+On Linux, the probe classifies a failure by `kind` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1060-L1067)):
+
+- **`bwrap_missing`**: `bwrap` is not installed. Fallback mechanisms (`systemd-run`, `unshare`) are rejected because they provide insufficient filesystem isolation.
+- **`bwrap_unusable`**: `bwrap` is installed but its usability probe failed. User namespaces are usually disabled (for example `sysctl kernel.unprivileged_userns_clone=0`) or restricted inside a container.
+
+The other probe kinds are `sandbox_exec_unavailable` (macOS), `powershell_missing` (Windows), `unsupported_platform` and `mock_unavailable` (tests only).
+
+<Callout type="warn">
+  `AGB_SANDBOX_GATES=0` turns off sandboxing of gate commands entirely. Use it only on machines where you accept running gate commands unsandboxed. See [Gates and sandboxing](/docs/concepts/gates-and-sandboxing).
+</Callout>
+
+### Ticket store
+
+| Detail | Level | Fix text |
+| --- | --- | --- |
+| `both legacy and directory stores` | fail | ``The plugin fails closed when both exist. Run `adlc ticket store migrate` (or remove .adlc/tickets.json).`` |
+| `orphaned directory store (no .store.json)` | warn | ``Likely an interrupted projection — the next `agb plan` recovers it, or run `adlc ticket doctor`.`` |
+| `none (created on first projection)` | pass | — |
+| `store corruption: ...` | fail | ``Run `adlc ticket doctor` to diagnose and repair ticket store issues.`` |
+
+The conflict is detected by `detectTicketStoreBackend`, which returns `'both'` when `.adlc/tickets/` and the legacy `.adlc/tickets.json` both exist ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L176)). The plugin treats that state as fail-closed, so resolve it before running anything.
+
+## Next steps
+
+- [`agb doctor` reference](/docs/reference/cli/doctor)
+- [Environment variables](/docs/reference/environment)

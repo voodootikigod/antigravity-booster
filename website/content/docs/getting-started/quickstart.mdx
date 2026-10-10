@@ -1,7 +1,105 @@
 ---
 title: "Quickstart"
-description: "plan, run, status: artifacts and exit codes"
-placeholder: true
+description: "Plan in Antigravity, compile with agb plan, execute with agb run, watch with agb status"
+claims: [C10]
 ---
 
-This page is being written.
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+**You plan in Antigravity and execute with `agb`.** Planning stays where it already works: the desktop app's plan mode or a planning conversation in an `agy` session. Both write a brain artifact (`implementation_plan.md` under `~/.gemini/antigravity/brain/`). `agb` doesn't replace that phase. It compiles the artifact: treat `implementation_plan.md` as source and `plan.json` as its compiled output.
+
+This page assumes you have finished [Installation](/docs/getting-started/installation) and `agb doctor` passes.
+
+<Steps>
+<Step>
+
+### Compile a plan
+
+<Tabs items={['From a brain artifact', 'From a Markdown spec']}>
+<Tab value="From a brain artifact">
+
+```sh
+agb brains                       # list plan artifacts, newest first
+agb plan <brain-id> /abs/repo    # compile → gate → plan.json
+```
+
+</Tab>
+<Tab value="From a Markdown spec">
+
+```sh
+agb plan spec.md /abs/repo
+```
+
+</Tab>
+</Tabs>
+
+The compiler converts the plan with a frontier model, then runs it through the plan gates (structural checks, coldstart, parallax, and an advisory premortem). Any failure goes back into a fresh conversion rather than leaving you with invalid JSON. When findings survive that loop, the fix belongs in the *plan*: refine it in Antigravity, or edit the spec, and re-run `agb plan`. See [Plan boundary](/docs/concepts/plan-boundary).
+
+Useful flags: `--out <file>` (default `plan.json`), `--force` (overwrite an existing output file, which is refused otherwise), `--no-coldstart`, `--no-parallax`, `--no-premortem`.
+
+</Step>
+<Step>
+
+### Validate it (optional)
+
+A compiled plan has already passed validation. If you edited `plan.json` by hand, check it again:
+
+```sh
+agb validate plan.json
+```
+
+</Step>
+<Step>
+
+### Run it
+
+```sh
+agb run plan.json
+```
+
+Each ticket is built in its own worktree, gated, prosecuted by another model family, and merged in order. The final report is printed to stdout as JSON.
+
+</Step>
+<Step>
+
+### Watch it
+
+From another terminal:
+
+```sh
+agb status /abs/repo             # one-shot snapshot of the current run
+agb status /abs/repo --watch     # refresh in place (--interval <ms>, default 1000)
+```
+
+For a richer view, start the [sidecar dashboard](/docs/guides/sidecar-dashboard) with `agb sidecar /abs/repo`.
+
+</Step>
+</Steps>
+
+## Exit codes
+
+The general rule is `0` = pass, `2` = gate failure or findings, `1` = usage or internal error ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L69)). For the commands on this page:
+
+| Command | `0` | `1` | `2` |
+| --- | --- | --- | --- |
+| `agb plan` | compiled, `plan.json` written | missing arguments, output exists without `--force`, or quota telemetry unavailable from `agy` ([L195-L210](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L195-L210)) | blocking findings, plan not compiled ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L229)) |
+| `agb validate` | `plan valid` | unreadable or malformed file (internal error) | plan invalid ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L290)) |
+| `agb run` | every ticket succeeded | plan invalid ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L128)) | one or more tickets failed ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L132)) |
+| `agb status` | snapshot printed | the removed TUI flag was passed (use `agb sidecar`) ([L269-L272](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L269-L272)) | — (with `--watch`, the code comes from the watch loop) |
+
+<Callout type="info">
+  An invalid plan exits with `1` from `agb run` but with `2` from `agb validate`. For `validate`, an invalid plan is the finding it exists to report. For `run`, it is a usage error.
+</Callout>
+
+The full table for every command is in [Exit and error codes](/docs/reference/exit-and-error-codes).
+
+<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 4)">
+  In v1.0.0, `agb --help` prints a literal `\n` (backslash-n) before the "Exit codes" summary line and after the banner instead of a line break, because the strings in bin/agb.mjs escape the newline twice ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L62)). The same literal `\n` ends the `agb: unknown command '<cmd>'` error ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L107)). This is cosmetic. The codes listed above are correct.
+</Callout>
+
+## Next steps
+
+- [Writing plans](/docs/guides/writing-plans): hand-writing `plan.json` when you have no brain artifact.
+- [Walkthrough](/docs/guides/walkthrough): a complete worked example.
+- [Plan schema](/docs/reference/plan-schema): every field `agb validate` enforces.
