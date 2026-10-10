@@ -35,6 +35,21 @@ function routes(mode) {
     '/api/search?query=Design%20history': { status: 200, type: 'application/json', body: '[]' },
   };
   if (mode === 'pass') return ok;
+  if (mode === 'index-leak')
+    return {
+      ...ok,
+      // Only the section index URL (no trailing slash) leaks.
+      '/llms.txt': {
+        status: 200,
+        type: 'text/plain',
+        body: '- [Install](/docs/getting-started/installation)\n- [History](/docs/project/design-history)\n',
+      },
+      '/api/search?query=Design%20history': {
+        status: 200,
+        type: 'application/json',
+        body: JSON.stringify([{ url: '/docs/project/design-history' }]),
+      },
+    };
   if (mode === 'og-status')
     return {
       ...ok,
@@ -147,4 +162,13 @@ test('check-site fails fast without a build', async () => {
   const r = await runCli(['--root', path.join(FIX, 'pass', 'website'), '--port', '4399']);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /run `npm run build` first/);
+});
+
+test('check-site flags the design-history section index leaking into search and llms.txt', async () => {
+  const r = await withServer('index-leak', (url) =>
+    runCli(['--base-url', url, '--root', path.join(FIX, 'pass', 'website')]),
+  );
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /\(c\) design-history result \/docs\/project\/design-history/);
+  assert.match(r.stderr, /\/llms\.txt: \(d\) contains design history/);
 });

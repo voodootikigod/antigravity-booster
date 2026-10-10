@@ -13,6 +13,8 @@ import { parseArgs } from './lib/args.mjs';
 
 const WEBSITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DESIGN_HISTORY = '/docs/project/design-history/';
+// Boundary-aware: matches the section index (no trailing slash) and every page under it.
+const DESIGN_HISTORY_RE = /\/docs\/project\/design-history(?=[/?#)\s]|$)/m;
 const READY_TIMEOUT_MS = 60_000;
 const FETCH_CONCURRENCY = 8;
 
@@ -123,7 +125,7 @@ export async function runChecks({ baseUrl, root }) {
         continue;
       }
       if (needResult && data.length === 0) errors.push(`${where}: (c) no results`);
-      const leaked = data.filter((r) => String(r?.url ?? '').includes(DESIGN_HISTORY));
+      const leaked = data.filter((r) => DESIGN_HISTORY_RE.test(String(r?.url ?? '')));
       if (leaked.length) errors.push(`${where}: (c) design-history result ${leaked[0].url}`);
     } catch (e) {
       errors.push(`${where}: (c) ${e.message}`);
@@ -138,7 +140,7 @@ export async function runChecks({ baseUrl, root }) {
     else {
       if (!body.includes('/docs/getting-started/installation'))
         errors.push('/llms.txt: (d) missing /docs/getting-started/installation');
-      if (body.includes(DESIGN_HISTORY)) errors.push('/llms.txt: (d) contains design history');
+      if (DESIGN_HISTORY_RE.test(body)) errors.push('/llms.txt: (d) contains design history');
     }
   } catch (e) {
     errors.push(`/llms.txt: (d) ${e.message}`);
