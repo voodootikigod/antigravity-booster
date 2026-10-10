@@ -1,7 +1,73 @@
 ---
 title: "Plan boundary"
 description: "Compile gates: spec-lint, coldstart, parallax, premortem, scope-overlap"
-placeholder: true
+claims: [C13]
 ---
 
-This page is being written.
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+The plan boundary is the point where a plan stops being prose and becomes an executable `plan.json`. `agb` does not author plans. You plan in Antigravity (plan mode or a planning conversation writes `implementation_plan.md` into a brain), or you write a local `spec.md`. `agb plan` treats that artifact as source and `plan.json` as a compiled output ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L3-L9)).
+
+```
+agb plan <brain-id-or-prefix | spec.md> <repo-path> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]
+```
+
+[C13](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L196) The full flag set is `--out`, `--force`, `--no-coldstart`, `--no-parallax` and `--no-premortem`. Without `--force`, `agb plan` refuses to overwrite an existing output file, because a hand-written plan may be sitting there ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L199-L203)). Each `--no-*` flag switches off one gate ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L215-L217)). Compiling needs live quota telemetry from `agy`; without it the command exits 1 before converting anything ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L206-L210)).
+
+## The compile pipeline
+
+<Steps>
+<Step>
+
+### Stage A: structural loop (deterministic, blocking)
+
+A model converts the plan into a ticket DAG. Then `validatePlan` checks the schema, ticket ids, edges, scopes, rails, tiers and `pool_hint` routability ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L242)), and `forecastOverlaps` runs the **scope-overlap gate**: any two tickets that can run at the same time (neither reaches the other through edges) must not declare overlapping scopes ([lib/preflight.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/preflight.mjs#L111-L124)). An overlap is a structural error with the remediation "repartition the files or add an edge" ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L619-L621)).
+
+These checks are free, so every failure is fed straight back to the converter, up to `maxAttempts` (3) conversions ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L631-L635)).
+
+</Step>
+<Step>
+
+### Stage B: coldstart and parallax (model, blocking)
+
+Two LLM gates run in parallel ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L643-L658)):
+
+- **coldstart** asks a fresh, read-only model on the cheap tier whether each ticket is executable by an agent that has only its `body` ([lib/preflight.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/preflight.mjs#L139)). Any gap blocks.
+- **parallax** interrogates each edge for contract ambiguity: several readers interpret the contract and a judge decides whether they diverge ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L498-L502)). A divergent edge blocks.
+
+Blocking findings get exactly **one** feedback re-conversion, then the gates run again ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L660-L668)). A gate that errors counts as blocking.
+
+</Step>
+<Step>
+
+### Premortem (model, advisory)
+
+[C13](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L670-L671) Premortem runs once on the surviving plan. It assumes the run already failed and lists likely causes. It is **advisory**: it never vetoes a compile. `agb plan` prints the causes with their likelihood after writing `plan.json` ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L239-L243)).
+
+</Step>
+<Step>
+
+### Projection and advisory tiers
+
+A blocking-free plan is projected into the ADLC ticket store (the `.adlc/tickets/` directory store, or the legacy `.adlc/tickets.json` in an unmigrated repo) so the plugin's rails hook and the `adlc` CLI see the same active tickets ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L198)). `adlc model-router` then cross-checks tiers and `adlc merge-forecast` sets `plan.concurrencyCap`. Both are advisory and degrade to a warning when unavailable ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L685-L704)).
+
+</Step>
+</Steps>
+
+## Outcomes
+
+| Result | Exit code | What to do |
+| --- | --- | --- |
+| Compiled | `0` | `plan.json` is written; next step is `agb run plan.json`. |
+| Blocking findings remain | `2` | Fix the **plan** (the brain plan in Antigravity, or your `spec.md`) and re-run `agb plan`. Do not hand-edit the compiled JSON ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L220-L229)). |
+| Usage, existing output, or no quota telemetry | `1` | Fix the invocation or your `agy` login. |
+
+## Where spec-lint fits
+
+`agb plan` does not run `spec-lint`. Lint the spec yourself before compiling, with `adlc spec-lint` from the ADLC toolkit (the same goes for a stand-alone `adlc premortem` or `adlc parallax` on the spec text). The compile gates above check the **ticket DAG**; spec-lint checks the **spec** that produced it.
+
+<Callout type="info" title="Gate strictness">
+By default, `plan.gate.build` and `plan.gate.test` must match `npm test` or `npm run <script>` ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L248-L258)). `AGB_STRICT_GATES=0` relaxes this ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L587)).
+</Callout>
+
+Hand-written plans skip the compiler but not validation: see [Writing plans](/docs/guides/writing-plans) and the [plan schema](/docs/reference/plan-schema).

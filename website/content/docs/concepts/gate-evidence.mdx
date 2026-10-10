@@ -1,7 +1,41 @@
 ---
 title: "Gate evidence"
 description: "gate-manifest record and verify"
-placeholder: true
 ---
 
-This page is being written.
+A log line saying a gate passed is a claim. **Gate evidence** is an append-only record of each gate outcome that can be checked later. `agb` writes it with the ADLC CLI's `gate-manifest` tool into the target repo's `.adlc/manifest.jsonl`, and anyone can rebuild the history from that file alone with `adlc gate-manifest verify`.
+
+## What agb records
+
+During `agb run`, the scheduler calls `adlc gate-manifest record <gate> --ticket <id> --data <json>` for these gates ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L947-L964)):
+
+| Gate name | When | `--data` |
+| --- | --- | --- |
+| `build` | After the build and test gates in the ticket worktree | `{ ok, strikes }` ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1956)) |
+| `prosecution` | After the prosecution loop | `{ verdict, findings, dryPasses }`, where `findings` is a count ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1973-L1977)) |
+| `post-merge-build` | After the gates in the integration worktree | `{ ok }` ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2244)) |
+| `rollback` | When an integration fails before the base ref advanced | `{ reason }`, truncated to 300 characters ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2306)) |
+
+Each call goes through the authenticated `adlc` binary with a 15-second timeout.
+
+<Callout type="info" title="Audit, not enforcement">
+Recording is best effort. If `adlc` is missing or `.adlc/` is not writable, `recordGate` returns `{ ok: false, error }` and the run continues ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L949-L955)). A broken audit trail never fails a build or merge that otherwise succeeded. Enforcement gates such as `rails-guard` work the other way: they fail closed (see [Rail enforcement](/docs/concepts/rail-enforcement)).
+</Callout>
+
+`.adlc/manifest.jsonl` is runtime state. `agb` adds `.adlc/*` (keeping the ticket store, archive, specs and `config.json` tracked) to the target repo's `.gitignore`, so writing evidence mid-run does not make the repo look dirty ([lib/worktrees.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L24-L37)). In session, the policy guard treats the manifest as an implicit rail, so agents cannot edit it ([hooks/policy/constants.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/hooks/policy/constants.mjs#L75)).
+
+## Verifying
+
+`agb` itself never calls `verify`. Run it yourself, from the target repo, to check the manifest:
+
+```bash
+npx adlc gate-manifest verify
+```
+
+You can also add your own entries for gates you run by hand, such as a test run before opening a pull request:
+
+```bash
+npm test && npx adlc gate-manifest record tests --ticket T-EXAMPLE && npx adlc gate-manifest verify
+```
+
+Signing and verification depend on your ADLC setup (for example `ADLC_MANIFEST_KEY`). `agb` strips that key from every worker's environment, so a builder cannot forge entries ([lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L37-L48)). For the command's flags, file format and key handling, see the [`@adlc/cli` documentation](https://www.npmjs.com/package/@adlc/cli).

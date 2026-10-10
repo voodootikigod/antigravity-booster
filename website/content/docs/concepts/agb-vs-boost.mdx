@@ -1,7 +1,28 @@
 ---
 title: "agb vs /boost"
 description: "How agb compares to /boost"
-placeholder: true
 ---
 
-This page is being written.
+Antigravity ships a built-in [`/boost` slash command](https://antigravity.google/docs/boost/) for on-demand multi-agent reasoning inside an interactive session. `agb` also uses several models, but it targets a different scope: autonomous, multi-ticket build-outs that run outside the chat, in isolated worktrees, behind deterministic gates.
+
+This page holds the only copy of the comparison. Each `agb` cell describes v1.0.0 behavior and links the code that implements it.
+
+| Dimension | Built-in `/boost` | `agb` |
+| :--- | :--- | :--- |
+| **Primary scope** | Interactive, single-task reasoning in an active session: a hard bug, an algorithm, a local refactor. | Autonomous multi-ticket campaigns: a spec or brain plan compiled into a ticket DAG and built in parallel. |
+| **Execution surface** | Inside the Antigravity app or an `agy` chat. Subagents report back into the conversation. | An external Node.js orchestrator that launches child `agy` workers as separate processes ([lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L262-L292)). |
+| **Workspace** | Subagents share your working tree; edits and commands prompt you. | One git worktree per ticket at `.worktrees/agb-<ticket-id>` on branch `agb/<ticket-id>` ([lib/worktrees.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L119-L121)). |
+| **Containment** | Standard Antigravity permission prompts. | Builders need a kernel containment floor: Seatbelt on macOS, bubblewrap on Linux, a Windows Job Object plus active sandbox verification or an HMAC-attested bypass ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1022)). Gate commands run with network denied ([lib/gates.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L49)). See [Gates and sandboxing](/docs/concepts/gates-and-sandboxing). |
+| **Quota** | The active model, within your session limits. | Four model pools (`gemini-flash`, `gemini-pro`, `claude`, `gpt-oss`) inside two upstream quota families, with per-pool and per-family caps that scale with live `/quota` telemetry ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L63-L76)). See [Pools and tiers](/docs/concepts/pools-and-tiers). |
+| **Scheduling** | Dynamic subagent dispatch; no state survives a crash. | A validated ticket DAG in `plan.json`; a ticket starts when its predecessors merge ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L8-L11)). Merges are journaled so a crashed run can recover. |
+| **Merging** | Not applicable; edits land in your tree. | Post-merge gates run in a separate integration worktree, and the base branch advances only by a compare-and-swap `git update-ref` ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2283-L2284)). A failed candidate is kept under `refs/quarantine/` instead of touching your branch ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2308)). |
+| **Governance** | Iterative rounds inside the conversation. | ADLC gates: frozen rails checked by `adlc rails-guard`, cross-family prosecution, mutation evidence from `adlc hollow-test`, and an append-only gate manifest. See [Prosecution](/docs/concepts/prosecution) and [Rail enforcement](/docs/concepts/rail-enforcement). |
+
+## When to use which
+
+- **Use `/boost`** when you are coding in Antigravity, hit a tricky problem, and want multi-agent help without tickets or branches.
+- **Use `agb`** when you have a spec, a PRD or a migration that should run for hours without supervision, with each ticket built in isolation, gated, prosecuted and merged only when it passes.
+
+<Callout type="info">
+The two compose. Plan in Antigravity (plan mode or a planning conversation), then compile that plan with [`agb plan`](/docs/concepts/plan-boundary) and run it with `agb run`.
+</Callout>
