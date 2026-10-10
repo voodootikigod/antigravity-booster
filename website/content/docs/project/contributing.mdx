@@ -1,6 +1,11 @@
 ---
 title: "Contributing"
 description: "How to set up, test and land a change in antigravity-booster."
+claims: [C28]
 ---
+
+<Callout type="info">
+antigravity-booster has no runtime `dependencies`. Every package, including the `@adlc/*` toolkit, is a devDependency installed by `npm ci` ([package.json](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L56)). Tickets live in the `.adlc/tickets/` directory store, and the CI rails-guard enforces their rails from it since #87 ([adlc-rails-guard.yml](https://github.com/voodootikigod/antigravity-booster/blob/a99b3cd/.github/workflows/adlc-rails-guard.yml)).
+</Callout>
 
 <include>../../../generated/contributing.mdx</include>
