@@ -95,7 +95,7 @@ The general rule is `0` = pass, `2` = gate failure or findings, `1` = usage or i
 The full table for every command is in [Exit and error codes](/docs/reference/exit-and-error-codes).
 
 <Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 4)">
-  In v1.0.0, `agb --help` prints a literal `\n` (backslash-n) before the "Exit codes" summary line and after the banner instead of a line break, because the strings in bin/agb.mjs escape the newline twice ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L62)). This is cosmetic. The codes listed above are correct.
+  In v1.0.0, `agb --help` prints a literal `\n` (backslash-n) before the "Exit codes" summary line and after the banner instead of a line break, because the strings in bin/agb.mjs escape the newline twice ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L62)). The same literal `\n` ends the `agb: unknown command '<cmd>'` error ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L107)). This is cosmetic. The codes listed above are correct.
 </Callout>
 
 ## Next steps

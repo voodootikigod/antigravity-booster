@@ -10,7 +10,7 @@ claims: [C1, C31]
 <name>                    | PASS   | <detail>                       | <fix>
 ```
 
-The level is `PASS`, `WARN` or `FAIL`. Doctor exits `1` if any check is `FAIL`, and `0` otherwise. Warnings never change the exit code ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1229-L1265)).
+The level is `PASS`, `WARN` or `FAIL`. Doctor exits `1` if any check is `FAIL`, or if a check itself throws (it then prints `Error check failed: <reason>` in place of a table row), and `0` otherwise. Warnings never change the exit code ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1229-L1265)).
 
 ```sh
 agb doctor
