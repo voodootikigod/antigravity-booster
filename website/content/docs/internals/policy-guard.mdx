@@ -5,7 +5,7 @@ description: "The in-session PreToolUse hook: how hooks/policy/* turns each agy 
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 
-The booster plugin registers one `PreToolUse` hook, `agb-policy-guard`, matching every tool (`"matcher": "*"`). It runs `bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs` with a 15 s hook timeout ([hooks.json](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/hooks.json#L1-L16)). Its job is to stop an agent in an interactive or headless session from editing frozen rails, the ADLC trust root, or the platform's own configuration, before the edit happens. The merge-time `adlc rails-guard` check in `agb run` and CI remains the mechanical guarantee; this hook catches problems earlier. See [Rail enforcement](/docs/concepts/rail-enforcement) for how the layers fit.
+The booster plugin registers one `PreToolUse` hook, `agb-policy-guard`, matching every tool (`"matcher": "*"`). It runs `/bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs` with a 15 s hook timeout; the runner is invoked through `/bin/sh`, which is why it is written in POSIX sh ([hooks.json](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/hooks.json#L1-L16)). Its job is to stop an agent in an interactive or headless session from editing frozen rails, the ADLC trust root, or the platform's own configuration, before the edit happens. The merge-time `adlc rails-guard` check in `agb run` and CI remains the mechanical guarantee; this hook catches problems earlier. See [Rail enforcement](/docs/concepts/rail-enforcement) for how the layers fit.
 
 ## Verdicts
 
