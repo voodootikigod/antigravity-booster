@@ -2,7 +2,7 @@
 
 The documentation site for `antigravity-booster` (`agb`), built with [Fumadocs](https://fumadocs.dev) on Next.js and deployed on Vercel. The design is specified in [`.adlc/specs/docs-site.md`](../.adlc/specs/docs-site.md).
 
-DOCS_URL: <to be recorded by the owner>
+DOCS_URL: https://www.agybooster.com
 
 This directory is isolated from the shipped plugin: it has its own `package.json` and `package-lock.json`, is not an npm workspace, and is never part of the npm tarball. The root `npm test` does not depend on it.
 

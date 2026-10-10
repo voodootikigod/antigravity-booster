@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-10T10:56:12.152Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "88b21e0a0718bd847da2a0da93fd04b1543db7fb2bf6066897032e542edb344e",
+    "ticketHash": "5f590127caa99e2b7457069a2f2f681b4e3526a90323e0ce19f1dd935591b98d",
+    "version": 1
+  },
   "body": "Vercel warns that website/package.json engines.node = 22.x overrides its default Node 24.x. Change only the website package: website/package.json engines.node -> 24.x, website/.nvmrc -> 24, website/README.md Node wording, and spec .adlc/specs/docs-site.md (revision 4 note on the Node row, D6, the 8.1 owner actions, the owner checklist, AC6, and the Vercel-vs-CI risk row). Root package.json engines (>=22.19.0) and the agb CLI test matrix stay on Node 22; the getting-started page documenting the CLI's Node >= 22.19.0 requirement is unchanged. Verify under Node 24: cd website && npm ci && npm run build && npm run check:site && npm test && node scripts/check-all.mjs, all passing; jq -r .engines.node website/package.json -> 24.x; cat website/.nvmrc -> 24. Archive this ticket after merge.",
+  "completed": true,
   "edges": [],
   "id": "T-DOCS-NODE24",
   "rails": [
