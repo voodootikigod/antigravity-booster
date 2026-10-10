@@ -1,7 +1,88 @@
 ---
 title: "Writing plans"
-description: "Hand-written plan.json, sizing and edge semantics"
-placeholder: true
+description: "Hand-writing plan.json: ticket sizing, scopes and rails, and what edges mean."
 ---
 
-This page is being written.
+`agb plan` compiles a plan for you, but a plan is just JSON and you can write one by hand. This guide covers the rules `agb validate` enforces and the judgment calls it cannot make. The full field list is in the [plan schema](/docs/reference/plan-schema).
+
+<Callout type="info">A compiled plan is disposable: `agb plan` refuses to overwrite an existing `plan.json` unless you pass `--force`, precisely because a hand-written one may not be ([overwrite guard](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L199-L203)).</Callout>
+
+## Skeleton
+
+```json
+{
+  "repo": "/abs/path/to/repo",
+  "base": "main",
+  "gate": { "build": "npm run build", "test": "npm test" },
+  "prosecution": { "dryPasses": 1 },
+  "tickets": [
+    {
+      "id": "T1",
+      "title": "Short imperative title",
+      "body": "Self-contained spec: files to create, behavior, tests to write.",
+      "scope": ["src/feature/**", "test/feature.test.mjs"],
+      "rails": ["src/shared/types.ts"],
+      "edges": [{ "to": "T2" }],
+      "tier": "mid",
+      "pool_hint": "auto"
+    }
+  ]
+}
+```
+
+## Plan-level rules
+
+These are checked by `validatePlan`, shared by `agb validate`, `agb run` and the plan compiler ([validatePlan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L242-L260)):
+
+- `repo` is required; relative paths are resolved against the current directory ([loadPlan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L113-L121)).
+- `gate` must declare `build`, `test`, or both, and each must match `npm test` or `npm run <script>`. Put anything more complex in a `package.json` script.
+- `adlcBin` is prohibited; the ADLC binary is resolved and authenticated by the runtime.
+- `base` defaults to `main` ([base default](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1289-L1292)). `agb run` refuses to start unless that branch is checked out in `repo`.
+
+## Ticket rules
+
+| Rule | Why |
+| --- | --- |
+| `id` matches `^[A-Za-z0-9][A-Za-z0-9_.-]*$` and is unique **case-insensitively** | It becomes the worktree `.worktrees/agb-<id>` and branch `agb/<id>` in lowercase, so `T1` and `t1` would collide ([id rules](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L262-L278)) |
+| `body` is a non-empty string | The builder sees only the body; an empty one renders an empty spec |
+| `scope` is a non-empty array of globs | An empty scope would disable the out-of-scope check ([scope and rails](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L291-L312)) |
+| `rails` (optional) are valid pathspecs | Paths the ticket must not edit |
+| `tier` is `cheap`, `mid` or `frontier` (default `mid`) | Selects the candidate models |
+| `pool_hint` is `gemini`, `claude`, `claude-gpt`, `gpt-oss` or `auto` | Filters the tier's candidates; the combination must leave at least one ([tier/hint check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L313-L321)). `gpt-oss` passes the enum check but no tier has a GPT-OSS candidate, so it is always rejected |
+
+<Callout type="warn" title="Tier and hint combinations">The `cheap` and `mid` tiers contain only Gemini models, so `tier: "cheap"` with `pool_hint: "claude"` is rejected at validation time ([tier candidates](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L80-L100), [tierCandidates](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1302-L1314)). Claude builders are only reachable through `frontier` (`claude-sonnet-4-6`, `claude-opus-4-6-thinking`). No tier lists a GPT-OSS model, so `pool_hint: "gpt-oss"` fails validation with every tier; GPT-OSS appears only as a prosecutor ([PROSECUTORS](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L108)).</Callout>
+
+## Edges
+
+An edge `{ "to": "B" }` on ticket `A` means **A must merge before B starts**. The scheduler turns each edge into a predecessor of its target ([predecessors](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1425-L1426)) and starts a ticket only when every predecessor has merged ([ready check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1464-L1468)). There are no waves: independent tickets run as soon as a pool slot is free.
+
+- Edges must name an existing ticket; self-edges and cycles are rejected ([edge checks](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L279-L290), [cycle check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L326-L333)).
+- If a predecessor fails, every ticket downstream of it fails as `blocked by failed predecessor` without running ([blocked](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2382-L2389)).
+- Add an edge whenever one ticket reads code another ticket writes. Two tickets with no edge between them run concurrently against the same base.
+
+## Scopes and rails
+
+Scope is what a ticket may change; rails are what it must not. After the build, any change outside `scope` or inside a rail fails the attempt ([scope check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L798-L810)).
+
+- **Keep concurrent scopes disjoint.** `agb preflight` vetoes pairwise scope overlap between tickets that can run at the same time ([preflight overlap](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/preflight.mjs#L1-L11)).
+- **Rail the foundation.** When `B` depends on `A`, list `A`'s files in `B`'s `rails` so `B` cannot rewrite them.
+- **Tests belong in scope.** A builder told to write tests needs the test file in its scope.
+
+## Sizing
+
+Each ticket gets two strikes: one regeneration with the failure appended, then it fails ([two-strike rule](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L8-L11)). A ticket that cannot be finished in one focused builder session is too big. Practical heuristics:
+
+- One coherent change per ticket: a module plus its tests, not a feature spread across layers.
+- Put shared types, directory layout and dispatchers in a **foundation** ticket that everything else depends on.
+- Prefer more, smaller tickets with clean edges over a few large ones; parallelism comes from width, and failures stay cheap.
+- Write the `body` so a fresh agent with no other context can execute it: name the files, the behavior and the tests.
+- Use `cheap` for mechanical work, `mid` by default, `frontier` for design-heavy or subtle work. See [Pools and tiers](/docs/concepts/pools-and-tiers).
+
+## Check before you run
+
+```bash
+agb validate plan.json    # exit 2 if invalid, prints every error
+agb preflight plan.json   # scope overlap + coldstart on each ticket body
+```
+
+Then follow the [walkthrough](/docs/guides/walkthrough) from the run step.

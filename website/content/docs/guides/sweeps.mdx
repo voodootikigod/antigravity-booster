@@ -1,7 +1,77 @@
 ---
 title: "Sweeps"
-description: "Sweep and recursive modes"
-placeholder: true
+description: "Sweep mode fans one operation across many targets; recursive mode lets an agy session drive agb itself."
 ---
 
-This page is being written.
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+`agb` has three workload shapes: a ticket DAG (`agb run`, see the [walkthrough](/docs/guides/walkthrough)), a **sweep** (the same operation applied to many targets), and a read-only [review fleet](/docs/guides/review). This page covers sweeps and **recursive mode**, where an Antigravity session decomposes work and drives `agb` on its own.
+
+## Sweep mode
+
+A sweep is for embarrassingly parallel work: migrations, mechanical refactors, JSDoc or test backfills. `agb sweep` turns a `sweep.json` into a normal plan with one generated ticket per target, then runs it through the same build, gate, prosecute and merge pipeline as `agb run` ([sweep command](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L133-L145)).
+
+```bash
+agb sweep sweep.json      # defaults to ./sweep.json
+```
+
+<Tabs items={['targetGlob', 'targets']}>
+<Tab value="targetGlob">
+
+```json
+{
+  "repo": "/abs/path/to/repo",
+  "gate": { "test": "npm test" },
+  "operation": "Add JSDoc to every exported function in {target}.",
+  "targetGlob": "src/**/*.mjs",
+  "scopePerTarget": ["{target}"]
+}
+```
+
+</Tab>
+<Tab value="targets">
+
+```json
+{
+  "repo": "/abs/path/to/repo",
+  "gate": { "test": "npm test" },
+  "operation": "Convert {target} from CommonJS to ESM. Update its tests.",
+  "targets": ["src/a.js", "src/b.js"],
+  "scopePerTarget": ["{target}", "test/{i}-*.test.js"]
+}
+```
+
+</Tab>
+</Tabs>
+
+### How a sweep becomes a plan
+
+`sweepToPlan` does the conversion ([sweepToPlan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L36-L61)):
+
+- `repo` is required, and `operation` must contain `{target}`.
+- Targets come from `targets`, or from `targetGlob` expanded with `git ls-files`, so only **tracked** files match ([expandTargets](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L21-L25)). No targets is an error.
+- Target *n* becomes ticket `S<n>` with title `sweep: <target>`. Its body is `operation` with `{target}` and `{i}` (1-based) substituted, plus a note that identical work is happening on other targets in parallel.
+- Each ticket's scope is `scopePerTarget` with the same substitution (default `["{target}"]`).
+- `tier` defaults to `cheap` and `pool_hint` to `auto`. `base` defaults to `main`; `gate`, `caps` and `prosecution` are copied through.
+- Generated tickets have **no edges and no rails**: every target runs independently.
+
+The generated plan is validated with the same rules as `agb run`; an invalid sweep exits `1`, and the run exits `2` if any target failed ([sweep exit codes](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L137-L145)). The schema is in [Sweep schema](/docs/reference/sweep-schema).
+
+<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 1)">`agb sweep` passes the global `--project` value to `sweepToPlan`, which only accepts `targets` and silently drops it ([call site](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L136), [signature](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L36)). The value is still forwarded to the run itself, so builder sessions use it; do not rely on the sweep conversion step honouring it.</Callout>
+
+### Tips for sweeps
+
+- Keep `scopePerTarget` tight. Two targets whose scopes overlap are not independent and will fight at merge time.
+- Make `operation` complete on its own: each builder sees one target and nothing else.
+- Shared files (a barrel `index`, a changelog) should not be in any target's scope. Update them in a follow-up ticket.
+- Large sweeps are bounded by pool capacity, not by the number of targets; see [Operating tips](/docs/guides/operating-tips).
+
+## Recursive mode
+
+In recursive mode an Antigravity session is the planner: it decomposes a large task into a ticket DAG, writes `plan.json` and runs `agb` while it supervises. The doctrine for this lives in the `adlc-self-orchestrate` skill, shipped by the `@adlc/antigravity` plugin that `agb bootstrap` installs (it is not vendored in this repo). The skill teaches foundation-first decomposition, a single writer per partition and self-contained ticket bodies.
+
+1. Run `agb bootstrap` once so the skill and the `~/.local/bin/agb` shim are installed (see [Bootstrap](/docs/getting-started/bootstrap)).
+2. In an agy session, ask for the work to be built in parallel with `agb`. The session writes a plan, runs `agb validate` and `agb preflight`, then `agb run`.
+3. The session reads the report and decides what to do with failed tickets. Control flow stays in `agb`; judgment stays with the model.
+
+Sessions launched this way can also use the `/agb-*` slash commands and the MCP tools; see [Headless and MCP](/docs/guides/headless-and-mcp).
