@@ -657,7 +657,7 @@ import {
   mkdirSync as mkdirSync18,
   readFileSync as readFileSync24,
   writeFileSync as writeFileSync18,
-  renameSync as renameSync8,
+  renameSync as renameSync7,
   rmSync as rmSync14,
   existsSync as existsSync29
 } from "node:fs";
@@ -718,7 +718,7 @@ function readLockMeta(lockDir) {
 function writeMetaAtomic(lockDir, meta) {
   const tmp = join32(lockDir, `.meta.${process.pid}.${randomBytes3(4).toString("hex")}`);
   writeFileSync18(tmp, JSON.stringify(meta), { mode: 384 });
-  renameSync8(tmp, join32(lockDir, "meta.json"));
+  renameSync7(tmp, join32(lockDir, "meta.json"));
 }
 function newToken(pid) {
   return `${pid}:${Date.now()}:${randomBytes3(8).toString("hex")}`;
@@ -729,7 +729,7 @@ function holderMessage(holder) {
 function reclaimDeadLock(lockDir, holder, deps) {
   const moved = `${lockDir}.stale.${process.pid}.${process.hrtime.bigint()}`;
   try {
-    renameSync8(lockDir, moved);
+    renameSync7(lockDir, moved);
   } catch (err) {
     if (err.code === "ENOENT") return;
     throw err;
@@ -740,7 +740,7 @@ function reclaimDeadLock(lockDir, holder, deps) {
     return;
   }
   try {
-    renameSync8(moved, lockDir);
+    renameSync7(moved, lockDir);
   } catch {
   }
   throw new MigrationLockError(holderMessage(grabbed ?? holder), "LOCK_HELD");
@@ -825,7 +825,7 @@ function writeMigrationState(home, state) {
   mkdirSync18(boosterDataDir2(home), { recursive: true });
   const tmp = `${p}.${process.pid}.${randomBytes3(4).toString("hex")}.tmp`;
   writeFileSync18(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 384 });
-  renameSync8(tmp, p);
+  renameSync7(tmp, p);
   return state;
 }
 function clearMigrationState(home) {
@@ -840,7 +840,7 @@ function removeImportEntry(home, name) {
   if (kept.length === m.imports.length) return;
   const tmp = `${p}.${process.pid}.tmp`;
   writeFileSync18(tmp, JSON.stringify({ ...m, imports: kept }, null, 2) + "\n");
-  renameSync8(tmp, p);
+  renameSync7(tmp, p);
 }
 function removeUninstallerDir(dir) {
   if (dir && basename9(dir).startsWith(UNINSTALLER_DIR_PREFIX)) rmSync14(dir, { recursive: true, force: true });
@@ -933,7 +933,7 @@ import {
   readlinkSync as readlinkSync3,
   symlinkSync as symlinkSync5,
   unlinkSync as unlinkSync8,
-  renameSync as renameSync9,
+  renameSync as renameSync8,
   chmodSync as chmodSync4,
   copyFileSync as copyFileSync5,
   realpathSync as realpathSync10,
@@ -972,7 +972,7 @@ function writeJsonAtomic(file, value, mode = 420) {
   mkdirSync19(dirname20(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${randomBytes4(3).toString("hex")}.tmp`;
   writeFileSync19(tmp, JSON.stringify(value, null, 2) + "\n", { mode });
-  renameSync9(tmp, file);
+  renameSync8(tmp, file);
 }
 function treeSize(dir) {
   let total = 0;
@@ -1112,7 +1112,7 @@ function restorePluginDir(p, name, fromDir) {
   mkdirSync19(p.plugins, { recursive: true });
   copyPluginTree(fromDir, tmp);
   rmSync15(dest, { recursive: true, force: true });
-  renameSync9(tmp, dest);
+  renameSync8(tmp, dest);
 }
 function agyUninstall(agyBin, name, home) {
   execFileSync16(agyBin, ["plugin", "uninstall", name], {
@@ -13803,7 +13803,7 @@ function enforcementGate({ activeRails, planRails, adlc, rails = [] }) {
 }
 
 // lib/lock.mjs
-import { mkdirSync as mkdirSync15, rmSync as rmSync11, writeFileSync as writeFileSync16, readFileSync as readFileSync21, existsSync as existsSync26, renameSync as renameSync7 } from "node:fs";
+import { mkdirSync as mkdirSync15, rmSync as rmSync11, writeFileSync as writeFileSync16, readFileSync as readFileSync21, existsSync as existsSync26 } from "node:fs";
 import { join as join29 } from "node:path";
 function acquireRepoLock(repo, { runId, pid = process.pid } = {}) {
   const lockDir = join29(repo, ".booster", "run.lock.d");
@@ -13828,25 +13828,23 @@ function acquireRepoLock(repo, { runId, pid = process.pid } = {}) {
     if (isAlive(holder.pid)) {
       throw new Error(`another agb run holds the lock on ${repo} (pid ${holder.pid}, run ${holder.runId}). Wait for it to finish, or remove ${lockDir} if it is stale.`);
     }
-    const moved = `${lockDir}.stale.${pid}.${process.hrtime.bigint()}`;
+    const reclaimDir = `${lockDir}.reclaim`;
     try {
-      renameSync7(lockDir, moved);
-      const grabbed = readMeta(join29(moved, "meta.json"));
-      const stillStale = grabbed && grabbed.token === holder.token && !isAlive(grabbed.pid);
-      if (!stillStale) {
-        try {
-          renameSync7(moved, lockDir);
-        } catch {
-          rmSync11(moved, { recursive: true, force: true });
-        }
+      mkdirSync15(reclaimDir);
+    } catch (err) {
+      if (err.code === "EEXIST") {
+        throw new Error(`lock on ${repo} is being reclaimed by another run \u2014 retry (remove ${reclaimDir} if no reclaim is in progress)`);
+      }
+      throw err;
+    }
+    try {
+      const again = readMeta(metaPath);
+      if (!again || again.token !== holder.token || isAlive(again.pid)) {
         throw new Error(`lock on ${repo} was reclaimed by another run \u2014 retry`);
       }
-      try {
-        rmSync11(moved, { recursive: true, force: true });
-      } catch {
-      }
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
+      rmSync11(lockDir, { recursive: true, force: true });
+    } finally {
+      rmSync11(reclaimDir, { recursive: true, force: true });
     }
     if (!tryCreate()) {
       const h = readMeta(metaPath);
