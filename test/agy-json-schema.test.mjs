@@ -250,8 +250,8 @@ test('Semantic verdict invariants: Invariant 1 (Strict Severity Gate) & Invarian
     const resShip = await prosecute({ ticket, diff, model: 'gemini-3.8-flash-low' });
     assert.equal(resShip.verdict, 'ship');
   } finally {
-    process.env.FAKE_PROSECUTOR_VERDICT = origVerdict;
-    process.env.AGB_AGY_BIN = origBin;
+    if (origVerdict === undefined) delete process.env.FAKE_PROSECUTOR_VERDICT; else process.env.FAKE_PROSECUTOR_VERDICT = origVerdict;
+    if (origBin === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = origBin;
   }
 });
 

@@ -1231,10 +1231,18 @@ test('preventExecutableReplacement: copies entire dependency closure without sym
       seal.release();
     }
   } finally {
-    process.env.AGB_EXEC_LOCKS_DIR = origExecLocks;
+    if (origExecLocks === undefined) delete process.env.AGB_EXEC_LOCKS_DIR;
+    else process.env.AGB_EXEC_LOCKS_DIR = origExecLocks;
     try { rmSync(root, { recursive: true, force: true }); } catch {}
     try { rmSync(locksDir, { recursive: true, force: true }); } catch {}
   }
+});
+
+// T-CODE-FIXES-AUDIT item 9: restoring an unset env var by assignment stores
+// the string "undefined", and later lock-dir mkdirs create ./undefined/ in the
+// checkout. Runs right after the test above (node:test is sequential per file).
+test('env restore: AGB_EXEC_LOCKS_DIR is never left as the string "undefined"', () => {
+  assert.notEqual(process.env.AGB_EXEC_LOCKS_DIR, 'undefined');
 });
 
 test('pinExecutable and preventExecutableReplacement: fails closed when executable pinning cannot be completed', () => {
