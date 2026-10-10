@@ -1,7 +1,30 @@
 ---
 title: "Stability"
-description: "Semver since 1.0.0 and the support policy"
-placeholder: true
+description: "Semver since 1.0.0, what counts as the public surface, and how features are retired."
+claims: [C29]
 ---
 
-This page is being written.
+`antigravity-booster` follows [semantic versioning](https://semver.org) from 1.0.0 on ([C29](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L3)).
+
+## What semver covers
+
+Breaking changes ship only in a new major version. Within a major (`^1.0.0`), these stay compatible:
+
+- the `agb` CLI surface: commands, flags and exit behavior ([CLI reference](/docs/reference/cli))
+- the `plan.json` schema ([Plan schema](/docs/reference/plan-schema))
+- the `.booster/` artifact layout ([File layout](/docs/reference/file-layout))
+
+Each breaking change is listed in the [changelog](/docs/project/changelog).
+
+## Supported versions
+
+Only the latest published version gets fixes, security fixes included. There are no long-term support branches. To report a vulnerability, see [SECURITY.md](https://github.com/voodootikigod/antigravity-booster/blob/main/SECURITY.md).
+
+## Deprecation and removal
+
+A retired feature goes through two steps:
+
+1. **Deprecated.** The command still works, but its help text marks it deprecated and names the replacement. Example: `agb import-brain` ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L46)), replaced by `agb plan`.
+2. **Removed.** The command or flag stays recognized but only prints an error that names the replacement. Example: `agb tui` ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L282)), replaced by `agb sidecar`. The old TUI flag on the status command was retired the same way ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L270)).
+
+[Removed commands](/docs/reference/cli/removed) lists every current entry. No fixed support window is promised for a deprecated feature. Removing one from the public surface is a breaking change, so it waits for a major version.

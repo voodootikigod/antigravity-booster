@@ -1,7 +1,43 @@
 ---
 title: "Releasing"
-description: "Publishing, release drift checks and rulesets"
-placeholder: true
+description: "How a version reaches npm: the release skill, the tag-triggered publish workflow, the rulesets that gate it, and the drift check."
 ---
 
-This page is being written.
+A release goes from a version bump on `main` to an npm publish with provenance. Each step is gated, and a person makes every decision.
+
+```mermaid
+flowchart LR
+  A[release skill: bump + CHANGELOG] --> B[PR to main, reviewed]
+  B --> C[maintainer pushes tag vX.Y.Z]
+  C --> D[publish.yml waits for npm-publish approval]
+  D --> E[checks: tag on main, tag = package.json]
+  E --> F[npm ci + npm test]
+  F --> G[npm publish --provenance]
+  H[release-drift.yml daily] -.watches.-> G
+```
+
+## The release skill
+
+[`skills/release`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/release/SKILL.md) runs the maintainer side. It checks for a clean, up-to-date `main`, a `repository.url`, no `file:` dependencies and a passing `npm test`. Then it bumps the version with `npm version --no-git-tag-version` and moves the `[Unreleased]` changelog entries under the new version. The bump lands through a PR because `main` is protected. After the merge, the maintainer tags the merged commit and pushes the tag.
+
+<Callout type="info">
+The generic release skill expects a project profile at `.claude/release-profile.md`. This repository does not have that file.
+</Callout>
+
+## The publish workflow
+
+Pushing a `v*` tag is the only trigger for [`publish.yml`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/publish.yml#L11). It has no `workflow_dispatch`, so it always runs the workflow file from the tagged commit. The job:
+
+1. Runs in the `npm-publish` protected environment ([publish.yml#L27](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/publish.yml#L27)), which needs a reviewer to approve it.
+2. Refuses a tag whose commit is not an ancestor of `origin/main` ([publish.yml#L41](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/publish.yml#L41)).
+3. Refuses a tag that does not match the `package.json` version ([publish.yml#L82](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/publish.yml#L82)).
+4. Upgrades to npm 11 for OIDC trusted publishing ([publish.yml#L70](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/publish.yml#L70)), then runs `npm ci` and `npm test`.
+5. Publishes with `npm publish --provenance --access public` ([publish.yml#L101](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/publish.yml#L101)), using the `id-token: write` permission ([publish.yml#L16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/publish.yml#L16)) instead of a long-lived token.
+
+## Rulesets
+
+[`docs/github-rulesets/`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/docs/github-rulesets/README.md) keeps the publish gates in version control. The `release-tag-ruleset.json` file lets only admins create, delete or move `refs/tags/v*` tags. `apply.sh` sets up the `npm-publish` environment and applies that ruleset. Branch protection for `main` is configured by hand in GitHub and is not in this directory.
+
+## Release drift
+
+[`release-drift.yml`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/release-drift.yml#L21) runs once a day and on demand. It runs [`scripts/release-drift.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/release-drift.mjs) ([release-drift.yml#L50](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/.github/workflows/release-drift.yml#L50)) to catch a version that reached `main` but never reached npm: either a publish waiting for an approval nobody gave, or a bump with no tag pushed. A grace window ([90 minutes](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/release-drift.mjs#L21)) keeps a healthy release in progress from being reported.

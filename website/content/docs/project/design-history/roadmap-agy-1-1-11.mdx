@@ -1,8 +1,317 @@
 ---
 title: "Roadmap: agy 1.1.11"
-placeholder: true
+description: "Integration roadmap written against agy CLI 1.1.11."
 ---
 
-<Callout type="info" title="Historical, superseded">This page is kept for history. It does not describe current behavior.</Callout>
+<Callout type="info" title="Historical, superseded">
+This is a research note kept for design history. It does not describe current behavior; the current docs, starting at [Concepts](/docs/concepts/overview), do. Source: [docs/research/roadmap-agy-1.1.11.md](https://github.com/voodootikigod/antigravity-booster/blob/main/docs/research/roadmap-agy-1.1.11.md).
+</Callout>
 
-This page is being written.
+This is a PLAN under review, not a diff. It proposes changes to the antigravity-booster
+codebase (agb orchestrator, repo at cwd). Claims marked [probed] were verified live on
+agy 1.1.11 on 2026-08-08; claims marked [changelog] come from the Antigravity changelog
+and are unverified on this machine.
+
+## Context claims the plan rests on
+
+- Installed agy is 1.1.11; booster calibrated against 1.1.1. [probed]
+- `agy models` now returns stable slugs: gemini-3.6-flash-&#123;high,medium,low&#125; (new family),
+  gemini-3.5-flash-&#123;high,medium,low&#125;, gemini-3.1-pro-&#123;high,low&#125;, claude-sonnet-4-6,
+  claude-opus-4-6-thinking, gpt-oss-120b-medium. [probed]
+- `agy -p "/quota"` returns machine-parseable lines: pool / limit-type / % remaining /
+  ISO reset. Pools are now TWO: "Gemini Models" and "Claude and GPT models", each with a
+  weekly AND a five-hour limit. [probed]
+- With --disable-slash-commands, `-p "/quota"` causes the model to hallucinate a fake
+  quota report instead of returning real data. [probed]
+- `--output-format json` returns &#123;conversation_id, status, response, duration_seconds,
+  num_turns, usage&#123;input,output,thinking,cache_read,total&#125;&#125;; when --json-schema is
+  passed it ALSO includes a validated structured_output field (probed in both json and
+  stream-json modes). The plain response field can carry markdown fences and
+  tool-action noise even when structured_output is clean. [probed]
+- agy can return status:"ERROR" in the result envelope while still delivering valid
+  schema-conforming structured_output (observed live 2026-08-08). status, exit code,
+  and structured_output presence are three independent signals. [probed]
+- `--output-format stream-json` emits init (tool list, permission_mode), per-step
+  step_update with usage, and a final result with structured_output when --json-schema
+  is passed. [probed]
+- `--conversation <id> -p` resumes headless; a warm turn read ~80% of input from cache
+  (cache_read_tokens 20378 of 25738) but took 63s wall for a trivial turn. [probed]
+- Cold print calls carry ~23k input tokens of overhead (global skills, AGENTS.md, tool
+  defs). [probed]
+- Headless agents natively expose define_subagent/invoke_subagent/manage_subagents,
+  manage_task, schedule, manage_inbox/send_message, search_web, browser_* tools. [probed]
+- `agy agents` still does not list plugin-installed agents. [probed]
+- --effort flag (1.1.5); agent.md markdown custom agents with per-agent model frontmatter
+  (1.1.6); print-mode skill/slash expansion (1.1.9); client auto-retries (1.0.16) and
+  server-supplied retry delay honored (1.1.11); headless honors settings.json policies
+  (1.1.4); .git read-only in sandbox (1.1.10). [changelog]
+- Python SDK `google-antigravity` shipped: Agent class, inspect/decide/transform hooks,
+  Pydantic structured output, subagents; same runtime/quota as CLI; TS/Go on roadmap.
+  [changelog]
+- The ~5-minute print-mode generation ceiling was measured on agy 1.0.7 and has NOT been
+  re-tested on 1.1.11.
+
+## P0 — correctness fixes (do first)
+
+1. Replace display-name model strings in lib/agy.mjs MODELS, lib/pools.mjs
+   TIER_CANDIDATES and PROSECUTORS with stable slugs; add Gemini 3.6 Flash to cheap/mid
+   tiers. Have `agb doctor` and run-preflight diff the table against live `agy models`
+   output and fail on unknown models.
+2. Re-model lib/pools.mjs around the two metered quota pools (Gemini | Claude+GPT) with
+   per-family concurrency caps kept as a separate axis. Accept that the gemini→GPT-OSS
+   prosecutor pairing no longer buys quota isolation (cross-family review property is
+   retained; pairing may be revisited).
+3. Model the five-hour rolling limit: poll `agy -p "/quota"` at run start and between
+   dispatch waves; pause or reroute dispatch when a pool's five-hour remaining drops
+   below a configured floor; surface both limits and reset times in `agb status` and the
+   sidecar. Never use --disable-slash-commands for quota probes.
+
+## P1 — replace custom heuristics with native structured output
+
+4. Add native structured output to runAgy (lib/agy.mjs), PER CALL SITE: verdict
+   and single-shot calls (prosecute, review lenses, plan gates, probes) use
+   --output-format json and parse stdout as one result object; builder dispatches
+   (step 8) use --output-format stream-json and derive the result from the
+   terminal result event while streaming intermediate events to the per-ticket
+   file. runAgy takes an outputMode option and classifies per mode — the two
+   formats are mutually exclusive per call and never mixed on one invocation.
+   The local hard-timeout
+   kill-path must set kind="timeout" via an internal flag and MUST NOT append
+   marker text to the stdout buffer; CLASSIFICATION PRECEDENCE is explicit:
+   (1) locally-set kill flag => kind=timeout, unconditionally — checked before
+   and overriding every stdout-parseability and exit-code rule (a killed
+   process also produces non-zero exit + truncated stdout, which must not be
+   misread as server failure or the quota-pause path in step 7 never triggers);
+   (2) spawn failure; (3) JSON result status; (4) exit code. The kill-path (the current code at lib/agy.mjs:104-106 does; that line
+   is deleted in the same change, before any caller parses stdout as JSON). Failure
+   classification treats process exit code, result.status, and structured_output
+   presence as three independent signals: a parse of stdout that fails while exit code is non-zero is classified
+   kind="cli" — an UNATTRIBUTED CLI failure (could be server-side OR a local
+   agy crash: OOM, panic, missing dependency — a local crash also exits
+   non-zero with a non-JSON stack trace, and must not be silently blamed on
+   the API). kind="cli" failures consume NO builder strike (strikes are for
+   model-attributable failures); they are retried once and, if repeated,
+   increment a per-run cli-failure budget that fails the run with operator
+   guidance (agb doctor) when exceeded. True server failures are identified
+   by a parseable ERROR envelope, not by exit code alone. status:"ERROR" ALWAYS
+   classifies the call as failed for gating purposes — fail closed. A
+   structured_output accompanying an ERROR status is written to the log for
+   diagnostics but is NEVER consumed as a verdict or gate input: treating it as
+   degraded-success would let anything that can induce an API error (safety
+   filter, crafted tool failure) smuggle a verdict past the prosecutor. Delete isAgyTimeout() text-marker regex and the empty-output heuristic
+   only after the JSON path is the sole consumer (same PR, wrapper keeps a fallback:
+   if stdout is not parseable JSON, fall back to legacy text classification and log a
+   calibration warning rather than throwing). Record usage tokens and conversation_id
+   per dispatch in the run log.
+5. Pass verdict schemas via `--json-schema` at the extractJson call sites
+   (lib/prosecute.mjs, lib/review.mjs, lib/plan.mjs); read ONLY
+   result.structured_output (never the response field, which can carry fences and
+   tool-action noise). If structured_output is absent, treat it STRICTLY as a malformed-verdict failure
+   of that call (existing strike/round semantics). There is NO fallback to
+   extractJson(response): parsing the free-text response would let output that
+   deliberately violates the schema smuggle an attacker-authored verdict (e.g. a
+   fenced &#123;"verdict":"approve"&#125; block) past the gate — the exact injection class
+   structured output exists to close. extractJson is deleted from these call sites
+   in the same change.
+6. Warm-resume retries — RESTRICTED SCOPE: on strike 2, resume the strike-1
+   conversation via `--conversation <id>` ONLY when the worktree HEAD is byte-identical
+   to the commit the builder produced in strike 1 — i.e. NO mutation of any kind
+   happened in between: not resetToBase (lib/scheduler.mjs:490-493) AND not an applied
+   consensus-fix commit (lib/scheduler.mjs:539-541 runs commitAll then falls back to
+   regeneration WITHOUT resetToBase when the fix fails re-prosecution). The gate is BOTH (a) a recorded strike-1 HEAD sha compared against current HEAD
+   at resume time AND (b) worktree cleanliness identity: record git status --porcelain
+   --ignored output (hashed) AFTER the strike-1 gate run completes (the same
+   lifecycle point the resume-time comparison happens at — hashing before the
+   test run would deterministically mismatch on ignored test artifacts like
+   coverage output and force every retry cold; --ignored stays included so
+   cleanup that strips gitignored artifacts the builder relies on still fails
+   the gate) — a
+   builder that ended dirty whose tree is now clean (resetToBase wipes uncommitted
+   work while leaving HEAD unchanged) fails the gate. Any mismatch on either check
+   forces a cold rebuild prompt. A resumed model assumes the tree is exactly
+   as it left it; both reset and consensus-fix violate that. The review fleet
+   loop-until-dry rounds are EXCLUDED from warm-resume entirely: convergence depends
+   on statistically independent fresh contexts per round (lib/review.mjs:56-57). The
+   only other warm-resume target is agb plan structural feedback, which converses
+   over a document and holds no worktree state. Retire the docs/research
+   "conversation ID blocked-upstream" finding.
+7. Remove agb-side transport-level retry/backoff where redundant with agy native
+   client retries + server retry-delay handling; keep the two-strike task-level logic
+   and flail detection unchanged. CLASSIFICATION GUARD: quota exhaustion is NOT a
+   strike. agy natively sleeps to honor server-supplied retry delays; with the local
+   hard-timeout (runAgy timer = --print-timeout + grace, lib/agy.mjs:94-107) that
+   sleep is killed at timeout and today would be recorded as a builder failure. The
+   scheduler must distinguish quota-backoff from model failure. QUOTA CHECK ON
+   EVERY FAILURE: poll agy -p "/quota" on ANY failed dispatch — timeout-kind,
+   status:"ERROR" envelope, and kind="cli" alike — because a synchronous 429
+   (e.g. an exhausted weekly limit) returns instantly as a status ERROR and
+   never trips the local timeout; routing only timeouts to the quota check
+   would burn strikes on quota errors and bypass pause/drain entirely.
+   Pool-exhausted classification takes PRECEDENCE over all strike accounting.
+   Additionally, short per-minute rate-limit sleeps are INVISIBLE to /quota
+   (it reports only five-hour and weekly windows), so a healthy /quota does
+   not prove a timeout was the model flailing: the FIRST timeout-kind result
+   per ticket consumes no strike and is retried once cold — with the SAME
+   worktree hygiene as post-pause retries (resetToBase + clean untracked
+   files first: a hard-timeout kill can leave truncated files that would
+   poison the cold retry); only a repeated timeout burns a strike. PROBE: check whether stream-json emits
+   backoff/sleep events when agy honors a server retry delay — if so,
+   classify those directly instead of inferring. When the /quota poll shows
+   the dispatching pool five-hour or weekly remaining at/below the configured
+   floor, classify as pool-exhausted and pause
+   INLINE INSIDE runTicket: the ticket awaits a scheduler-wide pool-pause gate that
+   resolves at the pool reset timestamp, holding its worktree, strikes counter, and
+   lastFailure locally. It must NOT exit runTicket to be re-queued — the finally
+   block (lib/scheduler.mjs:580-586) force-removes the worktree and deletes the
+   branch on any un-merged exit, which would erase strike state and prior work and
+   deterministically repeat the failure. No strike is consumed for a quota pause.
+   Two pause-safety guards: (a) before awaiting the gate, the ticket RELEASES its
+   pool concurrency slot and route reservation (unroute + semaphore release) and
+   re-acquires after the gate resolves, so a paused ticket never starves other
+   pools or waiters; (b) the pause promise is registered with the run abort
+   machinery — SIGINT/abort rejects all pause gates immediately so every
+   runTicket finally executes and cleans up worktrees/branches before exit;
+   process death during a pause leaves at worst the same orphan-worktree state as
+   death during a build, recovered by the existing prune-on-start path.
+   Guard: the pause happens while the run holds the exclusive repo lock
+   (acquireRepoLock spans runPlan), so a long pause starves every other agb run
+   on the repo. The pause ceiling is therefore SHORT by default (configurable,
+   default 30 minutes): pause inline only when the pool reset timestamp is
+   within the ceiling; otherwise DRAIN AND END: immediately stop dispatching new tickets, let
+   in-flight tickets on non-exhausted pools finish their current
+   build/gate/merge cycle (their work is preserved via normal merge), mark the
+   quota-failed and undispatched tickets pending, then end the run with a
+   pool-lockout error — finally blocks execute, worktrees/branches/lock are
+   released, and the next agb run retries the pending tickets (run
+   re-execution is the existing external re-queue mechanism; merged tickets
+   are never re-run). A lockout on one pool must not abort in-flight work on
+   another. CROSS-POOL DEPENDENCY GUARD: an in-flight ticket may finish its
+   build and then need the locked pool for prosecution (cross-family review).
+   Two-level handling: (a) prosecutor selection falls back to ANY cross-family
+   model whose pool has quota (family, not pool, carries the review property —
+   e.g. a Claude builder can be prosecuted by GPT-OSS even though GPT-OSS
+   shares the Claude quota pool, or by Gemini when available); (b) the built-pending-prosecution state guards the ENTIRE
+   post-build window, not just prosecutor selection: from the moment a build
+   is committed on the ticket branch until a ship/no-ship verdict is recorded,
+   the BRANCH is exempted from the finally deleteBranch cleanup (the worktree
+   itself may be removed — it is recreatable from the branch). A ticket whose
+   prosecution is killed mid-flight by a quota limit or drain therefore keeps
+   its branch, whatever state it was in when the run ended, and the next agb
+   run resumes at the prosecution phase against the preserved branch instead
+   of rebuilding. Entry into the state is the ADLC gate passing (build AND tests green on the
+   committed branch) — never the bare build commit, so an interruption during
+   the test phase cannot smuggle test-failing code into prosecution. A
+   preserved branch resumed by a later run ALWAYS re-runs the gate first and
+   only then prosecutes — resume never skips the merge gate. BRANCH-PRESERVATION RULE
+   (supersedes verdict-scoped exit): once ANY commit exists on the ticket
+   branch, the branch is exempt from deleteBranch whenever the run ends
+   WITHOUT a terminal ticket outcome — drain, pool-lockout, abort, or process
+   death mid-strike-2 all preserve it (a no-ship verdict re-enters building,
+   and a drain during that rebuild must not destroy the strike-1 commit and
+   prosecutor feedback). deleteBranch still runs on the two terminal
+   outcomes: merged (branch no longer needed) and two-strikes-exhausted
+   (verdict-driven failure; branch cleanup prevents re-run collisions).
+   Successful builds are never destroyed by a drain. Never hold the repo lock across a multi-hour or multi-day
+   lockout. The pause and its reset ETA are surfaced in agb status and the
+   sidecar while active. Post-pause retry hygiene: a quota-kill can land
+   mid-generation leaving partial writes, so before re-dispatching the same
+   strike after a pause, resetToBase the worktree and clean untracked files,
+   and issue the retry as a COLD prompt (consistent with the warm-resume gate:
+   any tree mutation forces cold). Strikes are reserved for model-attributable failures.
+
+## P2 — throughput and observability
+
+8. Capture stream-json per-ticket event files for builder dispatches. This requires
+   refactoring runAgy to write stdout events to the per-ticket file as they arrive
+   (line-buffered pipe), not the current buffer-then-write-at-exit logFile path
+   (lib/agy.mjs:146-153). The agy stream does NOT echo the input prompt or know the
+   orchestrator context, so runAgy writes a header record FIRST — &#123;ts, ticket, kind: "header",
+   model, strike, prompt; NO role field, so the flail-detector line filter
+   (role !== "builder") skips it rather than ingesting a bogus empty-output
+   strike record&#125; — then appends agy events as they arrive, and FINALLY
+   appends a terminal consolidated record with the SAME fields as the current
+   per-strike log record — &#123;ts, model, cwd, strike, ms, prompt, output:
+   &lt;concatenated agent_response text>, ok, role, kind?, error?&#125; — a strict
+   superset record, because the flail-detector (lib/scheduler.mjs:80-92)
+   correlates o.prompt AND o.output from one record when building its legacy
+   framing; splitting them across header and terminal records would blind it.
+   The header record exists only for live consumers (sidecar); the terminal
+   record is the system of record. Raw agy events carry no role field and are
+   transparently skipped by the detector. No current log record field is dropped.
+   Sidecar renders step-level progress and real token accounting from that stream
+   (replacing reliance on agb custom framing for those views). Event files inherit
+   the existing 0o700/0o600 secret-bearing transcript permissions.
+9. Context diet: run builders under a minimal --project per run; prune global skill
+   autoload for builder roles; measure whether --disable-slash-commands reduces the
+   ~23k/call overhead for calls that need no skills (never for command probes).
+10. Add effort as a routing dimension via --effort for models with effort variants.
+11. Re-probe Gemini 3.6 Flash concurrency width before raising DEFAULT_CAPS.
+12. Probe agent.md custom-agent discovery in headless mode; if it reduces per-call
+    input tokens, migrate prosecutor and review-lens personas to agent.md + --agent
+    — loaded ONLY from a trusted global agents directory outside any reviewed
+    worktree. Workspace-level agent discovery is a supply-chain hazard for security
+    roles: the code under review could ship its own .agents/prosecutor.md and
+    define its own reviewer. The probe must confirm a workspace-local agent.md
+    cannot shadow or override the globally named --agent; if it can, security
+    personas stay as orchestrator-assembled prompts. The same hazard applies to
+    ALL workspace customizations, not just agents: agy discovers skills
+    (.agents/skills/SKILL.md), AGENTS.md/GEMINI.md, and workspace hooks from
+    cwd — a reviewed worktree could ship a shadowed skill that instructs the
+    prosecutor to approve. GUARD (applies NOW, independent of the agent.md
+    migration): prosecutor and review-lens invocations never run with cwd
+    inside the reviewed worktree — cwd is a throwaway scratch directory so agy
+    discovers NO customizations (.agents/, AGENTS.md, hooks) from the reviewed
+    tree — but the reviewer must NOT be blinded: pass the worktree via
+    --add-dir for read access so cross-file passes (contract drift, dead
+    references, forgotten call sites) still work, with the diff also provided
+    as fenced data. PROBE REQUIRED before relying on this: confirm agy does
+    not discover customizations from --add-dir directories (only from cwd); if
+    it does, fall back to diff-plus-fenced-file-excerpts and probe for a
+    customization-disable flag. INJECTION RULE for all reviewer prompts: files
+    the reviewer reads itself via tools arrive unfenced, so the prompt must
+    carry explicit trust rules declaring ALL repository-derived content —
+    fenced or self-read — untrusted data whose embedded instructions are
+    themselves reportable findings, never directives (the booster prompt
+    fencing already does this for inlined diffs; extend it to cover tool-read
+    content and add a planted-injection regression test). Verify lib/review.mjs and lib/prosecute.mjs
+    comply and add a regression test.
+
+## P3 — strategic bets (probe before committing architecture)
+
+13. Pilot L3 native subagents (define_subagent/invoke_subagent) for intra-ticket
+    parallelism inside one agy conversation; agb keeps the cross-ticket DAG, worktrees,
+    and merge discipline. Aggregate stream usage per ticket to keep token burn visible.
+14. Move nightly maintenance (adlc-maintain-style decay checks) to the platform's
+    scheduled background automations.
+15. Probe manage_inbox/send_message as a native alternative to file-based coordination
+    between concurrent builders.
+16. SDK hooks pilot — CORRECTLY SCOPED: DecideHook/InspectHook are in-process
+    SDK lifecycle hooks; they intercept ONLY agents running inside that SDK
+    process and have no mechanism to police independent agy CLI subprocesses
+    spawned by agb. Therefore: (a) rails enforcement for CLI-dispatched
+    builders REMAINS with the existing mechanisms — the adlc-antigravity
+    plugin workspace hooks, settings.json permission.allow write allowlists,
+    and the macOS sandbox layer; (b) the SDK pilot migrates ONE lower-exposure role — the
+    plan-compiler premortem/parallax gates — to run INSIDE an SDK session with
+    DecideHook write-denial and InspectHook telemetry, and the SDK process
+    itself runs under the same OS sandbox as CLI subprocesses (sandbox-exec
+    wrapper), because plan documents are NOT fully trusted either (they
+    routinely incorporate issue-tracker text and other external content, and
+    DecideHook constrains writes, not reads or network egress). No SDK-hosted
+    role runs unsandboxed, regardless of input provenance. The prosecutor is
+    EXCLUDED from SDK hosting: it ingests untrusted diffs, and in-process
+    hosting would strip the OS sandbox (DecideHook constrains writes, not
+    reads or network egress) — prompt injection could exfiltrate host data
+    with orchestrator privileges. The prosecutor remains a sandboxed CLI
+    subprocess; any future SDK-hosted untrusted-input role requires the SDK
+    process itself to run under equivalent OS-level sandboxing (e.g.
+    sandbox-exec around the Python process). The claim "DecideHook enforces rails on CLI
+    builders" is retracted.
+17. Revisit the fail-closed-off-darwin sandbox stance given agy's native permissioning
+    maturity; potentially unlock Linux agb runs with agy-native sandbox as the floor.
+
+## Explicitly out of scope
+
+- No changes to ADLC gate semantics (build+tests green remains the merge gate).
+- Planning stays in Antigravity (GUI plan mode / agy sessions); agb plan remains a
+  compiler, never an author.

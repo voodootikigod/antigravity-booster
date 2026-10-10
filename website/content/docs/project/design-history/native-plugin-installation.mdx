@@ -1,8 +1,22 @@
 ---
 title: "Native plugin installation"
-placeholder: true
+description: "Summary of the spec that moved agb from a global npm install to a native Antigravity plugin."
 ---
 
-<Callout type="info" title="Historical, superseded">This page is kept for history. It does not describe current behavior.</Callout>
+<Callout type="info" title="Historical, superseded">
+This is a summary of a completed design spec, kept for design history. It does not describe current behavior; see [Installation](/docs/getting-started/installation) and [Plugin and migration](/docs/internals/plugin-and-migration). The full spec: [.adlc/specs/native-plugin-installation.md](https://github.com/voodootikigod/antigravity-booster/blob/main/.adlc/specs/native-plugin-installation.md).
+</Callout>
 
-This page is being written.
+The spec (T-PLUGIN-00..04, October 2026) planned the move from `npm install -g antigravity-booster` plus `agb bootstrap` to a native Google Antigravity plugin installed with `agy plugin install`.
+
+Its main decisions:
+
+- **Two layers.** The Node.js orchestration engine ships as single-file esbuild bundles (`dist/agb.mjs`, `dist/mcp-server.mjs`). The ADLC gate toolkit ships as an integrity-pinned vendored package under `vendor/adlc/`. Both are committed to git so a git-URL install runs without `npm install`, and CI fails if they drift from a fresh build.
+- **Measured platform facts** (agy 1.2.16, macOS and Linux): plugins stage byte-for-byte into `~/.gemini/config/plugins/<name>/`, and `agy plugin validate` recognises skills, agents, commands, MCP servers and hooks.
+- **POSIX launchers.** `bin/node-launcher.sh` finds a suitable Node, and `bin/hook-runner.sh` keeps a broken hook from crashing the session.
+- **Fail-closed enforcement.** Enforcement gates (`rails-guard` and the in-session policy guard) fail closed. Audit gates (`gate-manifest`, `flail-detector`) degrade.
+- **Bundled builds ignore overrides.** Development env overrides are ignored when `__AGB_BUNDLED__` is true. The companion `adlc-antigravity` plugin resolves only from its staged directory.
+- **Doctrine as a pinned dependency.** The doctrine comes from `@adlc/antigravity`, committed as the unmodified registry tarball in `vendor/cache/` and checked byte-for-byte in CI. A contract handshake (`adlcContract`) checks compatibility.
+- **Migration.** `agb migrate` moves an npm install to the plugin, with a state machine and rollback.
+
+Appendix A of the spec records the binding owner decisions and errata. Where the body and the appendix disagree, the appendix wins.
