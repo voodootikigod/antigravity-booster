@@ -1,7 +1,75 @@
 ---
 title: "Upgrading from npm"
-description: "agb migrate, rollback and the migration state machine"
-placeholder: true
+description: "agb migrate: move an npm-global or checkout install onto the native plugin, and roll it back"
+claims: [C15]
 ---
 
-This page is being written.
+If you installed `agb` with `npm install -g antigravity-booster` or run it from a source checkout, `agb migrate` moves that install onto the native Antigravity plugin. Before it changes anything, it snapshots your current plugins, shim, import manifest entries and skill links, so `agb migrate --rollback` can always restore the previous state.
+
+```sh
+agb migrate                  # migrate (resumes an interrupted run)
+agb migrate --rollback       # restore the pre-migration state
+```
+
+## Flags
+
+As parsed in [bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L297-L318) ([C15](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L52-L56)):
+
+| Flag | Effect |
+| --- | --- |
+| *(none)* | Run the migration, or resume one that was interrupted. |
+| `--force` | Re-run a migration that already reached `MIGRATED`, which otherwise exits `1`. With `--break-lock`, skip the confirmation prompt. |
+| `--rollback` | Restore from the pre-migration baseline snapshot. |
+| `--force-rollback` | Roll back even if the staged plugins changed since migration. Without it, rollback refuses and lists the changed plugins ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L544-L547)). |
+| `--break-lock` | Remove a stale migration lock. It shows the holder's pid and start time, warns if that process still appears to be running, and asks `Break the migration lock? [y/N]`. With no TTY, the answer is no unless you pass `--force`. It never runs a migration ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L670-L700)). |
+
+## What a migration does
+
+1. **Snapshot.** Copies the current plugin trees, `~/.local/bin/agb` and booster's import manifest entries into a timestamped snapshot. The first run also writes a read-only `pre-migration.baseline.json`, which every restore reads from ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L265-L312)).
+2. **Record symlinks.** Records the skill symlinks in `~/.gemini/skills` that the old install owns.
+3. **Stage plugins.** Installs and validates the `antigravity-booster` and `adlc-antigravity` plugins.
+4. **Finalize.** Removes the recorded old skill links and writes the terminal shim `~/.local/bin/agb`, replacing any existing one ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L351-L366)).
+
+On success it prints:
+
+> Migration successful. Global npm package may be uninstalled: npm uninstall -g antigravity-booster. CLI commands remain available via ~/.local/bin/agb and slash commands (/agb-doctor, /agb-bootstrap, /agb-migrate).
+
+([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L46-L47)). Until you uninstall the npm package, `agb doctor` warns that a secondary install is on your `PATH`.
+
+## State machine
+
+Each step writes its state before moving on, so an interrupted migration resumes where it stopped ([`migrateLocked`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L570-L612), [`rollbackLocked`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L528-L560)).
+
+<Mermaid
+  chart={`stateDiagram-v2
+  [*] --> SNAPSHOT_CREATED: agb migrate
+  SNAPSHOT_CREATED --> SYMLINKS_RECORDED
+  SYMLINKS_RECORDED --> PLUGINS_STAGED
+  PLUGINS_STAGED --> MIGRATED
+  MIGRATED --> SNAPSHOT_CREATED: agb migrate --force
+  MIGRATED --> ROLLBACK_IN_PROGRESS: --rollback
+  SNAPSHOT_CREATED --> ROLLBACK_IN_PROGRESS: --rollback after staging began
+  SYMLINKS_RECORDED --> ROLLBACK_IN_PROGRESS: --rollback after staging began
+  PLUGINS_STAGED --> ROLLBACK_IN_PROGRESS: --rollback
+  ROLLBACK_IN_PROGRESS --> ROLLED_BACK
+  ROLLBACK_IN_PROGRESS --> ROLLED_BACK_PENDING_UNINSTALL
+  ROLLED_BACK_PENDING_UNINSTALL --> ROLLED_BACK: booster plugin uninstalled
+  ROLLED_BACK --> SNAPSHOT_CREATED: agb migrate (old state archived)`}
+/>
+
+- **`SNAPSHOT_CREATED`, `SYMLINKS_RECORDED`, `PLUGINS_STAGED`**: in progress. Running `agb migrate` again resumes from the recorded state. Rolling back before staging has started (and when the system has never migrated) just deletes the snapshot and state, because nothing live had changed.
+- **`MIGRATED`**: done. `agb migrate` refuses without `--force`. `--rollback` restores the baseline, guarded by `--force-rollback` as described above.
+- **`ROLLBACK_IN_PROGRESS`**: a rollback was interrupted. `agb migrate` refuses until you run `agb migrate --rollback` to finish restoring.
+- **`ROLLED_BACK_PENDING_UNINSTALL`**: files are restored, but uninstalling the booster plugin is handed to a separate process. The next `agb migrate` (or `--rollback`) finishes the uninstall first.
+- **`ROLLED_BACK`**: back at the baseline. A later `agb migrate` archives the old state and starts fresh.
+
+Any unknown state makes `agb migrate` exit `1` and tells you to run `agb migrate --rollback` or inspect the data directory.
+
+<Callout type="info">
+  Migrations and rollbacks hold a lock. If a crashed process left it behind, use `agb migrate --break-lock`, then re-run `agb migrate` or `agb migrate --rollback`.
+</Callout>
+
+## See also
+
+- [`agb migrate` reference](/docs/reference/cli/migrate)
+- [Plugin and migration internals](/docs/internals/plugin-and-migration)

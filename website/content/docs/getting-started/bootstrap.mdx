@@ -1,7 +1,55 @@
 ---
 title: "Bootstrap"
-description: "What agb bootstrap does, its flags and aliases"
-placeholder: true
+description: "What agb bootstrap installs, its flags and aliases; the sidecar is not installed"
+claims: [C32]
 ---
 
-This page is being written.
+`agb bootstrap` is the one-time setup step that runs after [Installation](/docs/getting-started/installation). It is safe to run again: anything that is already current is left alone.
+
+```sh
+agb bootstrap [--force | -f] [--force-reinstall]
+```
+
+## What bootstrap does
+
+In order ([`bootstrap()` in lib/bootstrap.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L266)):
+
+1. **Checks for `agy`.** If `agy` is not on your `PATH`, bootstrap prints an info line and tries to fall back to the `jetski` CLI ([L285](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L285)). If neither exists, the plugin installs are skipped with a warning.
+2. **Links booster's own skills** into `~/.gemini/skills`. From a stable install directory it creates symlinks, so upgrades flow through. When it detects a temporary `npx` directory it copies the files instead, because symlinks would break once `npx` exits ([L306](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L306)). An existing entry that is not a symlink is skipped unless you pass `--force` ([L328](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L328)).
+3. **Installs the `adlc-antigravity` companion plugin** from the vendored, integrity-pinned release tarball ([L357](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L357)). It supplies the ADLC doctrine skills and the rails-guard hook.
+4. **Installs the `antigravity-booster` plugin itself** ([L363](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L363)).
+5. **Writes the terminal shim** `~/.local/bin/agb` ([L372](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L372)). The shim's write rules are described under [Installation](/docs/getting-started/installation#how-the-shim-behaves).
+6. Prints `bootstrap complete!`, the hint `export ADLC_PROVIDER=agy` (which runs `@adlc` tools on Antigravity quota), and how to start the sidecar.
+
+If any step fails, bootstrap keeps going and exits with code `1` at the end ([L396](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L396)).
+
+<Callout type="warn" title="The sidecar is not installed by bootstrap">
+  Bootstrap does **not** install or register the Sidecar dashboard plugin. It was removed from bootstrap for security reasons ([C32](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/bootstrap.mjs#L384)). The sidecar is opt-in: start it yourself with `agb sidecar <repo-path>`. See [Sidecar dashboard](/docs/guides/sidecar-dashboard).
+</Callout>
+
+## Flags
+
+| Flag | Effect |
+| --- | --- |
+| `--force`, `-f` | Overwrite entries in `~/.gemini/skills` that exist and are not symlinks. Both spellings are accepted ([C32](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L294)). |
+| `--force-reinstall` | Reinstall the bundled `adlc-antigravity` plugin even when one is present, and overwrite a terminal shim whose content differs ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L295)). |
+
+`agb doctor` recommends `--force-reinstall` when the companion plugin's manifest is corrupt, its contract is incompatible, or the policy-guard self-test fails. See [Verify your setup](/docs/getting-started/verify).
+
+## Aliases
+
+The following all run bootstrap ([C32](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L293)):
+
+```sh
+agb bootstrap
+agb setup
+agb install
+agb skills install    # also: agb skills setup, agb skills bootstrap
+```
+
+`agb setup --help` (or `-h`, on any alias) prints bootstrap's help. `agb help bootstrap` works too, but `agb help setup` falls back to the full command list, because `help <cmd>` only knows the canonical names ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L88-L103)).
+
+## See also
+
+- [`agb bootstrap` reference](/docs/reference/cli/bootstrap)
+- [Plugin and migration internals](/docs/internals/plugin-and-migration)
