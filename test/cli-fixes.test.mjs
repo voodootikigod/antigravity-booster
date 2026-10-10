@@ -4,7 +4,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync, readdirSync, existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -54,9 +54,9 @@ const MCP_SERVER = fileURLToPath(new URL('../mcp/server.mjs', import.meta.url));
 const ROOT_PKG = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
 
 /** Send JSON-RPC requests to a fresh MCP server; resolve with responses keyed by id. */
-function mcpExchange(requests, { timeoutMs = 30000 } = {}) {
+function mcpExchange(requests, { timeoutMs = 30000, env = process.env } = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [MCP_SERVER], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [MCP_SERVER], { stdio: ['pipe', 'pipe', 'pipe'], env });
     const want = new Set(requests.map((r) => r.id));
     const got = new Map();
     let buf = '';
@@ -98,6 +98,20 @@ test('item 2: agb_run without concurrency spawns agb run', async () => {
   const text = res.get(3).result.content[0].text;
   assert.match(text, /nope\.json/, `agb run did not execute: ${text.slice(0, 300)}`);
   assert.doesNotMatch(text, /concurrency/);
+});
+
+test('item 2: agb_run forwards exactly [run, <plan>] to agb', async () => {
+  // A preload records the argv of the spawned agb process (the MCP server
+  // passes its env through), so any extra or wrong forwarded flag is caught.
+  const log = join(TMP, 'agb-argv.json');
+  const preload = join(TMP, 'argv-preload.mjs');
+  writeFileSync(preload, `import { writeFileSync } from 'node:fs';
+if (/agb\\.mjs$/.test(process.argv[1] ?? '')) writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));
+`);
+  const plan = join(TMP, 'nope.json');
+  const env = { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${pathToFileURL(preload).href}`.trim() };
+  await mcpExchange([{ id: 5, method: 'tools/call', params: { name: 'agb_run', arguments: { plan } } }], { env });
+  assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')), ['run', plan]);
 });
 
 test('item 3: MCP serverInfo.version equals root package.json version', async () => {
