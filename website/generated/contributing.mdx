@@ -13,8 +13,10 @@ npm test          # fully offline: fake-agy + fake-adlc fixtures, no API keys
 `npm test` needs no credentials and reaches no network. If a change makes the
 suite require either, that is a bug in the change.
 
-To exercise the real CLI you also need Google Antigravity's `agy` on `PATH` and
-the ADLC toolkit (`npm i -g @adlc/cli`). `agb doctor` reports what is missing.
+To exercise the real CLI you also need Google Antigravity's `agy` on `PATH`.
+The ADLC toolkit comes in with `npm ci` (no global install); if it is missing,
+`agb doctor` reports it with the fix text
+[`npm install @adlc/cli` or `npx agb bootstrap`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L325).
 
 ## The bar for a change
 
@@ -27,17 +29,23 @@ and will be treated as such in review. `adlc hollow-test` automates this.
 the test is right.
 
 **Match the surrounding code.** No new dependencies without a reason that
-survives the question "what does this do that Node cannot?" — the package ships
-with two, both first-party.
+survives the question "what does this do that Node cannot?" — the package has
+no runtime `dependencies`; every package is a
+[devDependency](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L56) and the shipped plugin runs from
+prebuilt bundles.
 
 ## Things CI will reject
 
-- **Frozen rails.** Paths declared as `rails` in `.adlc/tickets.json` cannot be
-  edited by a PR. This is enforced in-session by a hook and at merge by
-  `.github/workflows/adlc-rails-guard.yml`. If your change genuinely needs to
+- **Frozen rails.** Paths declared as `rails` in the `.adlc/tickets/` directory
+  store cannot be edited by a PR. This is enforced in-session by a hook and at
+  merge by `.github/workflows/adlc-rails-guard.yml`, which
+  [reads the `.adlc/tickets/` store](https://github.com/voodootikigod/antigravity-booster/blob/a99b3cd/.github/workflows/adlc-rails-guard.yml#L13). If your change genuinely needs to
   touch one, it needs its own ticket — not a bypass.
-- **Removing or rewriting base tickets.** `.adlc/tickets.json` is append-only in a
-  PR; existing tickets must survive byte-identically.
+- **Removing or rewriting base tickets.** Existing base tickets in the
+  `.adlc/tickets/` store
+  [are protected](https://github.com/voodootikigod/antigravity-booster/blob/a99b3cd/.github/workflows/adlc-rails-guard.yml#L55): a PR
+  may add tickets, mark a base ticket completed, or archive it into
+  `.adlc/ticket-archive/`; any other edit or removal is denied.
 - **A drifted lockfile.** CI runs `npm ci`, so `package-lock.json` must agree with
   `package.json`.
 - **Undocumented commands.** Every dispatched command needs a row in the
@@ -65,9 +73,21 @@ it within a day, but the cheaper fix is not to do it.
 
 ## Platform notes
 
-Gate sandboxing uses `sandbox-exec` and is macOS-only, so several security tests
-skip on Linux. CI runs a macOS leg specifically to exercise them — if you touch
-`lib/gates.mjs`, watch that leg, not just the Linux one.
+Gate sandboxing uses Seatbelt (`sandbox-exec`) on macOS and
+[Bubblewrap (`bwrap`) on Linux](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L56-L84), with the
+network [denied](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L49) and writes limited to the worktree
+and temp. Gates fail closed only when no sandbox is usable. Windows has no gate
+sandbox (use `AGB_SANDBOX_GATES=0`), and its builder containment check can only
+be bypassed with an [HMAC-attested attestation](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L276-L285). Some sandbox tests are platform-specific, so CI runs a
+macOS leg — if you touch `lib/gates.mjs`, watch every leg.
+
+## Docs generator contract
+
+The docs site's reference pages are generated from code. The shape of the
+`COMMANDS` literal in `bin/agb.mjs` and the tool array in `mcp/server.mjs` is
+parsed by the generators. If your code PR changes those shapes, or adds a
+command, flag, env var, export or MCP tool, run `cd website && npm run gen` and
+commit `website/generated/` in the same PR. CI fails on stale generated output.
 
 ## Commits and PRs
 
