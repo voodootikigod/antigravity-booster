@@ -1860,3 +1860,27 @@ test('probeQuota: with no binary argument it uses AGB_AGY_BIN', async () => {
     if (saved === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = saved;
   }
 });
+
+test('withLockSync and withLock: timeout measures lock waiting only, not the start-time lookup (T-MACOS-TIMING-FIXES)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-lock-slow-start-'));
+  const lockFile = join(dir, 'test.lock');
+  // Simulates darwin's ps shell-out being slower than the whole lock budget.
+  const slowLookup = () => {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 120);
+    return 'slow-start';
+  };
+  try {
+    let sawStart = null;
+    const syncResult = withLockSync(lockFile, () => {
+      sawStart = JSON.parse(readFileSync(lockFile, 'utf8')).startTime;
+      return 'sync-ok';
+    }, { timeoutMs: 50, retryMs: 2, startTimeLookup: slowLookup });
+    assert.equal(syncResult, 'sync-ok');
+    assert.equal(sawStart, 'slow-start');
+
+    const asyncResult = await withLock(lockFile, async () => 'async-ok', { timeoutMs: 50, retryMs: 2, startTimeLookup: slowLookup });
+    assert.equal(asyncResult, 'async-ok');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

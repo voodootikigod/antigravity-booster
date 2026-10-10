@@ -552,3 +552,53 @@ test('fallback: injected workspacePaths/Cwd in args make the payload unparseable
   assertInvariant(r);
   assert.equal(decisionOf(r), 'deny');
 });
+
+// T-MACOS-TIMING-FIXES: the watchdog caches pidfile contents at t+timeout and
+// SIGKILLs at t+timeout+1. If the cached pid was reaped (pidfile removed) in
+// between, it may now belong to an unrelated process and must not be killed.
+// Deterministic: a "victim" stands in for a recycled pid; it records the
+// watchdog's SIGTERM in a marker file, which proves the pid was cached, and only
+// then do we remove the pidfile (simulating main reaping it) — no sleeps.
+async function waitFor(pred, ms = 15000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const v = pred();
+    if (v) return v;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error('waitFor timed out');
+}
+
+for (const [label, shell] of SHELLS) {
+  test(`[${label}] watchdog does not SIGKILL a cached pid whose pidfile was removed`, { timeout: 20000 }, async () => {
+    const tmp = fs.mkdtempSync(path.join(ROOT, 'stale-'));
+    const marker = path.join(tmp, 'victim-got-term');
+    const victim = spawn('/bin/sh', ['-c', `trap 'echo t > "${marker}"' TERM; while :; do sleep 0.05; done`], { stdio: 'ignore' });
+    const runner = spawn(shell, ['bin/hook-runner.sh', '--timeout', '1'], {
+      cwd: PLUGIN,
+      env: { PATH: process.env.PATH, HOME: HOME_DIR, TMPDIR: tmp, STUB_MODE: 'hang' },
+      stdio: ['pipe', 'ignore', 'ignore'],
+    });
+    runner.stdin.on('error', () => {});
+    runner.stdin.write(payloadFor(MUTATION)); // stdin held open: runner blocks reading it
+    const closed = new Promise((r) => runner.on('close', r));
+    try {
+      const pidfile = await waitFor(() => {
+        const d = fs.readdirSync(tmp).find((n) => n.startsWith('hook-runner.'));
+        const f = d && path.join(tmp, d, 'stdin_pid');
+        return f && fs.existsSync(f) ? f : null;
+      });
+      fs.writeFileSync(pidfile, `${victim.pid}\n`); // stand-in for a recycled pid
+      await waitFor(() => fs.existsSync(marker)); // watchdog cached + TERMed it
+      fs.rmSync(pidfile, { force: true }); // main "reaped" it; pid now unrelated
+      await closed; // watchdog has passed its SIGKILL step
+      assert.equal(victim.exitCode, null, 'victim must not have exited');
+      assert.equal(victim.signalCode, null, 'victim must not have been SIGKILLed');
+      process.kill(victim.pid, 0);
+    } finally {
+      victim.kill('SIGKILL');
+      runner.stdin.destroy();
+      runner.kill('SIGKILL');
+    }
+  });
+}
