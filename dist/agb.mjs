@@ -15724,7 +15724,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           throw new Error(`repo left base branch mid-run (now on '${onBranch2}', expected '${base}') \u2014 skipping ${t.id} to avoid merging/resetting the wrong branch`);
         }
         if (process.env.AGB_ALLOW_DIRTY !== "1" && isDirty(repo)) {
-          throw new Error(`repo became dirty mid-run \u2014 skipping ${t.id} to avoid 'git reset --hard' destroying uncommitted work`);
+          throw new Error(`repo became dirty mid-run \u2014 skipping ${t.id} \u2014 uncommitted changes are left untouched, but advancing ${base} by ref update under an edited checkout would leave those edits against a moved HEAD; commit or stash them (or set AGB_ALLOW_DIRTY=1)`);
         }
         const headBefore = currentHead(repo);
         discardProjection(worktree);
