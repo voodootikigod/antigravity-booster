@@ -280,10 +280,16 @@ MAIN_PID=$$
     kill -TERM "$_CPID" 2>/dev/null || true
   fi
   sleep 1
-  if [ -n "$_SPID" ] && kill -0 "$_SPID" 2>/dev/null; then
+  # Re-read: main removes each pidfile right after reaping that pid, so a pid
+  # whose file is gone or changed may already belong to an unrelated process.
+  _SPID2=""
+  _CPID2=""
+  [ -f "$TMP_STDIN_PID" ] && _SPID2="$(cat "$TMP_STDIN_PID" 2>/dev/null || true)"
+  [ -f "$TMP_PID" ] && _CPID2="$(cat "$TMP_PID" 2>/dev/null || true)"
+  if [ -n "$_SPID" ] && [ "$_SPID" = "$_SPID2" ] && kill -0 "$_SPID" 2>/dev/null; then
     kill -KILL "$_SPID" 2>/dev/null || true
   fi
-  if [ -n "$_CPID" ] && kill -0 "$_CPID" 2>/dev/null; then
+  if [ -n "$_CPID" ] && [ "$_CPID" = "$_CPID2" ] && kill -0 "$_CPID" 2>/dev/null; then
     kill -KILL "$_CPID" 2>/dev/null || true
   fi
   # Signal parent hook runner to trigger emit_fallback immediately
@@ -309,6 +315,7 @@ CHILD_PID=$!
 echo "$CHILD_PID" > "$TMP_PID"
 
 wait "$CHILD_PID" 2>/dev/null || CHILD_STATUS=$?
+rm -f "$TMP_PID" 2>/dev/null || true
 kill "$WATCHDOG_PID" 2>/dev/null || true
 wait "$WATCHDOG_PID" 2>/dev/null || true
 

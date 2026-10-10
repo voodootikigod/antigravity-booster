@@ -8692,12 +8692,12 @@ function reclaimStaleLock(lockFile, expectedToken, expectedIno) {
     }
   }
 }
-async function withLock(lockFile = getLockFile(), fn, { timeoutMs = 1e4, retryMs = 25 } = {}) {
+async function withLock(lockFile = getLockFile(), fn, { timeoutMs = 1e4, retryMs = 25, startTimeLookup = getProcessStartTime2 } = {}) {
   const dir = dirname14(lockFile);
   mkdirSync9(dir, { recursive: true, mode: 448 });
-  const deadline = Date.now() + timeoutMs;
   const lockToken = `${process.pid}:${randomUUID4()}`;
-  const myStartTime = getProcessStartTime2(process.pid);
+  const myStartTime = startTimeLookup(process.pid);
+  const deadline = Date.now() + timeoutMs;
   let lockAcquired = false;
   while (Date.now() < deadline) {
     try {
@@ -8746,12 +8746,12 @@ async function withLock(lockFile = getLockFile(), fn, { timeoutMs = 1e4, retryMs
     }
   }
 }
-function withLockSync(lockFile = getLockFile(), fn, { timeoutMs = 5e3, retryMs = 10 } = {}) {
+function withLockSync(lockFile = getLockFile(), fn, { timeoutMs = 5e3, retryMs = 10, startTimeLookup = getProcessStartTime2 } = {}) {
   const dir = dirname14(lockFile);
   mkdirSync9(dir, { recursive: true, mode: 448 });
-  const deadline = Date.now() + timeoutMs;
   const lockToken = `${process.pid}:${randomUUID4()}`;
-  const myStartTime = getProcessStartTime2(process.pid);
+  const myStartTime = startTimeLookup(process.pid);
+  const deadline = Date.now() + timeoutMs;
   let lockAcquired = false;
   while (Date.now() < deadline) {
     try {
