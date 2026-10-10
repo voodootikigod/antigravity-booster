@@ -1,7 +1,82 @@
 ---
 title: "Pools and tiers"
 description: "Quota pools, tier candidates, per-pool caps and prosecutor mapping"
-placeholder: true
+claims: [C4, C20]
 ---
 
-This page is being written.
+Antigravity meters models in independent quota pools. `agb` keeps a semaphore per pool and routes each ticket to the least-loaded pool that can serve its tier, so a run spreads load across pools instead of queueing on one ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1-L5)).
+
+## Two levels of pools
+
+Every model belongs to one **model pool**, and every model pool belongs to one **upstream quota family**. A slot is granted only when both have room ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1590-L1597)).
+
+| Model pool | Models | Upstream family | Default cap |
+| --- | --- | --- | --- |
+| `gemini-flash` | `gemini-3.8-flash-{low,medium,high}`, `gemini-3.7-flash-{low,medium,high}`, `gemini-3.6-flash-{low,medium,high}` | `gemini` | 8 |
+| `gemini-pro` | `gemini-3.1-pro-low`, `gemini-3.1-pro-high` | `gemini` | 4 |
+| `claude` | `claude-sonnet-4-6`, `claude-opus-4-6-thinking` | `claude_gpt` | 4 |
+| `gpt-oss` | `gpt-oss-120b-medium` | `claude_gpt` | 2 |
+
+Model lists: [lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L90-L104). Default per-pool caps (`DEFAULT_CAPS`): [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L71-L76). Family mapping: [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L769-L773).
+
+| Upstream family (`BASE_CAPS` key) | Matches `/quota` pool | Base cap |
+| --- | --- | --- |
+| `gemini` | "Gemini Models" | 12 |
+| `claude_gpt` (alias `claude-gpt`) | "Claude and GPT models" | 4 |
+
+Base family caps: [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L63-L67).
+
+### Caps scale with live quota
+
+Before planning or running, `agb` probes `agy -p /quota --output-format json` ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1319-L1328)). Each family's cap then scales with the lower of its remaining five-hour and weekly percentages ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L724-L726), [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L735-L742)), and each model pool's cap becomes the smaller of its default cap and its family's scaled cap ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1434-L1438)):
+
+| Remaining quota | Family cap |
+| --- | --- |
+| 50% or more | base cap |
+| 25% to 49% | half the base cap (rounded down) |
+| 10% to 24% | 1 |
+| under 10% | 0 (dispatch waits for the reset) |
+
+If telemetry is unavailable, `agb plan` and `agb run` stop rather than guess; a failed refresh trips a circuit breaker that suspends dispatch ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1502-L1504)).
+
+## Tiers
+
+A ticket's `tier` (default `mid`) picks a candidate list. Candidates are listed cheapest first and may span pools, which lets the router pick the least-loaded one ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L78-L100)).
+
+| Tier | Candidates (`TIER_CANDIDATES`) |
+| --- | --- |
+| `cheap` | `gemini-3.8-flash-low`, `gemini-3.8-flash-medium`, `gemini-3.7-flash-low`, `gemini-3.6-flash-low`, `gemini-3.6-flash-medium` |
+| `mid` | `gemini-3.8-flash-high`, `gemini-3.7-flash-medium`, `gemini-3.7-flash-high`, `gemini-3.6-flash-high`, `gemini-3.1-pro-low` |
+| `frontier` | `gemini-3.1-pro-high`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking` |
+
+`route()` prefers candidates whose pool and family both have capacity, then picks the one with the lowest reserved-to-cap ratio ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1770-L1790)).
+
+## `pool_hint`
+
+[C4](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L317-L318) A ticket may set `pool_hint` to one of `gemini`, `claude`, `claude-gpt`, `gpt-oss` or `auto`. Any other value fails plan validation. The hint filters the tier's candidates by model family ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1307-L1314)):
+
+| `pool_hint` | Keeps candidates whose family is | Tiers with candidates at v1.0.0 |
+| --- | --- | --- |
+| `auto` or unset | any | all |
+| `gemini` | `gemini` | all |
+| `claude` | `claude` | `frontier` only |
+| `claude-gpt` | `claude` or `gpt-oss` | `frontier` only |
+| `gpt-oss` | `gpt-oss` | none |
+
+A tier and hint combination that leaves no candidate fails validation with `no model candidates for tier ... with pool_hint ...` ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L319-L320)), so it is caught at plan time instead of mid-run. Because no tier lists `gpt-oss-120b-medium`, `pool_hint: "gpt-oss"` is accepted by the enum but always fails this check; the `gpt-oss` pool is used for prosecution, not building.
+
+## Prosecutor mapping
+
+The prosecutor always comes from a different family than the builder ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L102-L108)).
+
+| Builder family | Preferred prosecutor | Fallbacks, in order |
+| --- | --- | --- |
+| `gemini` | `gpt-oss-120b-medium` | `claude-sonnet-4-6` |
+| `claude` | `gemini-3.1-pro-high` | `gemini-3.8-flash-high`, `gpt-oss-120b-medium` |
+| `gpt-oss` | `gemini-3.1-pro-high` | `gemini-3.8-flash-high`, `claude-sonnet-4-6` |
+
+[C20](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L107) Gemini builders are prosecuted by `gpt-oss-120b-medium`; Claude and gpt-oss builders by `gemini-3.1-pro-high`. `prosecutorFor` takes the first candidate whose pool and family have capacity ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1800-L1825)). See [Prosecution](/docs/concepts/prosecution).
+
+<Callout type="info">
+Calibration probes behind these caps are listed on the [calibration](/docs/reference/calibration) page. Draining a pool during a run is covered in [Operating tips](/docs/guides/operating-tips).
+</Callout>

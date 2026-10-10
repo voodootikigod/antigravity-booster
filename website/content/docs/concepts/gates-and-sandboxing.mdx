@@ -1,7 +1,87 @@
 ---
 title: "Gates and sandboxing"
 description: "Seatbelt, bwrap and Windows attestation; network denied; fail-closed rules"
-placeholder: true
+claims: [C22]
 ---
 
-This page is being written.
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+A **gate** is a shell command whose exit code is the verdict, with no model involved ([lib/gates.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L1-L2)). `plan.gate.build` and `plan.gate.test` run in every ticket worktree after the build, and again in the integration worktree before a merge.
+
+Gate commands are untrusted. They run a script that lives in the builder's worktree (for example the `test` script in `package.json`), and a builder can rewrite that script. Running it unsandboxed on the host would be a sandbox escape, so `agb` contains two things separately: the **builder** process and the **gate** commands ([lib/gates.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L4-L10)).
+
+## Gate sandbox
+
+[C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L120-L135) Worktree and post-merge gates run sandboxed: Seatbelt (`sandbox-exec`) on macOS and bubblewrap (`bwrap`) on Linux. If no usable sandbox exists, the gate **fails closed** and returns `ok: false` with "gate refused: sandboxing requested but unavailable", unless you set `AGB_SANDBOX_GATES=0`.
+
+<Tabs items={['macOS (Seatbelt)', 'Linux (bwrap)', 'Windows']}>
+<Tab value="macOS (Seatbelt)">
+
+The generated SBPL profile ([lib/gates.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L35-L53)):
+
+- [C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L49) **network denied** (`(deny network*)`);
+- writes denied everywhere, then allowed only under the worktree, `/tmp`, `/private/tmp`, the OS temp dir, `/private/var/folders` and the standard `/dev` streams;
+- writes to the worktree's `.git` and `node_modules` denied again last, so they stay read-only even though they sit inside the worktree.
+
+Paths are canonicalized first, since Seatbelt matches `/private/var` and not the `/var` symlink.
+
+</Tab>
+<Tab value="Linux (bwrap)">
+
+The bubblewrap arguments ([lib/gates.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L59-L86)):
+
+- `--unshare-net`: **network denied**;
+- `--unshare-pid` and `--die-with-parent`;
+- `/` bound read-only, with writable binds only for `/tmp`, the OS temp dir and the worktree;
+- the worktree's `.git` and `node_modules` re-bound read-only (an empty read-only directory is mounted when either does not exist yet, so a gate cannot create one).
+
+Without `bwrap` the gate reports "bubblewrap not installed"; if user namespaces are restricted it explains that too ([lib/gates.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L155-L170)). Install `bubblewrap` or run in a disposable container with `AGB_SANDBOX_GATES=0`.
+
+</Tab>
+<Tab value="Windows">
+
+There is no gate sandbox on Windows: `gateSandboxAvailable` is true only on macOS and on Linux with `bwrap` on `PATH` ([lib/gates.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L91-L103)). Sandboxed gates therefore fail closed on Windows unless you set `AGB_SANDBOX_GATES=0`.
+
+</Tab>
+</Tabs>
+
+<Callout type="warn" title="AGB_SANDBOX_GATES=0">
+This runs gate scripts unsandboxed with your full privileges. Use it only where something else is the isolation boundary, such as a disposable CI container, or when a gate truly needs the network or a global cache write.
+</Callout>
+
+## Builder containment
+
+Builders are launched with `agy --sandbox` and on top of a kernel containment floor. On macOS and Linux both are mandatory and cannot be bypassed: `runAgy` refuses with `containment_unavailable` ([lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L266-L276), [lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L302-L333)).
+
+| Platform | Containment floor | When it is missing |
+| --- | --- | --- |
+| macOS | Seatbelt (`sandbox-exec`) | Builder refused |
+| Linux | bubblewrap, verified by a probe run with `--unshare-pid` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1046-L1071)) | Builder refused; `systemd-run` and `unshare` are not accepted as fallbacks |
+| Windows | A Job Object via `powershell.exe`, which bounds process lifetime but not filesystem or network; `agb` also requires the active Windows sandbox check to pass ([lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L646-L660)) | Builder refused unless a valid bypass attestation exists |
+
+### Windows bypass attestation
+
+[C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L407-L429) On Windows only, a builder may run without the full sandbox if `.adlc/config.json` holds a valid `sandboxBypassAttestation`. It must:
+
+- contain `installationId`, `repositoryRootCommit`, `repositoryOrigin`, `repositoryPath`, `nonce`, `runId`, `acknowledgedPlatform`, `authorizedBy`, `timestamp`, `expiresAt` and `signature`;
+- name `win32`, expire, and live no longer than one hour ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L455-L465));
+- match this host's `~/.adlc/installation_id`;
+- carry an HMAC-SHA256 signature over those fields made with `ADLC_ADMIN_KEY` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L567-L572));
+- use a single-use nonce, recorded on consumption so it cannot be replayed.
+
+On any other platform the attestation is rejected: "Sandbox bypass attestation is only supported on Windows" ([lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L80-L86)).
+
+## Secrets never reach workers
+
+Workers get an allow-listed environment. Known secrets (`ADLC_ADMIN_KEY`, `ADLC_MANIFEST_KEY`, `GITHUB_TOKEN`, cloud and model API keys), anything matching `KEY|TOKEN|SECRET|PASSWORD|AUTH|CREDENTIAL|PRIVATE|CERT`, and loader variables such as `NODE_OPTIONS` and `LD_PRELOAD` are stripped ([lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L22-L77)).
+
+## Summary of fail-closed rules
+
+| Situation | Result |
+| --- | --- |
+| Gate sandbox unavailable, `AGB_SANDBOX_GATES` unset | Gate fails |
+| Builder containment unavailable on macOS or Linux | Builder refused |
+| Builder containment incomplete on Windows, no valid attestation | Builder refused |
+| Rails declared but `adlc` not authenticated, or ticket store unreadable | Run refuses to dispatch (see [Rail enforcement](/docs/concepts/rail-enforcement)) |
+
+For the threat model, see [Security](/docs/reference/security). `agb doctor` reports these checks before a run: see [Verify](/docs/getting-started/verify).
