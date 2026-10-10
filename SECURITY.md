@@ -15,8 +15,9 @@ warranted, we will agree a disclosure timeline with you before publishing.
 
 ## Supported versions
 
-Only the latest published version receives security fixes. This project is pre-1.0
-(see [Stability](README.md#stability)); there are no long-term support branches.
+Only the latest published version receives security fixes. The project is at
+[1.0.0](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L3) and follows semver (see
+[Stability](README.md#stability)); there are no long-term support branches.
 
 ## Threat model
 
@@ -37,23 +38,32 @@ scrutiny as a shell script you did not write.
 
 **Boundaries you should know about:**
 
-- **Gate sandboxing is macOS-only.** Gate commands can be rewritten by the builder
-  inside its worktree, so they run under `sandbox-exec` (network denied; writes
-  confined to the worktree, excluding `.git` and `node_modules`). `sandbox-exec`
-  does not exist on Linux, so on Linux a requested sandbox **refuses to run**
-  rather than silently executing unsandboxed. Set `AGB_SANDBOX_GATES=0` to proceed
-  deliberately — only inside a disposable container.
-- **Subprocesses inherit your environment.** `agy` and gate commands receive the
-  full environment of the `agb` process. If your shell exports credentials
-  (`NPM_TOKEN`, cloud keys), the model's process can read them. Run `agb` from a
-  shell that does not export secrets you would not hand to the model.
+- **Gate sandboxing is platform-specific.** Gate commands can be rewritten by the
+  builder inside its worktree, so they run sandboxed: Seatbelt (`sandbox-exec`)
+  on macOS and [Bubblewrap (`bwrap`) on Linux](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L56-L84). The
+  network is [denied](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L49), writes are limited to the worktree
+  and temp, and `.git` and `node_modules` stay read-only. Gates
+  [fail closed](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L120-L135) only when no sandbox is usable:
+  rather than silently executing unsandboxed, they refuse to run. Windows has no
+  gate sandbox, so sandboxed gates there need `AGB_SANDBOX_GATES=0`, and a
+  builder without full containment is refused unless `.adlc/config.json` holds an
+  [HMAC-attested `sandboxBypassAttestation`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L276-L285). Set
+  `AGB_SANDBOX_GATES=0` only deliberately, inside a disposable container.
+- **Gate commands inherit your environment.** Builder `agy` processes are spawned
+  with known secrets and sensitive-looking variable names
+  [scrubbed](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L22-L48), but gate commands receive the full
+  environment of the `agb` process. If your shell exports credentials
+  (`NPM_TOKEN`, cloud keys), a gate script the builder rewrote can read them. Run
+  `agb` from a shell that does not export secrets you would not hand to the model.
 - **Transcripts may contain secrets.** The model can quote files it reads —
   including a `.env` — into its output, which is recorded. Transcripts, run state,
   and reports under `.booster/` are written owner-only (`0600`), but they are
   plaintext on disk. Treat `.booster/` as sensitive; it is gitignored by default.
-- **`AGB_ALLOW_DIRTY=1` permits a destructive rollback.** A failed gate can trigger
-  `git reset --hard`, discarding uncommitted work. Off by default; the warning is
-  not decorative.
+- **`AGB_ALLOW_DIRTY=1` runs on a dirty checkout.** Post-merge gates run in a
+  separate integration worktree and the base branch only advances by an atomic
+  [compare-and-swap `update-ref`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2283-L2285), but that
+  still moves the checked-out branch underneath your uncommitted work. Off by
+  default; the guard is worth honouring.
 
 ## Scope
 
