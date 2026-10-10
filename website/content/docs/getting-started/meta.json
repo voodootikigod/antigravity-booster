@@ -1,0 +1,4 @@
+{
+  "title": "Getting Started",
+  "pages": ["installation", "bootstrap", "quickstart", "upgrading-from-npm", "verify"]
+}

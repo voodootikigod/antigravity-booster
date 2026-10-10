@@ -1,0 +1,12 @@
+{
+  "title": "Guides",
+  "pages": [
+    "walkthrough",
+    "writing-plans",
+    "sweeps",
+    "sidecar-dashboard",
+    "review",
+    "operating-tips",
+    "headless-and-mcp"
+  ]
+}

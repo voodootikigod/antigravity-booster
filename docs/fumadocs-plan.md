@@ -1,3 +1,5 @@
+> **Superseded by .adlc/specs/docs-site.md** ([read the spec](../.adlc/specs/docs-site.md)). This plan is kept for history only; do not follow it.
+
 # Fumadocs Migration Plan
 
 This document outlines the strategy for migrating the `antigravity-booster` documentation from flat Markdown files to a structured, interactive documentation site powered by [Fumadocs](https://fumadocs.vercel.app/).

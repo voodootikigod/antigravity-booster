@@ -1,0 +1,20 @@
+{
+  "title": "Reference",
+  "pages": [
+    "cli",
+    "slash-commands",
+    "agents",
+    "skills",
+    "plan-schema",
+    "sweep-schema",
+    "environment",
+    "plugin-layout",
+    "mcp-tools",
+    "file-layout",
+    "log-formats",
+    "exit-and-error-codes",
+    "calibration",
+    "agy-integration",
+    "security"
+  ]
+}

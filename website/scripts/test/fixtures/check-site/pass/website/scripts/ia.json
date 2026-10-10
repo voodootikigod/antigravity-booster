@@ -1,0 +1,7 @@
+{
+  "pages": [
+    "index",
+    { "dir": "getting-started", "pages": ["installation"] },
+    { "dir": "project", "pages": [{ "dir": "design-history", "pages": ["index"] }] }
+  ]
+}
