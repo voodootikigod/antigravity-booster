@@ -8,7 +8,7 @@ This directory is isolated from the shipped plugin: it has its own `package.json
 
 ## Develop
 
-Use Node 22 (`.nvmrc` pins `22.19.0`).
+Use Node 24 (`.nvmrc` pins `24`), Vercel's default. The `agb` package itself still supports Node >= 22.19.0; only the site builds on 24.
 
 ```bash
 cd website
@@ -49,7 +49,7 @@ Design history (`content/docs/project/design-history/`) is listed in the navigat
 ## Deployment
 
 - Deployed by the Vercel GitHub integration: production from `main`, a preview deployment per PR. There is no deploy job in GitHub Actions and no `vercel.json`.
-- Vercel project settings (owner-operated): Root Directory `website/`; Node.js 22.x (Vercel resolves it from `engines.node` = `22.x` in `package.json`); default install and build commands.
+- Vercel project settings (owner-operated): Root Directory `website/`; Node.js 24.x, Vercel's default (it resolves the version from `engines.node` = `24.x` in `package.json`); default install and build commands.
 - Ignored Build Step: `git diff --quiet HEAD^ HEAD -- .` (skips builds for commits that do not touch `website/`).
 - The Vercel check is never a required status check; CI `build` + `check:site` is the merge evidence.
 - No environment variables or secrets are configured on Vercel.
