@@ -1,0 +1,44 @@
+{
+  "name": "agb-website",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "gen": "node scripts/gen-reference.mjs",
+    "check": "node scripts/check-all.mjs",
+    "check:site": "node scripts/check-site.mjs",
+    "lint:links": "node scripts/lint-links.mjs",
+    "lint": "biome check",
+    "test": "node --test scripts/test/"
+  },
+  "dependencies": {
+    "fumadocs-core": "16.17.1",
+    "fumadocs-mdx": "15.4.7",
+    "fumadocs-ui": "16.17.1",
+    "lucide-react": "1.50.0",
+    "mermaid": "12.1.0",
+    "next": "16.4.0",
+    "next-themes": "0.4.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/mdx": "2.0.14",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "next-validate-link": "1.6.7",
+    "postcss": "8.5.29",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "zod": "4.6.5"
+  }
+}

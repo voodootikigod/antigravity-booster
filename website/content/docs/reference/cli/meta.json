@@ -1,0 +1,22 @@
+{
+  "title": "CLI",
+  "pages": [
+    "index",
+    "run",
+    "sweep",
+    "plan",
+    "validate",
+    "preflight",
+    "review",
+    "status",
+    "doctor",
+    "bootstrap",
+    "migrate",
+    "sidecar",
+    "probe",
+    "pool",
+    "brains",
+    "import-brain",
+    "removed"
+  ]
+}

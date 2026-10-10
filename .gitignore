@@ -13,3 +13,9 @@ sidecars/agb.json
 !.adlc/ticket-archive/
 !.adlc/ticket-archive/**
 !.adlc/specs/
+
+# docs site (website/)
+website/.next/
+website/node_modules/
+website/.source/
+website/.vercel/

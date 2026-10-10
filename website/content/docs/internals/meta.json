@@ -1,0 +1,13 @@
+{
+  "title": "Internals",
+  "pages": [
+    "architecture",
+    "plan-compiler",
+    "run-lifecycle",
+    "integration-journal",
+    "plugin-and-migration",
+    "policy-guard",
+    "build-and-bundle",
+    "module-map"
+  ]
+}

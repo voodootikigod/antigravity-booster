@@ -1,0 +1,116 @@
+{
+  "pages": [
+    "index",
+    "---Getting Started---",
+    {
+      "dir": "getting-started",
+      "pages": ["installation", "bootstrap", "quickstart", "upgrading-from-npm", "verify"]
+    },
+    "---Concepts---",
+    {
+      "dir": "concepts",
+      "pages": [
+        "overview",
+        "agb-vs-boost",
+        "plan-boundary",
+        "pools-and-tiers",
+        "gates-and-sandboxing",
+        "prosecution",
+        "rail-enforcement",
+        "gate-evidence"
+      ]
+    },
+    "---Guides---",
+    {
+      "dir": "guides",
+      "pages": [
+        "walkthrough",
+        "writing-plans",
+        "sweeps",
+        "sidecar-dashboard",
+        "review",
+        "operating-tips",
+        "headless-and-mcp"
+      ]
+    },
+    "---Reference---",
+    {
+      "dir": "reference",
+      "pages": [
+        {
+          "dir": "cli",
+          "pages": [
+            "index",
+            "run",
+            "sweep",
+            "plan",
+            "validate",
+            "preflight",
+            "review",
+            "status",
+            "doctor",
+            "bootstrap",
+            "migrate",
+            "sidecar",
+            "probe",
+            "pool",
+            "brains",
+            "import-brain",
+            "removed"
+          ]
+        },
+        "slash-commands",
+        "agents",
+        "skills",
+        "plan-schema",
+        "sweep-schema",
+        "environment",
+        "plugin-layout",
+        "mcp-tools",
+        "file-layout",
+        "log-formats",
+        "exit-and-error-codes",
+        "calibration",
+        "agy-integration",
+        "security"
+      ]
+    },
+    "---Internals---",
+    {
+      "dir": "internals",
+      "pages": [
+        "architecture",
+        "plan-compiler",
+        "run-lifecycle",
+        "integration-journal",
+        "plugin-and-migration",
+        "policy-guard",
+        "build-and-bundle",
+        "module-map"
+      ]
+    },
+    "---Project---",
+    {
+      "dir": "project",
+      "pages": [
+        "contributing",
+        "adlc-in-this-repo",
+        "releasing",
+        "stability",
+        "changelog",
+        {
+          "dir": "design-history",
+          "pages": [
+            "index",
+            "roadmap-agy-1-1-11",
+            "roadmap-agy-1-2-8",
+            "antigravity-gui",
+            "linux-sandbox",
+            "agy-cli",
+            "native-plugin-installation"
+          ]
+        }
+      ]
+    }
+  ]
+}

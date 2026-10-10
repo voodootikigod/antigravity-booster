@@ -1,0 +1,17 @@
+{
+  "pages": [
+    "index",
+    "---Getting Started---",
+    "getting-started",
+    "---Concepts---",
+    "concepts",
+    "---Guides---",
+    "guides",
+    "---Reference---",
+    "reference",
+    "---Internals---",
+    "internals",
+    "---Project---",
+    "project"
+  ]
+}
