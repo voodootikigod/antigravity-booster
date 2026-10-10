@@ -61,6 +61,15 @@ export class Repo {
     writeFileSync(f, typeof content === 'string' ? content : prettyCanonicalJson(content));
     return this;
   }
+  // Stage a path through git plumbing only, never the working tree, so tree
+  // shapes a case-insensitive filesystem (macOS APFS) cannot hold, such as two
+  // names differing only by case, still reach the commit the guard reads.
+  stageOnly(p, content) {
+    const body = typeof content === 'string' ? content : prettyCanonicalJson(content);
+    const blob = sh(this.dir, 'git', ['hash-object', '-w', '--stdin'], { input: body }).stdout.trim();
+    (this.pending ??= []).push([blob, p]);
+    return this;
+  }
   read(p) { return readFileSync(join(this.dir, p), 'utf8'); }
   rm(p) { rmSync(join(this.dir, p), { recursive: true, force: true }); return this; }
   symlink(target, p) { const f = join(this.dir, p); mkdirSync(dirname(f), { recursive: true }); symlinkSync(target, f); return this; }
@@ -74,7 +83,7 @@ export class Repo {
     this.write('src/app.mjs', 'export const x = 1;\n');
     return this;
   }
-  commit(msg = 'c') { this.git('add', '-A'); this.git('commit', '-q', '--allow-empty', '-m', msg); return this.git('rev-parse', 'HEAD').trim(); }
+  commit(msg = 'c') { this.git('add', '-A'); for (const [blob, p] of this.pending ?? []) this.git('update-index', '--add', '--cacheinfo', `100644,${blob},${p}`); this.pending = []; this.git('commit', '-q', '--allow-empty', '-m', msg); return this.git('rev-parse', 'HEAD').trim(); }
   // Commit base on main and point origin/main at it; start the PR branch.
   base(msg = 'base') {
     this.commit(msg);

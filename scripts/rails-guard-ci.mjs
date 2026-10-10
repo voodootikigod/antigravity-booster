@@ -5,7 +5,8 @@
 // never from the PR tree. Imports node: built-ins only. No env-var overrides.
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
+import { realpathSync } from 'node:fs';
 
 export class Deny extends Error {}
 export class OpFail extends Error {}
@@ -335,4 +336,10 @@ export function main(argv, { cwd = process.cwd(), log = console.log, err = conso
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) process.exit(main(process.argv.slice(2)));
+// Entry check on resolved paths: import.meta.url is symlink-resolved but
+// argv[1] is not (macOS /var -> /private/var). A mismatch here used to skip
+// main() and exit 0, i.e. pass every PR, so compare realpaths.
+const isEntry = () => {
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+};
+if (process.argv[1] && isEntry()) process.exit(main(process.argv.slice(2)));

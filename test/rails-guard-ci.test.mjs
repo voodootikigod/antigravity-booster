@@ -3,7 +3,7 @@
 // history replayed from this repo's own object store (skipped when shallow).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, writeFileSync, chmodSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, chmodSync, mkdtempSync, rmSync, symlinkSync, copyFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -300,7 +300,7 @@ const denyCases = [
   ['J: non-json entry at HEAD', (r) => r.write(`${ACTIVE_DIR}/README.md`, 'hi'), /non-json/],
   ['J: non-canonical filename', (r) => r.write(`${ACTIVE_DIR}/x.json`, T('N')), /FILENAME_MISMATCH/],
   ['J: unparseable JSON at HEAD', (r) => r.write(r.shardPath('N'), '{nope'), /cannot parse/],
-  ['J: duplicate id at HEAD (case collision)', (r, a) => r.write(r.shardPath(a.id).replace('/a--', '/A--'), a), /case-insensitive|FILENAME_MISMATCH/],
+  ['J: duplicate id at HEAD (case collision)', (r, a) => r.stageOnly(r.shardPath(a.id).replace('/a--', '/A--'), a), /case-insensitive|FILENAME_MISMATCH/],
   ['J: shard over size limit', (r) => r.ticket(T('BIG', { body: 'x'.repeat(MAX_SHARD_BYTES) })), /exceeds/],
   ['manifest.jsonl rewritten', (r) => r.write('.adlc/manifest.jsonl', 'rewritten\n'), /append-only/],
   ['manifest.jsonl introduced non-empty', (r) => r.rm('.adlc/manifest.jsonl'), null],
@@ -589,3 +589,19 @@ test('replay: real #82 rails come from the active base ticket', { skip: hasHisto
   const res = evaluate({ base: gitTree(git, '5d1245a', 'base'), head: gitTree(git, '9da153c', 'head'), mergeBase: gitTree(git, '5d1245a', 'base') });
   assert.ok(res.rails.includes('lib/lock.mjs'));
 });
+
+// Regression: invoked through a symlinked directory (macOS $TMPDIR is
+// /var -> /private/var), the entry check once failed, skipped main() and
+// exited 0, passing every PR. The guard must still run and deny here.
+test('entry: guard invoked via a symlinked path still runs (no silent exit 0)', withRepo((r) => {
+  const real = mkdtempSync(join(tmpdir(), 'rg-real-'));
+  const link = `${real}-link`;
+  try {
+    mkdirSync(join(real, 'g'));
+    copyFileSync(GUARD, join(real, 'g', 'rails-guard-ci.mjs'));
+    symlinkSync(real, link);
+    r.dirStore().base().write('src/app.mjs', 'ok').merge();
+    const res = r.run(['--base', 'origin/main', '--bootstrap-unverified'], { guard: join(link, 'g', 'rails-guard-ci.mjs') });
+    assert.equal(res.code, 2, res.out);
+  } finally { rmSync(link, { force: true }); rmSync(real, { recursive: true, force: true }); }
+}));
