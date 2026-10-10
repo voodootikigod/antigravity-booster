@@ -1,0 +1,16 @@
+{
+  "body": "test/hook-runner.test.mjs 'unclosed stdin (writer holds pipe open) still emits fallback within the deadline' failed on macOS CI (PR #101 run) at 3523ms against a 3500ms ceiling for a 2s watchdog: runner jitter, not a behavior change. Align both unclosed-stdin tests with the SIGTERM-escalation test's budget from T-HOOK-RUNNER-ESCALATION-BUDGET (#81): ceiling 2s timeout + 2.5s jitter = 4500ms; add a 1900ms floor to the pipe-held test so it still proves the watchdog produced the fallback. bin/hook-runner.sh is unchanged. Verify: node --test test/hook-runner.test.mjs passes; npm test passes. Archive this ticket after merge.",
+  "edges": [],
+  "id": "T-HOOK-RUNNER-STDIN-BUDGET",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS",
+    "bin/hook-runner.sh"
+  ],
+  "scope": [
+    "test/hook-runner.test.mjs"
+  ],
+  "title": "De-flake hook-runner unclosed-stdin latency bound on macOS CI"
+}

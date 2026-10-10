@@ -472,13 +472,17 @@ for (const [label, shell] of SHELLS) {
       });
       assertInvariant(r);
       assert.equal(decisionOf(r), 'deny');
-      assert.ok(r.ms <= 3500, `took ${r.ms}ms`);
+      // Same budget as the escalation test above: the 2s timeout plus 2.5s of runner
+      // jitter (macOS CI measured 3523ms against the old 3500ms ceiling). The floor
+      // proves the fallback came from the watchdog, not an early exit.
+      assert.ok(r.ms >= 1900, `emitted before the 2s watchdog could fire: ${r.ms}ms`);
+      assert.ok(r.ms <= 4500, `took ${r.ms}ms`);
     });
 
     test('unclosed stdin with no bytes at all emits fallback within the deadline', async () => {
       const r = await go({ keepStdinOpen: true, args: ['--timeout', '2'], env: { STUB_MODE: 'empty' } });
       assert.equal(r.code, 0);
-      assert.ok(r.ms <= 3500, `took ${r.ms}ms`);
+      assert.ok(r.ms <= 4500, `took ${r.ms}ms`);
       if (r.stdout !== '') assertInvariant(r);
     });
   });
