@@ -57,8 +57,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        plan: { type: 'string', description: 'Path to plan.json file' },
-        concurrency: { type: 'integer', description: 'Override default concurrency cap' }
+        plan: { type: 'string', description: 'Path to plan.json file' }
       },
       required: ['plan']
     }
@@ -183,8 +182,16 @@ async function handleToolCall(id, name, args) {
     if (args.noParallax) cliArgs.push('--no-parallax');
     if (args.noPremortem) cliArgs.push('--no-premortem');
   } else if (name === 'agb_run') {
+    // `agb run` has no --concurrency flag (caps come from plan.json), so an
+    // explicit value would be silently ignored — reject it instead.
+    if (args.concurrency !== undefined) {
+      sendResult(id, {
+        content: [{ type: 'text', text: "agb_run: unsupported parameter 'concurrency' — agb run has no concurrency flag; set caps in plan.json instead" }],
+        isError: true
+      });
+      return;
+    }
     cliArgs.push('run', args.plan);
-    if (args.concurrency !== undefined) cliArgs.push('--concurrency', String(args.concurrency));
   } else if (name === 'agb_preflight') {
     cliArgs.push('preflight', args.plan);
   } else if (name === 'agb_status') {

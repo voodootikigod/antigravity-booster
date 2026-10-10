@@ -2,7 +2,7 @@
 // Fixture repos are throwaway, offline, and never sign commits.
 import { test, after } from 'node:test';
 import assert from 'node:assert';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -47,4 +47,55 @@ test('item 1: agb sweep --project passes the project to every agy invocation', (
   // Builder AND prosecutor must both have been spawned for this to mean anything.
   assert(seen.length >= 2, `expected builder + prosecutor invocations, saw ${seen.length}`);
   for (const line of seen) assert.match(line, /--project my-proj\b/, `agy invocation missing --project: ${line.slice(0, 200)}`);
+});
+
+// --- MCP server (items 2, 3) ---
+const MCP_SERVER = fileURLToPath(new URL('../mcp/server.mjs', import.meta.url));
+
+
+/** Send JSON-RPC requests to a fresh MCP server; resolve with responses keyed by id. */
+function mcpExchange(requests, { timeoutMs = 30000 } = {}) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(process.execPath, [MCP_SERVER], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const want = new Set(requests.map((r) => r.id));
+    const got = new Map();
+    let buf = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`MCP timeout; got ${[...got.keys()]}`)); }, timeoutMs);
+    child.stdout.on('data', (d) => {
+      buf += d;
+      let nl;
+      while ((nl = buf.indexOf('\n')) !== -1) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const msg = JSON.parse(line);
+        if (want.has(msg.id)) got.set(msg.id, msg);
+      }
+      if (got.size === want.size) { clearTimeout(timer); child.stdin.end(); child.kill(); resolvePromise(got); }
+    });
+    child.on('error', (e) => { clearTimeout(timer); reject(e); });
+    for (const r of requests) child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...r }) + '\n');
+  });
+}
+
+test('item 2: agb_run input schema does not advertise concurrency', async () => {
+  const res = await mcpExchange([{ id: 1, method: 'tools/list' }]);
+  const run = res.get(1).result.tools.find((t) => t.name === 'agb_run');
+  assert(run, 'agb_run tool missing');
+  assert.equal(Object.hasOwn(run.inputSchema.properties, 'concurrency'), false);
+});
+
+test('item 2: agb_run with concurrency returns a tool error naming the parameter', async () => {
+  const res = await mcpExchange([{ id: 2, method: 'tools/call', params: { name: 'agb_run', arguments: { plan: join(TMP, 'nope.json'), concurrency: 3 } } }]);
+  const r = res.get(2).result;
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /concurrency/);
+  assert.doesNotMatch(r.content[0].text, /ENOENT|nope\.json/, 'must reject before spawning agb');
+});
+
+test('item 2: agb_run without concurrency spawns agb run', async () => {
+  const res = await mcpExchange([{ id: 3, method: 'tools/call', params: { name: 'agb_run', arguments: { plan: join(TMP, 'nope.json') } } }]);
+  const text = res.get(3).result.content[0].text;
+  assert.match(text, /nope\.json/, `agb run did not execute: ${text.slice(0, 300)}`);
+  assert.doesNotMatch(text, /concurrency/);
 });
