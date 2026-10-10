@@ -5,9 +5,17 @@ import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 var __dirname = dirname(fileURLToPath(import.meta.url));
 var activeProcesses = /* @__PURE__ */ new Map();
+function readPackageVersion() {
+  try {
+    return JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version;
+  } catch (err) {
+    logDiagnostic(`could not read package.json version: ${err.message}`);
+    return "unknown";
+  }
+}
 var IS_BUNDLED = true;
 function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED) {
   const candidate = bundled ? join(dir, "agb.mjs") : join(dir, "..", "bin", "agb.mjs");
@@ -46,8 +54,7 @@ var TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        plan: { type: "string", description: "Path to plan.json file" },
-        concurrency: { type: "integer", description: "Override default concurrency cap" }
+        plan: { type: "string", description: "Path to plan.json file" }
       },
       required: ["plan"]
     }
@@ -130,7 +137,7 @@ async function handleRequest(req) {
       },
       serverInfo: {
         name: "antigravity-booster-mcp",
-        version: "0.7.0"
+        version: readPackageVersion()
       }
     });
     return;
@@ -156,8 +163,14 @@ async function handleToolCall(id, name, args) {
     if (args.noParallax) cliArgs.push("--no-parallax");
     if (args.noPremortem) cliArgs.push("--no-premortem");
   } else if (name === "agb_run") {
+    if (args.concurrency !== void 0) {
+      sendResult(id, {
+        content: [{ type: "text", text: "agb_run: unsupported parameter 'concurrency' \u2014 agb run has no concurrency flag; set caps in plan.json instead" }],
+        isError: true
+      });
+      return;
+    }
     cliArgs.push("run", args.plan);
-    if (args.concurrency !== void 0) cliArgs.push("--concurrency", String(args.concurrency));
   } else if (name === "agb_preflight") {
     cliArgs.push("preflight", args.plan);
   } else if (name === "agb_status") {
