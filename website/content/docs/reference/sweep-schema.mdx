@@ -1,6 +1,123 @@
 ---
 title: "Sweep schema"
-placeholder: true
+description: "The sweep.json fields agb sweep reads and the plan sweepToPlan generates from them."
 ---
 
-This page is being written.
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+A sweep runs the same operation across many targets: a migration, a refactor, an audit, a test backfill. `agb sweep sweep.json` turns the sweep spec into an ordinary [plan](/docs/reference/plan-schema) with one ticket per target, validates it with the same `validatePlan`, and hands it to the normal run pipeline (build, gate, prosecute, merge) ([dispatcher](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L133-L145)). The conversion is [`sweepToPlan`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L35-L61) in `lib/sweep.mjs`.
+
+## Example
+
+```json title="sweep.json"
+{
+  "repo": "/abs/path/to/repo",
+  "base": "main",
+  "gate": { "test": "npm test" },
+  "tier": "cheap",
+  "pool_hint": "auto",
+  "operation": "Add JSDoc to every exported function in {target}. Do not change behavior.",
+  "targetGlob": "src/**/*.mjs",
+  "scopePerTarget": ["{target}"]
+}
+```
+
+## Input fields
+
+<TypeTable
+  type={{
+    repo: {
+      type: 'string',
+      description: 'Target repository. Required; agb resolves it to an absolute path.',
+      required: true,
+    },
+    operation: {
+      type: 'string',
+      description: 'The per-target instruction. Must contain {target}; {i} (1-based index) is also substituted. Becomes each ticket body.',
+      required: true,
+    },
+    targets: {
+      type: 'string[]',
+      description: 'Explicit target list. Takes precedence over targetGlob.',
+    },
+    targetGlob: {
+      type: 'string',
+      description: 'Pathspec expanded with git ls-files in repo, so only tracked files match. Used when targets is absent.',
+    },
+    scopePerTarget: {
+      type: 'string[]',
+      description: 'Scope templates for each ticket, with {target} and {i} substituted.',
+      default: "['{target}']",
+    },
+    base: {
+      type: 'string',
+      description: 'Base branch.',
+      default: "'main'",
+    },
+    gate: {
+      type: '{ build?: string; test?: string }',
+      description: 'Gate commands, copied to the plan unchanged and validated by validatePlan.',
+    },
+    tier: {
+      type: "'cheap' | 'mid' | 'frontier'",
+      description: 'Tier for every generated ticket. Sweeps default to cheap because each item is small and densely railed.',
+      default: "'cheap'",
+    },
+    pool_hint: {
+      type: "'gemini' | 'claude' | 'claude-gpt' | 'gpt-oss' | 'auto'",
+      description: 'Pool hint for every generated ticket.',
+      default: "'auto'",
+    },
+    caps: {
+      type: 'object',
+      description: 'Per-pool concurrency caps, copied to the plan.',
+    },
+    prosecution: {
+      type: '{ dryPasses?: number }',
+      description: 'Prosecution settings, copied to the plan.',
+    },
+  }}
+/>
+
+`sweepToPlan` throws, and `agb sweep` exits 1, when `repo` is missing, `operation` lacks `{target}`, or neither `targets` nor `targetGlob` yields at least one target ([checks](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L36-L42)).
+
+## Generated plan
+
+For target number *i* (1-based) the generated ticket is ([ticket mapping](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L44-L52)):
+
+<TypeTable
+  type={{
+    id: {
+      type: 'string',
+      description: 'S1, S2, ... in target order.',
+    },
+    title: {
+      type: 'string',
+      description: "'sweep: ' followed by the target path.",
+    },
+    body: {
+      type: 'string',
+      description: 'operation with {target} and {i} filled in, plus a note that this is one item of an N-target sweep and must touch only its own target.',
+    },
+    scope: {
+      type: 'string[]',
+      description: 'scopePerTarget with substitutions.',
+    },
+    tier: {
+      type: 'string',
+      description: 'spec.tier, else cheap.',
+    },
+    pool_hint: {
+      type: 'string',
+      description: 'spec.pool_hint, else auto.',
+    },
+  }}
+/>
+
+Generated tickets have no `edges` and no `rails`: every item is independent. The plan itself carries `repo`, `base` (default `main`), `gate`, `caps`, `prosecution` and `tickets` ([return value](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/sweep.mjs#L53-L60)).
+
+<Callout type="warn" title="Scopes must not overlap">
+Each target becomes a parallel ticket. If two `scopePerTarget` expansions name the same file (for example a shared index), the tickets race on it. Keep per-target scopes disjoint, or run the shared change as a separate plan.
+</Callout>
+
+See the [Sweeps guide](/docs/guides/sweeps) for when to use a sweep and how `--project` applies, and [`agb sweep`](/docs/reference/cli/sweep) for the command.

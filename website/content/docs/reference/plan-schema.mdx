@@ -1,6 +1,140 @@
 ---
 title: "Plan schema"
-placeholder: true
+description: "The plan.json fields agb run, validate and preflight accept, and every rule validatePlan enforces."
+claims: [C4, C21]
 ---
 
-This page is being written.
+import { TypeTable } from 'fumadocs-ui/components/type-table';
+
+A plan is a JSON file that describes one build-out: the target repository, the gate commands that decide whether a ticket's work is acceptable, and a DAG of tickets. `agb plan` compiles one for you from an Antigravity plan or a local spec; you can also write it by hand. `agb run`, `agb validate` and `agb preflight` all load it through the same function, which runs [`validatePlan`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L242) before anything else happens ([loadPlan](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L113-L121)).
+
+## Example
+
+This is the shipped template, [`templates/plan.example.json`](https://github.com/voodootikigod/antigravity-booster/blob/main/templates/plan.example.json). Three tickets: `T1` and `T2` run in parallel, `T3` depends on `T1` and treats `lib/math.mjs` as a rail.
+
+<include>../../../../templates/plan.example.json</include>
+
+## Top-level fields
+
+These fields are validated by `lib/plan.mjs`.
+
+<TypeTable
+  type={{
+    repo: {
+      type: 'string',
+      description: 'Path to the target git repository. Required. agb resolves it to an absolute path after validation.',
+      required: true,
+    },
+    gate: {
+      type: '{ build?: string; test?: string }',
+      description: 'Gate commands run in each ticket worktree and again after merge. At least one of build or test is required. In strict mode (the default) each must match the npm gate pattern below.',
+      required: true,
+    },
+    tickets: {
+      type: 'Ticket[]',
+      description: 'The ticket DAG. Must be non-empty.',
+      required: true,
+    },
+    pools: {
+      type: 'PoolSet',
+      description: 'Runtime only. A live PoolSet instance a programmatic caller of runPlan may pass; it cannot be expressed in JSON. When absent, runPlan builds one from caps.',
+    },
+    adlcBin: {
+      type: 'never',
+      description: 'Prohibited. Any value is a validation error: the ADLC binary is resolved and authenticated by the runtime, never by the plan.',
+    },
+  }}
+/>
+
+The scheduler also reads these optional fields ([`plan.base`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1291), [`plan.caps`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1394), [`plan.prosecution.dryPasses`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1964)). `validatePlan` does not check them.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `base` | string | `main` | Branch the run builds on and merges into. |
+| `caps` | object | pool defaults | Per-pool concurrency caps, merged over the defaults (`gemini-flash`, `gemini-pro`, `claude`, `gpt-oss`). See [Calibration](/docs/reference/calibration). |
+| `prosecution.dryPasses` | number | `1` | Consecutive clean prosecution passes required before a ticket may merge. |
+
+## Ticket fields
+
+<TypeTable
+  type={{
+    id: {
+      type: 'string',
+      description: 'Unique ticket id matching /^[A-Za-z0-9][A-Za-z0-9_.-]*$/. Used as the worktree name (.worktrees/agb-<id lowercased>) and branch (agb/<id lowercased>), so ids must also be unique case-insensitively.',
+      required: true,
+    },
+    title: {
+      type: 'string',
+      description: 'Short human label shown in status output.',
+    },
+    body: {
+      type: 'string',
+      description: 'The full, self-contained specification the builder receives. Required and non-blank: without it the builder charter renders an empty spec.',
+      required: true,
+    },
+    scope: {
+      type: 'string[]',
+      description: 'Non-empty list of repo-relative pathspecs the ticket may change. An empty scope would disable the out-of-scope check, so it is rejected.',
+      required: true,
+    },
+    rails: {
+      type: 'string[]',
+      description: 'Pathspecs that must not change while this ticket is in flight (frozen tests, contracts). Validated with the same pathspec rules as scope.',
+    },
+    edges: {
+      type: '{ to: string }[]',
+      description: 'Dependencies. Each to must name another ticket in the plan; self-edges and cycles are rejected.',
+    },
+    tier: {
+      type: "'cheap' | 'mid' | 'frontier'",
+      description: 'Model tier. Unset means mid for routing. agb plan may overwrite it with the adlc model-router assignment.',
+      default: 'mid',
+    },
+    pool_hint: {
+      type: "'gemini' | 'claude' | 'claude-gpt' | 'gpt-oss' | 'auto'",
+      description: 'Restricts which quota pool family the tier candidates are drawn from. The tier and hint together must leave at least one model candidate.',
+    },
+  }}
+/>
+
+## Validation rules
+
+`validatePlan` returns a list of error strings; an empty list means the plan is valid. Every rule below produces one error per offending item, so you see all problems at once.
+
+**Plan level**
+
+- `repo` must be present ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L244)).
+- `adlcBin` must be absent ([C21](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L245-L247)).
+- `gate` must declare `build` or `test`. With strict gates, each declared command must match `^npm (test|run [a-zA-Z0-9_:-]+)$`, that is `npm test` or `npm run <script>` and nothing else ([C21](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L248-L258)). Strict mode is on unless `AGB_STRICT_GATES=0` ([compilePlan default](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L587)); `agb run`, `validate` and `preflight` always call `validatePlan` with its default, which is strict ([default argument](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L242)).
+- `tickets` must be non-empty ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L260)).
+
+**Ids**
+
+- No exact duplicates, and each id must match the ticket id pattern ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L265-L269)).
+- Ids must be unique case-insensitively: `Foo` and `foo` both map to worktree `agb-foo` and branch `agb/foo`, and creating the second would destroy the first ([C21](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L270-L275)).
+
+**Per ticket**
+
+- Every edge needs a non-blank string `to`, may not point at its own ticket, and must name a ticket that exists ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L279-L290)).
+- `body` is required and non-blank; `scope` is a non-empty array ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L291-L298)).
+- `scope` and `rails` entries are normalized (a trailing `/` becomes `/**`) and must be valid pathspecs: relative, no `.` or `..` segments, no empty segments, already normalized, not `*`, `**` or `.`, and matching the conservative character set in `PATHSPEC_RE` ([validatePathspec](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L95-L104), [applied](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L299-L313)).
+- `tier` must be `cheap`, `mid` or `frontier` ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L314-L316)).
+- `pool_hint` must be one of `gemini`, `claude`, `claude-gpt`, `gpt-oss` or `auto` ([C4](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L317-L318)), and the tier plus hint must yield at least one model candidate ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L319-L321)). The names are pool families, not individual models.
+
+**Graph**
+
+- The ticket DAG must be acyclic; a cycle is reported with the ids that form it ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L323-L332)).
+
+<Callout type="info" title="Scope overlaps are a compile-time check">
+`validatePlan` does not reject two parallel tickets with overlapping scopes. `agb plan` does: during compilation it forecasts overlaps and feeds them back as blocking errors until the plan is repartitioned or an edge is added ([compile loop](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L617-L622)). `agb preflight` reports the same forecast for hand-written plans.
+</Callout>
+
+## Gate script integrity
+
+Because `npm test` runs whatever `package.json` says, the scheduler also checks before merge that a ticket did not rewrite the gate script, or a script it delegates to, or its `pre`/`post` hooks ([verifyGateScriptIntegrity](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L114-L240)). A tampered script fails the ticket with error kind `gate_script_tampering`. See [Gates and sandboxing](/docs/concepts/gates-and-sandboxing).
+
+## Related
+
+- [Writing plans](/docs/guides/writing-plans)
+- [Sweep schema](/docs/reference/sweep-schema), which compiles to this shape
+- [`agb validate`](/docs/reference/cli/validate) and [Exit and error codes](/docs/reference/exit-and-error-codes)

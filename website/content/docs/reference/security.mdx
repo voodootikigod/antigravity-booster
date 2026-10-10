@@ -1,7 +1,67 @@
 ---
 title: "Security"
-description: "Threat model and security notes"
-placeholder: true
+description: "agb's threat model and the boundaries that enforce it: sandboxes, environment scrubbing, sidecar authentication and on-disk state."
+claims: [C3, C22, C23]
 ---
 
-This page is being written.
+agb runs an LLM that writes code in your repository, executes your build and test commands against that code, and merges the result. This page states what agb trusts, what it does not, and the mechanisms in v1.0.0 that hold the line. To report a vulnerability, follow the process in [SECURITY.md](https://github.com/voodootikigod/antigravity-booster/blob/main/SECURITY.md).
+
+<Callout type="info" title="This page supersedes parts of SECURITY.md">
+The threat-model section of the root `SECURITY.md` predates the v1.0.0 sandbox and environment work: it describes gate sandboxing as macOS-only and says subprocesses inherit your whole environment. The behavior below is read from the v1.0.0 source.
+</Callout>
+
+## Trust model
+
+**Untrusted: everything the model produces.** Code, test files, `package.json` edits and transcript text. Model output is never passed through a shell (subprocesses are spawned with argument arrays), the merge decision comes from gates plus a JSON severity contract from a separate prosecutor rather than the builder's own claim, and a builder that rewrites the gate script is caught before merge ([verifyGateScriptIntegrity](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L114)).
+
+**Trusted: your plan and your machine's configuration.** The `gate` commands in `plan.json` are yours and run by design. Strict mode limits them to `npm test` or `npm run <script>` ([plan rule](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L248)), and `adlcBin` cannot be set from a plan. Treat a plan you did not write like a shell script you did not write.
+
+**Trusted, human-attested: `.adlc/config.json`.** The trust root holds the Windows sandbox bypass attestation and the attestation flags. Only a human should edit it.
+
+## Gate sandbox
+
+Gate commands run inside the ticket worktree, where the builder could have rewritten them, so they run sandboxed ([C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L90-L107)):
+
+| Platform | Mechanism | Behavior |
+|---|---|---|
+| macOS | Seatbelt (`sandbox-exec`) | Network denied; writes allowed only under the worktree and temp; the worktree's `.git` and `node_modules` stay read-only ([profile](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L29-L53)). |
+| Linux | bubblewrap (`bwrap`) | Same policy: `--unshare-net`, host read-only, worktree and temp writable, `.git` and `node_modules` re-bound read-only ([C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L56-L84)). |
+| Windows | none | No gate sandbox exists, so a sandboxed gate is refused. |
+
+**Fail closed.** When a sandbox is requested but none is usable (no `bwrap` installed, user namespaces disabled, Windows), the gate does not run; it returns a failure that tells you why ([C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L126-L134)). The only way past this is `AGB_SANDBOX_GATES=0`, which runs gates unsandboxed with your full privileges. Set it only inside a disposable container that is itself the isolation boundary.
+
+Because network is denied, a gate that needs to download dependencies or reach a service fails under the sandbox. Install dependencies before the run.
+
+## Builder sandbox
+
+Builders always run with agy's `--sandbox`, and agb also wraps the agy process: Seatbelt on macOS (writes limited to the worktree and temp, reads of `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.npmrc`, `~/.netrc` and similar denied) and bubblewrap on Linux. On macOS and Linux an unsandboxed builder is refused; there is no override ([builder rule](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L266-L275)).
+
+On Windows a builder may run without a sandbox only with a valid `sandboxBypassAttestation` in `.adlc/config.json`: an HMAC-SHA256 signature over the attestation payload, keyed by `ADLC_ADMIN_KEY`, with a single-use nonce ([C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L276-L285), [HMAC check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L572)). `agb doctor` reports whether the attestation verifies. Setting `AGB_REQUIRE_DRIVER_SIGNATURE=1` makes doctor require a signed driver attestation as well.
+
+See [Gates and sandboxing](/docs/concepts/gates-and-sandboxing) for the full picture.
+
+## Environment
+
+**Builders get a scrubbed environment** ([C23](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L22-L48)). Only allowlisted variables (`PATH`, `HOME`, `USER`, `LANG`, `TERM`, `NODE_ENV`, `TMPDIR`, git isolation variables) and `AGB_*` / `ADLC_*` variables pass, and even those are dropped when they are a listed secret (`ADLC_ADMIN_KEY`, `ADLC_MANIFEST_KEY`, `GITHUB_TOKEN`, `GH_TOKEN`, `NPM_TOKEN`, AWS keys, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) or their name matches `KEY|TOKEN|SECRET|PASSWORD|AUTH|CREDENTIAL|PRIVATE|CERT`. Runtime-injection variables such as `NODE_OPTIONS`, `LD_PRELOAD` and `DYLD_INSERT_LIBRARIES` are always dropped ([C23](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L65-L78)).
+
+**Gate commands get the full environment** of the `agb` process ([runGate env](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L151-L152)). The sandbox denies them network access, which limits exfiltration, but they can read every exported variable. Run agb from a shell that does not export credentials you would not hand to your test suite.
+
+## Sidecar dashboard
+
+`agb sidecar` serves the dashboard on `127.0.0.1` only ([listen](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L203)) and generates a random 128-bit token per session. The page (`/`) requires `?token=`; the event stream (`/events`) requires the token as a bearer header or query parameter; both comparisons are constant-time ([token checks](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L27-L46)).
+
+<Callout type="warn" title="ANTIGRAVITY_SIDECAR_WEB_PORT disables the token check">
+`ANTIGRAVITY_SIDECAR_WEB_PORT` is real. It selects jetski mode and the port (default 3333) in the sidecar launcher ([C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/jetski-launcher.mjs#L8-L9)), and whenever it is set the server skips the token check for both `/` and `/events` ([C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L32-L46)). It is set only by the Antigravity jetski launcher, which hosts the dashboard inside the app; the server still binds to `127.0.0.1`, so it is reachable only from your machine. **Never set it by hand**: doing so turns off dashboard authentication for any local process or browser page that can reach the port.
+</Callout>
+
+## Data on disk
+
+Transcripts, run state and reports under `.booster/` are plaintext. They contain full prompts and model output, which can quote any file the model read, including a `.env`. agb forces `.booster/` and its log directories to `0700` and files to `0600`, and gitignores `.booster/` ([ownerOnlyDir](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L34-L48)). Treat the directory as sensitive and delete old run logs you do not need. See [File layout](/docs/reference/file-layout) and [Log formats](/docs/reference/log-formats).
+
+## Uncommitted changes
+
+agb refuses to start on a dirty working tree unless `AGB_ALLOW_DIRTY=1`. Commit or stash your work first; the override exists for automation that knows its tree state.
+
+## Rails and the policy guard
+
+Rails declared by active tickets are enforced three ways: the in-session policy guard denies agent edits to rail paths, `adlc rails-guard` checks diffs before dispatch and merge, and CI runs the same check. Enforcement gates fail closed when rails are declared. See [Rail enforcement](/docs/concepts/rail-enforcement) and [Policy guard](/docs/internals/policy-guard).
