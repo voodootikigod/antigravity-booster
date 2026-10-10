@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-10T10:56:12.813Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "4667608aedf68d9a890556edd70b6dbf2bc69a8c1684810d4b619611d957c21f",
+    "ticketHash": "361a11d4d348c5911389776a7d342aca137003c4af056211c34f1ecea44dbd0c",
+    "version": 1
+  },
   "body": "Replace the stock Fumadocs look with a design system inspired by antigravity.google but with agb's own identity (owner direction 2026-10-10, via /impeccable). Record strategy in website/PRODUCT.md and the visual system in website/DESIGN.md (Stitch format). Implement: Google Sans Flex + Google Sans Code self-hosted via @fontsource-variable packages (exact pins, no build-time network); console token palette in website/app/global.css (cool tinted neutrals, Go Blue #3279f9 as indicator only, Link Blue #1f63d6 / #7ea8ff for AA link text) for light and dark; Readout Rule (mono for code/values), evidence 'src' tags on pinned-source links, ruled table headers, Go Blue focus rings, reduced-motion kill switch; a console Callout component replacing Fumadocs' side-striped callout; agb mark + wordmark in the nav; telemetry strip keeping the exact text 'These docs track main. Latest release: vX.Y.Z.' (check-site e); a redesigned landing page (display headline, copyable install command, flight-sequence section, ruled route list). Remove the six root sidebar separators that duplicated folder names (content/docs/meta.json, scripts/ia.json, spec 4 tree). Verify: cd website && npm ci && npm run build && npm run check:site && npm test && node scripts/check-all.mjs && npm run lint all pass; root npm test passes. Archive this ticket after merge.",
+  "completed": true,
   "edges": [],
   "id": "T-DOCS-VISUAL",
   "rails": [
