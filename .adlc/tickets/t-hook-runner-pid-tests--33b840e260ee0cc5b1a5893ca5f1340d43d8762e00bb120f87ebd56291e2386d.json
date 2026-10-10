@@ -1,0 +1,16 @@
+{
+  "body": "Two lines in bin/hook-runner.sh from T-MACOS-TIMING-FIXES are unguarded by tests: the watchdog's [ \"$_CPID\" = \"$_CPID2\" ] re-check before SIGKILL, and rm -f \"$TMP_PID\" right after wait \"$CHILD_PID\". Add tests to test/hook-runner.test.mjs only: (1) swap the child pidfile to a victim pid, wait until the victim records the watchdog SIGTERM, remove the pidfile, assert the victim survives; (2) a PATH shim around rm logs invocations and the test asserts the child pidfile is removed individually before the final rm -rf cleanup. Each test must fail with its line deleted and pass with it present. Done when env -u ADLC_MANIFEST_KEY npm test is green.",
+  "edges": [],
+  "id": "T-HOOK-RUNNER-PID-TESTS",
+  "rails": [
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS",
+    "lib/lock.mjs",
+    "bin/hook-runner.sh"
+  ],
+  "scope": [
+    "test/hook-runner.test.mjs"
+  ],
+  "title": "Cover hook-runner child-pid SIGKILL re-check and post-wait pidfile removal"
+}
