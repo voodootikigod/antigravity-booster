@@ -40,14 +40,16 @@ node skills/modernize/scripts/audit.mjs [TARGET_ADLC_VERSION] [PINNED_ADLC_REF] 
 2. **Stage 2: Codebase Static & Behavioral Compatibility Audit**:
    - Audits core repository modules (`lib/prosecute.mjs`, `lib/preflight.mjs`, `lib/doctor.mjs`, `lib/agy.mjs`, `lib/pools.mjs`, `lib/plan.mjs`, `lib/bootstrap.mjs`, `package.json`).
    - Verifies module integrity, rejects source symlinks, and validates baseline dependency versions.
+   - **Codeweight & Tech-Debt Pruning**: Computes line and byte budgets across `lib/` and surfaces dead-code pruning candidates (such as retired model aliases and legacy ticket storage backends).
 
 3. **Stage 3: Subsystem Delta Matrix Analysis**:
-   - Evaluates the 5 architectural modernization pillars:
-     - Pillar 1: Model Catalog & Dual-Pool Quota Routing
-     - Pillar 2: Subprocess Protocol & Structured Output (JSON Schema)
+   - Dynamically evaluates differences between live runtimes and codebase capabilities across 6 architectural modernization pillars:
+     - Pillar 1: Model Catalog & Dual-Pool Quota Routing (dynamic additions/retirements)
+     - Pillar 2: Subprocess Protocol & Structured Output (JSON Schema / stream-json)
      - Pillar 3: Execution Timeouts & Watchdog Controls
      - Pillar 4: ADLC Deep Integration & Binary Authority
      - Pillar 5: Platform Sandboxing & Integration Recovery
+     - Pillar 6: Deprecation & Codeweight Pruning (retiring obsolete shims and workarounds)
 
 4. **Stage 4: Implementation Roadmap & Ticket DAG Validation**:
    - Extracts and parses the canonical machine-readable ticket plan from `docs/research/roadmap-agy-1.2.8-adlc-1.11.1.md`.
@@ -79,12 +81,13 @@ Scan `lib/` and verify compatibility with discovered facts:
 ---
 
 ### 4. Construct Subsystem Delta Matrix
-Tabulate differences into five clear pillars:
+Tabulate differences dynamically across six architectural pillars:
 1. **Model Catalog & Quota Pools**: New models, retired models, pool concurrency vs quota limits.
 2. **Subprocess Protocol & Structured Output**: JSON mode, JSON schema enforcement, stream-JSON event streaming.
 3. **Execution Timeouts & Controls**: Reasoning effort flags, timeout ceilings.
 4. **ADLC Integration & Offloading**: CLI flags, store health checks, offloading opportunities.
 5. **Platform Sandboxing**: OS sandbox capabilities and verification.
+6. **Deprecation & Codeweight Pruning**: Obsolete fallbacks, retired models (e.g. Gemini 3.5), and legacy store paths to prune to minimize codeweight.
 
 ---
 
@@ -107,4 +110,17 @@ Following ADLC P0/P1/P2/P3 rules:
   2. Model catalog & pool updates (`lib/agy.mjs`, `lib/pools.mjs`)
   3. Structured output & streaming protocols (`runAgy`)
   4. ADLC deep integration & doctor checks
-  5. Test suite verification (`npm test`, mutation testing)
+  5. Codeweight & deprecation pruning (retiring dead compatibility layers, removing obsolete shims)
+  6. Test suite verification (`npm test`, mutation testing)
+
+---
+
+### 7. Adversarial-Review & Fix Loop (P5 Standalone Prosecution)
+Before claiming a modernization change or ticket is complete, it MUST undergo a rigorous adversarial-review and fix loop:
+1. **Multi-Lens Refutation Fleet**: Run `agb review [repo] [ref]` or execute refute-chartered reviews across 4 independent lenses:
+   - **Correctness**: Bugs, broken edge cases, error swallowing, race conditions, wrong logic.
+   - **Security**: Containment violations, symlink traversal, unauthenticated binary execution, credential exposure.
+   - **Tests**: Vacuous assertions, mocked reality, deleted tests, coverage theater.
+   - **Contracts**: Breaking changes to exported APIs, schemas, types, or CLI options.
+2. **Loop Until Dry**: Address all high and critical findings. Re-execute review rounds until achieving consecutive dry rounds (no new findings).
+3. **Evidence Verification**: Record gate manifests via `adlc gate-manifest record` and verify with `npm test` before merge.

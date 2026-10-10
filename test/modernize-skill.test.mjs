@@ -47,6 +47,9 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
   assert.match(content, /Stage 3:/);
   assert.match(content, /Stage 4:/);
   assert.match(content, /Stage 5:/);
+  assert.match(content, /Codeweight & Tech-Debt Pruning/);
+  assert.match(content, /Pillar 6: Deprecation & Codeweight Pruning/);
+  assert.match(content, /Adversarial-Review & Fix Loop/);
   assert.match(content, /audit\.mjs/);
 });
 
@@ -59,7 +62,9 @@ test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
 
   assert.match(out, /Stage 1 \(Live Runtime Probes\):\s*\[PASS\]/);
   assert.match(out, /Stage 2 \(Static Codebase Audit\):\s*\[PASS\]/);
+  assert.match(out, /Codeweight audit: lib\/ total \d+ lines/);
   assert.match(out, /Stage 3 \(Subsystem Delta Matrix\):\s*\[PASS\]/);
+  assert.match(out, /Pillar 6: Deprecation & Codeweight Pruning/);
   assert.match(out, /Stage 4 \(Roadmap DAG Validation\):\s*\[PASS\]/);
   assert.match(out, /Stage 5 \(Provenance & Release Ledger\):\s*\[PASS\]/);
   assert.match(out, /All checks PASSED/);

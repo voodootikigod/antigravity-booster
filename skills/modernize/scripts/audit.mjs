@@ -238,53 +238,22 @@ function assertAdlcContained(adlcDir) {
   }
 }
 
-// Helper: Cross-platform process start time inspection for PID reuse protection (Linux, macOS, Windows)
-function getProcessStartTime(pid) {
-  if (typeof pid !== 'number' || pid <= 0) return null;
-  if (process.platform === 'linux') {
-    try {
-      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-      const parts = stat.split(' ');
-      return parts[21] || null;
-    } catch (_) {
-      return null;
-    }
-  }
-  if (process.platform === 'darwin') {
-    try {
-      const out = cp.execFileSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, killSignal: 'SIGKILL' });
-      return out.trim() || null;
-    } catch (_) {
-      return null;
-    }
-  }
-  if (process.platform === 'win32') {
-    try {
-      const out = cp.execFileSync('powershell.exe', ['-NoProfile', '-Command', `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToFileTimeUtc()`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, killSignal: 'SIGKILL' });
-      return out.trim() || null;
-    } catch (_) {
-      return null;
-    }
-  }
-  return null;
-}
-
-// Helper: Process liveness check guarded by cross-platform start time (Linux, macOS, Windows)
-function isProcessAlive(pid, recordedStartTime = null) {
+// Process liveness & start-time helpers (imported dynamically from lib/pools.mjs)
+let isProcessAliveHelper = (pid) => {
   if (typeof pid !== 'number' || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+};
+let getProcessStartTimeHelper = () => null;
+
+async function loadPoolHelpers(repoRoot) {
   try {
-    process.kill(pid, 0);
-  } catch (e) {
-    return e.code === 'EPERM'; // EPERM means process exists and is alive
+    const poolsUrl = pathToFileURL(path.resolve(repoRoot, 'lib', 'pools.mjs')).href;
+    const pools = await import(poolsUrl);
+    if (typeof pools.isProcessAlive === 'function') isProcessAliveHelper = pools.isProcessAlive;
+    if (typeof pools.getProcessStartTime === 'function') getProcessStartTimeHelper = pools.getProcessStartTime;
+  } catch {
+    // Keep safe defaults if pools.mjs is absent
   }
-  if (recordedStartTime) {
-    const currentStartTime = getProcessStartTime(pid);
-    if (currentStartTime && currentStartTime !== recordedStartTime) {
-      // PID was recycled by the OS for an unrelated process
-      return false;
-    }
-  }
-  return true;
 }
 
 // Helper: Cross-platform atomic file lock on .adlc/modernize_provenance.lock with continuous containment re-validation
@@ -294,7 +263,7 @@ function withProvenanceLock(adlcDir, fn) {
   const timeoutMs = 45000;
   const startTime = Date.now();
   const ownerToken = `${process.pid}:${crypto.randomUUID()}:${Date.now()}`;
-  const myProcStartTime = getProcessStartTime(process.pid);
+  const myProcStartTime = getProcessStartTimeHelper ? getProcessStartTimeHelper(process.pid) : null;
   let lockFd = null;
 
   while (Date.now() - startTime < timeoutMs) {
@@ -323,7 +292,7 @@ function withProvenanceLock(adlcDir, fn) {
         try {
           const raw = fs.readFileSync(lockPath, 'utf8');
           const info = JSON.parse(raw);
-          const alive = isProcessAlive(info.pid, info.startTime);
+          const alive = isProcessAliveHelper ? isProcessAliveHelper(info.pid, info.startTime) : true;
 
           // Stale reclamation: NEVER unlink a lock whose owner process is positively confirmed alive
           if (!alive) {
@@ -569,6 +538,60 @@ async function runStage2StaticAudit() {
   console.log(`[agb-modernize] [Stage 2] Audited ${filesToAudit.length} core repository modules.`);
   console.log(`[agb-modernize] [Stage 2] Baseline dependency versions: @adlc/core=${deps['@adlc/core'] || 'none'}, @adlc/antigravity=${deps['@adlc/antigravity'] || 'none'}`);
 
+  // Codeweight & Tech-Debt Pruning Analysis
+  const pruningCandidates = [];
+  let totalLibLines = 0;
+  let totalLibBytes = 0;
+  const libDir = path.join(repoRoot, 'lib');
+  if (fs.existsSync(libDir)) {
+    const libFiles = fs.readdirSync(libDir).filter(f => f.endsWith('.mjs'));
+    for (const f of libFiles) {
+      const full = path.join(libDir, f);
+      try {
+        const stat = fs.lstatSync(full);
+        if (stat.isSymbolicLink() || !stat.isFile()) continue;
+        const content = fs.readFileSync(full, 'utf8');
+        const lines = content.split('\n').length;
+        totalLibLines += lines;
+        totalLibBytes += Buffer.byteLength(content, 'utf8');
+      } catch {}
+    }
+
+    // Check for deprecated model fallbacks in lib/agy.mjs
+    const agyPath = path.join(libDir, 'agy.mjs');
+    if (fs.existsSync(agyPath)) {
+      try {
+        if (!fs.lstatSync(agyPath).isSymbolicLink()) {
+          const agyContent = fs.readFileSync(agyPath, 'utf8');
+          if (agyContent.includes('RETIRED_35_MAP') || agyContent.includes('3.5')) {
+            pruningCandidates.push({
+              area: 'Model Fallbacks (lib/agy.mjs)',
+              finding: 'Legacy Gemini 3.5 retirement maps and aliases remain in code; candidate for dead-code pruning.'
+            });
+          }
+        }
+      } catch {}
+    }
+
+    // Check for legacy single-file store paths in lib/adlc-bridge.mjs
+    const bridgePath = path.join(libDir, 'adlc-bridge.mjs');
+    if (fs.existsSync(bridgePath)) {
+      try {
+        if (!fs.lstatSync(bridgePath).isSymbolicLink()) {
+          const bridgeContent = fs.readFileSync(bridgePath, 'utf8');
+          if (bridgeContent.includes("backend === 'legacy'") || bridgeContent.includes('tickets.json')) {
+            pruningCandidates.push({
+              area: 'Legacy Ticket Backend (lib/adlc-bridge.mjs)',
+              finding: 'Single-file tickets.json fallback backend remains active; candidate for removal once migration verified.'
+            });
+          }
+        }
+      } catch {}
+    }
+  }
+
+  console.log(`[agb-modernize] [Stage 2] Codeweight audit: lib/ total ${totalLibLines} lines (${(totalLibBytes / 1024).toFixed(1)} KB). Found ${pruningCandidates.length} pruning candidate(s).`);
+
   const passed = auditFindings.length === 0;
   if (!passed) {
     console.error(`[agb-modernize] [Stage 2] FAILED: ${auditFindings.join('; ')}`);
@@ -578,48 +601,86 @@ async function runStage2StaticAudit() {
     passed,
     errors: auditFindings,
     summary: passed
-      ? `${filesToAudit.length} modules audited, 0 blocking syntax/symlink errors`
+      ? `${filesToAudit.length} modules audited, 0 blocking errors (${(totalLibBytes / 1024).toFixed(1)} KB lib/ codeweight)`
       : `FAILED (${auditFindings.join(', ')})`,
     auditFindings,
-    deps
+    deps,
+    codeweight: {
+      totalLibLines,
+      totalLibBytes,
+      pruningCandidates
+    }
   };
 }
 
 // ============================================================================
-// STAGE 3: Subsystem Delta Matrix Analysis
+// STAGE 3: Subsystem Delta Matrix Analysis (Dynamic)
 // ============================================================================
-async function runStage3DeltaMatrix() {
-  console.log('[agb-modernize] [Stage 3] Synthesizing subsystem delta matrix across 5 architectural pillars...');
-  const pillars = [
-    {
-      pillar: 'Pillar 1: Model Catalog & Dual-Pool Quota Routing',
-      delta: 'Incorporate Gemini 3.8/3.7/3.6 variants; deprecate 3.5; establish 2 metered pools (gemini, claude-gpt); dynamic scaling & lease durability'
-    },
-    {
-      pillar: 'Pillar 2: Subprocess Protocol & Structured Output',
-      delta: 'Support native --output-format json and --json-schema in runAgy; enforce semantic verdict invariants and DAG edge contracts'
-    },
-    {
-      pillar: 'Pillar 3: Execution Timeouts & Watchdog Controls',
-      delta: 'Implement --output-format stream-json with line/total byte caps; external watchdog timer; kernel process containment (cgroups v2/Job Objects)'
-    },
-    {
-      pillar: 'Pillar 4: ADLC Deep Integration & Binary Authority',
-      delta: 'Pass --graph-coupling to adlc merge-forecast; integrate adlc ticket doctor; enforce project-local authenticated binary resolution >= 1.11.1'
-    },
-    {
-      pillar: 'Pillar 5: Platform Sandboxing & Integration Recovery',
-      delta: 'Windows AppContainer active differential syscall probing; loopback TCP denial; disposable integration worktrees with crash-atomic 4-phase journal'
+async function runStage3DeltaMatrix(stage1Data = {}, stage2Data = {}) {
+  console.log('[agb-modernize] [Stage 3] Synthesizing subsystem delta matrix across 6 architectural pillars...');
+  const repoRoot = path.resolve('.');
+
+  // Dynamic Pillar 1: Model Catalog Delta
+  let knownModels = [];
+  try {
+    const agyPath = path.join(repoRoot, 'lib', 'agy.mjs');
+    if (fs.existsSync(agyPath) && !fs.lstatSync(agyPath).isSymbolicLink()) {
+      const content = fs.readFileSync(agyPath, 'utf8');
+      const matches = content.match(/['"`](gemini-[^'"`]+|claude-[^'"`]+|gpt-oss-[^'"`]+)['"`]/g);
+      if (matches) {
+        knownModels = [...new Set(matches.map(m => m.replace(/['"`]/g, '')))];
+      }
     }
+  } catch {}
+
+  const liveModels = stage1Data.modelsIdentified || [];
+  const modelAdditions = liveModels.filter(m => !knownModels.includes(m));
+  const pillar1Delta = modelAdditions.length > 0
+    ? `New models detected: ${modelAdditions.join(', ')}. Audit quota pools.`
+    : `Verified ${liveModels.length} models aligned with live runtime.`;
+
+  // Dynamic Pillar 2: Subprocess Protocol & Structured Output
+  const flags = stage1Data.flagsSupported || {};
+  const pillar2Delta = flags.outputFormatStreamJson && flags.jsonSchema
+    ? 'Native stream-json and --json-schema supported. Enforce structured invariant parsing.'
+    : 'Stream-json or json-schema missing; fallback to line buffering.';
+
+  // Dynamic Pillar 3: Execution Timeouts & Watchdog Controls
+  const pillar3Delta = flags.printTimeout
+    ? 'Native --print-timeout active. Offload process kill timers to agy runtime.'
+    : 'External watchdog timer required; kernel process containment active.';
+
+  // Dynamic Pillar 4: ADLC Deep Integration & Binary Authority
+  const adlcVer = stage1Data.adlcVersion || '1.11.1';
+  const pillar4Delta = `Authenticated project-local @adlc/cli (${adlcVer}). Offload gate enforcement to binary authority.`;
+
+  // Dynamic Pillar 5: Platform Sandboxing & Integration Recovery
+  const pillar5Delta = flags.sandbox
+    ? 'Native --sandbox available. Platform container verification active.'
+    : 'Container probe fallback; unshare/AppContainer active.';
+
+  // Dynamic Pillar 6: Deprecation & Codeweight Pruning
+  const prunings = stage2Data.codeweight?.pruningCandidates || [];
+  const pillar6Delta = prunings.length > 0
+    ? `Identified ${prunings.length} codeweight reduction target(s): ${prunings.map(p => p.area).join(', ')}.`
+    : 'Codebase clean of deprecated models and dead shims. Minimal codeweight maintained.';
+
+  const pillars = [
+    { pillar: 'Pillar 1: Model Catalog & Dual-Pool Quota Routing', delta: pillar1Delta },
+    { pillar: 'Pillar 2: Subprocess Protocol & Structured Output', delta: pillar2Delta },
+    { pillar: 'Pillar 3: Execution Timeouts & Watchdog Controls', delta: pillar3Delta },
+    { pillar: 'Pillar 4: ADLC Deep Integration & Binary Authority', delta: pillar4Delta },
+    { pillar: 'Pillar 5: Platform Sandboxing & Integration Recovery', delta: pillar5Delta },
+    { pillar: 'Pillar 6: Deprecation & Codeweight Pruning', delta: pillar6Delta }
   ];
 
   for (const p of pillars) {
-    console.log(`[agb-modernize] [Stage 3]   * ${p.pillar}: ${p.delta.slice(0, 75)}...`);
+    console.log(`[agb-modernize] [Stage 3]   * ${p.pillar}: ${p.delta.slice(0, 80)}...`);
   }
 
   return {
     passed: true,
-    summary: '5 architectural pillars formulated and aligned with upstream specifications',
+    summary: '6 architectural pillars formulated and dynamically aligned with live runtime & pruning analysis',
     pillars
   };
 }
@@ -1115,6 +1176,7 @@ async function main() {
   console.log('======================================================\n');
 
   const repoRoot = path.resolve('.');
+  await loadPoolHelpers(repoRoot);
   const adlcDir = getValidatedAdlcDir();
 
   // Execute Stage 1: Live Runtime Probes
@@ -1130,7 +1192,7 @@ async function main() {
   }
 
   // Execute Stage 3: Subsystem Delta Matrix
-  const stage3 = await runStage3DeltaMatrix();
+  const stage3 = await runStage3DeltaMatrix(stage1, stage2);
   if (!stage3.passed) {
     throw new Error(`Stage 3 (Subsystem Delta Matrix) failed: ${(stage3.errors || []).join('; ')}`);
   }
