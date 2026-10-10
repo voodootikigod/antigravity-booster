@@ -114,9 +114,8 @@ Pages live under `website/content/docs/`. Every folder has a `meta.json` with an
 
 ```
 index.mdx                 Introduction. SRC README "Why" + docs/README.md                         [GETSTARTED]
-meta.json  ["index","---Getting Started---","getting-started","---Concepts---","concepts",
-            "---Guides---","guides","---Reference---","reference","---Internals---","internals",
-            "---Project---","project"]                                                            [SCAFFOLD]
+meta.json  ["index","getting-started","concepts","guides","reference","internals","project"]
+           (rev 4: no separators; each folder is its own labelled sidebar group)                                                            [SCAFFOLD]
 
 getting-started/  ["installation","bootstrap","quickstart","upgrading-from-npm","verify"]        [GETSTARTED]
   installation.mdx        Prereqs (agy >= 1.2.6, Node >= 22.19.0), agy plugin install, ~/.local/bin/agb shim
