@@ -82,6 +82,22 @@ export function parseFlags(spec) {
   return flags.sort((a, b) => a.flag.localeCompare(b.flag));
 }
 
+// Flags a command's dispatch branch actually reads from `rest` (e.g.
+// `rest.includes('--no-coldstart')`), so a flag parsed in code but missing from
+// COMMANDS[cmd].flags still reaches the generated reference.
+export function dispatchFlags(src, name) {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const start = src.search(new RegExp(`(?:^|\\})\\s*(?:else\\s+)?if\\s*\\(cmd\\s*===\\s*'${esc}'`, 'm'));
+  if (start < 0) return [];
+  const rest = src.slice(start + 1);
+  const next = rest.search(/\}\s*else\s+if\s*\(\s*\(?cmd\s*===/);
+  const body = next < 0 ? rest : rest.slice(0, next);
+  const found = new Set();
+  const re = /rest(?:\.(?:includes|indexOf)\(|\[[^\]]+\]\s*===\s*)'(-{1,2}[a-z][\w-]*)'/g;
+  for (const m of body.matchAll(re)) found.add(m[1]);
+  return [...found].sort();
+}
+
 function parseCli(repo) {
   const file = 'bin/agb.mjs';
   const { src, value: commands } = literalAt(repo, file, /const\s+COMMANDS\s*=\s*/, 'COMMANDS');
@@ -133,7 +149,8 @@ function parseCli(repo) {
     }
     removedFlags.push({ flag: m[1], command: owner, message: msg });
   });
-  return { commands, aliases, version, help, globals, exitLine, removedFlags };
+  const dispatch = Object.fromEntries(Object.keys(commands).map((n) => [n, dispatchFlags(src, n)]));
+  return { commands, aliases, version, help, globals, exitLine, removedFlags, dispatch };
 }
 
 function genCli(repo) {
@@ -142,7 +159,12 @@ function genCli(repo) {
   const names = Object.keys(cli.commands).sort();
   for (const name of names) {
     const c = cli.commands[name];
-    const flags = parseFlags(`${c.args} ${c.flags ?? ''}`);
+    const declared = parseFlags(`${c.args} ${c.flags ?? ''}`);
+    const known = new Set(declared.map((f) => f.flag));
+    const flags = [
+      ...declared,
+      ...cli.dispatch[name].filter((f) => !known.has(f)).map((flag) => ({ flag, arg: '', desc: '' })),
+    ].sort((a, b) => a.flag.localeCompare(b.flag));
     const usage = `agb ${name}${c.args ? ` ${c.args}` : ''}`;
     out[`cli-${name}.mdx`] = join([
       `\`\`\`text\n${usage}\n\`\`\``,

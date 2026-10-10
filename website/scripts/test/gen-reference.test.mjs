@@ -303,3 +303,28 @@ test('convertRootDoc keeps code untouched and leaves absolute links alone', () =
   assert.match(out, /`\{c\}`/);
   assert.match(out, /\[https:\/\/u\.io\]\(https:\/\/u\.io\)/);
 });
+
+test('dispatchFlags finds flags read from rest in a command branch only', async () => {
+  const { dispatchFlags } = await import('../gen-reference.mjs');
+  const src = [
+    "if (cmd === 'run') {",
+    "  const x = rest.includes('--dry');",
+    "} else if (cmd === 'preflight') {",
+    "  const skip = rest.includes('--no-coldstart');",
+    "  if (rest[i] === '--out') {}",
+    "} else if (cmd === 'plan') {",
+    "  rest.indexOf('--interval');",
+    '}',
+  ].join('\n');
+  assert.deepEqual(dispatchFlags(src, 'preflight'), ['--no-coldstart', '--out']);
+  assert.deepEqual(dispatchFlags(src, 'run'), ['--dry']);
+  assert.deepEqual(dispatchFlags(src, 'plan'), ['--interval']);
+  assert.deepEqual(dispatchFlags(src, 'missing'), []);
+});
+
+test('generated preflight reference lists --no-coldstart', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../../generated/cli-preflight.mdx', import.meta.url), 'utf8');
+  assert.match(page, /--no-coldstart/);
+  assert.doesNotMatch(page, /takes no flags/);
+});
