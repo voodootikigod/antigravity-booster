@@ -140,3 +140,28 @@ test('item 5: pools.mjs cites a committed calibration file', () => {
     assert(existsSync(fileURLToPath(new URL(`../docs/calibration/${f}`, import.meta.url))), `cited file missing: ${f}`);
   }
 });
+
+test('item 6: probe defaults to <cwd>/docs/calibration when AGB_CALIBRATION_DIR is unset', () => {
+  const cwd = join(TMP, 'probe-cwd');
+  mkdirSync(cwd, { recursive: true });
+  const r = runProbe({ cwd });
+  assert.equal(r.status, 0, r.stderr);
+  const files = readdirSync(join(cwd, 'docs', 'calibration'));
+  assert.equal(files.length, 1, `expected one file under cwd/docs/calibration, got ${files}`);
+});
+
+test('item 6: AGB_CALIBRATION_DIR overrides the default probe dir', () => {
+  const cwd = join(TMP, 'probe-cwd-override');
+  const calDir = join(TMP, 'cal-6');
+  mkdirSync(cwd, { recursive: true });
+  const r = runProbe({ cwd, calDir });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(readdirSync(calDir).length, 1);
+  assert.equal(existsSync(join(cwd, 'docs')), false, 'default dir must not be used when overridden');
+});
+
+test('item 6: probe help text names the default calibration dir', () => {
+  const out = execFileSync(process.execPath, [AGB_BIN, 'help', 'probe'], { encoding: 'utf8' });
+  assert.match(out, /AGB_CALIBRATION_DIR/);
+  assert.match(out, /docs\/calibration/);
+});

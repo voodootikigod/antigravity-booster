@@ -46,7 +46,7 @@ const COMMANDS = {
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
   status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
   sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
-  probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
+  probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '[--force] [--force-reinstall]', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
   migrate: {
@@ -340,13 +340,14 @@ try {
     // SPEC A2: probe WRITES the calibration artifact (previously stdout-only
     // and the docs were hand-transcribed — adversarial-review LOW). The write
     // is best-effort: a read-only install prefix or full-garbage run must not
-    // turn a successful measurement into exit 1. AGB_CALIBRATION_DIR
-    // overrides the default (this checkout's docs/calibration/).
+    // turn a successful measurement into exit 1. The directory is
+    // AGB_CALIBRATION_DIR if set, else docs/calibration/ under the current
+    // working directory (never the install prefix, which may be read-only
+    // or a staged plugin copy).
     if (rows.some((r) => r.ok > 0)) {
       try {
         const day = new Date().toISOString().slice(0, 10);
-        const calDir = process.env.AGB_CALIBRATION_DIR ??
-          fileURLToPath(new URL('../docs/calibration/', import.meta.url));
+        const calDir = process.env.AGB_CALIBRATION_DIR || join(process.cwd(), 'docs', 'calibration');
         const calFile = join(calDir, `probes-${day}.md`);
         const table = [
           `## ${model} — probed ${new Date().toISOString()}`,
