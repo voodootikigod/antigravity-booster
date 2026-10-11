@@ -7,6 +7,9 @@ rather than enumerate.
 
 ## [Unreleased]
 
+### Added
+- **`/release-audit`** (T-RELEASE-AUDIT-SKILL): a project skill, ported from adlc and reshaped for booster, that answers GO / GO-WITH-RISK / NO-GO before `/release`. One agent per shipped surface (CLI, scheduler, ADLC gates, the PreToolUse policy guard, the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar) plus drift, docs, supply-chain and issue-sweep agents, with a refute pass over every blocker candidate. The verdict is arithmetic over structured reports: findings are grounded against the cited file, deduplicated and demoted with a named reason, never deleted, and a surface with no report or no files examined forces NO-GO. Mechanical probes reuse this repo's own gates (D11 lockstep, the vendored-adlc digest pins, the bootstrap tarball SHA-512, the bundle drift gate, the website generator, and the stranded-release classifier). `scripts/release-audit-{collect,synthesize,workflow}.mjs` are development tooling and do not ship in the package.
+
 ### Fixed
 
 - MCP `agb_run` no longer advertises a `concurrency` parameter; a call that supplies one now returns a tool error naming it instead of being silently ignored (`agb run` has no concurrency flag; use the plan's `caps`).
