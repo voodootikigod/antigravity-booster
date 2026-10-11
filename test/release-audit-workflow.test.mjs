@@ -143,6 +143,7 @@ test('extractPrompts returns the work list, both schemas and the refute template
   assert.match(p.refute.template, /Your job is to REFUTE it/);
   assert.match(p.refute.template, /\{\{title\}\}/);
   assert.match(p.refute.template, /\{\{unit\}\}/);
+  assert.match(p.refute.template, /WHERE:\s+\{\{file\}\}:\{\{line\}\}/, 'the refuter must be told the line, not just the file');
 });
 
 test('workflowMain --prompts writes prompts JSON instead of a script', () => {

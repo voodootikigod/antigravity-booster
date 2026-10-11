@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { canonicalSkills, syncSkills, syncMain, MIRRORS, MANIFEST } from '../scripts/sync-skills.mjs';
+import { canonicalSkills, syncSkills, syncMain, isSafeSkillName, MIRRORS, MANIFEST } from '../scripts/sync-skills.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -47,6 +47,7 @@ test('every skill has frontmatter all three harnesses accept', () => {
     assert.ok(fm, `${name}: SKILL.md must open with YAML frontmatter`);
     assert.match(fm, new RegExp(`^name: ${name}$`, 'm'), `${name}: frontmatter name must equal the directory name`);
     assert.ok(name.length <= 64 && /^[a-z0-9-]+$/.test(name), `${name}: Codex needs a lowercase-hyphen name of at most 64 chars`);
+    assert.match(fm, /^description: ["'A-Za-z]/m, `${name}: description must be a single logical line, not a YAML block scalar (the docs generator and some harnesses do not expand >- or |)`);
     // Codex caps description at 1024 chars; collapse folded-scalar whitespace the way YAML does.
     const desc = /^description:[ \t]*(?:[>|][-+]?)?\n?([\s\S]*?)(?=\n[A-Za-z][\w-]*:|$)/m.exec(fm);
     assert.ok(desc, `${name}: description is required`);
@@ -169,4 +170,23 @@ test('syncMain: exit codes, usage and the check message', (t) => {
   assert.match(out.join('\n'), /in sync/);
   assert.equal(syncMain(['--bogus'], io), 1);
   assert.equal(readdirSync(join(root, 'skills')).length, 1);
+});
+
+test('a crafted manifest cannot make sync delete anything outside the mirror', (t) => {
+  const root = scratchRepo(t);
+  syncSkills({ root });
+  const victim = join(root, 'lib');
+  mkdirSync(victim);
+  writeFileSync(join(victim, 'keep.mjs'), 'precious');
+  writeFileSync(join(root, '.agents/skills', MANIFEST), JSON.stringify({ managed: ['alpha', '../../lib', '..', '/etc', 'a/b'] }));
+  syncSkills({ root });
+  assert.equal(readFileSync(join(victim, 'keep.mjs'), 'utf8'), 'precious');
+  assert.equal(existsSync(join(root, 'skills')), true);
+  // and --check must not treat the hostile entry as a stale mirror either
+  assert.deepEqual(syncSkills({ root, check: true }).problems, []);
+});
+
+test('isSafeSkillName admits plain directory names only', () => {
+  for (const ok of ['alpha', 'release-audit', 'a.b_c']) assert.equal(isSafeSkillName(ok), true, ok);
+  for (const bad of ['', '..', '../x', 'a/b', '/abs', '.hidden', 'a..b', 7, null]) assert.equal(isSafeSkillName(bad), false, String(bad));
 });

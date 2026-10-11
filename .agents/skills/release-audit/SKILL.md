@@ -1,15 +1,6 @@
 ---
 name: release-audit
-description: >-
-  Production-readiness audit of antigravity-booster before cutting a release. Audits every
-  shipped surface in parallel — the CLI, scheduler, ADLC gates, the PreToolUse policy guard,
-  the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar — plus
-  suite-level drift, docs and supply-chain agents, hunting release-BLOCKING issues rather
-  than general code smells. Runs this repo's own integrity gates as mechanical probes and
-  triages open GitHub issues against the code. Runs on the currently selected model.
-  Triggers on "release audit", "are we ready to release", "production readiness", "what's
-  blocking the release", "audit before release", "pre-release check", "release blockers",
-  "can we ship 1.2".
+description: "Production-readiness audit of antigravity-booster before cutting a release. Audits every shipped surface in parallel — the CLI, scheduler, ADLC gates, the PreToolUse policy guard, the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar — plus suite-level drift, docs and supply-chain agents, hunting release-BLOCKING issues rather than general code smells. Runs this repo's own integrity gates as mechanical probes and triages open GitHub issues against the code. Runs on the currently selected model. Triggers on \"release audit\", \"are we ready to release\", \"production readiness\", \"what's blocking the release\", \"audit before release\", \"pre-release check\", \"release blockers\", \"can we ship 1.2\"."
 user-invocable: true
 metadata:
   internal: true
@@ -241,7 +232,7 @@ node scripts/release-audit-workflow.mjs --input <scratch>/wargs.json --out <scra
 
 `prompts.json` holds `work` (one `{ id, prompt }` per unit, suite and sweep agents included),
 `schemas.report` and `schemas.verdict` (JSON Schema), and `refute.template` with `{{unit}}`,
-`{{title}}`, `{{klass}}`, `{{file}}`, `{{evidence}}`, `{{body}}`, `{{consequence}}` placeholders.
+`{{title}}`, `{{klass}}`, `{{file}}`, `{{line}}`, `{{evidence}}`, `{{body}}`, `{{consequence}}` placeholders.
 For every `work` entry run one read-only, headless call from the repo root and keep its JSON:
 
 ```bash

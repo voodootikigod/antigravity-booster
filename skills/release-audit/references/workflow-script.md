@@ -433,7 +433,7 @@ if (typeof PROMPTS_ONLY === 'function') {
     schemas: { report: REPORT, verdict: VERDICT },
     refute: {
       template: refutePrompt('{{unit}}', {
-        title: '{{title}}', klass: '{{klass}}', file: '{{file}}', line: '', evidence: '{{evidence}}', body: '{{body}}', consequence: '{{consequence}}',
+        title: '{{title}}', klass: '{{klass}}', file: '{{file}}', line: '{{line}}', evidence: '{{evidence}}', body: '{{body}}', consequence: '{{consequence}}',
       }),
       appliesTo: 'every finding with bucket BLOCKER; set refuted/refutation from the VERDICT schema on that finding',
     },

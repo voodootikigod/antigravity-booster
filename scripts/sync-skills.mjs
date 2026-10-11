@@ -20,7 +20,7 @@
 import {
   cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync,
 } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -51,10 +51,23 @@ export function canonicalSkills(root = ROOT) {
     .sort();
 }
 
+const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** A manifest is data on disk, not trusted: only plain directory names survive. */
+export function isSafeSkillName(name) {
+  return typeof name === 'string' && SAFE_NAME.test(name) && !name.includes('..');
+}
+
+/** True when `child` resolves strictly inside `parent`. */
+function within(parent, child) {
+  const p = resolve(parent) + sep;
+  return resolve(child).startsWith(p) && resolve(child) !== resolve(parent);
+}
+
 function readManifest(mirrorDir) {
   try {
     const parsed = JSON.parse(readFileSync(join(mirrorDir, MANIFEST), 'utf8'));
-    return Array.isArray(parsed.managed) ? parsed.managed.filter((n) => typeof n === 'string') : [];
+    return Array.isArray(parsed.managed) ? parsed.managed.filter(isSafeSkillName) : [];
   } catch {
     return [];
   }
@@ -105,7 +118,7 @@ export function syncSkills({ root = ROOT, check = false, mirrors = MIRRORS } = {
 
     for (const name of stale) {
       const dst = join(mirrorDir, name);
-      if (!existsSync(dst)) continue;
+      if (!within(mirrorDir, dst) || !existsSync(dst)) continue;
       if (check) {
         problems.push(`${mirror}/${name}: removed from skills/ but still mirrored`);
       } else {
