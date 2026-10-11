@@ -149,7 +149,7 @@ test('runGate: sandboxed gate cannot overwrite node_modules (gitignored persiste
   }
 });
 
-test('runGate: sandboxed gate blocks a write outside the worktree on darwin', { skip: !gateSandboxEnabled() }, async () => {
+test('runGate: sandboxed gate blocks a write outside the worktree when the gate sandbox is available', { skip: !gateSandboxEnabled() }, async () => {
   const wt = mkdtempSync(join(tmpdir(), 'agb-gate-wt-'));
   // home is NOT in the sandbox's writable set (temp dirs are scratch, allowed).
   const outside = join(homedir(), `.agb-escape-${process.pid}.txt`);

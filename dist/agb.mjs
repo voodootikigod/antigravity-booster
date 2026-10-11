@@ -15037,9 +15037,9 @@ Fix: ${agyCheck.fix}`);
   ensureGitignore(repo);
   if (isDirty(repo)) {
     if (process.env.AGB_ALLOW_DIRTY !== "1") {
-      throw new Error(`repo ${repo} has uncommitted changes \u2014 commit or stash first (agb uses 'git reset --hard' for merge rollback and would discard them). Set AGB_ALLOW_DIRTY=1 to override.`);
+      throw new Error(`repo ${repo} has uncommitted changes \u2014 commit or stash first (uncommitted changes are left untouched, but they are not part of the run's base: builders and gates see only the committed ${base} HEAD). Set AGB_ALLOW_DIRTY=1 to override.`);
     }
-    log2(`WARNING: repo ${repo} has uncommitted changes and AGB_ALLOW_DIRTY=1 is enabled. If a ticket merge or post-merge gate fails, a hard reset (git reset --hard) will run and permanently discard your uncommitted changes.`);
+    log2(`WARNING: repo ${repo} has uncommitted changes and AGB_ALLOW_DIRTY=1 is enabled. They are left untouched (merges and rollbacks run in agb's worktrees and ${base} advances by ref update), but they are not part of the run's base: builders and gates see only the committed ${base} HEAD.`);
   }
   const pools = plan.pools ?? new PoolSet(plan.caps, { repo });
   const runId = `run-${Date.now().toString(36)}`;
@@ -15724,7 +15724,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           throw new Error(`repo left base branch mid-run (now on '${onBranch2}', expected '${base}') \u2014 skipping ${t.id} to avoid merging/resetting the wrong branch`);
         }
         if (process.env.AGB_ALLOW_DIRTY !== "1" && isDirty(repo)) {
-          throw new Error(`repo became dirty mid-run \u2014 skipping ${t.id} to avoid 'git reset --hard' destroying uncommitted work`);
+          throw new Error(`repo became dirty mid-run \u2014 skipping ${t.id} \u2014 uncommitted changes are left untouched, but advancing ${base} by ref update under an edited checkout would leave those edits against a moved HEAD; commit or stash them (or set AGB_ALLOW_DIRTY=1)`);
         }
         const headBefore = currentHead(repo);
         discardProjection(worktree);
@@ -16513,7 +16513,7 @@ var COMMANDS = {
   "import-brain": { args: "<id> <repo>", desc: "DEPRECATED: raw one-shot conversion (use agb plan)" },
   status: { args: "[repo]", desc: "render the live dashboard for a repo's current run", flags: "--watch [--interval <ms>]" },
   sidecar: { args: "[repo]", desc: "launch the HTTP server for the Antigravity Sidecar UI", flags: "[--port <port>]" },
-  probe: { args: "[widths]", desc: "measure pool concurrency/latency, print JSON lines" },
+  probe: { args: "[widths]", desc: "measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md" },
   validate: { args: "<plan>", desc: "validate a plan file without running anything" },
   bootstrap: { args: "[--force] [--force-reinstall]", desc: "wire ADLC skills into ~/.gemini/skills (aliases: setup, install)" },
   migrate: {
@@ -16525,14 +16525,14 @@ var COMMANDS = {
   tui: { args: "", desc: "Removed. Use agb sidecar instead." }
 };
 function printUsage() {
-  console.log("agb \u2014 Antigravity Booster orchestrator.\\n");
+  console.log("agb \u2014 Antigravity Booster orchestrator.\n");
   for (const [name, c] of Object.entries(COMMANDS)) {
     const cmdStr = `  agb ${name} ${c.args}`.padEnd(45);
     console.log(`${cmdStr} ${c.desc}`);
     if (c.extended) console.log(`                                              ${c.extended}`);
     if (c.flags) console.log(`                                              (flags: ${c.flags})`);
   }
-  console.log("\\nExit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.");
+  console.log("\nExit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.");
 }
 function printCmdUsage(name) {
   const c = COMMANDS[name];
@@ -16563,7 +16563,8 @@ if (rest.includes("--help") || rest.includes("-h")) {
   }
 }
 if (!COMMANDS[cmd] && cmd !== "setup" && cmd !== "install" && cmd !== "skills") {
-  console.error(`agb: unknown command '${cmd}'\\n`);
+  console.error(`agb: unknown command '${cmd}'
+`);
   console.error(`Usage: agb <command> ...`);
   console.error(`Run 'agb --help' for a list of commands.`);
   process.exit(1);
@@ -16806,8 +16807,8 @@ try {
     if (rows.some((r) => r.ok > 0)) {
       try {
         const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-        const calDir = process.env.AGB_CALIBRATION_DIR ?? fileURLToPath6(new URL("../docs/calibration/", import.meta.url));
-        const calFile = join35(calDir, `probe-${day}.md`);
+        const calDir = process.env.AGB_CALIBRATION_DIR || join35(process.cwd(), "docs", "calibration");
+        const calFile = join35(calDir, `probes-${day}.md`);
         const table = [
           `## ${model} \u2014 probed ${(/* @__PURE__ */ new Date()).toISOString()}`,
           "",
@@ -16938,7 +16939,8 @@ try {
       process.exit(1);
     }
   } else {
-    console.error(`agb: unknown command '${cmd}'\\n`);
+    console.error(`agb: unknown command '${cmd}'
+`);
     console.error(`Usage: agb <command> ...`);
     console.error(`Run 'agb --help' for a list of commands.`);
     process.exit(1);

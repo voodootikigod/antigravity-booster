@@ -417,7 +417,7 @@ test('runPlan: refuses a dirty repo (data-loss guard) unless AGB_ALLOW_DIRTY=1',
     await assert.rejects(
       withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
         runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, quiet)),
-      /uncommitted changes — commit or stash first.*Set AGB_ALLOW_DIRTY=1 to override/
+      /uncommitted changes — commit or stash first.*left untouched.*not part of the run's base.*Set AGB_ALLOW_DIRTY=1 to override/
     );
     // the uncommitted edit is untouched
     assert.match(readFileSync(join(repo, 'README.md'), 'utf8'), /uncommitted edit/);
@@ -435,7 +435,14 @@ test('runPlan: warns if dirty repo and AGB_ALLOW_DIRTY=1', async () => {
     await withEnv({ AGB_AGY_BIN: FAKE_AGY, AGB_ALLOW_DIRTY: '1' }, () =>
       runPlan({ repo, gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, captureLogger)
     );
-    assert.ok(logs.some((l) => l.includes('WARNING') && l.includes('AGB_ALLOW_DIRTY=1') && l.includes('git reset --hard')), 'warning should be printed');
+    const warning = logs.find((l) => l.includes('WARNING') && l.includes('AGB_ALLOW_DIRTY=1'));
+    assert.ok(warning, 'warning should be printed');
+    // T-CODE-FIXES-AUDIT item 7: merges/rollbacks run in worktrees and the base
+    // advances by CAS update-ref, so the main checkout is never reset.
+    assert.match(warning, /left untouched/);
+    assert.match(warning, /not part of the run's base/);
+    assert.doesNotMatch(warning, /reset --hard|permanently discard/);
+    assert.equal(readFileSync(join(repo, 'README.md'), 'utf8'), 'uncommitted edit\n', 'uncommitted edit must survive the run');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

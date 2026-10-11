@@ -46,7 +46,7 @@ const COMMANDS = {
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
   status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
   sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
-  probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines' },
+  probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '[--force] [--force-reinstall]', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
   migrate: {
@@ -59,14 +59,14 @@ const COMMANDS = {
 };
 
 function printUsage() {
-  console.log('agb — Antigravity Booster orchestrator.\\n');
+  console.log('agb — Antigravity Booster orchestrator.\n');
   for (const [name, c] of Object.entries(COMMANDS)) {
     const cmdStr = `  agb ${name} ${c.args}`.padEnd(45);
     console.log(`${cmdStr} ${c.desc}`);
     if (c.extended) console.log(`                                              ${c.extended}`);
     if (c.flags) console.log(`                                              (flags: ${c.flags})`);
   }
-  console.log('\\nExit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.');
+  console.log('\nExit codes: 0 = pass, 2 = gate failure / findings, 1 = usage or internal error.');
 }
 
 function printCmdUsage(name) {
@@ -104,7 +104,7 @@ if (rest.includes('--help') || rest.includes('-h')) {
 }
 
 if (!COMMANDS[cmd] && cmd !== 'setup' && cmd !== 'install' && cmd !== 'skills') {
-  console.error(`agb: unknown command '${cmd}'\\n`);
+  console.error(`agb: unknown command '${cmd}'\n`);
   console.error(`Usage: agb <command> ...`);
   console.error(`Run 'agb --help' for a list of commands.`);
   process.exit(1);
@@ -340,14 +340,15 @@ try {
     // SPEC A2: probe WRITES the calibration artifact (previously stdout-only
     // and the docs were hand-transcribed — adversarial-review LOW). The write
     // is best-effort: a read-only install prefix or full-garbage run must not
-    // turn a successful measurement into exit 1. AGB_CALIBRATION_DIR
-    // overrides the default (this checkout's docs/calibration/).
+    // turn a successful measurement into exit 1. The directory is
+    // AGB_CALIBRATION_DIR if set, else docs/calibration/ under the current
+    // working directory (never the install prefix, which may be read-only
+    // or a staged plugin copy).
     if (rows.some((r) => r.ok > 0)) {
       try {
         const day = new Date().toISOString().slice(0, 10);
-        const calDir = process.env.AGB_CALIBRATION_DIR ??
-          fileURLToPath(new URL('../docs/calibration/', import.meta.url));
-        const calFile = join(calDir, `probe-${day}.md`);
+        const calDir = process.env.AGB_CALIBRATION_DIR || join(process.cwd(), 'docs', 'calibration');
+        const calFile = join(calDir, `probes-${day}.md`);
         const table = [
           `## ${model} — probed ${new Date().toISOString()}`,
           '',
@@ -481,7 +482,7 @@ try {
       process.exit(1);
     }
   } else {
-    console.error(`agb: unknown command '${cmd}'\\n`);
+    console.error(`agb: unknown command '${cmd}'\n`);
     console.error(`Usage: agb <command> ...`);
     console.error(`Run 'agb --help' for a list of commands.`);
     process.exit(1);

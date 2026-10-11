@@ -9,6 +9,15 @@ rather than enumerate.
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP `agb_run` no longer advertises a `concurrency` parameter; a call that supplies one now returns a tool error naming it instead of being silently ignored (`agb run` has no concurrency flag; use the plan's `caps`).
+- The MCP server's `serverInfo.version` now reports the plugin's `package.json` version (it was hard-coded to `0.7.0`), from the same source as `agb --version`.
+- `agb --help` and the unknown-command error print real line breaks instead of a literal `\n`.
+- `agb probe` writes `probes-<day>.md`, matching the committed calibration reports, and the `DEFAULT_CAPS` comment cites the existing `docs/calibration/probes-2026-07-14.md`.
+- `agb probe` writes to `AGB_CALIBRATION_DIR` if set, otherwise to `docs/calibration/` under the current working directory (it previously wrote inside the agb installation).
+- The `AGB_ALLOW_DIRTY` refusal and warning no longer claim a failed merge hard-resets your checkout: uncommitted changes are left untouched, but they are not part of the run's base.
+
 ## [1.1.0] — 2026-10-10
 
 **The docs moved to [agybooster.com](https://www.agybooster.com/docs)**, and two

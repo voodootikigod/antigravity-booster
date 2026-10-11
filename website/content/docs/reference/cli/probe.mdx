@@ -21,8 +21,6 @@ Each row reports `model`, `width`, `ok`, `wall_ms`, `median_ms` and `max_ms`.
 
 ## Calibration output
 
-When at least one request succeeds, the rows are appended to `probe-<YYYY-MM-DD>.md` in `AGB_CALIBRATION_DIR`, or in the plugin's own `docs/calibration/` directory when that is unset. A failed write is reported but does not change the exit code ([calibration write](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L345-L365)).
-
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 6)">Without `AGB_CALIBRATION_DIR`, the calibration file is written inside the installed plugin, not in your repository. Set `AGB_CALIBRATION_DIR` to keep the file.</Callout>
+When at least one request succeeds, the rows are appended to `probes-<YYYY-MM-DD>.md` in `AGB_CALIBRATION_DIR`, or in `docs/calibration/` under the current working directory when that is unset. A failed write is reported but does not change the exit code ([calibration write](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L345-L365)).
 
 See [Calibration](/docs/reference/calibration).

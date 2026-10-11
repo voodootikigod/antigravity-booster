@@ -34,9 +34,7 @@ sequenceDiagram
 
 `--project <name>` scopes agy's conversation and state to a named project, and agb adds `--add-dir <cwd>` so that project can see the ticket worktree ([project args](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L257-L260)). `agb run` passes the `--project` you give on the command line ([flag parsing](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L22-L27)); without one, every builder in the run shares a fresh project named `agb-` followed by the run id, for example `agb-run-lq2x1k`, so a run never leaks into your interactive Antigravity conversations ([default project](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1396)). `review` and `preflight` pass `--project` through the same way.
 
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 1)">
-`agb sweep --project <name>` does not reliably isolate a sweep under the project you name. The dispatcher hands `{ project }` to `sweepToPlan`, which does not read a `project` option ([sweep dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L136)), and the value is lost on the way to the agy invocation. Until the fix lands, assume sweep builders run under the default per-run project.
-</Callout>
+`agb sweep --project <name>` behaves the same way: the sweep is converted to a plan and run with that project, so every builder and prosecutor session in the sweep runs under it.
 
 ## Output formats
 

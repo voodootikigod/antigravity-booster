@@ -46,4 +46,4 @@ What `agb` actually does to your branch: each merge happens in a separate integr
 
 `AGB_ALLOW_DIRTY=1` skips the clean-tree guard. Use it only when you understand that `agb` still advances the checked-out branch underneath your uncommitted work.
 
-<Callout type="warn" title="Known issue (T-CODE-FIXES-AUDIT item 7)">With `AGB_ALLOW_DIRTY=1`, `agb run` logs a warning that a hard reset will run and permanently discard uncommitted changes if a merge or post-merge gate fails, and the refusal message without it gives the same reason ([warning text](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1384-L1392)). That text predates the integration-worktree design described above and overstates what a failed merge does; the guard itself is still worth honouring.</Callout>
+The warning `agb run` logs under `AGB_ALLOW_DIRTY=1` (and the refusal without it) says exactly that: uncommitted changes are left untouched, but they are not part of the run's base, because builders and gates see only the committed base HEAD.

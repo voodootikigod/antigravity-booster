@@ -2,11 +2,23 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const activeProcesses = new Map();
+
+// Same version source as `agb --version`: the manifest one level up. Both
+// `mcp/server.mjs` and the bundled `dist/mcp-server.mjs` sit one directory
+// below the package root, so this resolves bundled and unbundled alike.
+function readPackageVersion() {
+  try {
+    return JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')).version;
+  } catch (err) {
+    logDiagnostic(`could not read package.json version: ${err.message}`);
+    return 'unknown';
+  }
+}
 
 
 // Resolution of the agb CLI entry point (spec §4.1):
@@ -57,8 +69,7 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        plan: { type: 'string', description: 'Path to plan.json file' },
-        concurrency: { type: 'integer', description: 'Override default concurrency cap' }
+        plan: { type: 'string', description: 'Path to plan.json file' }
       },
       required: ['plan']
     }
@@ -152,7 +163,7 @@ async function handleRequest(req) {
       },
       serverInfo: {
         name: 'antigravity-booster-mcp',
-        version: '0.7.0'
+        version: readPackageVersion()
       }
     });
     return;
@@ -183,8 +194,16 @@ async function handleToolCall(id, name, args) {
     if (args.noParallax) cliArgs.push('--no-parallax');
     if (args.noPremortem) cliArgs.push('--no-premortem');
   } else if (name === 'agb_run') {
+    // `agb run` has no --concurrency flag (caps come from plan.json), so an
+    // explicit value would be silently ignored — reject it instead.
+    if (args.concurrency !== undefined) {
+      sendResult(id, {
+        content: [{ type: 'text', text: "agb_run: unsupported parameter 'concurrency' — agb run has no concurrency flag; set caps in plan.json instead" }],
+        isError: true
+      });
+      return;
+    }
     cliArgs.push('run', args.plan);
-    if (args.concurrency !== undefined) cliArgs.push('--concurrency', String(args.concurrency));
   } else if (name === 'agb_preflight') {
     cliArgs.push('preflight', args.plan);
   } else if (name === 'agb_status') {
