@@ -92,12 +92,18 @@ export function buildScript(doc, script) {
  */
 export function extractPrompts(built) {
   const body = built.replace('export const meta', 'const meta');
-  const fn = new vm.Script(`(async function (args, log, agent, pipeline, parallel, PROMPTS_ONLY) {\n${body}\n})`)
+  // The try/catch lives INSIDE the async wrapper so a runtime failure in the
+  // script is reported through a synchronous sink with its real message, rather
+  // than as a rejected promise this synchronous function cannot see.
+  const fn = new vm.Script(`(async function (args, log, agent, pipeline, parallel, PROMPTS_ONLY, __fail) {\ntry {\n${body}\n} catch (e) { __fail(e) }\n})`)
     .runInNewContext({}, { timeout: 5000 });
   const refuse = () => { throw new Error('--prompts mode must not spawn agents'); };
   let captured = null;
-  const done = fn(undefined, () => {}, refuse, refuse, refuse, (prompts) => { captured = prompts; });
-  done.catch(() => {});
+  let failure = null;
+  fn(undefined, () => {}, refuse, refuse, refuse, (prompts) => { captured = prompts; }, (e) => { failure = e; });
+  if (failure) {
+    throw new Error(`workflow script failed before reaching its PROMPTS_ONLY hook: ${failure?.message ?? failure}`, { cause: failure });
+  }
   if (captured === null) throw new Error('workflow script never reached its PROMPTS_ONLY hook');
   return JSON.parse(JSON.stringify(captured)); // normalise vm-realm objects
 }

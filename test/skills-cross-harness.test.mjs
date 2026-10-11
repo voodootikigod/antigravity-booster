@@ -190,3 +190,19 @@ test('isSafeSkillName admits plain directory names only', () => {
   for (const ok of ['alpha', 'release-audit', 'a.b_c']) assert.equal(isSafeSkillName(ok), true, ok);
   for (const bad of ['', '..', '../x', 'a/b', '/abs', '.hidden', 'a..b', 7, null]) assert.equal(isSafeSkillName(bad), false, String(bad));
 });
+
+test('emptying skills/ clears the manifest so a later foreign skill of the same name survives', (t) => {
+  const root = scratchRepo(t);
+  syncSkills({ root });
+  rmSync(join(root, 'skills/alpha'), { recursive: true });
+  assert.ok(syncSkills({ root, check: true }).problems.length > 0, 'stale mirror must be reported');
+  syncSkills({ root });
+  for (const mirror of MIRRORS) {
+    assert.deepEqual(JSON.parse(readFileSync(join(root, mirror, MANIFEST), 'utf8')), { managed: [] });
+    mkdirSync(join(root, mirror, 'alpha'));
+    writeFileSync(join(root, mirror, 'alpha/SKILL.md'), 'mine');
+  }
+  syncSkills({ root });
+  for (const mirror of MIRRORS) assert.equal(readFileSync(join(root, mirror, 'alpha/SKILL.md'), 'utf8'), 'mine');
+  assert.deepEqual(syncSkills({ root, check: true }).problems, []);
+});

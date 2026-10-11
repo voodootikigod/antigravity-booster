@@ -130,10 +130,15 @@ export function syncSkills({ root = ROOT, check = false, mirrors = MIRRORS } = {
     const manifest = `${JSON.stringify({ managed: names }, null, 2)}\n`;
     const manifestPath = join(mirrorDir, MANIFEST);
     const current = existsSync(manifestPath) ? readFileSync(manifestPath, 'utf8') : null;
-    if (current !== manifest) {
+    // No manifest is needed for a mirror that never had one and has nothing to
+    // record; an existing one is always brought up to date, even down to an
+    // empty list, so a removed skill's name cannot linger and later claim a
+    // foreign directory of the same name.
+    const needed = current !== null || names.length > 0;
+    if (needed && current !== manifest) {
       if (check) {
-        if (names.length > 0) problems.push(`${mirror}/${MANIFEST}: out of date`);
-      } else if (names.length > 0) {
+        problems.push(`${mirror}/${MANIFEST}: out of date`);
+      } else {
         mkdirSync(mirrorDir, { recursive: true });
         writeFileSync(manifestPath, manifest);
         written.push(`${mirror}/${MANIFEST}`);

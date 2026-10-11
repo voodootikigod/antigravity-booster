@@ -164,3 +164,8 @@ test('workflowMain --prompts writes prompts JSON instead of a script', () => {
 test('extractPrompts fails loudly if the script has no prompts hook', () => {
   assert.throws(() => extractPrompts('export const meta = {}\nconst x = 1'), /PROMPTS_ONLY hook/);
 });
+
+test('extractPrompts surfaces the real runtime failure instead of a generic hook error', () => {
+  const bad = 'export const meta = {}\nconst input = {}\nconst x = input.missing.deep\n';
+  assert.throws(() => extractPrompts(bad), /failed before reaching its PROMPTS_ONLY hook: .*(deep|undefined)/);
+});
