@@ -1,0 +1,7 @@
+{
+  "managed": [
+    "modernize",
+    "release",
+    "release-audit"
+  ]
+}

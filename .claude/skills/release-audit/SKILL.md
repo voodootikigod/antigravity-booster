@@ -1,16 +1,9 @@
 ---
 name: release-audit
-description: >-
-  Production-readiness audit of antigravity-booster before cutting a release. Audits every
-  shipped surface in parallel — the CLI, scheduler, ADLC gates, the PreToolUse policy guard,
-  the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar — plus
-  suite-level drift, docs and supply-chain agents, hunting release-BLOCKING issues rather
-  than general code smells. Runs this repo's own integrity gates as mechanical probes and
-  triages open GitHub issues against the code. Runs on the currently selected model.
-  Triggers on "release audit", "are we ready to release", "production readiness", "what's
-  blocking the release", "audit before release", "pre-release check", "release blockers",
-  "can we ship 1.2".
+description: "Production-readiness audit of antigravity-booster before cutting a release. Audits every shipped surface in parallel — the CLI, scheduler, ADLC gates, the PreToolUse policy guard, the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar — plus suite-level drift, docs and supply-chain agents, hunting release-BLOCKING issues rather than general code smells. Runs this repo's own integrity gates as mechanical probes and triages open GitHub issues against the code. Runs on the currently selected model. Triggers on \"release audit\", \"are we ready to release\", \"production readiness\", \"what's blocking the release\", \"audit before release\", \"pre-release check\", \"release blockers\", \"can we ship 1.2\"."
 user-invocable: true
+metadata:
+  internal: true
 argument-hint: "[version] [--since <tag>] [--units a,b] [--skip-issues] [--skip-build]"
 ---
 
@@ -20,12 +13,12 @@ A **GO / GO-WITH-RISK / NO-GO** read on antigravity-booster before a release. Ev
 shipped surface gets its own agent, in parallel, and the verdict is arithmetic over what
 they return — not a model's summary of them.
 
-This is not `/adversarial-review`. That reviews a **diff** and deliberately runs on a
+This is not the `adversarial-review` skill. That reviews a **diff** and deliberately runs on a
 *different* model. This audits **standing state** — a landmine that shipped in 0.8.0 and is
 still in `dist/` is exactly what a diff review structurally cannot see — and runs on the
 **currently selected model**, with a refute pass as the precision mechanism.
 
-It is a port of adlc's `/release-audit`, reshaped for this repository: adlc gives one agent
+It is a port of adlc's `release-audit` skill, reshaped for this repository: adlc gives one agent
 per npm package in a lockstep monorepo; booster is **one** npm package that is also a native
 agy plugin installed from a git URL with no `npm install`, so the units are the shipped
 **surfaces** (declared in `scripts/release-audit-collect.mjs` `UNITS`) and the mechanical
@@ -35,7 +28,7 @@ classifier — imported rather than restated.
 
 ## When to use
 
-- Before `/release` — the readiness question, asked before the mechanical bump.
+- Before the `release` skill — the readiness question, asked before the mechanical bump.
 - "What is blocking 1.2.0?" / "are we ready to ship?"
 - After fixing blockers: re-run narrowed with `--units` (that run can never return GO).
 
@@ -70,7 +63,7 @@ alongside them. Launch it first, in the background, capturing to a log:
 npm test > <scratch>/suite.log 2>&1
 ```
 
-`<scratch>` is the session scratchpad directory, not `/tmp`. The synthesizer reads node's
+`<scratch>` is a scratch directory outside the repo (the session scratchpad when your harness provides one, otherwise a fresh `mktemp -d`), not a path inside the working tree. The synthesizer reads node's
 own `ℹ tests N` / `ℹ fail N` summary (or the TAP `# tests` / `# fail` form); a log with no
 summary counts as not-run, never as green. A red suite makes the verdict NO-GO no matter
 what the agents find.
@@ -111,7 +104,9 @@ inventory and issue excerpts). Never pass `input.json` as `args`.
 
 ### 3. Fan out (Phase B)
 
-Build a self-contained script and hand the Workflow tool its path:
+Claude Code: build a self-contained script and hand the Workflow tool its path.
+Codex and agy have no Workflow tool; follow **Harness notes** below for the `--prompts` route,
+then continue at Phase C.
 
 ```bash
 node scripts/release-audit-workflow.mjs --input <scratch>/wargs.json --out <scratch>/workflow.mjs
@@ -157,16 +152,17 @@ terminal output as-is.
 
 ### 5. Publish the report
 
-Load the `artifact-design` skill, then build the full report as an HTML page from the
-Phase C JSON and publish it with the **Artifact** tool: every surface's section, all three
-buckets, the issue-verdict table, demoted findings with their reasons, and the mechanical
-baseline. Keep the terminal output terse; the detail lives at the URL.
+Build the full report from the Phase C JSON: every surface's section, all three buckets,
+the issue-verdict table, demoted findings with their reasons, and the mechanical baseline.
+Claude Code publishes it as an HTML page with the **Artifact** tool (load `artifact-design`
+first); other harnesses write it to `<scratch>/release-audit-<version>.md` and print the
+path. Keep the terminal output terse; the detail lives in the report.
 
 ### 6. Report honestly
 
 Give the verdict and the blockers as the synthesizer computed them. Do not soften a NO-GO,
 and do not act on findings — deciding what to fix is the maintainer's call. If the verdict
-is GO or GO-WITH-RISK and the maintainer wants to proceed, the next step is `/release`.
+is GO or GO-WITH-RISK and the maintainer wants to proceed, the next step is the `release` skill.
 
 ## Demotion rules — why nothing is ever deleted
 
@@ -192,7 +188,7 @@ a human can disagree.
   never read as "no blocking issues". Same for a fetch that hit its 500-issue limit.
 - A probe that could not run (`shellcheck` missing, dirty tree, unreachable npm) is named in
   the verdict as `probe could not run`, and caps the verdict at GO-WITH-RISK.
-- HEAD not equal to `origin/main` is named: the audited tree is not what `/release` would tag.
+- HEAD not equal to `origin/main` is named: the audited tree is not what the `release` skill would tag.
 - A finding citing a path outside the repository is rejected rather than read — the cited
   path is model-authored, and grounding must not become an arbitrary-file probe.
 
@@ -208,10 +204,47 @@ layout), and `scripts/` is not in `package.json` `files`, so none of this ships 
 
 ## Related
 
-- `/release` — the mechanical cut (`.claude/release-profile.md` holds its facts). This
+- the `release` skill — the mechanical cut (`.claude/release-profile.md` holds its facts). This
   skill answers whether that should happen.
-- `/adversarial-review` — diff-scoped, cross-model. Different question, different scope.
+- the `adversarial-review` skill — diff-scoped, cross-model. Different question, different scope.
 - `scripts/release-drift.mjs` + `release-drift.yml` — the scheduled stranded-release check
   this audit reuses.
 - `AGENTS.md` — the ADLC doctrine the probes and prompts encode (P3 rails, P5 prosecution,
   the degrade-vs-fail-closed amendment).
+
+## Harness notes
+
+The same `SKILL.md` runs in Claude Code, Codex and agy (canonical copy in `skills/`, mirrored
+to `.claude/skills/` and `.agents/skills/` by `npm run skills:sync`). Phases A and C are plain
+`node` scripts and identical everywhere. Only the fan-out (B) and the report (5) differ.
+
+| | Claude Code | Codex | agy |
+|---|---|---|---|
+| invoke | the `release-audit` skill | `$release-audit` | ask for it by name |
+| fan-out (B) | `Workflow` tool, `workflow.mjs` | `--prompts` + `codex exec` per unit | `--prompts` + `agy -p` per unit |
+| report (5) | Artifact tool | Markdown file | Markdown file |
+
+**Codex / agy fan-out.** Emit the work list instead of a script:
+
+```bash
+node scripts/release-audit-workflow.mjs --input <scratch>/wargs.json --out <scratch>/prompts.json --prompts
+```
+
+`prompts.json` holds `work` (one `{ id, prompt }` per unit, suite and sweep agents included),
+`schemas.report` and `schemas.verdict` (JSON Schema), and `refute.template` with `{{unit}}`,
+`{{title}}`, `{{klass}}`, `{{file}}`, `{{line}}`, `{{evidence}}`, `{{body}}`, `{{consequence}}` placeholders.
+For every `work` entry run one read-only, headless call from the repo root and keep its JSON:
+
+```bash
+# Codex
+codex exec --sandbox read-only --output-schema <scratch>/report.schema.json "<prompt>"
+# agy
+agy -p "<prompt>" --sandbox --output-format json --json-schema <scratch>/report.schema.json
+```
+
+(write `schemas.report` to `report.schema.json` first). Then, for each finding with
+`bucket: "BLOCKER"`, fill the refute template and run it the same way against
+`schemas.verdict`; copy `refuted` / `refutation` onto that finding. Write
+`{ "reports": [ ...every unit's report... ] }` to `<scratch>/reports.json` and continue at
+Phase C. If the harness supports subagents, run the units concurrently; otherwise run them one
+after another. Do not skip units to save time: a unit with no report forces NO-GO.

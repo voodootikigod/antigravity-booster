@@ -9,6 +9,8 @@ Each folder under [`skills/`](https://github.com/voodootikigod/antigravity-boost
 
 ## Notes
 
+- Every skill runs in Claude Code, Codex and agy. `skills/<name>/` is the only copy to edit; `npm run skills:sync` mirrors it into `.claude/skills/` (Claude Code) and `.agents/skills/` (Codex and agy), and `npm test` fails if a mirror drifts.
+
 - **modernize** audits this plugin against the latest agy and ADLC releases and produces a modernization ticket DAG; its probe logic is in `scripts/audit.mjs` ([modernize frontmatter](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/modernize/SKILL.md#L1-L8)).
 - **release** is marked internal: it is the maintainers' release procedure for this repository, not something plugin users run ([release frontmatter](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/release/SKILL.md#L1-L9)). The process is documented in [Releasing](/docs/project/releasing).
 

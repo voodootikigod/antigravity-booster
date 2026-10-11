@@ -398,7 +398,48 @@ const WORK = [
   ...(FILTERED ? [] : [...SUITE_SPECS, ...SWEEP_SPECS]),
 ]
 
+// Pure so the `--prompts` mode can hand the same text to harnesses that have no
+// Workflow tool. Keep every field the refuter needs inside this one function.
+function refutePrompt(unitId, f) {
+  return `A release audit of ${unitId} claims this is a RELEASE BLOCKER for ${PKG} ${input.version}.
+Your job is to REFUTE it. Read the actual code and find the reason it is not blocking:
+the path is unreachable, the input cannot occur, a caller already guards it, the quoted
+evidence does not mean what the claim says, a test already pins the safe behaviour, or it
+is no worse than what ${input.since || 'the last release'} already shipped.
+
+CLAIM:      ${f.title}
+CLASS:      ${f.klass}
+WHERE:      ${f.file || '(no file)'}${f.line ? `:${f.line}` : ''}
+EVIDENCE:   ${f.evidence}
+BODY:       ${f.body}
+CONSEQUENCE:${f.consequence}
+
+Set refuted=true only if you can point at the specific reason it does not block, and say
+what that reason is. If it genuinely blocks the release, set refuted=false and say why the
+refutation attempt failed. Do not refuse to refute merely because the claim sounds serious.`
+}
+
 log(`auditing ${WORK.length} units of ${PKG} for ${input.version} (baseline ${input.since || 'none'})`)
+
+// `--prompts` mode (scripts/release-audit-workflow.mjs): the harness has no Workflow
+// tool, so hand the work list to a sink instead of running it. PROMPTS_ONLY is a
+// parameter only the builder's extractor supplies; under the Workflow runtime it is
+// undeclared, so this branch never fires and the default path is unchanged.
+if (typeof PROMPTS_ONLY === 'function') {
+  PROMPTS_ONLY({
+    package: PKG,
+    version: input.version,
+    work: WORK.map((w) => ({ id: w.id, prompt: w.prompt })),
+    schemas: { report: REPORT, verdict: VERDICT },
+    refute: {
+      template: refutePrompt('{{unit}}', {
+        title: '{{title}}', klass: '{{klass}}', file: '{{file}}', line: '{{line}}', evidence: '{{evidence}}', body: '{{body}}', consequence: '{{consequence}}',
+      }),
+      appliesTo: 'every finding with bucket BLOCKER; set refuted/refutation from the VERDICT schema on that finding',
+    },
+  })
+  return null
+}
 
 const reports = await pipeline(
   WORK,
@@ -414,22 +455,7 @@ const reports = await pipeline(
     if (candidates.length === 0) return report
     const verdicts = await parallel(candidates.map((f) => () =>
       agent(
-        `A release audit of ${spec.id} claims this is a RELEASE BLOCKER for ${PKG} ${input.version}.
-Your job is to REFUTE it. Read the actual code and find the reason it is not blocking:
-the path is unreachable, the input cannot occur, a caller already guards it, the quoted
-evidence does not mean what the claim says, a test already pins the safe behaviour, or it
-is no worse than what ${input.since || 'the last release'} already shipped.
-
-CLAIM:      ${f.title}
-CLASS:      ${f.klass}
-WHERE:      ${f.file || '(no file)'}${f.line ? `:${f.line}` : ''}
-EVIDENCE:   ${f.evidence}
-BODY:       ${f.body}
-CONSEQUENCE:${f.consequence}
-
-Set refuted=true only if you can point at the specific reason it does not block, and say
-what that reason is. If it genuinely blocks the release, set refuted=false and say why the
-refutation attempt failed. Do not refuse to refute merely because the claim sounds serious.`,
+        refutePrompt(spec.id, f),
         { label: `refute:${spec.id}`, phase: 'Verify', schema: VERDICT },
       )))
     const findings = candidates.map((f, i) => {

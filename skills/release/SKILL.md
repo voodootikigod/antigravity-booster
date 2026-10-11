@@ -11,7 +11,7 @@ last-verified: 2026-07-21
 
 # Release
 
-Use this command to release a new version of antigravity-booster.
+Use this skill to release a new version of antigravity-booster. It is plain `git`, `npm` and `gh` steps, so it runs the same in Claude Code, Codex and agy.
 
 ## Arguments
 
