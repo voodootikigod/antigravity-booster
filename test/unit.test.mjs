@@ -1016,7 +1016,9 @@ test('agents: subagents exist only as agents/<name>.md (the legacy .agents/ tree
     assert.ok(existsSync(agentMd), `agents/${role}.md must exist`);
     assert.match(readFileSync(agentMd, 'utf8'), new RegExp(`^---\\nname: ${role}\\n`), `agents/${role}.md must declare its name`);
   }
-  assert.equal(existsSync(new URL('../.agents', import.meta.url)), false);
+  // .agents/ may exist only as the generated skills mirror for Codex/agy discovery.
+  const agentsDir = new URL('../.agents', import.meta.url);
+  if (existsSync(agentsDir)) assert.deepEqual(readdirSync(agentsDir), ['skills']);
 });
 
 test('standalone commands: reviewFleet, preflight, compilePlan, and brainToPlan require successful quota refresh', async () => {

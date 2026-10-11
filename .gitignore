@@ -1,7 +1,9 @@
 .worktrees/
 node_modules/
 .booster/
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/release-profile.md
 !.adlc/config.json
 plan.json
 sidecars/agb.json

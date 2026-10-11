@@ -107,8 +107,12 @@ test('layout: MCP server source lives at mcp/server.mjs', () => {
   assert.ok(existsSync(join(ROOT, 'mcp', 'server.mjs')));
 });
 
-test('layout: the legacy .agents/ tree is gone (Appendix A D9); top-level sidecars/ is the dashboard source', () => {
-  assert.equal(existsSync(join(ROOT, '.agents')), false);
+test('layout: the legacy .agents/ tree is gone (Appendix A D9, amended); .agents/ holds only the generated skills mirror; top-level sidecars/ is the dashboard source', () => {
+  // Codex and agy discover repo skills at .agents/skills/, so that one generated
+  // mirror (scripts/sync-skills.mjs) is allowed. Nothing else: no second editable
+  // copy of sidecars, agents or skills sources.
+  const agentsDir = join(ROOT, '.agents');
+  if (existsSync(agentsDir)) assert.deepEqual(readdirSync(agentsDir), ['skills']);
   assert.ok(statSync(join(ROOT, 'sidecars')).isDirectory());
 });
 

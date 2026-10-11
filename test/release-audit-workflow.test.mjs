@@ -25,8 +25,8 @@ function compiles(source) {
 }
 
 test('parseArgs reads both paths', () => {
-  assert.deepEqual(parseArgs(['--input', 'a.json', '--out', 'b.mjs']), { input: 'a.json', out: 'b.mjs' });
-  assert.deepEqual(parseArgs([]), { input: null, out: null });
+  assert.deepEqual(parseArgs(['--input', 'a.json', '--out', 'b.mjs']), { input: 'a.json', out: 'b.mjs', prompts: false });
+  assert.deepEqual(parseArgs([]), { input: null, out: null, prompts: false });
 });
 
 test('extractScript returns the single javascript fence and refuses an ambiguous document', () => {
@@ -110,4 +110,56 @@ test('workflowMain writes the built script and reports what it embedded', () => 
   assert.equal(code, 0);
   assert.match(written['out.mjs'], /const INPUT_DOC = /);
   assert.match(lines.join(' '), /2 units/);
+});
+
+// ---------------------------------------------------------------- --prompts mode (Codex / agy)
+
+import { extractPrompts } from '../scripts/release-audit-workflow.mjs';
+import { workflowArgs, UNITS } from '../scripts/release-audit-collect.mjs';
+
+const PROMPT_DOC = workflowArgs({
+  version: '1.2.0', currentVersion: '1.1.0', since: 'v1.1.0',
+  units: [{ ...UNITS[0], missingPaths: [], fileCount: 1, bytes: 1, churn: {}, issues: [], files: ['f'] }],
+});
+
+function builtScript() {
+  const md = readFileSync(join(ROOT, WORKFLOW_MD), 'utf8');
+  return buildScript(PROMPT_DOC, extractScript(md));
+}
+
+test('parseArgs reads --prompts', () => {
+  assert.equal(parseArgs(['--input', 'a', '--out', 'b', '--prompts']).prompts, true);
+  assert.equal(parseArgs(['--input', 'a', '--out', 'b']).prompts, false);
+});
+
+test('extractPrompts returns the work list, both schemas and the refute template without spawning anything', () => {
+  const p = extractPrompts(builtScript());
+  assert.equal(p.version, '1.2.0');
+  assert.ok(p.work.some((w) => w.id === UNITS[0].id), 'one prompt per declared unit');
+  assert.ok(p.work.some((w) => w.id === 'suite:drift'), 'suite agents are included on an unfiltered run');
+  assert.ok(p.work.every((w) => typeof w.prompt === 'string' && w.prompt.length > 200));
+  assert.deepEqual(p.schemas.report.required.slice(0, 2), ['unit', 'files_examined']);
+  assert.ok(p.schemas.verdict.properties.refuted);
+  assert.match(p.refute.template, /Your job is to REFUTE it/);
+  assert.match(p.refute.template, /\{\{title\}\}/);
+  assert.match(p.refute.template, /\{\{unit\}\}/);
+});
+
+test('workflowMain --prompts writes prompts JSON instead of a script', () => {
+  const written = {};
+  const lines = [];
+  const code = workflowMain(['--input', 'in.json', '--out', 'p.json', '--prompts'], {
+    readFile: (p) => (String(p).endsWith('in.json') ? JSON.stringify(PROMPT_DOC) : readFileSync(p, 'utf8')),
+    writeFile: (p, c) => { written[p] = c; },
+    log: (m) => lines.push(m),
+    root: ROOT,
+  });
+  assert.equal(code, 0);
+  const parsed = JSON.parse(written['p.json']);
+  assert.ok(Array.isArray(parsed.work) && parsed.refute.template);
+  assert.match(lines.join('\n'), /prompts, schemas and refute template/);
+});
+
+test('extractPrompts fails loudly if the script has no prompts hook', () => {
+  assert.throws(() => extractPrompts('export const meta = {}\nconst x = 1'), /PROMPTS_ONLY hook/);
 });
