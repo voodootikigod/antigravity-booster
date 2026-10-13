@@ -8,6 +8,7 @@ import { dirname, join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 var __dirname = dirname(fileURLToPath(import.meta.url));
 var activeProcesses = /* @__PURE__ */ new Map();
+var cancelledRequests = /* @__PURE__ */ new Set();
 function readPackageVersion() {
   try {
     return JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")).version;
@@ -188,7 +189,7 @@ async function handleToolCall(id, name, args) {
   }
   try {
     const child = spawn(agbCmd, cliArgs, {
-      env: { ...process.env, AGB_PROVIDER: "jetski" },
+      env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"]
     });
     activeProcesses.set(id, child);
@@ -202,6 +203,11 @@ async function handleToolCall(id, name, args) {
     });
     child.on("close", (code) => {
       activeProcesses.delete(id);
+      if (cancelledRequests.has(id)) {
+        cancelledRequests.delete(id);
+        sendError(id, -32800, "Request cancelled");
+        return;
+      }
       const output = stdout.trim() + (stderr ? "\nStderr:\n" + stderr.trim() : "");
       sendResult(id, {
         content: [
@@ -257,13 +263,13 @@ function sendError(id, code, message) {
 function handleCancelNotification(params) {
   const targetId = params?.id;
   if (targetId !== void 0 && activeProcesses.has(targetId)) {
+    cancelledRequests.add(targetId);
     const child = activeProcesses.get(targetId);
     try {
       child.kill("SIGTERM");
     } catch (e) {
       logDiagnostic(`cancel ${targetId}: ${e.message}`);
     }
-    activeProcesses.delete(targetId);
   }
 }
 function cleanup() {

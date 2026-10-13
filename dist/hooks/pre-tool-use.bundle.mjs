@@ -3590,7 +3590,7 @@ function matcher(pattern, nocase) {
   return MATCHERS.get(key);
 }
 function matchDeclaredRail(rel, rails, platform) {
-  const nocase = platform === "darwin";
+  const nocase = platform === "darwin" || platform === "win32";
   for (const rail of rails) {
     const prefix = railStaticPrefix(rail);
     if (covers(rel, rail, platform) || prefix !== "" && (fold(rel, platform) === fold(prefix, platform) || isAncestor(rel, prefix, platform)) || matcher(rail, nocase).match(rel)) {
@@ -3600,7 +3600,7 @@ function matchDeclaredRail(rel, rails, platform) {
   return null;
 }
 function matchesScope(rel, scope, platform) {
-  const nocase = platform === "darwin";
+  const nocase = platform === "darwin" || platform === "win32";
   return scope.some(
     (entry) => typeof entry === "string" && entry.length > 0 && (matcher(entry, nocase).match(rel) || covers(rel, entry.replace(/\/+$/, ""), platform))
   );
@@ -3610,7 +3610,7 @@ function isImplicitAncestorOnly(rel, platform) {
   return ![...IMPLICIT_RAIL_DIRS, ...IMPLICIT_RAIL_FILES, TICKET_STORE_DIR].some((t) => covers(rel, t, platform));
 }
 function isRailAncestorOnly(rel, rail, platform) {
-  return !covers(rel, rail, platform) && !matcher(rail, platform === "darwin").match(rel);
+  return !covers(rel, rail, platform) && !matcher(rail, platform === "darwin" || platform === "win32").match(rel);
 }
 
 // hooks/policy/shell.mjs
@@ -4353,7 +4353,7 @@ function containsProtected(r, ctx) {
 var SHARD_WRITERS = /* @__PURE__ */ new Set(["write_to_file", "create_file", "save_file"]);
 var SHARD_CONTENT_KEYS = ["CodeContent", "Content"];
 function newShardVerdict(name, rel, args, platform) {
-  const folded = platform === "darwin" ? rel.toLowerCase() : rel;
+  const folded = platform === "darwin" || platform === "win32" ? rel.toLowerCase() : rel;
   if (!folded.startsWith(`${TICKET_STORE_DIR}/`)) return null;
   const reason = "A new ticket shard must be a schema-valid ticket written whole to its canonical <id>--<sha256(id)>.json file";
   if (!SHARD_WRITERS.has(name)) return deny(reason);

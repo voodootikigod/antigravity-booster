@@ -44,11 +44,7 @@ export function findExternalSpecifiers(source) {
     if ((quote === '"' || quote === "'" || quote === '`') && rawArg.endsWith(quote)) {
       const inner = rawArg.slice(1, -1);
       if (quote === '`' && inner.includes('${')) {
-        const prefix = inner.split('${')[0];
-        const base = prefix.replace(/\/.*$/, '');
-        if (!isBuiltin(prefix) && !isBuiltin(base)) {
-          found.add(rawArg);
-        }
+        found.add(rawArg);
       } else if (!isBuiltin(inner)) {
         found.add(inner);
       }

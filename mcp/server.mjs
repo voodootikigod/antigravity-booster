@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const activeProcesses = new Map();
+const cancelledRequests = new Set();
 
 // Same version source as `agb --version`: the manifest one level up. Both
 // `mcp/server.mjs` and the bundled `dist/mcp-server.mjs` sit one directory
@@ -223,7 +224,7 @@ async function handleToolCall(id, name, args) {
   // Spawn agb CLI execution
   try {
     const child = spawn(agbCmd, cliArgs, {
-      env: { ...process.env, AGB_PROVIDER: 'jetski' },
+      env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -242,6 +243,11 @@ async function handleToolCall(id, name, args) {
 
     child.on('close', (code) => {
       activeProcesses.delete(id);
+      if (cancelledRequests.has(id)) {
+        cancelledRequests.delete(id);
+        sendError(id, -32800, 'Request cancelled');
+        return;
+      }
       const output = stdout.trim() + (stderr ? '\nStderr:\n' + stderr.trim() : '');
       sendResult(id, {
         content: [
@@ -302,13 +308,13 @@ function sendError(id, code, message) {
 function handleCancelNotification(params) {
   const targetId = params?.id;
   if (targetId !== undefined && activeProcesses.has(targetId)) {
+    cancelledRequests.add(targetId);
     const child = activeProcesses.get(targetId);
     try {
       child.kill('SIGTERM');
     } catch (e) {
       logDiagnostic(`cancel ${targetId}: ${e.message}`);
     }
-    activeProcesses.delete(targetId);
   }
 }
 

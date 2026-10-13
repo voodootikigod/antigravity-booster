@@ -166,7 +166,7 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
       res.setHeader('Content-Security-Policy', csp);
       res.setHeader('Content-Type', contentType);
       let html = readFileSync(filePath, 'utf8');
-      // No longer inject ?token= into subresource URLs since the HttpOnly cookie handles it.
+      // Static subresources (/app.js, /style.css) are allowlisted on the local origin; /events requires token.
       return res.end(html);
     }
     

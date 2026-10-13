@@ -276,7 +276,7 @@ function matcher(pattern, nocase) {
  * as a pattern crashed the evaluator).
  */
 export function matchDeclaredRail(rel, rails, platform) {
-  const nocase = platform === 'darwin';
+  const nocase = platform === 'darwin' || platform === 'win32';
   for (const rail of rails) {
     const prefix = railStaticPrefix(rail);
     if (
@@ -292,7 +292,7 @@ export function matchDeclaredRail(rel, rails, platform) {
 
 /** Appendix A.4 item 8: scope entries are globs; a plain directory entry also covers descendants. */
 export function matchesScope(rel, scope, platform) {
-  const nocase = platform === 'darwin';
+  const nocase = platform === 'darwin' || platform === 'win32';
   return scope.some(
     (entry) =>
       typeof entry === 'string' &&
@@ -314,5 +314,5 @@ export function isImplicitAncestorOnly(rel, platform) {
 }
 
 export function isRailAncestorOnly(rel, rail, platform) {
-  return !covers(rel, rail, platform) && !matcher(rail, platform === 'darwin').match(rel);
+  return !covers(rel, rail, platform) && !matcher(rail, platform === 'darwin' || platform === 'win32').match(rel);
 }
