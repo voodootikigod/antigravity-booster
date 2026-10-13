@@ -536,7 +536,7 @@ async function runStage2StaticAudit() {
   const devDeps = pkg.devDependencies || {};
 
   console.log(`[agb-modernize] [Stage 2] Audited ${filesToAudit.length} core repository modules.`);
-  console.log(`[agb-modernize] [Stage 2] Baseline dependency versions: @adlc/core=${deps['@adlc/core'] || 'none'}, @adlc/antigravity=${deps['@adlc/antigravity'] || 'none'}`);
+  console.log(`[agb-modernize] [Stage 2] Baseline dependency versions: @adlc/core=${devDeps['@adlc/core'] || deps['@adlc/core'] || 'none'}, @adlc/antigravity=${devDeps['@adlc/antigravity'] || deps['@adlc/antigravity'] || 'none'}`);
 
   // Codeweight & Tech-Debt Pruning Analysis
   const pruningCandidates = [];

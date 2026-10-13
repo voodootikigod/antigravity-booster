@@ -69,6 +69,14 @@ Use this skill to release a new version of antigravity-booster. It is plain `git
    npm version <patch|minor|major> --no-git-tag-version
    ```
    This atomically updates the `"version"` field in both `./package.json` and `./package-lock.json`.
+   Also update `./plugin.json` to match (lockstep integrity requirement):
+   ```bash
+   node -e 'const fs = require("node:fs"); const p = "./plugin.json", j = JSON.parse(fs.readFileSync(p, "utf8")), v = JSON.parse(fs.readFileSync("./package.json", "utf8")).version; j.version = v; fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");'
+   ```
+   Then regenerate reference documentation:
+   ```bash
+   node website/scripts/gen-reference.mjs
+   ```
 
 4. **Commit the bump on a release branch.** **main** is protected by the
    **main-protection** ruleset (1 approving review + code-owner review), and its
@@ -76,7 +84,7 @@ Use this skill to release a new version of antigravity-booster. It is plain `git
    rejected for everyone, including admins. The bump has to land via a PR.
    ```bash
    git checkout -b release/vX.Y.Z
-   git add package.json package-lock.json CHANGELOG.md
+   git add package.json package-lock.json plugin.json CHANGELOG.md website/generated/*.mdx
    git commit -m "chore: bump version to X.Y.Z"
    git push -u origin release/vX.Y.Z
    gh pr create --title "chore: release X.Y.Z" --body "Version bump + changelog for X.Y.Z."
