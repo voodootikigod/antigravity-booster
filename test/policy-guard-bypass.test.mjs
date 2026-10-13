@@ -551,3 +551,9 @@ test('R5 L7: total resolution work per evaluation is bounded', () => {
   assert.equal(runIn('mcp__fs__write', { paths }, [A, I, P]), 'deny');
   assert.ok(Date.now() - t0 < 3000, `bounded (${Date.now() - t0} ms)`);
 });
+
+test('R5 L8: manage_task and find_by_name pass through in ADLC repos with active rails', () => {
+  assert.equal(run('manage_task', { Action: 'list' }, A), 'pass');
+  assert.equal(run('manage_task', { Action: 'status', TaskId: 'task-1' }, A), 'pass');
+  assert.equal(run('find_by_name', { SearchPath: join(A, 'lib'), query: 'lock' }, A), 'pass');
+});

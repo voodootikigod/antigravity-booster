@@ -1,6 +1,7 @@
 {
   "body": "1. In lib/doctor.mjs line 1202 checkTicketStore: change strict check to `if (!parsed.ok || (parsed.exitCode !== undefined && parsed.exitCode !== 0))` so clean ticket doctor output from @adlc/tickets passes.\n2. In lib/doctor.mjs line 20 checkNodeVersion: enforce Node >= 22.19.0 to align with package.json engines and bin/node-launcher.sh.\n3. In lib/bootstrap.mjs line 282: probe resolvedAgyBin directly via execFileSync(resolvedAgyBin, ['--version']) rather than requiring the external 'which' utility.\n\nVerification: npm test && node bin/agb.mjs doctor",
   "category": "bugfix",
+  "completed": true,
   "edges": [
     {
       "to": "T-AUDIT-W2-SIDECAR-SERVER"

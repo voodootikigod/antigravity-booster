@@ -10,10 +10,25 @@ import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
 process.env.AGB_PLUGIN_ROOT ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'agb-no-vendor-'));
 
-test('checkNodeVersion: passes on v18+', async () => {
-  const res = await checkNodeVersion();
-  // Assume tests run on v18+
-  assert.equal(res.level, 'pass');
+test('checkNodeVersion: passes on v22.19.0+ and fails on older versions', async () => {
+  const current = await checkNodeVersion();
+  assert.equal(current.level, 'pass');
+
+  const v2219 = await checkNodeVersion({ version: 'v22.19.0' });
+  assert.equal(v2219.level, 'pass');
+
+  const v24 = await checkNodeVersion({ version: 'v24.14.1' });
+  assert.equal(v24.level, 'pass');
+
+  const v18 = await checkNodeVersion({ version: 'v18.20.0' });
+  assert.equal(v18.level, 'fail');
+  assert.match(v18.fix, /Upgrade Node\.js to v22\.19\.0 or newer/);
+
+  const v20 = await checkNodeVersion({ version: 'v20.10.0' });
+  assert.equal(v20.level, 'fail');
+
+  const v2218 = await checkNodeVersion({ version: 'v22.18.9' });
+  assert.equal(v2218.level, 'fail');
 });
 
 test('checkAgyBinary: passes when fake-agy is provided', async () => {
