@@ -148,7 +148,10 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
       return res.end('Forbidden');
     }
 
-    const filePath = join(__dirname, safePath);
+    let filePath = join(__dirname, safePath);
+    if (!existsSync(filePath)) {
+      filePath = join(__dirname, '..', 'sidecars', safePath);
+    }
     if (!existsSync(filePath)) {
       res.writeHead(404);
       return res.end('Not found');

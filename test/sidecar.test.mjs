@@ -349,3 +349,23 @@ test('sidecar: recovers from oversized lines without stalling (multibyte boundar
     server.close();
   }
 });
+
+test('sidecar: serves dashboard static web assets (index.html, app.js, style.css)', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-sidecar-assets-'));
+  const token = 'test-token-1234';
+  const server = await serveSidecar(repo, 0, token);
+  try {
+    const port = server.address().port;
+    const resHtml = await fetchP(`http://127.0.0.1:${port}/?token=${token}`);
+    assert.equal(resHtml.statusCode, 200);
+    assert.match(resHtml.data, /<!DOCTYPE html>/i);
+
+    const resJs = await fetchP(`http://127.0.0.1:${port}/app.js?token=${token}`);
+    assert.equal(resJs.statusCode, 200);
+
+    const resCss = await fetchP(`http://127.0.0.1:${port}/style.css?token=${token}`);
+    assert.equal(resCss.statusCode, 200);
+  } finally {
+    server.close();
+  }
+});

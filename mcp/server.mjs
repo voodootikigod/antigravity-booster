@@ -133,9 +133,11 @@ rl.on('line', async (line) => {
       return;
     }
     
-    // Handle cancellation notification
-    if (request.method === '$/cancel') {
-      handleCancelNotification(request.params);
+    // Handle cancellation notification (standard MCP 2024-11-05 and legacy $/cancel)
+    if (request.method === 'notifications/cancelled' || request.method === '$/cancel') {
+      const cancelParams = request.params;
+      const targetId = cancelParams?.requestId ?? cancelParams?.id;
+      handleCancelNotification({ id: targetId });
       return;
     }
 
@@ -245,7 +247,7 @@ async function handleToolCall(id, name, args) {
         content: [
           {
             type: 'text',
-            text: output || `Executed successfully (exit code ${code})`
+            text: output || (code === 0 ? 'Executed successfully' : `Command failed with exit code ${code}`)
           }
         ],
         isError: code !== 0
