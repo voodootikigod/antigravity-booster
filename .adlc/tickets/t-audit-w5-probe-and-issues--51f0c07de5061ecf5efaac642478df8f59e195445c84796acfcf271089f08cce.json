@@ -1,0 +1,20 @@
+{
+  "body": "Enhance scripts/release-audit-collect.mjs shellcheckProbe to fall back to npx --yes shellcheck when native shellcheck is missing so probe always runs.\nClose the 9 already-fixed GitHub issues (#14, #15, #16, #17, #18, #19, #22, #27, #54) with evidence and annotate the 4 non-blocking issues (#20, #21, #25, #41).\n\nVerification: node scripts/release-audit-collect.mjs",
+  "category": "bugfix",
+  "edges": [
+    {
+      "to": "T-AUDIT-W5-REBUILD-AND-REAUDIT"
+    }
+  ],
+  "id": "T-AUDIT-W5-PROBE-AND-ISSUES",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "scripts/release-audit-collect.mjs"
+  ],
+  "title": "Harden shellcheck probe with npx fallback and close triaged GitHub issues"
+}

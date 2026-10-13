@@ -1,0 +1,22 @@
+{
+  "body": "1. Bump @adlc/cli from 1.6.0 to 1.11.1 in .github/workflows/publish.yml line 89 matching ci.yml and package.json.\n2. In .github/workflows/ci.yml lines 40 & 76 and publish.yml line 52, fail closed on Linux runners if bwrap userns verification fails rather than echoing and continuing.\n3. Enhance scripts/check-bundle-externals.mjs to parse AST or detect CallExpression (import/require) so dynamic or template specifiers cannot hide non-builtin externals.\n\nVerification: npm test && node scripts/check-bundle-externals.mjs",
+  "category": "chore",
+  "edges": [
+    {
+      "to": "T-AUDIT-W4-SKILLS-MODERNIZE"
+    }
+  ],
+  "id": "T-AUDIT-W3-CI-SUPPLY-CHAIN",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    ".github/workflows/**",
+    "scripts/check-bundle-externals.mjs",
+    "test/check-bundle-externals.test.mjs"
+  ],
+  "title": "Bump @adlc/cli pin in publish.yml, fail-closed bwrap userns check, and enhance bundle externals scanner"
+}

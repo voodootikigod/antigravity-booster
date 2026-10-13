@@ -1,0 +1,22 @@
+{
+  "body": "1. In sidecars/server.mjs line 151, resolve static assets by checking join(__dirname, safePath) and falling back to join(__dirname, '..', 'sidecars', safePath) so dist/agb.mjs serves dashboard files.\n2. In bin/agb.mjs line 432, change dynamic plugin name to valid kebab-case 'agb-dynamic-sidecar'. Update test/fixtures/fake-agy to validate plugin names.\n3. In bin/agb.mjs line 371, remove dead unsafeOpen variable and dead CLI references.\n4. In sidecars/jetski-launcher.mjs line 63, align /events offset pagination to byte offsets matching server.mjs.\n\nVerification: npm test && node test/sidecar.test.mjs",
+  "category": "bugfix",
+  "edges": [
+    {
+      "to": "T-AUDIT-W3-SCHEDULER-PREFLIGHT"
+    }
+  ],
+  "id": "T-AUDIT-W2-SIDECAR-SERVER",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "sidecars/**",
+    "bin/agb.mjs",
+    "test/sidecar.test.mjs"
+  ],
+  "title": "Fix bundled sidecar static assets 404, kebab-case dynamic plugin name, and /events offset"
+}
