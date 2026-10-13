@@ -627,11 +627,21 @@ export function releaseDriftProbe({ run = execFileSync, classify, manifestVersio
   return { problems: result.ok ? [] : [`${result.status}: ${result.message}`], unconsultable: null, status: result.status };
 }
 
-/** shellcheck over the two POSIX launchers, as CI runs it; absent shellcheck is unconsultable. */
+/** shellcheck over the two POSIX launchers, as CI runs it; falls back to npx --yes shellcheck when native is absent. */
 export function shellcheckProbe({ run = execFileSync, root = ROOT }) {
-  const present = tryRun('shellcheck', ['--version'], { run, cwd: root });
-  if (!present.ok) return { problems: [], unconsultable: 'shellcheck is not installed, so bin/*.sh were not linted' };
-  const r = tryRun('shellcheck', ['-s', 'sh', 'bin/node-launcher.sh', 'bin/hook-runner.sh'], { run, cwd: root });
+  let cmd = 'shellcheck';
+  let prefixArgs = [];
+  const present = tryRun(cmd, ['--version'], { run, cwd: root });
+  if (!present.ok) {
+    const npxCheck = tryRun('npx', ['--yes', 'shellcheck', '--version'], { run, cwd: root });
+    if (npxCheck.ok) {
+      cmd = 'npx';
+      prefixArgs = ['--yes', 'shellcheck'];
+    } else {
+      return { problems: [], unconsultable: 'shellcheck is not installed, so bin/*.sh were not linted' };
+    }
+  }
+  const r = tryRun(cmd, [...prefixArgs, '-s', 'sh', 'bin/node-launcher.sh', 'bin/hook-runner.sh'], { run, cwd: root });
   if (r.ok) return { problems: [], unconsultable: null };
   return { problems: [`shellcheck: ${r.out.slice(0, 800)}`], unconsultable: null };
 }

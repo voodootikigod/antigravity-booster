@@ -408,8 +408,18 @@ async function watchStatus(repo, intervalMs = 100) {
     const buf = Buffer.alloc(stat.size - offset);
     readSync5(fd, buf, 0, buf.length, offset);
     closeSync12(fd);
-    offset += buf.length;
-    const lines = buf.toString("utf8").split("\n");
+    let lastNewline = -1;
+    for (let i = buf.length - 1; i >= 0; i--) {
+      if (buf[i] === 10) {
+        lastNewline = i;
+        break;
+      }
+    }
+    if (lastNewline === -1) {
+      return false;
+    }
+    offset += lastNewline + 1;
+    const lines = buf.subarray(0, lastNewline).toString("utf8").split("\n");
     let updated = false;
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -1695,7 +1705,10 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       res.writeHead(403);
       return res.end("Forbidden");
     }
-    const filePath = join34(__dirname, safePath);
+    let filePath = join34(__dirname, safePath);
+    if (!existsSync31(filePath)) {
+      filePath = join34(__dirname, "..", "sidecars", safePath);
+    }
     if (!existsSync31(filePath)) {
       res.writeHead(404);
       return res.end("Not found");
@@ -7317,13 +7330,13 @@ import { fileURLToPath as fileURLToPath2 } from "url";
 import crypto2 from "crypto";
 import net from "net";
 var execFileAsync = promisify(execFile2);
-async function checkNodeVersion() {
-  const version = process.version;
-  const major = parseInt(version.slice(1).split(".")[0], 10);
-  if (major >= 18) {
+var MIN_NODE_VERSION = "22.19.0";
+async function checkNodeVersion({ version = process.version } = {}) {
+  const cleanVersion = version.replace(/^v/, "");
+  if (semverGte(cleanVersion, MIN_NODE_VERSION)) {
     return { name: "Node.js", level: "pass", detail: version, fix: null };
   }
-  return { name: "Node.js", level: "fail", detail: version, fix: "Upgrade Node.js to v18 or newer." };
+  return { name: "Node.js", level: "fail", detail: version, fix: `Upgrade Node.js to v${MIN_NODE_VERSION} or newer.` };
 }
 var MIN_AGY_VERSION = "1.2.6";
 async function checkAgyBinary({ env = process.env } = {}) {
@@ -8437,7 +8450,7 @@ async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo =
     if (doctorOutput) {
       try {
         const parsed = JSON.parse(doctorOutput);
-        if (!parsed.ok || parsed.exitCode !== 0) {
+        if (!parsed.ok || parsed.exitCode !== void 0 && parsed.exitCode !== 0) {
           const failedChecks = (parsed.checks || []).filter((c) => !c.ok).map((c) => `${c.name}${c.detail ? `: ${c.detail}` : ""}`).join(", ");
           return {
             name: "Ticket Store",
@@ -12594,7 +12607,7 @@ async function brainToPlan(idOrPrefix, { repo, gate, model = "gemini-3.1-pro-hig
     throw new Error("brain conversion produced no tickets");
   }
   const activeId = getActiveSessionId();
-  const artifactDir = process.env.AGB_ARTIFACT_DIR ?? (activeId ? join23(homedir5(), ".gemini", "jetski", "brain", activeId) : join23(repo, ".booster"));
+  const artifactDir = process.env.AGB_ARTIFACT_DIR ?? (activeId ? join23(BRAIN_DIR, activeId) : join23(repo, ".booster"));
   try {
     mkdirSync12(artifactDir, { recursive: true, mode: 448 });
     const mdPath = join23(artifactDir, "agb_plan_artifact.md");
@@ -14672,6 +14685,7 @@ async function recordGate({ repo, gateName, ticketId, data, adlcBin }) {
     await execFileAuthenticatedAdlc(adlcBin, args, { cwd: repo, timeout: GATE_MANIFEST_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo });
     return { ok: true };
   } catch (err) {
+    console.warn(`[agb] advisory audit gate ${gateName} degraded for ${ticketId}: ${err.message}`);
     return { ok: false, error: err.message };
   }
 }
@@ -15014,7 +15028,7 @@ Fix: ${agyCheck.fix}`);
   }
   const onBranch = currentBranch2(repo);
   if (onBranch !== base) {
-    throw new Error(`repo ${repo} is on '${onBranch}', not the plan's base '${base}'. Checkout ${base} before running (agb merges into and resets the checked-out branch).`);
+    throw new Error(`repo ${repo} is on '${onBranch}', not the plan's base '${base}'. Checkout ${base} before running (agb advances ${base} by ref update; the checkout must match the base being advanced).`);
   }
   const enforcement = checkEnforcementAvailable(repo);
   if (enforcement.abort) {
@@ -15368,6 +15382,9 @@ Fix: ${agyCheck.fix}`);
               const resolvedAdlc2 = resolveAdlcBinary({ repo: worktree });
               const adlcBin = resolvedAdlc2.ok ? resolvedAdlc2.binary : void 0;
               const flail = await checkFlailDetector({ logFile: buildLogFile, scope: t.scope, cwd: worktree, adlcBin });
+              if (flail.error) {
+                console.warn(`[agb] advisory audit gate flail-detector degraded for ${t.id}: ${flail.error}`);
+              }
               if (flail.detected) {
                 lastFailure = `flail detected (adlc flail-detector): ` + flail.signals.map((s) => s.type).join(", ") + ` \u2014 not attempting another strike`;
                 strikeError = lastFailure;
@@ -16399,7 +16416,7 @@ function bootstrap({
   const tempRun = isNpxTemp();
   let agyCheckFailed = false;
   try {
-    execFileSync14("which", [resolvedAgyBin], { stdio: "ignore" });
+    execFileSync14(resolvedAgyBin, ["--version"], { stdio: "ignore" });
   } catch (err) {
     console.log(`info: agy CLI not found on PATH; bootstrap will attempt to fall back to jetski CLI`);
     agyCheckFailed = true;
@@ -16779,7 +16796,7 @@ try {
     }
   } else if (cmd === "probe") {
     const widths = (rest[0] ?? "2,4,8").split(",").map(Number);
-    const model = rest[1] ?? "Gemini 3.5 Flash (Low)";
+    const model = rest[1] ?? "Gemini 3.8 Flash (Low)";
     const rows = [];
     for (const n of widths) {
       const t0 = Date.now();
@@ -16830,7 +16847,6 @@ try {
     }
   } else if (cmd === "sidecar") {
     let portStr = process.env.AGB_SIDECAR_PORT;
-    let unsafeOpen = false;
     const positional = [];
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === "--port") {
@@ -16887,7 +16903,7 @@ try {
       const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
       writeFileSync22(join36(pluginDir, "plugin.json"), JSON.stringify({
         id: pluginId,
-        name: "AGB Dynamic Sidecar",
+        name: "agb-dynamic-sidecar",
         version: "1.0.0",
         sidecars: ["sidecars/agb.json"]
       }, null, 2) + "\n", { mode: 384 });

@@ -114,8 +114,10 @@ rl.on("line", async (line) => {
       sendError(request.id, -32600, "Invalid Request");
       return;
     }
-    if (request.method === "$/cancel") {
-      handleCancelNotification(request.params);
+    if (request.method === "notifications/cancelled" || request.method === "$/cancel") {
+      const cancelParams = request.params;
+      const targetId = cancelParams?.requestId ?? cancelParams?.id;
+      handleCancelNotification({ id: targetId });
       return;
     }
     if (request.id === void 0 || request.id === null) {
@@ -205,7 +207,7 @@ async function handleToolCall(id, name, args) {
         content: [
           {
             type: "text",
-            text: output || `Executed successfully (exit code ${code})`
+            text: output || (code === 0 ? "Executed successfully" : `Command failed with exit code ${code}`)
           }
         ],
         isError: code !== 0
