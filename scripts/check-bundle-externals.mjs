@@ -26,8 +26,11 @@ const CALL_PATTERN = /\b(?:import|require)\s*\(([^)]+)\)/g;
 
 export function isBuiltin(specifier) {
   if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;
-  if (specifier.startsWith('node:')) return BUILTINS.has(specifier.slice(5)) || BUILTINS.has(specifier);
-  return BUILTINS.has(specifier) || BUILTINS.has(specifier.split('/')[0]);
+  const bare = specifier.startsWith('node:') ? specifier.slice(5) : specifier;
+  if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(bare)) return true;
+  if (BUILTINS.has(specifier) || BUILTINS.has(bare)) return true;
+  const knownSubpaths = new Set(['fs/promises', 'stream/promises', 'stream/consumers', 'stream/web', 'timers/promises', 'dns/promises', 'readline/promises', 'util/types']);
+  return knownSubpaths.has(bare);
 }
 
 export function findExternalSpecifiers(source) {

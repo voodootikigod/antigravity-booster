@@ -399,18 +399,30 @@ async function watchStatus(repo, intervalMs = 100) {
   const { openSync: openSync12, fstatSync: fstatSync4, readSync: readSync5, closeSync: closeSync12 } = await import("node:fs");
   const parseEvents = () => {
     if (!existsSync23(eventsPath)) return false;
-    const fd = openSync12(eventsPath, "r");
-    const stat = fstatSync4(fd);
-    if (offset > stat.size) offset = 0;
-    if (stat.size <= offset) {
-      closeSync12(fd);
+    let fd;
+    let slice;
+    try {
+      fd = openSync12(eventsPath, "r");
+      const stat = fstatSync4(fd);
+      if (offset > stat.size) offset = 0;
+      if (stat.size <= offset) {
+        return false;
+      }
+      const toRead = stat.size - offset;
+      const buf = Buffer.alloc(toRead);
+      const bytesRead = readSync5(fd, buf, 0, toRead, offset);
+      slice = buf.subarray(0, bytesRead);
+    } catch {
       return false;
+    } finally {
+      if (fd !== void 0) {
+        try {
+          closeSync12(fd);
+        } catch {
+        }
+      }
     }
-    const toRead = stat.size - offset;
-    const buf = Buffer.alloc(toRead);
-    const bytesRead = readSync5(fd, buf, 0, toRead, offset);
-    closeSync12(fd);
-    const slice = buf.subarray(0, bytesRead);
+    if (!slice) return false;
     let lastNewline = -1;
     for (let i = slice.length - 1; i >= 0; i--) {
       if (slice[i] === 10) {
@@ -12470,9 +12482,10 @@ async function preflight(plan, opts = {}) {
 import { readdirSync as readdirSync9, readFileSync as readFileSync18, statSync as statSync5, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
 import { join as join23, resolve as resolve11 } from "node:path";
 import { homedir as homedir5 } from "node:os";
-var jetskiBrain = join23(homedir5(), ".gemini", "jetski", "brain");
+var antigravityCliBrain = join23(homedir5(), ".gemini", "antigravity-cli", "brain");
 var antigravityBrain = join23(homedir5(), ".gemini", "antigravity", "brain");
-var defaultBrainDir = existsSync21(jetskiBrain) ? jetskiBrain : antigravityBrain;
+var jetskiBrain = join23(homedir5(), ".gemini", "jetski", "brain");
+var defaultBrainDir = [antigravityCliBrain, antigravityBrain, jetskiBrain].find((d) => existsSync21(d)) ?? antigravityCliBrain;
 var BRAIN_DIR = process.env.AGB_BRAIN_DIR ?? defaultBrainDir;
 function getActiveSessionId() {
   return process.env.ANTIGRAVITY_CONVERSATION_ID ?? process.env.AGB_SESSION_ID ?? null;
@@ -12481,8 +12494,9 @@ var PLAN_FILENAMES = ["implementation_plan.md", "plan.md", "agb_plan_artifact.md
 function listBrains(brainDir = BRAIN_DIR) {
   const dirsToSearch = [brainDir];
   if (brainDir === BRAIN_DIR) {
-    if (brainDir !== jetskiBrain && existsSync21(jetskiBrain)) dirsToSearch.push(jetskiBrain);
-    if (brainDir !== antigravityBrain && existsSync21(antigravityBrain)) dirsToSearch.push(antigravityBrain);
+    for (const candidate of [antigravityCliBrain, antigravityBrain, jetskiBrain]) {
+      if (brainDir !== candidate && existsSync21(candidate)) dirsToSearch.push(candidate);
+    }
   }
   const seen = /* @__PURE__ */ new Set();
   const results = [];
@@ -14654,11 +14668,15 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   }
 }
 var CONSENSUS_FIX_TIMEOUT_MS = 3e5;
-async function runConsensusFix({ worktree, testCmd, files, adlcBin }) {
+async function runConsensusFix({ worktree, testCmd, files, rails = [], adlcBin }) {
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
   }
-  const args = ["consensus-fix", "--allow-dirty", "--test-cmd", testCmd, "--files", files.join(","), "--rails", testCmd, "--apply", "--json"];
+  const args = ["consensus-fix", "--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
+  if (Array.isArray(rails) && rails.length > 0) {
+    args.push("--rails", rails.join(","));
+  }
+  args.push("--apply", "--json");
   const parseResult = (stdout2) => {
     const parsed = JSON.parse(stdout2);
     return {
@@ -15359,11 +15377,17 @@ Fix: ${agyCheck.fix}`);
           activeAttemptNamespaces.add(attemptSlug);
           knownAttemptNamespaces.add(attemptSlug);
           let strikeError = null;
+          let safeResetToBase = () => {
+            try {
+              resetToBase(worktree, base);
+            } catch {
+            }
+          };
           try {
             const preSnapshot = snapshotRootGit(repo);
             const { baseSha: baseRefSha, gitDir: expectedGitDir } = setupAttemptGitDatabase(repo, worktree, base);
             safeWriteWorktreeFile(join30(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
-            const safeResetToBase = () => {
+            safeResetToBase = () => {
               try {
                 verifyWorktreeGitPointer(worktree, expectedGitDir);
               } catch {
@@ -15583,6 +15607,7 @@ Fix: ${agyCheck.fix}`);
                     const g = gates.results.at(-1);
                     strikeError = `gate ${g.name} failed:
 ${g.output}`;
+                    safeResetToBase();
                   } else {
                     const dryNeeded = plan.prosecution?.dryPasses ?? 1;
                     let dry = 0;
@@ -15608,13 +15633,14 @@ ${g.output}`;
                     if (verdict.verdict === "error") {
                       strikes += 1;
                       strikeError = `prosecution error: ${verdict.error}`;
+                      safeResetToBase();
                     } else {
                       strikes += 1;
                       const blocking = blockingFindings(verdict.findings);
                       strikeError = `prosecution block (findings):
 ${JSON.stringify(blocking, null, 2)}`;
                       status.ticket(t.id, { phase: "fixing", detail: `${blocking.length} findings` });
-                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, adlcBin: runAdlcBin });
+                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, rails: t.rails ?? [], adlcBin: runAdlcBin });
                       let cfFailureReason = null;
                       if (cf.ok && cf.applied) {
                         let cfGitPointerOk = false;
@@ -15687,6 +15713,7 @@ ${JSON.stringify(blocking, null, 2)}`;
 consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt regeneration`;
                       lastFailure = strikeError;
                       status.strike(t.id, { model, error: strikeError, strikes });
+                      safeResetToBase();
                       prompt = regenPrompt(t, lastFailure);
                       continue;
                     }
@@ -15703,6 +15730,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           }
           lastFailure = strikeError;
           status.strike(t.id, { model, error: strikeError, strikes });
+          safeResetToBase();
           prompt = regenPrompt(t, lastFailure);
         }
         throw new Error(lastFailure ?? "two strikes exhausted");

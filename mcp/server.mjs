@@ -241,8 +241,12 @@ async function handleToolCall(id, name, args) {
       stderr += data;
     });
 
+    let responded = false;
+
     child.on('close', (code) => {
       activeProcesses.delete(id);
+      if (responded) return;
+      responded = true;
       if (cancelledRequests.has(id)) {
         cancelledRequests.delete(id);
         sendError(id, -32800, 'Request cancelled');
@@ -262,6 +266,9 @@ async function handleToolCall(id, name, args) {
 
     child.on('error', (err) => {
       activeProcesses.delete(id);
+      if (responded) return;
+      responded = true;
+      if (cancelledRequests.has(id)) cancelledRequests.delete(id);
       sendResult(id, {
         content: [
           {
