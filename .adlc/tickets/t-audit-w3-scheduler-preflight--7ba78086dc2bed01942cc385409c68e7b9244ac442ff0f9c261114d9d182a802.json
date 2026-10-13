@@ -1,6 +1,7 @@
 {
   "body": "1. Update lib/scheduler.mjs line 1348 branch error message: change '(agb merges into and resets the checked-out branch)' to '(agb advances ${base} by ref update; the checkout must match the base being advanced).'\n2. Update lib/scheduler.mjs lines 956 & 1000+: log an advisory warning when recordGate or checkFlailDetector returns ok: false so audit gate degradation is visible.\n3. Update lib/preflight.mjs line 33 JSDoc: clarify that gate failure returns ok: true with gateFailures populated for advisory logging.\n4. Safeguard/clarify dormant reviewCalibration in lib/review.mjs.\n5. Keep lib/lock.mjs line 97 lock verification guard as accepted defense-in-depth.\n\nVerification: npm test",
   "category": "bugfix",
+  "completed": true,
   "edges": [
     {
       "to": "T-AUDIT-W4-COMMAND-SPECS"

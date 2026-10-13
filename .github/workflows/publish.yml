@@ -49,7 +49,7 @@ jobs:
       - name: Verify Bubblewrap Userns
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          bwrap --ro-bind / / --unshare-net -- true || echo "bwrap still restricted, tests may skip or fallback"
+          bwrap --ro-bind / / --unshare-net -- true
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -86,7 +86,7 @@ jobs:
           echo "Publishing version $PKG_VERSION"
 
       - name: Install the ADLC toolkit
-        run: npm install -g --ignore-scripts @adlc/cli@1.6.0
+        run: npm install -g --ignore-scripts @adlc/cli@1.11.1
 
       - name: Install
         # ci, not install: the published artifact must be built from the

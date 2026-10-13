@@ -16,13 +16,13 @@ const BUILTINS = new Set(builtinModules);
 // esbuild emits static imports as `import ... from "x"` / `import "x"` /
 // `export ... from "x"`; dynamic and CommonJS forms survive as import("x") /
 // require("x") when left external.
-const SPECIFIER_PATTERNS = [
-  /^\s*import\s[^;]*?\bfrom\s*["']([^"']+)["']/gm,
-  /^\s*import\s*["']([^"']+)["']/gm,
-  /^\s*export\s[^;]*?\bfrom\s*["']([^"']+)["']/gm,
-  /\bimport\(\s*["']([^"']+)["']\s*\)/g,
-  /\brequire\(\s*["']([^"']+)["']\s*\)/g,
+const STATIC_PATTERNS = [
+  /^\s*import\s[^;]*?\bfrom\s*["'`]([^"'`\r\n]+)["'`]/gm,
+  /^\s*import\s*["'`]([^"'`\r\n]+)["'`]/gm,
+  /^\s*export\s[^;]*?\bfrom\s*["'`]([^"'`\r\n]+)["'`]/gm,
 ];
+
+const CALL_PATTERN = /\b(?:import|require)\s*\(([^)]+)\)/g;
 
 export function isBuiltin(specifier) {
   if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;
@@ -32,9 +32,30 @@ export function isBuiltin(specifier) {
 
 export function findExternalSpecifiers(source) {
   const found = new Set();
-  for (const re of SPECIFIER_PATTERNS) {
+  for (const re of STATIC_PATTERNS) {
     for (const m of source.matchAll(re)) {
-      if (!isBuiltin(m[1])) found.add(m[1]);
+      const spec = m[1].trim();
+      if (!isBuiltin(spec)) found.add(spec);
+    }
+  }
+  for (const m of source.matchAll(CALL_PATTERN)) {
+    const rawArg = m[1].trim();
+    const quote = rawArg[0];
+    if ((quote === '"' || quote === "'" || quote === '`') && rawArg.endsWith(quote)) {
+      const inner = rawArg.slice(1, -1);
+      if (quote === '`' && inner.includes('${')) {
+        const prefix = inner.split('${')[0];
+        const base = prefix.replace(/\/.*$/, '');
+        if (!isBuiltin(prefix) && !isBuiltin(base)) {
+          found.add(rawArg);
+        }
+      } else if (!isBuiltin(inner)) {
+        found.add(inner);
+      }
+    } else {
+      if (!isBuiltin(rawArg)) {
+        found.add(rawArg);
+      }
     }
   }
   return [...found].sort();
