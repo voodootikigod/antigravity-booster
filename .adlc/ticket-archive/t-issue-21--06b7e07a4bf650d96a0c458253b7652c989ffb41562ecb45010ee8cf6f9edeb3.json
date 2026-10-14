@@ -1,0 +1,29 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-10-14T16:13:21.798Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "1c43d1fdf133bdbceb5971a05128541da0349cfbc5859244c07c3c380b23755f",
+    "ticketHash": "efbe13b8f71e97a3fe9342f94de0ce8bd5a0e9b6241b0a278cdae402c218ed1e",
+    "version": 1
+  },
+  "body": "Resolve GitHub Issue #21: centralize all model slugs, aliases, tier candidates, prosecutors, and role model constants into `lib/models.mjs`.\n\nTasks:\n1. Create `lib/models.mjs` as the single source of truth exporting:\n   - `MODELS` (moved verbatim from `lib/agy.mjs:90-105`)\n   - `ALL_MODELS = Object.freeze(Object.values(MODELS).flat())`\n   - `MODEL_ALIASES` and `RETIRED_35_MAP` (moved verbatim from `lib/agy.mjs:107-137`)\n   - `TIER_CANDIDATES` (`cheap`, `mid`, `frontier`, moved verbatim from `lib/pools.mjs:80-100`)\n   - `PROSECUTORS` (`{ gemini: 'gpt-oss-120b-medium', claude: 'gemini-3.1-pro-high', 'gpt-oss': 'gemini-3.1-pro-high' }`, moved from `lib/pools.mjs:104-108`)\n   - `PROSECUTOR_CANDIDATES`: `{ gemini: ['gpt-oss-120b-medium', 'claude-sonnet-4-6'], claude: ['gemini-3.1-pro-high', 'gemini-3.8-flash-high', 'gpt-oss-120b-medium'], 'gpt-oss': ['gemini-3.1-pro-high', 'gemini-3.8-flash-high', 'claude-sonnet-4-6'] }`\n   - `ROLE_MODELS`: `{ coldstart: 'gemini-3.8-flash-low', premortem: 'gemini-3.1-pro-high', parallaxReader: 'gemini-3.8-flash-medium', parallaxJudge: 'gemini-3.1-pro-high', brainConvert: 'gemini-3.1-pro-high', probeDefault: 'Gemini 3.8 Flash (Low)', reviewFleetAlternates: ['gemini-3.8-flash-high', 'gemini-3.1-pro-high'] }`\n   - `modelFor(role)` helper returning `ROLE_MODELS[role]` (throwing `new Error('Unknown model role: ' + role)` if undefined)\n   - Helper functions moved from `lib/agy.mjs` and `lib/pools.mjs`: `resolveModelSlug(model)`, `poolOf(model)`, `familyOf(model)`, `upstreamPoolOf(model)` (where `const pool = poolOf(model); return pool.startsWith('gemini') ? 'gemini' : 'claude_gpt';`), and `tierCandidates(tier, poolHint)`.\n2. Re-export `MODELS`, `ALL_MODELS`, `MODEL_ALIASES`, `resolveModelSlug`, `poolOf`, `familyOf`, `upstreamPoolOf` from `lib/agy.mjs` and `TIER_CANDIDATES`, `PROSECUTORS`, `PROSECUTOR_CANDIDATES`, `tierCandidates`, `poolOf`, `upstreamPoolOf` from `lib/pools.mjs` so all existing external/test imports remain 100% backward-compatible. Update `prosecutorsFor(builderModel)` in `lib/pools.mjs:1803-1815` to read from `PROSECUTOR_CANDIDATES[fam]` and fallback `[PROSECUTORS[fam] || PROSECUTORS.claude]` so no raw model strings remain in `lib/pools.mjs`.\n3. Replace hardcoded model string literals in:\n   - `lib/plan.mjs` (`PREMORTEM_MODEL = ROLE_MODELS.premortem`, `PARALLAX_READER_MODEL = ROLE_MODELS.parallaxReader`, `PARALLAX_JUDGE_MODEL = ROLE_MODELS.parallaxJudge`)\n   - `lib/preflight.mjs` (`COLDSTART_MODEL = ROLE_MODELS.coldstart`)\n   - `lib/brain.mjs` (default `model = ROLE_MODELS.brainConvert` in `brainToPlan` at line 142)\n   - `bin/agb.mjs` (default probe model `ROLE_MODELS.probeDefault` at line 321)\n   - `lib/review.mjs` (default alternating lens models `ROLE_MODELS.reviewFleetAlternates[i % ROLE_MODELS.reviewFleetAlternates.length]` at line 116)\n4. Add `test/models-registry.test.mjs` verifying:\n   - Every model slug in `TIER_CANDIDATES`, `PROSECUTORS`, `PROSECUTOR_CANDIDATES`, `ROLE_MODELS` (via `resolveModelSlug` for strings or array elements), and `MODEL_ALIASES` values is a member of `ALL_MODELS`.\n   - Scanning all `lib/*.mjs` files (excluding `lib/models.mjs` and stripping `//` and `/* */` comments) with regex `/['\"](?:gemini-3\\.[0-9][^'\"]*|claude-(?:sonnet|opus)-[0-9][^'\"]*|gpt-oss-[0-9][^'\"]*)['\"]/` finds 0 matches.\n5. Run `npm run build` and `node website/scripts/check-all.mjs` so `dist/` bundles and docs checks are completely clean.",
+  "completed": true,
+  "edges": [],
+  "id": "T-ISSUE-21",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "lib/models.mjs",
+    "lib/**",
+    "bin/agb.mjs",
+    "test/models-registry.test.mjs",
+    "test/**",
+    "dist/**"
+  ],
+  "title": "Centralize model-name registry into lib/models.mjs (#21)"
+}

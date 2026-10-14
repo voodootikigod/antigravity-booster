@@ -8531,6 +8531,146 @@ async function runDoctor(opts = {}) {
   return failed ? 1 : 0;
 }
 
+// lib/models.mjs
+var MODELS = {
+  "gemini-flash": [
+    "gemini-3.8-flash-low",
+    "gemini-3.8-flash-medium",
+    "gemini-3.8-flash-high",
+    "gemini-3.7-flash-low",
+    "gemini-3.7-flash-medium",
+    "gemini-3.7-flash-high",
+    "gemini-3.6-flash-low",
+    "gemini-3.6-flash-medium",
+    "gemini-3.6-flash-high"
+  ],
+  "gemini-pro": ["gemini-3.1-pro-low", "gemini-3.1-pro-high"],
+  claude: ["claude-sonnet-4-6", "claude-opus-4-6-thinking"],
+  "gpt-oss": ["gpt-oss-120b-medium"]
+};
+var ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
+var MODEL_ALIASES = {
+  "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
+  "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
+  "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
+  "gemini 3.7 flash (low)": "gemini-3.7-flash-low",
+  "gemini 3.7 flash (medium)": "gemini-3.7-flash-medium",
+  "gemini 3.7 flash (high)": "gemini-3.7-flash-high",
+  "gemini 3.6 flash (low)": "gemini-3.6-flash-low",
+  "gemini 3.6 flash (medium)": "gemini-3.6-flash-medium",
+  "gemini 3.6 flash (high)": "gemini-3.6-flash-high",
+  "gemini 3.5 flash (low)": "gemini-3.8-flash-low",
+  "gemini 3.5 flash (medium)": "gemini-3.8-flash-medium",
+  "gemini 3.5 flash (high)": "gemini-3.8-flash-high",
+  "gemini-3.5-flash-low": "gemini-3.8-flash-low",
+  "gemini-3.5-flash-medium": "gemini-3.8-flash-medium",
+  "gemini-3.5-flash-high": "gemini-3.8-flash-high",
+  "gemini 3.1 pro (low)": "gemini-3.1-pro-low",
+  "gemini 3.1 pro (high)": "gemini-3.1-pro-high",
+  "claude sonnet 4.6 (thinking)": "claude-sonnet-4-6",
+  "claude opus 4.6 (thinking)": "claude-opus-4-6-thinking",
+  "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
+};
+var RETIRED_35_MAP = {
+  "gemini-3.5-flash-low": "gemini-3.8-flash-low",
+  "gemini-3.5-flash-medium": "gemini-3.8-flash-medium",
+  "gemini-3.5-flash-high": "gemini-3.8-flash-high",
+  "gemini 3.5 flash (low)": "gemini-3.8-flash-low",
+  "gemini 3.5 flash (medium)": "gemini-3.8-flash-medium",
+  "gemini 3.5 flash (high)": "gemini-3.8-flash-high"
+};
+var TIER_CANDIDATES = {
+  cheap: [
+    "gemini-3.8-flash-low",
+    "gemini-3.8-flash-medium",
+    "gemini-3.7-flash-low",
+    "gemini-3.6-flash-low",
+    "gemini-3.6-flash-medium"
+  ],
+  mid: [
+    "gemini-3.8-flash-high",
+    "gemini-3.7-flash-medium",
+    "gemini-3.7-flash-high",
+    "gemini-3.6-flash-high",
+    "gemini-3.1-pro-low"
+  ],
+  frontier: [
+    "gemini-3.1-pro-high",
+    "claude-sonnet-4-6",
+    "claude-opus-4-6-thinking"
+  ]
+};
+var PROSECUTORS = {
+  gemini: "gpt-oss-120b-medium",
+  claude: "gemini-3.1-pro-high",
+  "gpt-oss": "gemini-3.1-pro-high"
+};
+var PROSECUTOR_CANDIDATES = {
+  gemini: ["gpt-oss-120b-medium", "claude-sonnet-4-6"],
+  claude: ["gemini-3.1-pro-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
+  "gpt-oss": ["gemini-3.1-pro-high", "gemini-3.8-flash-high", "claude-sonnet-4-6"]
+};
+var ROLE_MODELS = {
+  coldstart: "gemini-3.8-flash-low",
+  premortem: "gemini-3.1-pro-high",
+  parallaxReader: "gemini-3.8-flash-medium",
+  parallaxJudge: "gemini-3.1-pro-high",
+  brainConvert: "gemini-3.1-pro-high",
+  probeDefault: "Gemini 3.8 Flash (Low)",
+  reviewFleetAlternates: ["gemini-3.8-flash-high", "gemini-3.1-pro-high"]
+};
+function resolveModelSlug(model) {
+  if (typeof model !== "string") return model;
+  const normalized = model.trim().toLowerCase();
+  if (RETIRED_35_MAP[normalized]) {
+    const resolved = RETIRED_35_MAP[normalized];
+    console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
+    return resolved;
+  }
+  if (MODEL_ALIASES[normalized]) {
+    const resolved = MODEL_ALIASES[normalized];
+    if (normalized.includes("3.5")) {
+      console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
+    }
+    return resolved;
+  }
+  for (const list of Object.values(MODELS)) {
+    for (const slug of list) {
+      if (slug.toLowerCase() === normalized) return slug;
+    }
+  }
+  return model;
+}
+function poolOf(model) {
+  const slug = resolveModelSlug(model);
+  for (const [pool, models] of Object.entries(MODELS)) {
+    if (models.includes(slug)) return pool;
+  }
+  if (typeof slug !== "string") throw new Error(`unknown model: ${slug}`);
+  const normalized = slug.toLowerCase();
+  if (normalized.includes("flash")) return "gemini-flash";
+  if (normalized.includes("gemini")) return "gemini-pro";
+  if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus")) return "claude";
+  if (normalized.includes("gpt")) return "gpt-oss";
+  throw new Error(`unknown model: ${slug}`);
+}
+function familyOf(model) {
+  const pool = poolOf(model);
+  return pool.startsWith("gemini") ? "gemini" : pool;
+}
+function upstreamPoolOf(model) {
+  const pool = poolOf(model);
+  return pool.startsWith("gemini") ? "gemini" : "claude_gpt";
+}
+function tierCandidates(tier, poolHint) {
+  return (TIER_CANDIDATES[tier] ?? TIER_CANDIDATES.mid).filter((m) => {
+    if (!poolHint || poolHint === "auto") return true;
+    const fam = familyOf(m);
+    if (poolHint === "claude-gpt") return fam === "claude" || fam === "gpt-oss";
+    return fam === poolHint;
+  });
+}
+
 // lib/pools.mjs
 import {
   writeFileSync as writeFileSync10,
@@ -8576,32 +8716,6 @@ var DEFAULT_CAPS = {
   "gemini-pro": 4,
   claude: 4,
   "gpt-oss": 2
-};
-var TIER_CANDIDATES = {
-  cheap: [
-    "gemini-3.8-flash-low",
-    "gemini-3.8-flash-medium",
-    "gemini-3.7-flash-low",
-    "gemini-3.6-flash-low",
-    "gemini-3.6-flash-medium"
-  ],
-  mid: [
-    "gemini-3.8-flash-high",
-    "gemini-3.7-flash-medium",
-    "gemini-3.7-flash-high",
-    "gemini-3.6-flash-high",
-    "gemini-3.1-pro-low"
-  ],
-  frontier: [
-    "gemini-3.1-pro-high",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6-thinking"
-  ]
-};
-var PROSECUTORS = {
-  gemini: "gpt-oss-120b-medium",
-  claude: "gemini-3.1-pro-high",
-  "gpt-oss": "gemini-3.1-pro-high"
 };
 function getStateFile() {
   if (process.env.AGB_QUOTA_STATE) return process.env.AGB_QUOTA_STATE;
@@ -9219,11 +9333,6 @@ function computeQuotaResumption(fiveHourPercent, fiveHourResetTime, weeklyPercen
     resumesAtMs
   };
 }
-function upstreamPoolOf(model) {
-  const fam = familyOf(model);
-  if (fam === "claude" || fam === "gpt-oss") return "claude_gpt";
-  return "gemini";
-}
 function getLeaseHeartbeatPath(repo, leaseId) {
   return join19(repo, ".adlc", "leases", `${leaseId}.heartbeat`);
 }
@@ -9715,14 +9824,6 @@ async function drainPools(repo, { gracePeriodMs = 1e3 } = {}) {
     return { ok: true, drainedLeases: Object.keys(v2.leases).length };
   });
 }
-function tierCandidates(tier, poolHint) {
-  return (TIER_CANDIDATES[tier] ?? TIER_CANDIDATES.mid).filter((m) => {
-    if (!poolHint || poolHint === "auto") return true;
-    const fam = familyOf(m);
-    if (poolHint === "claude-gpt") return fam === "claude" || fam === "gpt-oss";
-    return fam === poolHint;
-  });
-}
 var QUOTA_PROBE_TIMEOUT_MS = 3e4;
 async function probeQuota(agyBin = process.env.AGB_AGY_BIN || "agy", { timeoutMs = QUOTA_PROBE_TIMEOUT_MS } = {}) {
   try {
@@ -10151,16 +10252,10 @@ var PoolSet = class {
   /** Candidate cross-family prosecutors for a builder model in preference order. */
   prosecutorsFor(builderModel) {
     const fam = familyOf(builderModel);
-    if (fam === "gemini") {
-      return ["gpt-oss-120b-medium", "claude-sonnet-4-6"];
+    if (PROSECUTOR_CANDIDATES[fam]) {
+      return [...PROSECUTOR_CANDIDATES[fam]];
     }
-    if (fam === "claude") {
-      return ["gemini-3.1-pro-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"];
-    }
-    if (fam === "gpt-oss") {
-      return ["gemini-3.1-pro-high", "gemini-3.8-flash-high", "claude-sonnet-4-6"];
-    }
-    return [PROSECUTORS[fam] || "gemini-3.1-pro-high"];
+    return [PROSECUTORS[fam] || PROSECUTORS.claude];
   }
   /** Cross-family prosecutor for a builder model. Prefers candidate with available capacity. */
   prosecutorFor(builderModel) {
@@ -10244,95 +10339,10 @@ function verifySandboxBypassAttestation(repoPath, platform2 = process.platform, 
   const effectiveEnv = env ? { ...process.env, ...env } : process.env;
   return verifyWindowsSandboxAttestation({ repo: repoPath, platform: platform2, consumeNonce, env: effectiveEnv });
 }
-var MODELS = {
-  "gemini-flash": [
-    "gemini-3.8-flash-low",
-    "gemini-3.8-flash-medium",
-    "gemini-3.8-flash-high",
-    "gemini-3.7-flash-low",
-    "gemini-3.7-flash-medium",
-    "gemini-3.7-flash-high",
-    "gemini-3.6-flash-low",
-    "gemini-3.6-flash-medium",
-    "gemini-3.6-flash-high"
-  ],
-  "gemini-pro": ["gemini-3.1-pro-low", "gemini-3.1-pro-high"],
-  claude: ["claude-sonnet-4-6", "claude-opus-4-6-thinking"],
-  "gpt-oss": ["gpt-oss-120b-medium"]
-};
-var MODEL_ALIASES = {
-  "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
-  "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
-  "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
-  "gemini 3.7 flash (low)": "gemini-3.7-flash-low",
-  "gemini 3.7 flash (medium)": "gemini-3.7-flash-medium",
-  "gemini 3.7 flash (high)": "gemini-3.7-flash-high",
-  "gemini 3.6 flash (low)": "gemini-3.6-flash-low",
-  "gemini 3.6 flash (medium)": "gemini-3.6-flash-medium",
-  "gemini 3.6 flash (high)": "gemini-3.6-flash-high",
-  "gemini 3.5 flash (low)": "gemini-3.8-flash-low",
-  "gemini 3.5 flash (medium)": "gemini-3.8-flash-medium",
-  "gemini 3.5 flash (high)": "gemini-3.8-flash-high",
-  "gemini-3.5-flash-low": "gemini-3.8-flash-low",
-  "gemini-3.5-flash-medium": "gemini-3.8-flash-medium",
-  "gemini-3.5-flash-high": "gemini-3.8-flash-high",
-  "gemini 3.1 pro (low)": "gemini-3.1-pro-low",
-  "gemini 3.1 pro (high)": "gemini-3.1-pro-high",
-  "claude sonnet 4.6 (thinking)": "claude-sonnet-4-6",
-  "claude opus 4.6 (thinking)": "claude-opus-4-6-thinking",
-  "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
-};
-var RETIRED_35_MAP = {
-  "gemini-3.5-flash-low": "gemini-3.8-flash-low",
-  "gemini-3.5-flash-medium": "gemini-3.8-flash-medium",
-  "gemini-3.5-flash-high": "gemini-3.8-flash-high",
-  "gemini 3.5 flash (low)": "gemini-3.8-flash-low",
-  "gemini 3.5 flash (medium)": "gemini-3.8-flash-medium",
-  "gemini 3.5 flash (high)": "gemini-3.8-flash-high"
-};
-function resolveModelSlug(model) {
-  if (typeof model !== "string") return model;
-  const normalized = model.trim().toLowerCase();
-  if (RETIRED_35_MAP[normalized]) {
-    const resolved = RETIRED_35_MAP[normalized];
-    console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
-    return resolved;
-  }
-  if (MODEL_ALIASES[normalized]) {
-    const resolved = MODEL_ALIASES[normalized];
-    if (normalized.includes("3.5")) {
-      console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
-    }
-    return resolved;
-  }
-  for (const list of Object.values(MODELS)) {
-    for (const slug of list) {
-      if (slug.toLowerCase() === normalized) return slug;
-    }
-  }
-  return model;
-}
 function isAgyTimeout(out) {
   const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
   const last = lines.at(-1) ?? "";
   return /^Error: (?:timed out waiting for response|MCP (?:tool call|server connection|connection) timed out|timed out waiting for MCP response)\.?$/i.test(last) && out.length < 300;
-}
-function poolOf(model) {
-  const slug = resolveModelSlug(model);
-  for (const [pool, models] of Object.entries(MODELS)) {
-    if (models.includes(slug)) return pool;
-  }
-  if (typeof slug !== "string") throw new Error(`unknown model: ${slug}`);
-  const normalized = slug.toLowerCase();
-  if (normalized.includes("flash")) return "gemini-flash";
-  if (normalized.includes("gemini")) return "gemini-pro";
-  if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus")) return "claude";
-  if (normalized.includes("gpt")) return "gpt-oss";
-  throw new Error(`unknown model: ${slug}`);
-}
-function familyOf(model) {
-  const pool = poolOf(model);
-  return pool.startsWith("gemini") ? "gemini" : pool;
 }
 function parseTimeoutMs(timeout) {
   if (typeof timeout === "number") return timeout;
@@ -10358,6 +10368,7 @@ async function runAgy({
   bin,
   env,
   project: project2,
+  conversation,
   strike = 0,
   role,
   outputFormat,
@@ -10376,6 +10387,9 @@ async function runAgy({
   const agyBin = bin ?? process.env.AGB_AGY_BIN ?? "agy";
   const effectiveTimeout = outputFormat === "stream-json" && (!timeout || timeout === "0") ? "0" : timeout;
   const args = ["--print", prompt, "--print-timeout", effectiveTimeout, "--model", resolvedModel];
+  if (typeof conversation === "string" && conversation.trim()) {
+    args.push("--conversation", conversation.trim());
+  }
   if (outputFormat) {
     args.push("--output-format", outputFormat);
   }
@@ -11064,6 +11078,7 @@ async function runAgy({
     let consecutiveGarbageBytes = 0;
     const events = [];
     let terminalResult = null;
+    let extractedConversationId = null;
     let killReason = null;
     let childKilled = false;
     const recordKillReason = (reason) => {
@@ -11158,6 +11173,31 @@ async function runAgy({
     if (outputFormat === "stream-json") {
       resetEventProgressTimer();
     }
+    const captureEventConversationId = (ev) => {
+      const candidateConvId = typeof ev.conversation_id === "string" && ev.conversation_id.trim() || typeof ev.init?.conversation_id === "string" && ev.init.conversation_id.trim() || typeof ev.step_update?.conversation_id === "string" && ev.step_update.conversation_id.trim() || typeof ev.result?.conversation_id === "string" && ev.result.conversation_id.trim() || null;
+      if (candidateConvId) {
+        extractedConversationId = candidateConvId;
+      }
+    };
+    const normalizeNestedStreamEvent = (ev) => {
+      if (ev.event === "init" || ev.event === "step_update") {
+        events.push(ev);
+        return true;
+      }
+      if (ev.event === "result" && ev.result && (ev.result.status === "SUCCESS" || ev.result.status === "ERROR")) {
+        const normResult = {
+          ...ev.result,
+          type: "result",
+          exit_code: typeof ev.result.exit_code === "number" ? ev.result.exit_code : ev.result.status === "SUCCESS" ? 0 : 1
+        };
+        if (!terminalResult) {
+          terminalResult = normResult;
+          events.push(normResult);
+        }
+        return true;
+      }
+      return false;
+    };
     const flushStreamBuffer = () => {
       if (killReason) return;
       if (outputFormat === "stream-json" && currentLineBuffer.length > 0) {
@@ -11186,7 +11226,10 @@ async function runAgy({
                   events.push(ev);
                 }
               }
+            } else if (ev && typeof ev === "object" && ev.event) {
+              validEvent = normalizeNestedStreamEvent(ev);
             }
+            if (validEvent) captureEventConversationId(ev);
           } catch {
           }
           if (validEvent) {
@@ -11342,7 +11385,7 @@ async function runAgy({
         }
       }
       let ok2 = kind === null;
-      let result = { ok: ok2, output: out, ms, error: errorMsg, kind };
+      let result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
       if (outputFormat === "stream-json") {
         result.events = events;
         result.terminalResult = terminalResult;
@@ -11351,21 +11394,25 @@ async function runAgy({
         try {
           const parsed = JSON.parse(out);
           if (parsed && typeof parsed === "object") {
+            if (typeof parsed?.conversation_id === "string" && parsed.conversation_id.trim()) {
+              extractedConversationId = parsed.conversation_id.trim();
+            }
             result.envelope = parsed;
             const statusStr = typeof parsed.status === "string" ? parsed.status.toLowerCase() : "";
             if (statusStr === "error" || statusStr === "failed") {
               ok2 = false;
               kind = "envelope_error";
               errorMsg = `agy returned error status in JSON envelope: ${parsed.status}${parsed.error || parsed.response ? ` (${parsed.error || parsed.response})` : ""}`;
-              result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed };
+              result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
             } else if (jsonSchema) {
+              const schemaObj = typeof jsonSchema === "string" ? JSON.parse(jsonSchema) : jsonSchema;
               let structured = parsed.structured_output;
               if (structured === void 0 || structured === null) {
                 if (parsed.status !== void 0 || parsed.type === "result" || parsed.response !== void 0 || parsed.error !== void 0) {
                   ok2 = false;
                   kind = "missing_structured_output";
                   errorMsg = "agy JSON response envelope missing required structured_output";
-                  result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed };
+                  result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
                 } else {
                   structured = parsed;
                 }
@@ -11378,17 +11425,16 @@ async function runAgy({
                     ok2 = false;
                     kind = "schema_violation";
                     errorMsg = `structured_output is invalid JSON: ${e.message}`;
-                    result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed };
+                    result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
                   }
                 }
                 if (ok2) {
-                  const schemaObj = typeof jsonSchema === "string" ? JSON.parse(jsonSchema) : jsonSchema;
                   const validation = validateJsonSchema(structured, schemaObj);
                   if (!validation.valid) {
                     ok2 = false;
                     kind = "schema_violation";
                     errorMsg = `structured output violates schema: ${validation.errors.join("; ")}`;
-                    result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed };
+                    result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
                   } else {
                     result.data = structured;
                   }
@@ -11412,7 +11458,7 @@ async function runAgy({
                 ok2 = false;
                 kind = "schema_violation";
                 errorMsg = `structured output violates schema: ${validation.errors.join("; ")}`;
-                result = { ok: ok2, output: out, ms, error: errorMsg, kind };
+                result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
               } else {
                 result.data = parsed;
               }
@@ -11424,9 +11470,10 @@ async function runAgy({
           ok2 = false;
           kind = "schema_violation";
           errorMsg = `Invalid JSON structured output: ${e.message}`;
-          result = { ok: ok2, output: out, ms, error: errorMsg, kind };
+          result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
         }
       }
+      result.conversationId = extractedConversationId;
       if (logFile) {
         mkdirSync10(dirname15(logFile), { recursive: true, mode: 448 });
         const record = {
@@ -11440,6 +11487,9 @@ async function runAgy({
           ok: ok2,
           role
         };
+        if (extractedConversationId !== null) {
+          record.conversationId = extractedConversationId;
+        }
         if (!ok2) {
           record.kind = kind;
           record.error = result.error;
@@ -11490,7 +11540,10 @@ async function runAgy({
                   console.warn("[agb] Warning: duplicate terminal result event received; first result wins");
                 }
               }
+            } else if (ev && typeof ev === "object" && ev.event) {
+              validEvent = normalizeNestedStreamEvent(ev);
             }
+            if (validEvent) captureEventConversationId(ev);
           } catch {
           }
           if (validEvent) {
@@ -12204,42 +12257,91 @@ function extractJson(text) {
   throw new Error("extractJson: unbalanced JSON in model output");
 }
 
+// lib/adlc-tool.mjs
+async function runAdlcTool({
+  tool,
+  args = [],
+  cwd,
+  timeoutMs = 3e4,
+  maxBuffer = 10 * 1024 * 1024,
+  adlcBin,
+  repo
+} = {}) {
+  let res;
+  try {
+    res = await execFileAuthenticatedAdlc(
+      adlcBin,
+      [tool, ...args],
+      { cwd, timeout: timeoutMs, maxBuffer },
+      { repo: repo ?? cwd }
+    );
+  } catch (err) {
+    if (err?.stdout && !err.killed && !err.signal && Number.isInteger(err.code)) {
+      try {
+        const parsed = JSON.parse(err.stdout);
+        return {
+          ok: true,
+          exitCode: err.code ?? 2,
+          parsed,
+          stdout: err.stdout
+        };
+      } catch {
+      }
+    }
+    return {
+      ok: false,
+      exitCode: err?.code ?? 1,
+      error: err?.message ?? String(err),
+      unparseable: Boolean(err?.stdout),
+      stdout: err?.stdout ?? ""
+    };
+  }
+  const stdout2 = res?.stdout ?? "";
+  try {
+    const parsed = JSON.parse(stdout2);
+    return {
+      ok: true,
+      exitCode: 0,
+      parsed,
+      stdout: stdout2
+    };
+  } catch (parseErr) {
+    return {
+      ok: false,
+      exitCode: 0,
+      error: "unparseable " + tool + " output: " + parseErr.message,
+      unparseable: true,
+      stdout: stdout2
+    };
+  }
+}
+
 // lib/prosecute.mjs
 var execFileP3 = promisify4(execFile5);
 var MAX_DIFF_CHARS = 12e4;
 var HOLLOW_TEST_TIMEOUT_MS = 18e4;
 async function runHollowTest({ worktree, testCmd, base = "main", adlcBin } = {}) {
   if (!testCmd) return { ok: false, error: "no gate test command configured \u2014 hollow-test skipped" };
-  const parseResult = (stdout2) => {
-    const parsed = JSON.parse(stdout2);
-    const survivors = (parsed.mutants ?? []).filter((m) => m.status === "survived");
-    return {
-      ok: true,
-      total: parsed.summary?.total ?? 0,
-      killed: parsed.summary?.killed ?? 0,
-      survived: survivors.length,
-      mutants: survivors
-    };
-  };
-  try {
-    const { stdout: stdout2 } = await execFileAuthenticatedAdlc(adlcBin, [
-      "hollow-test",
-      "--test-cmd",
-      testCmd,
-      "--base",
-      base,
-      "--json"
-    ], { cwd: worktree, timeout: HOLLOW_TEST_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo: worktree });
-    return parseResult(stdout2);
-  } catch (err) {
-    if (err.stdout) {
-      try {
-        return parseResult(err.stdout);
-      } catch {
-      }
-    }
-    return { ok: false, error: err.message };
+  const res = await runAdlcTool({
+    tool: "hollow-test",
+    args: ["--test-cmd", testCmd, "--base", base, "--json"],
+    cwd: worktree,
+    timeoutMs: HOLLOW_TEST_TIMEOUT_MS,
+    adlcBin,
+    repo: worktree
+  });
+  if (!res.ok) {
+    return { ok: false, error: res.error };
   }
+  const parsed = res.parsed;
+  const survivors = (parsed.mutants ?? []).filter((m) => m.status === "survived");
+  return {
+    ok: true,
+    total: parsed.summary?.total ?? 0,
+    killed: parsed.summary?.killed ?? 0,
+    survived: survivors.length,
+    mutants: survivors
+  };
 }
 async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd, base, project: project2, onSpawn }) {
   if (!diff.trim()) {
@@ -12334,21 +12436,19 @@ var execFileP4 = promisify5(execFile6);
 var MERGE_FORECAST_TIMEOUT_MS = 3e4;
 async function applyMergeForecast(plan, ticketsPath, { adlcBin, repo, graphCoupling } = {}) {
   const graphCouplingPath = graphCoupling ?? (repo ? join22(repo, ".adlc", "graph-coupling.json") : join22(".adlc", "graph-coupling.json"));
-  const args = ["merge-forecast", "--tickets", ticketsPath, "--json", "--graph-coupling", graphCouplingPath];
-  let stdout2;
-  try {
-    const res = await execFileAuthenticatedAdlc(adlcBin, args, { cwd: repo, timeout: MERGE_FORECAST_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo });
-    stdout2 = res.stdout;
-  } catch (err) {
-    stdout2 = err.stdout;
-    if (!stdout2) return { ok: false, error: err.message };
+  const args = ["--tickets", ticketsPath, "--json", "--graph-coupling", graphCouplingPath];
+  const res = await runAdlcTool({
+    tool: "merge-forecast",
+    args,
+    cwd: repo,
+    timeoutMs: MERGE_FORECAST_TIMEOUT_MS,
+    adlcBin,
+    repo
+  });
+  if (!res.ok) {
+    return { ok: false, error: res.error };
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(stdout2);
-  } catch (err) {
-    return { ok: false, error: `unparseable merge-forecast output: ${err.message}` };
-  }
+  const parsed = res.parsed;
   plan.concurrencyCap = parsed.recommendedWidth ?? parsed.certifiedWidth ?? null;
   return {
     ok: true,
@@ -12359,7 +12459,7 @@ async function applyMergeForecast(plan, ticketsPath, { adlcBin, repo, graphCoupl
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings : []
   };
 }
-var COLDSTART_MODEL = "gemini-3.8-flash-low";
+var COLDSTART_MODEL = ROLE_MODELS.coldstart;
 function coldstartPrompt(ticket, gate) {
   return `You are doing a cold-start check on a work ticket. You know NOTHING
 about the project except what the ticket says. A fresh agent must be able to
@@ -12585,7 +12685,7 @@ ${brain.task ?? "(none)"}
  "tickets": [{"id": "T1", "title": "...", "body": "...",
    "scope": ["..."], "edges": [], "tier": "mid", "pool_hint": "auto"}]}`;
 }
-async function brainToPlan(idOrPrefix, { repo, gate, model = "gemini-3.1-pro-high", brainDir = BRAIN_DIR, feedback = [], project: project2, pools } = {}) {
+async function brainToPlan(idOrPrefix, { repo, gate, model = ROLE_MODELS.brainConvert, brainDir = BRAIN_DIR, feedback = [], project: project2, pools } = {}) {
   const finalProject = project2 ?? `agb-brain-${Date.now()}`;
   if (!repo) throw new Error("brainToPlan: repo is required");
   if (pools) {
@@ -13101,28 +13201,26 @@ function unlinkIntegrationJournal(repo) {
 
 // lib/plan.mjs
 var execFileP5 = promisify6(execFile7);
-var PREMORTEM_MODEL = "gemini-3.1-pro-high";
-var PARALLAX_READER_MODEL = "gemini-3.8-flash-medium";
+var PREMORTEM_MODEL = ROLE_MODELS.premortem;
+var PARALLAX_READER_MODEL = ROLE_MODELS.parallaxReader;
 var TICKET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
-var PARALLAX_JUDGE_MODEL = "gemini-3.1-pro-high";
+var PARALLAX_JUDGE_MODEL = ROLE_MODELS.parallaxJudge;
 var MODEL_ROUTER_TIMEOUT_MS = 3e4;
 async function applyModelRouterTiers(plan, ticketsPath, { adlcBin, floor } = {}) {
-  const args = ["model-router", "--tickets", ticketsPath, "--json"];
+  const args = ["--tickets", ticketsPath, "--json"];
   if (floor !== void 0) args.push("--floor", String(floor));
-  let stdout2;
-  try {
-    const res = await execFileAuthenticatedAdlc(adlcBin, args, { cwd: plan.repo, timeout: MODEL_ROUTER_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo: plan.repo });
-    stdout2 = res.stdout;
-  } catch (err) {
-    stdout2 = err.stdout;
-    if (!stdout2) return { ok: false, error: err.message, assignments: [] };
+  const res = await runAdlcTool({
+    tool: "model-router",
+    args,
+    cwd: plan.repo,
+    timeoutMs: MODEL_ROUTER_TIMEOUT_MS,
+    adlcBin,
+    repo: plan.repo
+  });
+  if (!res.ok) {
+    return { ok: false, error: res.error, assignments: [] };
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(stdout2);
-  } catch (err) {
-    return { ok: false, error: `unparseable model-router output: ${err.message}`, assignments: [] };
-  }
+  const parsed = res.parsed;
   const assignments = Array.isArray(parsed.assignments) ? parsed.assignments : [];
   const byId = new Map(assignments.map((a) => [a.id, a]));
   for (const t of plan.tickets ?? []) {
@@ -13929,6 +14027,14 @@ function isAlive(pid) {
 }
 
 // lib/scheduler.mjs
+function warmRegenPrompt(ticket, previousFailure) {
+  return [
+    `Strike 1 for ticket ${ticket.id} (${ticket.title}) failed verification and the worktree has been reset to base HEAD.`,
+    `Previous failure:
+${previousFailure}`,
+    `Do not repeat the failing approach. Implement the complete fix within declared scope (${(ticket.scope ?? []).join(", ")}) without touching frozen rails (${(ticket.rails ?? []).join(", ")}), run the gate tests, and end with TICKET-DONE or TICKET-BLOCKED: <reason>.`
+  ].join("\n\n");
+}
 var NULL_HOOKS_PATH2 = process.platform === "win32" ? "NUL" : "/dev/null";
 function terminateProcessTree(child, sig = "SIGKILL") {
   if (!child) return;
@@ -14642,21 +14748,22 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
     }
   }
   const repo = cwd ?? process.cwd();
-  const args = ["flail-detector", targetFile, "--json"];
+  const args = [targetFile, "--json"];
   for (const g of scope ?? []) args.push("--scope", g);
   try {
-    const { stdout: stdout2 } = await execFileAuthenticatedAdlc(adlcBin, args, { cwd: repo, timeout: FLAIL_DETECTOR_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo });
-    const parsed = JSON.parse(stdout2);
-    return { detected: parsed.verdict === "flail", signals: parsed.signals ?? [] };
-  } catch (err) {
-    if (err.stdout) {
-      try {
-        const parsed = JSON.parse(err.stdout);
-        return { detected: parsed.verdict === "flail", signals: parsed.signals ?? [] };
-      } catch {
-      }
+    const res = await runAdlcTool({
+      tool: "flail-detector",
+      args,
+      cwd: repo,
+      timeoutMs: FLAIL_DETECTOR_TIMEOUT_MS,
+      adlcBin,
+      repo
+    });
+    if (!res.ok) {
+      return { detected: false, signals: [], error: res.error };
     }
-    return { detected: false, signals: [], error: err.message };
+    const parsed = res.parsed;
+    return { detected: parsed.verdict === "flail", signals: parsed.signals ?? [] };
   } finally {
     if (tmpDirToClean) {
       const { rmSync: rmSync16 } = await import("node:fs");
@@ -14672,32 +14779,29 @@ async function runConsensusFix({ worktree, testCmd, files, rails = [], adlcBin }
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
   }
-  const args = ["consensus-fix", "--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
+  const args = ["--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
   if (Array.isArray(rails) && rails.length > 0) {
     args.push("--rails", rails.join(","));
   }
   args.push("--apply", "--json");
-  const parseResult = (stdout2) => {
-    const parsed = JSON.parse(stdout2);
-    return {
-      ok: true,
-      applied: !!parsed.applied,
-      survivors: parsed.survivors?.length ?? 0,
-      allDivergent: !!parsed.allDivergent
-    };
-  };
-  try {
-    const { stdout: stdout2 } = await execFileAuthenticatedAdlc(adlcBin, args, { cwd: worktree, timeout: CONSENSUS_FIX_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo: worktree });
-    return parseResult(stdout2);
-  } catch (err) {
-    if (err.stdout) {
-      try {
-        return parseResult(err.stdout);
-      } catch {
-      }
-    }
-    return { ok: false, applied: false, error: err.message };
+  const res = await runAdlcTool({
+    tool: "consensus-fix",
+    args,
+    cwd: worktree,
+    timeoutMs: CONSENSUS_FIX_TIMEOUT_MS,
+    adlcBin,
+    repo: worktree
+  });
+  if (!res.ok) {
+    return { ok: false, applied: false, error: res.error };
   }
+  const parsed = res.parsed;
+  return {
+    ok: true,
+    applied: !!parsed.applied,
+    survivors: parsed.survivors?.length ?? 0,
+    allDivergent: !!parsed.allDivergent
+  };
 }
 var GATE_MANIFEST_TIMEOUT_MS = 15e3;
 async function recordGate({ repo, gateName, ticketId, data, adlcBin }) {
@@ -14712,34 +14816,34 @@ async function recordGate({ repo, gateName, ticketId, data, adlcBin }) {
   }
 }
 async function checkRailsGuard({ worktree, base, rails, adlcBin }) {
-  const args = ["rails-guard", "--base", base, "--json"];
+  const args = ["--base", base, "--json"];
   for (const r of rails) args.push("--rails", r);
-  try {
-    const { stdout: stdout2 } = await execFileAuthenticatedAdlc(adlcBin, args, { cwd: worktree, timeout: RAILS_GUARD_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo: worktree });
-    let parsed;
-    try {
-      parsed = JSON.parse(stdout2);
-    } catch {
+  const res = await runAdlcTool({
+    tool: "rails-guard",
+    args,
+    cwd: worktree,
+    timeoutMs: RAILS_GUARD_TIMEOUT_MS,
+    adlcBin,
+    repo: worktree
+  });
+  if (!res.ok) {
+    if (res.exitCode === 0 && res.unparseable) {
       return { violations: ["adlc rails-guard operational error: unparseable --json output"], operationalError: true };
     }
+    return { violations: [`adlc rails-guard operational error: ${res.error}`], operationalError: true };
+  }
+  const parsed = res.parsed;
+  if (res.exitCode === 0) {
     if (parsed?.railGlobError) {
       return { violations: [`adlc rails-guard operational error: invalid rail glob: ${parsed.railGlobError}`], operationalError: true };
     }
     return { violations: [] };
-  } catch (err) {
-    if (err.stdout) {
-      try {
-        const parsed = JSON.parse(err.stdout);
-        const violations = (parsed.violations ?? []).map((v) => v.file ?? JSON.stringify(v));
-        if (violations.length === 0 || parsed.railGlobError) {
-          return { violations: [`adlc rails-guard operational error: exit without violations${parsed.railGlobError ? ` (invalid rail glob: ${parsed.railGlobError})` : ""}`], operationalError: true };
-        }
-        return { violations };
-      } catch {
-      }
-    }
-    return { violations: [`adlc rails-guard operational error: ${err.message}`], operationalError: true };
   }
+  const violations = (parsed?.violations ?? []).map((v) => v.file ?? JSON.stringify(v));
+  if (violations.length === 0 || parsed?.railGlobError) {
+    return { violations: [`adlc rails-guard operational error: exit without violations${parsed?.railGlobError ? ` (invalid rail glob: ${parsed.railGlobError})` : ""}`], operationalError: true };
+  }
+  return { violations };
 }
 function checkEnforcementAvailable(repo) {
   if (!existsSync27(join30(repo, ".adlc"))) {
@@ -15227,7 +15331,7 @@ Fix: ${agyCheck.fix}`);
         }
       }
     }
-    async function buildOnce(t, worktree, model, prompt, strike, { ticketId, token, repo: targetRepo, baseRefSha, onReroute } = {}) {
+    async function buildOnce(t, worktree, model, prompt, strike, { ticketId, token, repo: targetRepo, baseRefSha, conversation, onReroute } = {}) {
       const { model: activeModel, release } = await acquireWithQuotaHandling(model, {
         role: "builder",
         tier: t.tier,
@@ -15265,6 +15369,7 @@ Fix: ${agyCheck.fix}`);
           repo: targetRepo ?? repo,
           ticketId: ticketId ?? t.id,
           token,
+          conversation,
           onSpawn: (child) => {
             if (child) {
               activeChildren.add(child);
@@ -15363,6 +15468,8 @@ Fix: ${agyCheck.fix}`);
         let attempts = 0;
         let prompt = builderPrompt(t);
         let lastFailure = "";
+        let lastConversationId = null;
+        let lastStrikeModel = null;
         const safeId = t.id.replace(/[\/\\]/g, "_");
         const buildLogFile = join30(logDir, `${safeId}.jsonl`);
         while (strikes < 2) {
@@ -15421,11 +15528,22 @@ Fix: ${agyCheck.fix}`);
               }
             }
             status.ticket(t.id, { phase: "building", model, strikes: strikeNum, attempts });
+            let strikeConversation = void 0;
+            if (strikes > 0) {
+              if (lastConversationId && model === lastStrikeModel && process.env.AGB_WARM_STRIKES !== "0") {
+                prompt = warmRegenPrompt(t, lastFailure);
+                strikeConversation = lastConversationId;
+              } else {
+                prompt = regenPrompt(t, lastFailure);
+                strikeConversation = void 0;
+              }
+            }
             const build = await buildOnce(t, worktree, model, prompt, strikeNum, {
               ticketId: t.id,
               token: ownerToken,
               repo,
               baseRefSha,
+              conversation: strikeConversation,
               onReroute: (newModel) => {
                 model = newModel;
               }
@@ -15433,6 +15551,8 @@ Fix: ${agyCheck.fix}`);
             if (build.model && build.model !== model) {
               model = build.model;
             }
+            lastConversationId = build.conversationId ?? null;
+            lastStrikeModel = model;
             strikeError = null;
             let gitPointerOk = false;
             try {
@@ -16204,7 +16324,7 @@ async function reviewFleet({
     rounds += 1;
     const results = await Promise.all(
       lenses.map(async (lens, i) => {
-        const model = models?.[i % (models?.length ?? 1)] ?? (i % 2 === 0 ? "gemini-3.8-flash-high" : "gemini-3.1-pro-high");
+        const model = models?.[i % (models?.length ?? 1)] ?? ROLE_MODELS.reviewFleetAlternates[i % ROLE_MODELS.reviewFleetAlternates.length];
         let release = () => {
         };
         try {
@@ -16830,7 +16950,7 @@ try {
     }
   } else if (cmd === "probe") {
     const widths = (rest[0] ?? "2,4,8").split(",").map(Number);
-    const model = rest[1] ?? "Gemini 3.8 Flash (Low)";
+    const model = rest[1] ?? ROLE_MODELS.probeDefault;
     const rows = [];
     for (const n of widths) {
       const t0 = Date.now();
