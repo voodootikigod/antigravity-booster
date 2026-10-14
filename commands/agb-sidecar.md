@@ -5,7 +5,7 @@ description: Launch the HTTP server for the Antigravity Sidecar UI
 
 # /agb-sidecar [repo-path] [--port <port>]
 
-Launches the native web dashboard sidecar server for a repository and prints the URL to open. The server keeps running until stopped, so start it in the background (or tell the user to run it in their own terminal) rather than blocking on it.
+Launches the native web dashboard sidecar server for a repository and prints the local host/port binding, while the full authenticated URL containing the session token is registered into the dynamic sidecar plugin manifest. The server keeps running until stopped, so always run it as a background task (or instruct the user to run it in their own terminal) rather than blocking on it.
 
 ## How to run it
 
@@ -15,7 +15,7 @@ Use your shell tool (`run_command`) to run the antigravity-booster terminal shim
 ~/.local/bin/agb sidecar [repo-path] [--port <port>]
 ```
 
-Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 1 = failure or error).
+Run it in the background from the user's workspace (e.g. as a background process or daemon), then report the server status to the user.
 
 ## If the shim is missing
 

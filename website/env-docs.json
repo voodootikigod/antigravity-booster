@@ -47,7 +47,7 @@
       "group": "core",
       "default": "unset",
       "bundledIgnored": false,
-      "description": "Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. The MCP server sets it to jetski for the agb processes it spawns."
+      "description": "Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner."
     },
     {
       "name": "AGB_SESSION_ID",

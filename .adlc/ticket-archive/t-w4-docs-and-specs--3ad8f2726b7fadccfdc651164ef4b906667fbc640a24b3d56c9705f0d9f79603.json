@@ -1,0 +1,41 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-10-14T19:52:04.149Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "cfa9c5b6aa2f56590c78a7363b7309bffaa55853596436ed9b37df7d96df5882",
+    "ticketHash": "5122f11f10787b8e7196b8c5ee70d156dad4de014d012beb5be3ff7218d26970",
+    "version": 1
+  },
+  "body": "Resolve Wave 4 audit findings:\n1. In CHANGELOG.md:\n   - Under ## [Unreleased], document recent features and fixes:\n     * Warm second-strike conversation resumption via agy --conversation (#25, AGB_WARM_STRIKES)\n     * Centralized model-name registry in lib/models.mjs (#21)\n     * Shared runAdlcTool() wrapper across 6 call sites (#20)\n     * Mutation-killing test and branch coverage for lock reclaim guard (#41)\n     * Release audit Wave 1-5 remediations.\n   - On line 145, remove obsolete reference to '--unsafe-open' flag; document dynamic session token authentication.\n2. In commands/agb-sidecar.md:\n   - Update line 8 to clarify that the server prints the local host/port binding, while the full authenticated URL containing the token is registered into the dynamic sidecar plugin manifest. Instruct agents to background the command.\n3. In website docs:\n   - website/content/docs/reference/calibration.mdx (line 37): update probe model to Gemini 3.8 Flash (Low).\n   - website/content/docs/reference/cli/probe.mdx (line 18): update default model to Gemini 3.8 Flash (Low).\n   - website/content/docs/reference/cli/brains.mdx (line 12): update default brain path to ~/.gemini/antigravity-cli/brain.\n   - website/content/docs/reference/mcp-tools.mdx (line 13): remove obsolete claim that MCP server sets AGB_PROVIDER=jetski.\n   - website/content/docs/guides/headless-and-mcp.mdx (line 45): document agb_run.concurrency support.\n   - website/content/docs/getting-started/verify.mdx (line 25): update Node.js requirement to >= 22.19.0.\n   - website/content/docs/internals/run-lifecycle.mdx (line 40): document warm second-strike resumption.\n   - website/env-docs.json (line 50): remove obsolete sentence stating MCP server sets AGB_PROVIDER to jetski.\n4. In skills/release/SKILL.md, .claude/skills/release/SKILL.md, and .agents/skills/release/SKILL.md:\n   - Reorder Step 3 so that updating CHANGELOG.md occurs before running 'node website/scripts/gen-reference.mjs'.\n\nVerification: node website/scripts/gen-reference.mjs --check",
+  "category": "bugfix",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-W5-REBUILD-AND-REAUDIT"
+    }
+  ],
+  "id": "T-W4-DOCS-AND-SPECS",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "CHANGELOG.md",
+    "commands/agb-sidecar.md",
+    "skills/release/SKILL.md",
+    ".claude/skills/release/SKILL.md",
+    ".agents/skills/release/SKILL.md",
+    "website/content/docs/reference/calibration.mdx",
+    "website/content/docs/reference/cli/probe.mdx",
+    "website/content/docs/reference/cli/brains.mdx",
+    "website/content/docs/reference/mcp-tools.mdx",
+    "website/content/docs/guides/headless-and-mcp.mdx",
+    "website/content/docs/getting-started/verify.mdx",
+    "website/content/docs/internals/run-lifecycle.mdx",
+    "website/env-docs.json"
+  ],
+  "title": "Wave 4: Documentation, Command Specs, and Website Sync"
+}

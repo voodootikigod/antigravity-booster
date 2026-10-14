@@ -122,7 +122,7 @@ export const UNITS = Object.freeze([
   {
     id: 'surface:skills',
     kind: 'skills',
-    label: 'Shipped skills (modernize, release) and their scripts',
+    label: 'Shipped skills (modernize, release, release-audit) and their scripts',
     paths: ['skills'],
     rails: [],
   },

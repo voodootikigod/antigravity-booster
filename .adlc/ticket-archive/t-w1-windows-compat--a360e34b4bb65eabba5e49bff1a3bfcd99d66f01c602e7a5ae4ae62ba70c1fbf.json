@@ -1,0 +1,36 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-10-14T19:52:03.804Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b0857917e35a741aa1baf4137146ec79e0550d05a3bf35ac62799b78a9c380c8",
+    "ticketHash": "7e18b5b14fec7140b4a119882c213243f7afee91afbcc7bea3a579201c9e9f45",
+    "version": 1
+  },
+  "body": "Resolve Wave 1 audit findings for Windows cross-platform compatibility:\n1. In lib/digest.mjs:\n   - In collect(), determine file executable classification cls ('x' vs 'f') as:\n     const isExec = process.platform === 'win32'\n       ? (relpath.endsWith('.sh') || relpath.startsWith('bin/') || relpath.endsWith('bin/adlc.mjs'))\n       : Boolean(fs.statSync(full).mode & EXEC_BITS);\n     const cls = isExec ? 'x' : 'f';\n   - Verify that computeDirectoryDigest('vendor/adlc') matches KNOWN_VENDORED_ADLC.treeDigest from lib/adlc-bridge.mjs on both Windows and POSIX.\n2. In hooks/policy/paths.mjs:\n   - In isWithin(candidate, parent): normalize candidate and parent using .replace(/\\\\/g, '/') before performing the normalized prefix check, ensuring mixed slashes on win32 match.\n3. In lib/doctor.mjs:\n   - In checkSecondaryInstall(): import { delimiter } from 'node:path' and split PATH using path.delimiter instead of hardcoded ':'.\n   - In checkPolicyGuard(): replace the hardcoded spawnSync('/bin/sh', ['-c', command], ...) with:\n     const shellBin = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';\n     const shellArgs = process.platform === 'win32' ? ['/d', '/s', '/c', command] : ['-c', command];\n     return spawnSync(shellBin, shellArgs, { cwd, env, timeout, stdio: ['pipe', 'pipe', 'pipe'] });\n4. In lib/migrate.mjs:\n   - In handOverUninstall(): when process.platform === 'win32', invoke spawn('cmd.exe', ['/c', uninstallerPath], { detached: true, stdio: 'ignore' }).unref(); otherwise spawn('/bin/sh', [uninstallerPath], ...).\n5. In lib/bootstrap.mjs:\n   - In the version probe of resolvedAgyBin around line 282, pass shell: process.platform === 'win32' in execFileSync options so that Windows batch wrappers (agy.cmd / agy.ps1) execute without ENOENT.\n\nVerification: npm test && node bin/agb.mjs doctor",
+  "category": "bugfix",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-W2-GATE-HARDENING"
+    }
+  ],
+  "id": "T-W1-WINDOWS-COMPAT",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "lib/digest.mjs",
+    "hooks/policy/paths.mjs",
+    "lib/doctor.mjs",
+    "lib/migrate.mjs",
+    "lib/bootstrap.mjs",
+    "test/digest.test.mjs",
+    "test/doctor.test.mjs",
+    "test/policy-guard-bypass.test.mjs"
+  ],
+  "title": "Wave 1: Windows Platform Compatibility and Path Normalization"
+}

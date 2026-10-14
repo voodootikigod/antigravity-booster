@@ -44,3 +44,12 @@ test('findExternalSpecifiers: catches template literals and dynamic/computed cal
   assert.deepEqual(findExternalSpecifiers(src), ['`dynamic-pkg/${name}`', 'custom-pkg', 'nested/mod', 'unknownVar']);
 });
 
+test('findExternalSpecifiers: catches numbered require identifiers emitted by esbuild', () => {
+  const src = [
+    'const x = require2("some-pkg");',
+    'const y = require123("another-pkg");',
+    'const ok = require2("node:path");',
+  ].join('\n');
+  assert.deepEqual(findExternalSpecifiers(src), ['another-pkg', 'some-pkg']);
+});
+

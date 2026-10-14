@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 import { evaluatePayload } from '../hooks/policy/evaluate.mjs';
 import { findAdlcRoot } from '../lib/active-rails.mjs';
+import { isWithin } from '../hooks/policy/paths.mjs';
 
 const base = realpathSync(mkdtempSync(join(tmpdir(), 'agb-bypass-')));
 test.after(() => rmSync(base, { recursive: true, force: true }));
@@ -556,4 +557,12 @@ test('R5 L8: manage_task and find_by_name pass through in ADLC repos with active
   assert.equal(run('manage_task', { Action: 'list' }, A), 'pass');
   assert.equal(run('manage_task', { Action: 'status', TaskId: 'task-1' }, A), 'pass');
   assert.equal(run('find_by_name', { SearchPath: join(A, 'lib'), query: 'lock' }, A), 'pass');
+});
+
+test('R5 L9: isWithin correctly matches Windows paths with mixed slashes', () => {
+  assert.equal(isWithin('C:\\repo\\sub\\file.txt', 'C:/repo', 'win32'), true);
+  assert.equal(isWithin('C:/repo/sub/file.txt', 'C:\\repo', 'win32'), true);
+  assert.equal(isWithin('C:\\repo\\sub\\file.txt', 'C:\\repo\\', 'win32'), true);
+  assert.equal(isWithin('C:\\other\\file.txt', 'C:\\repo', 'win32'), false);
+  assert.equal(isWithin('C:\\repo', 'C:/repo', 'win32'), true);
 });

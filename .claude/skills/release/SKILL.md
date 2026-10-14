@@ -64,7 +64,7 @@ Use this skill to release a new version of antigravity-booster. It is plain `git
    ```
    Must exit 0. If tests fail, abort — do not proceed.
 
-3. **Bump version:**
+3. **Bump version and update changelog:**
    ```bash
    npm version <patch|minor|major> --no-git-tag-version
    ```
@@ -73,6 +73,7 @@ Use this skill to release a new version of antigravity-booster. It is plain `git
    ```bash
    node -e 'const fs = require("node:fs"); const p = "./plugin.json", j = JSON.parse(fs.readFileSync(p, "utf8")), v = JSON.parse(fs.readFileSync("./package.json", "utf8")).version; j.version = v; fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");'
    ```
+   Move the `## [Unreleased]` entries in `./CHANGELOG.md` under a new `## [X.Y.Z] — YYYY-MM-DD` heading.
    Then regenerate reference documentation:
    ```bash
    node website/scripts/gen-reference.mjs
@@ -89,8 +90,6 @@ Use this skill to release a new version of antigravity-booster. It is plain `git
    git push -u origin release/vX.Y.Z
    gh pr create --title "chore: release X.Y.Z" --body "Version bump + changelog for X.Y.Z."
    ```
-   Also move the `## [Unreleased]` entries in `./CHANGELOG.md` under a new
-   `## [X.Y.Z] — YYYY-MM-DD` heading in this commit.
 
 5. **Get the PR reviewed and merged.** Wait for CI and an approval, then merge.
    Do not tag before it lands: `.github/workflows/publish.yml` refuses to publish

@@ -1,0 +1,34 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-10-14T19:39:49.948Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "afd64f489cd9008580742a6d3145bc4d0317ad071d5a774e5509a00cd2801a72",
+    "ticketHash": "b2e5ca963ff65a4d0f48b94e1c25726017ef12e9f613025848cf1a364c5ab53f",
+    "version": 1
+  },
+  "body": "Resolve GitHub Issue #20: extract the 6x duplicated `adlc <tool> --json` execution + exit-2 `err.stdout` JSON recovery wrapper into `lib/adlc-tool.mjs`.\n\nTasks:\n1. Create `lib/adlc-tool.mjs` exporting `runAdlcTool({ tool, args = [], cwd, timeoutMs = 30_000, maxBuffer = 10 * 1024 * 1024, adlcBin, repo })`:\n   - Uses `execFileAuthenticatedAdlc` from `./adlc-bridge.mjs`.\n   - Invokes `execFileAuthenticatedAdlc(adlcBin, [tool, ...args], { cwd, timeout: timeoutMs, maxBuffer }, { repo: repo ?? cwd })`.\n   - On exit 0: parses `stdout` as JSON and returns `{ ok: true, exitCode: 0, parsed, stdout }` (if `stdout` is not valid JSON, returns `{ ok: false, exitCode: 0, error: 'unparseable ' + tool + ' output: ' + parseErr.message, unparseable: true, stdout }`).\n   - On non-zero exit (e.g. exit 2 gate failure): if `err.stdout` is present, attempts `JSON.parse(err.stdout)`. If valid JSON, returns `{ ok: true, exitCode: err.code ?? 2, parsed, stdout: err.stdout }`. If `err.stdout` is missing or unparseable JSON, returns `{ ok: false, exitCode: err.code ?? 1, error: err.message, unparseable: Boolean(err.stdout), stdout: err.stdout ?? '' }`.\n   - Never throws.\n2. Refactor the 6 call sites to use `runAdlcTool()` while preserving their exact return shapes and error messages:\n   - `lib/plan.mjs` (`applyModelRouterTiers`)\n   - `lib/preflight.mjs` (`applyMergeForecast`)\n   - `lib/prosecute.mjs` (`runHollowTest`)\n   - `lib/review.mjs` (`reviewCalibration`)\n   - `lib/scheduler.mjs` (`checkFlailDetector` and `runConsensusFix`; note `checkRailsGuard` can also use `runAdlcTool` or keep its fail-closed wrapper over `runAdlcTool` as long as exact error strings in `test/` are preserved).\n3. Create `test/adlc-tool.test.mjs` testing:\n   - exit 0 valid JSON\n   - exit 2 gate-fail with valid JSON on `err.stdout` (recovered as `ok: true`)\n   - exit 1 operational error with no stdout (`ok: false`)\n   - exit 0 / exit 2 with malformed JSON (`ok: false, unparseable: true`)\n   - missing binary / ENOENT degradation (`ok: false`).",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-ISSUE-21"
+    }
+  ],
+  "id": "T-ISSUE-20",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "lib/adlc-tool.mjs",
+    "lib/plan.mjs",
+    "lib/preflight.mjs",
+    "lib/prosecute.mjs",
+    "lib/review.mjs",
+    "lib/scheduler.mjs",
+    "test/adlc-tool.test.mjs"
+  ],
+  "title": "Extract shared runAdlcTool() wrapper across 6 adlc CLI call sites (#20)"
+}

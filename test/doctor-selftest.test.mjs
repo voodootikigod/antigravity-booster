@@ -149,6 +149,17 @@ test('D10: an npm-global agb on PATH is a warning; only ~/.local/bin/agb is a pa
   assert.equal(checkSecondaryInstall({ home, env: { PATH: `${linkDir}:${shimDir}` } }).level, 'pass');
 });
 
+test('checkSecondaryInstall uses path.delimiter for path splitting', async () => {
+  const home = freshHome();
+  const shimDir = join(home, '.local', 'bin');
+  const otherBin = join(base, `other-bin-${n++}`);
+  for (const d of [shimDir, otherBin]) { mkdirSync(d, { recursive: true }); writeFileSync(join(d, 'agb'), '#!/bin/sh\n'); chmodSync(join(d, 'agb'), 0o755); }
+  const { delimiter } = await import('node:path');
+  const res = checkSecondaryInstall({ home, env: { PATH: [otherBin, shimDir].join(delimiter) } });
+  assert.equal(res.level, 'warn');
+  assert.match(res.detail, /secondary install detected/);
+});
+
 test('D15: killswitch notices in hooks.log are counted and reported', () => {
   const home = freshHome();
   assert.equal(checkKillswitchUsage({ home }).level, 'pass');

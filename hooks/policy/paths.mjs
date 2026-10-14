@@ -157,9 +157,11 @@ function fold(p, platform) {
 
 /** True when `child` equals `parent` or sits beneath it. */
 export function isWithin(child, parent, platform = process.platform) {
-  const c = fold(child, platform);
-  const p = fold(parent, platform);
-  return c === p || c.startsWith(p.endsWith(sep) ? p : p + sep);
+  const normChild = child.replace(/\\/g, '/');
+  const normParent = parent.replace(/\\/g, '/');
+  const c = fold(normChild, platform);
+  const p = fold(normParent, platform);
+  return c === p || c.startsWith(p.endsWith('/') ? p : p + '/');
 }
 
 export function protectedRoots(home) {
