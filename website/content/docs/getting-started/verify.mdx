@@ -22,7 +22,7 @@ The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/ant
 
 | Name | Levels | Fix text | Source |
 | --- | --- | --- | --- |
-| `Node.js` | pass / fail | `Upgrade Node.js to v22.19.0 or newer.` | [L20-L24](https://github.com/voodootikigod/antigravity-booster/blob/main/lib/doctor.mjs#L20-L24) |
+| `Node.js` | pass / fail | `Upgrade Node.js to v22.19.0 or newer.` | [L20-L24](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L20-L24) |
 | `agy CLI` | pass / fail | Too old: `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` Unparseable version: `Ensure agy outputs standard SemVer version string.` Missing: `Install Google Antigravity CLI and ensure it is on PATH.` | [C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26), [L35-L54](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L35-L54) |
 | `agy Auth` | pass / fail | ``Run `agy login` to authenticate.`` | [L71-L75](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L71-L75) |
 | `adlc-antigravity plugin` | pass / warn / fail | See [plugin states](#adlc-antigravity-plugin) | [L151-L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L166) |
