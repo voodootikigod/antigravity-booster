@@ -7,7 +7,7 @@
 // the interleaving test fails against the pre-fix implementation).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs, { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -176,3 +176,61 @@ test('reclaim aborts when the same-token holder pid is alive again at the mutex 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('reclaim aborts when meta.json is removed before the mutex re-read (!again branch)', () => {
+  const { repo, lockDir } = staleRepo();
+  let removed = false;
+  try {
+    withHooks([[process, 'kill', (real) => function (p, sig) {
+      if (!removed && p === DEAD_PID) {
+        removed = true;
+        rmSync(join(lockDir, 'meta.json'), { force: true });
+      }
+      return real.call(process, p, sig);
+    }]], () => {
+      assert.throws(() => acquireRepoLock(repo, { runId: 'late' }), /reclaimed by another run/);
+    });
+    assert.equal(removed, true);
+    assert.equal(existsSync(`${lockDir}.reclaim`), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('mutation check: disabling the mutex re-read guard allows an unsafe lock overwrite', async () => {
+  const { repo, lockDir } = staleRepo();
+  const OTHER_DEAD = DEAD_PID + 2;
+  const replacement = { pid: OTHER_DEAD, runId: 'other', token: 'other-token' };
+  let releaseMutated;
+  try {
+    const lockSource = readFileSync(join(here, '..', 'lib', 'lock.mjs'), 'utf8');
+    const target = 'if (!again || again.token !== holder.token || isAlive(again.pid))';
+    assert.ok(lockSource.includes(target), 'target guard string must exist in lock.mjs');
+    const mutatedSource = lockSource.replace(target, 'if (false)');
+    const mutatedPath = join(repo, 'mutated-lock.mjs');
+    writeFileSync(mutatedPath, mutatedSource, 'utf8');
+
+    const { acquireRepoLock: acquireMutated } = await import(pathToFileURL(mutatedPath).href);
+
+    let swapped = false;
+    withHooks([[process, 'kill', (real) => function (p, sig) {
+      if (!swapped && p === DEAD_PID) {
+        swapped = true;
+        writeFileSync(join(lockDir, 'meta.json'), JSON.stringify(replacement));
+      }
+      return real.call(process, p, sig);
+    }]], () => {
+      assert.doesNotThrow(() => {
+        releaseMutated = acquireMutated(repo, { runId: 'late' });
+      });
+    });
+
+    assert.equal(swapped, true);
+    const finalMeta = JSON.parse(readFileSync(join(lockDir, 'meta.json'), 'utf8'));
+    assert.equal(finalMeta.runId, 'late', 'mutated lock must have erroneously overwritten meta.json with "late"');
+  } finally {
+    releaseMutated?.();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
