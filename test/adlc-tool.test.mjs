@@ -27,13 +27,17 @@ function withFakeAdlc(scriptBody, fn) {
   writeFileSync(fakeScript, `#!/usr/bin/env node\n${scriptBody}\n`, { mode: 0o755 });
 
   const prevCustom = process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
+  const prevBin = process.env.AGB_ADLC_BIN;
   process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = '1';
+  process.env.AGB_ADLC_BIN = fakeScript;
 
   return Promise.resolve()
     .then(() => fn({ adlcBin: fakeScript, tmpDir }))
     .finally(() => {
       if (prevCustom === undefined) delete process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
       else process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = prevCustom;
+      if (prevBin === undefined) delete process.env.AGB_ADLC_BIN;
+      else process.env.AGB_ADLC_BIN = prevBin;
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
     });
 }
