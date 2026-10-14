@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runAdlcTool } from '../lib/adlc-tool.mjs';
+import { runHollowTest } from '../lib/prosecute.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -236,4 +237,34 @@ test('runAdlcTool: calling without arguments defaults safely without throwing', 
   const res = await runAdlcTool();
   assert.equal(res.ok, false);
   assert.ok(res.error);
+});
+
+test('runHollowTest: forwards --test-cmd, --base, and --json to adlc hollow-test', async () => {
+  await withFakeAdlc(`
+    const args = process.argv.slice(2);
+    if (
+      args[0] !== 'hollow-test' ||
+      args[1] !== '--test-cmd' ||
+      args[2] !== 'npm test' ||
+      args[3] !== '--base' ||
+      args[4] !== 'origin/custom-base' ||
+      args[5] !== '--json'
+    ) {
+      console.error('unexpected args: ' + JSON.stringify(args));
+      process.exit(1);
+    }
+    console.log(JSON.stringify({ summary: { total: 3, killed: 3 }, mutants: [] }));
+    process.exit(0);
+  `, async ({ adlcBin }) => {
+    const res = await runHollowTest({
+      worktree: REPO_ROOT,
+      testCmd: 'npm test',
+      base: 'origin/custom-base',
+      adlcBin,
+    });
+    assert.equal(res.ok, true);
+    assert.equal(res.total, 3);
+    assert.equal(res.killed, 3);
+    assert.equal(res.survived, 0);
+  });
 });
