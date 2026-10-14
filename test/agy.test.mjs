@@ -187,9 +187,9 @@ test('runAgy: supports real agy 1.3.5 stream-json event envelopes and extracts c
     mock2.cleanup();
   }
 
-  // Test 3: { event: 'step_update', step_update: { conversation_id: 'conv-step-789' } }
+  // Test 3: { event: 'step_update', step_update: { conversation_id: 'conv-step-789', action: 'blocked', step: 2 } }
   const mock3 = makeMockScript([
-    `echo '{"event":"step_update","step_update":{"conversation_id":"conv-step-789"}}'`,
+    `echo '{"event":"step_update","step_update":{"conversation_id":"conv-step-789","action":"blocked","step":2}}'`,
     `echo '{"event":"result","result":{"status":"SUCCESS","exit_code":0}}'`,
   ]);
   try {
@@ -202,6 +202,9 @@ test('runAgy: supports real agy 1.3.5 stream-json event envelopes and extracts c
     });
     assert.ok(res.ok, res.error);
     assert.equal(res.conversationId, 'conv-step-789');
+    assert.equal(res.events[0].type, 'step_update');
+    assert.equal(res.events[0].action, 'blocked');
+    assert.equal(res.events[0].step, 2);
   } finally {
     mock3.cleanup();
   }

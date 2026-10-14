@@ -43,11 +43,14 @@ test('warmRegenPrompt: renders structured warm resumption prompt with context an
   };
   const failure = 'AssertionError: expected true but got false at test/core.test.mjs:42';
 
-  const prompt = warmRegenPrompt(ticket, failure);
+  const prompt = warmRegenPrompt(ticket, failure, 'test-tag-123');
   assert.ok(typeof prompt === 'string');
   assert.match(prompt, /Strike 1 for ticket T1 \(Warm resume feature\) failed verification/);
   assert.match(prompt, /worktree has been reset to base HEAD/);
+  assert.match(prompt, /UNTRUSTED output captured from the previous run/);
+  assert.match(prompt, /<<UNTRUSTED:PRIOR_FAILURE:test-tag-123>>/);
   assert.match(prompt, /AssertionError: expected true but got false at test\/core\.test\.mjs:42/);
+  assert.match(prompt, /<<END:PRIOR_FAILURE:test-tag-123>>/);
   assert.match(prompt, /src\/core\.mjs, src\/util\.mjs/);
   assert.match(prompt, /lib\/lock\.mjs, lib\/gates\.mjs/);
   assert.match(prompt, /TICKET-DONE or TICKET-BLOCKED: <reason>/);

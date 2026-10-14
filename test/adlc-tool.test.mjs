@@ -233,6 +233,29 @@ test('runAdlcTool: calling without arguments defaults safely without throwing', 
   assert.ok(res.error);
 });
 
+test('runAdlcTool: non-object JSON (null, array, primitive) degrades as unparseable on exit 0 and exit 2', async () => {
+  await withFakeAdlc(`
+    const mode = process.argv[3];
+    if (mode === 'null-0') { console.log('null'); process.exit(0); }
+    if (mode === 'arr-0') { console.log('[]'); process.exit(0); }
+    if (mode === 'null-2') { console.log('null'); process.exit(2); }
+    if (mode === 'arr-2') { console.log('[1,2]'); process.exit(2); }
+  `, async ({ adlcBin }) => {
+    for (const mode of ['null-0', 'arr-0']) {
+      const res = await runAdlcTool({ tool: 'test-tool', args: [mode], adlcBin, cwd: REPO_ROOT });
+      assert.equal(res.ok, false);
+      assert.equal(res.unparseable, true);
+      assert.match(res.error, /^unparseable test-tool output: expected JSON object/);
+    }
+    for (const mode of ['null-2', 'arr-2']) {
+      const res = await runAdlcTool({ tool: 'test-tool', args: [mode], adlcBin, cwd: REPO_ROOT });
+      assert.equal(res.ok, false);
+      assert.equal(res.exitCode, 2);
+      assert.equal(res.unparseable, true);
+    }
+  });
+});
+
 test('refactored call sites forward exact expected CLI arguments including --json', async () => {
   await withFakeAdlc(`
     const args = process.argv.slice(2);
