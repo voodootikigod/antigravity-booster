@@ -3502,9 +3502,11 @@ function fold(p, platform) {
   return platform === "darwin" || platform === "win32" ? p.toLowerCase() : p;
 }
 function isWithin(child, parent, platform = process.platform) {
-  const c = fold(child, platform);
-  const p = fold(parent, platform);
-  return c === p || c.startsWith(p.endsWith(sep3) ? p : p + sep3);
+  const normChild = child.replace(/\\/g, "/");
+  const normParent = parent.replace(/\\/g, "/");
+  const c = fold(normChild, platform);
+  const p = fold(normParent, platform);
+  return c === p || c.startsWith(p.endsWith("/") ? p : p + "/");
 }
 function protectedRoots(home) {
   return [

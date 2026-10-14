@@ -22,7 +22,7 @@ const STATIC_PATTERNS = [
   /^\s*export\s[^;]*?\bfrom\s*["'`]([^"'`\r\n]+)["'`]/gm,
 ];
 
-const CALL_PATTERN = /\b(?:import|require)\s*\(([^)]+)\)/g;
+const CALL_PATTERN = /\b(?:import|require\d*)\s*\(([^)]+)\)/g;
 
 export function isBuiltin(specifier) {
   if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;

@@ -8,7 +8,7 @@
 | AGB_BUILD_TIMEOUT | 5m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
 | AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
-| AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. The MCP server sets it to jetski for the agb processes it spawns. | honoured |
+| AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
 | AGB_SESSION_ID | unset | Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes. | honoured |
 | AGB_TARGET_REPO | unset | Extra directory bin/node-launcher.sh searches when locating a project-local Node runtime. | honoured |
 | AGB_WARM_STRIKES | 1 | Set to 0 to disable warm second-strike builder resumption via agy --conversation &lt;id&gt; when a ticket fails its first attempt on the same model. | honoured |

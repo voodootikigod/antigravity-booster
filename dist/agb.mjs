@@ -31,7 +31,8 @@ function collect(root, rel, excluded, out) {
     } else if (entry.isDirectory()) {
       collect(root, segs, excluded, out);
     } else if (entry.isFile()) {
-      const cls = fs.statSync(full).mode & EXEC_BITS ? "x" : "f";
+      const isExec = process.platform === "win32" ? relpath.endsWith(".sh") || relpath.startsWith("bin/") || relpath.endsWith("bin/adlc.mjs") : Boolean(fs.statSync(full).mode & EXEC_BITS);
+      const cls = isExec ? "x" : "f";
       const h = createHash3("sha256").update(fs.readFileSync(full)).digest("hex");
       out.push({ relpath, payload: `${cls}\0${h}` });
     }
@@ -956,7 +957,7 @@ import {
   readdirSync as readdirSync13,
   lstatSync as lstatSync14,
   readlinkSync as readlinkSync3,
-  symlinkSync as symlinkSync5,
+  symlinkSync as symlinkSync6,
   unlinkSync as unlinkSync8,
   renameSync as renameSync8,
   chmodSync as chmodSync4,
@@ -965,7 +966,7 @@ import {
   statSync as statSync8,
   mkdtempSync as mkdtempSync8
 } from "node:fs";
-import { join as join33, dirname as dirname20, resolve as resolve17, sep as sep4, isAbsolute as isAbsolute9, delimiter } from "node:path";
+import { join as join33, dirname as dirname20, resolve as resolve17, sep as sep4, isAbsolute as isAbsolute9, delimiter as delimiter2 } from "node:path";
 import { homedir as homedir9, tmpdir as tmpdir9 } from "node:os";
 import { execFileSync as execFileSync16, spawn as spawn4 } from "node:child_process";
 import { randomBytes as randomBytes4 } from "node:crypto";
@@ -1128,7 +1129,7 @@ function recreateSymlinks(p, links, log2) {
       log2(`Notice: Symlink target ${target} missing; skipping dangling link`);
       continue;
     }
-    symlinkSync5(target, at);
+    symlinkSync6(target, at);
   }
 }
 function restorePluginDir(p, name, fromDir) {
@@ -1282,12 +1283,21 @@ async function handOverUninstall(ctx) {
     agyBin
   ];
   const quoted = args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(" ");
-  const script = join33(dir, "uninstall.sh");
-  writeFileSync19(script, `#!/bin/sh
+  const isWin = process.platform === "win32";
+  const scriptName = isWin ? "uninstall.cmd" : "uninstall.sh";
+  const script = join33(dir, scriptName);
+  if (isWin) {
+    writeFileSync19(script, `@echo off\r
+cd /d "${launcher.cwd ?? home}" || exit /b 1\r
+${args.map((a) => `"${String(a)}"`).join(" ")}\r
+`);
+  } else {
+    writeFileSync19(script, `#!/bin/sh
 cd '${String(launcher.cwd ?? home).replace(/'/g, `'\\''`)}' || exit 1
 exec ${quoted}
 `, { mode: 448 });
-  const child = spawn4("/bin/sh", [script], { detached: true, stdio: "ignore", env: { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} } });
+  }
+  const child = isWin ? spawn4("cmd.exe", ["/c", script], { detached: true, stdio: "ignore", env: { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} } }) : spawn4("/bin/sh", [script], { detached: true, stdio: "ignore", env: { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} } });
   let exited = false;
   const exitedP = new Promise((r) => child.on("exit", () => {
     exited = true;
@@ -1327,7 +1337,7 @@ exec ${quoted}
   return 1;
 }
 function agbElsewhereOnPath(p, env) {
-  for (const d of String(env.PATH ?? "").split(delimiter).filter(Boolean)) {
+  for (const d of String(env.PATH ?? "").split(delimiter2).filter(Boolean)) {
     const c = join33(d, "agb");
     if (existsSync30(c) && realOrResolved(c) !== realOrResolved(p.shim)) return true;
   }
@@ -1786,6 +1796,15 @@ var init_server = __esm({
 import { readFileSync as readFileSync27, writeFileSync as writeFileSync21, mkdirSync as mkdirSync21, appendFileSync as appendFileSync3, existsSync as existsSync32 } from "node:fs";
 import { resolve as resolve18, join as join35 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
+
+// lib/scheduler.mjs
+import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync12, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
+import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
+import { promisify as promisify7 } from "node:util";
+import { tmpdir as tmpdir8 } from "node:os";
+import path2, { join as join30, resolve as resolve15, isAbsolute as isAbsolute8, dirname as dirname18, basename as basename8 } from "node:path";
+import { pathToFileURL } from "node:url";
+import crypto5 from "node:crypto";
 
 // node_modules/@adlc/tickets/index.mjs
 var tickets_exports = {};
@@ -5609,18 +5628,9 @@ function scopesOverlap(a, b) {
   return false;
 }
 
-// lib/scheduler.mjs
-import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync12, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
-import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
-import { promisify as promisify7 } from "node:util";
-import { tmpdir as tmpdir8 } from "node:os";
-import path2, { join as join30, resolve as resolve15, isAbsolute as isAbsolute8, dirname as dirname18, basename as basename8 } from "node:path";
-import { pathToFileURL } from "node:url";
-import crypto5 from "node:crypto";
-
 // lib/agy.mjs
 import { spawn as spawn2, execFileSync as execFileSync8 } from "node:child_process";
-import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10 } from "node:fs";
+import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10, symlinkSync as symlinkSync3 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { tmpdir as tmpdir6, homedir as homedir4 } from "node:os";
 import { dirname as dirname15, join as join20, resolve as resolve10, relative as relative7, isAbsolute as isAbsolute6 } from "node:path";
@@ -7340,7 +7350,7 @@ init_plugin_paths();
 init_digest();
 import { existsSync as existsSync17, readFileSync as readFileSync15, readdirSync as readdirSync8, mkdtempSync as mkdtempSync4, writeFileSync as writeFileSync9, openSync as openSync6, closeSync as closeSync6, writeSync, fsyncSync as fsyncSync3, realpathSync as realpathSync4, mkdirSync as mkdirSync8, rmSync as rmSync5, unlinkSync as unlinkSync3, lstatSync as lstatSync8, statSync as statSync3, truncateSync, constants as constants2 } from "fs";
 import { homedir as homedir3, tmpdir as tmpdir4 } from "os";
-import { join as join18, dirname as dirname13, relative as relative6, resolve as resolve8, isAbsolute as isAbsolute5 } from "path";
+import { join as join18, dirname as dirname13, relative as relative6, resolve as resolve8, isAbsolute as isAbsolute5, delimiter } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 import crypto2 from "crypto";
 import net from "net";
@@ -7498,7 +7508,9 @@ function selftestRepo(dir) {
 }
 function runHook(command, pluginRoot, home, repo, relPath) {
   const payload = { toolCall: { name: "write_to_file", args: { TargetFile: join18(repo, relPath) } }, workspacePaths: [repo] };
-  return spawnSync3("/bin/sh", ["-c", command], {
+  const shellBin = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
+  const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
+  return spawnSync3(shellBin, shellArgs, {
     cwd: pluginRoot,
     input: JSON.stringify(payload),
     encoding: "utf8",
@@ -7570,7 +7582,7 @@ function checkSecondaryInstall({ home = homedir3(), env = process.env } = {}) {
   };
   const shimReal = real(shim);
   const others = /* @__PURE__ */ new Set();
-  for (const dir of String(env.PATH ?? "").split(":").filter(Boolean)) {
+  for (const dir of String(env.PATH ?? "").split(delimiter).filter(Boolean)) {
     const candidate = join18(dir, "agb");
     if (existsSync17(candidate) && real(candidate) !== shimReal) others.add(candidate);
   }
@@ -8462,7 +8474,14 @@ async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo =
     } catch (err) {
       if (err.stdout) {
         doctorOutput = err.stdout;
-      } else if (err.code !== "ENOENT" && err.code !== 127) {
+      } else if (err.code === "ENOENT" || err.code === 127) {
+        return {
+          name: "Ticket Store",
+          level: "warn",
+          detail: "adlc binary not found or failed to execute ticket doctor",
+          fix: "Ensure @adlc/cli is installed and reachable."
+        };
+      } else {
         return {
           name: "Ticket Store",
           level: "fail",
@@ -8498,7 +8517,7 @@ async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo =
 }
 async function runDoctor(opts = {}) {
   const checks = [
-    checkNodeVersion(),
+    checkNodeVersion(opts),
     checkAgyBinary(opts),
     checkAgyAuth(opts),
     checkPlugin(opts),
@@ -8592,7 +8611,8 @@ var TIER_CANDIDATES = {
     "gemini-3.7-flash-medium",
     "gemini-3.7-flash-high",
     "gemini-3.6-flash-high",
-    "gemini-3.1-pro-low"
+    "gemini-3.1-pro-low",
+    "claude-sonnet-4-6"
   ],
   frontier: [
     "gemini-3.1-pro-high",
@@ -10401,6 +10421,7 @@ async function runAgy({
     args.push("--add-dir", cwd ?? ".");
   }
   const isBuilder = role === "builder";
+  const userHome = process.env.AGB_HOME_DIR || homedir4();
   const effectiveEnv = env ? { ...process.env, ...env } : process.env;
   let effectiveSandbox = sandbox;
   let verifiedBypass = null;
@@ -10700,7 +10721,6 @@ async function runAgy({
           } catch {
           }
         }
-        const userHome = process.env.AGB_HOME_DIR || homedir4();
         const sensitiveCandidates = [
           join20(realAllowedDir, ".npmrc"),
           join20(realAllowedDir, ".pypirc"),
@@ -10793,6 +10813,27 @@ async function runAgy({
           }
         }
         const bwrapAgyBin = resolvedAgy || entrypointAgy || agyBin;
+        const geminiDir = join20(userHome, ".gemini");
+        if (existsSync19(geminiDir)) {
+          let realGeminiDir;
+          try {
+            realGeminiDir = realpathSync6(geminiDir);
+          } catch {
+            realGeminiDir = geminiDir;
+          }
+          launchArgs.push("--ro-bind", realGeminiDir, geminiDir);
+          if (realGeminiDir !== geminiDir) {
+            launchArgs.push("--ro-bind", realGeminiDir, realGeminiDir);
+          }
+          if (cwd) {
+            const agbHomeGemini = join20(cwd, ".agb_home", ".gemini");
+            try {
+              mkdirSync10(agbHomeGemini, { recursive: true, mode: 448 });
+            } catch {
+            }
+            launchArgs.push("--ro-bind", realGeminiDir, agbHomeGemini);
+          }
+        }
         launchArgs.push("--", bwrapAgyBin, ...args);
       } else if (containmentCheck.mechanism === "job_object") {
         let bypass = verifiedBypass;
@@ -11044,6 +11085,14 @@ async function runAgy({
         try {
           mkdirSync10(agbHome, { recursive: true, mode: 448 });
         } catch {
+        }
+        const realGemini = join20(userHome, ".gemini");
+        const targetGemini = join20(agbHome, ".gemini");
+        if (existsSync19(realGemini) && !existsSync19(targetGemini)) {
+          try {
+            symlinkSync3(realGemini, targetGemini, "junction");
+          } catch {
+          }
         }
         spawnEnv.HOME = agbHome;
         spawnEnv.XDG_CONFIG_HOME = agbHome;
@@ -12791,7 +12840,7 @@ import {
   mkdirSync as mkdirSync13,
   readdirSync as readdirSync10,
   rmSync as rmSync9,
-  symlinkSync as symlinkSync3,
+  symlinkSync as symlinkSync4,
   cpSync as cpSync2,
   lstatSync as lstatSync11,
   realpathSync as realpathSync8
@@ -13034,7 +13083,7 @@ function createIntegrationWorktree(repo, token, base = "main") {
   const targetModules = join24(path3, "node_modules");
   if (existsSync22(repoModules) && !existsSync22(targetModules)) {
     try {
-      symlinkSync3(repoModules, targetModules, "junction");
+      symlinkSync4(repoModules, targetModules, "junction");
     } catch {
       try {
         cpSync2(repoModules, targetModules, { recursive: true });
@@ -13857,6 +13906,7 @@ function unionActiveRails(repoRoot) {
   }
   return { ok: true, adlc: true, hasActiveTickets: active.length > 0, rails: [...rails].sort() };
 }
+var loadActiveRails = unionActiveRails;
 
 // lib/run-integrity.mjs
 init_digest();
@@ -15803,47 +15853,57 @@ ${JSON.stringify(blocking, null, 2)}`;
                             safeResetToBase();
                             cfFailureReason = `consensus-fix candidate violated scope: ${cfScope.error}`;
                           } else {
-                            const cfRails = (t.rails ?? []).length ? await checkRailsGuard({ worktree, base, rails: t.rails, adlcBin: runAdlcBin }) : { violations: [] };
-                            if (cfRails.violations.length) {
+                            const activeRailsRes = loadActiveRails(repo);
+                            if (!activeRailsRes.ok) {
                               safeResetToBase();
-                              cfFailureReason = `consensus-fix candidate violated rails (${cfRails.violations.join(", ")})`;
+                              cfFailureReason = `consensus-fix failed to verify active rails: ${activeRailsRes.error}`;
                             } else {
-                              let cfGateIntegrityError = null;
-                              try {
-                                const basePkgPath2 = join30(repo, "package.json");
-                                const candPkgPath = join30(worktree, "package.json");
-                                if (existsSync27(basePkgPath2)) {
-                                  if (!existsSync27(candPkgPath)) {
-                                    throw new Error("candidate deleted package.json while baseline repository requires it");
-                                  }
-                                  const basePkg = JSON.parse(readFileSync22(basePkgPath2, "utf8"));
-                                  const candPkg = JSON.parse(readFileSync22(candPkgPath, "utf8"));
-                                  for (const cmd2 of [gate?.build, gate?.test].filter(Boolean)) {
-                                    verifyGateScriptIntegrity(candPkg, basePkg, cmd2);
-                                  }
-                                }
-                              } catch (err) {
-                                cfGateIntegrityError = err;
-                              }
-                              if (cfGateIntegrityError) {
+                              const cfRailsList = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate?.storeRails ?? [], ...activeRailsRes.rails ?? []])];
+                              const cfRails = cfRailsList.length ? await checkRailsGuard({ worktree, base, rails: cfRailsList, adlcBin: runAdlcBin }) : { violations: [] };
+                              if (cfRails.operationalError) {
                                 safeResetToBase();
-                                cfFailureReason = `consensus-fix candidate tampered with gate script: ${cfGateIntegrityError.message}`;
+                                cfFailureReason = `consensus-fix candidate rail check failed: ${cfRails.violations.join(", ")}`;
+                              } else if (cfRails.violations.length) {
+                                safeResetToBase();
+                                cfFailureReason = `consensus-fix candidate violated rails (${cfRails.violations.join(", ")})`;
                               } else {
-                                status.ticket(t.id, { phase: "gating" });
-                                const cfGates = await runGates(gate, worktree, { sandbox: true });
-                                if (cfGates.ok) {
-                                  status.ticket(t.id, { phase: "prosecuting", detail: "consensus-fix verification" });
-                                  const cfVerdict = await prosecuteBranch(t, worktree, model);
-                                  if (cfVerdict.verdict === "ship") {
-                                    status.strike(t.id, { model, error: null, strikes });
-                                    await integrate(t, worktree);
-                                    return;
+                                let cfGateIntegrityError = null;
+                                try {
+                                  const basePkgPath2 = join30(repo, "package.json");
+                                  const candPkgPath = join30(worktree, "package.json");
+                                  if (existsSync27(basePkgPath2)) {
+                                    if (!existsSync27(candPkgPath)) {
+                                      throw new Error("candidate deleted package.json while baseline repository requires it");
+                                    }
+                                    const basePkg = JSON.parse(readFileSync22(basePkgPath2, "utf8"));
+                                    const candPkg = JSON.parse(readFileSync22(candPkgPath, "utf8"));
+                                    for (const cmd2 of [gate?.build, gate?.test].filter(Boolean)) {
+                                      verifyGateScriptIntegrity(candPkg, basePkg, cmd2);
+                                    }
                                   }
+                                } catch (err) {
+                                  cfGateIntegrityError = err;
+                                }
+                                if (cfGateIntegrityError) {
                                   safeResetToBase();
-                                  cfFailureReason = "consensus-fix applied a candidate but it still failed prosecution";
+                                  cfFailureReason = `consensus-fix candidate tampered with gate script: ${cfGateIntegrityError.message}`;
                                 } else {
-                                  safeResetToBase();
-                                  cfFailureReason = "consensus-fix applied a candidate but it still failed gates";
+                                  status.ticket(t.id, { phase: "gating" });
+                                  const cfGates = await runGates(gate, worktree, { sandbox: true });
+                                  if (cfGates.ok) {
+                                    status.ticket(t.id, { phase: "prosecuting", detail: "consensus-fix verification" });
+                                    const cfVerdict = await prosecuteBranch(t, worktree, model);
+                                    if (cfVerdict.verdict === "ship") {
+                                      status.strike(t.id, { model, error: null, strikes });
+                                      await integrate(t, worktree);
+                                      return;
+                                    }
+                                    safeResetToBase();
+                                    cfFailureReason = "consensus-fix applied a candidate but it still failed prosecution";
+                                  } else {
+                                    safeResetToBase();
+                                    cfFailureReason = "consensus-fix applied a candidate but it still failed gates";
+                                  }
                                 }
                               }
                             }
@@ -16401,7 +16461,7 @@ async function reviewFleet({
 }
 
 // lib/bootstrap.mjs
-import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync12, lstatSync as lstatSync13, symlinkSync as symlinkSync4, copyFileSync as copyFileSync4, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
+import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync12, lstatSync as lstatSync13, symlinkSync as symlinkSync5, copyFileSync as copyFileSync4, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
 import { join as join31, resolve as resolve16, dirname as dirname19 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { homedir as homedir7 } from "node:os";
@@ -16593,7 +16653,7 @@ function bootstrap({
   const tempRun = isNpxTemp();
   let agyCheckFailed = false;
   try {
-    execFileSync14(resolvedAgyBin, ["--version"], { stdio: "ignore" });
+    execFileSync14(resolvedAgyBin, ["--version"], { stdio: "ignore", shell: process.platform === "win32" });
   } catch (err) {
     console.log(`info: agy CLI not found on PATH; bootstrap will attempt to fall back to jetski CLI`);
     agyCheckFailed = true;
@@ -16640,7 +16700,7 @@ function bootstrap({
         }
       } else {
         try {
-          symlinkSync4(src, dst);
+          symlinkSync5(src, dst);
           console.log(`linked  ${name} -> ${dst}`);
         } catch (err) {
           console.error(`error: failed to symlink skill ${name}: ${err.message}`);

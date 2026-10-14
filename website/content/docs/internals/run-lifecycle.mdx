@@ -39,7 +39,7 @@ The ticket's `tier` and `pool_hint` pick a model from the quota pools. The sched
 <Step>
 ### Build (up to two strikes)
 
-Each attempt gets an isolated per-attempt Git database and a generated `AGENTS.md` describing the ticket, then the builder runs through `agy` ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1717-L1751)). A ticket has two strikes. From the second attempt on, `adlc flail-detector` can end the ticket early if the builder is repeating itself.
+Each attempt gets an isolated per-attempt Git database and a generated `AGENTS.md` describing the ticket, then the builder runs through `agy` ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1717-L1751)). A ticket has two strikes. When retrying on the same model, second strikes resume the builder's conversation context via `agy --conversation` (warm resume), avoiding cold-start re-exploration. Set `AGB_WARM_STRIKES=0` to force cold restarts on every strike. From the second attempt on, `adlc flail-detector` can end the ticket early if the builder is repeating itself.
 </Step>
 
 <Step>

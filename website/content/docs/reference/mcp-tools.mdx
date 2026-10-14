@@ -10,7 +10,7 @@ The plugin registers an MCP server named `agb` (see [Plugin layout](/docs/refere
 
 The server answers `initialize` with protocol version `2024-11-05` and `serverInfo.name` `antigravity-booster-mcp`. `serverInfo.version` is read from the plugin's `package.json`, the same source `agb --version` uses (v1.0.0 hard-coded `0.7.0` instead: [C6](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L153-L156)).
 
-Child processes are started with `AGB_PROVIDER=jetski` added to the environment ([spawn environment](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L204-L206)). Unknown tools return JSON-RPC error `-32602`, unknown methods `-32601`.
+Child processes inherit the ambient environment from the host agent harness. Unknown tools return JSON-RPC error `-32602`, unknown methods `-32601`.
 
 ## Tools
 
