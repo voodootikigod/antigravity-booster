@@ -124,6 +124,9 @@ emit_fallback() {
       if [ -n "$CWD_VAL" ]; then
         printf '%s\n' "$CWD_VAL"
       fi
+      if [ ! -s "$TMP_IN" ]; then
+        printf '%s\n' "$PWD"
+      fi
     } | while IFS= read -r _target; do
       [ -n "$_target" ] || continue
       _curr="$_target"
@@ -189,7 +192,7 @@ emit_fallback() {
 
     IS_READ_ONLY=0
     case "$TOOL_NAME" in
-      view_file|grep_search|code_search|list_directory|read_url_content|read_browser_page|search_web|list_resources|read_resource|ask_question|view_file_outline|read_terminal|read_notebook|command_status)
+      view_file|grep_search|code_search|list_directory|read_url_content|read_browser_page|search_web|list_resources|read_resource|ask_question|view_file_outline|read_terminal|read_notebook|command_status|find_by_name|manage_task)
         IS_READ_ONLY=1
         ;;
     esac

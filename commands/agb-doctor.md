@@ -15,7 +15,7 @@ Use your shell tool (`run_command`) to run the antigravity-booster terminal shim
 ~/.local/bin/agb doctor
 ```
 
-Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 2 = gate failure or findings, 1 = usage or internal error).
+Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 1 = failure or error).
 
 If the `agb` MCP server is connected, you may instead prefer the `mcp__agb__agb_doctor` tool (it takes no arguments); it runs the same command and returns its output.
 

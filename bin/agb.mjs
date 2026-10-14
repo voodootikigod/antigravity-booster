@@ -318,7 +318,7 @@ try {
     }
   } else if (cmd === 'probe') {
     const widths = (rest[0] ?? '2,4,8').split(',').map(Number);
-    const model = rest[1] ?? 'Gemini 3.5 Flash (Low)';
+    const model = rest[1] ?? 'Gemini 3.8 Flash (Low)';
     const rows = [];
     for (const n of widths) {
       const t0 = Date.now();
@@ -368,7 +368,6 @@ try {
     }
   } else if (cmd === 'sidecar') {
     let portStr = process.env.AGB_SIDECAR_PORT;
-    let unsafeOpen = false;
     const positional = [];
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '--port') {
@@ -429,7 +428,7 @@ try {
       const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
       writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({
         id: pluginId,
-        name: 'AGB Dynamic Sidecar',
+        name: 'agb-dynamic-sidecar',
         version: '1.0.0',
         sidecars: ['sidecars/agb.json']
       }, null, 2) + '\n', { mode: 0o600 });

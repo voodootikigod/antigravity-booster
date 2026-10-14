@@ -16,25 +16,45 @@ const BUILTINS = new Set(builtinModules);
 // esbuild emits static imports as `import ... from "x"` / `import "x"` /
 // `export ... from "x"`; dynamic and CommonJS forms survive as import("x") /
 // require("x") when left external.
-const SPECIFIER_PATTERNS = [
-  /^\s*import\s[^;]*?\bfrom\s*["']([^"']+)["']/gm,
-  /^\s*import\s*["']([^"']+)["']/gm,
-  /^\s*export\s[^;]*?\bfrom\s*["']([^"']+)["']/gm,
-  /\bimport\(\s*["']([^"']+)["']\s*\)/g,
-  /\brequire\(\s*["']([^"']+)["']\s*\)/g,
+const STATIC_PATTERNS = [
+  /^\s*import\s[^;]*?\bfrom\s*["'`]([^"'`\r\n]+)["'`]/gm,
+  /^\s*import\s*["'`]([^"'`\r\n]+)["'`]/gm,
+  /^\s*export\s[^;]*?\bfrom\s*["'`]([^"'`\r\n]+)["'`]/gm,
 ];
+
+const CALL_PATTERN = /\b(?:import|require)\s*\(([^)]+)\)/g;
 
 export function isBuiltin(specifier) {
   if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;
-  if (specifier.startsWith('node:')) return BUILTINS.has(specifier.slice(5)) || BUILTINS.has(specifier);
-  return BUILTINS.has(specifier) || BUILTINS.has(specifier.split('/')[0]);
+  const bare = specifier.startsWith('node:') ? specifier.slice(5) : specifier;
+  if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(bare)) return true;
+  if (BUILTINS.has(specifier) || BUILTINS.has(bare)) return true;
+  const knownSubpaths = new Set(['fs/promises', 'stream/promises', 'stream/consumers', 'stream/web', 'timers/promises', 'dns/promises', 'readline/promises', 'util/types']);
+  return knownSubpaths.has(bare);
 }
 
 export function findExternalSpecifiers(source) {
   const found = new Set();
-  for (const re of SPECIFIER_PATTERNS) {
+  for (const re of STATIC_PATTERNS) {
     for (const m of source.matchAll(re)) {
-      if (!isBuiltin(m[1])) found.add(m[1]);
+      const spec = m[1].trim();
+      if (!isBuiltin(spec)) found.add(spec);
+    }
+  }
+  for (const m of source.matchAll(CALL_PATTERN)) {
+    const rawArg = m[1].trim();
+    const quote = rawArg[0];
+    if ((quote === '"' || quote === "'" || quote === '`') && rawArg.endsWith(quote)) {
+      const inner = rawArg.slice(1, -1);
+      if (quote === '`' && inner.includes('${')) {
+        found.add(rawArg);
+      } else if (!isBuiltin(inner)) {
+        found.add(inner);
+      }
+    } else {
+      if (!isBuiltin(rawArg)) {
+        found.add(rawArg);
+      }
     }
   }
   return [...found].sort();

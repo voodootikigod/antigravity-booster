@@ -403,7 +403,7 @@ test('runPlan: refuses to run when the repo is on a non-base branch', async () =
     await assert.rejects(
       withEnv({ AGB_AGY_BIN: FAKE_AGY }, () =>
         runPlan({ repo, base: 'main', gate: { test: 'true' }, tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['T1.txt'] }] }, quiet)),
-      /is on 'feature-x', not the plan's base 'main'/
+      /is on 'feature-x', not the plan's base 'main'.*agb advances main by ref update/
     );
   } finally {
     rmSync(repo, { recursive: true, force: true });

@@ -1,7 +1,7 @@
 import { serveSidecar } from './server.mjs';
 import { resolve, join, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { writeFileSync, mkdirSync, chmodSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, chmodSync, readFileSync, existsSync, openSync, closeSync, readSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -58,10 +58,35 @@ async function start() {
         let result = { lines: [], newOffset: offset, runId, repo: repoPath };
         if (eventsPath && existsSync(eventsPath)) {
           try {
-            const content = readFileSync(eventsPath, 'utf8');
-            const allLines = content.split('\n').filter(Boolean);
-            const newLines = allLines.slice(offset);
-            result = { lines: newLines, newOffset: allLines.length, runId, repo: repoPath };
+            const stats = statSync(eventsPath);
+            if (offset > stats.size) {
+              offset = 0;
+            }
+            if (stats.size > offset) {
+              const fd = openSync(eventsPath, 'r');
+              try {
+                const toRead = stats.size - offset;
+                const buffer = Buffer.alloc(toRead);
+                const totalRead = readSync(fd, buffer, 0, toRead, offset);
+                let lastNewline = -1;
+                for (let i = totalRead - 1; i >= 0; i--) {
+                  if (buffer[i] === 10) {
+                    lastNewline = i;
+                    break;
+                  }
+                }
+                if (lastNewline !== -1) {
+                  const completeBuffer = buffer.subarray(0, lastNewline);
+                  const completeContent = completeBuffer.toString('utf8');
+                  const lines = completeContent.split('\n').filter(Boolean).filter((line) => {
+                    try { JSON.parse(line); return true; } catch { return false; }
+                  });
+                  result = { lines, newOffset: offset + lastNewline + 1, runId, repo: repoPath };
+                }
+              } finally {
+                closeSync(fd);
+              }
+            }
           } catch (e) {}
         }
         return makeResponse(JSON.stringify(result), 'application/json');

@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const activeProcesses = new Map();
+const cancelledRequests = new Set();
 
 // Same version source as `agb --version`: the manifest one level up. Both
 // `mcp/server.mjs` and the bundled `dist/mcp-server.mjs` sit one directory
@@ -133,9 +134,11 @@ rl.on('line', async (line) => {
       return;
     }
     
-    // Handle cancellation notification
-    if (request.method === '$/cancel') {
-      handleCancelNotification(request.params);
+    // Handle cancellation notification (standard MCP 2024-11-05 and legacy $/cancel)
+    if (request.method === 'notifications/cancelled' || request.method === '$/cancel') {
+      const cancelParams = request.params;
+      const targetId = cancelParams?.requestId ?? cancelParams?.id;
+      handleCancelNotification({ id: targetId });
       return;
     }
 
@@ -221,7 +224,7 @@ async function handleToolCall(id, name, args) {
   // Spawn agb CLI execution
   try {
     const child = spawn(agbCmd, cliArgs, {
-      env: { ...process.env, AGB_PROVIDER: 'jetski' },
+      env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe']
     });
 
@@ -238,14 +241,23 @@ async function handleToolCall(id, name, args) {
       stderr += data;
     });
 
+    let responded = false;
+
     child.on('close', (code) => {
       activeProcesses.delete(id);
+      if (responded) return;
+      responded = true;
+      if (cancelledRequests.has(id)) {
+        cancelledRequests.delete(id);
+        sendError(id, -32800, 'Request cancelled');
+        return;
+      }
       const output = stdout.trim() + (stderr ? '\nStderr:\n' + stderr.trim() : '');
       sendResult(id, {
         content: [
           {
             type: 'text',
-            text: output || `Executed successfully (exit code ${code})`
+            text: output || (code === 0 ? 'Executed successfully' : `Command failed with exit code ${code}`)
           }
         ],
         isError: code !== 0
@@ -254,6 +266,9 @@ async function handleToolCall(id, name, args) {
 
     child.on('error', (err) => {
       activeProcesses.delete(id);
+      if (responded) return;
+      responded = true;
+      if (cancelledRequests.has(id)) cancelledRequests.delete(id);
       sendResult(id, {
         content: [
           {
@@ -300,13 +315,13 @@ function sendError(id, code, message) {
 function handleCancelNotification(params) {
   const targetId = params?.id;
   if (targetId !== undefined && activeProcesses.has(targetId)) {
+    cancelledRequests.add(targetId);
     const child = activeProcesses.get(targetId);
     try {
       child.kill('SIGTERM');
     } catch (e) {
       logDiagnostic(`cancel ${targetId}: ${e.message}`);
     }
-    activeProcesses.delete(targetId);
   }
 }
 

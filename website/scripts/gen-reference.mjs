@@ -157,13 +157,14 @@ function genCli(repo) {
   const cli = parseCli(repo);
   const out = {};
   const names = Object.keys(cli.commands).sort();
+  const removedSet = new Set(cli.removedFlags.map((r) => `${r.command}:${r.flag}`));
   for (const name of names) {
     const c = cli.commands[name];
     const declared = parseFlags(`${c.args} ${c.flags ?? ''}`);
     const known = new Set(declared.map((f) => f.flag));
     const flags = [
       ...declared,
-      ...cli.dispatch[name].filter((f) => !known.has(f)).map((flag) => ({ flag, arg: '', desc: '' })),
+      ...cli.dispatch[name].filter((f) => !known.has(f) && !removedSet.has(`${name}:${f}`)).map((flag) => ({ flag, arg: '', desc: '' })),
     ].sort((a, b) => a.flag.localeCompare(b.flag));
     const usage = `agb ${name}${c.args ? ` ${c.args}` : ''}`;
     out[`cli-${name}.mdx`] = join([

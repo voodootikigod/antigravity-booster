@@ -226,7 +226,7 @@ const SHARD_CONTENT_KEYS = ['CodeContent', 'Content'];
  * later tool call (P5 rounds 4–5). Case folds on darwin.
  */
 function newShardVerdict(name, rel, args, platform) {
-  const folded = platform === 'darwin' ? rel.toLowerCase() : rel;
+  const folded = (platform === 'darwin' || platform === 'win32') ? rel.toLowerCase() : rel;
   if (!folded.startsWith(`${TICKET_STORE_DIR}/`)) return null;
   const reason = 'A new ticket shard must be a schema-valid ticket written whole to its canonical <id>--<sha256(id)>.json file';
   if (!SHARD_WRITERS.has(name)) return deny(reason);

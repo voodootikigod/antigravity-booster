@@ -1,0 +1,24 @@
+{
+  "body": "1. Update skills/release/SKILL.md steps 3 & 4 (and mirrored .claude/skills and .agents/skills) to bump plugin.json version, run node website/scripts/gen-reference.mjs, and stage plugin.json and website/generated/*.mdx.\n2. Fix skills/modernize/scripts/audit.mjs line 540 to inspect pkg.devDependencies instead of pkg.dependencies for @adlc baseline.\n\nVerification: npm test",
+  "category": "docs",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-AUDIT-W5-PROBE-AND-ISSUES"
+    }
+  ],
+  "id": "T-AUDIT-W4-SKILLS-MODERNIZE",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "skills/release/**",
+    "skills/modernize/**",
+    ".claude/skills/**",
+    ".agents/skills/**"
+  ],
+  "title": "Update release skill procedure for plugin.json/gen-reference and modernize audit devDependencies"
+}

@@ -31,3 +31,16 @@ test('DEFAULT_BUNDLES covers all four shipped bundles (incl. vendored adlc)', as
   const { DEFAULT_BUNDLES } = await import('../scripts/check-bundle-externals.mjs');
   assert.deepEqual(DEFAULT_BUNDLES, ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs']);
 });
+
+test('findExternalSpecifiers: catches template literals and dynamic/computed call expressions', () => {
+  const src = [
+    'const a = require(`custom-pkg`);',
+    'const b = await import(`nested/mod`);',
+    'const c = require(`dynamic-pkg/${name}`);',
+    'const d = require(unknownVar);',
+    'const ok1 = await import(`node:fs`);',
+    'const ok2 = require(`node:path`);',
+  ].join('\n');
+  assert.deepEqual(findExternalSpecifiers(src), ['`dynamic-pkg/${name}`', 'custom-pkg', 'nested/mod', 'unknownVar']);
+});
+

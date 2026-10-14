@@ -311,9 +311,9 @@
     {
       "name": "AGB_CALIBRATION_DIR",
       "group": "paths",
-      "default": "the plugin's docs/calibration/",
+      "default": "docs/calibration under cwd",
       "bundledIgnored": false,
-      "description": "Where agb probe appends its probe-<day>.md calibration file."
+      "description": "Where agb probe appends its probes-<day>.md calibration file."
     },
     {
       "name": "AGB_EXEC_CACHE_DIR",

@@ -1,0 +1,17 @@
+{
+  "body": "Rebuild all bundles (dist/agb.mjs, dist/sidecar.mjs, dist/hooks/*.bundle.mjs), verify clean git working tree, execute full mechanical test suite (npm test), and verify release audit passes with 0 BLOCKER, 0 SHOULD-FIX, and GO verdict.\n\nVerification: npm run build && npm test",
+  "category": "chore",
+  "completed": true,
+  "edges": [],
+  "id": "T-AUDIT-W5-REBUILD-AND-REAUDIT",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "dist/**"
+  ],
+  "title": "Rebuild bundles, run test suite, and verify clean release audit verdict"
+}

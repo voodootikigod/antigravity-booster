@@ -1,0 +1,21 @@
+{
+  "body": "1. Remove unsupported '(and concurrency if the user gave one)' from commands/agb-run.md line 20 matching mcp/server.mjs rejection.\n2. Fix exit code claim in commands/agb-doctor.md line 18, commands/agb-migrate.md, and commands/agb-sidecar.md to document exit 0 = pass, 1 = failure/error.\n\nVerification: test/cli.test.mjs",
+  "category": "docs",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-AUDIT-W5-PROBE-AND-ISSUES"
+    }
+  ],
+  "id": "T-AUDIT-W4-COMMAND-SPECS",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "commands/**"
+  ],
+  "title": "Remove concurrency parameter from agb-run.md and fix exit code claims in agb-doctor.md"
+}

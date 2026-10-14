@@ -53,11 +53,34 @@ export function beginEvaluation(limit = DEFAULT_EVALUATION_BUDGET) {
  * first missing one are appended literally. A symlink loop yields null.
  */
 export function physicalResolve(input, base = '/') {
-  const raw = input.startsWith('/') ? input : `${base}/${input}`;
+  const normInput = String(input).replace(/\\/g, '/');
+  const normBase = String(base ?? '/').replace(/\\/g, '/');
+  const winInputDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normInput);
+  const winBaseDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normBase);
+
+  let root = '/';
+  let raw = '';
+
+  if (winInputDrive) {
+    root = winInputDrive[0].endsWith('/') ? winInputDrive[0] : `${winInputDrive[0]}/`;
+    raw = normInput.slice(root.length);
+  } else if (normInput.startsWith('/')) {
+    root = '/';
+    raw = normInput.slice(1);
+  } else if (winBaseDrive) {
+    root = winBaseDrive[0].endsWith('/') ? winBaseDrive[0] : `${winBaseDrive[0]}/`;
+    const baseSub = normBase.slice(root.length).replace(/^\/+|\/+$/g, '');
+    raw = baseSub ? `${baseSub}/${normInput}` : normInput;
+  } else {
+    root = '/';
+    const baseSub = normBase.replace(/^\/+|\/+$/g, '');
+    raw = baseSub ? `${baseSub}/${normInput}` : normInput;
+  }
+
   const initial = raw.split('/');
   if (initial.length > MAX_PATH_COMPONENTS) return null;
   const stack = initial.reverse(); // pop() yields components in order, in O(1)
-  let current = '/';
+  let current = root;
   // Depth of components appended below the first missing one. While > 0 there
   // is nothing on disk to lstat; a later `..` that climbs back out resumes
   // following symlinks (P5 round 4: `nope/../link/x`).
@@ -72,18 +95,33 @@ export function physicalResolve(input, base = '/') {
     if (comp === '' || comp === '.') continue;
     if (comp === '..') {
       current = dirname(current);
+      if (current.length < root.length) current = root;
       if (missingDepth > 0) missingDepth -= 1;
       continue;
     }
-    const next = current === '/' ? `/${comp}` : `${current}/${comp}`;
+    const next = current === root ? `${root}${comp}` : `${current}/${comp}`;
     if (isMagicPath(next)) return null;
     if (missingDepth === 0) {
       const st = lstatOrNull(next);
       if (st?.isSymbolicLink()) {
         hops += 1;
         if (hops > MAX_SYMLINK_HOPS) return null;
-        const target = readlinkSync(next);
-        if (target.startsWith('/')) current = '/';
+        const target = readlinkSync(next).replace(/\\/g, '/');
+        const targetWinDrive = /^[a-zA-Z]:(?:\/|$)/.exec(target);
+        if (targetWinDrive) {
+          root = targetWinDrive[0].endsWith('/') ? targetWinDrive[0] : `${targetWinDrive[0]}/`;
+          current = root;
+          const targetSub = target.slice(root.length);
+          const parts = targetSub.split('/');
+          for (let i = parts.length - 1; i >= 0; i -= 1) stack.push(parts[i]);
+          continue;
+        } else if (target.startsWith('/')) {
+          root = '/';
+          current = '/';
+          const parts = target.slice(1).split('/');
+          for (let i = parts.length - 1; i >= 0; i -= 1) stack.push(parts[i]);
+          continue;
+        }
         const parts = target.split('/');
         for (let i = parts.length - 1; i >= 0; i -= 1) stack.push(parts[i]);
         continue;
@@ -114,7 +152,7 @@ export function resolveCandidate(token, base, home) {
 }
 
 function fold(p, platform) {
-  return platform === 'darwin' ? p.toLowerCase() : p;
+  return (platform === 'darwin' || platform === 'win32') ? p.toLowerCase() : p;
 }
 
 /** True when `child` equals `parent` or sits beneath it. */
@@ -238,7 +276,7 @@ function matcher(pattern, nocase) {
  * as a pattern crashed the evaluator).
  */
 export function matchDeclaredRail(rel, rails, platform) {
-  const nocase = platform === 'darwin';
+  const nocase = platform === 'darwin' || platform === 'win32';
   for (const rail of rails) {
     const prefix = railStaticPrefix(rail);
     if (
@@ -254,7 +292,7 @@ export function matchDeclaredRail(rel, rails, platform) {
 
 /** Appendix A.4 item 8: scope entries are globs; a plain directory entry also covers descendants. */
 export function matchesScope(rel, scope, platform) {
-  const nocase = platform === 'darwin';
+  const nocase = platform === 'darwin' || platform === 'win32';
   return scope.some(
     (entry) =>
       typeof entry === 'string' &&
@@ -276,5 +314,5 @@ export function isImplicitAncestorOnly(rel, platform) {
 }
 
 export function isRailAncestorOnly(rel, rail, platform) {
-  return !covers(rel, rail, platform) && !matcher(rail, platform === 'darwin').match(rel);
+  return !covers(rel, rail, platform) && !matcher(rail, platform === 'darwin' || platform === 'win32').match(rel);
 }

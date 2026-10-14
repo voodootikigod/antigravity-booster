@@ -1,0 +1,22 @@
+{
+  "body": "1. Update website/env-docs.json line 312: default 'docs/calibration under cwd', description 'Where agb probe appends its probes-<day>.md calibration file.'.\n2. Update website/scripts/gen-reference.mjs to filter out cli.removedFlags (--ui) from command tables.\n3. Update website/content/docs/project/releasing.mdx line 29: note release-audit is a cross-harness skill.\n4. Update website/content/docs/reference/skills.mdx line 14: add release-audit bullet.\n5. Update SECURITY.md line 19: update version reference.\n6. Run node website/scripts/gen-reference.mjs to regenerate website/generated/*.mdx.\n\nVerification: node website/scripts/gen-reference.mjs --check",
+  "category": "docs",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-AUDIT-W5-PROBE-AND-ISSUES"
+    }
+  ],
+  "id": "T-AUDIT-W4-WEBSITE-DOCS",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "website/**",
+    "SECURITY.md"
+  ],
+  "title": "Update calibration metadata, filter removed flags, and fix release docs"
+}

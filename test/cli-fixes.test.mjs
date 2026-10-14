@@ -189,3 +189,33 @@ test('item 6: probe help text names the default calibration dir', () => {
   assert.match(out, /AGB_CALIBRATION_DIR/);
   assert.match(out, /docs\/calibration/);
 });
+
+test('MCP: notifications/cancelled is recognized and handled', async () => {
+  const child = spawn(process.execPath, [MCP_SERVER], { stdio: ['pipe', 'pipe', 'pipe'] });
+  try {
+    // Send a cancellation notification using MCP 2024-11-05 method
+    child.stdin.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+      params: { requestId: 9999, reason: 'user cancelled' }
+    }) + '\n');
+    // Ensure server didn't crash or error on the notification
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/list' }) + '\n');
+    const out = await new Promise((resolve) => {
+      child.stdout.once('data', (d) => resolve(JSON.parse(d.toString().trim())));
+    });
+    assert.equal(out.id, 10);
+    assert.ok(out.result.tools.length > 0);
+  } finally {
+    child.kill();
+  }
+});
+
+test('probe: defaults to Gemini 3.8 Flash (Low) model', () => {
+  const cwd = join(TMP, 'probe-cwd-model');
+  mkdirSync(cwd, { recursive: true });
+  const env = { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGB_QUOTA_STATE: join(TMP, 'pools-probe-model.json') };
+  const r = spawnSync(process.execPath, [AGB_BIN, 'probe', '1'], { cwd, env, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /deprecated|retired/i);
+});

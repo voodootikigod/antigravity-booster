@@ -7,10 +7,12 @@ export const READ_ONLY_TOOLS = new Set([
   'read_url_content', 'read_browser_page', 'search_web',
   'list_resources', 'read_resource', 'ask_question',
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',
+  'find_by_name',
 ]);
 
 export const ORCHESTRATION_TOOLS = new Set([
   'invoke_subagent', 'define_subagent', 'manage_subagents', 'schedule', 'send_message',
+  'manage_task',
 ]);
 
 // agy control steps with no filesystem, shell or network effect. `finish`
@@ -44,6 +46,7 @@ export const READ_TOOL_PATH_SCHEMAS = {
   grep_search: ['SearchPath', 'DirectoryPath', 'path'],
   code_search: ['SearchPath', 'DirectoryPath', 'path'],
   file_search: ['SearchPath', 'DirectoryPath', 'path'],
+  find_by_name: ['SearchPath', 'DirectoryPath', 'path', 'dir'],
 };
 
 // Gate 1: required path keys for file-mutating tools (probed agy 1.2.16).

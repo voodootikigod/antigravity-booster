@@ -1916,7 +1916,8 @@ function findAdlcRoot(targetPath, { home = homedir() } = {}) {
   let outermost = null;
   let curr = resolve5(targetPath);
   for (; ; ) {
-    const hasAdlc = curr !== homeDir && curr !== "/" && isDirectory(join8(curr, ".adlc"));
+    const isRoot = curr === "/" || curr === dirname8(curr);
+    const hasAdlc = curr !== homeDir && !isRoot && isDirectory(join8(curr, ".adlc"));
     if (hasAdlc) {
       if (existsSync10(join8(curr, ".git"))) return curr;
       outermost = curr;
@@ -1972,14 +1973,16 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "view_file_outline",
   "read_terminal",
   "read_notebook",
-  "command_status"
+  "command_status",
+  "find_by_name"
 ]);
 var ORCHESTRATION_TOOLS = /* @__PURE__ */ new Set([
   "invoke_subagent",
   "define_subagent",
   "manage_subagents",
   "schedule",
-  "send_message"
+  "send_message",
+  "manage_task"
 ]);
 var AGY_CONTROL_TOOLS = /* @__PURE__ */ new Set(["finish"]);
 var BOOSTER_MCP_SERVER = "agb";
@@ -2015,7 +2018,8 @@ var READ_TOOL_PATH_SCHEMAS = {
   list_directory: ["DirAbsolutePath", "DirectoryPath", "path", "dir"],
   grep_search: ["SearchPath", "DirectoryPath", "path"],
   code_search: ["SearchPath", "DirectoryPath", "path"],
-  file_search: ["SearchPath", "DirectoryPath", "path"]
+  file_search: ["SearchPath", "DirectoryPath", "path"],
+  find_by_name: ["SearchPath", "DirectoryPath", "path", "dir"]
 };
 var TOOL_PATH_SCHEMAS = {
   write_to_file: { required: ["TargetFile"] },
@@ -3413,11 +3417,31 @@ function beginEvaluation(limit = DEFAULT_EVALUATION_BUDGET) {
   budget = limit;
 }
 function physicalResolve(input, base = "/") {
-  const raw = input.startsWith("/") ? input : `${base}/${input}`;
+  const normInput = String(input).replace(/\\/g, "/");
+  const normBase = String(base ?? "/").replace(/\\/g, "/");
+  const winInputDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normInput);
+  const winBaseDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normBase);
+  let root = "/";
+  let raw = "";
+  if (winInputDrive) {
+    root = winInputDrive[0].endsWith("/") ? winInputDrive[0] : `${winInputDrive[0]}/`;
+    raw = normInput.slice(root.length);
+  } else if (normInput.startsWith("/")) {
+    root = "/";
+    raw = normInput.slice(1);
+  } else if (winBaseDrive) {
+    root = winBaseDrive[0].endsWith("/") ? winBaseDrive[0] : `${winBaseDrive[0]}/`;
+    const baseSub = normBase.slice(root.length).replace(/^\/+|\/+$/g, "");
+    raw = baseSub ? `${baseSub}/${normInput}` : normInput;
+  } else {
+    root = "/";
+    const baseSub = normBase.replace(/^\/+|\/+$/g, "");
+    raw = baseSub ? `${baseSub}/${normInput}` : normInput;
+  }
   const initial = raw.split("/");
   if (initial.length > MAX_PATH_COMPONENTS) return null;
   const stack = initial.reverse();
-  let current = "/";
+  let current = root;
   let missingDepth = 0;
   let hops = 0;
   let steps = 0;
@@ -3429,18 +3453,33 @@ function physicalResolve(input, base = "/") {
     if (comp === "" || comp === ".") continue;
     if (comp === "..") {
       current = dirname9(current);
+      if (current.length < root.length) current = root;
       if (missingDepth > 0) missingDepth -= 1;
       continue;
     }
-    const next = current === "/" ? `/${comp}` : `${current}/${comp}`;
+    const next = current === root ? `${root}${comp}` : `${current}/${comp}`;
     if (isMagicPath(next)) return null;
     if (missingDepth === 0) {
       const st = lstatOrNull(next);
       if (st?.isSymbolicLink()) {
         hops += 1;
         if (hops > MAX_SYMLINK_HOPS) return null;
-        const target = readlinkSync(next);
-        if (target.startsWith("/")) current = "/";
+        const target = readlinkSync(next).replace(/\\/g, "/");
+        const targetWinDrive = /^[a-zA-Z]:(?:\/|$)/.exec(target);
+        if (targetWinDrive) {
+          root = targetWinDrive[0].endsWith("/") ? targetWinDrive[0] : `${targetWinDrive[0]}/`;
+          current = root;
+          const targetSub = target.slice(root.length);
+          const parts2 = targetSub.split("/");
+          for (let i = parts2.length - 1; i >= 0; i -= 1) stack.push(parts2[i]);
+          continue;
+        } else if (target.startsWith("/")) {
+          root = "/";
+          current = "/";
+          const parts2 = target.slice(1).split("/");
+          for (let i = parts2.length - 1; i >= 0; i -= 1) stack.push(parts2[i]);
+          continue;
+        }
         const parts = target.split("/");
         for (let i = parts.length - 1; i >= 0; i -= 1) stack.push(parts[i]);
         continue;
@@ -3460,7 +3499,7 @@ function resolveCandidate(token, base, home) {
   return { lexical, real: real ?? lexical, unresolved: real === null };
 }
 function fold(p, platform) {
-  return platform === "darwin" ? p.toLowerCase() : p;
+  return platform === "darwin" || platform === "win32" ? p.toLowerCase() : p;
 }
 function isWithin(child, parent, platform = process.platform) {
   const c = fold(child, platform);
@@ -3551,7 +3590,7 @@ function matcher(pattern, nocase) {
   return MATCHERS.get(key);
 }
 function matchDeclaredRail(rel, rails, platform) {
-  const nocase = platform === "darwin";
+  const nocase = platform === "darwin" || platform === "win32";
   for (const rail of rails) {
     const prefix = railStaticPrefix(rail);
     if (covers(rel, rail, platform) || prefix !== "" && (fold(rel, platform) === fold(prefix, platform) || isAncestor(rel, prefix, platform)) || matcher(rail, nocase).match(rel)) {
@@ -3561,7 +3600,7 @@ function matchDeclaredRail(rel, rails, platform) {
   return null;
 }
 function matchesScope(rel, scope, platform) {
-  const nocase = platform === "darwin";
+  const nocase = platform === "darwin" || platform === "win32";
   return scope.some(
     (entry) => typeof entry === "string" && entry.length > 0 && (matcher(entry, nocase).match(rel) || covers(rel, entry.replace(/\/+$/, ""), platform))
   );
@@ -3571,7 +3610,7 @@ function isImplicitAncestorOnly(rel, platform) {
   return ![...IMPLICIT_RAIL_DIRS, ...IMPLICIT_RAIL_FILES, TICKET_STORE_DIR].some((t) => covers(rel, t, platform));
 }
 function isRailAncestorOnly(rel, rail, platform) {
-  return !covers(rel, rail, platform) && !matcher(rail, platform === "darwin").match(rel);
+  return !covers(rel, rail, platform) && !matcher(rail, platform === "darwin" || platform === "win32").match(rel);
 }
 
 // hooks/policy/shell.mjs
@@ -3988,7 +4027,7 @@ function globTargetVerdict(token, cwd, ctx) {
   if (!repo.adlc) return null;
   const relPattern = relative4(repo.root, absPattern).split(sep4).join("/");
   if (relPattern.startsWith("..")) return null;
-  const nocase = ctx.platform === "darwin";
+  const nocase = ctx.platform === "darwin" || ctx.platform === "win32";
   const hit = trustRootSamples(repo).find((p) => minimatch(p, relPattern, { nocase }));
   if (hit) return deny(`Glob in a shell command can match the ADLC trust root: ${hit}`);
   const rail = repo.activeRail && repo.store.ok ? repo.store.rails.find((r) => railStaticPrefix(r) === r && minimatch(r, relPattern, { nocase })) : null;
@@ -4314,7 +4353,7 @@ function containsProtected(r, ctx) {
 var SHARD_WRITERS = /* @__PURE__ */ new Set(["write_to_file", "create_file", "save_file"]);
 var SHARD_CONTENT_KEYS = ["CodeContent", "Content"];
 function newShardVerdict(name, rel, args, platform) {
-  const folded = platform === "darwin" ? rel.toLowerCase() : rel;
+  const folded = platform === "darwin" || platform === "win32" ? rel.toLowerCase() : rel;
   if (!folded.startsWith(`${TICKET_STORE_DIR}/`)) return null;
   const reason = "A new ticket shard must be a schema-valid ticket written whole to its canonical <id>--<sha256(id)>.json file";
   if (!SHARD_WRITERS.has(name)) return deny(reason);

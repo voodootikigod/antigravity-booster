@@ -292,7 +292,7 @@ function globTargetVerdict(token, cwd, ctx) {
   if (!repo.adlc) return null;
   const relPattern = relative(repo.root, absPattern).split(sep).join('/');
   if (relPattern.startsWith('..')) return null;
-  const nocase = ctx.platform === 'darwin';
+  const nocase = ctx.platform === 'darwin' || ctx.platform === 'win32';
   const hit = trustRootSamples(repo).find((p) => minimatch(p, relPattern, { nocase }));
   if (hit) return deny(`Glob in a shell command can match the ADLC trust root: ${hit}`);
   const rail = repo.activeRail && repo.store.ok ? repo.store.rails.find((r) => railStaticPrefix(r) === r && minimatch(r, relPattern, { nocase })) : null;

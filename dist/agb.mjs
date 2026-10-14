@@ -399,17 +399,42 @@ async function watchStatus(repo, intervalMs = 100) {
   const { openSync: openSync12, fstatSync: fstatSync4, readSync: readSync5, closeSync: closeSync12 } = await import("node:fs");
   const parseEvents = () => {
     if (!existsSync23(eventsPath)) return false;
-    const fd = openSync12(eventsPath, "r");
-    const stat = fstatSync4(fd);
-    if (stat.size <= offset) {
-      closeSync12(fd);
+    let fd;
+    let slice;
+    try {
+      fd = openSync12(eventsPath, "r");
+      const stat = fstatSync4(fd);
+      if (offset > stat.size) offset = 0;
+      if (stat.size <= offset) {
+        return false;
+      }
+      const toRead = stat.size - offset;
+      const buf = Buffer.alloc(toRead);
+      const bytesRead = readSync5(fd, buf, 0, toRead, offset);
+      slice = buf.subarray(0, bytesRead);
+    } catch {
+      return false;
+    } finally {
+      if (fd !== void 0) {
+        try {
+          closeSync12(fd);
+        } catch {
+        }
+      }
+    }
+    if (!slice) return false;
+    let lastNewline = -1;
+    for (let i = slice.length - 1; i >= 0; i--) {
+      if (slice[i] === 10) {
+        lastNewline = i;
+        break;
+      }
+    }
+    if (lastNewline === -1) {
       return false;
     }
-    const buf = Buffer.alloc(stat.size - offset);
-    readSync5(fd, buf, 0, buf.length, offset);
-    closeSync12(fd);
-    offset += buf.length;
-    const lines = buf.toString("utf8").split("\n");
+    offset += lastNewline + 1;
+    const lines = slice.subarray(0, lastNewline).toString("utf8").split("\n");
     let updated = false;
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -1695,7 +1720,10 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       res.writeHead(403);
       return res.end("Forbidden");
     }
-    const filePath = join34(__dirname, safePath);
+    let filePath = join34(__dirname, safePath);
+    if (!existsSync31(filePath)) {
+      filePath = join34(__dirname, "..", "sidecars", safePath);
+    }
     if (!existsSync31(filePath)) {
       res.writeHead(404);
       return res.end("Not found");
@@ -7317,13 +7345,13 @@ import { fileURLToPath as fileURLToPath2 } from "url";
 import crypto2 from "crypto";
 import net from "net";
 var execFileAsync = promisify(execFile2);
-async function checkNodeVersion() {
-  const version = process.version;
-  const major = parseInt(version.slice(1).split(".")[0], 10);
-  if (major >= 18) {
+var MIN_NODE_VERSION = "22.19.0";
+async function checkNodeVersion({ version = process.version } = {}) {
+  const cleanVersion = version.replace(/^v/, "");
+  if (semverGte(cleanVersion, MIN_NODE_VERSION)) {
     return { name: "Node.js", level: "pass", detail: version, fix: null };
   }
-  return { name: "Node.js", level: "fail", detail: version, fix: "Upgrade Node.js to v18 or newer." };
+  return { name: "Node.js", level: "fail", detail: version, fix: `Upgrade Node.js to v${MIN_NODE_VERSION} or newer.` };
 }
 var MIN_AGY_VERSION = "1.2.6";
 async function checkAgyBinary({ env = process.env } = {}) {
@@ -8385,8 +8413,17 @@ async function checkSandbox({ env = process.env, platform: platform2 = process.p
   return { name: "Sandbox", level: "fail", detail: `unsupported platform: ${platform2}`, fix: "Sandbox is only supported on macOS, Linux, and Windows. Set AGB_SANDBOX_GATES=0 to bypass." };
 }
 async function checkBrainDir({ env = process.env } = {}) {
-  const dir = env.AGB_BRAIN_DIR || join18(homedir3(), ".gemini/antigravity/brain");
-  if (existsSync17(dir)) {
+  const custom = env.AGB_BRAIN_DIR;
+  if (custom) {
+    return existsSync17(custom) ? { name: "Brain Dir", level: "pass", detail: "exists", fix: null } : { name: "Brain Dir", level: "warn", detail: "not found", fix: `Create directory ${custom} or unset AGB_BRAIN_DIR.` };
+  }
+  const candidates = [
+    join18(homedir3(), ".gemini", "antigravity-cli", "brain"),
+    join18(homedir3(), ".gemini", "antigravity", "brain"),
+    join18(homedir3(), ".gemini", "jetski", "brain")
+  ];
+  const found = candidates.find((d) => existsSync17(d));
+  if (found) {
     return { name: "Brain Dir", level: "pass", detail: "exists", fix: null };
   }
   return { name: "Brain Dir", level: "warn", detail: "not found", fix: "Run an agy session to initialize the brain directory." };
@@ -8437,7 +8474,7 @@ async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo =
     if (doctorOutput) {
       try {
         const parsed = JSON.parse(doctorOutput);
-        if (!parsed.ok || parsed.exitCode !== 0) {
+        if (!parsed.ok || parsed.exitCode !== void 0 && parsed.exitCode !== 0) {
           const failedChecks = (parsed.checks || []).filter((c) => !c.ok).map((c) => `${c.name}${c.detail ? `: ${c.detail}` : ""}`).join(", ");
           return {
             name: "Ticket Store",
@@ -11756,14 +11793,6 @@ ${fenced.block}
 
 Avoid repeating the failed approach.`;
 }
-function fixPrompt(ticket, findings) {
-  const list = findings.map((f, i) => `${i + 1}. [${f.severity}] ${f.file ?? "(general)"}: ${f.claim}`).join("\n");
-  return `Ticket ${ticket.id} (see AGENTS.md) was reviewed. These verified findings block it:
-
-${list}
-
-Fix every finding. Stay inside the ticket's scope. Re-run the gates. End with TICKET-DONE or TICKET-BLOCKED: <reason>.`;
-}
 function hollowTestSection(hollowTest) {
   if (!hollowTest) return "";
   if (!hollowTest.ok) {
@@ -12453,9 +12482,10 @@ async function preflight(plan, opts = {}) {
 import { readdirSync as readdirSync9, readFileSync as readFileSync18, statSync as statSync5, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
 import { join as join23, resolve as resolve11 } from "node:path";
 import { homedir as homedir5 } from "node:os";
-var jetskiBrain = join23(homedir5(), ".gemini", "jetski", "brain");
+var antigravityCliBrain = join23(homedir5(), ".gemini", "antigravity-cli", "brain");
 var antigravityBrain = join23(homedir5(), ".gemini", "antigravity", "brain");
-var defaultBrainDir = existsSync21(jetskiBrain) ? jetskiBrain : antigravityBrain;
+var jetskiBrain = join23(homedir5(), ".gemini", "jetski", "brain");
+var defaultBrainDir = [antigravityCliBrain, antigravityBrain, jetskiBrain].find((d) => existsSync21(d)) ?? antigravityCliBrain;
 var BRAIN_DIR = process.env.AGB_BRAIN_DIR ?? defaultBrainDir;
 function getActiveSessionId() {
   return process.env.ANTIGRAVITY_CONVERSATION_ID ?? process.env.AGB_SESSION_ID ?? null;
@@ -12464,8 +12494,9 @@ var PLAN_FILENAMES = ["implementation_plan.md", "plan.md", "agb_plan_artifact.md
 function listBrains(brainDir = BRAIN_DIR) {
   const dirsToSearch = [brainDir];
   if (brainDir === BRAIN_DIR) {
-    if (brainDir !== jetskiBrain && existsSync21(jetskiBrain)) dirsToSearch.push(jetskiBrain);
-    if (brainDir !== antigravityBrain && existsSync21(antigravityBrain)) dirsToSearch.push(antigravityBrain);
+    for (const candidate of [antigravityCliBrain, antigravityBrain, jetskiBrain]) {
+      if (brainDir !== candidate && existsSync21(candidate)) dirsToSearch.push(candidate);
+    }
   }
   const seen = /* @__PURE__ */ new Set();
   const results = [];
@@ -12594,7 +12625,7 @@ async function brainToPlan(idOrPrefix, { repo, gate, model = "gemini-3.1-pro-hig
     throw new Error("brain conversion produced no tickets");
   }
   const activeId = getActiveSessionId();
-  const artifactDir = process.env.AGB_ARTIFACT_DIR ?? (activeId ? join23(homedir5(), ".gemini", "jetski", "brain", activeId) : join23(repo, ".booster"));
+  const artifactDir = process.env.AGB_ARTIFACT_DIR ?? (activeId ? join23(BRAIN_DIR, activeId) : join23(repo, ".booster"));
   try {
     mkdirSync12(artifactDir, { recursive: true, mode: 448 });
     const mdPath = join23(artifactDir, "agb_plan_artifact.md");
@@ -14637,11 +14668,15 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   }
 }
 var CONSENSUS_FIX_TIMEOUT_MS = 3e5;
-async function runConsensusFix({ worktree, testCmd, files, adlcBin }) {
+async function runConsensusFix({ worktree, testCmd, files, rails = [], adlcBin }) {
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
   }
-  const args = ["consensus-fix", "--allow-dirty", "--test-cmd", testCmd, "--files", files.join(","), "--rails", testCmd, "--apply", "--json"];
+  const args = ["consensus-fix", "--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
+  if (Array.isArray(rails) && rails.length > 0) {
+    args.push("--rails", rails.join(","));
+  }
+  args.push("--apply", "--json");
   const parseResult = (stdout2) => {
     const parsed = JSON.parse(stdout2);
     return {
@@ -14672,6 +14707,7 @@ async function recordGate({ repo, gateName, ticketId, data, adlcBin }) {
     await execFileAuthenticatedAdlc(adlcBin, args, { cwd: repo, timeout: GATE_MANIFEST_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024 }, { repo });
     return { ok: true };
   } catch (err) {
+    console.warn(`[agb] advisory audit gate ${gateName} degraded for ${ticketId}: ${err.message}`);
     return { ok: false, error: err.message };
   }
 }
@@ -15014,7 +15050,7 @@ Fix: ${agyCheck.fix}`);
   }
   const onBranch = currentBranch2(repo);
   if (onBranch !== base) {
-    throw new Error(`repo ${repo} is on '${onBranch}', not the plan's base '${base}'. Checkout ${base} before running (agb merges into and resets the checked-out branch).`);
+    throw new Error(`repo ${repo} is on '${onBranch}', not the plan's base '${base}'. Checkout ${base} before running (agb advances ${base} by ref update; the checkout must match the base being advanced).`);
   }
   const enforcement = checkEnforcementAvailable(repo);
   if (enforcement.abort) {
@@ -15341,11 +15377,17 @@ Fix: ${agyCheck.fix}`);
           activeAttemptNamespaces.add(attemptSlug);
           knownAttemptNamespaces.add(attemptSlug);
           let strikeError = null;
+          let safeResetToBase = () => {
+            try {
+              resetToBase(worktree, base);
+            } catch {
+            }
+          };
           try {
             const preSnapshot = snapshotRootGit(repo);
             const { baseSha: baseRefSha, gitDir: expectedGitDir } = setupAttemptGitDatabase(repo, worktree, base);
             safeWriteWorktreeFile(join30(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
-            const safeResetToBase = () => {
+            safeResetToBase = () => {
               try {
                 verifyWorktreeGitPointer(worktree, expectedGitDir);
               } catch {
@@ -15368,6 +15410,9 @@ Fix: ${agyCheck.fix}`);
               const resolvedAdlc2 = resolveAdlcBinary({ repo: worktree });
               const adlcBin = resolvedAdlc2.ok ? resolvedAdlc2.binary : void 0;
               const flail = await checkFlailDetector({ logFile: buildLogFile, scope: t.scope, cwd: worktree, adlcBin });
+              if (flail.error) {
+                console.warn(`[agb] advisory audit gate flail-detector degraded for ${t.id}: ${flail.error}`);
+              }
               if (flail.detected) {
                 lastFailure = `flail detected (adlc flail-detector): ` + flail.signals.map((s) => s.type).join(", ") + ` \u2014 not attempting another strike`;
                 strikeError = lastFailure;
@@ -15562,6 +15607,7 @@ Fix: ${agyCheck.fix}`);
                     const g = gates.results.at(-1);
                     strikeError = `gate ${g.name} failed:
 ${g.output}`;
+                    safeResetToBase();
                   } else {
                     const dryNeeded = plan.prosecution?.dryPasses ?? 1;
                     let dry = 0;
@@ -15587,13 +15633,14 @@ ${g.output}`;
                     if (verdict.verdict === "error") {
                       strikes += 1;
                       strikeError = `prosecution error: ${verdict.error}`;
+                      safeResetToBase();
                     } else {
                       strikes += 1;
                       const blocking = blockingFindings(verdict.findings);
                       strikeError = `prosecution block (findings):
 ${JSON.stringify(blocking, null, 2)}`;
                       status.ticket(t.id, { phase: "fixing", detail: `${blocking.length} findings` });
-                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, adlcBin: runAdlcBin });
+                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, rails: t.rails ?? [], adlcBin: runAdlcBin });
                       let cfFailureReason = null;
                       if (cf.ok && cf.applied) {
                         let cfGitPointerOk = false;
@@ -15651,8 +15698,10 @@ ${JSON.stringify(blocking, null, 2)}`;
                                     await integrate(t, worktree);
                                     return;
                                   }
+                                  safeResetToBase();
                                   cfFailureReason = "consensus-fix applied a candidate but it still failed prosecution";
                                 } else {
+                                  safeResetToBase();
                                   cfFailureReason = "consensus-fix applied a candidate but it still failed gates";
                                 }
                               }
@@ -15664,7 +15713,8 @@ ${JSON.stringify(blocking, null, 2)}`;
 consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt regeneration`;
                       lastFailure = strikeError;
                       status.strike(t.id, { model, error: strikeError, strikes });
-                      prompt = fixPrompt(t, blocking);
+                      safeResetToBase();
+                      prompt = regenPrompt(t, lastFailure);
                       continue;
                     }
                   }
@@ -15680,6 +15730,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           }
           lastFailure = strikeError;
           status.strike(t.id, { model, error: strikeError, strikes });
+          safeResetToBase();
           prompt = regenPrompt(t, lastFailure);
         }
         throw new Error(lastFailure ?? "two strikes exhausted");
@@ -16399,7 +16450,7 @@ function bootstrap({
   const tempRun = isNpxTemp();
   let agyCheckFailed = false;
   try {
-    execFileSync14("which", [resolvedAgyBin], { stdio: "ignore" });
+    execFileSync14(resolvedAgyBin, ["--version"], { stdio: "ignore" });
   } catch (err) {
     console.log(`info: agy CLI not found on PATH; bootstrap will attempt to fall back to jetski CLI`);
     agyCheckFailed = true;
@@ -16779,7 +16830,7 @@ try {
     }
   } else if (cmd === "probe") {
     const widths = (rest[0] ?? "2,4,8").split(",").map(Number);
-    const model = rest[1] ?? "Gemini 3.5 Flash (Low)";
+    const model = rest[1] ?? "Gemini 3.8 Flash (Low)";
     const rows = [];
     for (const n of widths) {
       const t0 = Date.now();
@@ -16830,7 +16881,6 @@ try {
     }
   } else if (cmd === "sidecar") {
     let portStr = process.env.AGB_SIDECAR_PORT;
-    let unsafeOpen = false;
     const positional = [];
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === "--port") {
@@ -16887,7 +16937,7 @@ try {
       const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
       writeFileSync22(join36(pluginDir, "plugin.json"), JSON.stringify({
         id: pluginId,
-        name: "AGB Dynamic Sidecar",
+        name: "agb-dynamic-sidecar",
         version: "1.0.0",
         sidecars: ["sidecars/agb.json"]
       }, null, 2) + "\n", { mode: 384 });
