@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import {
   MODELS,
   ALL_MODELS,
@@ -17,7 +19,6 @@ import {
   familyOf,
   upstreamPoolOf,
   tierCandidates,
-  prosecutorsFor,
 } from '../lib/models.mjs';
 
 import * as agyExports from '../lib/agy.mjs';
@@ -177,29 +178,58 @@ describe('models-registry: single source of truth', () => {
     }));
   });
 
-  it('prosecutorsFor returns candidates in preference order across families', () => {
-    assert.deepEqual(prosecutorsFor('gemini-3.8-flash-low'), [
+  it('PoolSet.prosecutorsFor returns candidates in preference order across families and falls back cleanly', () => {
+    const pools = new PoolSet();
+    assert.deepEqual(pools.prosecutorsFor('gemini-3.8-flash-low'), [
       'gpt-oss-120b-medium',
       'claude-sonnet-4-6',
     ]);
-    assert.deepEqual(prosecutorsFor('claude-sonnet-4-6'), [
+    assert.deepEqual(pools.prosecutorsFor('claude-sonnet-4-6'), [
       'gemini-3.1-pro-high',
       'gemini-3.8-flash-high',
       'gpt-oss-120b-medium',
     ]);
-    assert.deepEqual(prosecutorsFor('gpt-oss-120b-medium'), [
+    assert.deepEqual(pools.prosecutorsFor('gpt-oss-120b-medium'), [
       'gemini-3.1-pro-high',
       'gemini-3.8-flash-high',
       'claude-sonnet-4-6',
     ]);
 
-    // Unknown family fallback
-    const mockModel = 'unknown-family-model';
-    // If we call with a family that falls through:
-    // PROSECUTORS[fam] || PROSECUTORS.claude => PROSECUTORS.claude = 'gemini-3.1-pro-high'
-    // To trigger this, we can test fallback behavior:
-    const pools = new PoolSet();
-    assert.deepEqual(pools.prosecutorsFor('gemini-3.8-flash-low'), prosecutorsFor('gemini-3.8-flash-low'));
+    const saved = PROSECUTOR_CANDIDATES.gemini;
+    try {
+      delete PROSECUTOR_CANDIDATES.gemini;
+      assert.deepEqual(pools.prosecutorsFor('gemini-3.8-flash-low'), [PROSECUTORS.gemini]);
+    } finally {
+      PROSECUTOR_CANDIDATES.gemini = saved;
+    }
+  });
+
+  it('bin/agb.mjs probe uses ROLE_MODELS.probeDefault by default and rest[1] when specified', () => {
+    const fakeAgy = join(process.cwd(), 'test', 'fixtures', 'fake-agy');
+    const agbBin = join(process.cwd(), 'bin', 'agb.mjs');
+    const tmp = mkdtempSync(join(tmpdir(), 'agb-probe-test-'));
+    try {
+      const env = { ...process.env, AGB_AGY_BIN: fakeAgy };
+      const defaultOut = execFileSync(process.execPath, [agbBin, 'probe', '1'], {
+        cwd: tmp,
+        env,
+        encoding: 'utf8',
+      }).trim();
+      const defaultRow = JSON.parse(defaultOut);
+      assert.equal(defaultRow.model, ROLE_MODELS.probeDefault);
+      assert.equal(defaultRow.width, 1);
+
+      const customOut = execFileSync(process.execPath, [agbBin, 'probe', '1', 'claude-sonnet-4-6'], {
+        cwd: tmp,
+        env,
+        encoding: 'utf8',
+      }).trim();
+      const customRow = JSON.parse(customOut);
+      assert.equal(customRow.model, 'claude-sonnet-4-6');
+      assert.equal(customRow.width, 1);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it('lib/agy.mjs re-exports expected symbols for 100% backward compatibility', () => {
@@ -220,7 +250,6 @@ describe('models-registry: single source of truth', () => {
     assert.equal(poolsExports.tierCandidates, tierCandidates);
     assert.equal(poolsExports.poolOf, poolOf);
     assert.equal(poolsExports.upstreamPoolOf, upstreamPoolOf);
-    assert.equal(poolsExports.prosecutorsFor, prosecutorsFor);
   });
 
   it('no raw model string literals exist in lib/*.mjs outside lib/models.mjs', () => {
@@ -245,3 +274,4 @@ describe('models-registry: single source of truth', () => {
     assert.deepEqual(violations, [], `Found raw model strings in lib: ${JSON.stringify(violations)}`);
   });
 });
+
