@@ -1,15 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runAdlcTool } from '../lib/adlc-tool.mjs';
+import { applyModelRouterTiers } from '../lib/plan.mjs';
+import { applyMergeForecast } from '../lib/preflight.mjs';
 import { runHollowTest } from '../lib/prosecute.mjs';
+import { reviewCalibration } from '../lib/review.mjs';
+import { checkFlailDetector } from '../lib/scheduler.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 function withFakeAdlc(scriptBody, fn) {
+  mkdirSync(join(REPO_ROOT, '.adlc'), { recursive: true });
   const tmpDir = mkdtempSync(join(REPO_ROOT, '.adlc', 'tmp-adlc-tool-test-'));
   const pkgJsonPath = join(tmpDir, 'package.json');
   writeFileSync(pkgJsonPath, JSON.stringify({
@@ -22,17 +27,13 @@ function withFakeAdlc(scriptBody, fn) {
   writeFileSync(fakeScript, `#!/usr/bin/env node\n${scriptBody}\n`, { mode: 0o755 });
 
   const prevCustom = process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
-  const prevBin = process.env.AGB_ADLC_BIN;
   process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = '1';
-  process.env.AGB_ADLC_BIN = fakeScript;
 
   return Promise.resolve()
     .then(() => fn({ adlcBin: fakeScript, tmpDir }))
     .finally(() => {
       if (prevCustom === undefined) delete process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
       else process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = prevCustom;
-      if (prevBin === undefined) delete process.env.AGB_ADLC_BIN;
-      else process.env.AGB_ADLC_BIN = prevBin;
       try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
     });
 }
@@ -171,7 +172,7 @@ test('runAdlcTool: missing binary / ENOENT degradation returns ok: false', async
   assert.ok(res.error);
 });
 
-test('runAdlcTool: passes args (automatically appending --json without duplicating), cwd, and repo to the child process', async () => {
+test('runAdlcTool: passes [tool, ...args], cwd, and repo verbatim to the child process', async () => {
   await withFakeAdlc(`
     const args = process.argv.slice(2);
     console.log(JSON.stringify({ cwd: process.cwd(), args }));
@@ -186,29 +187,18 @@ test('runAdlcTool: passes args (automatically appending --json without duplicati
     });
     assert.equal(res.ok, true);
     assert.equal(res.parsed.cwd, tmpDir);
-    assert.deepEqual(res.parsed.args, ['test-tool', '--first', '1', '--second', '--json']);
-
-    const res2 = await runAdlcTool({
-      tool: 'test-tool',
-      args: ['--first', '1', '--json', '--second'],
-      cwd: tmpDir,
-      repo: REPO_ROOT,
-      adlcBin,
-    });
-    assert.equal(res2.ok, true);
-    assert.deepEqual(res2.parsed.args, ['test-tool', '--first', '1', '--json', '--second']);
+    assert.deepEqual(res.parsed.args, ['test-tool', '--first', '1', '--second']);
   });
 });
 
-test('runAdlcTool: handles timeoutMs constraint without throwing', async () => {
+test('runAdlcTool: timeout kill does NOT recover valid JSON written to stdout before timeout', async () => {
   await withFakeAdlc(`
-    setTimeout(() => {
-      console.log('{"done":true}');
-    }, 5000);
+    console.log(JSON.stringify({ violations: [] }));
+    setTimeout(() => {}, 250);
   `, async ({ adlcBin }) => {
     const res = await runAdlcTool({
       tool: 'slow-tool',
-      timeoutMs: 100,
+      timeoutMs: 60,
       adlcBin,
       cwd: REPO_ROOT,
     });
@@ -217,14 +207,14 @@ test('runAdlcTool: handles timeoutMs constraint without throwing', async () => {
   });
 });
 
-test('runAdlcTool: handles maxBuffer constraint without throwing', async () => {
+test('runAdlcTool: maxBuffer error does NOT recover valid JSON written to stdout', async () => {
   await withFakeAdlc(`
-    console.log('x'.repeat(1024 * 1024));
+    console.log(JSON.stringify({ data: 'x'.repeat(1024) }));
     process.exit(0);
   `, async ({ adlcBin }) => {
     const res = await runAdlcTool({
       tool: 'huge-tool',
-      maxBuffer: 512,
+      maxBuffer: 128,
       adlcBin,
       cwd: REPO_ROOT,
     });
@@ -239,32 +229,50 @@ test('runAdlcTool: calling without arguments defaults safely without throwing', 
   assert.ok(res.error);
 });
 
-test('runHollowTest: forwards --test-cmd, --base, and --json to adlc hollow-test', async () => {
+test('refactored call sites forward exact expected CLI arguments including --json', async () => {
   await withFakeAdlc(`
     const args = process.argv.slice(2);
-    if (
-      args[0] !== 'hollow-test' ||
-      args[1] !== '--test-cmd' ||
-      args[2] !== 'npm test' ||
-      args[3] !== '--base' ||
-      args[4] !== 'origin/custom-base' ||
-      args[5] !== '--json'
-    ) {
-      console.error('unexpected args: ' + JSON.stringify(args));
+    if (!args.includes('--json')) {
+      console.error('missing --json in args: ' + JSON.stringify(args));
       process.exit(1);
     }
-    console.log(JSON.stringify({ summary: { total: 3, killed: 3 }, mutants: [] }));
+    const tool = args[0];
+    if (tool === 'model-router') {
+      if (args[1] !== '--tickets' || args[2] !== '/tmp/t.json' || args[3] !== '--json') process.exit(1);
+      console.log(JSON.stringify({ assignments: [], p3Findings: [] }));
+    } else if (tool === 'merge-forecast') {
+      if (args[1] !== '--tickets' || args[2] !== '/tmp/t.json' || args[3] !== '--json' || args[4] !== '--graph-coupling') process.exit(1);
+      console.log(JSON.stringify({ recommendedWidth: 2 }));
+    } else if (tool === 'hollow-test') {
+      if (args[1] !== '--test-cmd' || args[2] !== 'npm test' || args[3] !== '--base' || args[4] !== 'origin/custom-base' || args[5] !== '--json') process.exit(1);
+      console.log(JSON.stringify({ summary: { total: 3, killed: 3 }, mutants: [] }));
+    } else if (tool === 'review-calibration') {
+      if (args[1] !== '--review-cmd' || args[2] !== 'echo ship' || args[3] !== '--json') process.exit(1);
+      console.log(JSON.stringify({ recall: 1 }));
+    } else if (tool === 'flail-detector') {
+      if (args[2] !== '--json') process.exit(1);
+      console.log(JSON.stringify({ verdict: 'clean', signals: [] }));
+    }
     process.exit(0);
-  `, async ({ adlcBin }) => {
-    const res = await runHollowTest({
-      worktree: REPO_ROOT,
-      testCmd: 'npm test',
-      base: 'origin/custom-base',
-      adlcBin,
-    });
-    assert.equal(res.ok, true);
-    assert.equal(res.total, 3);
-    assert.equal(res.killed, 3);
-    assert.equal(res.survived, 0);
+  `, async ({ adlcBin, tmpDir }) => {
+    const mr = await applyModelRouterTiers({ repo: REPO_ROOT, tickets: [] }, '/tmp/t.json', { adlcBin });
+    assert.equal(mr.ok, true);
+
+    const mf = await applyMergeForecast({ repo: REPO_ROOT, tickets: [] }, '/tmp/t.json', { adlcBin, repo: REPO_ROOT });
+    assert.equal(mf.ok, true);
+    assert.equal(mf.recommendedWidth, 2);
+
+    const ht = await runHollowTest({ worktree: REPO_ROOT, testCmd: 'npm test', base: 'origin/custom-base', adlcBin });
+    assert.equal(ht.ok, true);
+    assert.equal(ht.total, 3);
+
+    const rc = await reviewCalibration({ repo: REPO_ROOT, reviewCmd: 'echo ship', adlcBin });
+    assert.equal(rc.ok, true);
+
+    const logFile = join(tmpDir, 'builder.log');
+    writeFileSync(logFile, 'sample log');
+    const fd = await checkFlailDetector({ logFile, scope: ['lib/**'], adlcBin, cwd: REPO_ROOT });
+    assert.equal(fd.detected, false);
+    assert.equal(fd.error, undefined);
   });
 });
