@@ -170,7 +170,7 @@ test('runAdlcTool: missing binary / ENOENT degradation returns ok: false', async
   assert.ok(res.error);
 });
 
-test('runAdlcTool: passes args, cwd, and repo to the child process', async () => {
+test('runAdlcTool: passes args (automatically appending --json without duplicating), cwd, and repo to the child process', async () => {
   await withFakeAdlc(`
     const args = process.argv.slice(2);
     console.log(JSON.stringify({ cwd: process.cwd(), args }));
@@ -185,7 +185,17 @@ test('runAdlcTool: passes args, cwd, and repo to the child process', async () =>
     });
     assert.equal(res.ok, true);
     assert.equal(res.parsed.cwd, tmpDir);
-    assert.deepEqual(res.parsed.args, ['test-tool', '--first', '1', '--second']);
+    assert.deepEqual(res.parsed.args, ['test-tool', '--first', '1', '--second', '--json']);
+
+    const res2 = await runAdlcTool({
+      tool: 'test-tool',
+      args: ['--first', '1', '--json', '--second'],
+      cwd: tmpDir,
+      repo: REPO_ROOT,
+      adlcBin,
+    });
+    assert.equal(res2.ok, true);
+    assert.deepEqual(res2.parsed.args, ['test-tool', '--first', '1', '--json', '--second']);
   });
 });
 
