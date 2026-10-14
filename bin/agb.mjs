@@ -17,6 +17,7 @@ import { validatePlan, compilePlan } from '../lib/plan.mjs';
 import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
+import { ROLE_MODELS } from '../lib/models.mjs';
 
 const rawArgs = process.argv.slice(2);
 let project;
@@ -318,7 +319,7 @@ try {
     }
   } else if (cmd === 'probe') {
     const widths = (rest[0] ?? '2,4,8').split(',').map(Number);
-    const model = rest[1] ?? 'Gemini 3.8 Flash (Low)';
+    const model = rest[1] ?? ROLE_MODELS.probeDefault;
     const rows = [];
     for (const n of widths) {
       const t0 = Date.now();

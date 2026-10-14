@@ -137,6 +137,7 @@ fi
 prompt=""
 output_format=""
 json_schema=""
+conversation_arg=""
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--print" ]; then
@@ -145,11 +146,19 @@ for arg in "$@"; do
     output_format="$arg"
   elif [ "$prev" = "--json-schema" ]; then
     json_schema="$arg"
+  elif [ "$prev" = "--conversation" ] || [ "$prev" = "-c" ]; then
+    conversation_arg="$arg"
   fi
   prev="$arg"
 done
 if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "--help" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
   prompt=$(cat)
+fi
+
+conv_id="${FAKE_CONVERSATION_ID:-fake-conv-123}"
+conv_field=""
+if [ "$conv_id" != "none" ]; then
+  conv_field=',"conversation_id":"'"$conv_id"'"'
 fi
 
 is_expected=""
@@ -357,11 +366,11 @@ case "$prompt" in
         echo '{"type":"step_update","step":1,"action":"working"}'
         exit 0 ;;
       server-shutdown)
-        echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         exit 1 ;;
       duplicate-result)
-        echo '{"type":"result","status":"SUCCESS","exit_code":0}'
-        echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
+        echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         exit 0 ;;
       overflow-line)
         node -e "process.stdout._handle?.setBlocking?.(true); process.stdout.write('x'.repeat(1024*1024 + 100) + '\n')"
@@ -375,12 +384,12 @@ case "$prompt" in
       heartbeat)
         echo '{"type":"step_update","step":1,"action":"start"}'
         echo '{"type":"heartbeat","timestamp":123456789}'
-        echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+        echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         exit 0 ;;
       blocked)
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"blocked"}'
-          echo '{"type":"result","status":"ERROR","exit_code":1}'
+          echo '{"type":"result","status":"ERROR","exit_code":1'$conv_field'}'
         else
           echo "TICKET-BLOCKED: cannot proceed"
         fi
@@ -389,7 +398,7 @@ case "$prompt" in
         echo "wrong stuff" > "${tid:-out}.txt"
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"bad"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -397,7 +406,7 @@ case "$prompt" in
       noop)
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"noop"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -412,7 +421,7 @@ assert.equal(add(1, 1), 42);
 EOF
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"sabotage-math"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -426,7 +435,7 @@ EOF
         fi
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"conflict"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -436,7 +445,7 @@ EOF
         echo "// test modified" >> test/sample.test.js
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"mod-test"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -448,7 +457,7 @@ EOF
         echo sabotage > SABOTAGE
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"sabotage"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -462,7 +471,7 @@ EOF
         git config core.hooksPath "$PWD/.myhooks"
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"tamper"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -472,7 +481,7 @@ EOF
         echo edited > RAIL.txt
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"rail"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -481,7 +490,7 @@ EOF
         rm -f package.json
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"delete-pkg"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -503,7 +512,7 @@ EOF
         echo "did the work" > "${tid:-out}.txt"
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"echo-adlc"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -515,7 +524,7 @@ EOF
         echo "did the work" > "${tid:-out}.txt"
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"echo-charter"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -534,7 +543,7 @@ EOF
         echo "FLAIL-REPEATED-ERROR: cannot resolve import"
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"flail"}'
-          echo '{"type":"result","status":"ERROR","exit_code":1}'
+          echo '{"type":"result","status":"ERROR","exit_code":1'$conv_field'}'
         else
           echo "TICKET-BLOCKED: stuck"
         fi
@@ -549,7 +558,7 @@ EOF
         if [ "$n" -eq 0 ]; then
           if [ "$output_format" = "stream-json" ]; then
             echo '{"type":"step_update","step":1,"action":"transient-error"}'
-            echo '{"type":"result","status":"ERROR","exit_code":1}'
+            echo '{"type":"result","status":"ERROR","exit_code":1'$conv_field'}'
           else
             echo "TICKET-BLOCKED: transient hiccup"
           fi
@@ -558,7 +567,7 @@ EOF
         echo "did the work" > "${tid:-out}.txt"
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"transient-good"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -573,7 +582,7 @@ EOF
         [ "$n" -eq 0 ] && echo edited > RAIL.txt
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"rail-attempt"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -582,7 +591,7 @@ EOF
         echo "did the work" > "${tid:-out}.txt"
         if [ "$output_format" = "stream-json" ]; then
           echo '{"type":"step_update","step":1,"action":"good"}'
-          echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         else
           echo "TICKET-DONE"
         fi
@@ -596,15 +605,15 @@ if [ "$output_format" = "json" ]; then
     *INVALID_JSON*) echo "not a valid json output"; exit 0 ;;
     *)
       if [ -n "$json_schema" ]; then
-        echo '{"status": "ok", "structured_output": {"hello": "world"}}'
+        echo '{"status": "ok", "structured_output": {"hello": "world"}'$conv_field'}'
       else
-        echo '{"status": "ok"}'
+        echo '{"status": "ok"'$conv_field'}'
       fi
       exit 0 ;;
   esac
 fi
 if [ "$output_format" = "stream-json" ]; then
-  echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+  echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
   exit 0
 fi
 echo "$prompt" | grep -o 'PONG-[A-Za-z0-9]*' || echo "OK"

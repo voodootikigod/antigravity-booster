@@ -7,7 +7,7 @@
 // the interleaving test fails against the pre-fix implementation).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs, { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -176,3 +176,72 @@ test('reclaim aborts when the same-token holder pid is alive again at the mutex 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('reclaim aborts when meta.json is removed before the mutex re-read (!again branch)', () => {
+  const { repo, lockDir } = staleRepo();
+  const reclaimDir = `${lockDir}.reclaim`;
+  let removedBeforeMutex = false;
+  try {
+    // Synchronous call order in acquireRepoLock (lib/lock.mjs):
+    // 1. readMeta(metaPath) reads initial stale holder (line 54)
+    // 2. isAlive(holder.pid) synchronously invokes process.kill(DEAD_PID, 0) (line 63)
+    // 3. mkdirSync(reclaimDir) acquires the .reclaim mutex (line 73)
+    // 4. again = readMeta(metaPath) re-reads meta under the mutex (line 81)
+    withHooks([[process, 'kill', (real) => function (p, sig) {
+      if (!removedBeforeMutex && p === DEAD_PID) {
+        assert.equal(existsSync(reclaimDir), false, 'liveness probe runs synchronously before mutex acquisition');
+        rmSync(join(lockDir, 'meta.json'), { force: true });
+        removedBeforeMutex = true;
+      }
+      return real.call(process, p, sig);
+    }]], () => {
+      assert.throws(() => acquireRepoLock(repo, { runId: 'late' }), /reclaimed by another run/);
+    });
+    assert.equal(removedBeforeMutex, true, 'hook must have removed meta.json synchronously before mutex re-read');
+    assert.equal(existsSync(join(lockDir, 'meta.json')), false, 'missing meta.json remains absent after aborted reclaim');
+    assert.equal(existsSync(reclaimDir), false, 'reclaim mutex dir must be cleaned up in finally');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('mutation check: disabling the mutex re-read guard allows an unsafe lock overwrite', async () => {
+  const { repo, lockDir } = staleRepo();
+  const OTHER_DEAD = DEAD_PID + 2;
+  const replacement = { pid: OTHER_DEAD, runId: 'other', token: 'other-token' };
+  let releaseMutated;
+  try {
+    const lockSource = readFileSync(join(here, '..', 'lib', 'lock.mjs'), 'utf8');
+    const target = 'if (!again || again.token !== holder.token || isAlive(again.pid))';
+    assert.ok(lockSource.includes(target), 'target guard string must exist in lock.mjs');
+    const mutatedSource = lockSource.replace(target, 'if (false)');
+    const mutatedPath = join(repo, 'mutated-lock.mjs');
+    writeFileSync(mutatedPath, mutatedSource, 'utf8');
+
+    const cacheBustedUrl = `${pathToFileURL(mutatedPath).href}?mut=${Date.now()}`;
+    const { acquireRepoLock: acquireMutated } = await import(cacheBustedUrl);
+
+    let swapped = false;
+    withHooks([[process, 'kill', (real) => function (p, sig) {
+      if (!swapped && p === DEAD_PID) {
+        swapped = true;
+        writeFileSync(join(lockDir, 'meta.json'), JSON.stringify(replacement));
+      }
+      return real.call(process, p, sig);
+    }]], () => {
+      assert.doesNotThrow(() => {
+        releaseMutated = acquireMutated(repo, { runId: 'late' });
+      });
+    });
+
+    assert.equal(swapped, true);
+    const finalMeta = JSON.parse(readFileSync(join(lockDir, 'meta.json'), 'utf8'));
+    assert.notEqual(finalMeta.token, 'other-token', 'without the mutex re-read guard, the replacement holder token is clobbered');
+    assert.equal(finalMeta.runId, 'late');
+  } finally {
+    releaseMutated?.();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+

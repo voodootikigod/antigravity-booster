@@ -11,6 +11,7 @@
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. The MCP server sets it to jetski for the agb processes it spawns. | honoured |
 | AGB_SESSION_ID | unset | Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes. | honoured |
 | AGB_TARGET_REPO | unset | Extra directory bin/node-launcher.sh searches when locating a project-local Node runtime. | honoured |
+| AGB_WARM_STRIKES | 1 | Set to 0 to disable warm second-strike builder resumption via agy --conversation &lt;id&gt; when a ticket fails its first attempt on the same model. | honoured |
 | AGB_WORKER_MODE | set by agb | Set by agb on read-only worker agy processes (value readonly). The PreToolUse guard denies mutations and never prompts while it is set. | honoured |
 | AGB_WORKER_TICKET | set by agb | Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts. | honoured |
 | ANTIGRAVITY_CONVERSATION_ID | set by Antigravity | Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes. | honoured |

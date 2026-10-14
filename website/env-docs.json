@@ -71,6 +71,13 @@
       "description": "Extra directory bin/node-launcher.sh searches when locating a project-local Node runtime."
     },
     {
+      "name": "AGB_WARM_STRIKES",
+      "group": "core",
+      "default": "1",
+      "bundledIgnored": false,
+      "description": "Set to 0 to disable warm second-strike builder resumption via agy --conversation <id> when a ticket fails its first attempt on the same model."
+    },
+    {
       "name": "AGB_WORKER_MODE",
       "group": "core",
       "default": "set by agb",
