@@ -3,7 +3,7 @@ name: agb-run
 description: Execute a ticket DAG (build, gate, prosecute, merge)
 ---
 
-# /agb-run <plan.json> [options]
+# /agb-run <plan.json>
 
 Executes the ticket DAG defined in `plan.json`: builds each ticket in an isolated worktree fleet, runs the deterministic gates, prosecutes, and merges. This is long-running and mutates the target repository, so confirm the plan path with the user if it is ambiguous.
 
@@ -12,7 +12,7 @@ Executes the ticket DAG defined in `plan.json`: builds each ticket in an isolate
 Use your shell tool (`run_command`) to run the antigravity-booster terminal shim, passing the user's arguments through unchanged (quote each argument; never interpolate untrusted text into a larger shell string):
 
 ```sh
-~/.local/bin/agb run <plan.json> [options]
+~/.local/bin/agb run <plan.json>
 ```
 
 Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 2 = gate failure or findings, 1 = usage or internal error).

@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, isAbsolute } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -102,7 +102,9 @@ const TOOLS = [
     description: 'Run diagnostic health check for tools, auth, and sandbox setup',
     inputSchema: {
       type: 'object',
-      properties: {}
+      properties: {
+        repo: { type: 'string', description: 'Optional path to target repository' }
+      }
     }
   },
   {
@@ -207,11 +209,24 @@ async function handleToolCall(id, name, args) {
     const repoCheck = requireNonFlagString(args, 'repo');
     if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
     targetCwd = resolve(repoCheck.value);
-    cliArgs.push('plan', resolve(specCheck.value), targetCwd);
+    const rawSpec = specCheck.value;
+    const specInTarget = resolve(targetCwd, rawSpec);
+    const specInAmbient = resolve(rawSpec);
+    let resolvedSpec;
+    if (existsSync(specInTarget)) {
+      resolvedSpec = specInTarget;
+    } else if (existsSync(specInAmbient)) {
+      resolvedSpec = specInAmbient;
+    } else if (isAbsolute(rawSpec) || rawSpec.includes('/') || rawSpec.includes('\\') || /\.(md|markdown|txt|json)$/i.test(rawSpec)) {
+      resolvedSpec = specInTarget;
+    } else {
+      resolvedSpec = rawSpec;
+    }
+    cliArgs.push('plan', resolvedSpec, targetCwd);
     if (args.out !== undefined) {
       const outCheck = requireNonFlagString(args, 'out');
       if (!outCheck.ok) { sendError(id, -32602, outCheck.error); return; }
-      cliArgs.push('--out', resolve(outCheck.value));
+      cliArgs.push('--out', resolve(targetCwd, outCheck.value));
     }
     if (args.force) cliArgs.push('--force');
     if (args.noColdstart) cliArgs.push('--no-coldstart');
