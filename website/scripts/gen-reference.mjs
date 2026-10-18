@@ -402,7 +402,8 @@ function genDocsMd(repo) {
   });
   const agentRows = listFiles(path.join(repo, 'agents'), (r) => /^[^/]+\.md$/.test(r)).map((f) => {
     const d = fm(repo, `agents/${f}`);
-    return [d.name, d.description, typeof d.tools === 'string' ? d.tools : ''];
+    const toolsStr = Array.isArray(d.tools) ? d.tools.join(', ') : typeof d.tools === 'string' ? d.tools : '';
+    return [d.name, d.description, toolsStr];
   });
   const skillRows = listFiles(path.join(repo, 'skills'), (r) => /^[^/]+\/SKILL\.md$/.test(r)).map((f) => {
     const dir = f.split('/')[0];

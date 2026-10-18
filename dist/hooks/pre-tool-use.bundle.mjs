@@ -4124,7 +4124,9 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
       return deny("Destructive command targets a directory containing platform configuration, plugins, or Node runtimes");
     }
     for (const repo of ctx.knownRepos()) {
-      if (repo.adlc && isWithin(repo.root, r.real, ctx.platform)) {
+      if (!repo.adlc) continue;
+      const repoReal = physicalResolve(repo.root, "/", ctx.platform) ?? repo.root;
+      if (isWithin(repoReal, r.real, ctx.platform) || isWithin(repo.root, r.lexical, ctx.platform)) {
         return deny("Target path is an ADLC repository root (or its parent), which holds frozen trust-root state");
       }
     }
@@ -4208,9 +4210,11 @@ function classifyLine(line, cwd, ctx, depth) {
     const argv = effectiveArgv(sub.argv);
     if (DIR_CHANGE.has(argv[0])) {
       const target = dirChangeTarget(sub, current, ctx, cdpath);
-      const intoWorkspace = target !== null && ctx.workspacePaths.some((w) => isWithin(target, w, ctx.platform));
+      const targetReal = target !== null ? physicalResolve(target, current, ctx.platform) : null;
+      const wsReals = ctx.workspaceRealPaths ?? ctx.workspacePaths.map((w) => physicalResolve(w, "/", ctx.platform) ?? w);
+      const intoWorkspace = targetReal !== null && wsReals.some((wReal) => isWithin(targetReal, wReal, ctx.platform));
       if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx, depth));
-      current = target;
+      current = targetReal;
       continue;
     }
     verdicts.push(classifySubcommand(sub, current, ctx, depth));
@@ -4223,10 +4227,12 @@ function classifyRunCommand(args, ctx) {
   if (typeof line !== "string") return deny("run_command without a CommandLine string cannot be verified");
   const cwdRaw = typeof args?.Cwd === "string" && args.Cwd.length > 0 ? args.Cwd : ctx.workspacePaths[0];
   if (!cwdRaw) return deny("Cannot determine the shell working directory");
-  const cwd = isAbsolute4(cwdRaw) ? resolve7(cwdRaw) : resolve7(ctx.workspacePaths[0] ?? "/", cwdRaw);
+  const cwdLexical = isAbsolute4(cwdRaw) ? resolve7(cwdRaw) : resolve7(ctx.workspacePaths[0] ?? "/", cwdRaw);
+  const cwd = physicalResolve(cwdLexical, "/", ctx.platform) ?? cwdLexical;
   const cwdRepo = ctx.repoAt(cwd);
   const adlcContext = cwdRepo.adlc || ctx.workspacePaths.some((w) => ctx.repoAt(w).adlc);
-  const insideWorkspace = ctx.workspacePaths.some((w) => isWithin(cwd, w, ctx.platform));
+  const wsReals = ctx.workspaceRealPaths ?? ctx.workspacePaths.map((w) => physicalResolve(w, "/", ctx.platform) ?? w);
+  const insideWorkspace = wsReals.some((wReal) => isWithin(cwd, wReal, ctx.platform));
   if (adlcContext && (!isAbsolute4(cwdRaw) || !insideWorkspace)) {
     return deny("Shell command working directory outside declared workspace paths in an ADLC repository is forbidden");
   }
@@ -4375,7 +4381,9 @@ function containsProtected(r, ctx) {
   }
   for (const w of ctx.workspacePaths) {
     const repo = ctx.repoAt(w);
-    if (repo.adlc && repo.root !== r.real && isWithin(repo.root, r.real, ctx.platform)) {
+    if (!repo.adlc) continue;
+    const repoReal = realOr(repo.root);
+    if (repoReal !== r.real && isWithin(repoReal, r.real, ctx.platform) || repo.root !== r.lexical && isWithin(repo.root, r.lexical, ctx.platform)) {
       return deny("Target path contains an ADLC repository");
     }
   }
@@ -4594,7 +4602,9 @@ function buildContext(payload, options = {}) {
   const env = options.env ?? process.env;
   const home = resolve8(options.home ?? homedir2());
   const realHome = realOr(home);
+  const platform = options.platform ?? process.platform;
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : []).filter((p) => typeof p === "string" && isAbsolute5(p)).map((p) => resolve8(p));
+  const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, "/", platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;
@@ -4603,8 +4613,9 @@ function buildContext(payload, options = {}) {
   return {
     home,
     realHome,
-    platform: options.platform ?? process.platform,
+    platform,
     workspacePaths,
+    workspaceRealPaths,
     workerTicket,
     readonly,
     cdpath: Boolean(env.CDPATH),

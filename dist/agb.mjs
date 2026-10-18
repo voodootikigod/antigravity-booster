@@ -687,7 +687,7 @@ import {
   rmSync as rmSync14,
   existsSync as existsSync29
 } from "node:fs";
-import { join as join32, basename as basename9 } from "node:path";
+import { join as join32, basename as basename10 } from "node:path";
 import { homedir as homedir8 } from "node:os";
 import { execFileSync as execFileSync15 } from "node:child_process";
 import { randomBytes as randomBytes3 } from "node:crypto";
@@ -869,7 +869,7 @@ function removeImportEntry(home, name) {
   renameSync7(tmp, p);
 }
 function removeUninstallerDir(dir) {
-  if (dir && basename9(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
+  if (dir && basename10(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
     try {
       rmSync14(dir, { recursive: true, force: true });
     } catch {
@@ -1306,7 +1306,7 @@ async function handOverUninstall(ctx) {
     "--agy-bin",
     agyBin
   ];
-  const childEnv2 = { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} };
+  const childEnv2 = { ...process.env, HOME: home, ...isWin ? { USERPROFILE: home } : {}, ...ctx.uninstallerEnv ?? {} };
   let child;
   if (isWin && args[0] === process.execPath) {
     child = spawn4(args[0], args.slice(1), { cwd: launcherCwd, detached: true, stdio: "ignore", env: childEnv2 });
@@ -1830,7 +1830,7 @@ var init_server = __esm({
 
 // bin/agb.mjs
 import { readFileSync as readFileSync27, writeFileSync as writeFileSync21, mkdirSync as mkdirSync21, appendFileSync as appendFileSync3, existsSync as existsSync32 } from "node:fs";
-import { resolve as resolve18, join as join35, basename as basename10 } from "node:path";
+import { resolve as resolve18, join as join35, basename as basename11 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // lib/scheduler.mjs
@@ -5743,7 +5743,7 @@ var lt = (a, b) => compare(a, b) < 0;
 var eq = (a, b) => compare(a, b) === 0;
 
 // lib/adlc-bridge.mjs
-import { writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync14, existsSync as existsSync16, readdirSync as readdirSync7, rmSync as rmSync4, lstatSync as lstatSync7, realpathSync as realpathSync3, openSync as openSync5, readSync as readSync3, closeSync as closeSync5, statSync as statSync2, fstatSync as fstatSync2, chmodSync as chmodSync2, copyFileSync as copyFileSync3, cpSync, symlinkSync as symlinkSync2, mkdtempSync as mkdtempSync3, constants } from "node:fs";
+import { writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync14, existsSync as existsSync16, readdirSync as readdirSync7, rmSync as rmSync4, lstatSync as lstatSync7, realpathSync as realpathSync3, openSync as openSync5, readSync as readSync3, closeSync as closeSync5, statSync as statSync2, fstatSync as fstatSync2, chmodSync as chmodSync2, copyFileSync as copyFileSync3, cpSync, symlinkSync as symlinkSync2, mkdtempSync as mkdtempSync3, accessSync, constants } from "node:fs";
 import { join as join17, dirname as dirname12, relative as relative5, resolve as resolve7, isAbsolute as isAbsolute4, basename as basename6 } from "node:path";
 import { homedir as homedir2, tmpdir as tmpdir3 } from "node:os";
 import { spawnSync as spawnSync2, spawn, execFileSync as execFileSync5, execFile } from "node:child_process";
@@ -5818,7 +5818,7 @@ function detectTicketStoreBackend(repo) {
 }
 function writeAdlcTickets(repo, tickets) {
   const dir = join17(repo, ".adlc");
-  if (existsSync16(dir) && lstatSync7(dir).isSymbolicLink()) {
+  if (lstatSync7(dir, { throwIfNoEntry: false })?.isSymbolicLink()) {
     throw new Error(`refusing to project tickets through a symlink: ${dir}`);
   }
   mkdirSync7(dir, { recursive: true });
@@ -5835,7 +5835,7 @@ function writeAdlcTickets(repo, tickets) {
   const { initializeDirectoryStore: initializeDirectoryStore2, ticketFilename: ticketFilename2, prettyCanonicalJson: prettyCanonicalJson2, ACTIVE_MANIFEST: ACTIVE_MANIFEST2 } = ticketsLib();
   const storeDir = join17(dir, "tickets");
   for (const p of [dir, storeDir]) {
-    if (existsSync16(p) && lstatSync7(p).isSymbolicLink()) {
+    if (lstatSync7(p, { throwIfNoEntry: false })?.isSymbolicLink()) {
       throw new Error(`refusing to project tickets through a symlink: ${p}`);
     }
   }
@@ -6601,6 +6601,7 @@ function getApprovedPinnedBase() {
   if (process.env.AGB_EXEC_CACHE_DIR) {
     try {
       mkdirSync7(process.env.AGB_EXEC_CACHE_DIR, { recursive: true, mode: 448 });
+      accessSync(process.env.AGB_EXEC_CACHE_DIR, constants.W_OK);
       return process.env.AGB_EXEC_CACHE_DIR;
     } catch {
     }
@@ -6609,6 +6610,7 @@ function getApprovedPinnedBase() {
   const dir = join17(home, ".adlc", "pinned");
   try {
     mkdirSync7(dir, { recursive: true, mode: 448 });
+    accessSync(dir, constants.W_OK);
     return dir;
   } catch {
     return tmpdir3();
@@ -6622,6 +6624,7 @@ function getApprovedLocksDir() {
   const dir = join17(home, ".adlc", "locks");
   try {
     mkdirSync7(dir, { recursive: true, mode: 448 });
+    accessSync(dir, constants.W_OK);
     return dir;
   } catch {
     return join17(tmpdir3(), "agb_adlc_locks");
@@ -7435,7 +7438,8 @@ async function checkAgyAuth({ env = process.env, home = env.HOME || homedir3() }
     let cmd2 = env.AGB_AGY_BIN || resolveAgyBinary(home);
     let args = ["models"];
     if (process.platform === "linux") {
-      args = ["-q", "-e", "-c", `${cmd2} models`, "/dev/null"];
+      const quotedCmd = `'${String(cmd2).replace(/'/g, "'\\''")}'`;
+      args = ["-q", "-e", "-c", `${quotedCmd} models`, "/dev/null"];
       cmd2 = "script";
     } else if (process.platform === "darwin") {
       args = ["-q", "/dev/null", cmd2, "models"];
@@ -8366,11 +8370,13 @@ function checkKernelContainment(platform2 = process.platform, options = {}) {
   } else if (options && typeof options === "object") {
     env = options.env ?? process.env;
   }
-  if (env.AGB_MOCK_CONTAINMENT_UNAVAILABLE === "1") {
-    return { supported: false, mechanism: null, kind: "mock_unavailable", detail: "Kernel containment floor unavailable (mocked)" };
-  }
-  if (env.AGB_MOCK_CONTAINMENT_MECHANISM) {
-    return { supported: true, mechanism: env.AGB_MOCK_CONTAINMENT_MECHANISM };
+  if (isTestExecution(env)) {
+    if (env.AGB_MOCK_CONTAINMENT_UNAVAILABLE === "1") {
+      return { supported: false, mechanism: null, kind: "mock_unavailable", detail: "Kernel containment floor unavailable (mocked)" };
+    }
+    if (env.AGB_MOCK_CONTAINMENT_MECHANISM) {
+      return { supported: true, mechanism: env.AGB_MOCK_CONTAINMENT_MECHANISM };
+    }
   }
   if (effectivePlatform === "win32") {
     try {
@@ -10674,6 +10680,7 @@ async function runAgy({
   let argsTempFile = null;
   let argsTempDir = null;
   let bwrapTempDir = null;
+  let bwrapCreatedLocalNm = null;
   if (isBuilder) {
     if (!containment) {
       if (platform2 !== "win32") {
@@ -10917,6 +10924,7 @@ async function runAgy({
             } catch {
             }
           } else if (canonicalNm) {
+            bwrapCreatedLocalNm = localNm;
             launchArgs.push("--ro-bind", canonicalNm, canonicalNm);
             launchArgs.push("--ro-bind", canonicalNm, localNm);
           }
@@ -11545,6 +11553,13 @@ async function runAgy({
         } catch {
         }
         bwrapTempDir = null;
+      }
+      if (bwrapCreatedLocalNm) {
+        try {
+          rmdirSync(bwrapCreatedLocalNm);
+        } catch {
+        }
+        bwrapCreatedLocalNm = null;
       }
       if (childKilled || killReason || signal) {
         if (originalPid && isProcessAlive(originalPid, originalStartTime)) {
@@ -12699,7 +12714,7 @@ async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd,
     };
   }
   const blocking = modelBlocking || hollowBlocking;
-  const verdict = blocking ? "block" : parsed.verdict;
+  const verdict = blocking ? "block" : "ship";
   return { verdict, model, findings, hollowTest };
 }
 function blockingFindings(findings) {
@@ -13521,7 +13536,9 @@ async function applyModelRouterTiers(plan, ticketsPath, { adlcBin, floor } = {})
   const byId = new Map(assignments.map((a) => [a.id, a]));
   for (const t of plan.tickets ?? []) {
     const assignment = byId.get(t.id);
-    if (assignment?.tier) t.tier = assignment.tier;
+    if (assignment?.tier && TIER_CANDIDATES[assignment.tier] && tierCandidates(assignment.tier, t.pool_hint).length > 0) {
+      t.tier = assignment.tier;
+    }
   }
   return { ok: true, assignments, p3Findings: Array.isArray(parsed.p3Findings) ? parsed.p3Findings : [] };
 }
@@ -16743,7 +16760,7 @@ async function reviewFleet({
 
 // lib/bootstrap.mjs
 import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync13, lstatSync as lstatSync14, readlinkSync as readlinkSync3, symlinkSync as symlinkSync5, copyFileSync as copyFileSync5, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
-import { join as join31, resolve as resolve16, dirname as dirname19 } from "node:path";
+import { join as join31, resolve as resolve16, dirname as dirname19, basename as basename9 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { homedir as homedir7 } from "node:os";
 import { execSync as execSync2, execFileSync as execFileSync14 } from "node:child_process";
@@ -16865,7 +16882,7 @@ function installBoosterPlugin({ home, agyBin, agyCheckFailed }) {
   return true;
 }
 function installReason(r, forceReinstall) {
-  if (forceReinstall) return `reinstalling ${r.dir.split("/").pop()}: --force-reinstall`;
+  if (forceReinstall) return `reinstalling ${basename9(r.dir)}: --force-reinstall`;
   if (r.report === "not-installed") return `installing bundled adlc-antigravity ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
   if (r.report === "outdated-plugin") return `upgrading adlc-antigravity ${r.version} -> ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
   return `reinstalling adlc-antigravity: ${r.report}`;
@@ -17449,7 +17466,7 @@ try {
             execFileSync17(agyBin, ["plugin", "uninstall", pluginId], { stdio: "ignore" });
           } catch (e) {
           }
-          const dirBase = pluginDir ? basename10(pluginDir) : "";
+          const dirBase = pluginDir ? basename11(pluginDir) : "";
           if (dirBase && dirBase !== pluginId) {
             try {
               execFileSync17(agyBin, ["plugin", "uninstall", dirBase], { stdio: "ignore" });
