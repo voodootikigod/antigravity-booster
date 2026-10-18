@@ -223,3 +223,14 @@ test('fake-agy emulates plugin uninstall under a temp HOME only', () => {
     assert.equal(spawnSync(FAKE_AGY, ['plugin', 'uninstall', '../x'], { env }).status, 1, 'path-like name rejected');
   } finally { ctx.cleanup(); }
 });
+
+test('bootstrap --force-reinstall logs basename of plugin directory via path.basename', () => {
+  const ctx = setup();
+  try {
+    assert.equal(runBootstrap(ctx).status, 0);
+    const reinstall = runBootstrap(ctx, { forceReinstall: true });
+    assert.equal(reinstall.status, 0, reinstall.stderr);
+    assert.match(reinstall.stdout + reinstall.stderr, /reinstalling adlc-antigravity: --force-reinstall/);
+  } finally { ctx.cleanup(); }
+});
+

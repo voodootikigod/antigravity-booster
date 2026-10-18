@@ -42,3 +42,48 @@ test('verifyAgainstLockfile: a package with no lockfile integrity is refused (ne
     assert.equal(verifyAgainstLockfile('@adlc/absent', { root }).ok, false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('computeVendoredDigests throws when vendor/adlc/package.json is missing a string version', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(join(tmpdir(), 'agb-digest-ver-'));
+  try {
+    const vendorDir = join(root, 'vendor', 'adlc');
+    mkdirSync(join(vendorDir, 'dist'), { recursive: true });
+    writeFileSync(join(vendorDir, 'package.json'), JSON.stringify({ name: '@adlc/cli' }));
+    writeFileSync(join(vendorDir, 'dist', 'adlc.bundle.mjs'), '// bundle\n');
+    assert.throws(() => computeVendoredDigests(vendorDir), /Invalid or missing version in vendored ADLC manifest/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('verifyAgainstLockfile: detects manifest field mismatch between installed package.json and lockfile entry', async () => {
+  const { verifyAgainstLockfile } = await import('../scripts/update-adlc-digests.mjs');
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(join(tmpdir(), 'agb-lock-mismatch-'));
+  try {
+    mkdirSync(join(root, 'node_modules', '@adlc', 'x'), { recursive: true });
+    writeFileSync(join(root, 'node_modules', '@adlc', 'x', 'package.json'), JSON.stringify({
+      name: '@adlc/x',
+      version: '1.0.0',
+      dependencies: { evil: '1.0.0' }
+    }));
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({
+      packages: {
+        'node_modules/@adlc/x': {
+          version: '1.0.0',
+          integrity: 'sha512-abc==',
+          dependencies: {}
+        }
+      }
+    }));
+    const res = verifyAgainstLockfile('@adlc/x', { root });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /manifest field 'dependencies' mismatch/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+

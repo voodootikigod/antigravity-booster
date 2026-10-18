@@ -77,4 +77,15 @@ test('findExternalSpecifiers: catches .resolve, bare __esm assignments, and __ag
   assert.deepEqual(findExternalSpecifiers(src), ['ext-resolve-1', 'ext-resolve-2', 'ext-resolve-3']);
 });
 
+test('findExternalSpecifiers: catches esbuild __require and __require.resolve helpers while allowing built-ins', () => {
+  const src = [
+    'var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : {})(function(x) {});',
+    'const a = __require("external-via-esbuild-helper");',
+    'const b = __require.resolve("external-resolve-via-helper");',
+    'const ok1 = __require("node:fs");',
+    'const ok2 = __require.resolve("node:path");',
+  ].join('\n');
+  assert.deepEqual(findExternalSpecifiers(src), ['external-resolve-via-helper', 'external-via-esbuild-helper']);
+});
+
 

@@ -471,3 +471,35 @@ test('COLDSTART_SCHEMA, PARALLAX_READER_SCHEMA, PARALLAX_JUDGE_SCHEMA, PREMORTEM
   assert.deepEqual(PARALLAX_JUDGE_SCHEMA.required, ['divergent', 'divergences']);
   assert.deepEqual(PREMORTEM_SCHEMA.required, ['causes']);
 });
+
+test('applyModelRouterTiers: ignores router tier assignments that have zero candidates for ticket pool_hint', async () => {
+  const { applyModelRouterTiers } = await import('../lib/plan.mjs');
+  const fakeAdlc = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-plan-router-'));
+  const prevAllow = process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
+  const prevBin = process.env.AGB_ADLC_BIN;
+  process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = '1';
+  process.env.AGB_ADLC_BIN = fakeAdlc;
+  try {
+    const ticketsPath = join(tmp, 'tickets.json');
+    writeFileSync(ticketsPath, JSON.stringify({ tickets: [{ id: 'T1' }, { id: 'T2' }] }));
+    const plan = {
+      tickets: [
+        { id: 'T1', tier: 'mid', pool_hint: 'auto' },
+        { id: 'T2', tier: 'mid', pool_hint: 'gpt-oss' }, // 'frontier' has 0 gpt-oss candidates
+      ],
+    };
+    const res = await applyModelRouterTiers(plan, ticketsPath);
+    assert.equal(res.ok, true);
+    assert.equal(plan.tickets[0].tier, 'frontier', 'valid frontier tier applied when pool_hint has candidates');
+    assert.equal(plan.tickets[1].tier, 'mid', 'tier with 0 candidates for pool_hint must not overwrite valid tier');
+  } finally {
+    if (prevAllow === undefined) delete process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
+    else process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = prevAllow;
+    if (prevBin === undefined) delete process.env.AGB_ADLC_BIN;
+    else process.env.AGB_ADLC_BIN = prevBin;
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+

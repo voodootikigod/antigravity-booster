@@ -87,10 +87,22 @@ async function start() {
                   }
                 }
                 if (lastNewline === -1) {
-                  if (offset + toRead < stats.size) {
+                  if (offset + totalRead < stats.size) {
+                    let scanOffset = offset + totalRead;
+                    const scanBuf = Buffer.alloc(65536);
+                    while (scanOffset < stats.size) {
+                      const n = readSync(fd, scanBuf, 0, Math.min(scanBuf.length, stats.size - scanOffset), scanOffset);
+                      if (n === 0) break;
+                      const nl = scanBuf.subarray(0, n).indexOf(10);
+                      if (nl !== -1) {
+                        scanOffset += nl + 1;
+                        break;
+                      }
+                      scanOffset += n;
+                    }
                     result = {
-                      lines: [buffer.toString('utf8', 0, toRead)],
-                      newOffset: offset + toRead,
+                      lines: [],
+                      newOffset: scanOffset,
                       runId,
                       repo: repoPath,
                       reset: isReset,

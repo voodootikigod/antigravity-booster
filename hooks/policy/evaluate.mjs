@@ -470,7 +470,7 @@ export function buildContext(payload, options = {}) {
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : [])
     .filter((p) => typeof p === 'string' && isAbsolute(p))
     .map((p) => resolve(p));
-  const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, '/', platform)?.real ?? physicalResolve(w, '/', platform) ?? w));
+  const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, '/', platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;

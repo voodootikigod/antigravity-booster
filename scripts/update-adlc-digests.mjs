@@ -34,6 +34,12 @@ export function verifyAgainstLockfile(pkg, { root = ROOT } = {}) {
   if (!entry?.integrity || !entry?.version) return { ok: false, error: `${pkg}: no lockfile integrity` };
   const localDir = join(root, 'node_modules', pkg);
   if (!existsSync(localDir)) return { ok: false, error: `${pkg}: missing from node_modules` };
+  const localManifest = JSON.parse(readFileSync(join(localDir, 'package.json'), 'utf8'));
+  for (const field of ['version', 'dependencies', 'optionalDependencies', 'bin']) {
+    if (entry[field] !== undefined && JSON.stringify(localManifest[field] ?? {}) !== JSON.stringify(entry[field])) {
+      return { ok: false, error: `${pkg}@${entry.version}: manifest field '${field}' mismatch against lockfile` };
+    }
+  }
   const out = mkdtempSync(join(tmpdir(), 'agb-digest-'));
   try {
     // npm pack of the exact registry version reproduces the published tarball.
@@ -44,7 +50,6 @@ export function verifyAgainstLockfile(pkg, { root = ROOT } = {}) {
     if (actual !== entry.integrity) {
       return { ok: false, error: `${pkg}@${entry.version}: registry tarball ${actual} != lockfile ${entry.integrity}` };
     }
-    const unpackDir = join(out, 'unpacked');
     execFileSync('tar', ['-xzf', tarballPath, '-C', out], { stdio: 'ignore' });
     const unpackedPkgDir = join(out, 'package');
     const registryTreeDigest = computeDirectoryDigest(unpackedPkgDir, { exclude: ['package.json', 'node_modules'] });
@@ -53,11 +58,10 @@ export function verifyAgainstLockfile(pkg, { root = ROOT } = {}) {
       return { ok: false, error: `${pkg}@${entry.version}: local node_modules/${pkg} tree digest (${localTreeDigest}) != registry tarball (${registryTreeDigest})` };
     }
     const unpackedManifest = JSON.parse(readFileSync(join(unpackedPkgDir, 'package.json'), 'utf8'));
-    const localManifest = JSON.parse(readFileSync(join(localDir, 'package.json'), 'utf8'));
-    const manifestFields = ['name', 'version', 'main', 'bin', 'exports'];
+    const manifestFields = ['name', 'version', 'main', 'bin', 'exports', 'dependencies'];
     for (const field of manifestFields) {
       if (JSON.stringify(unpackedManifest[field]) !== JSON.stringify(localManifest[field])) {
-        return { ok: false, error: `${pkg}@${entry.version}: package.json manifest mismatch` };
+        return { ok: false, error: `${pkg}@${entry.version}: package.json manifest field '${field}' mismatch` };
       }
     }
     return { ok: true, version: entry.version };

@@ -374,7 +374,7 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
     }
     for (const repo of ctx.knownRepos()) {
       if (!repo.adlc) continue;
-      const repoReal = physicalResolve(repo.root, '/', ctx.platform)?.real ?? physicalResolve(repo.root, '/', ctx.platform) ?? repo.root;
+      const repoReal = physicalResolve(repo.root, '/', ctx.platform) ?? repo.root;
       if (isWithin(repoReal, r.real, ctx.platform) || isWithin(repo.root, r.lexical, ctx.platform)) {
         return deny('Target path is an ADLC repository root (or its parent), which holds frozen trust-root state');
       }
@@ -477,8 +477,8 @@ function classifyLine(line, cwd, ctx, depth) {
     const argv = effectiveArgv(sub.argv);
     if (DIR_CHANGE.has(argv[0])) {
       const target = dirChangeTarget(sub, current, ctx, cdpath);
-      const targetReal = target !== null ? (physicalResolve(target, current, ctx.platform)?.real ?? physicalResolve(target, current, ctx.platform)) : null;
-      const wsReals = ctx.workspaceRealPaths ?? ctx.workspacePaths.map((w) => physicalResolve(w, '/', ctx.platform)?.real ?? physicalResolve(w, '/', ctx.platform) ?? w);
+      const targetReal = target !== null ? physicalResolve(target, current, ctx.platform) : null;
+      const wsReals = ctx.workspaceRealPaths ?? ctx.workspacePaths.map((w) => physicalResolve(w, '/', ctx.platform) ?? w);
       const intoWorkspace = targetReal !== null && wsReals.some((wReal) => isWithin(targetReal, wReal, ctx.platform));
       if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx, depth));
       current = targetReal;
@@ -496,10 +496,12 @@ export function classifyRunCommand(args, ctx) {
   if (typeof line !== 'string') return deny('run_command without a CommandLine string cannot be verified');
   const cwdRaw = typeof args?.Cwd === 'string' && args.Cwd.length > 0 ? args.Cwd : ctx.workspacePaths[0];
   if (!cwdRaw) return deny('Cannot determine the shell working directory');
-  const cwd = isAbsolute(cwdRaw) ? resolve(cwdRaw) : resolve(ctx.workspacePaths[0] ?? '/', cwdRaw);
+  const cwdLexical = isAbsolute(cwdRaw) ? resolve(cwdRaw) : resolve(ctx.workspacePaths[0] ?? '/', cwdRaw);
+  const cwd = physicalResolve(cwdLexical, '/', ctx.platform) ?? cwdLexical;
   const cwdRepo = ctx.repoAt(cwd);
   const adlcContext = cwdRepo.adlc || ctx.workspacePaths.some((w) => ctx.repoAt(w).adlc);
-  const insideWorkspace = ctx.workspacePaths.some((w) => isWithin(cwd, w, ctx.platform));
+  const wsReals = ctx.workspaceRealPaths ?? ctx.workspacePaths.map((w) => physicalResolve(w, '/', ctx.platform) ?? w);
+  const insideWorkspace = wsReals.some((wReal) => isWithin(cwd, wReal, ctx.platform));
   if (adlcContext && (!isAbsolute(cwdRaw) || !insideWorkspace)) {
     return deny('Shell command working directory outside declared workspace paths in an ADLC repository is forbidden');
   }

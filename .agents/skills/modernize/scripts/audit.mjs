@@ -377,7 +377,7 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   const stage1Errors = [];
 
   try {
-    const res = cp.spawnSync(agyBin, ['--version'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['--version'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', shell: process.platform === 'win32' });
     if (res.error || res.status !== 0 || res.signal) {
       agyVersion = 'unavailable';
       stage1Errors.push(`agy --version probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
@@ -394,7 +394,7 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   }
 
   try {
-    const res = cp.spawnSync(agyBin, ['--help'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['--help'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', shell: process.platform === 'win32' });
     if (res.error || res.status !== 0 || res.signal) {
       stage1Errors.push(`agy --help probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
     } else {
@@ -405,7 +405,7 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   }
 
   try {
-    const res = cp.spawnSync(agyBin, ['models'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['models'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', shell: process.platform === 'win32' });
     if (res.error || res.status !== 0 || res.signal) {
       stage1Errors.push(`agy models probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
     } else {
@@ -531,6 +531,13 @@ async function runStage2StaticAudit() {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
   const deps = pkg.dependencies || {};
   const devDeps = pkg.devDependencies || {};
+
+  if (!deps['@adlc/core'] && !devDeps['@adlc/core']) {
+    auditFindings.push('Missing required dependency in package.json: @adlc/core');
+  }
+  if (!deps['@adlc/antigravity'] && !devDeps['@adlc/antigravity']) {
+    auditFindings.push('Missing required dependency in package.json: @adlc/antigravity');
+  }
 
   console.log(`[agb-modernize] [Stage 2] Audited ${filesToAudit.length} core repository modules.`);
   console.log(`[agb-modernize] [Stage 2] Baseline dependency versions: @adlc/core=${devDeps['@adlc/core'] || deps['@adlc/core'] || 'none'}, @adlc/antigravity=${devDeps['@adlc/antigravity'] || deps['@adlc/antigravity'] || 'none'}`);
@@ -706,9 +713,32 @@ async function runStage4RoadmapValidation(repoRoot) {
     throw new Error(`Canonical plan JSON syntax error: ${err.message}`);
   }
 
-  // Import booster's own native plan validator using pathToFileURL for portable resolution
-  const planMjsUrl = pathToFileURL(path.resolve(repoRoot, 'lib', 'plan.mjs')).href;
-  const { validatePlan } = await import(planMjsUrl);
+  let validatePlan;
+  const planMjsPath = path.resolve(repoRoot, 'lib', 'plan.mjs');
+  if (fs.existsSync(planMjsPath)) {
+    const planMjsUrl = pathToFileURL(planMjsPath).href;
+    ({ validatePlan } = await import(planMjsUrl));
+  } else {
+    validatePlan = function validatePlanFallback(p) {
+      const errs = [];
+      if (!p || typeof p !== 'object' || !Array.isArray(p.tickets)) return ['plan.tickets must be an array'];
+      const ids = new Set();
+      for (const t of p.tickets) {
+        if (!t || typeof t.id !== 'string' || !t.id) errs.push('ticket missing id');
+        else if (ids.has(t.id)) errs.push(`duplicate ticket id '${t.id}'`);
+        else ids.add(t.id);
+        if (!Array.isArray(t?.scope)) errs.push(`ticket '${t?.id}': scope must be an array`);
+        if (!Array.isArray(t?.rails)) errs.push(`ticket '${t?.id}': rails must be an array`);
+        if (!Array.isArray(t?.edges)) errs.push(`ticket '${t?.id}': edges must be an array`);
+      }
+      for (const t of p.tickets) {
+        for (const dep of t?.edges || []) {
+          if (!ids.has(dep)) errs.push(`ticket '${t.id}' references unknown edge '${dep}'`);
+        }
+      }
+      return errs;
+    };
+  }
   const errors = validatePlan(plan);
   if (errors.length > 0) {
     throw new Error(`Canonical plan validation failed with ${errors.length} error(s): ${errors.join('; ')}`);
@@ -816,13 +846,20 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
 
   console.log(`[agb-modernize] Fetching ADLC changelog: ${ADLC_CHANGELOG_URL}`);
   let adlcContent;
+  let adlcProvenanceSource = ADLC_CHANGELOG_URL;
   try {
     adlcContent = await fetchText(ADLC_CHANGELOG_URL);
   } catch (err) {
     const localAdlcManifest = path.join(repoRoot, 'vendor', 'adlc', 'package.json');
     if (!process.env.ADLC_CHANGELOG_URL && fs.existsSync(localAdlcManifest)) {
-      console.warn(`[agb-modernize] Warning: Could not fetch ${ADLC_CHANGELOG_URL}: ${err.message}. Falling back to local vendored ADLC manifest...`);
-      adlcContent = fs.readFileSync(localAdlcManifest, 'utf8');
+      const rawManifest = fs.readFileSync(localAdlcManifest, 'utf8');
+      const localManifestObj = JSON.parse(rawManifest);
+      if (localManifestObj.version !== TARGET_ADLC_VERSION) {
+        throw new Error(`FATAL: Cannot fall back to local vendored ADLC manifest (${localManifestObj.version}) for target version ${TARGET_ADLC_VERSION}: ${err.message}`);
+      }
+      console.warn(`[agb-modernize] Warning: Could not fetch ${ADLC_CHANGELOG_URL}: ${err.message}. Falling back to local vendored ADLC manifest (${localAdlcManifest})...`);
+      adlcContent = rawManifest;
+      adlcProvenanceSource = 'local:vendor/adlc/package.json';
     } else {
       throw err;
     }
@@ -841,7 +878,8 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 30000,
-      killSignal: 'SIGKILL'
+      killSignal: 'SIGKILL',
+      shell: process.platform === 'win32'
     });
     const files = fs.readdirSync(tempPackDir).filter(f => f.endsWith('.tgz'));
     if (files.length === 0) throw new Error('No .tgz produced by npm pack');
@@ -1101,6 +1139,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
       targetAdlcVersion: TARGET_ADLC_VERSION,
       pinnedAdlcRef: PINNED_ADLC_REF,
       adlcChangelogUrl: ADLC_CHANGELOG_URL,
+      adlcProvenanceSource,
       adlcChangelogSha256: actualAdlcSha256,
       targetAgyVersion: TARGET_AGY_VERSION,
       pinnedAgyRef: PINNED_AGY_REF,

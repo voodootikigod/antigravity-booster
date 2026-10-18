@@ -611,9 +611,12 @@ test('R6 AR-001: workspace and targets accessed via a symlinked ancestor directo
     assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'feature.mjs'), CodeContent: 'x' }, symBase, { AGB_WORKER_TICKET: 'T1' }), 'pass');
     assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'ok.mjs'), CodeContent: 'x' }, symBase, { AGB_WORKER_TICKET: 'T1' }), 'deny');
     assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'lock.mjs'), CodeContent: 'x' }, symBase, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+    assert.equal(run('run_command', { CommandLine: 'git status', Cwd: A }, symBase), 'pass');
+    assert.equal(run('run_command', { CommandLine: `rm -rf ${A}`, Cwd: symBase }, symBase), 'deny');
   } finally {
     rmSync(symBase, { force: true });
   }
 });
+
 
 

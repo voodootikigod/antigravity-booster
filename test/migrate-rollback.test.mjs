@@ -818,3 +818,9 @@ test('hasEverMigrated alone (no stagingStarted) forces a full baseline restore, 
     assert.equal(readFileSync(ctx.shim, 'utf8'), 'orig\n');
   } finally { ctx.cleanup(); }
 });
+
+test('handOverUninstall sets USERPROFILE alongside HOME on Windows so homedir() resolves to target home', () => {
+  const migrateSrc = readFileSync(join(ROOT, 'lib', 'migrate.mjs'), 'utf8');
+  assert.match(migrateSrc, /HOME:\s*home,\s*\.\.\.\(isWin\s*\?\s*\{\s*USERPROFILE:\s*home\s*\}\s*:\s*\{\}\)/);
+});
+

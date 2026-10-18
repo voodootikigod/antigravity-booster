@@ -1397,3 +1397,26 @@ test('spawnAuthenticatedAdlc: child runs from the pinned executable', () => with
   assert.equal(code, 0);
   assertRanPinned(ranFrom, root);
 }));
+
+test('writeAdlcTickets: rejects dangling symlink at .adlc or .adlc/tickets before mkdirSync', () => {
+  const repo1 = mkdtempSync(join(tmpdir(), 'agb-bridge-dangling1-'));
+  const repo2 = mkdtempSync(join(tmpdir(), 'agb-bridge-dangling2-'));
+  const missingTarget = join(tmpdir(), `agb-nonexistent-${Date.now()}`);
+  try {
+    symlinkSync(missingTarget, join(repo1, '.adlc'));
+    assert.throws(
+      () => writeAdlcTickets(repo1, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]),
+      /refusing to project tickets through a symlink/
+    );
+    mkdirSync(join(repo2, '.adlc'), { recursive: true });
+    symlinkSync(missingTarget, join(repo2, '.adlc', 'tickets'));
+    assert.throws(
+      () => writeAdlcTickets(repo2, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]),
+      /refusing to project tickets through a symlink/
+    );
+  } finally {
+    rmSync(repo1, { recursive: true, force: true });
+    rmSync(repo2, { recursive: true, force: true });
+  }
+});
+
