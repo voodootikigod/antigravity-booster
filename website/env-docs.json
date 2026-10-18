@@ -68,7 +68,7 @@
       "group": "core",
       "default": "unset",
       "bundledIgnored": false,
-      "description": "Extra directory bin/node-launcher.sh searches when locating a project-local Node runtime."
+      "description": "Target repository path checked by bin/node-launcher.sh; any candidate Node binary whose realpath resolves inside AGB_TARGET_REPO (or the current working directory) is rejected to prevent repo-planted binary execution."
     },
     {
       "name": "AGB_WARM_STRIKES",

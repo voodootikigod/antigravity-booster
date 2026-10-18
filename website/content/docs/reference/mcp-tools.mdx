@@ -16,7 +16,7 @@ Child processes inherit the ambient environment from the host agent harness. Unk
 
 The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
 
-<Callout type="info" title="agb_run takes only a plan">`agb run` has no concurrency flag, so `agb_run` accepts no `concurrency` parameter: a call that supplies one returns a tool error naming it (v1.0.0 forwarded it to `agb run`, which ignored it: [C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)). Concurrency comes from the plan's `caps` and `concurrencyCap`.</Callout>
+<Callout type="info" title="agb_run takes only a plan">`agb run` has no concurrency flag, so `agb_run` accepts no `concurrency` parameter: a call that supplies one returns a tool error naming it (v1.0.0 forwarded it to `agb run`, which ignored it: [C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)). Runtime concurrency is enforced by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`).</Callout>
 
 <include>../../../generated/mcp-tools.mdx</include>
 
