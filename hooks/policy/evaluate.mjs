@@ -17,7 +17,7 @@ import {
 } from './constants.mjs';
 import {
   beginEvaluation, boosterDataRoots, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
-  matchesScope, protectedRoots, repoRelative, resolveCandidate,
+  matchesScope, physicalResolve, protectedRoots, repoRelative, resolveCandidate,
 } from './paths.mjs';
 import { classifyRunCommand } from './shell.mjs';
 import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
@@ -211,7 +211,10 @@ function containsProtected(r, ctx) {
   }
   for (const w of ctx.workspacePaths) {
     const repo = ctx.repoAt(w);
-    if (repo.adlc && repo.root !== r.real && isWithin(repo.root, r.real, ctx.platform)) {
+    if (!repo.adlc) continue;
+    const repoReal = realOr(repo.root);
+    if ((repoReal !== r.real && isWithin(repoReal, r.real, ctx.platform)) ||
+        (repo.root !== r.lexical && isWithin(repo.root, r.lexical, ctx.platform))) {
       return deny('Target path contains an ADLC repository');
     }
   }
@@ -463,9 +466,11 @@ export function buildContext(payload, options = {}) {
   const env = options.env ?? process.env;
   const home = resolve(options.home ?? homedir()); // a relative HOME would disable protection (P5 r4 L8)
   const realHome = realOr(home);
+  const platform = options.platform ?? process.platform;
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : [])
     .filter((p) => typeof p === 'string' && isAbsolute(p))
     .map((p) => resolve(p));
+  const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, '/', platform)?.real ?? physicalResolve(w, '/', platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;
@@ -474,8 +479,9 @@ export function buildContext(payload, options = {}) {
   return {
     home,
     realHome,
-    platform: options.platform ?? process.platform,
+    platform,
     workspacePaths,
+    workspaceRealPaths,
     workerTicket,
     readonly,
     cdpath: Boolean(env.CDPATH),
