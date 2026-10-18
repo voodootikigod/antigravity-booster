@@ -167,9 +167,9 @@ emit_fallback() {
     fi
   fi
 
-  # Fail closed on unparseable payload or ambiguous context
+  # Fail closed on unparseable or empty payload or ambiguous context
   UNPARSEABLE=0
-  if [ "$PARSE_SUCCESS" -eq 0 ] && [ -s "$TMP_IN" ]; then
+  if [ "$PARSE_SUCCESS" -eq 0 ]; then
     HAS_ADLC_TICKETS=1
     HAS_ADLC_DIR=1
     UNPARSEABLE=1

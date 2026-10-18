@@ -143,3 +143,38 @@ test('resolveTicket: missing id and unreadable store both fail closed', () => {
     assert.match(r.error, /\S/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('unionActiveRails: fails closed when .adlc or .adlc/tickets is a symlink', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const root = makeRepo({ adlc: false });
+  const target = makeRepo({ adlc: false });
+  try {
+    symlinkSync(join(target, 'nonexistent'), join(root, '.adlc'));
+    const r1 = unionActiveRails(root);
+    assert.equal(r1.ok, false);
+    assert.equal(r1.railsPresent, true);
+    assert.match(r1.error, /UNSAFE_STORE_PATH/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test('unionActiveRails: ignores ambient ADLC_TICKET_STORE env overrides', () => {
+  const root = makeRepo();
+  const emptyStore = makeRepo();
+  const prev = process.env.ADLC_TICKET_STORE;
+  try {
+    writeShard(root, { id: 'T1', rails: ['lib/lock.mjs'] });
+    process.env.ADLC_TICKET_STORE = join(emptyStore, '.adlc', 'tickets');
+    const r = unionActiveRails(root);
+    assert.equal(r.ok, true);
+    assert.deepEqual(r.rails, ['lib/lock.mjs']);
+  } finally {
+    if (prev === undefined) delete process.env.ADLC_TICKET_STORE;
+    else process.env.ADLC_TICKET_STORE = prev;
+    rmSync(root, { recursive: true, force: true });
+    rmSync(emptyStore, { recursive: true, force: true });
+  }
+});
+

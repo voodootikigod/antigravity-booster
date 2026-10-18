@@ -158,7 +158,7 @@ export function isShimInvocation(argv, ctx) {
 }
 
 function isLiteralShardPath(token, cwd, ctx) {
-  const r = resolveCandidate(token, cwd, ctx.home);
+  const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
   const repo = ctx.repoAt(r.real);
   if (!repo.adlc) return false;
   const rel = repoRelative(r.real, repo.root);
@@ -190,7 +190,7 @@ function isTestCommand(sub) {
 /** A pathspec that resolves to a whole repository (`.`, `./`, `docs/..`, `:/` magic). */
 function isRootPathspec(token, cwd, ctx) {
   if (token.startsWith(':')) return true;
-  const r = resolveCandidate(token, cwd, ctx.home);
+  const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
   const repo = ctx.repoAt(r.real);
   return repo.adlc ? repoRelative(r.real, repo.root) === '' : false;
 }
@@ -303,13 +303,13 @@ function writesIntoProtectedParent(r, ctx) {
   return ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
 }
 
-function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
+function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd = false }) {
   const writeTargets = new Set(sub.redirects.filter((r) => r.op.includes('>')).map((r) => r.target));
   const verdicts = [];
   const repos = [];
   const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
-    const r = resolveCandidate(token, cwd, ctx.home);
+    const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
     if (r.unresolved && !stage1) return { verdict: deny('Shell target path cannot be resolved (symlink loop or oversized path)'), repos };
     if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
       return { verdict: deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden'), repos };
@@ -343,6 +343,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
           : askOrDeny(ctx, `Command names a directory containing the ADLC trust root (${implicit})`),
       );
     }
+    if (testCmd && !writeTargets.has(token)) continue;
     const rail = repo.activeRail ? matchDeclaredRail(rel, repo.store.rails, ctx.platform) : null;
     if (rail) {
       verdicts.push(
@@ -367,7 +368,7 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
   }
   if (!verbs.deletes) return PASS;
   for (const token of candidateTokens(sub)) {
-    const r = resolveCandidate(token, cwd, ctx.home);
+    const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
     if (writesIntoProtectedParent(r, ctx)) {
       return deny('Destructive command targets a directory containing platform configuration, plugins, or Node runtimes');
     }
@@ -407,10 +408,11 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   const verbs = verbClass(argv);
   const shim = isShimInvocation(argv, ctx);
   const stage1 = !shim && isStage1(sub);
+  const testCmd = !shim && isTestCommand(sub);
   const dirChange = DIR_CHANGE.has(argv[0]);
-  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs });
+  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd });
   if (targetVerdict.decision === 'deny') return targetVerdict;
-  const contextRepos = [cwdRepo, ...repos];
+  const contextRepos = [cwdRepo, ...ctx.workspacePaths.map((w) => ctx.repoAt(w)), ...repos];
   const finish = (v) => mostRestrictive([targetVerdict, v]);
 
   const ticketOps = adlcTicketOperands(argv);
@@ -432,7 +434,7 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
     return finish(stage5(ctx, contextRepos, 'agb command in an active-rail ADLC repository requires operator confirmation'));
   }
   if (dirChange) return finish(stage5(ctx, contextRepos, 'Directory change in an active-rail ADLC repository requires operator confirmation'));
-  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && isTestCommand(sub)) return finish(PASS);
+  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && testCmd) return finish(PASS);
   if (!ctx.headless && contextRepos.some((r) => r.adlc && r.activeRail) && isRoutine(sub, cwd, ctx)) return finish(PASS);
   return finish(stage5(ctx, contextRepos, 'Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation'));
 }

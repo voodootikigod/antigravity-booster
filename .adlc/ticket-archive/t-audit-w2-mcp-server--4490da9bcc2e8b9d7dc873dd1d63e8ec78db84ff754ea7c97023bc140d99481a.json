@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "649073a387a9ec459b37c2434624025d3ede3694d2216a5f65a19043872da780",
+    "version": 1
+  },
   "body": "1. In mcp/server.mjs line 137, support MCP 2024-11-05 notification 'notifications/cancelled' (extracting params.requestId) alongside '$/cancel' before the request.id check.\n2. In mcp/server.mjs line 248, fix fallback text on empty stdout/stderr: output || (code === 0 ? 'Executed successfully' : `Command failed with exit code ${code}`).\n\nVerification: npm test && node test/mcp.test.mjs",
   "category": "bugfix",
   "completed": true,

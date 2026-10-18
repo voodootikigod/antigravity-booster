@@ -11,7 +11,7 @@ Every model call agb makes goes through one function, [`runAgy`](https://github.
 ```text
 agy --print <prompt> --print-timeout <timeout> --model <slug>
     [--output-format json|stream-json] [--json-schema <schema>]
-    [--project <name> --add-dir <cwd>] [--sandbox]
+    [--project <name> --add-dir <cwd>] [--conversation <id>] [--sandbox]
 ```
 
 The arguments are built as an array and spawned without a shell, so nothing in a prompt is shell-interpreted ([argument list](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L249-L260)). Display names such as `Gemini 3.5 Flash (Low)` are mapped to agy model slugs first. The agy binary is `AGB_AGY_BIN` if set, else `agy` on `PATH`.
@@ -46,7 +46,7 @@ sequenceDiagram
 
 ### Conversation ids
 
-The json and stream-json outputs carry agy's conversation metadata, including the conversation id. agb does not parse that field itself: it returns the whole parsed envelope as `result.envelope` for json ([C34](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L1124)) and the parsed events plus `terminalResult` for stream-json ([C34](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L1116-L1119)), so callers can read it. When agb itself runs inside an Antigravity conversation, `ANTIGRAVITY_CONVERSATION_ID` is forwarded to child agy processes even when the environment is scrubbed ([forwarding](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L797-L799)).
+The json and stream-json outputs carry agy's conversation metadata, including the conversation id. `runAgy` extracts the conversation id into `result.conversationId` from `conversation_id` or `conversationId` on stream-json events and `terminalResult` ([C34](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L1116-L1119)) and from `envelope.conversation_id` or `envelope.conversationId` for json ([C34](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L1124)), and also returns `result.envelope` and `result.terminalResult`. Callers can resume an earlier session by passing `conversation: <id>` to `runAgy` (which appends `--conversation <id>`). When agb itself runs inside an Antigravity conversation, `ANTIGRAVITY_CONVERSATION_ID` is forwarded to child agy processes even when the environment is scrubbed ([forwarding](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L797-L799)).
 
 ## Stream limits
 

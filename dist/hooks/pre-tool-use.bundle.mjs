@@ -330,7 +330,7 @@ var require_brace_expansion = __commonJS({
 });
 
 // hooks/policy/evaluate.mjs
-import { lstatSync as lstatSync7, readdirSync as readdirSync6, realpathSync as realpathSync2 } from "node:fs";
+import { lstatSync as lstatSync8, readdirSync as readdirSync6, realpathSync as realpathSync2 } from "node:fs";
 import { homedir as homedir2 } from "node:os";
 import { basename as basename5, isAbsolute as isAbsolute5, join as join11, resolve as resolve8 } from "node:path";
 
@@ -1895,7 +1895,7 @@ var MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketpl
 import { createInterface } from "node:readline/promises";
 
 // lib/active-rails.mjs
-import { existsSync as existsSync10, statSync } from "node:fs";
+import { existsSync as existsSync10, lstatSync as lstatSync6, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname as dirname8, join as join8, resolve as resolve5 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
@@ -1904,9 +1904,10 @@ function isActiveTicket(ticket) {
   if (ticket.completed === true) return false;
   return !INACTIVE_STATUSES.has(ticket.status);
 }
-function isDirectory(path2) {
+function isSymlinkOrDirectory(path2) {
   try {
-    return statSync(path2).isDirectory();
+    const st = lstatSync6(path2);
+    return st.isSymbolicLink() || st.isDirectory();
   } catch {
     return false;
   }
@@ -1917,7 +1918,7 @@ function findAdlcRoot(targetPath, { home = homedir() } = {}) {
   let curr = resolve5(targetPath);
   for (; ; ) {
     const isRoot = curr === "/" || curr === dirname8(curr);
-    const hasAdlc = curr !== homeDir && !isRoot && isDirectory(join8(curr, ".adlc"));
+    const hasAdlc = curr !== homeDir && !isRoot && isSymlinkOrDirectory(join8(curr, ".adlc"));
     if (hasAdlc) {
       if (existsSync10(join8(curr, ".git"))) return curr;
       outermost = curr;
@@ -1927,16 +1928,31 @@ function findAdlcRoot(targetPath, { home = homedir() } = {}) {
     curr = parent;
   }
 }
+function hasSymlinkStorePath(repoRoot) {
+  for (const rel of [".adlc", join8(".adlc", "tickets"), join8(".adlc", "tickets.json")]) {
+    try {
+      const st = lstatSync6(join8(repoRoot, rel), { throwIfNoEntry: false });
+      if (st?.isSymbolicLink()) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
 function loadSnapshot(repoRoot) {
+  if (hasSymlinkStorePath(repoRoot)) {
+    return { ok: false, error: "UNSAFE_STORE_PATH: symlinked ADLC ticket store path" };
+  }
   try {
-    return { ok: true, snapshot: loadTicketSnapshot({ root: repoRoot }) };
+    return { ok: true, snapshot: loadTicketSnapshot({ root: repoRoot, env: {} }) };
   } catch (err) {
     if (err?.code === "STORE_NOT_FOUND") return { ok: true, snapshot: null };
     return { ok: false, error: `${err?.code ?? "ERROR"}: ${err?.message ?? String(err)}` };
   }
 }
 function unionActiveRails(repoRoot) {
-  if (!existsSync10(join8(repoRoot, ".adlc"))) {
+  const adlcSt = lstatSync6(join8(repoRoot, ".adlc"), { throwIfNoEntry: false });
+  if (!adlcSt) {
     return { ok: true, adlc: false, hasActiveTickets: false, rails: [] };
   }
   const loaded = loadSnapshot(repoRoot);
@@ -1986,6 +2002,7 @@ var ORCHESTRATION_TOOLS = /* @__PURE__ */ new Set([
 ]);
 var AGY_CONTROL_TOOLS = /* @__PURE__ */ new Set(["finish"]);
 var BOOSTER_MCP_SERVER = "agb";
+var BOOSTER_MCP_SERVERS = /* @__PURE__ */ new Set(["agb", "antigravity-booster_agb"]);
 var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
   "agb_plan",
   "agb_run",
@@ -2058,7 +2075,7 @@ var TICKET_STORE_DIR = ".adlc/tickets";
 var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls", "wc"]);
 
 // hooks/policy/paths.mjs
-import { existsSync as existsSync11, lstatSync as lstatSync6, readlinkSync, realpathSync } from "node:fs";
+import { existsSync as existsSync11, lstatSync as lstatSync7, readlinkSync, realpathSync } from "node:fs";
 import { dirname as dirname9, basename as basename3, isAbsolute as isAbsolute3, join as join9, relative as relative3, resolve as resolve6, sep as sep3 } from "node:path";
 
 // node_modules/minimatch/dist/esm/index.js
@@ -3402,7 +3419,7 @@ function hasHomePrefix(token) {
 }
 function lstatOrNull(p) {
   try {
-    return lstatSync6(p);
+    return lstatSync7(p);
   } catch {
     return null;
   }
@@ -3416,11 +3433,12 @@ var budget = DEFAULT_EVALUATION_BUDGET;
 function beginEvaluation(limit = DEFAULT_EVALUATION_BUDGET) {
   budget = limit;
 }
-function physicalResolve(input, base = "/") {
-  const normInput = String(input).replace(/\\/g, "/");
-  const normBase = String(base ?? "/").replace(/\\/g, "/");
-  const winInputDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normInput);
-  const winBaseDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normBase);
+function physicalResolve(input, base = "/", platform = process.platform) {
+  const isWin = platform === "win32";
+  const normInput = isWin ? String(input).replace(/\\/g, "/") : String(input);
+  const normBase = isWin ? String(base ?? "/").replace(/\\/g, "/") : String(base ?? "/");
+  const winInputDrive = isWin ? /^[a-zA-Z]:(?:\/|$)/.exec(normInput) : null;
+  const winBaseDrive = isWin ? /^[a-zA-Z]:(?:\/|$)/.exec(normBase) : null;
   let root = "/";
   let raw = "";
   if (winInputDrive) {
@@ -3464,8 +3482,9 @@ function physicalResolve(input, base = "/") {
       if (st?.isSymbolicLink()) {
         hops += 1;
         if (hops > MAX_SYMLINK_HOPS) return null;
-        const target = readlinkSync(next).replace(/\\/g, "/");
-        const targetWinDrive = /^[a-zA-Z]:(?:\/|$)/.exec(target);
+        const rawTarget = readlinkSync(next);
+        const target = isWin ? rawTarget.replace(/\\/g, "/") : rawTarget;
+        const targetWinDrive = isWin ? /^[a-zA-Z]:(?:\/|$)/.exec(target) : null;
         if (targetWinDrive) {
           root = targetWinDrive[0].endsWith("/") ? targetWinDrive[0] : `${targetWinDrive[0]}/`;
           current = root;
@@ -3492,18 +3511,19 @@ function physicalResolve(input, base = "/") {
   }
   return current;
 }
-function resolveCandidate(token, base, home) {
+function resolveCandidate(token, base, home, platform = process.platform) {
   const expanded = expandHome(token, home);
   const lexical = isAbsolute3(expanded) ? resolve6(expanded) : resolve6(base ?? "/", expanded);
-  const real = physicalResolve(expanded, base ?? "/");
+  const real = physicalResolve(expanded, base ?? "/", platform);
   return { lexical, real: real ?? lexical, unresolved: real === null };
 }
 function fold(p, platform) {
   return platform === "darwin" || platform === "win32" ? p.toLowerCase() : p;
 }
 function isWithin(child, parent, platform = process.platform) {
-  const normChild = child.replace(/\\/g, "/");
-  const normParent = parent.replace(/\\/g, "/");
+  const isWin = platform === "win32";
+  const normChild = isWin ? child.replace(/\\/g, "/") : child;
+  const normParent = isWin ? parent.replace(/\\/g, "/") : parent;
   const c = fold(normChild, platform);
   const p = fold(normParent, platform);
   return c === p || c.startsWith(p.endsWith("/") ? p : p + "/");
@@ -3543,8 +3563,14 @@ function repoRelative(abs, repoRoot) {
   } catch {
   }
   const rel = relative3(realRepo, abs);
-  if (rel.startsWith("..") || isAbsolute3(rel)) return null;
-  return rel.split(sep3).join("/");
+  if (!rel.startsWith("..") && !isAbsolute3(rel)) {
+    return rel.split(sep3).join("/");
+  }
+  const lexRel = relative3(resolve6(repoRoot), resolve6(abs));
+  if (!lexRel.startsWith("..") && !isAbsolute3(lexRel)) {
+    return lexRel.split(sep3).join("/");
+  }
+  return null;
 }
 function covers(rel, target, platform) {
   const r = fold(rel, platform);
@@ -3924,7 +3950,7 @@ function isShimInvocation(argv, ctx) {
   return false;
 }
 function isLiteralShardPath(token, cwd, ctx) {
-  const r = resolveCandidate(token, cwd, ctx.home);
+  const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
   const repo = ctx.repoAt(r.real);
   if (!repo.adlc) return false;
   const rel = repoRelative(r.real, repo.root);
@@ -3950,7 +3976,7 @@ function isTestCommand(sub) {
 }
 function isRootPathspec(token, cwd, ctx) {
   if (token.startsWith(":")) return true;
-  const r = resolveCandidate(token, cwd, ctx.home);
+  const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
   const repo = ctx.repoAt(r.real);
   return repo.adlc ? repoRelative(r.real, repo.root) === "" : false;
 }
@@ -4038,13 +4064,13 @@ function globTargetVerdict(token, cwd, ctx) {
 function writesIntoProtectedParent(r, ctx) {
   return ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
 }
-function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
+function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd = false }) {
   const writeTargets = new Set(sub.redirects.filter((r) => r.op.includes(">")).map((r) => r.target));
   const verdicts = [];
   const repos = [];
   const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
-    const r = resolveCandidate(token, cwd, ctx.home);
+    const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
     if (r.unresolved && !stage1) return { verdict: deny("Shell target path cannot be resolved (symlink loop or oversized path)"), repos };
     if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
       return { verdict: deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden"), repos };
@@ -4073,6 +4099,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs }) {
         hard || !isImplicitAncestorOnly(rel, ctx.platform) ? deny(`Target path matches standing ADLC implicit rail: ${implicit}`) : askOrDeny(ctx, `Command names a directory containing the ADLC trust root (${implicit})`)
       );
     }
+    if (testCmd && !writeTargets.has(token)) continue;
     const rail = repo.activeRail ? matchDeclaredRail(rel, repo.store.rails, ctx.platform) : null;
     if (rail) {
       verdicts.push(
@@ -4092,7 +4119,7 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
   }
   if (!verbs.deletes) return PASS;
   for (const token of candidateTokens(sub)) {
-    const r = resolveCandidate(token, cwd, ctx.home);
+    const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
     if (writesIntoProtectedParent(r, ctx)) {
       return deny("Destructive command targets a directory containing platform configuration, plugins, or Node runtimes");
     }
@@ -4124,10 +4151,11 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   const verbs = verbClass(argv);
   const shim = isShimInvocation(argv, ctx);
   const stage1 = !shim && isStage1(sub);
+  const testCmd = !shim && isTestCommand(sub);
   const dirChange = DIR_CHANGE.has(argv[0]);
-  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs });
+  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd });
   if (targetVerdict.decision === "deny") return targetVerdict;
-  const contextRepos = [cwdRepo, ...repos];
+  const contextRepos = [cwdRepo, ...ctx.workspacePaths.map((w) => ctx.repoAt(w)), ...repos];
   const finish = (v) => mostRestrictive([targetVerdict, v]);
   const ticketOps = adlcTicketOperands(argv);
   if (ticketOps && ticketOps[0] === "ticket" && LIFECYCLE_VERBS.has(ticketOps[1])) {
@@ -4148,7 +4176,7 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
     return finish(stage5(ctx, contextRepos, "agb command in an active-rail ADLC repository requires operator confirmation"));
   }
   if (dirChange) return finish(stage5(ctx, contextRepos, "Directory change in an active-rail ADLC repository requires operator confirmation"));
-  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && isTestCommand(sub)) return finish(PASS);
+  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && testCmd) return finish(PASS);
   if (!ctx.headless && contextRepos.some((r) => r.adlc && r.activeRail) && isRoutine(sub, cwd, ctx)) return finish(PASS);
   return finish(stage5(ctx, contextRepos, "Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation"));
 }
@@ -4246,13 +4274,23 @@ function makeRepoCache(home) {
     knownRepos: () => [...byRoot.values()]
   };
 }
+function matchDirectBoosterMcpPrefix(name) {
+  for (const server of BOOSTER_MCP_SERVERS) {
+    for (const prefix of [`mcp__${server}__`, `mcp_${server}_`]) {
+      if (name.startsWith(prefix)) {
+        const tool = name.slice(prefix.length);
+        if (BOOSTER_MCP_TOOLS.has(tool)) return tool;
+      }
+    }
+  }
+  return null;
+}
 function isBoosterMcpTool(name, args) {
-  if (name === "call_mcp_tool") return args?.ServerName === BOOSTER_MCP_SERVER && BOOSTER_MCP_TOOLS.has(args?.ToolName);
-  const prefix = `mcp__${BOOSTER_MCP_SERVER}__`;
-  return name.startsWith(prefix) && BOOSTER_MCP_TOOLS.has(name.slice(prefix.length));
+  if (name === "call_mcp_tool") return BOOSTER_MCP_SERVERS.has(args?.ServerName) && BOOSTER_MCP_TOOLS.has(args?.ToolName);
+  return matchDirectBoosterMcpPrefix(name) !== null;
 }
 function boosterMcpToolName(name, args) {
-  return name === "call_mcp_tool" ? args?.ToolName : name.slice(`mcp__${BOOSTER_MCP_SERVER}__`.length);
+  return name === "call_mcp_tool" ? args?.ToolName : matchDirectBoosterMcpPrefix(name) ?? name.slice(`mcp__${BOOSTER_MCP_SERVER}__`.length);
 }
 function extractProbedPaths(toolName, args) {
   const schema = TOOL_PATH_SCHEMAS[toolName];
@@ -4269,7 +4307,7 @@ function extractProbedPaths(toolName, args) {
   }
   return { paths };
 }
-var looksLikePath = (s) => isAbsolute5(s) || hasHomePrefix(s) || s.includes("/") || s.startsWith(".") || FILE_URL.test(s);
+var looksLikePath = (s) => isAbsolute5(s) || hasHomePrefix(s) || s.includes("/") || s.includes("\\") || s.startsWith(".") || FILE_URL.test(s);
 function scanPathLike(value, { skipContentKeys = false } = {}) {
   const paths = [];
   const stack = [{ value, depth: 0 }];
@@ -4298,8 +4336,8 @@ function readToolPaths(name, args) {
   return keys.map((k) => args?.[k]).filter((v) => typeof v === "string" && v.length > 0).map(toPath);
 }
 function resolveAll(token, ctx) {
-  if (isAbsolute5(token) || hasHomePrefix(token)) return [resolveCandidate(token, "/", ctx.home)];
-  return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
+  if (isAbsolute5(token) || hasHomePrefix(token)) return [resolveCandidate(token, "/", ctx.home, ctx.platform)];
+  return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home, ctx.platform));
 }
 var DEFAULT_SUBTREE_ENTRIES = 5e4;
 var SUBTREE_SKIP = /* @__PURE__ */ new Set(["node_modules", ".git"]);
@@ -4326,7 +4364,7 @@ function subtreeHoldsAdlc(dir, limit) {
 }
 function isExistingDirectory(p) {
   try {
-    return lstatSync7(p).isDirectory();
+    return lstatSync8(p).isDirectory();
   } catch {
     return false;
   }
@@ -4445,6 +4483,24 @@ function schemaViolationVerdict(name, args, reason, ctx) {
   }
   return PASS;
 }
+function evaluateOneTargetForm(target, name, args, ctx, workerRepos) {
+  const { verdict, repo, rel } = gateOnePath(target, ctx);
+  if (verdict.decision !== "pass") return verdict;
+  if (repo.adlc && rel) {
+    const shard = newShardVerdict(name, rel, args, ctx.platform);
+    if (shard) return shard;
+  }
+  const repoRealRoot = repo.adlc ? realOr(repo.root) : null;
+  if (ctx.workerTicket && repo.adlc && !workerRepos.some((w) => realOr(w.root) === repoRealRoot)) {
+    return deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation in another ADLC repository: ${target.real}`);
+  } else if (workerRepos.length > 0) {
+    if (!repo.adlc || !workerRepos.some((w) => realOr(w.root) === repoRealRoot)) {
+      return deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${target.real}`);
+    }
+    return workerScopeVerdict(repo, rel, ctx);
+  }
+  return PASS;
+}
 function evaluateFileTool(name, args, ctx) {
   const extracted = extractProbedPaths(name, args);
   if (!extracted || extracted.error) {
@@ -4471,26 +4527,9 @@ function evaluateFileTool(name, args, ctx) {
         verdicts.push(contains);
         continue;
       }
-      const { verdict, repo, rel } = gateOnePath(r, ctx);
-      if (verdict.decision !== "pass") {
-        verdicts.push(verdict);
-        continue;
-      }
-      if (repo.adlc && rel) {
-        const shard = newShardVerdict(name, rel, args, ctx.platform);
-        if (shard) {
-          verdicts.push(shard);
-          continue;
-        }
-      }
-      if (ctx.workerTicket && repo.adlc && !workerRepos.some((w) => w.root === repo.root)) {
-        verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation in another ADLC repository: ${r.real}`));
-      } else if (workerRepos.length > 0) {
-        if (!repo.adlc || !workerRepos.some((w) => w.root === repo.root)) {
-          verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
-        } else {
-          verdicts.push(workerScopeVerdict(repo, rel, ctx));
-        }
+      verdicts.push(evaluateOneTargetForm(r, name, args, ctx, workerRepos));
+      if (r.lexical !== r.real) {
+        verdicts.push(evaluateOneTargetForm({ ...r, real: r.lexical }, name, args, ctx, workerRepos));
       }
     }
   }
@@ -4500,10 +4539,17 @@ function evaluateMcpTool(name, args, ctx) {
   const scan = scanPathLike(args);
   if (scan.overflow) return OVERFLOW;
   const verdicts = [];
+  const scannedRepos = [];
   for (const token of scan.paths) {
     for (const r of resolveAll(token, ctx)) {
-      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      const { verdict, repo } = gateOnePath(r, ctx, { rootIsTarget: false });
+      scannedRepos.push(repo);
       if (verdict.decision === "deny") verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${verdict.reason})`));
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === "deny") verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${lexRes.verdict.reason})`));
+      }
     }
   }
   if (verdicts.length) return mostRestrictive(verdicts);
@@ -4513,7 +4559,7 @@ function evaluateMcpTool(name, args, ctx) {
   }
   if (ctx.readonly) return deny("Third-party MCP tool call cannot prompt operator in a read-only agb worker session");
   if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; tool call denied");
-  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  const repos = [...ctx.anchors.map((a) => ctx.repoAt(a)), ...scannedRepos];
   if (ctx.workerTicket && repos.some((r) => r.adlc)) return deny("Third-party MCP tool call cannot prompt operator in headless worker mode");
   if (repos.some((r) => r.adlc && r.activeRail)) {
     return ctx.headless ? deny("Third-party MCP tool call cannot prompt operator in headless worker mode") : ask("Third-party MCP tool call in an active-rail ADLC repository requires operator confirmation");
@@ -4525,13 +4571,20 @@ function evaluateUnknownTool(args, ctx) {
   if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; tool call denied");
   const scan = scanPathLike(args);
   if (scan.overflow) return OVERFLOW;
+  const scannedRepos = [];
   for (const token of scan.paths) {
     for (const r of resolveAll(token, ctx)) {
-      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      const { verdict, repo } = gateOnePath(r, ctx, { rootIsTarget: false });
+      scannedRepos.push(repo);
       if (verdict.decision === "deny") return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === "deny") return lexRes.verdict;
+      }
     }
   }
-  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  const repos = [...ctx.anchors.map((a) => ctx.repoAt(a)), ...scannedRepos];
   if (repos.some((r) => r.adlc && (r.activeRail || ctx.workerTicket))) {
     return deny("Unknown tool in ADLC repository with active frozen rails; cannot verify safety");
   }
@@ -4578,7 +4631,7 @@ function evaluatePayload(payload, options = {}) {
   if (READ_ONLY_TOOLS.has(name) || ORCHESTRATION_TOOLS.has(name)) return PASS;
   if (name === "run_command") return classifyRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
-  if (name === "call_mcp_tool" || name.startsWith("mcp__")) return evaluateMcpTool(name, args, ctx);
+  if (name === "call_mcp_tool" || name.startsWith("mcp__") || name.startsWith("mcp_")) return evaluateMcpTool(name, args, ctx);
   return evaluateUnknownTool(args, ctx);
 }
 

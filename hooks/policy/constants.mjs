@@ -24,6 +24,7 @@ export const ORCHESTRATION_TOOLS = new Set([
 export const AGY_CONTROL_TOOLS = new Set(['finish']);
 
 export const BOOSTER_MCP_SERVER = 'agb';
+export const BOOSTER_MCP_SERVERS = new Set(['agb', 'antigravity-booster_agb']);
 export const BOOSTER_MCP_TOOLS = new Set([
   'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_review',
 ]);

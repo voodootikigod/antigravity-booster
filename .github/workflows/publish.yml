@@ -94,6 +94,16 @@ jobs:
         # release rather than resolve something nobody reviewed.
         run: npm ci
 
+      - name: Verify bundle and vendored ADLC integrity
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain --untracked-files=all dist/ vendor/)" ]; then
+            echo "::error::Committed dist/ or vendor/ bundles are out of sync with source."
+            git status --short --untracked-files=all dist/ vendor/
+            exit 1
+          fi
+          node scripts/update-adlc-digests.mjs
+
       - name: Test
         run: npm test
 

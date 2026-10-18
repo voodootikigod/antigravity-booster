@@ -42,10 +42,12 @@ is_valid_node() {
   esac
 
   # Security: Candidate must reside within trusted system prefixes or standard version managers
+  REAL_HOME="$(resolve_full_path "$HOME" 2>/dev/null || printf '%s\n' "$HOME")"
   TRUSTED=0
   case "$REAL_CANDIDATE" in
     /opt/homebrew/*|/usr/local/*|/usr/*|/bin/*|/System/*) TRUSTED=1 ;;
     "$HOME"/.local/share/fnm/*|"$HOME"/.local/share/mise/*|"$HOME"/.nvm/*|"$HOME"/.asdf/*|"$HOME"/.volta/*|"$HOME"/.nodenv/*|"$HOME"/n/*) TRUSTED=1 ;;
+    "$REAL_HOME"/.local/share/fnm/*|"$REAL_HOME"/.local/share/mise/*|"$REAL_HOME"/.nvm/*|"$REAL_HOME"/.asdf/*|"$REAL_HOME"/.volta/*|"$REAL_HOME"/.nodenv/*|"$REAL_HOME"/n/*) TRUSTED=1 ;;
   esac
   [ "$TRUSTED" -eq 1 ] || return 1
 
@@ -53,7 +55,7 @@ is_valid_node() {
   for check_dir in "$CURRENT_DIR" "$AGB_TARGET_REPO"; do
     [ -n "$check_dir" ] || continue
     case "$check_dir" in
-      /|/Users|/home|"$HOME"|"$HOME"/|/tmp|/var) continue ;;
+      /|/Users|/home|"$HOME"|"$HOME"/|"$REAL_HOME"|"$REAL_HOME"/|/tmp|/var) continue ;;
       *)
         case "$REAL_CANDIDATE" in
           "$check_dir"/*|"$check_dir") return 1 ;;

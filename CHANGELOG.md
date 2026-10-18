@@ -18,9 +18,12 @@ rather than enumerate.
 - **Project skills run in Claude Code, Codex and agy** (T-SKILLS-CROSS-HARNESS): `skills/<name>/` is the single canonical source for `modernize`, `release` and `release-audit` (the latter moved from `.claude/skills/`). `npm run skills:sync` mirrors them byte-for-byte into `.claude/skills/` (Claude Code) and `.agents/skills/` (Codex and agy); `npm run skills:check` (also run by `npm test`) fails on drift. Foreign skills in those directories are never touched. `release-audit` gained a `--prompts` fan-out route (`scripts/release-audit-workflow.mjs --prompts`) so Codex and agy, which have no Workflow tool, can drive the same per-surface audit with `codex exec --output-schema` / `agy -p --json-schema`, and its Claude-only tools now have stated fallbacks.
 - **`/release-audit`** (T-RELEASE-AUDIT-SKILL): a project skill, ported from adlc and reshaped for booster, that answers GO / GO-WITH-RISK / NO-GO before `/release`. One agent per shipped surface (CLI, scheduler, ADLC gates, the PreToolUse policy guard, the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar) plus drift, docs, supply-chain and issue-sweep agents, with a refute pass over every blocker candidate. The verdict is arithmetic over structured reports: findings are grounded against the cited file, deduplicated and demoted with a named reason, never deleted, and a surface with no report or no files examined forces NO-GO. Mechanical probes reuse this repo's own gates (D11 lockstep, the vendored-adlc digest pins, the bootstrap tarball SHA-512, the bundle drift gate, the website generator, and the stranded-release classifier). `scripts/release-audit-{collect,synthesize,workflow}.mjs` are development tooling and do not ship in the package.
 
-### Fixed
+### Changed
 
 - MCP `agb_run` no longer advertises a `concurrency` parameter; a call that supplies one now returns a tool error naming it instead of being silently ignored (`agb run` has no concurrency flag; use the plan's `caps`).
+
+### Fixed
+
 - The MCP server's `serverInfo.version` now reports the plugin's `package.json` version (it was hard-coded to `0.7.0`), from the same source as `agb --version`.
 - `agb --help` and the unknown-command error print real line breaks instead of a literal `\n`.
 - `agb probe` writes `probes-<day>.md`, matching the committed calibration reports, and the `DEFAULT_CAPS` comment cites the existing `docs/calibration/probes-2026-07-14.md`.

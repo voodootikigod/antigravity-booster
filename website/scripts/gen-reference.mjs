@@ -94,7 +94,10 @@ export function dispatchFlags(src, name) {
   const body = next < 0 ? rest : rest.slice(0, next);
   const found = new Set();
   const re = /rest(?:\.(?:includes|indexOf)\(|\[[^\]]+\]\s*===\s*)'(-{1,2}[a-z][\w-]*)'/g;
-  for (const m of body.matchAll(re)) found.add(m[1]);
+  for (const m of body.matchAll(re)) {
+    if (m[1] === '--finish-uninstall') continue;
+    found.add(m[1]);
+  }
   return [...found].sort();
 }
 

@@ -565,4 +565,55 @@ test('R5 L9: isWithin correctly matches Windows paths with mixed slashes', () =>
   assert.equal(isWithin('C:\\repo\\sub\\file.txt', 'C:\\repo\\', 'win32'), true);
   assert.equal(isWithin('C:\\other\\file.txt', 'C:\\repo', 'win32'), false);
   assert.equal(isWithin('C:\\repo', 'C:/repo', 'win32'), true);
+  assert.equal(isWithin('/repo\\out', '/repo', 'linux'), false);
 });
+
+test('R6 BLOCKER-1: POSIX paths and symlinks containing backslashes cannot bypass frozen rails or worker scope', async () => {
+  const { symlinkSync } = await import('node:fs');
+  // 1. Backslash component followed by ../.. on POSIX resolves to <repo>/lib/lock.mjs
+  assert.equal(run('write_to_file', { TargetFile: `${A}/lib/a\\b/../../lib/lock.mjs`, CodeContent: 'x' }, A), 'deny');
+  assert.equal(run('write_to_file', { TargetFile: `${A}/lib/a\\b/../../outside.mjs`, CodeContent: 'x' }, A, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+  // 2. Symlink whose name contains a backslash on POSIX
+  const bsLink = join(A, 'lib', 's\\l');
+  try {
+    symlinkSync(join(A, 'lib', 'lock.mjs'), bsLink);
+    assert.equal(run('write_to_file', { TargetFile: bsLink, CodeContent: 'x' }, A), 'deny');
+  } finally {
+    rmSync(bsLink, { force: true });
+  }
+});
+
+test('R6 BLOCKER-2: POSIX Cwd with backslash sibling path cannot bypass workspace containment or ADLC enforcement', () => {
+  assert.equal(run('run_command', { CommandLine: 'make', Cwd: `${A}\\out` }, A), 'deny');
+  assert.equal(run('run_command', { CommandLine: 'make', Cwd: `${A}\\out` }, A, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+});
+
+test('R6 MCP & testCmd: antigravity-booster_agb server name is recognized and node --test on a frozen rail test file is allowed', () => {
+  assert.equal(run('call_mcp_tool', { ServerName: 'antigravity-booster_agb', ToolName: 'agb_status', Arguments: { repo: A } }, A), 'pass');
+  assert.equal(run('mcp__antigravity-booster_agb__agb_status', { repo: A }, A), 'pass');
+  assert.equal(run('mcp_antigravity-booster_agb_agb_status', { repo: A }, A), 'pass');
+  assert.equal(run('call_mcp_tool', { ServerName: 'antigravity-booster_agb', ToolName: 'agb_run', Arguments: { plan: join(A, 'plan.json') } }, A, { AGB_WORKER_MODE: 'readonly' }), 'deny');
+
+  // node --test on a declared frozen rail passes (while writing to it via redirect is still denied)
+  assert.equal(sh('node --test lib/lock.mjs', A), 'ask'); // interactive unlisted falls to stage5 ask, not target deny
+  assert.equal(sh('node --test lib/lock.mjs', A, { AGB_WORKER_TICKET: 'T1' }), 'pass');
+  assert.equal(sh('node --test lib/lock.mjs > lib/lock.mjs', A, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+  assert.equal(sh('node --test .adlc/config.json', A, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+});
+
+test('R6 AR-001: workspace and targets accessed via a symlinked ancestor directory (e.g. macOS /var -> /private/var) pass for in-scope files and deny rails', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const symBase = join(base, 'sym-parent');
+  symlinkSync(A, symBase);
+  try {
+    assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'feature.mjs'), CodeContent: 'x' }, symBase), 'pass');
+    assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'lock.mjs'), CodeContent: 'x' }, symBase), 'deny');
+    assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'feature.mjs'), CodeContent: 'x' }, symBase, { AGB_WORKER_TICKET: 'T1' }), 'pass');
+    assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'ok.mjs'), CodeContent: 'x' }, symBase, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+    assert.equal(run('write_to_file', { TargetFile: join(symBase, 'lib', 'lock.mjs'), CodeContent: 'x' }, symBase, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+  } finally {
+    rmSync(symBase, { force: true });
+  }
+});
+
+

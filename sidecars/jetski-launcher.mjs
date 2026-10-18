@@ -44,7 +44,9 @@ async function start() {
 
       app.api('/events', (data) => {
         const runJsonPath = join(repoPath, '.booster', 'run.json');
-        let offset = Number(data && data.offset) || 0;
+        let offset = Number(data && data.offset);
+        if (!Number.isFinite(offset) || offset < 0) offset = 0;
+        offset = Math.floor(offset);
         let runId = null;
         let eventsPath = null;
         if (existsSync(runJsonPath)) {
@@ -65,7 +67,8 @@ async function start() {
             if (stats.size > offset) {
               const fd = openSync(eventsPath, 'r');
               try {
-                const toRead = stats.size - offset;
+                const MAX_CHUNK = 1024 * 1024;
+                const toRead = Math.min(stats.size - offset, MAX_CHUNK);
                 const buffer = Buffer.alloc(toRead);
                 const totalRead = readSync(fd, buffer, 0, toRead, offset);
                 let lastNewline = -1;

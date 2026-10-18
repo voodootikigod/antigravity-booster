@@ -64,7 +64,8 @@ function scalar(v) {
       .split(',')
       .map((x) => scalar(x))
       .filter((x) => x !== '');
-  if (/^(['"]).*\1$/.test(s)) return s.slice(1, -1);
+  if (/^".*"$/.test(s)) return s.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  if (/^'.*'$/.test(s)) return s.slice(1, -1);
   if (s === 'true') return true;
   if (s === 'false') return false;
   return s;

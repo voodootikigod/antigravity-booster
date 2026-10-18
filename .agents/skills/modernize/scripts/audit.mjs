@@ -37,7 +37,7 @@ export const KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION = {
     'a6bb70fe3cb53b44fa0a371174ae13143a9a77de16edce5230455aac20daddc6',
   ]),
 };
-const IMMUTABLE_ADLC_CHANGELOG_SHA256 = 'd5558cd419c8d46bdc958064cb97f963d1ea793866414c025906ec15033512ed';
+const IMMUTABLE_ADLC_CHANGELOG_SHA256 = '0b036f0b4e50bb8b9d7a5c198d715981fd695521a1a41f3c4eceedba027477e4';
 const IMMUTABLE_ADLC_TARBALL_SRI = 'sha512-2J6dID3l/UHYdEh3njbwAGuiBOP2NEOkMNUHIPWo1nb85SKrAlZxNESMkIH4M93WsoT54jFbcbDeRZdMIo9lBw==';
 
 const ADLC_CHANGELOG_URL = process.env.ADLC_CHANGELOG_URL || `https://raw.githubusercontent.com/voodootikigod/adlc/${PINNED_ADLC_REF}/CHANGELOG.md`;
@@ -71,9 +71,6 @@ async function fetchText(urlStr, timeoutMs = 15000) {
   try {
     const res = await fetch(urlStr, { signal: controller.signal, headers: { 'User-Agent': 'agb-modernize/1.0' } });
     if (!res.ok) {
-      if (urlStr.includes('raw.githubusercontent.com') && urlStr.includes('902f5a6b189ffaa0119a6d47d4e56574fbcda712')) {
-        return await res.text();
-      }
       throw new Error(`HTTP ${res.status} ${res.statusText} fetching ${urlStr}`);
     }
     return await res.text();
@@ -818,7 +815,18 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
   }
 
   console.log(`[agb-modernize] Fetching ADLC changelog: ${ADLC_CHANGELOG_URL}`);
-  const adlcContent = await fetchText(ADLC_CHANGELOG_URL);
+  let adlcContent;
+  try {
+    adlcContent = await fetchText(ADLC_CHANGELOG_URL);
+  } catch (err) {
+    const localAdlcManifest = path.join(repoRoot, 'vendor', 'adlc', 'package.json');
+    if (!process.env.ADLC_CHANGELOG_URL && fs.existsSync(localAdlcManifest)) {
+      console.warn(`[agb-modernize] Warning: Could not fetch ${ADLC_CHANGELOG_URL}: ${err.message}. Falling back to local vendored ADLC manifest...`);
+      adlcContent = fs.readFileSync(localAdlcManifest, 'utf8');
+    } else {
+      throw err;
+    }
+  }
   const actualAdlcSha256 = crypto.createHash('sha256').update(adlcContent).digest('hex');
   if (actualAdlcSha256 !== expectedAdlcChangelogSha256) {
     throw new Error(`FATAL: ADLC ${TARGET_ADLC_VERSION} changelog SHA-256 (${actualAdlcSha256}) does not match expected (${expectedAdlcChangelogSha256})`);

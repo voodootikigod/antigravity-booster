@@ -1,0 +1,20 @@
+{
+  "body": "Fix SHOULD-FIX #16 (dangling skill symlinks & error propagation in bootstrap), SHOULD-FIX #17 (resolveAgyBinary fallback in bootstrap and doctor), SHOULD-FIX #18 (Windows detached uninstaller cwd and timeout kill in migrate), SHOULD-FIX #19 (Windows checkPolicyGuard self-test in doctor), and SHOULD-FIX #21 & #22 (fail closed in checkAdlcBinary and checkTicketStore in doctor).",
+  "completed": true,
+  "edges": [],
+  "id": "T-AUDIT3-W3-INSTALL-DOCTOR",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "lib/bootstrap.mjs",
+    "lib/doctor.mjs",
+    "lib/migrate.mjs",
+    "lib/migration-lock.mjs",
+    "test/doctor.test.mjs"
+  ],
+  "title": "Remediate Bootstrap, Doctor & Windows Migrate Rollback findings from 1.2.0 release audit"
+}

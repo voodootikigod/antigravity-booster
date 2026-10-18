@@ -27,6 +27,7 @@ flowchart TD
     subgraph Engine["Orchestration engine"]
         SCHED["lib/scheduler.mjs"]
         POOLS["lib/pools.mjs"]
+        MODELS["lib/models.mjs"]
         WT["lib/worktrees.mjs"]
         GATES["lib/gates.mjs"]
         PROS["lib/prosecute.mjs"]
@@ -38,6 +39,7 @@ flowchart TD
 
     subgraph Bridge["ADLC bridge"]
         BR["lib/adlc-bridge.mjs"]
+        ATOOL["lib/adlc-tool.mjs"]
         RAILS["lib/active-rails.mjs"]
     end
 
@@ -60,7 +62,10 @@ flowchart TD
     PLAN --> BRAIN
     PLAN --> PRE
     PLAN --> BR
+    PLAN --> ATOOL
+    PRE --> ATOOL
     SCHED --> POOLS
+    POOLS --> MODELS
     SCHED --> WT
     SCHED --> GATES
     SCHED --> PROS
@@ -70,7 +75,10 @@ flowchart TD
     SCHED --> INTEG
     SCHED --> RAILS
     SCHED --> BR
+    SCHED --> ATOOL
     PROS --> CHART
+    PROS --> ATOOL
+    ATOOL --> BR
     BOOT --> PP
     BOOT --> DOC
     MIG --> PP
@@ -96,13 +104,13 @@ flowchart TD
 
 ### Orchestration engine
 
-`lib/scheduler.mjs` (`runPlan`) runs the ticket DAG. It routes each ticket through the quota pools (`lib/pools.mjs`, class `PoolSet`), creates worktrees and runs integration transactions (`lib/worktrees.mjs`), runs sandboxed gates (`lib/gates.mjs`), prosecutes with a different model family (`lib/prosecute.mjs`, prompts from `lib/charters.mjs`), serializes runs per repository (`lib/lock.mjs`), writes `.booster/run.json` (`lib/status.mjs`) and checks that workers did not tamper with anything outside their worktree (`lib/run-integrity.mjs`) ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L25-L40)). See [Run lifecycle](/docs/internals/run-lifecycle) and [Integration journal](/docs/internals/integration-journal).
+`lib/scheduler.mjs` (`runPlan`) runs the ticket DAG. It routes each ticket through the quota pools (`lib/pools.mjs`, class `PoolSet`, backed by the shared model and tier registry in `lib/models.mjs`), creates worktrees and runs integration transactions (`lib/worktrees.mjs`), runs sandboxed gates (`lib/gates.mjs`), prosecutes with a different model family (`lib/prosecute.mjs`, prompts from `lib/charters.mjs`), serializes runs per repository (`lib/lock.mjs`), writes `.booster/run.json` (`lib/status.mjs`) and checks that workers did not tamper with anything outside their worktree (`lib/run-integrity.mjs`) ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L25-L40)). See [Run lifecycle](/docs/internals/run-lifecycle) and [Integration journal](/docs/internals/integration-journal).
 
 `lib/lock.mjs` and `lib/gates.mjs` are this repository's own frozen rails: merge-lock correctness and sandbox enforcement.
 
 ### ADLC bridge
 
-`lib/adlc-bridge.mjs` is the only place agb talks to the ADLC toolkit. It resolves and authenticates the `adlc` binary (the pinned vendored copy when bundled), projects plans into the ticket store, and reads the companion plugin's contract. Calls to `adlc` tools return `{ ok: false, error }` instead of throwing: audit gates such as `gate-manifest` degrade, while enforcement gates such as `rails-guard` are failed closed by their callers. `lib/active-rails.mjs` is the fail-closed reader of active rails, shared by the scheduler and the policy guard ([lib/active-rails.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/active-rails.mjs#L1-L4)).
+`lib/adlc-bridge.mjs` and `lib/adlc-tool.mjs` are the layer where agb talks to the ADLC toolkit. `lib/adlc-bridge.mjs` resolves and authenticates the `adlc` binary (the pinned vendored copy when bundled), projects plans into the ticket store, and reads the companion plugin's contract; `lib/adlc-tool.mjs` (`runAdlcTool`) runs authenticated `adlc <tool>` subcommands and parses JSON output. Calls to `adlc` tools return `{ ok: false, error }` instead of throwing: audit gates such as `gate-manifest` degrade, while enforcement gates such as `rails-guard` are failed closed by their callers. `lib/active-rails.mjs` is the fail-closed reader of active rails, shared by the scheduler and the policy guard ([lib/active-rails.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/active-rails.mjs#L1-L4)).
 
 ### Installation and health
 

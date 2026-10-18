@@ -1,4 +1,9 @@
+# Force LF line endings across all text files so Windows git checkouts with
+# core.autocrlf=true never alter SHA-256 content hashes in vendor/adlc or dist.
+* text=auto eol=lf
+
 # Generated, committed plugin artifacts (spec Appendix A P2): never hand-merge.
 # Resolve source conflicts, then `npm run build` and commit the result.
-dist/** linguist-generated=true -diff
-vendor/** linguist-generated=true -diff
+dist/** linguist-generated=true -diff text eol=lf
+vendor/adlc/** linguist-generated=true -diff text eol=lf
+vendor/cache/*.tgz linguist-generated=true -diff binary

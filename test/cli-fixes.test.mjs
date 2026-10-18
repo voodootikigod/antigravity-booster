@@ -219,3 +219,36 @@ test('probe: defaults to Gemini 3.8 Flash (Low) model', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stderr, /deprecated|retired/i);
 });
+
+test('readBrain: recognizes backslash path separator as local file candidate (#121)', async () => {
+  const { readBrain } = await import('../lib/brain.mjs');
+  const dir = join(TMP, 'brain-local-candidate');
+  mkdirSync(dir, { recursive: true });
+  // Extensionless local spec file inside TMP; on POSIX a filename can even contain '\\' or we can verify it does not fall through to conversation lookup when existsSync is true
+  const specFile = join(dir, 'sub\\SPEC');
+  writeFileSync(specFile, '# Backslash Spec\nBody text\n');
+  const res = readBrain(specFile, join(TMP, 'empty-brain-dir'));
+  assert.equal(res.sourceType, 'local-spec');
+  assert.equal(res.title, 'Backslash Spec');
+});
+
+test('checkBrainDir: respects injected home parameter (#126)', async () => {
+  const { checkBrainDir } = await import('../lib/doctor.mjs');
+  const fakeHome = join(TMP, 'fake-home-brain');
+  const cliBrain = join(fakeHome, '.gemini', 'antigravity-cli', 'brain');
+  mkdirSync(cliBrain, { recursive: true });
+  const res = await checkBrainDir({ env: {}, home: fakeHome });
+  assert.equal(res.level, 'pass');
+  assert.equal(res.detail, 'exists');
+});
+
+test('sweepToPlan: preserves dollar replacement patterns in target paths literally', async () => {
+  const { sweepToPlan } = await import('../lib/sweep.mjs');
+  const plan = sweepToPlan({
+    repo: TMP,
+    operation: 'Refactor {target} (#{i})',
+    targets: ['src/$&/$$/file.mjs'],
+  });
+  assert.equal(plan.tickets[0].body.includes('Refactor src/$&/$$/file.mjs (#1)'), true);
+  assert.deepEqual(plan.tickets[0].scope, ['src/$&/$$/file.mjs']);
+});

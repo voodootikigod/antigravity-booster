@@ -311,7 +311,7 @@
     {
       "name": "AGB_BRAIN_DIR",
       "group": "paths",
-      "default": "~/.gemini/antigravity/brain",
+      "default": "~/.gemini/antigravity-cli/brain (falls back to ~/.gemini/antigravity/brain and ~/.gemini/jetski/brain)",
       "bundledIgnored": false,
       "description": "Antigravity brain directory searched for plans."
     },

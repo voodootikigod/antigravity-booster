@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "d686eea6b82e6b8e568179c98e35e53fd3ba606da4edfc004b7ae886c7ecf2db",
+    "version": 1
+  },
   "body": "Rebuild all bundles (dist/agb.mjs, dist/sidecar.mjs, dist/hooks/*.bundle.mjs), verify clean git working tree, execute full mechanical test suite (npm test), and verify release audit passes with 0 BLOCKER, 0 SHOULD-FIX, and GO verdict.\n\nVerification: npm run build && npm test",
   "category": "chore",
   "completed": true,

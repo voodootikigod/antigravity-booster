@@ -22,7 +22,10 @@ const STATIC_PATTERNS = [
   /^\s*export\s[^;]*?\bfrom\s*["'`]([^"'`\r\n]+)["'`]/gm,
 ];
 
-const CALL_PATTERN = /\b(?:import|require\d*)\s*\(([^)]+)\)/g;
+const CALL_PATTERN = /\b(?:import|require\d*(?:\s*\.\s*resolve)?)\s*\(([^)]+)\)/g;
+const CREATE_REQUIRE_IDENT = '(?:createRequire\\d*|__agbCreateRequire\\d*)';
+const DIRECT_CREATE_REQUIRE_PATTERN = new RegExp(`\\b${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)(?:\\s*\\.\\s*resolve)?\\s*\\(([^)]+)\\)`, 'g');
+const BOUND_CREATE_REQUIRE_DECL = new RegExp(`(?:\\b(?:const|let|var)\\s+|(?:^|[;,{}\\n])\\s*)([A-Za-z_$][\\w$]*)\\s*=\\s*(?:[\\w$]+\\.)?${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)`, 'gm');
 
 export function isBuiltin(specifier) {
   if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;
@@ -31,6 +34,21 @@ export function isBuiltin(specifier) {
   if (BUILTINS.has(specifier) || BUILTINS.has(bare)) return true;
   const knownSubpaths = new Set(['fs/promises', 'stream/promises', 'stream/consumers', 'stream/web', 'timers/promises', 'dns/promises', 'readline/promises', 'util/types']);
   return knownSubpaths.has(bare);
+}
+
+function recordCallArg(rawArg, found) {
+  const trimmed = rawArg.trim();
+  const quote = trimmed[0];
+  if ((quote === '"' || quote === "'" || quote === '`') && trimmed.endsWith(quote)) {
+    const inner = trimmed.slice(1, -1);
+    if (quote === '`' && inner.includes('${')) {
+      found.add(trimmed);
+    } else if (!isBuiltin(inner)) {
+      found.add(inner);
+    }
+  } else if (!isBuiltin(trimmed)) {
+    found.add(trimmed);
+  }
 }
 
 export function findExternalSpecifiers(source) {
@@ -42,19 +60,18 @@ export function findExternalSpecifiers(source) {
     }
   }
   for (const m of source.matchAll(CALL_PATTERN)) {
-    const rawArg = m[1].trim();
-    const quote = rawArg[0];
-    if ((quote === '"' || quote === "'" || quote === '`') && rawArg.endsWith(quote)) {
-      const inner = rawArg.slice(1, -1);
-      if (quote === '`' && inner.includes('${')) {
-        found.add(rawArg);
-      } else if (!isBuiltin(inner)) {
-        found.add(inner);
-      }
-    } else {
-      if (!isBuiltin(rawArg)) {
-        found.add(rawArg);
-      }
+    recordCallArg(m[1], found);
+  }
+  for (const m of source.matchAll(DIRECT_CREATE_REQUIRE_PATTERN)) {
+    recordCallArg(m[1], found);
+  }
+  for (const decl of source.matchAll(BOUND_CREATE_REQUIRE_DECL)) {
+    const ident = decl[1];
+    if (/^require\d*$/.test(ident)) continue;
+    const escaped = ident.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const boundCallRe = new RegExp(`\\b${escaped}(?:\\s*\\.\\s*resolve)?\\s*\\(([^)]+)\\)`, 'g');
+    for (const m of source.matchAll(boundCallRe)) {
+      recordCallArg(m[1], found);
     }
   }
   return [...found].sort();

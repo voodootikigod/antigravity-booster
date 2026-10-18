@@ -231,3 +231,19 @@ test('prosecute: passes the project option to runAgy', async () => {
   }
 });
 
+test('prosecute: forwards adlcBin to runHollowTest (#122)', async () => {
+  await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship', FAKE_HOLLOW_TEST_MODE: 'survivors' }, async () => {
+    const v = await prosecute({
+      ticket: { id: 'T1', body: 'spec' },
+      diff: 'real diff',
+      model: 'Claude Sonnet 4.6 (Thinking)',
+      worktree: '/tmp',
+      testCmd: 'npm test',
+      adlcBin: FAKE_ADLC,
+    });
+    assert.equal(v.hollowTest.ok, true);
+    assert.equal(v.hollowTest.survived, 1);
+    assert.equal(v.verdict, 'block');
+  });
+});
+
