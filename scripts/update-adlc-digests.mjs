@@ -52,6 +52,14 @@ export function verifyAgainstLockfile(pkg, { root = ROOT } = {}) {
     if (registryTreeDigest !== localTreeDigest) {
       return { ok: false, error: `${pkg}@${entry.version}: local node_modules/${pkg} tree digest (${localTreeDigest}) != registry tarball (${registryTreeDigest})` };
     }
+    const unpackedManifest = JSON.parse(readFileSync(join(unpackedPkgDir, 'package.json'), 'utf8'));
+    const localManifest = JSON.parse(readFileSync(join(localDir, 'package.json'), 'utf8'));
+    const manifestFields = ['name', 'version', 'main', 'bin', 'exports'];
+    for (const field of manifestFields) {
+      if (JSON.stringify(unpackedManifest[field]) !== JSON.stringify(localManifest[field])) {
+        return { ok: false, error: `${pkg}@${entry.version}: package.json manifest mismatch` };
+      }
+    }
     return { ok: true, version: entry.version };
   } catch (err) {
     return { ok: false, error: `${pkg}: ${err.message}` };
@@ -62,6 +70,9 @@ export function verifyAgainstLockfile(pkg, { root = ROOT } = {}) {
 
 export function computeVendoredDigests(vendorDir = join(ROOT, 'vendor', 'adlc')) {
   const manifest = JSON.parse(readFileSync(join(vendorDir, 'package.json'), 'utf8'));
+  if (typeof manifest.version !== 'string' || manifest.version.trim().length === 0) {
+    throw new Error(`Invalid or missing version in vendored ADLC manifest: ${join(vendorDir, 'package.json')}`);
+  }
   return {
     version: manifest.version,
     binarySha256: sha256(join(vendorDir, 'bin', 'adlc.mjs')),
@@ -94,6 +105,15 @@ function main(argv) {
     }
   }
   const digests = computeVendoredDigests();
+  const lockfilePath = join(ROOT, 'package-lock.json');
+  if (existsSync(lockfilePath)) {
+    const lock = JSON.parse(readFileSync(lockfilePath, 'utf8'));
+    const coreVersion = lock.packages?.['node_modules/@adlc/core']?.version ?? lock.dependencies?.['@adlc/core']?.version;
+    if (coreVersion && digests.version !== coreVersion) {
+      process.stderr.write(`update-adlc-digests: vendored version (${digests.version}) does not match package-lock @adlc/core version (${coreVersion})\n`);
+      return 1;
+    }
+  }
   const source = readFileSync(BRIDGE, 'utf8');
   if (!BLOCK.test(source)) {
     process.stderr.write('update-adlc-digests: KNOWN_VENDORED_ADLC block not found in lib/adlc-bridge.mjs\n');

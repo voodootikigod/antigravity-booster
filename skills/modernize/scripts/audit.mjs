@@ -377,7 +377,7 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   const stage1Errors = [];
 
   try {
-    const res = cp.spawnSync(agyBin, ['--version'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['--version'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', shell: process.platform === 'win32' });
     if (res.error || res.status !== 0 || res.signal) {
       agyVersion = 'unavailable';
       stage1Errors.push(`agy --version probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
@@ -394,7 +394,7 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   }
 
   try {
-    const res = cp.spawnSync(agyBin, ['--help'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['--help'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', shell: process.platform === 'win32' });
     if (res.error || res.status !== 0 || res.signal) {
       stage1Errors.push(`agy --help probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
     } else {
@@ -405,7 +405,7 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   }
 
   try {
-    const res = cp.spawnSync(agyBin, ['models'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+    const res = cp.spawnSync(agyBin, ['models'], { encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL', shell: process.platform === 'win32' });
     if (res.error || res.status !== 0 || res.signal) {
       stage1Errors.push(`agy models probe failed (status: ${res.status}, signal: ${res.signal}, error: ${res.error?.message || 'none'})`);
     } else {
@@ -531,6 +531,13 @@ async function runStage2StaticAudit() {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
   const deps = pkg.dependencies || {};
   const devDeps = pkg.devDependencies || {};
+
+  if (!deps['@adlc/core'] && !devDeps['@adlc/core']) {
+    auditFindings.push('Missing required dependency in package.json: @adlc/core');
+  }
+  if (!deps['@adlc/antigravity'] && !devDeps['@adlc/antigravity']) {
+    auditFindings.push('Missing required dependency in package.json: @adlc/antigravity');
+  }
 
   console.log(`[agb-modernize] [Stage 2] Audited ${filesToAudit.length} core repository modules.`);
   console.log(`[agb-modernize] [Stage 2] Baseline dependency versions: @adlc/core=${devDeps['@adlc/core'] || deps['@adlc/core'] || 'none'}, @adlc/antigravity=${devDeps['@adlc/antigravity'] || deps['@adlc/antigravity'] || 'none'}`);

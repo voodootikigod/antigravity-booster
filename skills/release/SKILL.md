@@ -1,6 +1,6 @@
 ---
 name: release
-description: Release a new version of antigravity-booster (bumps version, tags git, pushes, triggers npm publish)
+description: "[Maintainer workflow for the antigravity-booster repository only] Release a new version of antigravity-booster (bumps version, tags git, pushes, triggers npm publish)"
 license: MIT
 user-invocable: true
 metadata:
@@ -63,6 +63,13 @@ Use this skill to release a new version of antigravity-booster. It is plain `git
    npm test
    ```
    Must exit 0. If tests fail, abort — do not proceed.
+
+   g. Build and generated artifacts verification:
+   ```bash
+   npm run build
+   git status --porcelain --untracked-files=all dist/ vendor/
+   ```
+   Must exit 0 and git status must be empty. If any dist/ or vendor/ files were modified or untracked, abort and inspect build artifacts first.
 
 3. **Bump version and update changelog:**
    ```bash
