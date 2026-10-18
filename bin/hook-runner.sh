@@ -15,6 +15,9 @@ WAIT_TIMEOUT=9
 HOOK_LOG_DIR="${HOME}/.gemini/antigravity-cli/plugin_data/antigravity-booster/logs"
 mkdir -p "$HOOK_LOG_DIR" 2>/dev/null || true
 HOOK_LOG_FILE="$HOOK_LOG_DIR/hooks.log"
+if ! ( : >>"$HOOK_LOG_FILE" ) 2>/dev/null; then
+  HOOK_LOG_FILE="/dev/null"
+fi
 
 # Emergency killswitch: Parent process launch environment variable
 # (Immutable from child subshells spawned by in-session agents)

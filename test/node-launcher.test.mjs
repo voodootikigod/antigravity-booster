@@ -171,6 +171,25 @@ describe('bin/node-launcher.sh', { skip }, () => {
         const r = run(fx, ['dist/hello.mjs'], { shell, cwd: join(fx.home, '.local/share/fnm') });
         assert.equal(r.status, 86);
       });
+
+      test('isolated builder HOME (.agb_home) accepts version-manager candidate under host user home derived from staged .gemini plugin path', () => {
+        const fx = fixture();
+        mockNode(fnmPath(fx.home, '22.19.0'), '22.19.0');
+        const stagedRoot = join(fx.home, '.gemini', 'config', 'plugins', 'antigravity-booster');
+        mkdirSync(join(stagedRoot, 'bin'), { recursive: true });
+        mkdirSync(join(stagedRoot, 'dist'), { recursive: true });
+        copyFileSync(fx.launcher, join(stagedRoot, 'bin', 'node-launcher.sh'));
+        copyFileSync(join(fx.root, 'dist', 'hello.mjs'), join(stagedRoot, 'dist', 'hello.mjs'));
+        const agbHome = join(fx.dir, 'worktree', '.agb_home');
+        mkdirSync(agbHome, { recursive: true });
+        const r = spawnSync(shell, [join(stagedRoot, 'bin', 'node-launcher.sh'), 'dist/hello.mjs', 'builder'], {
+          cwd: agbHome,
+          env: { PATH: '/usr/bin:/bin', HOME: agbHome },
+          encoding: 'utf8',
+        });
+        assert.equal(r.status, 0, r.stderr);
+        assert.deepEqual(JSON.parse(r.stdout), ['builder']);
+      });
     });
   }
 

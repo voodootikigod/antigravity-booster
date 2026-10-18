@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, chmodSync, mkdirSync, lstatSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -207,5 +207,57 @@ test('runAgy: supports real agy 1.3.5 stream-json event envelopes and extracts c
     assert.equal(res.events[0].step, 2);
   } finally {
     mock3.cleanup();
+  }
+});
+
+test('runAgy: builder mode stages writable .agb_home/.gemini/antigravity-cli/plugin_data/antigravity-booster/logs and links read-only auth entries', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agb-fake-home-'));
+  const fakeWorktree = mkdtempSync(join(tmpdir(), 'agb-fake-wt-'));
+  const savedHomeDir = process.env.AGB_HOME_DIR;
+  process.env.AGB_HOME_DIR = fakeHome;
+  try {
+    const realGemini = join(fakeHome, '.gemini');
+    mkdirSync(join(realGemini, 'config', 'plugins'), { recursive: true });
+    mkdirSync(join(realGemini, 'antigravity-cli', 'plugin_data'), { recursive: true });
+    mkdirSync(join(realGemini, 'antigravity-cli', 'builtin'), { recursive: true });
+    writeFileSync(join(realGemini, 'oauth_creds.json'), '{"token":"secret"}');
+    writeFileSync(join(realGemini, 'antigravity-cli', 'antigravity-oauth-token'), 'oauth-token-123');
+
+    const mock = makeMockScript([
+      `echo '{"event":"result","result":{"status":"SUCCESS","exit_code":0}}'`,
+    ]);
+    try {
+      const res = await runAgy({
+        bin: mock.bin,
+        model: 'gemini-3-pro',
+        prompt: 'builder test',
+        cwd: fakeWorktree,
+        role: 'builder',
+        sandbox: true,
+        outputFormat: 'stream-json',
+        worker: { ticket: 't-1' },
+      });
+      assert.ok(res.ok, res.error);
+
+      const stagedGemini = join(fakeWorktree, '.agb_home', '.gemini');
+      assert.equal(lstatSync(stagedGemini).isSymbolicLink(), false, '.agb_home/.gemini must be a real writable directory, not a symlink');
+      const logsDir = join(stagedGemini, 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs');
+      assert.equal(existsSync(logsDir), true, 'plugin_data logs directory must exist inside .agb_home/.gemini');
+      writeFileSync(join(logsDir, 'hooks.log'), 'probe\n');
+      assert.equal(readFileSync(join(logsDir, 'hooks.log'), 'utf8'), 'probe\n');
+      assert.equal(lstatSync(join(stagedGemini, 'oauth_creds.json')).isSymbolicLink(), true, 'oauth_creds.json should be symlinked on POSIX');
+      assert.equal(lstatSync(join(stagedGemini, 'config')).isSymbolicLink(), false, 'config dir must be a real directory so config/projects is writable');
+      assert.equal(lstatSync(join(stagedGemini, 'config', 'plugins')).isSymbolicLink(), true, 'config/plugins should be symlinked on POSIX');
+      assert.equal(lstatSync(join(stagedGemini, 'config', 'projects')).isSymbolicLink(), false, 'config/projects must be a real writable directory');
+      assert.equal(lstatSync(join(stagedGemini, 'antigravity-cli', 'antigravity-oauth-token')).isSymbolicLink(), true, 'antigravity-oauth-token should be symlinked inside antigravity-cli');
+      assert.equal(lstatSync(join(stagedGemini, 'antigravity-cli', 'brain')).isSymbolicLink(), false, 'antigravity-cli/brain must be a real writable directory');
+    } finally {
+      mock.cleanup();
+    }
+  } finally {
+    if (savedHomeDir === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHomeDir;
+    rmSync(fakeHome, { recursive: true, force: true });
+    rmSync(fakeWorktree, { recursive: true, force: true });
   }
 });
