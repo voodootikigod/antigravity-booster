@@ -94,7 +94,7 @@ if ($ArgsBase64) {
     $argList = ConvertFrom-Json $rawJson
 } elseif ($ArgsFile -and (Test-Path $ArgsFile)) {
     try {
-        $rawJson = Get-Content -Raw -Path $ArgsFile
+        $rawJson = [System.IO.File]::ReadAllText($ArgsFile, [System.Text.Encoding]::UTF8)
         $argList = ConvertFrom-Json $rawJson
     } finally {
         Remove-Item -Force -Path $ArgsFile -ErrorAction SilentlyContinue

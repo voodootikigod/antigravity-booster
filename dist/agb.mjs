@@ -31,7 +31,7 @@ function collect(root, rel, excluded, out) {
     } else if (entry.isDirectory()) {
       collect(root, segs, excluded, out);
     } else if (entry.isFile()) {
-      const isExec = process.platform === "win32" ? relpath.endsWith(".sh") || relpath.startsWith("bin/") || relpath.endsWith("bin/adlc.mjs") : Boolean(fs.statSync(full).mode & EXEC_BITS);
+      const isExec = process.platform === "win32" ? relpath.endsWith(".sh") || relpath.endsWith("bin/adlc.mjs") : Boolean(fs.statSync(full).mode & EXEC_BITS);
       const cls = isExec ? "x" : "f";
       const h = createHash3("sha256").update(fs.readFileSync(full)).digest("hex");
       out.push({ relpath, payload: `${cls}\0${h}` });
@@ -869,7 +869,12 @@ function removeImportEntry(home, name) {
   renameSync7(tmp, p);
 }
 function removeUninstallerDir(dir) {
-  if (dir && basename9(dir).startsWith(UNINSTALLER_DIR_PREFIX)) rmSync14(dir, { recursive: true, force: true });
+  if (dir && basename9(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
+    try {
+      rmSync14(dir, { recursive: true, force: true });
+    } catch {
+    }
+  }
 }
 function finishUninstall({ home = homedir8(), token, uninstallerDir, agyBin, baseline, deps = defaultDeps(), uninstall } = {}) {
   let handle;
@@ -955,8 +960,8 @@ import {
   mkdirSync as mkdirSync19,
   rmSync as rmSync15,
   readdirSync as readdirSync13,
-  lstatSync as lstatSync14,
-  readlinkSync as readlinkSync3,
+  lstatSync as lstatSync15,
+  readlinkSync as readlinkSync4,
   symlinkSync as symlinkSync6,
   unlinkSync as unlinkSync8,
   renameSync as renameSync8,
@@ -1070,7 +1075,7 @@ function scanSkillSymlinks(skillsDir) {
   if (!existsSync30(skillsDir)) return [];
   const links = [];
   for (const e of readdirSync13(skillsDir, { withFileTypes: true })) {
-    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync3(join33(skillsDir, e.name)) });
+    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync4(join33(skillsDir, e.name)) });
   }
   return links.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -1119,7 +1124,7 @@ function recreateSymlinks(p, links, log2) {
     const at = join33(p.skills, name);
     let present = false;
     try {
-      lstatSync14(at);
+      lstatSync15(at);
       present = true;
     } catch {
     }
@@ -1231,7 +1236,7 @@ function step6Finalize(ctx, state) {
   for (const { name, target } of state.recordedSymlinks ?? []) {
     const at = join33(p.skills, name);
     try {
-      if (lstatSync14(at).isSymbolicLink() && readlinkSync3(at) === target) unlinkSync8(at);
+      if (lstatSync15(at).isSymbolicLink() && readlinkSync4(at) === target) unlinkSync8(at);
     } catch {
     }
   }
@@ -1261,16 +1266,35 @@ function readBaseline(state) {
 }
 function defaultUninstallerArgv(home) {
   const staged = join33(pluginsDirFor(home), BOOSTER_PLUGIN_NAME);
+  if (process.platform === "win32") {
+    return { argv: [process.execPath, join33(staged, "dist", "agb.mjs")], cwd: home };
+  }
   return { argv: ["/bin/sh", join33(staged, "bin", "node-launcher.sh"), "dist/agb.mjs"], cwd: staged };
 }
 async function handOverUninstall(ctx) {
   const { home, lock, agyBin, log: log2, err } = ctx;
   const dir = mkdtempSync8(join33(ctx.tmpParent ?? tmpdir9(), UNINSTALLER_DIR_PREFIX));
   chmodSync4(dir, 448);
-  const launcher = ctx.uninstaller ?? defaultUninstallerArgv(home);
+  const rawLauncher = ctx.uninstaller ?? defaultUninstallerArgv(home);
+  const isWin = process.platform === "win32";
+  const staged = join33(pluginsDirFor(home), BOOSTER_PLUGIN_NAME);
+  let launcherArgv = [...rawLauncher.argv];
+  let launcherCwd = rawLauncher.cwd ?? home;
+  if (isWin && !ctx.uninstaller) {
+    const stagedBundle = join33(staged, "dist", "agb.mjs");
+    const tempBundle = join33(dir, "agb-uninstaller.mjs");
+    if (existsSync30(stagedBundle)) {
+      try {
+        copyFileSync5(stagedBundle, tempBundle);
+        launcherArgv = [process.execPath, tempBundle];
+      } catch {
+      }
+    }
+    launcherCwd = home;
+  }
   const baselineFile = join33(readMigrationState(home)?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
   const args = [
-    ...launcher.argv,
+    ...launcherArgv,
     "migrate",
     "--finish-uninstall",
     "--baseline",
@@ -1282,22 +1306,27 @@ async function handOverUninstall(ctx) {
     "--agy-bin",
     agyBin
   ];
-  const quoted = args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(" ");
-  const isWin = process.platform === "win32";
-  const scriptName = isWin ? "uninstall.cmd" : "uninstall.sh";
-  const script = join33(dir, scriptName);
-  if (isWin) {
-    writeFileSync19(script, `@echo off\r
-cd /d "${launcher.cwd ?? home}" || exit /b 1\r
+  const childEnv2 = { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} };
+  let child;
+  if (isWin && args[0] === process.execPath) {
+    child = spawn4(args[0], args.slice(1), { cwd: launcherCwd, detached: true, stdio: "ignore", env: childEnv2 });
+  } else {
+    const quoted = args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(" ");
+    const scriptName = isWin ? "uninstall.cmd" : "uninstall.sh";
+    const script = join33(dir, scriptName);
+    if (isWin) {
+      writeFileSync19(script, `@echo off\r
+cd /d "${launcherCwd}" || exit /b 1\r
 ${args.map((a) => `"${String(a)}"`).join(" ")}\r
 `);
-  } else {
-    writeFileSync19(script, `#!/bin/sh
-cd '${String(launcher.cwd ?? home).replace(/'/g, `'\\''`)}' || exit 1
+    } else {
+      writeFileSync19(script, `#!/bin/sh
+cd '${String(launcherCwd).replace(/'/g, `'\\''`)}' || exit 1
 exec ${quoted}
 `, { mode: 448 });
+    }
+    child = isWin ? spawn4("cmd.exe", ["/c", script], { detached: true, stdio: "ignore", env: childEnv2 }) : spawn4("/bin/sh", [script], { detached: true, stdio: "ignore", env: childEnv2 });
   }
-  const child = isWin ? spawn4("cmd.exe", ["/c", script], { detached: true, stdio: "ignore", env: { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} } }) : spawn4("/bin/sh", [script], { detached: true, stdio: "ignore", env: { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} } });
   let exited = false;
   const exitedP = new Promise((r) => child.on("exit", () => {
     exited = true;
@@ -1326,13 +1355,20 @@ exec ${quoted}
     return 0;
   }
   try {
-    process.kill(-child.pid, "SIGKILL");
+    if (isWin) child.kill("SIGKILL");
+    else process.kill(-child.pid, "SIGKILL");
   } catch {
   }
   if (!exited) await Promise.race([exitedP, sleep3(5e3)]);
   invalidateMigrationLockToken(lock);
-  rmSync15(lock.lockDir, { recursive: true, force: true });
-  rmSync15(dir, { recursive: true, force: true });
+  try {
+    rmSync15(lock.lockDir, { recursive: true, force: true });
+  } catch {
+  }
+  try {
+    rmSync15(dir, { recursive: true, force: true });
+  } catch {
+  }
   err("error: the detached uninstaller did not acknowledge the lock handover within 2.0s; state is ROLLED_BACK_PENDING_UNINSTALL. Re-run `agb migrate --rollback` to retry.");
   return 1;
 }
@@ -1798,7 +1834,7 @@ import { resolve as resolve18, join as join35 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // lib/scheduler.mjs
-import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync12, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
+import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync13, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
 import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
 import { tmpdir as tmpdir8 } from "node:os";
@@ -7364,9 +7400,10 @@ async function checkNodeVersion({ version = process.version } = {}) {
   return { name: "Node.js", level: "fail", detail: version, fix: `Upgrade Node.js to v${MIN_NODE_VERSION} or newer.` };
 }
 var MIN_AGY_VERSION = "1.2.6";
-async function checkAgyBinary({ env = process.env } = {}) {
+async function checkAgyBinary({ env = process.env, home = env.HOME || homedir3() } = {}) {
   try {
-    const { stdout: stdout2 } = await execFileAsync(env.AGB_AGY_BIN || "agy", ["--version"], { env, timeout: 5e3 });
+    const agyCmd = env.AGB_AGY_BIN || resolveAgyBinary(home);
+    const { stdout: stdout2 } = await execFileAsync(agyCmd, ["--version"], { env, timeout: 5e3 });
     const rawOut = stdout2.trim();
     const verMatch = rawOut.match(/\b\d+\.\d+\.\d+(?:-[\w.-]+)?\b/);
     if (!verMatch) {
@@ -7393,9 +7430,9 @@ async function checkAgyBinary({ env = process.env } = {}) {
     return { name: "agy CLI", level: "fail", detail: "not found or error", fix: "Install Google Antigravity CLI and ensure it is on PATH." };
   }
 }
-async function checkAgyAuth({ env = process.env } = {}) {
+async function checkAgyAuth({ env = process.env, home = env.HOME || homedir3() } = {}) {
   try {
-    let cmd2 = env.AGB_AGY_BIN || "agy";
+    let cmd2 = env.AGB_AGY_BIN || resolveAgyBinary(home);
     let args = ["models"];
     if (process.platform === "linux") {
       args = ["-q", "-e", "-c", `${cmd2} models`, "/dev/null"];
@@ -7508,6 +7545,25 @@ function selftestRepo(dir) {
 }
 function runHook(command, pluginRoot, home, repo, relPath) {
   const payload = { toolCall: { name: "write_to_file", args: { TargetFile: join18(repo, relPath) } }, workspacePaths: [repo] };
+  const hookEnv = {
+    PATH: MINIMAL_PATH,
+    HOME: home,
+    NODE_V8_COVERAGE: "",
+    ...process.platform === "win32" ? {
+      SystemRoot: process.env.SystemRoot || "C:\\Windows",
+      COMSPEC: process.env.COMSPEC || "C:\\Windows\\System32\\cmd.exe",
+      USERPROFILE: home
+    } : {}
+  };
+  if (process.platform === "win32" && command.includes("dist/hooks/pre-tool-use.bundle.mjs")) {
+    return spawnSync3(process.execPath, [join18(pluginRoot, "dist", "hooks", "pre-tool-use.bundle.mjs")], {
+      cwd: pluginRoot,
+      input: JSON.stringify(payload),
+      encoding: "utf8",
+      env: hookEnv,
+      timeout: HOOK_TIMEOUT_MS
+    });
+  }
   const shellBin = process.platform === "win32" ? "cmd.exe" : "/bin/sh";
   const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
   return spawnSync3(shellBin, shellArgs, {
@@ -7517,7 +7573,7 @@ function runHook(command, pluginRoot, home, repo, relPath) {
     // NODE_V8_COVERAGE is pinned empty: Node re-injects it into an explicit
     // env when the key is absent, which would leak instrumentation into the
     // otherwise minimal hook environment.
-    env: { PATH: MINIMAL_PATH, HOME: home, NODE_V8_COVERAGE: "" },
+    env: hookEnv,
     timeout: HOOK_TIMEOUT_MS
   });
 }
@@ -7617,7 +7673,7 @@ async function checkAdlcBinary({ env = process.env, cwd = process.cwd() } = {}) 
   const resolved = resolveAdlcBinary({ repo: cwd, env, allowCustom });
   const bin = resolved.ok ? resolved.binary : null;
   if (!bin) {
-    if (existsSync17(localPkgDir) || existsSync17(localBin) || env.AGB_ADLC_BIN && !allowCustom || env.AGB_ADLC_BIN && resolved.error) {
+    if (resolved.error === "vendored-adlc-tampered" || IS_BUNDLED || existsSync17(localPkgDir) || existsSync17(localBin) || env.AGB_ADLC_BIN && !allowCustom || env.AGB_ADLC_BIN && resolved.error || env.ADLC_CLI_PATH && resolved.error) {
       return {
         name: "adlc CLI",
         level: "fail",
@@ -8424,15 +8480,15 @@ async function checkSandbox({ env = process.env, platform: platform2 = process.p
   }
   return { name: "Sandbox", level: "fail", detail: `unsupported platform: ${platform2}`, fix: "Sandbox is only supported on macOS, Linux, and Windows. Set AGB_SANDBOX_GATES=0 to bypass." };
 }
-async function checkBrainDir({ env = process.env } = {}) {
+async function checkBrainDir({ env = process.env, home = homedir3() } = {}) {
   const custom = env.AGB_BRAIN_DIR;
   if (custom) {
     return existsSync17(custom) ? { name: "Brain Dir", level: "pass", detail: "exists", fix: null } : { name: "Brain Dir", level: "warn", detail: "not found", fix: `Create directory ${custom} or unset AGB_BRAIN_DIR.` };
   }
   const candidates = [
-    join18(homedir3(), ".gemini", "antigravity-cli", "brain"),
-    join18(homedir3(), ".gemini", "antigravity", "brain"),
-    join18(homedir3(), ".gemini", "jetski", "brain")
+    join18(home, ".gemini", "antigravity-cli", "brain"),
+    join18(home, ".gemini", "antigravity", "brain"),
+    join18(home, ".gemini", "jetski", "brain")
   ];
   const found = candidates.find((d) => existsSync17(d));
   if (found) {
@@ -8441,6 +8497,27 @@ async function checkBrainDir({ env = process.env } = {}) {
   return { name: "Brain Dir", level: "warn", detail: "not found", fix: "Run an agy session to initialize the brain directory." };
 }
 async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo = cwd } = {}) {
+  for (const rel of [".adlc", join18(".adlc", "tickets"), join18(".adlc", "tickets.json")]) {
+    let st;
+    try {
+      st = lstatSync8(join18(cwd, rel), { throwIfNoEntry: false });
+    } catch {
+      return {
+        name: "Ticket Store",
+        level: "fail",
+        detail: "store corruption: unreadable ADLC ticket store path",
+        fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
+      };
+    }
+    if (st?.isSymbolicLink()) {
+      return {
+        name: "Ticket Store",
+        level: "fail",
+        detail: "store corruption: symlinked ADLC ticket store path",
+        fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
+      };
+    }
+  }
   const backend = detectTicketStoreBackend(cwd);
   if (backend === "both") {
     return {
@@ -8461,55 +8538,77 @@ async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo =
   if (backend === "none") {
     return { name: "Ticket Store", level: "pass", detail: "none (created on first projection)", fix: null };
   }
+  try {
+    loadTicketSnapshot({ root: cwd, env: {} });
+  } catch (err) {
+    if (err?.code !== "STORE_NOT_FOUND") {
+      return {
+        name: "Ticket Store",
+        level: "fail",
+        detail: `store corruption: ${err?.code ?? "ERROR"}: ${err?.message ?? String(err)}`,
+        fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
+      };
+    }
+  }
   const allowCustom = env.AGB_ALLOW_CUSTOM_ADLC_CLI === "1";
   const resolved = resolveAdlcBinary({ repo: cwd, env, allowCustom });
   const fallbackResolved = !resolved.ok && repo !== cwd ? resolveAdlcBinary({ repo, env, allowCustom }) : null;
   const activeResolved = resolved.ok ? resolved : fallbackResolved?.ok ? fallbackResolved : null;
   const bin = activeResolved?.ok ? activeResolved.binary : null;
-  if (bin) {
-    let doctorOutput;
-    try {
-      const { stdout: stdout2 } = await execFileAuthenticatedAdlc(bin, ["ticket", "doctor", "--json"], { cwd, env, timeout: 1e4 }, { repo: cwd, env, allowCustom });
-      doctorOutput = stdout2;
-    } catch (err) {
-      if (err.stdout) {
-        doctorOutput = err.stdout;
-      } else if (err.code === "ENOENT" || err.code === 127) {
-        return {
-          name: "Ticket Store",
-          level: "warn",
-          detail: "adlc binary not found or failed to execute ticket doctor",
-          fix: "Ensure @adlc/cli is installed and reachable."
-        };
-      } else {
-        return {
-          name: "Ticket Store",
-          level: "fail",
-          detail: `store corruption: adlc ticket doctor failed (${err.stderr?.trim() || err.message})`,
-          fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
-        };
-      }
+  if (!bin) {
+    const errReason = resolved.error || fallbackResolved?.error;
+    if (errReason === "vendored-adlc-tampered" || IS_BUNDLED) {
+      return {
+        name: "Ticket Store",
+        level: "fail",
+        detail: `${backend} backend (cannot verify: ${errReason || "vendored adlc CLI unavailable"})`,
+        fix: "Run `agb bootstrap --force-reinstall` to restore the vendored ADLC CLI."
+      };
     }
-    if (doctorOutput) {
-      try {
-        const parsed = JSON.parse(doctorOutput);
-        if (!parsed.ok || parsed.exitCode !== void 0 && parsed.exitCode !== 0) {
-          const failedChecks = (parsed.checks || []).filter((c) => !c.ok).map((c) => `${c.name}${c.detail ? `: ${c.detail}` : ""}`).join(", ");
-          return {
-            name: "Ticket Store",
-            level: "fail",
-            detail: `store corruption: ${failedChecks || "ticket doctor reported errors"}`,
-            fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
-          };
-        }
-      } catch {
+    return { name: "Ticket Store", level: "pass", detail: `${backend} backend`, fix: null };
+  }
+  let doctorOutput;
+  try {
+    const { stdout: stdout2 } = await execFileAuthenticatedAdlc(bin, ["ticket", "doctor", "--json"], { cwd, env, timeout: 1e4 }, { repo: cwd, env, allowCustom });
+    doctorOutput = stdout2;
+  } catch (err) {
+    if (err.stdout) {
+      doctorOutput = err.stdout;
+    } else if (err.code === "ENOENT" || err.code === 127) {
+      return {
+        name: "Ticket Store",
+        level: "warn",
+        detail: "adlc binary not found or failed to execute ticket doctor",
+        fix: "Ensure @adlc/cli is installed and reachable."
+      };
+    } else {
+      return {
+        name: "Ticket Store",
+        level: "fail",
+        detail: `store corruption: adlc ticket doctor failed (${err.stderr?.trim() || err.message})`,
+        fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
+      };
+    }
+  }
+  if (doctorOutput) {
+    try {
+      const parsed = JSON.parse(doctorOutput);
+      if (!parsed.ok || parsed.exitCode !== void 0 && parsed.exitCode !== 0) {
+        const failedChecks = (parsed.checks || []).filter((c) => !c.ok).map((c) => `${c.name}${c.detail ? `: ${c.detail}` : ""}`).join(", ");
         return {
           name: "Ticket Store",
           level: "fail",
-          detail: `store corruption: unparseable ticket doctor output`,
+          detail: `store corruption: ${failedChecks || "ticket doctor reported errors"}`,
           fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
         };
       }
+    } catch {
+      return {
+        name: "Ticket Store",
+        level: "fail",
+        detail: `store corruption: unparseable ticket doctor output`,
+        fix: "Run `adlc ticket doctor` to diagnose and repair ticket store issues."
+      };
     }
   }
   const detail = `${backend} backend`;
@@ -12405,8 +12504,8 @@ async function runHollowTest({ worktree, testCmd, base = "main", adlcBin } = {})
     adlcBin,
     repo: worktree
   });
-  if (!res.ok) {
-    return { ok: false, error: res.error };
+  if (!res.ok || res.exitCode !== 0 && res.exitCode !== 2) {
+    return { ok: false, error: res.error || `hollow-test exited with code ${res.exitCode}` };
   }
   const parsed = res.parsed;
   const survivors = (parsed.mutants ?? []).filter((m) => m.status === "survived");
@@ -12418,7 +12517,7 @@ async function runHollowTest({ worktree, testCmd, base = "main", adlcBin } = {})
     mutants: survivors
   };
 }
-async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd, base, project: project2, onSpawn }) {
+async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd, base, project: project2, onSpawn, adlcBin }) {
   if (!diff.trim()) {
     return { verdict: "block", model, findings: [{ severity: "critical", charge: "spec", claim: "empty diff \u2014 ticket produced no committed change" }] };
   }
@@ -12434,7 +12533,7 @@ async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd,
     };
   }
   const finalProject = project2 ?? `agb-prosecute-${Date.now()}`;
-  const hollowTest = worktree ? await runHollowTest({ worktree, testCmd, base }) : null;
+  const hollowTest = worktree ? await runHollowTest({ worktree, testCmd, base, adlcBin }) : null;
   const res = await runAgy({
     model,
     prompt: prosecutionPrompt(ticket, diff, void 0, hollowTest),
@@ -12694,7 +12793,7 @@ function readBrain(idOrPrefix, brainDir = BRAIN_DIR) {
   const activeId = getActiveSessionId();
   const targetId = idOrPrefix ?? activeId;
   const supportedExts = [".md", ".json", ".csv", ".pdf", ".txt"];
-  const isLocalFileCandidate = targetId && (targetId.includes("/") || supportedExts.some((ext) => targetId.toLowerCase().endsWith(ext)));
+  const isLocalFileCandidate = targetId && (targetId.includes("/") || targetId.includes("\\") || supportedExts.some((ext) => targetId.toLowerCase().endsWith(ext)));
   if (isLocalFileCandidate && existsSync21(targetId) && statSync5(targetId).isFile()) {
     const resolvedPath = resolve11(targetId);
     const content = readFileSync18(resolvedPath, "utf8");
@@ -13032,11 +13131,15 @@ function commitAll(worktree, message) {
   git(worktree, "commit", "--no-verify", "--no-gpg-sign", "-q", "-m", message);
   return true;
 }
-function discardProjection(worktree) {
+function discardProjection(worktree, base = "HEAD") {
   for (const p of ["AGENTS.md", ".adlc/tickets", ".adlc/tickets.json"]) {
     try {
-      git(worktree, "checkout", "HEAD", "--", p);
+      git(worktree, "checkout", base, "--", p);
     } catch {
+      try {
+        git(worktree, "checkout", "HEAD", "--", p);
+      } catch {
+      }
     }
   }
 }
@@ -13875,7 +13978,7 @@ async function compilePlan(idOrPrefix, {
 init_status();
 
 // lib/active-rails.mjs
-import { existsSync as existsSync24, statSync as statSync6 } from "node:fs";
+import { existsSync as existsSync24, lstatSync as lstatSync12, statSync as statSync6 } from "node:fs";
 import { dirname as dirname17, join as join27, resolve as resolve13 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
 function isActiveTicket(ticket) {
@@ -13883,16 +13986,31 @@ function isActiveTicket(ticket) {
   if (ticket.completed === true) return false;
   return !INACTIVE_STATUSES.has(ticket.status);
 }
+function hasSymlinkStorePath(repoRoot) {
+  for (const rel of [".adlc", join27(".adlc", "tickets"), join27(".adlc", "tickets.json")]) {
+    try {
+      const st = lstatSync12(join27(repoRoot, rel), { throwIfNoEntry: false });
+      if (st?.isSymbolicLink()) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
 function loadSnapshot(repoRoot) {
+  if (hasSymlinkStorePath(repoRoot)) {
+    return { ok: false, error: "UNSAFE_STORE_PATH: symlinked ADLC ticket store path" };
+  }
   try {
-    return { ok: true, snapshot: loadTicketSnapshot({ root: repoRoot }) };
+    return { ok: true, snapshot: loadTicketSnapshot({ root: repoRoot, env: {} }) };
   } catch (err) {
     if (err?.code === "STORE_NOT_FOUND") return { ok: true, snapshot: null };
     return { ok: false, error: `${err?.code ?? "ERROR"}: ${err?.message ?? String(err)}` };
   }
 }
 function unionActiveRails(repoRoot) {
-  if (!existsSync24(join27(repoRoot, ".adlc"))) {
+  const adlcSt = lstatSync12(join27(repoRoot, ".adlc"), { throwIfNoEntry: false });
+  if (!adlcSt) {
     return { ok: true, adlc: false, hasActiveTickets: false, rails: [] };
   }
   const loaded = loadSnapshot(repoRoot);
@@ -14562,7 +14680,7 @@ function verifyRootGitIntegrity(repo, pre, {
 }
 function safeWriteWorktreeFile(filePath, content) {
   try {
-    const st = lstatSync12(filePath);
+    const st = lstatSync13(filePath);
     if (st.isSymbolicLink()) {
       unlinkSync7(filePath);
     } else if (!st.isFile()) {
@@ -14626,7 +14744,7 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
   if (!existsSync27(gitEntry)) {
     throw new Error(`Security violation: worktree .git pointer missing at ${gitEntry}`);
   }
-  const stat = lstatSync12(gitEntry);
+  const stat = lstatSync13(gitEntry);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw new Error(`Security violation: worktree .git pointer at ${gitEntry} is not a regular file`);
   }
@@ -14730,7 +14848,6 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
     const pathsToCheck = rec.status === "R" || rec.status === "C" ? [rec.src, rec.dest] : [rec.path];
     for (const p of pathsToCheck) {
       if (!p) continue;
-      if (p === "AGENTS.md" || p === ".adlc/tickets.json" || p.startsWith(".adlc/tickets/")) continue;
       changedPaths.push(p);
       const norm = path2.posix.normalize(p);
       if (norm !== p || p.startsWith("/") || p.startsWith("\\") || p.split("/").some((s) => s === "." || s === "..")) {
@@ -14746,7 +14863,7 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
       } else {
         const fullPath = join30(worktreePath, p);
         try {
-          const st = lstatSync12(fullPath);
+          const st = lstatSync13(fullPath);
           if (st.isSymbolicLink()) {
             const rawTarget = readlinkSync2(fullPath);
             let finalReal;
@@ -15242,7 +15359,6 @@ Fix: ${agyCheck.fix}`);
   const integrityBaseline = snapshotRunIntegrity({ cwd: repo });
   if (!integrityBaseline.ok) throw new Error(`enforcement gate: ${integrityBaseline.error}`);
   let runCompromised = null;
-  ensureGitignore(repo);
   if (isDirty(repo)) {
     if (process.env.AGB_ALLOW_DIRTY !== "1") {
       throw new Error(`repo ${repo} has uncommitted changes \u2014 commit or stash first (uncommitted changes are left untouched, but they are not part of the run's base: builders and gates see only the committed ${base} HEAD). Set AGB_ALLOW_DIRTY=1 to override.`);
@@ -15299,6 +15415,7 @@ Fix: ${agyCheck.fix}`);
         }
       }
     };
+    ensureGitignore(repo);
     await reconcileIntegrationJournal(repo, base);
     reapIntegrationWorktrees(repo);
     try {
@@ -15495,6 +15612,7 @@ Fix: ${agyCheck.fix}`);
           testCmd: gate?.test,
           base,
           project: finalProject,
+          adlcBin: runAdlcBin,
           onSpawn: (child) => {
             if (child) {
               activeChildren.add(child);
@@ -15587,7 +15705,7 @@ Fix: ${agyCheck.fix}`);
               writeAdlcTickets(worktree, [planTicketToRailTicket(t)]);
             }
             if (strikes > 0) {
-              const resolvedAdlc2 = resolveAdlcBinary({ repo: worktree });
+              const resolvedAdlc2 = runAdlcBin ? { ok: true, binary: runAdlcBin } : resolveAdlcBinary({ repo: worktree });
               const adlcBin = resolvedAdlc2.ok ? resolvedAdlc2.binary : void 0;
               const flail = await checkFlailDetector({ logFile: buildLogFile, scope: t.scope, cwd: worktree, adlcBin });
               if (flail.error) {
@@ -15831,7 +15949,8 @@ ${g.output}`;
                       strikeError = `prosecution block (findings):
 ${JSON.stringify(blocking, null, 2)}`;
                       status.ticket(t.id, { phase: "fixing", detail: `${blocking.length} findings` });
-                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, rails: t.rails ?? [], adlcBin: runAdlcBin });
+                      const cfRails = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate?.storeRails ?? []])];
+                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, rails: cfRails, adlcBin: runAdlcBin });
                       let cfFailureReason = null;
                       if (cf.ok && cf.applied) {
                         let cfGitPointerOk = false;
@@ -15859,13 +15978,16 @@ ${JSON.stringify(blocking, null, 2)}`;
                               cfFailureReason = `consensus-fix failed to verify active rails: ${activeRailsRes.error}`;
                             } else {
                               const cfRailsList = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate?.storeRails ?? [], ...activeRailsRes.rails ?? []])];
-                              const cfRails = cfRailsList.length ? await checkRailsGuard({ worktree, base, rails: cfRailsList, adlcBin: runAdlcBin }) : { violations: [] };
-                              if (cfRails.operationalError) {
+                              const cfRails2 = cfRailsList.length ? await checkRailsGuard({ worktree, base, rails: cfRailsList, adlcBin: runAdlcBin }) : { violations: [] };
+                              if (cfRails2.operationalError) {
+                                strikes = 2;
+                                strikeError = compromiseRun(cfRails2.violations.join(", "));
+                                lastFailure = strikeError;
+                                status.strike(t.id, { model, error: strikeError, strikes });
+                                throw new Error(strikeError);
+                              } else if (cfRails2.violations.length) {
                                 safeResetToBase();
-                                cfFailureReason = `consensus-fix candidate rail check failed: ${cfRails.violations.join(", ")}`;
-                              } else if (cfRails.violations.length) {
-                                safeResetToBase();
-                                cfFailureReason = `consensus-fix candidate violated rails (${cfRails.violations.join(", ")})`;
+                                cfFailureReason = `consensus-fix candidate violated rails (${cfRails2.violations.join(", ")})`;
                               } else {
                                 let cfGateIntegrityError = null;
                                 try {
@@ -15890,10 +16012,24 @@ ${JSON.stringify(blocking, null, 2)}`;
                                 } else {
                                   status.ticket(t.id, { phase: "gating" });
                                   const cfGates = await runGates(gate, worktree, { sandbox: true });
+                                  await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: cfGates.ok, strikes, consensusFix: true }, adlcBin: runAdlcBin });
                                   if (cfGates.ok) {
-                                    status.ticket(t.id, { phase: "prosecuting", detail: "consensus-fix verification" });
-                                    const cfVerdict = await prosecuteBranch(t, worktree, model);
-                                    if (cfVerdict.verdict === "ship") {
+                                    let cfDry = 0;
+                                    let cfVerdict;
+                                    while (cfDry < dryNeeded) {
+                                      status.ticket(t.id, { phase: "prosecuting", detail: `consensus-fix dry ${cfDry}/${dryNeeded}` });
+                                      cfVerdict = await prosecuteBranch(t, worktree, model);
+                                      if (cfVerdict.verdict !== "ship") break;
+                                      cfDry += 1;
+                                    }
+                                    await recordGate({
+                                      repo,
+                                      gateName: "prosecution",
+                                      ticketId: t.id,
+                                      data: { verdict: cfVerdict.verdict, findings: cfVerdict.findings?.length ?? 0, dryPasses: cfDry, consensusFix: true },
+                                      adlcBin: runAdlcBin
+                                    });
+                                    if (cfDry >= dryNeeded) {
                                       status.strike(t.id, { model, error: null, strikes });
                                       await integrate(t, worktree);
                                       return;
@@ -16279,7 +16415,7 @@ function expandTargets(repo, glob) {
   return out.split("\n").filter(Boolean);
 }
 function fill(template, target, i) {
-  return template.replaceAll("{target}", target).replaceAll("{i}", String(i));
+  return template.replaceAll("{target}", () => target).replaceAll("{i}", () => String(i));
 }
 function sweepToPlan(spec, { targets } = {}) {
   if (!spec.repo) throw new Error("sweep.repo is required");
@@ -16368,7 +16504,10 @@ Respond with ONLY:
   "line": "approx", "claim": "specific checkable claim", "evidence": "diff lines or reasoning"}]}`;
 }
 function reviewDiff(repo, ref) {
-  const args = ref ? ["diff", ref] : ["diff", "HEAD"];
+  if (ref && String(ref).startsWith("-")) {
+    throw new Error(`Invalid git ref: ${ref}`);
+  }
+  const args = ref ? ["diff", "--end-of-options", ref] : ["diff", "HEAD"];
   return execFileSync13("git", args, { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 }
 var key = (f) => `${f.file}|${(f.claim ?? "").slice(0, 80).toLowerCase()}`;
@@ -16461,7 +16600,7 @@ async function reviewFleet({
 }
 
 // lib/bootstrap.mjs
-import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync12, lstatSync as lstatSync13, symlinkSync as symlinkSync5, copyFileSync as copyFileSync4, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
+import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync12, lstatSync as lstatSync14, readlinkSync as readlinkSync3, symlinkSync as symlinkSync5, copyFileSync as copyFileSync4, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
 import { join as join31, resolve as resolve16, dirname as dirname19 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { homedir as homedir7 } from "node:os";
@@ -16648,7 +16787,7 @@ function bootstrap({
   pluginPath,
   agyBin
 } = {}) {
-  const resolvedAgyBin = agyBin ?? process.env.AGB_AGY_BIN ?? "agy";
+  const resolvedAgyBin = agyBin ?? process.env.AGB_AGY_BIN ?? resolveAgyBinary(home);
   let hasErrors = false;
   const tempRun = isNpxTemp();
   let agyCheckFailed = false;
@@ -16677,17 +16816,27 @@ function bootstrap({
     for (const name of skills) {
       const src = join31(skillsSrc, name);
       const dst = join31(destination, name);
-      if (existsSync28(dst)) {
-        const isSymlink = lstatSync13(dst).isSymbolicLink();
+      const dstStat = lstatSync14(dst, { throwIfNoEntry: false });
+      if (dstStat) {
+        const isSymlink = dstStat.isSymbolicLink();
         if (force) {
           console.log(`overwriting existing skill: ${name}`);
           rmSync13(dst, { recursive: true, force: true });
-        } else {
-          if (isSymlink) {
-            console.log(`ok      ${name} (already linked)`);
-          } else {
-            console.warn(`skip    ${name} (exists and is not a symlink \u2014 use --force to overwrite)`);
+        } else if (isSymlink) {
+          let targetMatches = false;
+          try {
+            targetMatches = resolve16(dirname19(dst), readlinkSync3(dst)) === resolve16(src) && existsSync28(dst);
+          } catch {
+            targetMatches = false;
           }
+          if (targetMatches) {
+            console.log(`ok      ${name} (already linked)`);
+            continue;
+          }
+          console.log(`relinking stale skill symlink: ${name}`);
+          rmSync13(dst, { recursive: true, force: true });
+        } else {
+          console.warn(`skip    ${name} (exists and is not a symlink \u2014 use --force to overwrite)`);
           continue;
         }
       }
@@ -16697,6 +16846,7 @@ function bootstrap({
           console.log(`copied  ${name} -> ${dst}`);
         } catch (err) {
           console.error(`error: failed to copy skill ${name}: ${err.message}`);
+          hasErrors = true;
         }
       } else {
         try {
@@ -16704,6 +16854,7 @@ function bootstrap({
           console.log(`linked  ${name} -> ${dst}`);
         } catch (err) {
           console.error(`error: failed to symlink skill ${name}: ${err.message}`);
+          hasErrors = true;
         }
       }
     }

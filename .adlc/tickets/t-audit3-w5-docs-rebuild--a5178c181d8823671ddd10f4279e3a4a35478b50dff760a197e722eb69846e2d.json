@@ -1,0 +1,33 @@
+{
+  "body": "Fix SHOULD-FIX #1 & #24 (agy-integration.mdx and log-formats.mdx --conversation and conversationId), SHOULD-FIX #2 (AGB_BRAIN_DIR default in website/env-docs.json), SHOULD-FIX #23 (unescape quotes in website/scripts/lib/md.mjs scalar), SHOULD-FIX #25 (Windows active sandbox probe in verify.mdx), SHOULD-FIX #26 (lib/adlc-tool.mjs and lib/models.mjs in architecture.mdx), SHOULD-FIX #27 (claude-sonnet-4-6 in walkthrough.mdx mid tier), regenerate reference docs, sync skills, and rebuild bundles.",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-AUDIT3-W1-POLICY-MCP"
+    },
+    {
+      "to": "T-AUDIT3-W2-SCHEDULER-GATES"
+    },
+    {
+      "to": "T-AUDIT3-W3-INSTALL-DOCTOR"
+    },
+    {
+      "to": "T-AUDIT3-W4-SUPPLY-CI"
+    }
+  ],
+  "id": "T-AUDIT3-W5-DOCS-REBUILD",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "website/**",
+    "dist/**",
+    "vendor/**",
+    ".claude/skills/**",
+    ".agents/skills/**"
+  ],
+  "title": "Remediate Website Docs, Reference Generator, Bundle Rebuild & Verification from 1.2.0 release audit"
+}

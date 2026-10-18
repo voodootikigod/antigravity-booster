@@ -172,21 +172,33 @@ test('an empty dir argument is a TypeError, not a filesystem error', async () =>
   assert.throws(() => computeDirectoryDigest(''), TypeError);
 });
 
-test('win32 executable classification simulates POSIX execute bits for bin and sh scripts', async () => {
+test('win32 executable classification simulates POSIX execute bits for bin/adlc.mjs and .sh scripts while keeping non-executable bin/cli.mjs as f', async () => {
   const { createHash } = await import('node:crypto');
-  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
   const { join } = await import('node:path');
   const { tmpdir } = await import('node:os');
+  const { fileURLToPath } = await import('node:url');
   const { computeDirectoryDigest } = await import('../lib/digest.mjs');
+  const { KNOWN_VENDORED_ADLC } = await import('../lib/adlc-bridge.mjs');
   const dir = mkdtempSync(join(tmpdir(), 'agb-digest-win32-'));
   const origPlatform = process.platform;
   try {
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+    mkdirSync(join(dir, 'bin'), { recursive: true });
+    writeFileSync(join(dir, 'bin', 'adlc.mjs'), '#!/usr/bin/env node\n');
+    writeFileSync(join(dir, 'bin', 'cli.mjs'), 'console.log(1);\n');
     writeFileSync(join(dir, 'run.sh'), 'echo 1');
     writeFileSync(join(dir, 'data.txt'), 'hello');
     const sha = (s) => createHash('sha256').update(s).digest('hex');
-    const expected = createHash('sha256').update(`data.txt\0f\0${sha('hello')}\0run.sh\0x\0${sha('echo 1')}\0`).digest('hex');
+    const expected = createHash('sha256').update(
+      `bin/adlc.mjs\0x\0${sha('#!/usr/bin/env node\n')}\0` +
+      `bin/cli.mjs\0f\0${sha('console.log(1);\n')}\0` +
+      `data.txt\0f\0${sha('hello')}\0` +
+      `run.sh\0x\0${sha('echo 1')}\0`
+    ).digest('hex');
     assert.equal(computeDirectoryDigest(dir), expected);
+    const vendorAdlc = fileURLToPath(new URL('../vendor/adlc', import.meta.url));
+    assert.equal(computeDirectoryDigest(vendorAdlc), KNOWN_VENDORED_ADLC.treeDigest);
   } finally {
     Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
     rmSync(dir, { recursive: true, force: true });

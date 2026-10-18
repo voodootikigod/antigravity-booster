@@ -64,6 +64,7 @@ Each line of `<ticket>.jsonl` records one agy call made for that ticket, builder
 | `output` | The full agy stdout. With stream-json this is the raw event stream. |
 | `ok` | Whether the call succeeded. |
 | `role` | `builder` for build calls. |
+| `conversationId` | Present when agy returned a conversation id in `json` or `stream-json` output. |
 | `kind`, `error` | Only when `ok` is false: the failure class (`timeout`, `server`, `spawn`, `schema_violation`, and so on) and message. |
 
 <Callout type="warn" title="Transcripts can contain secrets">

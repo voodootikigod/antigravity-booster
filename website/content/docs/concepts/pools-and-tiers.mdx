@@ -46,7 +46,7 @@ A ticket's `tier` (default `mid`) picks a candidate list. Candidates are listed 
 | Tier | Candidates (`TIER_CANDIDATES`) |
 | --- | --- |
 | `cheap` | `gemini-3.8-flash-low`, `gemini-3.8-flash-medium`, `gemini-3.7-flash-low`, `gemini-3.6-flash-low`, `gemini-3.6-flash-medium` |
-| `mid` | `gemini-3.8-flash-high`, `gemini-3.7-flash-medium`, `gemini-3.7-flash-high`, `gemini-3.6-flash-high`, `gemini-3.1-pro-low` |
+| `mid` | `gemini-3.8-flash-high`, `gemini-3.7-flash-medium`, `gemini-3.7-flash-high`, `gemini-3.6-flash-high`, `gemini-3.1-pro-low`, `claude-sonnet-4-6` |
 | `frontier` | `gemini-3.1-pro-high`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking` |
 
 `route()` prefers candidates whose pool and family both have capacity, then picks the one with the lowest reserved-to-cap ratio ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1770-L1790)).
@@ -55,12 +55,12 @@ A ticket's `tier` (default `mid`) picks a candidate list. Candidates are listed 
 
 [C4](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L317-L318) A ticket may set `pool_hint` to one of `gemini`, `claude`, `claude-gpt`, `gpt-oss` or `auto`. Any other value fails plan validation. The hint filters the tier's candidates by model family ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1307-L1314)):
 
-| `pool_hint` | Keeps candidates whose family is | Tiers with candidates at v1.0.0 |
+| `pool_hint` | Keeps candidates whose family is | Tiers with candidates |
 | --- | --- | --- |
 | `auto` or unset | any | all |
 | `gemini` | `gemini` | all |
-| `claude` | `claude` | `frontier` only |
-| `claude-gpt` | `claude` or `gpt-oss` | `frontier` only |
+| `claude` | `claude` | `mid`, `frontier` |
+| `claude-gpt` | `claude` or `gpt-oss` | `mid`, `frontier` |
 | `gpt-oss` | `gpt-oss` | none |
 
 A tier and hint combination that leaves no candidate fails validation with `no model candidates for tier ... with pool_hint ...` ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L319-L320)), so it is caught at plan time instead of mid-run. Because no tier lists `gpt-oss-120b-medium`, `pool_hint: "gpt-oss"` is accepted by the enum but always fails this check; the `gpt-oss` pool is used for prosecution, not building.

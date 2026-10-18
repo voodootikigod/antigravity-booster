@@ -224,6 +224,19 @@ test('checkTicketStore: warns on an orphaned directory store (dir without .store
   }
 });
 
+test('checkTicketStore: FAILS on a dangling or symlinked .adlc store path', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const d = mkdtempSync(join(tmpdir(), 'agb-test-store-symlink-'));
+  try {
+    symlinkSync(join(d, 'nonexistent-adlc'), join(d, '.adlc'));
+    const res = await checkTicketStore({ cwd: d });
+    assert.equal(res.level, 'fail');
+    assert.match(res.detail, /symlinked ADLC ticket store path/);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+
 test('resolveAdlcBinary: resolves project-local @adlc/cli and validates version floor', () => {
   const res = resolveAdlcBinary({ repo: process.cwd() });
   assert.equal(res.ok, true);

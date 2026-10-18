@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "41cbcd4bcae754b41db29bf97a0b087279f75ba0bfcf427d872a625ec52d8149",
+    "version": 1
+  },
   "body": "1. Update skills/release/SKILL.md steps 3 & 4 (and mirrored .claude/skills and .agents/skills) to bump plugin.json version, run node website/scripts/gen-reference.mjs, and stage plugin.json and website/generated/*.mdx.\n2. Fix skills/modernize/scripts/audit.mjs line 540 to inspect pkg.devDependencies instead of pkg.dependencies for @adlc baseline.\n\nVerification: npm test",
   "category": "docs",
   "completed": true,

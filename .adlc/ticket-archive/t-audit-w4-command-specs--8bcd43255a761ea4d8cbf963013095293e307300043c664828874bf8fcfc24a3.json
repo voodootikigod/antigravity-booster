@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "91c3f4642ca6a84ffee24e49a45ac3c2d0d089d2679a51acd15c6e259de88ebe",
+    "version": 1
+  },
   "body": "1. Remove unsupported '(and concurrency if the user gave one)' from commands/agb-run.md line 20 matching mcp/server.mjs rejection.\n2. Fix exit code claim in commands/agb-doctor.md line 18, commands/agb-migrate.md, and commands/agb-sidecar.md to document exit 0 = pass, 1 = failure/error.\n\nVerification: test/cli.test.mjs",
   "category": "docs",
   "completed": true,

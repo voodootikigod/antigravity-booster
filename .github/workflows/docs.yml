@@ -18,6 +18,7 @@ on:
       - "templates/**"
       - "dist/**"
       - "vendor/**"
+      - ".adlc/**"
       - "plugin.json"
       - "hooks.json"
       - "mcp_config.json"
@@ -43,6 +44,7 @@ on:
       - "templates/**"
       - "dist/**"
       - "vendor/**"
+      - ".adlc/**"
       - "plugin.json"
       - "hooks.json"
       - "mcp_config.json"
@@ -88,8 +90,8 @@ jobs:
             echo "code=true" >> "$GITHUB_OUTPUT"; echo "docs=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           code=false; docs=false
-          if printf '%s\n' "$files" | grep -qE '^(lib|bin|mcp|hooks|sidecars|scripts|commands|agents|skills|templates|dist|vendor|website)/|^(plugin\.json|hooks\.json|mcp_config\.json|package\.json|CONTRIBUTING\.md|CHANGELOG\.md)$|^\.github/workflows/docs\.yml$'; then code=true; fi
-          if printf '%s\n' "$files" | grep -qE '^(website|docs)/|^[^/]+\.md$|^\.github/workflows/docs\.yml$'; then docs=true; fi
+          if printf '%s\n' "$files" | grep -qE '^(\.adlc|lib|bin|mcp|hooks|sidecars|scripts|commands|agents|skills|templates|dist|vendor|website)/|^(plugin\.json|hooks\.json|mcp_config\.json|package\.json|CONTRIBUTING\.md|CHANGELOG\.md)$|^\.github/workflows/docs\.yml$'; then code=true; fi
+          if printf '%s\n' "$files" | grep -qE '^(website|docs)/|^[^/]+\.md$|^package\.json$|^\.github/workflows/docs\.yml$'; then docs=true; fi
           echo "code=$code" >> "$GITHUB_OUTPUT"; echo "docs=$docs" >> "$GITHUB_OUTPUT"
           echo "code=$code docs=$docs"
 

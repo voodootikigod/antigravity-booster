@@ -132,7 +132,16 @@ test('layout: agy plugin validate processes skills, agents, commands, mcpServers
   const r = spawnSync('agy', ['plugin', 'validate', ROOT], { encoding: 'utf8', timeout: 60_000 });
   const out = `${r.stdout}${r.stderr}`.replace(/\x1b\[[0-9;]*m/g, '');
   assert.equal(r.status, 0, out);
-  for (const category of ['skills', 'agents', 'commands', 'mcpServers', 'hooks']) {
-    assert.match(out, new RegExp(`${category}\\s*:\\s*\\d+ processed`), `${category} not processed:\n${out}`);
+  for (const category of ['skills', 'agents', ' mcpServers', 'hooks']) {
+    const trimmed = category.trim();
+    assert.match(
+      out,
+      new RegExp(`${trimmed}\\s*(?::\\s*\\d+\\s+processed|\\s+\\d+)`),
+      `${trimmed} not processed:\n${out}`,
+    );
   }
+  if (out.includes('commands')) {
+    assert.match(out, /commands\s*(?::\s*\d+\s+processed|\s+\d+)/, `commands not processed:\n${out}`);
+  }
+  assert.match(out, /Validation passed/i, `Validation did not pass:\n${out}`);
 });

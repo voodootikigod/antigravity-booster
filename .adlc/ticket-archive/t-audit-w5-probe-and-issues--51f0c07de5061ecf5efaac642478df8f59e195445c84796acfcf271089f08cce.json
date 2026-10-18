@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "b216d420fceb26d5d9afaf4b85a922b8af34d0d27f44315d2268ae0ba8bc7e20",
+    "version": 1
+  },
   "body": "Enhance scripts/release-audit-collect.mjs shellcheckProbe to fall back to npx --yes shellcheck when native shellcheck is missing so probe always runs.\nClose the 9 already-fixed GitHub issues (#14, #15, #16, #17, #18, #19, #22, #27, #54) with evidence and annotate the 4 non-blocking issues (#20, #21, #25, #41).\n\nVerification: node scripts/release-audit-collect.mjs",
   "category": "bugfix",
   "completed": true,

@@ -28,7 +28,7 @@ The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/ant
 | `adlc-antigravity plugin` | pass / warn / fail | See [plugin states](#adlc-antigravity-plugin) | [L151-L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L166) |
 | `adlc CLI` | pass / warn / fail | See [adlc CLI](#adlc-cli) | [L315-L354](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L315-L354) |
 | `Sandbox` | pass / fail | See [Sandbox](#sandbox) | [L1086-L1146](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1086-L1146) |
-| `Brain Dir` | pass / warn | `Run an agy session to initialize the brain directory.` (`AGB_BRAIN_DIR` overrides the default `~/.gemini/antigravity/brain`) | [L1150-L1154](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1150-L1154) |
+| `Brain Dir` | pass / warn | Default (`~/.gemini/antigravity-cli/brain`, `~/.gemini/antigravity/brain`, `~/.gemini/jetski/brain`): `Run an agy session to initialize the brain directory.` Custom (`AGB_BRAIN_DIR`): `Create directory <custom> or unset AGB_BRAIN_DIR.` | [L1150-L1154](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1150-L1154) |
 | `Ticket Store` | pass / warn / fail | See [Ticket store](#ticket-store) | [L1157-L1194](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1157-L1194) |
 | `Policy guard self-test` | pass / fail | ``Run `agb bootstrap --force-reinstall` and check hooks.log.`` | [L251](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L251) |
 | `agb install` | pass / warn | `prefer ~/.local/bin/agb (npm is a secondary channel)` | [L281-L282](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L281-L282) |
@@ -81,7 +81,9 @@ Gates run inside a kernel sandbox, and doctor checks the one for your platform (
 | Windows | `bypassed via verified HMAC attestation` | pass | — |
 | Windows | `attestation rejected: <reason>` | fail | `Repair or update sandboxBypassAttestation in .adlc/config.json.` |
 | Windows | `malformed config: <error>` | fail | `Repair .adlc/config.json.` |
-| Other (and Windows without an attestation) | `unsupported platform: <platform>` | fail | `Sandbox is only supported on macOS, Linux, and Windows. Set AGB_SANDBOX_GATES=0 to bypass.` |
+| Windows (without an attestation) | Active Windows sandbox probe verified (`EACCES`/`WSAEACCES`/nonce) | pass | — |
+| Windows (without an attestation) | Active Windows sandbox probe failed (`<reason>`) | fail | Configure a verified `sandboxBypassAttestation` in `.adlc/config.json` or ensure the Windows sandbox driver is active. |
+| Other | `unsupported platform: <platform>` | fail | `Sandbox is only supported on macOS, Linux, and Windows. Set AGB_SANDBOX_GATES=0 to bypass.` |
 
 On Linux, the probe classifies a failure by `kind` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1060-L1067)):
 

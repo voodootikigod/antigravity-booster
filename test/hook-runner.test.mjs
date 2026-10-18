@@ -421,10 +421,12 @@ for (const [label, shell] of SHELLS) {
       assert.equal(decisionOf(r), 'deny');
     });
 
-    test('empty payload (no stdin bytes) on crash: non-ADLC fallback ask, never crashes', async () => {
-      const r = await go({ payload: '', env: { STUB_MODE: 'crash' } });
-      assertInvariant(r);
-      assert.equal(decisionOf(r), 'ask');
+    test('empty payload (no stdin bytes) on crash or exit 86: fails closed to deny, never crashes', async () => {
+      for (const mode of ['crash', 'exit86']) {
+        const r = await go({ payload: '', env: { STUB_MODE: mode } });
+        assertInvariant(r);
+        assert.equal(decisionOf(r), 'deny');
+      }
     });
 
     test('large payload (300 KB) is handled and child output forwarded', async () => {

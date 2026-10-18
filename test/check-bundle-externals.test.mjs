@@ -53,3 +53,28 @@ test('findExternalSpecifiers: catches numbered require identifiers emitted by es
   assert.deepEqual(findExternalSpecifiers(src), ['another-pkg', 'some-pkg']);
 });
 
+test('findExternalSpecifiers: catches direct and bound createRequire calls while allowing built-ins', () => {
+  const src = [
+    'import { createRequire } from "node:module";',
+    'const a = createRequire(import.meta.url)("direct-ext");',
+    'const ok1 = createRequire(import.meta.url)("node:fs");',
+    'const customReq = createRequire(import.meta.url);',
+    'const b = customReq("bound-ext");',
+    'const ok2 = customReq("node:crypto");',
+  ].join('\n');
+  assert.deepEqual(findExternalSpecifiers(src), ['bound-ext', 'direct-ext']);
+});
+
+test('findExternalSpecifiers: catches .resolve, bare __esm assignments, and __agbCreateRequire', () => {
+  const src = [
+    'const r1 = require.resolve("ext-resolve-1");',
+    'const r2 = createRequire(import.meta.url).resolve("ext-resolve-2");',
+    'var hoistedReq;',
+    'hoistedReq = __agbCreateRequire(import.meta.url);',
+    'const r3 = hoistedReq.resolve("ext-resolve-3");',
+    'const ok = require.resolve("node:fs");',
+  ].join('\n');
+  assert.deepEqual(findExternalSpecifiers(src), ['ext-resolve-1', 'ext-resolve-2', 'ext-resolve-3']);
+});
+
+

@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "9dbf4b9327cf32e64d55879e00b773be11e4b526d1007d618056d7fb802b33eb",
+    "version": 1
+  },
   "body": "1. In lib/brain.mjs line 180, use BRAIN_DIR instead of hardcoded '.gemini', 'jetski', 'brain': activeId ? join(BRAIN_DIR, activeId) : join(repo, '.booster').\n2. In lib/status.mjs line 224, rewind read offset to the last observed newline in the read buffer so partial trailing lines are preserved between ticks without dropping events or hanging on completion.\n3. In bin/agb.mjs line 321, default agb probe model to 'Gemini 3.8 Flash (Low)' to eliminate the retired 3.5 model warning.\n\nVerification: npm test && node test/status.test.mjs && node test/brain.test.mjs",
   "category": "bugfix",
   "completed": true,

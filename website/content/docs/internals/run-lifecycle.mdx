@@ -45,7 +45,7 @@ Each attempt gets an isolated per-attempt Git database and a generated `AGENTS.m
 <Step>
 ### Verify what the builder did
 
-The host fetches the candidate commit out of the worktree (the builder never writes the main repository's refs), checks that the root repository's Git state was not tampered with, and runs the authoritative scope and anti-no-op check: every changed file must match the ticket's `scope`, and the diff must not be empty ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1884-L1904)). When the ticket declares rails, `adlc rails-guard` runs too; a rail violation uses up every strike at once. A rail or scope strike resets the ticket worktree to the base so the bad commit does not carry into the next attempt.
+The host fetches the candidate commit out of the worktree (the builder never writes the main repository's refs), checks that the root repository's Git state was not tampered with, and runs the authoritative scope and anti-no-op check: every changed file must match the ticket's `scope`, and the diff must not be empty ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1884-L1904)). When the ticket declares rails, `adlc rails-guard` runs too; a rail violation consumes one strike and resets the ticket worktree to the base for a retry attempt (operational rail-guard failures or physical containment escapes use up every strike at once). A rail or scope strike resets the ticket worktree to the base so the bad commit does not carry into the next attempt.
 </Step>
 
 <Step>

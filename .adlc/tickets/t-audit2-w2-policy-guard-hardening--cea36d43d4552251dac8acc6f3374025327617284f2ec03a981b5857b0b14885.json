@@ -1,0 +1,24 @@
+{
+  "body": "1. In bin/hook-runner.sh emit_fallback(), set UNPARSEABLE=1 when stdin file TMP_IN is empty/missing so child failures with empty stdin fail closed to deny. Add test in test/hook-runner.test.mjs.\n2. In bin/node-launcher.sh is_trusted_candidate(), resolve REAL_HOME via resolve_full_path and accept candidates under either HOME or REAL_HOME. Add test in test/node-launcher.test.mjs.\n3. Set chmod +x on bin/node-launcher.sh (100755).",
+  "category": "bugfix",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-AUDIT2-W3-RUNTIME-GATES-AND-ISSUES"
+    }
+  ],
+  "id": "T-AUDIT2-W2-POLICY-GUARD-HARDENING",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "bin/hook-runner.sh",
+    "bin/node-launcher.sh",
+    "test/hook-runner.test.mjs",
+    "test/node-launcher.test.mjs"
+  ],
+  "title": "Wave 2: Fail-closed empty stdin in hook-runner.sh and symlinked HOME support in node-launcher.sh"
+}

@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -186,12 +186,33 @@ async function handleRequest(req) {
   sendError(id, -32601, `Method not found: ${method}`);
 }
 
+function requireNonFlagString(args, key) {
+  const val = args?.[key];
+  if (typeof val !== 'string' || val.trim().length === 0) {
+    return { ok: false, error: `Invalid or missing required string argument '${key}'` };
+  }
+  if (val.startsWith('-')) {
+    return { ok: false, error: `Positional argument '${key}' must not start with '-'` };
+  }
+  return { ok: true, value: val };
+}
+
 async function handleToolCall(id, name, args) {
   let cliArgs = [...baseArgs];
-  
+  let targetCwd;
+
   if (name === 'agb_plan') {
-    cliArgs.push('plan', args.spec, args.repo);
-    if (args.out) cliArgs.push('--out', args.out);
+    const specCheck = requireNonFlagString(args, 'spec');
+    if (!specCheck.ok) { sendError(id, -32602, specCheck.error); return; }
+    const repoCheck = requireNonFlagString(args, 'repo');
+    if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
+    targetCwd = resolve(repoCheck.value);
+    cliArgs.push('plan', resolve(specCheck.value), targetCwd);
+    if (args.out !== undefined) {
+      const outCheck = requireNonFlagString(args, 'out');
+      if (!outCheck.ok) { sendError(id, -32602, outCheck.error); return; }
+      cliArgs.push('--out', resolve(outCheck.value));
+    }
     if (args.force) cliArgs.push('--force');
     if (args.noColdstart) cliArgs.push('--no-coldstart');
     if (args.noParallax) cliArgs.push('--no-parallax');
@@ -206,16 +227,37 @@ async function handleToolCall(id, name, args) {
       });
       return;
     }
-    cliArgs.push('run', args.plan);
+    const planCheck = requireNonFlagString(args, 'plan');
+    if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
+    const absPlan = resolve(planCheck.value);
+    targetCwd = dirname(absPlan);
+    cliArgs.push('run', absPlan);
   } else if (name === 'agb_preflight') {
-    cliArgs.push('preflight', args.plan);
+    const planCheck = requireNonFlagString(args, 'plan');
+    if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
+    const absPlan = resolve(planCheck.value);
+    targetCwd = dirname(absPlan);
+    cliArgs.push('preflight', absPlan);
   } else if (name === 'agb_status') {
-    cliArgs.push('status', args.repo);
+    const repoCheck = requireNonFlagString(args, 'repo');
+    if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
+    targetCwd = resolve(repoCheck.value);
+    cliArgs.push('status', targetCwd);
   } else if (name === 'agb_doctor') {
+    if (typeof args.repo === 'string' && args.repo.trim().length > 0 && !args.repo.startsWith('-')) {
+      targetCwd = resolve(args.repo);
+    }
     cliArgs.push('doctor');
   } else if (name === 'agb_review') {
-    cliArgs.push('review', args.repo);
-    if (args.ref) cliArgs.push(args.ref);
+    const repoCheck = requireNonFlagString(args, 'repo');
+    if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
+    targetCwd = resolve(repoCheck.value);
+    cliArgs.push('review', targetCwd);
+    if (args.ref !== undefined) {
+      const refCheck = requireNonFlagString(args, 'ref');
+      if (!refCheck.ok) { sendError(id, -32602, refCheck.error); return; }
+      cliArgs.push(refCheck.value);
+    }
   } else {
     sendError(id, -32602, `Unknown tool: ${name}`);
     return;
@@ -223,10 +265,14 @@ async function handleToolCall(id, name, args) {
 
   // Spawn agb CLI execution
   try {
-    const child = spawn(agbCmd, cliArgs, {
+    const spawnOpts = {
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe']
-    });
+    };
+    if (targetCwd && existsSync(targetCwd)) {
+      spawnOpts.cwd = targetCwd;
+    }
+    const child = spawn(agbCmd, cliArgs, spawnOpts);
 
     activeProcesses.set(id, child);
 

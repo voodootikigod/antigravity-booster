@@ -147,6 +147,16 @@ describe('bin/node-launcher.sh', { skip }, () => {
         assert.equal(r.status, 0, r.stderr);
       });
 
+      test('symlinked $HOME directory accepts version-manager candidate under real home path', () => {
+        const fx = fixture();
+        mockNode(fnmPath(fx.home, '22.19.0'), '22.19.0');
+        const symHome = join(fx.dir, 'sym-home');
+        symlinkSync(fx.home, symHome);
+        const r = run(fx, ['dist/hello.mjs', 'sym'], { shell, env: { HOME: symHome } });
+        assert.equal(r.status, 0, r.stderr);
+        assert.deepEqual(JSON.parse(r.stdout), ['sym']);
+      });
+
       test('candidate inside AGB_TARGET_REPO is rejected', () => {
         const fx = fixture();
         mockNode(fnmPath(fx.home, '22.19.0'), '22.19.0');

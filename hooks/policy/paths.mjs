@@ -52,11 +52,12 @@ export function beginEvaluation(limit = DEFAULT_EVALUATION_BUDGET) {
  * (spec §4.5.1 resolveSafeTarget; P5 rounds 2 and 3). Components past the
  * first missing one are appended literally. A symlink loop yields null.
  */
-export function physicalResolve(input, base = '/') {
-  const normInput = String(input).replace(/\\/g, '/');
-  const normBase = String(base ?? '/').replace(/\\/g, '/');
-  const winInputDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normInput);
-  const winBaseDrive = /^[a-zA-Z]:(?:\/|$)/.exec(normBase);
+export function physicalResolve(input, base = '/', platform = process.platform) {
+  const isWin = platform === 'win32';
+  const normInput = isWin ? String(input).replace(/\\/g, '/') : String(input);
+  const normBase = isWin ? String(base ?? '/').replace(/\\/g, '/') : String(base ?? '/');
+  const winInputDrive = isWin ? /^[a-zA-Z]:(?:\/|$)/.exec(normInput) : null;
+  const winBaseDrive = isWin ? /^[a-zA-Z]:(?:\/|$)/.exec(normBase) : null;
 
   let root = '/';
   let raw = '';
@@ -106,8 +107,9 @@ export function physicalResolve(input, base = '/') {
       if (st?.isSymbolicLink()) {
         hops += 1;
         if (hops > MAX_SYMLINK_HOPS) return null;
-        const target = readlinkSync(next).replace(/\\/g, '/');
-        const targetWinDrive = /^[a-zA-Z]:(?:\/|$)/.exec(target);
+        const rawTarget = readlinkSync(next);
+        const target = isWin ? rawTarget.replace(/\\/g, '/') : rawTarget;
+        const targetWinDrive = isWin ? /^[a-zA-Z]:(?:\/|$)/.exec(target) : null;
         if (targetWinDrive) {
           root = targetWinDrive[0].endsWith('/') ? targetWinDrive[0] : `${targetWinDrive[0]}/`;
           current = root;
@@ -136,18 +138,18 @@ export function physicalResolve(input, base = '/') {
 }
 
 /** Physical path for policy matching; a symlink loop falls back to the lexical path. */
-export function resolveSafeTarget(absPath) {
-  return physicalResolve(absPath) ?? resolve(absPath);
+export function resolveSafeTarget(absPath, platform = process.platform) {
+  return physicalResolve(absPath, '/', platform) ?? resolve(absPath);
 }
 
 /** Resolve a candidate token against `base`, returning both lexical and real forms. */
-export function resolveCandidate(token, base, home) {
+export function resolveCandidate(token, base, home, platform = process.platform) {
   const expanded = expandHome(token, home);
   const lexical = isAbsolute(expanded) ? resolve(expanded) : resolve(base ?? '/', expanded);
   // The physical path is resolved from the RAW token: collapsing `..` first
   // (as resolve() does) would skip symlinks the kernel follows. A symlink loop
   // or an absurd path cannot be resolved: callers deny `unresolved` targets.
-  const real = physicalResolve(expanded, base ?? '/');
+  const real = physicalResolve(expanded, base ?? '/', platform);
   return { lexical, real: real ?? lexical, unresolved: real === null };
 }
 
@@ -157,8 +159,9 @@ function fold(p, platform) {
 
 /** True when `child` equals `parent` or sits beneath it. */
 export function isWithin(child, parent, platform = process.platform) {
-  const normChild = child.replace(/\\/g, '/');
-  const normParent = parent.replace(/\\/g, '/');
+  const isWin = platform === 'win32';
+  const normChild = isWin ? child.replace(/\\/g, '/') : child;
+  const normParent = isWin ? parent.replace(/\\/g, '/') : parent;
   const c = fold(normChild, platform);
   const p = fold(normParent, platform);
   return c === p || c.startsWith(p.endsWith('/') ? p : p + '/');
@@ -205,8 +208,14 @@ export function repoRelative(abs, repoRoot) {
     // keep lexical
   }
   const rel = relative(realRepo, abs);
-  if (rel.startsWith('..') || isAbsolute(rel)) return null;
-  return rel.split(sep).join('/');
+  if (!rel.startsWith('..') && !isAbsolute(rel)) {
+    return rel.split(sep).join('/');
+  }
+  const lexRel = relative(resolve(repoRoot), resolve(abs));
+  if (!lexRel.startsWith('..') && !isAbsolute(lexRel)) {
+    return lexRel.split(sep).join('/');
+  }
+  return null;
 }
 
 function covers(rel, target, platform) {

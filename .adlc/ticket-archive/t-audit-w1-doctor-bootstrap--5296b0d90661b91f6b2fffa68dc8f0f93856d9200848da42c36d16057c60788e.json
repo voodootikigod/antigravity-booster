@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "b6ae310ef9dbaaccb816061a0f83b323c662b9ac8ccb98d432deed256181c234",
+    "version": 1
+  },
   "body": "1. In lib/doctor.mjs line 1202 checkTicketStore: change strict check to `if (!parsed.ok || (parsed.exitCode !== undefined && parsed.exitCode !== 0))` so clean ticket doctor output from @adlc/tickets passes.\n2. In lib/doctor.mjs line 20 checkNodeVersion: enforce Node >= 22.19.0 to align with package.json engines and bin/node-launcher.sh.\n3. In lib/bootstrap.mjs line 282: probe resolvedAgyBin directly via execFileSync(resolvedAgyBin, ['--version']) rather than requiring the external 'which' utility.\n\nVerification: npm test && node bin/agb.mjs doctor",
   "category": "bugfix",
   "completed": true,

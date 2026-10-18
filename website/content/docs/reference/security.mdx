@@ -6,8 +6,8 @@ claims: [C3, C22, C23]
 
 agb runs an LLM that writes code in your repository, executes your build and test commands against that code, and merges the result. This page states what agb trusts, what it does not, and the mechanisms in v1.0.0 that hold the line. To report a vulnerability, follow the process in [SECURITY.md](https://github.com/voodootikigod/antigravity-booster/blob/main/SECURITY.md).
 
-<Callout type="info" title="This page supersedes parts of SECURITY.md">
-The threat-model section of the root `SECURITY.md` predates the v1.0.0 sandbox and environment work: it describes gate sandboxing as macOS-only and says subprocesses inherit your whole environment. The behavior below is read from the v1.0.0 source.
+<Callout type="info" title="Relationship to SECURITY.md">
+This page expands on the repository's root `SECURITY.md` with line-anchored source citations for gate sandboxing, environment scrubbing, sidecar origin validation, and on-disk state permissions.
 </Callout>
 
 ## Trust model

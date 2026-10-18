@@ -20,24 +20,39 @@ import { computeDirectoryDigest } from '../lib/digest.mjs';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const BRIDGE = join(ROOT, 'lib', 'adlc-bridge.mjs');
 export const VENDORED_PACKAGES = [
-  '@adlc/rails-guard', '@adlc/gate-manifest', '@adlc/flail-detector', '@adlc/hollow-test',
+  '@adlc/core', '@adlc/rails-guard', '@adlc/gate-manifest', '@adlc/flail-detector', '@adlc/hollow-test',
   '@adlc/consensus-fix', '@adlc/model-router', '@adlc/merge-forecast', '@adlc/tickets',
 ];
 
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 const sri512 = (buf) => `sha512-${createHash('sha512').update(buf).digest('base64')}`;
 
-/** Re-pack the installed package and compare to the lockfile's registry integrity. */
+/** Re-pack the installed package and compare to the lockfile's registry integrity and local node_modules tree. */
 export function verifyAgainstLockfile(pkg, { root = ROOT } = {}) {
   const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
   const entry = lock.packages?.[`node_modules/${pkg}`];
   if (!entry?.integrity || !entry?.version) return { ok: false, error: `${pkg}: no lockfile integrity` };
+  const localDir = join(root, 'node_modules', pkg);
+  if (!existsSync(localDir)) return { ok: false, error: `${pkg}: missing from node_modules` };
   const out = mkdtempSync(join(tmpdir(), 'agb-digest-'));
   try {
     // npm pack of the exact registry version reproduces the published tarball.
-    const name = execFileSync('npm', ['pack', `${pkg}@${entry.version}`, '--pack-destination', out, '--silent'], { cwd: out, encoding: 'utf8' }).trim().split('\n').pop();
-    const actual = sri512(readFileSync(join(out, name)));
-    return actual === entry.integrity ? { ok: true, version: entry.version } : { ok: false, error: `${pkg}@${entry.version}: registry tarball ${actual} != lockfile ${entry.integrity}` };
+    const isWin = process.platform === 'win32';
+    const name = execFileSync(isWin ? 'npm.cmd' : 'npm', ['pack', `${pkg}@${entry.version}`, '--pack-destination', out, '--silent'], { cwd: out, encoding: 'utf8', shell: isWin }).trim().split('\n').pop();
+    const tarballPath = join(out, name);
+    const actual = sri512(readFileSync(tarballPath));
+    if (actual !== entry.integrity) {
+      return { ok: false, error: `${pkg}@${entry.version}: registry tarball ${actual} != lockfile ${entry.integrity}` };
+    }
+    const unpackDir = join(out, 'unpacked');
+    execFileSync('tar', ['-xzf', tarballPath, '-C', out], { stdio: 'ignore' });
+    const unpackedPkgDir = join(out, 'package');
+    const registryTreeDigest = computeDirectoryDigest(unpackedPkgDir, { exclude: ['package.json', 'node_modules'] });
+    const localTreeDigest = computeDirectoryDigest(localDir, { exclude: ['package.json', 'node_modules'] });
+    if (registryTreeDigest !== localTreeDigest) {
+      return { ok: false, error: `${pkg}@${entry.version}: local node_modules/${pkg} tree digest (${localTreeDigest}) != registry tarball (${registryTreeDigest})` };
+    }
+    return { ok: true, version: entry.version };
   } catch (err) {
     return { ok: false, error: `${pkg}: ${err.message}` };
   } finally {

@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-18T11:50:00.000Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b017084fb92f296630a5d3e470995ca88bd0fcca0b9781b238f4061f288a31b5",
+    "ticketHash": "eab665f43fa49fdb343c4af2718d637129fa775a6d6d7e934132776b628fc124",
+    "version": 1
+  },
   "body": "1. In hooks/policy/constants.mjs, add 'manage_task' to ORCHESTRATION_TOOLS, and add 'find_by_name' to READ_ONLY_TOOLS and READ_TOOL_PATH_SCHEMAS.\n2. In bin/hook-runner.sh line 192, add fallback read-only tool matchers for manage_task and find_by_name.\n3. In bin/hook-runner.sh line 169, ensure missing Node runtime (exit 86) on 0-byte stdin in an ADLC repository fails closed.\n4. In hooks/policy/paths.mjs line 116, fold case on platform === 'win32' as well as 'darwin', and normalize Windows drive letter paths in physicalResolve.\n5. In lib/active-rails.mjs line 70, exclude Windows drive roots (curr === dirname(curr)) alongside '/'.\n6. Rebuild hook bundle: npm run build:hooks.\n\nVerification: npm test && node test/policy-guard.test.mjs",
   "category": "bugfix",
   "completed": true,

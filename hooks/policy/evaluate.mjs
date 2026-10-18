@@ -12,7 +12,7 @@ import { basename, isAbsolute, join, resolve } from 'node:path';
 import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
-  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
+  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
   PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS,
 } from './constants.mjs';
 import {
@@ -77,14 +77,25 @@ function makeRepoCache(home) {
   };
 }
 
+function matchDirectBoosterMcpPrefix(name) {
+  for (const server of BOOSTER_MCP_SERVERS) {
+    for (const prefix of [`mcp__${server}__`, `mcp_${server}_`]) {
+      if (name.startsWith(prefix)) {
+        const tool = name.slice(prefix.length);
+        if (BOOSTER_MCP_TOOLS.has(tool)) return tool;
+      }
+    }
+  }
+  return null;
+}
+
 export function isBoosterMcpTool(name, args) {
-  if (name === 'call_mcp_tool') return args?.ServerName === BOOSTER_MCP_SERVER && BOOSTER_MCP_TOOLS.has(args?.ToolName);
-  const prefix = `mcp__${BOOSTER_MCP_SERVER}__`;
-  return name.startsWith(prefix) && BOOSTER_MCP_TOOLS.has(name.slice(prefix.length));
+  if (name === 'call_mcp_tool') return BOOSTER_MCP_SERVERS.has(args?.ServerName) && BOOSTER_MCP_TOOLS.has(args?.ToolName);
+  return matchDirectBoosterMcpPrefix(name) !== null;
 }
 
 function boosterMcpToolName(name, args) {
-  return name === 'call_mcp_tool' ? args?.ToolName : name.slice(`mcp__${BOOSTER_MCP_SERVER}__`.length);
+  return name === 'call_mcp_tool' ? args?.ToolName : (matchDirectBoosterMcpPrefix(name) ?? name.slice(`mcp__${BOOSTER_MCP_SERVER}__`.length));
 }
 
 /** Probed-schema path extraction for file-mutating tools (§4.5.1). */
@@ -104,7 +115,7 @@ export function extractProbedPaths(toolName, args) {
   return { paths };
 }
 
-const looksLikePath = (s) => isAbsolute(s) || hasHomePrefix(s) || s.includes('/') || s.startsWith('.') || FILE_URL.test(s);
+const looksLikePath = (s) => isAbsolute(s) || hasHomePrefix(s) || s.includes('/') || s.includes('\\') || s.startsWith('.') || FILE_URL.test(s);
 
 /**
  * A.6 item 9: every string (and object key) that looks like a path, anywhere
@@ -149,8 +160,8 @@ function readToolPaths(name, args) {
  * No anchor at all yields [] — callers fail closed.
  */
 function resolveAll(token, ctx) {
-  if (isAbsolute(token) || hasHomePrefix(token)) return [resolveCandidate(token, '/', ctx.home)];
-  return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home));
+  if (isAbsolute(token) || hasHomePrefix(token)) return [resolveCandidate(token, '/', ctx.home, ctx.platform)];
+  return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home, ctx.platform));
 }
 
 const DEFAULT_SUBTREE_ENTRIES = 50000;
@@ -328,6 +339,27 @@ function schemaViolationVerdict(name, args, reason, ctx) {
   return PASS;
 }
 
+function evaluateOneTargetForm(target, name, args, ctx, workerRepos) {
+  const { verdict, repo, rel } = gateOnePath(target, ctx);
+  if (verdict.decision !== 'pass') return verdict;
+  if (repo.adlc && rel) {
+    const shard = newShardVerdict(name, rel, args, ctx.platform);
+    if (shard) return shard;
+  }
+  // A worker may write only inside its own ADLC repo's ticket scope, and never
+  // into an ADLC repo that is not its own (P5 rounds 3–5).
+  const repoRealRoot = repo.adlc ? realOr(repo.root) : null;
+  if (ctx.workerTicket && repo.adlc && !workerRepos.some((w) => realOr(w.root) === repoRealRoot)) {
+    return deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation in another ADLC repository: ${target.real}`);
+  } else if (workerRepos.length > 0) {
+    if (!repo.adlc || !workerRepos.some((w) => realOr(w.root) === repoRealRoot)) {
+      return deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${target.real}`);
+    }
+    return workerScopeVerdict(repo, rel, ctx);
+  }
+  return PASS;
+}
+
 function evaluateFileTool(name, args, ctx) {
   const extracted = extractProbedPaths(name, args);
   if (!extracted || extracted.error) {
@@ -357,28 +389,9 @@ function evaluateFileTool(name, args, ctx) {
         verdicts.push(contains);
         continue;
       }
-      const { verdict, repo, rel } = gateOnePath(r, ctx);
-      if (verdict.decision !== 'pass') {
-        verdicts.push(verdict);
-        continue;
-      }
-      if (repo.adlc && rel) {
-        const shard = newShardVerdict(name, rel, args, ctx.platform);
-        if (shard) {
-          verdicts.push(shard);
-          continue;
-        }
-      }
-      // A worker may write only inside its own ADLC repo's ticket scope, and never
-      // into an ADLC repo that is not its own (P5 rounds 3–5).
-      if (ctx.workerTicket && repo.adlc && !workerRepos.some((w) => w.root === repo.root)) {
-        verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation in another ADLC repository: ${r.real}`));
-      } else if (workerRepos.length > 0) {
-        if (!repo.adlc || !workerRepos.some((w) => w.root === repo.root)) {
-          verdicts.push(deny(`Headless worker for ticket ${ctx.workerTicket} attempted mutation outside its repository: ${r.real}`));
-        } else {
-          verdicts.push(workerScopeVerdict(repo, rel, ctx));
-        }
+      verdicts.push(evaluateOneTargetForm(r, name, args, ctx, workerRepos));
+      if (r.lexical !== r.real) {
+        verdicts.push(evaluateOneTargetForm({ ...r, real: r.lexical }, name, args, ctx, workerRepos));
       }
     }
   }
@@ -389,11 +402,18 @@ function evaluateMcpTool(name, args, ctx) {
   const scan = scanPathLike(args);
   if (scan.overflow) return OVERFLOW;
   const verdicts = [];
+  const scannedRepos = [];
   for (const token of scan.paths) {
     for (const r of resolveAll(token, ctx)) {
       // An MCP argument that names a repository (e.g. `repo`) is a reference, not a mutation target.
-      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      const { verdict, repo } = gateOnePath(r, ctx, { rootIsTarget: false });
+      scannedRepos.push(repo);
       if (verdict.decision === 'deny') verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${verdict.reason})`));
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === 'deny') verdicts.push(deny(`Target path '${token}' in MCP tool call references frozen rail (${lexRes.verdict.reason})`));
+      }
     }
   }
   if (verdicts.length) return mostRestrictive(verdicts);
@@ -403,7 +423,7 @@ function evaluateMcpTool(name, args, ctx) {
   }
   if (ctx.readonly) return deny('Third-party MCP tool call cannot prompt operator in a read-only agb worker session');
   if (ctx.workerTicket && ctx.anchors.length === 0) return deny('Headless worker has no workspace; tool call denied');
-  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  const repos = [...ctx.anchors.map((a) => ctx.repoAt(a)), ...scannedRepos];
   if (ctx.workerTicket && repos.some((r) => r.adlc)) return deny('Third-party MCP tool call cannot prompt operator in headless worker mode');
   if (repos.some((r) => r.adlc && r.activeRail)) {
     return ctx.headless
@@ -419,13 +439,20 @@ function evaluateUnknownTool(args, ctx) {
   // Trust-root and rail gating applies to unknown tools in every repo (P5 round 3 M6).
   const scan = scanPathLike(args);
   if (scan.overflow) return OVERFLOW;
+  const scannedRepos = [];
   for (const token of scan.paths) {
     for (const r of resolveAll(token, ctx)) {
-      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      const { verdict, repo } = gateOnePath(r, ctx, { rootIsTarget: false });
+      scannedRepos.push(repo);
       if (verdict.decision === 'deny') return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === 'deny') return lexRes.verdict;
+      }
     }
   }
-  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  const repos = [...ctx.anchors.map((a) => ctx.repoAt(a)), ...scannedRepos];
   if (repos.some((r) => r.adlc && (r.activeRail || ctx.workerTicket))) {
     return deny('Unknown tool in ADLC repository with active frozen rails; cannot verify safety');
   }
@@ -479,6 +506,6 @@ export function evaluatePayload(payload, options = {}) {
   if (READ_ONLY_TOOLS.has(name) || ORCHESTRATION_TOOLS.has(name)) return PASS;
   if (name === 'run_command') return classifyRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
-  if (name === 'call_mcp_tool' || name.startsWith('mcp__')) return evaluateMcpTool(name, args, ctx);
+  if (name === 'call_mcp_tool' || name.startsWith('mcp__') || name.startsWith('mcp_')) return evaluateMcpTool(name, args, ctx);
   return evaluateUnknownTool(args, ctx);
 }

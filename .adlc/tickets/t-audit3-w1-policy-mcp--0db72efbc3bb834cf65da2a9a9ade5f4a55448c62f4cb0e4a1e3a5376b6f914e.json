@@ -1,0 +1,19 @@
+{
+  "body": "Fix BLOCKER-1 (platform-gated backslash normalization in physicalResolve and lexical+real target evaluation), BLOCKER-2 (platform-gated backslash normalization in isWithin and workspace ADLC context retention), SHOULD-FIX #11 (looksLikePath backslash check), SHOULD-FIX #12 (scanned target repos in evaluateMcpTool/evaluateUnknownTool), SHOULD-FIX #13 (allow node --test on declared rail test files), SHOULD-FIX #14 (spawn agb with targetCwd and validate arguments in mcp/server.mjs), and SHOULD-FIX #15 (recognize antigravity-booster_agb MCP server name).",
+  "completed": true,
+  "edges": [],
+  "id": "T-AUDIT3-W1-POLICY-MCP",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "hooks/policy/**",
+    "mcp/server.mjs",
+    "test/policy-guard-bypass.test.mjs",
+    "test/pre-tool-use.test.mjs"
+  ],
+  "title": "Remediate Policy Guard BLOCKERs & MCP Server findings from 1.2.0 release audit"
+}

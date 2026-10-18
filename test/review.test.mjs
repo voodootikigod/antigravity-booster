@@ -5,9 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { reviewFleet } from '../lib/review.mjs';
+import { reviewFleet, reviewDiff } from '../lib/review.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
+
+test('reviewDiff: rejects ref values starting with a dash to prevent git flag injection', () => {
+  assert.throws(() => reviewDiff(process.cwd(), '--output=/tmp/pwn'), /Invalid git ref/);
+  assert.throws(() => reviewDiff(process.cwd(), '-p'), /Invalid git ref/);
+});
 
 test('reviewFleet: passes project option to runAgy', async () => {
   const state = mkdtempSync(join(tmpdir(), 'agb-review-test-'));

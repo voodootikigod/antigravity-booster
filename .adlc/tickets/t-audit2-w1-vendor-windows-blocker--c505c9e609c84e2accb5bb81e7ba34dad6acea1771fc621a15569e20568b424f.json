@@ -1,0 +1,20 @@
+{
+  "body": "1. Fix lib/digest.mjs win32 executable bit simulation so package/bin/cli.mjs (0644) stays class f on Windows and matches STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS[1.7.0]. Add regression test in test/digest.test.mjs.\n2. Update .gitattributes to enforce eol=lf on text/dist/vendor/adlc and binary on vendor/cache/*.tgz.\n3. Fix defaultUninstallerArgv in lib/migrate.mjs on win32 to invoke process.execPath on dist/agb.mjs instead of /bin/sh.\n4. Use npm.cmd + shell:true on win32 in scripts/update-adlc-digests.mjs.",
+  "completed": true,
+  "edges": [],
+  "id": "T-AUDIT2-W1-VENDOR-WINDOWS-BLOCKER",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "lib/digest.mjs",
+    "test/digest.test.mjs",
+    ".gitattributes",
+    "lib/migrate.mjs",
+    "scripts/update-adlc-digests.mjs"
+  ],
+  "title": "Wave 1: Resolve Windows digest blocker, line-ending attributes, and Windows uninstaller/pack paths"
+}
