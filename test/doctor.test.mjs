@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, runDoctor } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor } from '../lib/doctor.mjs';
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -387,5 +387,26 @@ test('checkTicketStore: runs cleanly on current repo with project-local @adlc/cl
   const res = await checkTicketStore({ cwd: process.cwd() });
   assert.equal(res.level, 'pass');
   assert.match(res.detail, /directory backend/);
+});
+
+test('checkKernelContainment: ignores mocks outside test mode when NODE_ENV is production', () => {
+  // Outside test mode (NODE_ENV=production), mocks must be ignored
+  const resUnavailable = checkKernelContainment('unsupported_test_os', {
+    env: { NODE_ENV: 'production', AGB_MOCK_CONTAINMENT_UNAVAILABLE: '1' },
+  });
+  assert.equal(resUnavailable.kind, 'unsupported_platform');
+  assert.notEqual(resUnavailable.kind, 'mock_unavailable');
+
+  const resMechanism = checkKernelContainment('unsupported_test_os', {
+    env: { NODE_ENV: 'production', AGB_MOCK_CONTAINMENT_MECHANISM: 'mock_custom' },
+  });
+  assert.equal(resMechanism.kind, 'unsupported_platform');
+  assert.notEqual(resMechanism.mechanism, 'mock_custom');
+
+  // Verify that inside test mode, mocks are respected
+  const resMocked = checkKernelContainment('unsupported_test_os', {
+    env: { AGB_MOCK_CONTAINMENT_UNAVAILABLE: '1' },
+  });
+  assert.equal(resMocked.kind, 'mock_unavailable');
 });
 

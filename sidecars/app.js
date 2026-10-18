@@ -39,7 +39,7 @@ async function pollEvents() {
         state.runId = data.runId;
         eventsLog.innerHTML = '';
         runStatus.innerHTML = '<span class="pulse"></span>Waiting for activity...';
-        runStatus.className = 'status-badge status-running';
+        runStatus.className = 'run-status status-badge status-running';
         console.log('Resetting dashboard for new run:', data.runId);
         offset = 0;
         // Re-fetch with 0 offset immediately
@@ -65,19 +65,19 @@ async function pollEvents() {
       }
       
       if (data.warning) {
-        runStatus.innerHTML = `<span class="pulse" style="background-color: var(--color-status-failed)"></span>${data.warning}`;
-        runStatus.className = 'status-badge status-failed';
+        runStatus.innerHTML = `<span class="pulse" style="background-color: var(--danger)"></span>${data.warning}`;
+        runStatus.className = 'run-status status-badge status-failed';
       } else if (runStatus.className.includes('status-failed') && (runStatus.innerHTML.includes('Dropped oversized line') || runStatus.innerHTML.includes('Dropped unparseable JSON line'))) {
         runStatus.innerHTML = '<span class="pulse"></span>Running...';
-        runStatus.className = 'status-badge status-running';
+        runStatus.className = 'run-status status-badge status-running';
       }
     } else {
       if (res.status === 401 || res.status === 403) {
-        runStatus.innerHTML = '<span class="pulse" style="background-color: var(--color-status-failed)"></span>Dashboard token is stale — restart the panel from the new URL';
-        runStatus.className = 'status-badge status-failed';
+        runStatus.innerHTML = '<span class="pulse" style="background-color: var(--danger)"></span>Dashboard token is stale — restart the panel from the new URL';
+        runStatus.className = 'run-status status-badge status-failed';
       } else {
-        runStatus.innerHTML = '<span class="pulse" style="background-color: var(--color-status-failed)"></span>Network error or server unavailable';
-        runStatus.className = 'status-badge status-failed';
+        runStatus.innerHTML = '<span class="pulse" style="background-color: var(--danger)"></span>Network error or server unavailable';
+        runStatus.className = 'run-status status-badge status-failed';
       }
     }
   } catch (err) {
@@ -91,6 +91,10 @@ async function pollEvents() {
 function processEvent(evt) {
   addEventLog(evt);
   
+  if ((evt.type === 'pool' || evt.type === 'phase' || evt.type === 'strike') && !state.done && runStatus.innerHTML.includes('Waiting for activity...')) {
+    runStatus.innerHTML = '<span class="pulse"></span>Running...';
+  }
+
   if (evt.type === 'pool') {
     state.pools = evt.pools;
   } else if (evt.type === 'report') {
