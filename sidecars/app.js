@@ -65,10 +65,12 @@ async function pollEvents() {
       }
       
       if (data.warning) {
-        runStatus.innerHTML = `<span class="pulse" style="background-color: var(--danger)"></span>${data.warning}`;
-        runStatus.className = 'run-status status-badge status-failed';
+        if (!state.done) {
+          runStatus.innerHTML = `<span class="pulse" style="background-color: var(--danger)"></span>${data.warning}`;
+          runStatus.className = 'run-status status-badge status-failed';
+        }
       } else if (runStatus.className.includes('status-failed') && (runStatus.innerHTML.includes('Dropped oversized line') || runStatus.innerHTML.includes('Dropped unparseable JSON line'))) {
-        runStatus.innerHTML = '<span class="pulse"></span>Running...';
+        runStatus.innerHTML = state.done ? '<span class="pulse done"></span> Run Complete' : '<span class="pulse"></span>Running...';
         runStatus.className = 'run-status status-badge status-running';
       }
     } else {
@@ -100,6 +102,7 @@ function processEvent(evt) {
   } else if (evt.type === 'report') {
     state.done = true;
     runStatus.innerHTML = '<span class="pulse done"></span> Run Complete';
+    runStatus.className = 'run-status status-badge status-running';
   } else if (evt.ticket) {
     if (!state.tickets.has(evt.ticket)) {
       state.tickets.set(evt.ticket, { id: evt.ticket, phase: 'pending' });

@@ -5666,7 +5666,7 @@ function scopesOverlap(a, b) {
 
 // lib/agy.mjs
 import { spawn as spawn2, execFileSync as execFileSync8 } from "node:child_process";
-import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10, symlinkSync as symlinkSync3, readdirSync as readdirSync9, copyFileSync as copyFileSync4 } from "node:fs";
+import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10, symlinkSync as symlinkSync3, readdirSync as readdirSync9, copyFileSync as copyFileSync4, cpSync as cpSync2 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { tmpdir as tmpdir6, homedir as homedir4 } from "node:os";
 import { dirname as dirname15, join as join20, resolve as resolve10, relative as relative7, isAbsolute as isAbsolute6 } from "node:path";
@@ -10500,6 +10500,27 @@ var WRITABLE_ANTIGRAVITY_CLI_ENTRIES = /* @__PURE__ */ new Set([
   "last_check.timestamp",
   "settings.json.bak"
 ]);
+function stageGeminiEntry(entry, srcPath, dstPath, platform2) {
+  if (lstatSync10(dstPath, { throwIfNoEntry: false })) return;
+  if (platform2 !== "win32") {
+    try {
+      symlinkSync3(srcPath, dstPath);
+    } catch {
+    }
+    return;
+  }
+  if (entry.isFile()) {
+    try {
+      copyFileSync4(srcPath, dstPath);
+    } catch {
+    }
+  } else if (entry.isDirectory()) {
+    try {
+      cpSync2(srcPath, dstPath, { recursive: true, force: false, errorOnExist: false });
+    } catch {
+    }
+  }
+}
 function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
   let worktreeDir = cwd;
   try {
@@ -10532,20 +10553,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
     try {
       for (const entry of readdirSync9(realGemini, { withFileTypes: true })) {
         if (WRITABLE_GEMINI_RUNTIME_DIRS.has(entry.name) || entry.name.startsWith("agb-sidecar-plugin-")) continue;
-        const srcPath = join20(realGemini, entry.name);
-        const dstPath = join20(targetGemini, entry.name);
-        if (lstatSync10(dstPath, { throwIfNoEntry: false })) continue;
-        if (platform2 !== "win32") {
-          try {
-            symlinkSync3(srcPath, dstPath);
-          } catch {
-          }
-        } else if (entry.isFile()) {
-          try {
-            copyFileSync4(srcPath, dstPath);
-          } catch {
-          }
-        }
+        stageGeminiEntry(entry, join20(realGemini, entry.name), join20(targetGemini, entry.name), platform2);
       }
     } catch {
     }
@@ -10554,20 +10562,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
       try {
         for (const entry of readdirSync9(realConfig, { withFileTypes: true })) {
           if (entry.name === "projects") continue;
-          const srcPath = join20(realConfig, entry.name);
-          const dstPath = join20(targetConfig, entry.name);
-          if (lstatSync10(dstPath, { throwIfNoEntry: false })) continue;
-          if (platform2 !== "win32") {
-            try {
-              symlinkSync3(srcPath, dstPath);
-            } catch {
-            }
-          } else if (entry.isFile()) {
-            try {
-              copyFileSync4(srcPath, dstPath);
-            } catch {
-            }
-          }
+          stageGeminiEntry(entry, join20(realConfig, entry.name), join20(targetConfig, entry.name), platform2);
         }
       } catch {
       }
@@ -10577,20 +10572,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
       try {
         for (const entry of readdirSync9(realCli, { withFileTypes: true })) {
           if (WRITABLE_ANTIGRAVITY_CLI_ENTRIES.has(entry.name)) continue;
-          const srcPath = join20(realCli, entry.name);
-          const dstPath = join20(targetCli, entry.name);
-          if (lstatSync10(dstPath, { throwIfNoEntry: false })) continue;
-          if (platform2 !== "win32") {
-            try {
-              symlinkSync3(srcPath, dstPath);
-            } catch {
-            }
-          } else if (entry.isFile()) {
-            try {
-              copyFileSync4(srcPath, dstPath);
-            } catch {
-            }
-          }
+          stageGeminiEntry(entry, join20(realCli, entry.name), join20(targetCli, entry.name), platform2);
         }
       } catch {
       }
@@ -13065,7 +13047,7 @@ import {
   readdirSync as readdirSync11,
   rmSync as rmSync9,
   symlinkSync as symlinkSync4,
-  cpSync as cpSync2,
+  cpSync as cpSync3,
   lstatSync as lstatSync11,
   realpathSync as realpathSync8
 } from "node:fs";
@@ -13322,7 +13304,7 @@ function createIntegrationWorktree(repo, token, base = "main") {
       symlinkSync4(repoModules, targetModules, "junction");
     } catch {
       try {
-        cpSync2(repoModules, targetModules, { recursive: true });
+        cpSync3(repoModules, targetModules, { recursive: true });
       } catch {
       }
     }

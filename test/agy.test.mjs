@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runAgy } from '../lib/agy.mjs';
+import { runAgy, stageBuilderGeminiHome } from '../lib/agy.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 
@@ -261,3 +261,30 @@ test('runAgy: builder mode stages writable .agb_home/.gemini/antigravity-cli/plu
     rmSync(fakeWorktree, { recursive: true, force: true });
   }
 });
+
+test('stageBuilderGeminiHome: on win32 copies directory entries (e.g. config/plugins, antigravity-cli/builtin) without symlinks/junctions', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agb-win32-home-'));
+  const fakeWorktree = mkdtempSync(join(tmpdir(), 'agb-win32-wt-'));
+  try {
+    const realGemini = join(fakeHome, '.gemini');
+    mkdirSync(join(realGemini, 'config', 'plugins', 'antigravity-booster'), { recursive: true });
+    mkdirSync(join(realGemini, 'antigravity-cli', 'builtin', 'skills'), { recursive: true });
+    writeFileSync(join(realGemini, 'oauth_creds.json'), '{"token":"win32-secret"}');
+    writeFileSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'plugin.json'), '{"name":"antigravity-booster"}');
+    writeFileSync(join(realGemini, 'antigravity-cli', 'builtin', 'skills', 'SKILL.md'), '# skill');
+
+    const agbHome = stageBuilderGeminiHome(fakeWorktree, fakeHome, 'win32');
+    const stagedGemini = join(agbHome, '.gemini');
+    assert.equal(lstatSync(stagedGemini).isSymbolicLink(), false);
+    assert.equal(lstatSync(join(stagedGemini, 'oauth_creds.json')).isSymbolicLink(), false);
+    assert.equal(readFileSync(join(stagedGemini, 'oauth_creds.json'), 'utf8'), '{"token":"win32-secret"}');
+    assert.equal(lstatSync(join(stagedGemini, 'config', 'plugins')).isSymbolicLink(), false);
+    assert.equal(readFileSync(join(stagedGemini, 'config', 'plugins', 'antigravity-booster', 'plugin.json'), 'utf8'), '{"name":"antigravity-booster"}');
+    assert.equal(lstatSync(join(stagedGemini, 'antigravity-cli', 'builtin')).isSymbolicLink(), false);
+    assert.equal(readFileSync(join(stagedGemini, 'antigravity-cli', 'builtin', 'skills', 'SKILL.md'), 'utf8'), '# skill');
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+    rmSync(fakeWorktree, { recursive: true, force: true });
+  }
+});
+
