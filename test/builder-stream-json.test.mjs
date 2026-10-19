@@ -1648,7 +1648,7 @@ test('runAgy builder: bwrap containment rejects FAKE_STATE_DIR outside tmpdir or
     const validTmpState = mkdtempSync(join(tmpdir(), 'agb-tmp-fake-state-'));
     try {
       let prodSpawnedArgs = null;
-      await runAgy({
+      const prodRes = await runAgy({
         model: 'gemini-flash',
         prompt: 'Ticket T1 TICKET-DONE',
         cwd: dir,
@@ -1666,7 +1666,12 @@ test('runAgy builder: bwrap containment rejects FAKE_STATE_DIR outside tmpdir or
 
       let realValidTmp;
       try { realValidTmp = realpathSync(validTmpState); } catch { realValidTmp = validTmpState; }
-      assert.equal(prodSpawnedArgs.includes(realValidTmp), false, 'FAKE_STATE_DIR must not be mounted when NODE_ENV=production');
+      if (prodSpawnedArgs) {
+        assert.equal(prodSpawnedArgs.includes(realValidTmp), false, 'FAKE_STATE_DIR must not be mounted when NODE_ENV=production');
+      } else {
+        assert.equal(prodRes.ok, false, 'When NODE_ENV=production on non-bwrap host, mock containment is rejected before spawn');
+        assert.equal(prodRes.kind, 'containment_unavailable');
+      }
     } finally {
       rmSync(validTmpState, { recursive: true, force: true });
     }

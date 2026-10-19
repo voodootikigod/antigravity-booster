@@ -1,0 +1,36 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:23:51.430Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "26d6a7a35eaa4e7aa811bb9ce5fc30e87b5e2c11adb1d13ee09b6a5e07668064",
+    "ticketHash": "ac0ef1e89586ee3d56191871bc5169a6afda02a1b9840f409d3a5247ccc1cb6f",
+    "version": 1
+  },
+  "body": "1. Fix rail strike behavior description in website/content/docs/internals/run-lifecycle.mdx.\n2. Update mid tier model table and hint prose in website/content/docs/guides/writing-plans.mdx and website/content/docs/concepts/pools-and-tiers.mdx while keeping C4/C20 evidence links intact.\n3. Update Callout in website/content/docs/reference/security.mdx (#125).\n4. Document all 3 brain dir candidates and custom remediation in website/content/docs/getting-started/verify.mdx and quickstart.mdx (#127).\n5. Move MCP agb_run concurrency removal to ### Changed in CHANGELOG.md.\n6. Filter internal --finish-uninstall flag in website/scripts/gen-reference.mjs.",
+  "category": "bugfix",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-AUDIT2-W5-REBUILD-AND-VERIFY"
+    }
+  ],
+  "id": "T-AUDIT2-W4-DOCS-AND-CHANGELOG",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "website/content/docs/internals/run-lifecycle.mdx",
+    "website/content/docs/guides/writing-plans.mdx",
+    "website/content/docs/concepts/pools-and-tiers.mdx",
+    "website/content/docs/reference/security.mdx",
+    "website/content/docs/getting-started/verify.mdx",
+    "website/content/docs/getting-started/quickstart.mdx",
+    "CHANGELOG.md",
+    "website/scripts/gen-reference.mjs"
+  ],
+  "title": "Wave 4: Resolve website documentation drift (#125, #127), CHANGELOG categorization, and gen-reference flags"
+}

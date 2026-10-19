@@ -1,12 +1,4 @@
 {
-  "_adlcArchive": {
-    "archivedAt": "2026-10-18T17:34:06.913Z",
-    "reason": "completed",
-    "sourceRevision": null,
-    "sourceStoreHash": "21bce325798d5850f9a53a4cbc1a0e5a4f749dbc46a45e7539a900ec0917f343",
-    "ticketHash": "a5808d1620dcd0c6673097ab78a56ec29c60deab1bf822bef83bad2275e461c3",
-    "version": 1
-  },
   "body": "Applied in Wave 0 foundation commit on fix/release-audit-run2-1.2.0: added writable fallback for HOOK_LOG_FILE in bin/hook-runner.sh, stageBuilderGeminiHome in lib/agy.mjs, staged plugin .adlc/.booster exclusion in lib/run-integrity.mjs, worktree/branch lifecycle in lib/worktrees.mjs and lib/scheduler.mjs, and !IS_BUNDLED + unified pluginId in bin/agb.mjs.",
   "completed": true,
   "edges": [

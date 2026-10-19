@@ -1,0 +1,27 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:23:51.524Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "f2db0f518d538887e13055e79497d0ac3dd95b074dac0b54c2dec51763dcca02",
+    "ticketHash": "07385449ad692fed95ba42eda5bd3a1020022bb2d42454b8cfd2bc34131a944d",
+    "version": 1
+  },
+  "body": "Run npm run skills:sync, npm run build, node website/scripts/gen-reference.mjs, node website/scripts/check-all.mjs, node scripts/check-bundle-externals.mjs, npm test, and node bin/agb.mjs doctor.",
+  "category": "bugfix",
+  "completed": true,
+  "edges": [],
+  "id": "T-AUDIT2-W5-REBUILD-AND-VERIFY",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json",
+    "CODEOWNERS"
+  ],
+  "scope": [
+    "dist/agb.mjs",
+    "website/generated/cli-flags.md",
+    "website/generated/env-vars.md"
+  ],
+  "title": "Wave 5: Sync skills, rebuild bundle and generated docs, and run full ADLC verification suite"
+}
