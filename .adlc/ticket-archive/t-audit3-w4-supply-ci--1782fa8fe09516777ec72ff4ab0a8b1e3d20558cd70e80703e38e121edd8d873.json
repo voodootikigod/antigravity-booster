@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:24:13.660Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "5cc1921a1b78d37916cda41815e5ab9ee1ddbd567ecbe30c867ed1db49b13a6e",
+    "ticketHash": "8f260fa7ff570f7228bc695cc4292c14e156659473f6a54067216521ba1f889c",
+    "version": 1
+  },
   "body": "Fix test/plugin-layout.test.mjs agy plugin validate output format assertion, SHOULD-FIX #20 (@adlc/core and local node_modules tree digest verification in scripts/update-adlc-digests.mjs), SHOULD-FIX #28 (.resolve, bare __esm assignments, and __agbCreateRequire in scripts/check-bundle-externals.mjs), SHOULD-FIX #30 (bundle-drift and digest verification in .github/workflows/publish.yml), and SHOULD-FIX #31 (.adlc/** and package.json filters in .github/workflows/docs.yml).",
   "completed": true,
   "edges": [],

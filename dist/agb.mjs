@@ -687,7 +687,7 @@ import {
   rmSync as rmSync14,
   existsSync as existsSync29
 } from "node:fs";
-import { join as join32, basename as basename9 } from "node:path";
+import { join as join32, basename as basename10 } from "node:path";
 import { homedir as homedir8 } from "node:os";
 import { execFileSync as execFileSync15 } from "node:child_process";
 import { randomBytes as randomBytes3 } from "node:crypto";
@@ -869,7 +869,7 @@ function removeImportEntry(home, name) {
   renameSync7(tmp, p);
 }
 function removeUninstallerDir(dir) {
-  if (dir && basename9(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
+  if (dir && basename10(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
     try {
       rmSync14(dir, { recursive: true, force: true });
     } catch {
@@ -959,14 +959,14 @@ import {
   writeFileSync as writeFileSync19,
   mkdirSync as mkdirSync19,
   rmSync as rmSync15,
-  readdirSync as readdirSync13,
+  readdirSync as readdirSync14,
   lstatSync as lstatSync15,
   readlinkSync as readlinkSync4,
   symlinkSync as symlinkSync6,
   unlinkSync as unlinkSync8,
   renameSync as renameSync8,
   chmodSync as chmodSync4,
-  copyFileSync as copyFileSync5,
+  copyFileSync as copyFileSync6,
   realpathSync as realpathSync10,
   statSync as statSync8,
   mkdtempSync as mkdtempSync8
@@ -1007,7 +1007,7 @@ function writeJsonAtomic(file, value, mode = 420) {
 }
 function treeSize(dir) {
   let total = 0;
-  for (const e of readdirSync13(dir, { withFileTypes: true })) {
+  for (const e of readdirSync14(dir, { withFileTypes: true })) {
     if (INSTALL_COPY_EXCLUSIONS.includes(e.name)) continue;
     const full = join33(dir, e.name);
     if (e.isDirectory()) total += treeSize(full);
@@ -1074,7 +1074,7 @@ function restoreImportEntries(p, entries, { keep = [] } = {}) {
 function scanSkillSymlinks(skillsDir) {
   if (!existsSync30(skillsDir)) return [];
   const links = [];
-  for (const e of readdirSync13(skillsDir, { withFileTypes: true })) {
+  for (const e of readdirSync14(skillsDir, { withFileTypes: true })) {
     if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync4(join33(skillsDir, e.name)) });
   }
   return links.sort((a, b) => a.name.localeCompare(b.name));
@@ -1176,7 +1176,7 @@ function step3Snapshot(ctx, state) {
   const shimPreviouslyAbsent = !existsSync30(p.shim);
   if (!shimPreviouslyAbsent) {
     mkdirSync19(join33(snap, "shim"), { recursive: true });
-    copyFileSync5(p.shim, join33(snap, "shim", "agb"));
+    copyFileSync6(p.shim, join33(snap, "shim", "agb"));
   }
   const importEntries = ourEntries(p);
   writeJsonAtomic(join33(snap, "import_manifest.json"), { imports: importEntries });
@@ -1285,7 +1285,7 @@ async function handOverUninstall(ctx) {
     const tempBundle = join33(dir, "agb-uninstaller.mjs");
     if (existsSync30(stagedBundle)) {
       try {
-        copyFileSync5(stagedBundle, tempBundle);
+        copyFileSync6(stagedBundle, tempBundle);
         launcherArgv = [process.execPath, tempBundle];
       } catch {
       }
@@ -1306,7 +1306,7 @@ async function handOverUninstall(ctx) {
     "--agy-bin",
     agyBin
   ];
-  const childEnv2 = { ...process.env, HOME: home, ...ctx.uninstallerEnv ?? {} };
+  const childEnv2 = { ...process.env, HOME: home, ...isWin ? { USERPROFILE: home } : {}, ...ctx.uninstallerEnv ?? {} };
   let child;
   if (isWin && args[0] === process.execPath) {
     child = spawn4(args[0], args.slice(1), { cwd: launcherCwd, detached: true, stdio: "ignore", env: childEnv2 });
@@ -1394,7 +1394,7 @@ async function restoreFromBaseline(ctx, state) {
   if (baseline.shimPreviouslyAbsent) rmSync15(p.shim, { force: true });
   else {
     mkdirSync19(dirname20(p.shim), { recursive: true });
-    copyFileSync5(join33(base, "shim", "agb"), p.shim);
+    copyFileSync6(join33(base, "shim", "agb"), p.shim);
     chmodSync4(p.shim, 493);
   }
   assertMigrationLockHeld(lock);
@@ -1830,11 +1830,11 @@ var init_server = __esm({
 
 // bin/agb.mjs
 import { readFileSync as readFileSync27, writeFileSync as writeFileSync21, mkdirSync as mkdirSync21, appendFileSync as appendFileSync3, existsSync as existsSync32 } from "node:fs";
-import { resolve as resolve18, join as join35 } from "node:path";
+import { resolve as resolve18, join as join35, basename as basename11 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // lib/scheduler.mjs
-import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync11, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync13, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
+import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync27, readFileSync as readFileSync22, readdirSync as readdirSync12, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync13, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
 import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
 import { tmpdir as tmpdir8 } from "node:os";
@@ -5666,7 +5666,7 @@ function scopesOverlap(a, b) {
 
 // lib/agy.mjs
 import { spawn as spawn2, execFileSync as execFileSync8 } from "node:child_process";
-import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10, symlinkSync as symlinkSync3 } from "node:fs";
+import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10, symlinkSync as symlinkSync3, readdirSync as readdirSync9, copyFileSync as copyFileSync4, cpSync as cpSync2 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { tmpdir as tmpdir6, homedir as homedir4 } from "node:os";
 import { dirname as dirname15, join as join20, resolve as resolve10, relative as relative7, isAbsolute as isAbsolute6 } from "node:path";
@@ -5743,7 +5743,7 @@ var lt = (a, b) => compare(a, b) < 0;
 var eq = (a, b) => compare(a, b) === 0;
 
 // lib/adlc-bridge.mjs
-import { writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync14, existsSync as existsSync16, readdirSync as readdirSync7, rmSync as rmSync4, lstatSync as lstatSync7, realpathSync as realpathSync3, openSync as openSync5, readSync as readSync3, closeSync as closeSync5, statSync as statSync2, fstatSync as fstatSync2, chmodSync as chmodSync2, copyFileSync as copyFileSync3, cpSync, symlinkSync as symlinkSync2, mkdtempSync as mkdtempSync3, constants } from "node:fs";
+import { writeFileSync as writeFileSync8, mkdirSync as mkdirSync7, readFileSync as readFileSync14, existsSync as existsSync16, readdirSync as readdirSync7, rmSync as rmSync4, lstatSync as lstatSync7, realpathSync as realpathSync3, openSync as openSync5, readSync as readSync3, closeSync as closeSync5, statSync as statSync2, fstatSync as fstatSync2, chmodSync as chmodSync2, copyFileSync as copyFileSync3, cpSync, symlinkSync as symlinkSync2, mkdtempSync as mkdtempSync3, accessSync, constants } from "node:fs";
 import { join as join17, dirname as dirname12, relative as relative5, resolve as resolve7, isAbsolute as isAbsolute4, basename as basename6 } from "node:path";
 import { homedir as homedir2, tmpdir as tmpdir3 } from "node:os";
 import { spawnSync as spawnSync2, spawn, execFileSync as execFileSync5, execFile } from "node:child_process";
@@ -5818,7 +5818,7 @@ function detectTicketStoreBackend(repo) {
 }
 function writeAdlcTickets(repo, tickets) {
   const dir = join17(repo, ".adlc");
-  if (existsSync16(dir) && lstatSync7(dir).isSymbolicLink()) {
+  if (lstatSync7(dir, { throwIfNoEntry: false })?.isSymbolicLink()) {
     throw new Error(`refusing to project tickets through a symlink: ${dir}`);
   }
   mkdirSync7(dir, { recursive: true });
@@ -5835,7 +5835,7 @@ function writeAdlcTickets(repo, tickets) {
   const { initializeDirectoryStore: initializeDirectoryStore2, ticketFilename: ticketFilename2, prettyCanonicalJson: prettyCanonicalJson2, ACTIVE_MANIFEST: ACTIVE_MANIFEST2 } = ticketsLib();
   const storeDir = join17(dir, "tickets");
   for (const p of [dir, storeDir]) {
-    if (existsSync16(p) && lstatSync7(p).isSymbolicLink()) {
+    if (lstatSync7(p, { throwIfNoEntry: false })?.isSymbolicLink()) {
       throw new Error(`refusing to project tickets through a symlink: ${p}`);
     }
   }
@@ -6601,6 +6601,7 @@ function getApprovedPinnedBase() {
   if (process.env.AGB_EXEC_CACHE_DIR) {
     try {
       mkdirSync7(process.env.AGB_EXEC_CACHE_DIR, { recursive: true, mode: 448 });
+      accessSync(process.env.AGB_EXEC_CACHE_DIR, constants.W_OK);
       return process.env.AGB_EXEC_CACHE_DIR;
     } catch {
     }
@@ -6609,6 +6610,7 @@ function getApprovedPinnedBase() {
   const dir = join17(home, ".adlc", "pinned");
   try {
     mkdirSync7(dir, { recursive: true, mode: 448 });
+    accessSync(dir, constants.W_OK);
     return dir;
   } catch {
     return tmpdir3();
@@ -6622,6 +6624,7 @@ function getApprovedLocksDir() {
   const dir = join17(home, ".adlc", "locks");
   try {
     mkdirSync7(dir, { recursive: true, mode: 448 });
+    accessSync(dir, constants.W_OK);
     return dir;
   } catch {
     return join17(tmpdir3(), "agb_adlc_locks");
@@ -7435,7 +7438,8 @@ async function checkAgyAuth({ env = process.env, home = env.HOME || homedir3() }
     let cmd2 = env.AGB_AGY_BIN || resolveAgyBinary(home);
     let args = ["models"];
     if (process.platform === "linux") {
-      args = ["-q", "-e", "-c", `${cmd2} models`, "/dev/null"];
+      const quotedCmd = `'${String(cmd2).replace(/'/g, "'\\''")}'`;
+      args = ["-q", "-e", "-c", `${quotedCmd} models`, "/dev/null"];
       cmd2 = "script";
     } else if (process.platform === "darwin") {
       args = ["-q", "/dev/null", cmd2, "models"];
@@ -8366,11 +8370,13 @@ function checkKernelContainment(platform2 = process.platform, options = {}) {
   } else if (options && typeof options === "object") {
     env = options.env ?? process.env;
   }
-  if (env.AGB_MOCK_CONTAINMENT_UNAVAILABLE === "1") {
-    return { supported: false, mechanism: null, kind: "mock_unavailable", detail: "Kernel containment floor unavailable (mocked)" };
-  }
-  if (env.AGB_MOCK_CONTAINMENT_MECHANISM) {
-    return { supported: true, mechanism: env.AGB_MOCK_CONTAINMENT_MECHANISM };
+  if (isTestExecution(env)) {
+    if (env.AGB_MOCK_CONTAINMENT_UNAVAILABLE === "1") {
+      return { supported: false, mechanism: null, kind: "mock_unavailable", detail: "Kernel containment floor unavailable (mocked)" };
+    }
+    if (env.AGB_MOCK_CONTAINMENT_MECHANISM) {
+      return { supported: true, mechanism: env.AGB_MOCK_CONTAINMENT_MECHANISM };
+    }
   }
   if (effectivePlatform === "win32") {
     try {
@@ -10475,6 +10481,105 @@ function parseTimeoutMs(timeout) {
   if (unit === "h") return val * 60 * 60 * 1e3;
   return 10 * 60 * 1e3;
 }
+var WRITABLE_GEMINI_RUNTIME_DIRS = /* @__PURE__ */ new Set(["antigravity-cli", "antigravity", "config", "jetski", "tmp", "logs", "locks"]);
+var WRITABLE_ANTIGRAVITY_CLI_ENTRIES = /* @__PURE__ */ new Set([
+  "brain",
+  "conversations",
+  "crashes",
+  "log",
+  "logs",
+  "plugin_data",
+  "presence",
+  "scratch",
+  "cache",
+  "cli.log",
+  "conversation_summaries.db",
+  "history.jsonl",
+  "jetbox_summaries_proto.pb",
+  "jetski_state.pbtxt",
+  "last_check.timestamp",
+  "settings.json.bak"
+]);
+function stageGeminiEntry(entry, srcPath, dstPath, platform2) {
+  if (lstatSync10(dstPath, { throwIfNoEntry: false })) return;
+  if (platform2 !== "win32") {
+    try {
+      symlinkSync3(srcPath, dstPath);
+    } catch {
+    }
+    return;
+  }
+  if (entry.isFile()) {
+    try {
+      copyFileSync4(srcPath, dstPath);
+    } catch {
+    }
+  } else if (entry.isDirectory()) {
+    try {
+      cpSync2(srcPath, dstPath, { recursive: true, force: false, errorOnExist: false });
+    } catch {
+    }
+  }
+}
+function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
+  let worktreeDir = cwd;
+  try {
+    worktreeDir = realpathSync6(cwd);
+  } catch {
+  }
+  const agbHome = join20(worktreeDir, ".agb_home");
+  const targetGemini = join20(agbHome, ".gemini");
+  const targetCli = join20(targetGemini, "antigravity-cli");
+  const targetConfig = join20(targetGemini, "config");
+  try {
+    if (lstatSync10(targetGemini, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      rmSync7(targetGemini, { force: true });
+    }
+    if (lstatSync10(targetConfig, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      rmSync7(targetConfig, { force: true });
+    }
+  } catch {
+  }
+  try {
+    mkdirSync10(join20(targetCli, "plugin_data", "antigravity-booster", "logs"), { recursive: true, mode: 448 });
+    mkdirSync10(join20(targetConfig, "projects"), { recursive: true, mode: 448 });
+    for (const sub of ["brain", "conversations", "crashes", "log", "presence", "scratch", "cache"]) {
+      mkdirSync10(join20(targetCli, sub), { recursive: true, mode: 448 });
+    }
+  } catch {
+  }
+  const realGemini = join20(userHome, ".gemini");
+  if (existsSync19(realGemini)) {
+    try {
+      for (const entry of readdirSync9(realGemini, { withFileTypes: true })) {
+        if (WRITABLE_GEMINI_RUNTIME_DIRS.has(entry.name) || entry.name.startsWith("agb-sidecar-plugin-")) continue;
+        stageGeminiEntry(entry, join20(realGemini, entry.name), join20(targetGemini, entry.name), platform2);
+      }
+    } catch {
+    }
+    const realConfig = join20(realGemini, "config");
+    if (existsSync19(realConfig)) {
+      try {
+        for (const entry of readdirSync9(realConfig, { withFileTypes: true })) {
+          if (entry.name === "projects") continue;
+          stageGeminiEntry(entry, join20(realConfig, entry.name), join20(targetConfig, entry.name), platform2);
+        }
+      } catch {
+      }
+    }
+    const realCli = join20(realGemini, "antigravity-cli");
+    if (existsSync19(realCli)) {
+      try {
+        for (const entry of readdirSync9(realCli, { withFileTypes: true })) {
+          if (WRITABLE_ANTIGRAVITY_CLI_ENTRIES.has(entry.name)) continue;
+          stageGeminiEntry(entry, join20(realCli, entry.name), join20(targetCli, entry.name), platform2);
+        }
+      } catch {
+      }
+    }
+  }
+  return agbHome;
+}
 async function runAgy({
   model,
   prompt,
@@ -10557,6 +10662,7 @@ async function runAgy({
   let argsTempFile = null;
   let argsTempDir = null;
   let bwrapTempDir = null;
+  let bwrapCreatedLocalNm = null;
   if (isBuilder) {
     if (!containment) {
       if (platform2 !== "win32") {
@@ -10800,6 +10906,7 @@ async function runAgy({
             } catch {
             }
           } else if (canonicalNm) {
+            bwrapCreatedLocalNm = localNm;
             launchArgs.push("--ro-bind", canonicalNm, canonicalNm);
             launchArgs.push("--ro-bind", canonicalNm, localNm);
           }
@@ -10924,13 +11031,8 @@ async function runAgy({
           if (realGeminiDir !== geminiDir) {
             launchArgs.push("--ro-bind", realGeminiDir, realGeminiDir);
           }
-          if (cwd) {
-            const agbHomeGemini = join20(cwd, ".agb_home", ".gemini");
-            try {
-              mkdirSync10(agbHomeGemini, { recursive: true, mode: 448 });
-            } catch {
-            }
-            launchArgs.push("--ro-bind", realGeminiDir, agbHomeGemini);
+          if (isBuilder && cwd) {
+            stageBuilderGeminiHome(cwd, userHome, platform2);
           }
         }
         launchArgs.push("--", bwrapAgyBin, ...args);
@@ -11180,19 +11282,7 @@ async function runAgy({
       delete spawnEnv.GIT_DIR;
       delete spawnEnv.GIT_WORK_TREE;
       if (cwd) {
-        const agbHome = join20(cwd, ".agb_home");
-        try {
-          mkdirSync10(agbHome, { recursive: true, mode: 448 });
-        } catch {
-        }
-        const realGemini = join20(userHome, ".gemini");
-        const targetGemini = join20(agbHome, ".gemini");
-        if (existsSync19(realGemini) && !existsSync19(targetGemini)) {
-          try {
-            symlinkSync3(realGemini, targetGemini, "junction");
-          } catch {
-          }
-        }
+        const agbHome = stageBuilderGeminiHome(cwd, userHome, platform2);
         spawnEnv.HOME = agbHome;
         spawnEnv.XDG_CONFIG_HOME = agbHome;
       } else if (!spawnEnv.HOME && process.env.HOME) {
@@ -11204,6 +11294,16 @@ async function runAgy({
       }
       spawnEnv.GIT_CONFIG_NOSYSTEM = "1";
       spawnEnv.GIT_CONFIG_GLOBAL = process.platform === "win32" ? "NUL" : "/dev/null";
+      try {
+        const realNodeDir = dirname15(realpathSync6(process.execPath));
+        const sep5 = process.platform === "win32" ? ";" : ":";
+        const curPath = spawnEnv.PATH || "";
+        const parts = curPath.split(sep5).filter(Boolean);
+        if (realNodeDir && !parts.includes(realNodeDir)) {
+          spawnEnv.PATH = parts.length > 0 ? `${curPath}${sep5}${realNodeDir}` : realNodeDir;
+        }
+      } catch {
+      }
     }
     const spawnOpts = { cwd, stdio: ["ignore", "pipe", "pipe"], env: spawnEnv };
     if (process.platform !== "win32") {
@@ -11435,6 +11535,13 @@ async function runAgy({
         } catch {
         }
         bwrapTempDir = null;
+      }
+      if (bwrapCreatedLocalNm) {
+        try {
+          rmdirSync(bwrapCreatedLocalNm);
+        } catch {
+        }
+        bwrapCreatedLocalNm = null;
       }
       if (childKilled || killReason || signal) {
         if (originalPid && isProcessAlive(originalPid, originalStartTime)) {
@@ -12589,7 +12696,7 @@ async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd,
     };
   }
   const blocking = modelBlocking || hollowBlocking;
-  const verdict = blocking ? "block" : parsed.verdict;
+  const verdict = blocking ? "block" : "ship";
   return { verdict, model, findings, hollowTest };
 }
 function blockingFindings(findings) {
@@ -12753,7 +12860,7 @@ async function preflight(plan, opts = {}) {
 }
 
 // lib/brain.mjs
-import { readdirSync as readdirSync9, readFileSync as readFileSync18, statSync as statSync5, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
+import { readdirSync as readdirSync10, readFileSync as readFileSync18, statSync as statSync5, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
 import { join as join23, resolve as resolve11 } from "node:path";
 import { homedir as homedir5 } from "node:os";
 var antigravityCliBrain = join23(homedir5(), ".gemini", "antigravity-cli", "brain");
@@ -12776,7 +12883,7 @@ function listBrains(brainDir = BRAIN_DIR) {
   const results = [];
   for (const bDir of dirsToSearch) {
     if (!existsSync21(bDir)) continue;
-    for (const id of readdirSync9(bDir)) {
+    for (const id of readdirSync10(bDir)) {
       if (seen.has(id)) continue;
       const dir = join23(bDir, id);
       const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync21(join23(dir, f))).map((f) => ({ path: join23(dir, f), mtime: statSync5(join23(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
@@ -12937,10 +13044,10 @@ import {
   renameSync as renameSync5,
   unlinkSync as unlinkSync6,
   mkdirSync as mkdirSync13,
-  readdirSync as readdirSync10,
+  readdirSync as readdirSync11,
   rmSync as rmSync9,
   symlinkSync as symlinkSync4,
-  cpSync as cpSync2,
+  cpSync as cpSync3,
   lstatSync as lstatSync11,
   realpathSync as realpathSync8
 } from "node:fs";
@@ -13033,6 +13140,14 @@ function createWorktree(repo, ticketId, base = "main") {
   const path3 = join24(repo, ".worktrees", name);
   try {
     git(repo, "worktree", "remove", "--force", path3);
+  } catch {
+  }
+  try {
+    rmSync9(path3, { recursive: true, force: true });
+  } catch {
+  }
+  try {
+    git(repo, "worktree", "prune");
   } catch {
   }
   try {
@@ -13189,7 +13304,7 @@ function createIntegrationWorktree(repo, token, base = "main") {
       symlinkSync4(repoModules, targetModules, "junction");
     } catch {
       try {
-        cpSync2(repoModules, targetModules, { recursive: true });
+        cpSync3(repoModules, targetModules, { recursive: true });
       } catch {
       }
     }
@@ -13201,7 +13316,7 @@ function reapIntegrationWorktrees(repo) {
   const dir = join24(repo, ".worktrees");
   if (!existsSync22(dir)) return;
   try {
-    const entries = readdirSync10(dir, { withFileTypes: true });
+    const entries = readdirSync11(dir, { withFileTypes: true });
     for (const ent of entries) {
       if (ent.isDirectory() && ent.name.startsWith("agb-integration-")) {
         const full = join24(dir, ent.name);
@@ -13220,7 +13335,7 @@ function reapIntegrationWorktrees(repo) {
   const attemptGitBase = join24(dir, ".attempt_git");
   if (existsSync22(attemptGitBase)) {
     try {
-      const attemptEntries = readdirSync10(attemptGitBase, { withFileTypes: true });
+      const attemptEntries = readdirSync11(attemptGitBase, { withFileTypes: true });
       for (const ent of attemptEntries) {
         const correspondingWt = join24(dir, ent.name);
         if (!existsSync22(correspondingWt)) {
@@ -13230,7 +13345,7 @@ function reapIntegrationWorktrees(repo) {
           }
         }
       }
-      if (readdirSync10(attemptGitBase).length === 0) {
+      if (readdirSync11(attemptGitBase).length === 0) {
         try {
           rmSync9(attemptGitBase, { recursive: true, force: true });
         } catch {
@@ -13403,7 +13518,9 @@ async function applyModelRouterTiers(plan, ticketsPath, { adlcBin, floor } = {})
   const byId = new Map(assignments.map((a) => [a.id, a]));
   for (const t of plan.tickets ?? []) {
     const assignment = byId.get(t.id);
-    if (assignment?.tier) t.tier = assignment.tier;
+    if (assignment?.tier && TIER_CANDIDATES[assignment.tier] && tierCandidates(assignment.tier, t.pool_hint).length > 0) {
+      t.tier = assignment.tier;
+    }
   }
   return { ok: true, assignments, p3Findings: Array.isArray(parsed.p3Findings) ? parsed.p3Findings : [] };
 }
@@ -14037,7 +14154,7 @@ var GIT_TIMEOUT_MS = 1e4;
 var ABSENT2 = "absent";
 function digestOrAbsent(dir) {
   if (!existsSync25(dir) || !statSync7(dir).isDirectory()) return ABSENT2;
-  return computeDirectoryDigest(dir);
+  return computeDirectoryDigest(dir, { exclude: [".adlc", ".booster"] });
 }
 function hooksDirFor(cwd) {
   const out = execFileSync10("git", ["rev-parse", "--git-path", "hooks"], {
@@ -14262,7 +14379,7 @@ function hashDir(dir, filterFn = () => true) {
   let count = 0;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync11(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+      const entries = readdirSync12(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join30(d, ent.name);
@@ -14287,7 +14404,7 @@ function listObjects(objectsDir) {
   if (!existsSync27(objectsDir)) return set;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync11(d, { withFileTypes: true });
+      const entries = readdirSync12(d, { withFileTypes: true });
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join30(d, ent.name);
@@ -14761,7 +14878,7 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
   }
   const hooksDir = join30(resolvedTarget, "hooks");
   if (existsSync27(hooksDir)) {
-    const entries = readdirSync11(hooksDir);
+    const entries = readdirSync12(hooksDir);
     for (const ent of entries) {
       if (!ent.endsWith(".sample")) {
         throw new Error(`Security violation: unexpected hook file found in attempt git database: ${ent}`);
@@ -15426,12 +15543,27 @@ Fix: ${agyCheck.fix}`);
     if (!quotaInit.ok) {
       throw new Error(`Cannot start run: quota telemetry unavailable from agy: ${quotaInit.error}`);
     }
+    for (const t of tickets) {
+      const wtPath = join30(repo, ".worktrees", `agb-${t.id.toLowerCase()}`);
+      if (existsSync27(wtPath)) {
+        try {
+          removeWorktree(repo, wtPath, { force: true });
+        } catch {
+          try {
+            rmSync12(wtPath, { recursive: true, force: true });
+          } catch {
+          }
+        }
+      }
+    }
     pruneWorktrees(repo);
+    for (const t of tickets) deleteBranch(repo, t.id);
     const preds = Object.fromEntries(tickets.map((t) => [t.id, []]));
     for (const t of tickets) for (const e of t.edges ?? []) preds[e.to].push(t.id);
     let mergeLock = Promise.resolve();
     const activeAttemptNamespaces = /* @__PURE__ */ new Set();
     const knownAttemptNamespaces = /* @__PURE__ */ new Set();
+    const attemptRefsToClean = /* @__PURE__ */ new Set();
     let fleetCliFailures = 0;
     for (const t of tickets) status.ticket(t.id, { phase: "pending" });
     const isReady = (t) => !started.has(t.id) && preds[t.id].every((p) => merged.has(p)) && preds[t.id].every((p) => !failed.has(p));
@@ -15647,11 +15779,11 @@ Fix: ${agyCheck.fix}`);
       let model;
       let worktree;
       try {
+        model = pools.route(t.tier ?? "mid", t.pool_hint);
         const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
         if (!q.ok) {
           throw new Error(`Quota telemetry check failed: ${q.error}`);
         }
-        model = pools.route(t.tier ?? "mid", t.pool_hint);
         worktree = createWorktree(repo, t.id, base);
         let strikes = 0;
         let attempts = 0;
@@ -15672,6 +15804,7 @@ Fix: ${agyCheck.fix}`);
           const attemptRef = `refs/namespaces/${attemptSlug}/refs/heads/candidate`;
           activeAttemptNamespaces.add(attemptSlug);
           knownAttemptNamespaces.add(attemptSlug);
+          attemptRefsToClean.add(attemptRef);
           let strikeError = null;
           let safeResetToBase = () => {
             try {
@@ -16061,10 +16194,6 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             }
           } finally {
             activeAttemptNamespaces.delete(attemptSlug);
-            try {
-              execFileSync11("git", ["update-ref", "-d", attemptRef], { cwd: repo });
-            } catch {
-            }
           }
           lastFailure = strikeError;
           status.strike(t.id, { model, error: strikeError, strikes });
@@ -16095,7 +16224,6 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             rmSync12(gitDir, { recursive: true, force: true });
           } catch {
           }
-          deleteBranch(repo, t.id);
         }
         dispatch();
       }
@@ -16375,6 +16503,19 @@ ${g?.output?.slice(0, 300)}`);
       settled += batch.length;
       await Promise.allSettled(batch);
     }
+    try {
+      pruneWorktrees(repo);
+    } catch {
+    }
+    for (const t of tickets) {
+      if (!merged.has(t.id)) deleteBranch(repo, t.id);
+    }
+    for (const ref of attemptRefsToClean) {
+      try {
+        execFileSync11("git", ["update-ref", "-d", ref], { cwd: repo });
+      } catch {
+      }
+    }
   } finally {
     for (const child of activeChildren) {
       terminateProcessTree(child, "SIGKILL");
@@ -16600,8 +16741,8 @@ async function reviewFleet({
 }
 
 // lib/bootstrap.mjs
-import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync12, lstatSync as lstatSync14, readlinkSync as readlinkSync3, symlinkSync as symlinkSync5, copyFileSync as copyFileSync4, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
-import { join as join31, resolve as resolve16, dirname as dirname19 } from "node:path";
+import { existsSync as existsSync28, mkdirSync as mkdirSync17, readdirSync as readdirSync13, lstatSync as lstatSync14, readlinkSync as readlinkSync3, symlinkSync as symlinkSync5, copyFileSync as copyFileSync5, rmSync as rmSync13, readFileSync as readFileSync23, appendFileSync as appendFileSync2 } from "node:fs";
+import { join as join31, resolve as resolve16, dirname as dirname19, basename as basename9 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 import { homedir as homedir7 } from "node:os";
 import { execSync as execSync2, execFileSync as execFileSync14 } from "node:child_process";
@@ -16629,13 +16770,13 @@ function isNpxTemp(filePath = fileURLToPath4(import.meta.url), env = process.env
 }
 function copyDirSync(src, dest) {
   mkdirSync17(dest, { recursive: true });
-  for (const entry of readdirSync12(src, { withFileTypes: true })) {
+  for (const entry of readdirSync13(src, { withFileTypes: true })) {
     const srcPath = join31(src, entry.name);
     const destPath = join31(dest, entry.name);
     if (entry.isDirectory()) {
       copyDirSync(srcPath, destPath);
     } else {
-      copyFileSync4(srcPath, destPath);
+      copyFileSync5(srcPath, destPath);
     }
   }
 }
@@ -16723,7 +16864,7 @@ function installBoosterPlugin({ home, agyBin, agyCheckFailed }) {
   return true;
 }
 function installReason(r, forceReinstall) {
-  if (forceReinstall) return `reinstalling ${r.dir.split("/").pop()}: --force-reinstall`;
+  if (forceReinstall) return `reinstalling ${basename9(r.dir)}: --force-reinstall`;
   if (r.report === "not-installed") return `installing bundled adlc-antigravity ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
   if (r.report === "outdated-plugin") return `upgrading adlc-antigravity ${r.version} -> ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
   return `reinstalling adlc-antigravity: ${r.report}`;
@@ -16812,7 +16953,7 @@ function bootstrap({
     } else {
       console.log("installation directory is stable: using symlinks for auto-upgrades");
     }
-    const skills = readdirSync12(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const skills = readdirSync13(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     for (const name of skills) {
       const src = join31(skillsSrc, name);
       const dst = join31(destination, name);
@@ -17266,11 +17407,12 @@ try {
     const token = randomBytes5(16).toString("hex");
     const server = await serveSidecar2(resolve18(positional[0] ?? "."), port, token);
     const actualPort = server.address().port;
+    const pluginId = `agb-sidecar-plugin-${process.pid}-${actualPort}`;
     let pluginDir;
     let createdDir = false;
     let wroteManifests = false;
     try {
-      pluginDir = process.env.AGB_PLUGIN_DIR || join36(homedir10(), ".gemini", `agb-sidecar-plugin-${process.pid}-${actualPort}`);
+      pluginDir = !IS_BUNDLED && process.env.AGB_PLUGIN_DIR || join36(homedir10(), ".gemini", pluginId);
       if (!existsSync32(pluginDir)) {
         mkdirSync22(pluginDir, { recursive: true, mode: 448 });
         createdDir = true;
@@ -17288,10 +17430,9 @@ try {
         description: "Visualizes parallel build-outs orchestrated by Antigravity Booster."
       };
       writeFileSync22(join36(pluginDir, "sidecars", "agb.json"), JSON.stringify(manifest, null, 2) + "\n", { mode: 384 });
-      const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
       writeFileSync22(join36(pluginDir, "plugin.json"), JSON.stringify({
         id: pluginId,
-        name: "agb-dynamic-sidecar",
+        name: pluginId,
         version: "1.0.0",
         sidecars: ["sidecars/agb.json"]
       }, null, 2) + "\n", { mode: 384 });
@@ -17306,6 +17447,13 @@ try {
           try {
             execFileSync17(agyBin, ["plugin", "uninstall", pluginId], { stdio: "ignore" });
           } catch (e) {
+          }
+          const dirBase = pluginDir ? basename11(pluginDir) : "";
+          if (dirBase && dirBase !== pluginId) {
+            try {
+              execFileSync17(agyBin, ["plugin", "uninstall", dirBase], { stdio: "ignore" });
+            } catch (e) {
+            }
           }
           if (pluginDir) {
             if (createdDir) {

@@ -57,20 +57,28 @@ async function start() {
           } catch (e) {}
         }
 
+        let isReset = false;
         let result = { lines: [], newOffset: offset, runId, repo: repoPath };
         if (eventsPath && existsSync(eventsPath)) {
           try {
             const stats = statSync(eventsPath);
             if (offset > stats.size) {
               offset = 0;
+              isReset = true;
             }
+            result = { lines: [], newOffset: offset, runId, repo: repoPath, ...(isReset ? { reset: true } : {}) };
             if (stats.size > offset) {
               const fd = openSync(eventsPath, 'r');
               try {
                 const MAX_CHUNK = 1024 * 1024;
                 const toRead = Math.min(stats.size - offset, MAX_CHUNK);
                 const buffer = Buffer.alloc(toRead);
-                const totalRead = readSync(fd, buffer, 0, toRead, offset);
+                let totalRead = 0;
+                while (totalRead < buffer.length) {
+                  const bytesRead = readSync(fd, buffer, totalRead, buffer.length - totalRead, offset + totalRead);
+                  if (bytesRead === 0) break;
+                  totalRead += bytesRead;
+                }
                 let lastNewline = -1;
                 for (let i = totalRead - 1; i >= 0; i--) {
                   if (buffer[i] === 10) {
@@ -78,13 +86,50 @@ async function start() {
                     break;
                   }
                 }
-                if (lastNewline !== -1) {
+                if (lastNewline === -1) {
+                  if (offset + totalRead < stats.size) {
+                    let scanOffset = offset + totalRead;
+                    const scanBuf = Buffer.alloc(65536);
+                    while (scanOffset < stats.size) {
+                      const n = readSync(fd, scanBuf, 0, Math.min(scanBuf.length, stats.size - scanOffset), scanOffset);
+                      if (n === 0) break;
+                      const nl = scanBuf.subarray(0, n).indexOf(10);
+                      if (nl !== -1) {
+                        scanOffset += nl + 1;
+                        break;
+                      }
+                      scanOffset += n;
+                    }
+                    result = {
+                      lines: [],
+                      newOffset: scanOffset,
+                      runId,
+                      repo: repoPath,
+                      reset: isReset,
+                      warning: 'Dropped oversized line',
+                    };
+                  }
+                } else {
                   const completeBuffer = buffer.subarray(0, lastNewline);
                   const completeContent = completeBuffer.toString('utf8');
+                  let droppedCorrupt = false;
                   const lines = completeContent.split('\n').filter(Boolean).filter((line) => {
-                    try { JSON.parse(line); return true; } catch { return false; }
+                    try {
+                      JSON.parse(line);
+                      return true;
+                    } catch (e) {
+                      droppedCorrupt = true;
+                      return false;
+                    }
                   });
-                  result = { lines, newOffset: offset + lastNewline + 1, runId, repo: repoPath };
+                  result = {
+                    lines,
+                    newOffset: offset + lastNewline + 1,
+                    runId,
+                    repo: repoPath,
+                    reset: isReset,
+                    ...(droppedCorrupt ? { warning: 'Dropped unparseable JSON line' } : {}),
+                  };
                 }
               } finally {
                 closeSync(fd);

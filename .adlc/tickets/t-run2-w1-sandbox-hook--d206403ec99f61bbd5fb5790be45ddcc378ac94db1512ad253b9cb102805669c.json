@@ -1,0 +1,40 @@
+{
+  "body": "Applied in Wave 0 foundation commit on fix/release-audit-run2-1.2.0: added writable fallback for HOOK_LOG_FILE in bin/hook-runner.sh, stageBuilderGeminiHome in lib/agy.mjs, staged plugin .adlc/.booster exclusion in lib/run-integrity.mjs, worktree/branch lifecycle in lib/worktrees.mjs and lib/scheduler.mjs, and !IS_BUNDLED + unified pluginId in bin/agb.mjs.",
+  "completed": true,
+  "edges": [
+    {
+      "to": "t-run2-w2-policy-guard"
+    },
+    {
+      "to": "t-run2-w3-mcp-plan-gates"
+    },
+    {
+      "to": "t-run2-w4-doctor-install-sidecar"
+    },
+    {
+      "to": "t-run2-w5-skills-scripts"
+    },
+    {
+      "to": "t-run2-w6-docs-website"
+    }
+  ],
+  "id": "t-run2-w1-sandbox-hook",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "bin/hook-runner.sh",
+    "bin/node-launcher.sh",
+    "lib/agy.mjs",
+    "lib/run-integrity.mjs",
+    "lib/worktrees.mjs",
+    "lib/scheduler.mjs",
+    "bin/agb.mjs",
+    "test/hook-runner.test.mjs",
+    "test/node-launcher.test.mjs",
+    "test/agy.test.mjs",
+    "test/unit.test.mjs"
+  ],
+  "title": "Wave 0: Fix builder .agb_home/.gemini sandbox staging, hook-runner.sh log fallback, and agb sidecar bundled/uninstall handling"
+}

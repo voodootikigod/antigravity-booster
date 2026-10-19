@@ -10,7 +10,7 @@ claims: [C5, C9, C10]
 
 <include>../../../../generated/cli-run.mdx</include>
 
-The only option besides the plan path is the global `--project` flag. Concurrency is not a command-line option: it comes from the plan's `caps` and `concurrencyCap` fields ([C9](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L34), [run dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L123-L132)). See [Plan schema](/docs/reference/plan-schema).
+The only option besides the plan path is the global `--project` flag. Concurrency is not a command-line option: runtime concurrency is enforced by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`) ([C9](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L34), [run dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L123-L132)). See [Plan schema](/docs/reference/plan-schema).
 
 ## What it does
 

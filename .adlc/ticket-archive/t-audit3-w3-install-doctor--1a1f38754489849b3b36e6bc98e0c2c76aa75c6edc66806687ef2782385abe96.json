@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:24:13.566Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "a9be6bdc1ad44fb5bf27325350ac207f509913ba2eb7984c929455ddd1c1d0da",
+    "ticketHash": "08d3721292754be351e09cbd04ba744341e0c66d88d6d952bbc40f49a73ff430",
+    "version": 1
+  },
   "body": "Fix SHOULD-FIX #16 (dangling skill symlinks & error propagation in bootstrap), SHOULD-FIX #17 (resolveAgyBinary fallback in bootstrap and doctor), SHOULD-FIX #18 (Windows detached uninstaller cwd and timeout kill in migrate), SHOULD-FIX #19 (Windows checkPolicyGuard self-test in doctor), and SHOULD-FIX #21 & #22 (fail closed in checkAdlcBinary and checkTicketStore in doctor).",
   "completed": true,
   "edges": [],

@@ -462,15 +462,15 @@ test('runGate: fails closed when sandbox requested but unavailable, unless expli
     // Simulate non-darwin by stubbing: call runGate with sandbox on a host
     // where sandbox-exec is absent. We can't change os.platform() here, so
     // assert the contract via gateSandboxAvailable on this host.
-    if (!gateSandboxEnabled()) {
+    if (!gateSandboxEnabled(fakeLinux)) {
       const r = await runGate('test', 'echo hi', wt, { sandbox: true, env: { AGB_SANDBOX_GATES: 'unset' } });
       assert.equal(r.ok, false, 'must refuse rather than run unsandboxed');
       assert.match(r.output, /sandbox/i);
       const allowed = await runGate('test', 'echo hi', wt, { sandbox: true, env: { AGB_SANDBOX_GATES: '0' } });
       assert.equal(allowed.ok, true, 'explicit opt-out runs unsandboxed');
     } else {
-      // On darwin sandbox is available, so a requested gate runs sandboxed.
-      const r = await runGate('test', 'echo hi', wt, { sandbox: true });
+      // On darwin/linux sandbox is available, so a requested gate runs sandboxed.
+      const r = await runGate('test', 'echo hi', wt, { sandbox: true, env: fakeLinux });
       assert.equal(r.ok, true);
       assert.equal(r.sandboxed, true);
     }

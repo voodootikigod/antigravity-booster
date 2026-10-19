@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:24:13.472Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "ecc765f832f4c2049f9e21c3d4680f37a59a3a390a6ba54449244fa4a6a43dad",
+    "ticketHash": "e475898d6b37d097624f078f562f7006a0309d3ef7a4aa448737b328bc9fa669",
+    "version": 1
+  },
   "body": "Fix SHOULD-FIX #3 (consensus-fix multi-pass dryPasses & gate-manifest recording), SHOULD-FIX #4 (do not unconditionally skip AGENTS.md and .adlc/tickets/* in verifyScopeAndAntiNoOp; update discardProjection), SHOULD-FIX #5 (check isDirty and acquireRepoLock before ensureGitignore), SHOULD-FIX #6 (UTF-8 encoding for $ArgsFile in job-object-wrapper.ps1), SHOULD-FIX #7 & #8 (ignore ambient store env overrides and fail closed on symlinked store paths in lib/active-rails.mjs), SHOULD-FIX #9 (fail closed on hollow-test exit code 1), and SHOULD-FIX #10 (reject leading dashes and pass --end-of-options in reviewDiff).",
   "completed": true,
   "edges": [],

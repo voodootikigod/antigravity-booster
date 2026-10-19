@@ -3,7 +3,7 @@
 // agb — Antigravity Booster orchestrator.
 
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPlan } from '../lib/scheduler.mjs';
 import { renderStatus } from '../lib/status.mjs';
@@ -17,6 +17,7 @@ import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
 import { ROLE_MODELS } from '../lib/models.mjs';
+import { IS_BUNDLED } from '../lib/adlc-bridge.mjs';
 
 const rawArgs = process.argv.slice(2);
 let project;
@@ -401,11 +402,12 @@ try {
     
     const actualPort = server.address().port;
     
+    const pluginId = `agb-sidecar-plugin-${process.pid}-${actualPort}`;
     let pluginDir;
     let createdDir = false;
     let wroteManifests = false;
     try {
-      pluginDir = process.env.AGB_PLUGIN_DIR || join(homedir(), '.gemini', `agb-sidecar-plugin-${process.pid}-${actualPort}`);
+      pluginDir = (!IS_BUNDLED && process.env.AGB_PLUGIN_DIR) || join(homedir(), '.gemini', pluginId);
       if (!existsSync(pluginDir)) {
         mkdirSync(pluginDir, { recursive: true, mode: 0o700 });
         createdDir = true;
@@ -425,10 +427,9 @@ try {
       };
       
       writeFileSync(join(pluginDir, 'sidecars', 'agb.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
-      const pluginId = `agb-sidecar-dynamic-${process.pid}-${actualPort}`;
       writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({
         id: pluginId,
-        name: 'agb-dynamic-sidecar',
+        name: pluginId,
         version: '1.0.0',
         sidecars: ['sidecars/agb.json']
       }, null, 2) + '\n', { mode: 0o600 });
@@ -443,6 +444,10 @@ try {
         try {
           server.close();
           try { execFileSync(agyBin, ['plugin', 'uninstall', pluginId], { stdio: 'ignore' }); } catch(e) {}
+          const dirBase = pluginDir ? basename(pluginDir) : '';
+          if (dirBase && dirBase !== pluginId) {
+            try { execFileSync(agyBin, ['plugin', 'uninstall', dirBase], { stdio: 'ignore' }); } catch(e) {}
+          }
           if (pluginDir) {
             if (createdDir) {
               rmSync(pluginDir, { recursive: true, force: true });

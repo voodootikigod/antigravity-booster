@@ -22,7 +22,7 @@ const STATIC_PATTERNS = [
   /^\s*export\s[^;]*?\bfrom\s*["'`]([^"'`\r\n]+)["'`]/gm,
 ];
 
-const CALL_PATTERN = /\b(?:import|require\d*(?:\s*\.\s*resolve)?)\s*\(([^)]+)\)/g;
+const CALL_PATTERN = /\b(?:import|(?:__)?require\d*(?:\s*\.\s*resolve)?)\s*\(([^)]+)\)/g;
 const CREATE_REQUIRE_IDENT = '(?:createRequire\\d*|__agbCreateRequire\\d*)';
 const DIRECT_CREATE_REQUIRE_PATTERN = new RegExp(`\\b${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)(?:\\s*\\.\\s*resolve)?\\s*\\(([^)]+)\\)`, 'g');
 const BOUND_CREATE_REQUIRE_DECL = new RegExp(`(?:\\b(?:const|let|var)\\s+|(?:^|[;,{}\\n])\\s*)([A-Za-z_$][\\w$]*)\\s*=\\s*(?:[\\w$]+\\.)?${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)`, 'gm');
@@ -67,7 +67,7 @@ export function findExternalSpecifiers(source) {
   }
   for (const decl of source.matchAll(BOUND_CREATE_REQUIRE_DECL)) {
     const ident = decl[1];
-    if (/^require\d*$/.test(ident)) continue;
+    if (/^(?:__)?require\d*$/.test(ident)) continue;
     const escaped = ident.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const boundCallRe = new RegExp(`\\b${escaped}(?:\\s*\\.\\s*resolve)?\\s*\\(([^)]+)\\)`, 'g');
     for (const m of source.matchAll(boundCallRe)) {

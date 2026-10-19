@@ -670,3 +670,23 @@ for (const [label, shell] of SHELLS) {
     assert.ok(dirRm === -1 || pidRm < dirRm, `child pidfile removal must precede cleanup: ${JSON.stringify(lines)}`);
   });
 }
+
+for (const [label, shell] of SHELLS) {
+  test(`[${label}] read-only $HOME/.gemini falls back to /dev/null for HOOK_LOG_FILE instead of denying headless worker tool calls`, async () => {
+    const roHome = fs.mkdtempSync(path.join(ROOT, 'ro-home-'));
+    const roGemini = path.join(roHome, '.gemini');
+    fs.mkdirSync(roGemini, { recursive: true });
+    fs.chmodSync(roGemini, 0o500);
+    try {
+      const r = await run(shell, {
+        payload: payloadFor('write_to_file'),
+        env: { HOME: roHome, AGB_WORKER_TICKET: 't-1', STUB_MODE: 'empty' },
+      });
+      assert.equal(r.code, 0);
+      assert.equal(r.stdout.trim(), '', `expected pass (empty stdout), got: ${r.stdout}`);
+    } finally {
+      try { fs.chmodSync(roGemini, 0o700); } catch {}
+      fs.rmSync(roHome, { recursive: true, force: true });
+    }
+  });
+}

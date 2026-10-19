@@ -779,7 +779,8 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
   // adlc-bridge statically imports @adlc/tickets (bundling), so the copy needs
   // the repo's node_modules — linked entry by entry, EXCEPT @adlc/antigravity,
   // which must stay unresolvable for the fallback branch under test.
-  const repoModules = fileURLToPath(new URL('../node_modules', import.meta.url));
+  const localModules = fileURLToPath(new URL('../node_modules', import.meta.url));
+  const repoModules = existsSync(join(localModules, '@adlc')) ? localModules : fileURLToPath(new URL('../../../node_modules', import.meta.url));
   const isoModules = join(isoRoot, 'node_modules');
   mkdirSync(join(isoModules, '@adlc'), { recursive: true });
   for (const entry of readdirSync(repoModules)) {

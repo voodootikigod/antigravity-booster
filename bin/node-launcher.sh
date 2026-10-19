@@ -6,6 +6,13 @@ LAUNCHER_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
 PLUGIN_ROOT="$(dirname -- "$LAUNCHER_DIR")"
 CURRENT_DIR="$(pwd -P 2>/dev/null || true)"
 
+# When running inside a builder sandbox where HOME is isolated to <worktree>/.agb_home,
+# derive the host user home from the staged plugin path (<userHome>/.gemini/config/plugins/...).
+USER_HOME="$HOME"
+case "$PLUGIN_ROOT" in
+  */.gemini/*) USER_HOME="${PLUGIN_ROOT%%/.gemini/*}" ;;
+esac
+
 # Resolve full symlink chain iteratively in pure POSIX sh
 resolve_full_path() {
   _tgt="$1"
@@ -43,11 +50,14 @@ is_valid_node() {
 
   # Security: Candidate must reside within trusted system prefixes or standard version managers
   REAL_HOME="$(resolve_full_path "$HOME" 2>/dev/null || printf '%s\n' "$HOME")"
+  REAL_USER_HOME="$(resolve_full_path "$USER_HOME" 2>/dev/null || printf '%s\n' "$USER_HOME")"
   TRUSTED=0
   case "$REAL_CANDIDATE" in
     /opt/homebrew/*|/usr/local/*|/usr/*|/bin/*|/System/*) TRUSTED=1 ;;
     "$HOME"/.local/share/fnm/*|"$HOME"/.local/share/mise/*|"$HOME"/.nvm/*|"$HOME"/.asdf/*|"$HOME"/.volta/*|"$HOME"/.nodenv/*|"$HOME"/n/*) TRUSTED=1 ;;
     "$REAL_HOME"/.local/share/fnm/*|"$REAL_HOME"/.local/share/mise/*|"$REAL_HOME"/.nvm/*|"$REAL_HOME"/.asdf/*|"$REAL_HOME"/.volta/*|"$REAL_HOME"/.nodenv/*|"$REAL_HOME"/n/*) TRUSTED=1 ;;
+    "$USER_HOME"/.local/share/fnm/*|"$USER_HOME"/.local/share/mise/*|"$USER_HOME"/.nvm/*|"$USER_HOME"/.asdf/*|"$USER_HOME"/.volta/*|"$USER_HOME"/.nodenv/*|"$USER_HOME"/n/*) TRUSTED=1 ;;
+    "$REAL_USER_HOME"/.local/share/fnm/*|"$REAL_USER_HOME"/.local/share/mise/*|"$REAL_USER_HOME"/.nvm/*|"$REAL_USER_HOME"/.asdf/*|"$REAL_USER_HOME"/.volta/*|"$REAL_USER_HOME"/.nodenv/*|"$REAL_USER_HOME"/n/*) TRUSTED=1 ;;
   esac
   [ "$TRUSTED" -eq 1 ] || return 1
 
@@ -55,7 +65,7 @@ is_valid_node() {
   for check_dir in "$CURRENT_DIR" "$AGB_TARGET_REPO"; do
     [ -n "$check_dir" ] || continue
     case "$check_dir" in
-      /|/Users|/home|"$HOME"|"$HOME"/|"$REAL_HOME"|"$REAL_HOME"/|/tmp|/var) continue ;;
+      /|/Users|/home|"$HOME"|"$HOME"/|"$REAL_HOME"|"$REAL_HOME"/|"$USER_HOME"|"$USER_HOME"/|"$REAL_USER_HOME"|"$REAL_USER_HOME"/|/tmp|/var) continue ;;
       *)
         case "$REAL_CANDIDATE" in
           "$check_dir"/*|"$check_dir") return 1 ;;
@@ -85,75 +95,85 @@ check_candidate "/usr/local/bin/node"
 check_candidate "/usr/bin/node"
 check_candidate "/bin/node"
 
-# 2. Search fnm locations (aliases/default, current, and installed versions)
-if [ -z "$NODE_BIN" ]; then
-  check_candidate "$HOME/.local/share/fnm/aliases/default/bin/node"
-  check_candidate "$HOME/.local/share/fnm/current/bin/node"
-  if [ -z "$NODE_BIN" ] && [ -d "$HOME/.local/share/fnm/node-versions" ]; then
-    for vdir in "$HOME/.local/share/fnm/node-versions"/*/installation/bin/node; do
-      [ -e "$vdir" ] || continue
-      check_candidate "$vdir"
-      [ -z "$NODE_BIN" ] || break
-    done
-  fi
-fi
+search_home_managers() {
+  _h="$1"
+  [ -n "$_h" ] || return 0
 
-# 3. Search mise locations
-if [ -z "$NODE_BIN" ] && [ -d "$HOME/.local/share/mise/installs/node" ]; then
-  for vdir in "$HOME/.local/share/mise/installs/node"/*/bin/node; do
-    [ -e "$vdir" ] || continue
-    check_candidate "$vdir"
-    [ -z "$NODE_BIN" ] || break
-  done
-fi
-
-# 4. Search asdf locations (directly inspect real installations; skip cwd-sensitive shims)
-if [ -z "$NODE_BIN" ]; then
-  if [ -d "$HOME/.asdf/installs/nodejs" ]; then
-    for vdir in "$HOME/.asdf/installs/nodejs"/*/bin/node; do
-      [ -e "$vdir" ] || continue
-      check_candidate "$vdir"
-      [ -z "$NODE_BIN" ] || break
-    done
-  fi
-fi
-
-# 5. Search nodenv locations
-if [ -z "$NODE_BIN" ] && [ -d "$HOME/.nodenv/versions" ]; then
-  for vdir in "$HOME/.nodenv/versions"/*/bin/node; do
-    [ -e "$vdir" ] || continue
-    check_candidate "$vdir"
-    [ -z "$NODE_BIN" ] || break
-  done
-fi
-
-# 6. Search volta locations (directly inspect real engine images; ~/.volta/bin/node is a cwd-sensitive shim)
-if [ -z "$NODE_BIN" ]; then
-  if [ -d "$HOME/.volta/tools/image/node" ]; then
-    for vdir in "$HOME/.volta/tools/image/node"/*/bin/node; do
-      [ -e "$vdir" ] || continue
-      check_candidate "$vdir"
-      [ -z "$NODE_BIN" ] || break
-    done
-  fi
+  # 2. Search fnm locations (aliases/default, current, and installed versions)
   if [ -z "$NODE_BIN" ]; then
-    check_candidate "$HOME/.volta/bin/node"
+    check_candidate "$_h/.local/share/fnm/aliases/default/bin/node"
+    check_candidate "$_h/.local/share/fnm/current/bin/node"
+    if [ -z "$NODE_BIN" ] && [ -d "$_h/.local/share/fnm/node-versions" ]; then
+      for vdir in "$_h/.local/share/fnm/node-versions"/*/installation/bin/node; do
+        [ -e "$vdir" ] || continue
+        check_candidate "$vdir"
+        [ -z "$NODE_BIN" ] || break
+      done
+    fi
   fi
-fi
 
-# 7. Search nvm versions
-if [ -z "$NODE_BIN" ] && [ -d "$HOME/.nvm/versions/node" ]; then
-  for vdir in "$HOME/.nvm/versions/node"/*/bin/node; do
-    [ -e "$vdir" ] || continue
-    check_candidate "$vdir"
-    [ -z "$NODE_BIN" ] || break
-  done
-fi
+  # 3. Search mise locations
+  if [ -z "$NODE_BIN" ] && [ -d "$_h/.local/share/mise/installs/node" ]; then
+    for vdir in "$_h/.local/share/mise/installs/node"/*/bin/node; do
+      [ -e "$vdir" ] || continue
+      check_candidate "$vdir"
+      [ -z "$NODE_BIN" ] || break
+    done
+  fi
 
-# 8. Search n manager locations
-if [ -z "$NODE_BIN" ]; then
-  check_candidate "/usr/local/n/versions/node/default/bin/node"
-  check_candidate "$HOME/n/bin/node"
+  # 4. Search asdf locations (directly inspect real installations; skip cwd-sensitive shims)
+  if [ -z "$NODE_BIN" ]; then
+    if [ -d "$_h/.asdf/installs/nodejs" ]; then
+      for vdir in "$_h/.asdf/installs/nodejs"/*/bin/node; do
+        [ -e "$vdir" ] || continue
+        check_candidate "$vdir"
+        [ -z "$NODE_BIN" ] || break
+      done
+    fi
+  fi
+
+  # 5. Search nodenv locations
+  if [ -z "$NODE_BIN" ] && [ -d "$_h/.nodenv/versions" ]; then
+    for vdir in "$_h/.nodenv/versions"/*/bin/node; do
+      [ -e "$vdir" ] || continue
+      check_candidate "$vdir"
+      [ -z "$NODE_BIN" ] || break
+    done
+  fi
+
+  # 6. Search volta locations (directly inspect real engine images; ~/.volta/bin/node is a cwd-sensitive shim)
+  if [ -z "$NODE_BIN" ]; then
+    if [ -d "$_h/.volta/tools/image/node" ]; then
+      for vdir in "$_h/.volta/tools/image/node"/*/bin/node; do
+        [ -e "$vdir" ] || continue
+        check_candidate "$vdir"
+        [ -z "$NODE_BIN" ] || break
+      done
+    fi
+    if [ -z "$NODE_BIN" ]; then
+      check_candidate "$_h/.volta/bin/node"
+    fi
+  fi
+
+  # 7. Search nvm versions
+  if [ -z "$NODE_BIN" ] && [ -d "$_h/.nvm/versions/node" ]; then
+    for vdir in "$_h/.nvm/versions/node"/*/bin/node; do
+      [ -e "$vdir" ] || continue
+      check_candidate "$vdir"
+      [ -z "$NODE_BIN" ] || break
+    done
+  fi
+
+  # 8. Search n manager locations
+  if [ -z "$NODE_BIN" ]; then
+    check_candidate "/usr/local/n/versions/node/default/bin/node"
+    check_candidate "$_h/n/bin/node"
+  fi
+}
+
+search_home_managers "$HOME"
+if [ -z "$NODE_BIN" ] && [ "$USER_HOME" != "$HOME" ]; then
+  search_home_managers "$USER_HOME"
 fi
 
 # 9. Fall back to system PATH if candidate satisfies strict trust prefix validation

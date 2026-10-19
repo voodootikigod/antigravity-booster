@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:23:51.943Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "61c7c6128af50528a45dded077f830e5d13777d7ce0d36226604ee6f20e1be33",
+    "ticketHash": "b7668fc2c2081bd1445f1373e5c60a867f20d41074148f0cbb8c9027ba87718f",
+    "version": 1
+  },
   "body": "Update .github/workflows/adlc-rails-guard.yml setup-node step from node-version: 20 to node-version: 22 to align with package.json engines.node >= 22.19.0 (resolving SHOULD-FIX #29 from the 1.2.0 release audit). Isolated in its own PR because .github/workflows/adlc-rails-guard.yml is in TRUST_ROOTS.",
   "completed": true,
   "edges": [],

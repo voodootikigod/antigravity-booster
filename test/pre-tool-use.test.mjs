@@ -2,8 +2,8 @@
 // (spec .adlc/specs/native-plugin-installation.md §4.5.1 + Appendix A).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
@@ -562,3 +562,19 @@ test('entry: a read-only worker finish step prints nothing (pass), a lookalike i
   const bad = entry(JSON.stringify(payload('finish_task', { gaps: [] }, fx.active)), READONLY);
   assert.equal(JSON.parse(bad.stdout.trim()).decision, 'deny');
 });
+
+test('symlinked workspacePaths and physical Cwd resolve to the same physical workspace', () => {
+  const symWs = join(dirname(fx.active), 'sym-active-ws');
+  symlinkSync(fx.active, symWs);
+  try {
+    // Physical Cwd with symlinked workspacePaths
+    assert.equal(run('run_command', { CommandLine: 'git status', Cwd: fx.active }, symWs).decision, 'pass');
+    // Symlinked Cwd with physical workspacePaths
+    assert.equal(run('run_command', { CommandLine: 'git status', Cwd: symWs }, fx.active).decision, 'pass');
+    // Compound cd into physical subdir when workspacePaths is symlinked
+    assert.equal(run('run_command', { CommandLine: `cd ${join(fx.active, 'lib')} && git status`, Cwd: symWs }, symWs).decision, 'pass');
+  } finally {
+    rmSync(symWs, { force: true });
+  }
+});
+

@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:23:51.232Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "9e1055c3a1b0cfbdf7932b5057ce00b51284e3b601fd0a0de12de1e401fbcda9",
+    "ticketHash": "b2c29a5fef69ea69a1952c8e4d8ec2f4b50f1bea5e455b8e57acfada129c48fd",
+    "version": 1
+  },
   "body": "1. In bin/hook-runner.sh emit_fallback(), set UNPARSEABLE=1 when stdin file TMP_IN is empty/missing so child failures with empty stdin fail closed to deny. Add test in test/hook-runner.test.mjs.\n2. In bin/node-launcher.sh is_trusted_candidate(), resolve REAL_HOME via resolve_full_path and accept candidates under either HOME or REAL_HOME. Add test in test/node-launcher.test.mjs.\n3. Set chmod +x on bin/node-launcher.sh (100755).",
   "category": "bugfix",
   "completed": true,

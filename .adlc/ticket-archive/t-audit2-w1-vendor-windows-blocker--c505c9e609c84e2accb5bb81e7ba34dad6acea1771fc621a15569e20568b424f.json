@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-19T11:23:51.135Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "2f7c7006f121234411a2f5b1ff9be56aabc849fd23cf7b932493998d7ef50441",
+    "ticketHash": "c1d3731670fe42cf1dd7ef7b9274a82df5e3277ebd2d3e03ea446057a15b6a4f",
+    "version": 1
+  },
   "body": "1. Fix lib/digest.mjs win32 executable bit simulation so package/bin/cli.mjs (0644) stays class f on Windows and matches STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS[1.7.0]. Add regression test in test/digest.test.mjs.\n2. Update .gitattributes to enforce eol=lf on text/dist/vendor/adlc and binary on vendor/cache/*.tgz.\n3. Fix defaultUninstallerArgv in lib/migrate.mjs on win32 to invoke process.execPath on dist/agb.mjs instead of /bin/sh.\n4. Use npm.cmd + shell:true on win32 in scripts/update-adlc-digests.mjs.",
   "completed": true,
   "edges": [],

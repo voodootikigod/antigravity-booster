@@ -1,6 +1,6 @@
 ---
 name: release-audit
-description: "Production-readiness audit of antigravity-booster before cutting a release. Audits every shipped surface in parallel — the CLI, scheduler, ADLC gates, the PreToolUse policy guard, the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar — plus suite-level drift, docs and supply-chain agents, hunting release-BLOCKING issues rather than general code smells. Runs this repo's own integrity gates as mechanical probes and triages open GitHub issues against the code. Runs on the currently selected model. Triggers on \"release audit\", \"are we ready to release\", \"production readiness\", \"what's blocking the release\", \"audit before release\", \"pre-release check\", \"release blockers\", \"can we ship 1.2\"."
+description: "[Maintainer workflow for the antigravity-booster repository only] Production-readiness audit of antigravity-booster before cutting a release. Audits every shipped surface in parallel — the CLI, scheduler, ADLC gates, the PreToolUse policy guard, the MCP server, install/migrate, the vendored adlc, shipped skills, the sidecar — plus suite-level drift, docs and supply-chain agents, hunting release-BLOCKING issues rather than general code smells. Runs this repo's own integrity gates as mechanical probes and triages open GitHub issues against the code. Runs on the currently selected model. Triggers on \"release audit\", \"are we ready to release\", \"production readiness\", \"what's blocking the release\", \"audit before release\", \"pre-release check\", \"release blockers\", \"can we ship 1.2\"."
 user-invocable: true
 metadata:
   internal: true
@@ -199,7 +199,7 @@ node scripts/release-audit-collect.mjs --skip-issues --skip-build | head -20   #
 node --test test/release-audit-*.test.mjs
 ```
 
-The helpers live flat in `scripts/` with tests in `test/` (the repo's flat `npm test`
+The helper scripts in `scripts/` live in the antigravity-booster source repository checkout, with tests in `test/` (the repo's flat `npm test`
 layout), and `scripts/` is not in `package.json` `files`, so none of this ships to users.
 
 ## Related

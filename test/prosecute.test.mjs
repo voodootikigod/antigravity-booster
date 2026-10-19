@@ -247,3 +247,29 @@ test('prosecute: forwards adlcBin to runHollowTest (#122)', async () => {
   });
 });
 
+test('prosecute: normalizes verdict to ship when model returns block with only low/medium findings and no hollow-test survivors', async () => {
+  const { writeFileSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'agb-prosecute-lowblock-'));
+  const customAgy = join(dir, 'agy');
+  writeFileSync(
+    customAgy,
+    `#!/bin/sh\necho '{"verdict":"block","findings":[{"severity":"low","charge":"style","file":"a.js","claim":"nit","evidence":"x"}]}'\n`,
+    { mode: 0o755 },
+  );
+  try {
+    await withFakes({ AGB_AGY_BIN: customAgy }, async () => {
+      const v = await prosecute({
+        ticket: { id: 'T1', body: 'spec' },
+        diff: 'real diff',
+        model: 'Claude Sonnet 4.6 (Thinking)',
+      });
+      assert.equal(v.verdict, 'ship');
+      assert.equal(v.findings.length, 1);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
+
