@@ -5,7 +5,7 @@ import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve, isAbsolute } from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 var __dirname = dirname(fileURLToPath(import.meta.url));
 var activeProcesses = /* @__PURE__ */ new Map();
 var cancelledRequests = /* @__PURE__ */ new Set();
@@ -243,8 +243,23 @@ async function handleToolCall(id, name, args) {
     targetCwd = resolve(repoCheck.value);
     cliArgs.push("status", targetCwd);
   } else if (name === "agb_doctor") {
-    if (typeof args.repo === "string" && args.repo.trim().length > 0 && !args.repo.startsWith("-")) {
-      targetCwd = resolve(args.repo);
+    if (args.repo !== void 0) {
+      const repoCheck = requireNonFlagString(args, "repo");
+      if (!repoCheck.ok) {
+        sendError(id, -32602, repoCheck.error);
+        return;
+      }
+      const resolvedRepo = resolve(repoCheck.value);
+      let isDir = false;
+      try {
+        isDir = statSync(resolvedRepo).isDirectory();
+      } catch {
+      }
+      if (!isDir) {
+        sendError(id, -32602, `Invalid parameter 'repo': directory does not exist: ${repoCheck.value}`);
+        return;
+      }
+      targetCwd = resolvedRepo;
     }
     cliArgs.push("doctor");
   } else if (name === "agb_review") {

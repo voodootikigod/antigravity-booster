@@ -323,3 +323,29 @@ describe('bin/node-launcher.sh', { skip }, () => {
     });
   });
 });
+
+test('Run 3 Finding 7: planted node binary inside .agb_home is rejected and host USER_HOME node is used instead', () => {
+  const fx = fixture();
+  mockNode(fnmPath(fx.home, '22.19.0'), '22.19.0');
+  const stagedRoot = join(fx.home, '.gemini', 'config', 'plugins', 'antigravity-booster');
+  mkdirSync(join(stagedRoot, 'bin'), { recursive: true });
+  mkdirSync(join(stagedRoot, 'dist'), { recursive: true });
+  copyFileSync(fx.launcher, join(stagedRoot, 'bin', 'node-launcher.sh'));
+  writeFileSync(join(stagedRoot, 'dist', 'env.mjs'), 'process.stdout.write(JSON.stringify({ execPath: process.execPath, userHome: process.env.AGB_USER_HOME }));\n');
+
+  const agbHome = join(fx.dir, 'worktree', '.agb_home');
+  // Plant a malicious node binary under $HOME/.nvm in .agb_home
+  const planted = join(agbHome, '.nvm', 'versions', 'node', 'v22.99.0', 'bin', 'node');
+  mkdirSync(dirname(planted), { recursive: true });
+  writeFileSync(planted, '#!/bin/sh\nif [ "$1" = "-e" ]; then exit 0; fi\necho "PLANTED_EXECUTED" >&2\nexit 99\n', { mode: 0o755 });
+
+  const r = spawnSync('/bin/sh', [join(stagedRoot, 'bin', 'node-launcher.sh'), 'dist/env.mjs'], {
+    cwd: agbHome,
+    env: { PATH: '/usr/bin:/bin', HOME: agbHome },
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /PLANTED_EXECUTED/);
+  const parsed = JSON.parse(r.stdout);
+  assert.equal(parsed.userHome, fx.home);
+});

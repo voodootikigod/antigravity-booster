@@ -14,7 +14,7 @@ import { minimatch } from 'minimatch';
 import { lexCommandLine } from './shell-lexer.mjs';
 import { IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, PURE_READERS, TICKET_STORE_DIR } from './constants.mjs';
 import {
-  boosterDataRoots, expandHome, hasHomePrefix, isImplicitAncestorOnly, isRailAncestorOnly, isWithin,
+  boosterDataRoots, expandHome, hasHomePrefix, isBenignProcRead, isImplicitAncestorOnly, isRailAncestorOnly, isWithin,
   matchDeclaredRail, matchImplicitRail, matchRoot, physicalResolve, protectedRoots, railStaticPrefix, repoRelative, resolveCandidate,
 } from './paths.mjs';
 import { ask, deny, PASS, mostRestrictive } from './verdict.mjs';
@@ -279,24 +279,36 @@ function trustRootSamples(repo) {
  * roots (P5 round 2). Only bounded-length patterns are evaluated; anything
  * longer is treated as hostile.
  */
+function resolveTokenCandidates(token, cwd, ctx) {
+  if (hasHomePrefix(token)) {
+    const homes = ctx.homes ?? [ctx.home];
+    return homes.map((h) => resolveCandidate(token, cwd, h, ctx.platform));
+  }
+  return [resolveCandidate(token, cwd, ctx.home, ctx.platform)];
+}
+
 function globTargetVerdict(token, cwd, ctx) {
   if (!GLOB_CHARS.test(token)) return null;
   if (token.length > MAX_PATTERN_LENGTH) return deny('Over-long glob pattern in a shell command cannot be verified');
-  const absPattern = resolve(cwd, expandHome(token, ctx.home));
-  const staticDir = dirname(absPattern.slice(0, absPattern.search(GLOB_CHARS) + 1));
+  const homes = hasHomePrefix(token) ? (ctx.homes ?? [ctx.home]) : [ctx.home];
   const roots = ctx.protectedRoots;
-  if (roots.some((root) => isWithin(staticDir, root, ctx.platform) || (staticDir !== '/' && isWithin(root, staticDir, ctx.platform)))) {
-    return deny('Glob in a shell command reaches platform configuration, plugins, or Node runtimes');
+  for (const h of homes) {
+    const absPattern = resolve(cwd, expandHome(token, h));
+    const staticDir = dirname(absPattern.slice(0, absPattern.search(GLOB_CHARS) + 1));
+    if (roots.some((root) => isWithin(staticDir, root, ctx.platform) || (staticDir !== '/' && isWithin(root, staticDir, ctx.platform)))) {
+      return deny('Glob in a shell command reaches platform configuration, plugins, or Node runtimes');
+    }
+    const repo = ctx.repoAt(staticDir);
+    if (!repo.adlc) continue;
+    const relPattern = relative(repo.root, absPattern).split(sep).join('/');
+    if (relPattern.startsWith('..')) continue;
+    const nocase = ctx.platform === 'darwin' || ctx.platform === 'win32';
+    const hit = trustRootSamples(repo).find((p) => minimatch(p, relPattern, { nocase }));
+    if (hit) return deny(`Glob in a shell command can match the ADLC trust root: ${hit}`);
+    const rail = repo.activeRail && repo.store.ok ? repo.store.rails.find((r) => railStaticPrefix(r) === r && minimatch(r, relPattern, { nocase })) : null;
+    if (rail) return deny(`Glob in a shell command can match frozen rail: ${rail}`);
   }
-  const repo = ctx.repoAt(staticDir);
-  if (!repo.adlc) return null;
-  const relPattern = relative(repo.root, absPattern).split(sep).join('/');
-  if (relPattern.startsWith('..')) return null;
-  const nocase = ctx.platform === 'darwin' || ctx.platform === 'win32';
-  const hit = trustRootSamples(repo).find((p) => minimatch(p, relPattern, { nocase }));
-  if (hit) return deny(`Glob in a shell command can match the ADLC trust root: ${hit}`);
-  const rail = repo.activeRail && repo.store.ok ? repo.store.rails.find((r) => railStaticPrefix(r) === r && minimatch(r, relPattern, { nocase })) : null;
-  return rail ? deny(`Glob in a shell command can match frozen rail: ${rail}`) : null;
+  return null;
 }
 
 function writesIntoProtectedParent(r, ctx) {
@@ -309,10 +321,13 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd =
   const repos = [];
   const destructive = Boolean(verbs.deletes || verbs.writes);
   for (const token of candidateTokens(sub)) {
-    const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
-    if (r.unresolved && !stage1) return { verdict: deny('Shell target path cannot be resolved (symlink loop or oversized path)'), repos };
+    const candidates = resolveTokenCandidates(token, cwd, ctx);
+    for (const r of candidates) {
     if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
       return { verdict: deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden'), repos };
+    }
+    if (r.unresolved && !(stage1 && isBenignProcRead(token, r))) {
+      return { verdict: deny('Shell target path cannot be resolved (symlink loop or oversized path)'), repos };
     }
     if ((writeTargets.has(token) || !(stage1 || shim)) && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
       return { verdict: deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden'), repos };
@@ -352,6 +367,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd =
           : askOrDeny(ctx, `Command names a directory containing frozen rail: ${rail}`),
       );
     }
+    }
   }
   return { verdict: mostRestrictive(verdicts), repos };
 }
@@ -368,15 +384,16 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
   }
   if (!verbs.deletes) return PASS;
   for (const token of candidateTokens(sub)) {
-    const r = resolveCandidate(token, cwd, ctx.home, ctx.platform);
-    if (writesIntoProtectedParent(r, ctx)) {
-      return deny('Destructive command targets a directory containing platform configuration, plugins, or Node runtimes');
-    }
-    for (const repo of ctx.knownRepos()) {
-      if (!repo.adlc) continue;
-      const repoReal = physicalResolve(repo.root, '/', ctx.platform) ?? repo.root;
-      if (isWithin(repoReal, r.real, ctx.platform) || isWithin(repo.root, r.lexical, ctx.platform)) {
-        return deny('Target path is an ADLC repository root (or its parent), which holds frozen trust-root state');
+    for (const r of resolveTokenCandidates(token, cwd, ctx)) {
+      if (writesIntoProtectedParent(r, ctx)) {
+        return deny('Destructive command targets a directory containing platform configuration, plugins, or Node runtimes');
+      }
+      for (const repo of ctx.knownRepos()) {
+        if (!repo.adlc) continue;
+        const repoReal = physicalResolve(repo.root, '/', ctx.platform) ?? repo.root;
+        if (isWithin(repoReal, r.real, ctx.platform) || isWithin(repo.root, r.lexical, ctx.platform)) {
+          return deny('Target path is an ADLC repository root (or its parent), which holds frozen trust-root state');
+        }
       }
     }
   }

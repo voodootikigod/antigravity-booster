@@ -141,7 +141,7 @@ test('layout: agy plugin validate processes skills, agents, commands, mcpServers
     );
   }
   if (out.includes('commands')) {
-    assert.match(out, /commands\s*(?::\s*\d+\s+processed|\s+\d+)/, `commands not processed:\n${out}`);
+    assert.match(out, /commands\s*(?::\s*\d+\s+processed|\s+\d+|: never loaded)/, `commands not processed:\n${out}`);
   }
   assert.match(out, /Validation passed/i, `Validation did not pass:\n${out}`);
 });

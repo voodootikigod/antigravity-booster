@@ -272,3 +272,29 @@ for (const [mode, reason] of [['garbage', /unparseable --json output/], ['empty-
     }
   });
 }
+
+test('mid-run ticket store corruption compromises the run instead of proceeding with stale rails', async () => {
+  const repo = makeRepo({ storeTickets: [{ id: 'S-1', rails: ['RAIL.txt'] }] });
+  const state = mkdtempSync(join(tmpdir(), 'agb-fc-state-'));
+  const adlcDir = join(repo, '.adlc', 'tickets');
+  const corruptShard = join(adlcDir, ticketFilename('CORRUPT-MID-RUN'));
+  // Exclude the corrupt shard from git status so verifyRootGitIntegrity does not trip on untracked file,
+  // and corrupt the root ticket store during gate.test (after Strike 1's verifyRootGitIntegrity, right before
+  // consensus-fix re-reads loadActiveRails(repo)).
+  writeFileSync(join(repo, '.gitignore'), '.adlc/tickets/corrupt-mid-run--*.json\n');
+  git(repo, 'add', '.gitignore');
+  git(repo, 'commit', '-qm', 'ignore mid-run corrupt shard');
+  const testCmd = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(`require('fs').writeFileSync(${JSON.stringify(corruptShard)}, '{corrupt-json')`)} `;
+  try {
+    const report = await withEnv(trusted(state, { FAKE_PROSECUTOR_VERDICT: 'block-then-ship' }), () => runPlan({
+      repo, gate: { test: testCmd },
+      tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+    }, quiet));
+    assert.equal(report.merged.length, 0);
+    assert.ok(report.compromised, 'run must be marked compromised when ticket store becomes unreadable mid-run');
+    assert.match(report.failed.T1, /run compromised: ticket store unreadable/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});

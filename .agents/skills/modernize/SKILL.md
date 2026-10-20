@@ -1,11 +1,12 @@
 ---
 name: modernize
-description: Audit and adapt antigravity-booster against the latest upstream Google Antigravity (agy) and ADLC releases, probing live CLI runtimes and generating an actionable ADLC modernization ticket DAG.
+description: "[Maintainer workflow for the antigravity-booster repository only] Audit and adapt antigravity-booster against the latest upstream Google Antigravity (agy) and ADLC releases, probing live CLI runtimes and generating an actionable ADLC modernization ticket DAG."
 license: MIT
 user-invocable: true
 metadata:
   version: 1.0.0
-last-verified: 2026-09-22
+  internal: true
+last-verified: 2026-10-20
 ---
 
 # Modernize Booster Skill
@@ -68,9 +69,9 @@ node skills/modernize/scripts/audit.mjs [TARGET_ADLC_VERSION] [PINNED_ADLC_REF] 
 ---
 
 ### 3. Static Audit Against Booster Codebase
-Scan `lib/` and verify compatibility with discovered facts:
-- `lib/prosecute.mjs`, `lib/preflight.mjs`, `lib/doctor.mjs`: Audit binary resolution for `adlc` across all call sites (`resolveAdlcBinary()`). Re-authenticate project-local package root manifest (`node_modules/@adlc/cli/package.json`), verify `lstat` rejects symlinks for the package directory itself, assert physical repository containment (`realpathSync(pkgDir) === path.resolve(repoRoot, 'node_modules/@adlc/cli')`), assert executable shim target resides within `@adlc/cli` and matches manifest-declared `bin` entrypoint, verify exact semver floor (`>= 1.11.1`), verify lockfile integrity against `package-lock.json`, and ensure PATH fallbacks are default-denied in security-sensitive operations (`run`, `prosecute`, `preflight`). The modernization report must fail if the authoritative CLI cannot be verified.
-- `lib/agy.mjs`: Compare `MODELS` and `MODEL_ALIASES` against live `agy models`. Check `runAgy` flags and output mode.
+Scan `lib/` and verify compatibility with discovered facts (`runStage2StaticAudit()`):
+- Core module presence & non-symlink verification across `lib/prosecute.mjs`, `lib/preflight.mjs`, `lib/doctor.mjs`, `lib/agy.mjs`, `lib/pools.mjs`, `lib/plan.mjs`, `lib/bootstrap.mjs`, and `package.json` (binary resolution and lockfile/shim authentication are verified in Stage 1 and Stage 5).
+- `lib/models.mjs` & `lib/agy.mjs`: Compare `MODELS` and `MODEL_ALIASES` (defined in `lib/models.mjs` and re-exported by `lib/agy.mjs`) against live `agy models`. Check `runAgy` flags and output mode.
 - `lib/pools.mjs`: Compare `DEFAULT_CAPS`, `TIER_CANDIDATES`, and `PROSECUTORS` against live quota pools and available models.
 - `lib/preflight.mjs`: Check whether `adlc merge-forecast` leverages new flags like `--graph-coupling`. Verify coldstart model choice.
 - `lib/plan.mjs`: Check models used for parallax and premortem. Verify `validatePlan` compatibility with pool hints and edge conventions.
@@ -107,7 +108,7 @@ Following ADLC P0/P1/P2/P3 rules:
 - Non-trivial changes are modeled as tickets in `.adlc/tickets/` with clear acceptance criteria, frozen rails, and dependency edges.
 - Order tickets logically:
   1. Dependency upgrades (`package.json`)
-  2. Model catalog & pool updates (`lib/agy.mjs`, `lib/pools.mjs`)
+  2. Model catalog & pool updates (`lib/models.mjs`, `lib/agy.mjs`, `lib/pools.mjs`)
   3. Structured output & streaming protocols (`runAgy`)
   4. ADLC deep integration & doctor checks
   5. Codeweight & deprecation pruning (retiring dead compatibility layers, removing obsolete shims)

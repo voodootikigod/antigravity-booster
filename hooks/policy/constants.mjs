@@ -3,7 +3,7 @@
 // Tool names are agy 1.2.16 CORTEX_STEP_TYPE_* names, lowercased.
 
 export const READ_ONLY_TOOLS = new Set([
-  'view_file', 'grep_search', 'code_search', 'list_directory',
+  'view_file', 'read_file', 'grep_search', 'code_search', 'list_directory',
   'read_url_content', 'read_browser_page', 'search_web',
   'list_resources', 'read_resource', 'ask_question',
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',
@@ -30,7 +30,7 @@ export const BOOSTER_MCP_TOOLS = new Set([
 ]);
 
 export const PATH_MUTATING_TOOLS = new Set([
-  'run_command', 'write_to_file', 'replace_file_content', 'multi_replace_file_content',
+  'run_command', 'write_to_file', 'write_file', 'replace_file_content', 'multi_replace_file_content',
   'edit_file', 'create_file', 'save_file', 'delete_file', 'move', 'delete_directory',
   'edit_notebook', 'write_blob',
 ]);
@@ -38,6 +38,7 @@ export const PATH_MUTATING_TOOLS = new Set([
 // Step 1 inspection: which argument keys carry a path for read tools.
 export const READ_TOOL_PATH_SCHEMAS = {
   view_file: ['AbsolutePath', 'filePath', 'path'],
+  read_file: ['Path', 'AbsolutePath', 'filePath', 'path'],
   view_file_outline: ['AbsolutePath', 'filePath', 'path'],
   read_notebook: ['AbsolutePath', 'notebookPath', 'path'],
   read_resource: ['Uri', 'uri'],
@@ -53,9 +54,10 @@ export const READ_TOOL_PATH_SCHEMAS = {
 // Gate 1: required path keys for file-mutating tools (probed agy 1.2.16).
 export const TOOL_PATH_SCHEMAS = {
   write_to_file: { required: ['TargetFile'] },
+  write_file: { required: ['Path'] },
   replace_file_content: { required: ['TargetFile'] },
   multi_replace_file_content: { required: ['TargetFile'] },
-  edit_file: { required: ['TargetFile'] },
+  edit_file: { required: ['TargetFile'], altRequired: ['Path'] },
   create_file: { required: ['TargetFile'] },
   save_file: { required: ['TargetFile'] },
   delete_file: { required: ['TargetFile'] },
@@ -67,8 +69,8 @@ export const TOOL_PATH_SCHEMAS = {
 
 // Free-text / non-path keys never inspected as paths (Appendix A E5).
 export const EXCLUDED_CONTENT_KEYS = new Set([
-  'TargetContent', 'ReplacementContent', 'CodeContent', 'Content',
-  'Instruction', 'Description', 'summary', 'prompt', 'code', 'text',
+  'TargetContent', 'ReplacementContent', 'Target', 'Replacement', 'CodeContent', 'Content',
+  'Instruction', 'Description', 'ArtifactMetadata', 'Summary', 'summary', 'prompt', 'code', 'text',
   'explanation', 'message', 'comment',
   'toolAction', 'toolSummary', 'WaitMsBeforeAsync',
 ]);

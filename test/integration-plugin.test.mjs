@@ -125,6 +125,33 @@ test('MCP Server: handles JSON-RPC initialization, tool listing, and tool calls'
   const textOutput = callResponse.result.content[0].text;
   assert.match(textOutput, /Environment Diagnostic|Failed to execute/);
 
+  // 4. Send tools/call request for agb_doctor with flag-like or non-existent repo -> must return -32602
+  writeLine({
+    jsonrpc: '2.0',
+    id: 4,
+    method: 'tools/call',
+    params: {
+      name: 'agb_doctor',
+      arguments: { repo: '--malicious-flag' }
+    }
+  });
+  const errResp1 = await getNextMessage();
+  assert.equal(errResp1.id, 4);
+  assert.equal(errResp1.error?.code, -32602);
+
+  writeLine({
+    jsonrpc: '2.0',
+    id: 5,
+    method: 'tools/call',
+    params: {
+      name: 'agb_doctor',
+      arguments: { repo: join(home, 'does-not-exist-dir') }
+    }
+  });
+  const errResp2 = await getNextMessage();
+  assert.equal(errResp2.id, 5);
+  assert.equal(errResp2.error?.code, -32602);
+
   // Terminate child
   child.stdin.end();
   child.kill();

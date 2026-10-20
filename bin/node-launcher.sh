@@ -45,7 +45,7 @@ is_valid_node() {
 
   # Security: Reject candidates containing dangerous or ephemeral directory segments
   case "$REAL_CANDIDATE" in
-    */tmp/*|*/tmp|*/node_modules/*|*/.git/*) return 1 ;;
+    */tmp/*|*/tmp|*/node_modules/*|*/.git/*|*/.agb_home/*|*/.agb_home) return 1 ;;
   esac
 
   # Security: Candidate must reside within trusted system prefixes or standard version managers
@@ -171,9 +171,12 @@ search_home_managers() {
   fi
 }
 
-search_home_managers "$HOME"
-if [ -z "$NODE_BIN" ] && [ "$USER_HOME" != "$HOME" ]; then
-  search_home_managers "$USER_HOME"
+search_home_managers "$USER_HOME"
+if [ -z "$NODE_BIN" ] && [ "$HOME" != "$USER_HOME" ]; then
+  case "$HOME" in
+    */.agb_home|*/.agb_home/*) ;;
+    *) search_home_managers "$HOME" ;;
+  esac
 fi
 
 # 9. Fall back to system PATH if candidate satisfies strict trust prefix validation
@@ -209,6 +212,11 @@ esac
 if [ ! -f "$TARGET_SCRIPT" ]; then
   echo "error: Plugin target script not found: $TARGET_SCRIPT" >&2
   exit 1
+fi
+
+if [ -n "$USER_HOME" ] && [ "$USER_HOME" != "$HOME" ]; then
+  AGB_USER_HOME="$USER_HOME"
+  export AGB_USER_HOME
 fi
 
 exec "$NODE_BIN" "$TARGET_SCRIPT" "$@"

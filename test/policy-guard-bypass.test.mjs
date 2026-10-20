@@ -618,5 +618,69 @@ test('R6 AR-001: workspace and targets accessed via a symlinked ancestor directo
   }
 });
 
+test('Run 3 Finding 6: read tools and Stage 1 shell readers deny /proc/self/root, symlink loops, and >40-hop symlinks while allowing benign /proc/self/status', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const secretPath = join(home, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'secret.json');
+  assert.equal(run('view_file', { AbsolutePath: `/proc/self/root${secretPath}` }, P), 'deny');
+  assert.equal(run('read_file', { Path: `/proc/self/root${secretPath}` }, P), 'deny');
+  assert.equal(run('view_file', { AbsolutePath: '/proc/self/root/etc/hosts' }, P), 'deny');
+  assert.equal(sh(`cat /proc/self/root${secretPath}`, P), 'deny');
+  assert.equal(sh('cat /proc/self/root/etc/hosts', P), 'deny');
+  assert.equal(run('view_file', { AbsolutePath: '/proc/self/status' }, P), 'pass');
+  assert.equal(sh('cat /proc/self/status', P), 'pass');
+  // Lexical traversal through /proc/self/cwd/../status must be denied
+  assert.equal(run('view_file', { AbsolutePath: '/proc/self/cwd/../status' }, P), 'deny');
+  assert.equal(sh('cat /proc/self/cwd/../status', P), 'deny');
 
+  // Symlink pointing to /proc/self/status must be denied (not a direct /proc path)
+  const procLink = join(P, 'proc-status-link');
+  symlinkSync('/proc/self/status', procLink);
+  try {
+    assert.equal(run('view_file', { AbsolutePath: procLink }, P), 'deny');
+    assert.equal(sh(`cat ${procLink}`, P), 'deny');
+  } finally {
+    rmSync(procLink, { force: true });
+  }
+});
 
+test('Run 3 Finding 8 & Antigravity 2.0 schemas: buildContext protects host userHome when HOME is .agb_home, and read_file/write_file/edit_file { Path } are enforced', () => {
+  const agbHome = join(A, '.agb_home');
+  mkdirSync(agbHome, { recursive: true });
+  const hostSecret = join(home, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'token.json');
+  const hostHooks = join(home, '.gemini', 'config', 'plugins', 'antigravity-booster', 'hooks.json');
+
+  // With HOME isolated to .agb_home and AGB_USER_HOME set to host home, host boosterDataRoots and protectedRoots are still protected
+  const envWithUserHome = { AGB_WORKER_TICKET: 'T1', AGB_USER_HOME: home };
+  assert.equal(
+    evaluatePayload(
+      { toolCall: { name: 'read_file', args: { Path: hostSecret } }, workspacePaths: [A] },
+      { env: envWithUserHome, home: agbHome, platform: 'linux' }
+    ).decision,
+    'deny'
+  );
+  assert.equal(
+    evaluatePayload(
+      { toolCall: { name: 'write_file', args: { Path: hostHooks, Content: '{}' } }, workspacePaths: [A] },
+      { env: envWithUserHome, home: agbHome, platform: 'linux' }
+    ).decision,
+    'deny'
+  );
+
+  // Antigravity 2.0 tool schemas (read_file, write_file, edit_file with Path/Target/Replacement)
+  assert.equal(run('read_file', { Path: join(A, 'lib', 'lock.mjs') }, A), 'pass');
+  assert.equal(run('write_file', { Path: join(A, 'lib', 'lock.mjs'), Content: 'x' }, A), 'deny');
+  assert.equal(run('write_file', { Path: join(A, 'lib', 'feature.mjs'), Content: 'x' }, A, { AGB_WORKER_TICKET: 'T1' }), 'pass');
+  assert.equal(run('edit_file', { Path: join(A, 'lib', 'lock.mjs'), Target: 'a', Replacement: 'b' }, A), 'deny');
+  assert.equal(run('edit_file', { Path: join(A, 'lib', 'feature.mjs'), Target: 'a/b.mjs', Replacement: 'c/d.mjs' }, A, { AGB_WORKER_TICKET: 'T1' }), 'pass');
+  // Supplying both TargetFile and Path simultaneously on edit_file is a conflicting schema violation
+  assert.equal(run('edit_file', { TargetFile: join(A, 'lib', 'feature.mjs'), Path: 'README.md', Target: 'a', Replacement: 'b' }, A, { AGB_WORKER_TICKET: 'T1' }), 'deny');
+  // ~username expansion against AGB_USER_HOME when HOME is .agb_home is denied for boosterDataRoots
+  const userBase = home.split('/').filter(Boolean).pop();
+  assert.equal(
+    evaluatePayload(
+      { toolCall: { name: 'run_command', args: { CommandLine: `node --test ~${userBase}/.gemini/antigravity-cli/plugin_data/antigravity-booster/token.json` } }, workspacePaths: [A] },
+      { env: envWithUserHome, home: agbHome, platform: 'linux' }
+    ).decision,
+    'deny'
+  );
+});
