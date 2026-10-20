@@ -38,6 +38,8 @@ async function pollEvents() {
         state.done = false;
         state.runId = data.runId;
         eventsLog.innerHTML = '';
+        ticketsGrid.innerHTML = '';
+        poolStatus.innerHTML = '';
         runStatus.innerHTML = '<span class="pulse"></span>Waiting for activity...';
         runStatus.className = 'run-status status-badge status-running';
         console.log('Resetting dashboard for new run:', data.runId);
@@ -163,6 +165,8 @@ function render() {
           <span class="pool-val">${escapeHtml(n)} / ${escapeHtml(state.pools.caps?.[p] ?? '?')}</span>
         </div>
       `).join('');
+    } else {
+      poolStatus.innerHTML = '';
     }
     
     // Render tickets

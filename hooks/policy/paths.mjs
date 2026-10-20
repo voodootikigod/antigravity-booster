@@ -37,6 +37,26 @@ const DEFAULT_EVALUATION_BUDGET = 200000;
 const MAGIC_PATH = /^\/(proc\/(self|thread-self|\d+)|dev\/fd)(\/|$)/;
 export const isMagicPath = (p) => MAGIC_PATH.test(p);
 
+// Benign single-file /proc pseudo-files that cannot traverse into the host filesystem
+// (excludes /proc/*/root, /proc/*/cwd, /proc/*/fd, /proc/*/exe, /proc/*/environ, /proc/*/mem).
+const BENIGN_PROC_READ_FILE = /^\/proc\/(self|thread-self|\d+)\/(status|stat|statm|cmdline|comm|limits|maps|smaps|io|mountinfo|mounts|cgroup)$/;
+
+/**
+ * True only when a read target is a direct, non-symlinked benign /proc/<pid>/<stat-file>
+ * pseudo-file (not reached through a symlink hop in the workspace or via /proc/<pid>/root).
+ */
+export function isBenignProcRead(token, resolved) {
+  const raw = String(token ?? '').trim();
+  if (!resolved || !BENIGN_PROC_READ_FILE.test(raw) || raw !== resolved.lexical) return false;
+  try {
+    const st = lstatSync(resolved.lexical);
+    if (st.isSymbolicLink()) return false;
+  } catch {
+    // On non-Linux or missing /proc, allow lexical /proc/<pid>/status read tests
+  }
+  return true;
+}
+
 // Total resolution steps allowed per policy evaluation (P5 round 5 L7):
 // many large paths can otherwise push a single call past the runner watchdog.
 let budget = DEFAULT_EVALUATION_BUDGET;
@@ -191,10 +211,27 @@ export function boosterDataRoots(home) {
   ];
 }
 
+const PROC_ROOT_PREFIX = /^(?:\/proc\/(?:self|thread-self|\d+)\/root)+(?=\/|$)/;
+
+function stripProcRoot(p) {
+  if (typeof p !== 'string' || !PROC_ROOT_PREFIX.test(p)) return p;
+  const stripped = p.replace(PROC_ROOT_PREFIX, '');
+  return stripped.startsWith('/') ? stripped : `/${stripped}`;
+}
+
 /** First root (from `roots`) that contains either form of the resolved path. */
 export function matchRoot(resolved, roots, platform) {
+  const lexStripped = stripProcRoot(resolved.lexical);
+  const realStripped = stripProcRoot(resolved.real);
   for (const root of roots) {
-    if (isWithin(resolved.lexical, root, platform) || isWithin(resolved.real, root, platform)) return root;
+    if (
+      isWithin(resolved.lexical, root, platform) ||
+      isWithin(resolved.real, root, platform) ||
+      (lexStripped !== resolved.lexical && isWithin(lexStripped, root, platform)) ||
+      (realStripped !== resolved.real && isWithin(realStripped, root, platform))
+    ) {
+      return root;
+    }
   }
   return null;
 }

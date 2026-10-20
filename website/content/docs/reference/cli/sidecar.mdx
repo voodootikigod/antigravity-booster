@@ -17,6 +17,6 @@ claims: [C11]
 
 ## Behavior
 
-The server is started with a random 16-byte hex token ([token](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L399-L400)). It writes a sidecar plugin manifest into `AGB_PLUGIN_DIR`, or into `~/.gemini/agb-sidecar-plugin-<pid>-<port>` when that is unset, and refuses to overwrite an existing manifest ([manifest directory](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L408-L414)).
+The server is started with a random 16-byte hex token ([token](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L399-L400)). It writes a sidecar plugin manifest into `AGB_PLUGIN_DIR` (in unbundled source runs; ignored in the bundled plugin build), or into `~/.gemini/agb-sidecar-plugin-<pid>-<port>` when that is unset, and refuses to overwrite an existing manifest ([manifest directory](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L408-L414)).
 
 Security, the token URL and the `ANTIGRAVITY_SIDECAR_WEB_PORT` caveat are covered in the [Sidecar dashboard guide](/docs/guides/sidecar-dashboard) and [Security](/docs/reference/security).

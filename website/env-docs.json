@@ -91,7 +91,6 @@
       "bundledIgnored": false,
       "description": "Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts."
     },
-
     {
       "name": "ADLC_ANTIGRAVITY_PLUGIN_NAME",
       "group": "plugin-resolution",
@@ -117,8 +116,8 @@
       "name": "AGB_PLUGIN_DIR",
       "group": "plugin-resolution",
       "default": "~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-<pid>-<port> (sidecar)",
-      "bundledIgnored": false,
-      "description": "Two readers: the companion-plugin handshake manifest directory (ignored by the bundled build) and the directory agb sidecar writes its plugin manifest into (honoured in every build)."
+      "bundledIgnored": true,
+      "description": "Two readers (both ignored by the bundled build): the companion-plugin handshake manifest directory and the directory agb sidecar writes its plugin manifest into (honoured in unbundled source runs only)."
     },
     {
       "name": "AGB_PLUGIN_ROOT",
@@ -127,7 +126,6 @@
       "bundledIgnored": true,
       "description": "Plugin root holding vendor/adlc, used to find the vendored adlc CLI. Unbundled runs only."
     },
-
     {
       "name": "ADLC_CLI_PATH",
       "group": "adlc",
@@ -205,7 +203,6 @@
       "bundledIgnored": false,
       "description": "Ticket-store path override the PreToolUse guard also protects."
     },
-
     {
       "name": "AGB_HOOK_DISABLE",
       "group": "sandbox-and-gates",
@@ -248,7 +245,6 @@
       "bundledIgnored": false,
       "description": "Plan compilation uses strict gates unless set to 0. At run time, 1 forces gate commands to match the npm pattern even without a package.json."
     },
-
     {
       "name": "AGB_POOLS_DIR",
       "group": "pools-and-quota",
@@ -284,7 +280,6 @@
       "bundledIgnored": false,
       "description": "Maximum milliseconds a ticket waits for a quota reset before failing."
     },
-
     {
       "name": "AGB_SIDECAR_PORT",
       "group": "sidecar",
@@ -300,7 +295,6 @@
       "description": "Selects jetski mode in the sidecar launcher and sets its port.",
       "security": "Setting it disables token auth on the sidecar dashboard and event stream: any local client can read run data."
     },
-
     {
       "name": "AGB_ARTIFACT_DIR",
       "group": "paths",
@@ -343,7 +337,6 @@
       "bundledIgnored": false,
       "description": "Home directory override for agb's per-user state."
     },
-
     {
       "name": "AGB_MOCK_CONTAINMENT_MECHANISM",
       "group": "internal/test-only",
@@ -366,5 +359,10 @@
       "description": "Test double for the Windows sandbox canary path."
     }
   ],
-  "ignore": []
+  "ignore": [
+    {
+      "name": "AGB_USER_HOME",
+      "reason": "Internal variable exported by bin/node-launcher.sh to pass the host user home directory into the PreToolUse policy guard when HOME is isolated to .agb_home."
+    }
+  ]
 }

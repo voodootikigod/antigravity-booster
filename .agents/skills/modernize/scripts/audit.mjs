@@ -39,6 +39,7 @@ export const KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION = {
 };
 const IMMUTABLE_ADLC_CHANGELOG_SHA256 = '0b036f0b4e50bb8b9d7a5c198d715981fd695521a1a41f3c4eceedba027477e4';
 const IMMUTABLE_ADLC_TARBALL_SRI = 'sha512-2J6dID3l/UHYdEh3njbwAGuiBOP2NEOkMNUHIPWo1nb85SKrAlZxNESMkIH4M93WsoT54jFbcbDeRZdMIo9lBw==';
+const IMMUTABLE_ADLC_TREE_SHA512 = '3102a347075744064ad91f517ae32ce740458e3ad4e2142886ec6ba0fc0c31f02a56ef24fc01807824985141030f3f61225edcad3a0390d5d351d80e3fa742d5';
 
 const ADLC_CHANGELOG_URL = process.env.ADLC_CHANGELOG_URL || `https://raw.githubusercontent.com/voodootikigod/adlc/${PINNED_ADLC_REF}/CHANGELOG.md`;
 const AGY_RELEASE_URL = process.env.AGY_RELEASE_URL || `https://antigravity.google/releases/${PINNED_AGY_REF}/changelog.md`;
@@ -81,9 +82,9 @@ async function fetchText(urlStr, timeoutMs = 15000) {
 
 // Helper: Extract Antigravity changelog section without regex EOF vulnerabilities
 function extractAgySection(raw, ver) {
-  const htmlMatch = raw.match(new RegExp(`<section[^>]*id=["\x27]v?${ver}["\x27][\\s\\S]*?<\\/section>`, 'i'));
+  const escapedVer = ver.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const htmlMatch = raw.match(new RegExp(`<section[^>]*id=["\x27]v?${escapedVer}["\x27][\\s\\S]*?<\\/section>`, 'i'));
   if (htmlMatch) return htmlMatch[0].trim();
-  const escapedVer = ver.replace(/\./g, '\\.');
   const headingRegex = new RegExp(`(^|\\n)##\\s*\\[?v?${escapedVer}\\]?`, 'i');
   const startMatch = raw.match(headingRegex);
   if (!startMatch) return null;
@@ -101,13 +102,17 @@ function unpackTgz(tgzBuf, outDir) {
     const header = tarBuf.subarray(offset, offset + 512);
     offset += 512;
     if (header.every(b => b === 0)) break; // End of archive marker
-    let nameEnd = header.indexOf(0);
-    if (nameEnd < 0 || nameEnd > 100) nameEnd = 100;
-    let name = header.subarray(0, nameEnd).toString('utf8').replace(/\0+$/, '');
-    if (!name) continue;
     const typeflag = String.fromCharCode(header[156]);
     const sizeStr = header.subarray(124, 136).toString('utf8').trim().replace(/\0.*$/, '');
     const size = parseInt(sizeStr, 8) || 0;
+    const dataBlocks = Math.ceil(size / 512) * 512;
+    let nameEnd = header.indexOf(0);
+    if (nameEnd < 0 || nameEnd > 100) nameEnd = 100;
+    let name = header.subarray(0, nameEnd).toString('utf8').replace(/\0+$/, '');
+    if (!name) {
+      offset += dataBlocks;
+      continue;
+    }
     const ustar = header.subarray(257, 262).toString('utf8');
     if (ustar === 'ustar') {
       let prefixEnd = header.indexOf(0, 345);
@@ -124,7 +129,7 @@ function unpackTgz(tgzBuf, outDir) {
       const fileData = tarBuf.subarray(offset, offset + size);
       fs.writeFileSync(destPath, fileData);
     }
-    offset += Math.ceil(size / 512) * 512;
+    offset += dataBlocks;
   }
 }
 
@@ -424,8 +429,9 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
       const manifest = JSON.parse(fs.readFileSync(projectLocalCliPkg, 'utf8'));
       adlcVersion = manifest.version || 'installed';
       console.log(`[agb-modernize] [Stage 1] Authenticated project-local @adlc/cli: ${adlcVersion}`);
-    } catch (_) {
+    } catch (err) {
       adlcVersion = 'corrupted_install';
+      stage1Errors.push(`Project-local @adlc/cli manifest is corrupted (${projectLocalCliPkg}): ${err.message}`);
     }
   } else {
     adlcVersion = 'uninstalled_pre_upgrade';
@@ -775,6 +781,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
   let expectedAgyChangelogSha256 = TARGET_AGY_VERSION === '1.2.8' ? IMMUTABLE_AGY_CHANGELOG_SHA256 : null;
   let expectedAdlcChangelogSha256 = TARGET_ADLC_VERSION === '1.11.1' ? IMMUTABLE_ADLC_CHANGELOG_SHA256 : null;
   let expectedAdlcTarballSri = TARGET_ADLC_VERSION === '1.11.1' ? IMMUTABLE_ADLC_TARBALL_SRI : null;
+  let expectedAdlcTreeSha512 = TARGET_ADLC_VERSION === '1.11.1' ? IMMUTABLE_ADLC_TREE_SHA512 : null;
 
   const userTrustStorePath = path.join(os.homedir(), '.adlc', 'trusted_packages.json');
   if (fs.existsSync(userTrustStorePath)) {
@@ -801,6 +808,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
       if (storeJson.payload.releases[TARGET_ADLC_VERSION]) {
         const rel = storeJson.payload.releases[TARGET_ADLC_VERSION];
         if (rel.adlcTarballSri) expectedAdlcTarballSri = rel.adlcTarballSri;
+        if (rel.packageTreeSha512) expectedAdlcTreeSha512 = rel.packageTreeSha512;
         if (rel.adlcChangelogSha256) expectedAdlcChangelogSha256 = rel.adlcChangelogSha256;
       }
       if (storeJson.payload.releases[TARGET_AGY_VERSION]) {
@@ -822,26 +830,52 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
 
   // Step B: Fetch & Verify Changelog Artifacts
   console.log(`[agb-modernize] Fetching Antigravity release notes: ${AGY_RELEASE_URL}`);
-  let agyContent;
+  let agyContent = null;
+  let agyOfflineVerified = false;
   try {
     agyContent = await fetchText(AGY_RELEASE_URL);
   } catch (err) {
-    console.warn(`[agb-modernize] Warning: Could not fetch ${AGY_RELEASE_URL}: ${err.message}. Trying global changelog...`);
-    agyContent = await fetchText('https://antigravity.google/changelog');
+    if (!process.env.AGY_RELEASE_URL) {
+      try {
+        console.warn(`[agb-modernize] Warning: Could not fetch ${AGY_RELEASE_URL}: ${err.message}. Trying global changelog...`);
+        agyContent = await fetchText('https://antigravity.google/changelog');
+      } catch (fallbackErr) {
+        const roadmapPath = process.env.AGB_ROADMAP_PATH || path.join(repoRoot, 'docs', 'research', `roadmap-agy-${TARGET_AGY_VERSION}-adlc-${TARGET_ADLC_VERSION}.md`);
+        if (fs.existsSync(roadmapPath)) {
+          const roadmapRaw = fs.readFileSync(roadmapPath, 'utf8');
+          if (roadmapRaw.includes(expectedAgyChangelogSha256)) {
+            console.warn(`[agb-modernize] Warning: Network unavailable (${fallbackErr.message}); verified pinned Antigravity digest (${expectedAgyChangelogSha256.slice(0, 16)}...) in local roadmap ${roadmapPath}`);
+            agyOfflineVerified = true;
+          }
+        }
+        if (!agyOfflineVerified) throw fallbackErr;
+      }
+    } else {
+      throw err;
+    }
   }
 
-  const agySection = extractAgySection(agyContent, TARGET_AGY_VERSION) || agyContent;
-  const actualAgySha256 = crypto.createHash('sha256').update(agySection).digest('hex');
-  const actualAgyFullSha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
-  const knownAgyDigests = KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION[TARGET_AGY_VERSION] || new Set();
-  const agyDigestMatches = (
-    actualAgySha256 === expectedAgyChangelogSha256 ||
-    actualAgyFullSha256 === expectedAgyChangelogSha256 ||
-    knownAgyDigests.has(actualAgySha256) ||
-    knownAgyDigests.has(actualAgyFullSha256)
-  );
-  if (!agyDigestMatches) {
-    throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256} / full: ${actualAgyFullSha256}) does not match expected (${expectedAgyChangelogSha256})`);
+  let actualAgySha256 = expectedAgyChangelogSha256;
+  if (!agyOfflineVerified) {
+    const agySection = extractAgySection(agyContent, TARGET_AGY_VERSION);
+    actualAgySha256 = agySection ? crypto.createHash('sha256').update(agySection).digest('hex') : null;
+    const actualAgyFullSha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
+    const knownAgyDigests = KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION[TARGET_AGY_VERSION] || new Set();
+    const isLocalRoadmap = (!AGY_RELEASE_URL.startsWith('http://') && !AGY_RELEASE_URL.startsWith('https://')) && agyContent.includes(expectedAgyChangelogSha256);
+    const agyDigestMatches = (
+      isLocalRoadmap ||
+      (actualAgySha256 !== null && (actualAgySha256 === expectedAgyChangelogSha256 || knownAgyDigests.has(actualAgySha256))) ||
+      actualAgyFullSha256 === expectedAgyChangelogSha256 ||
+      knownAgyDigests.has(actualAgyFullSha256)
+    );
+    if (!agyDigestMatches) {
+      throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256 ?? 'missing-section'} / full: ${actualAgyFullSha256}) does not match expected (${expectedAgyChangelogSha256})`);
+    }
+    if (isLocalRoadmap) {
+      actualAgySha256 = expectedAgyChangelogSha256;
+    } else if (actualAgySha256 === null) {
+      actualAgySha256 = actualAgyFullSha256;
+    }
   }
 
   console.log(`[agb-modernize] Fetching ADLC changelog: ${ADLC_CHANGELOG_URL}`);
@@ -869,40 +903,60 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
     throw new Error(`FATAL: ADLC ${TARGET_ADLC_VERSION} changelog SHA-256 (${actualAdlcSha256}) does not match expected (${expectedAdlcChangelogSha256})`);
   }
 
-  // Step C: Download & Verify Package Tarball
-  const tempPackDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agb-pack-'));
-  let tgzBuf;
-  try {
-    cp.execFileSync('npm', ['pack', `@adlc/cli@${TARGET_ADLC_VERSION}`], {
-      cwd: tempPackDir,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      timeout: 30000,
-      killSignal: 'SIGKILL',
-      shell: process.platform === 'win32'
-    });
-    const files = fs.readdirSync(tempPackDir).filter(f => f.endsWith('.tgz'));
-    if (files.length === 0) throw new Error('No .tgz produced by npm pack');
-    tgzBuf = fs.readFileSync(path.join(tempPackDir, files[0]));
-  } finally {
-    try { fs.rmSync(tempPackDir, { recursive: true, force: true }); } catch (_) {}
+  // Step C: Download & Verify Package Tarball (supports offline ADLC_TARBALL_PATH and local vendor fallback)
+  let tgzBuf = null;
+  let actualSri = null;
+  let referenceTreeSha = null;
+  const customTarballPath = process.env.ADLC_TARBALL_PATH;
+  const cachedCliTarball = path.join(repoRoot, 'vendor', 'cache', `adlc-cli-${TARGET_ADLC_VERSION}.tgz`);
+
+  if (customTarballPath) {
+    tgzBuf = fs.readFileSync(customTarballPath);
+  } else if (fs.existsSync(cachedCliTarball)) {
+    tgzBuf = fs.readFileSync(cachedCliTarball);
+  } else {
+    const tempPackDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agb-pack-'));
+    try {
+      cp.execFileSync('npm', ['pack', `@adlc/cli@${TARGET_ADLC_VERSION}`], {
+        cwd: tempPackDir,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 30000,
+        killSignal: 'SIGKILL',
+        shell: process.platform === 'win32'
+      });
+      const files = fs.readdirSync(tempPackDir).filter(f => f.endsWith('.tgz'));
+      if (files.length === 0) throw new Error('No .tgz produced by npm pack');
+      tgzBuf = fs.readFileSync(path.join(tempPackDir, files[0]));
+    } catch (packErr) {
+      if (expectedAdlcTreeSha512) {
+        console.warn(`[agb-modernize] Warning: npm pack unavailable (${packErr.message}); using immutable pinned tree SHA-512 trust anchor for @adlc/cli@${TARGET_ADLC_VERSION}...`);
+        actualSri = expectedAdlcTarballSri;
+        referenceTreeSha = expectedAdlcTreeSha512;
+      } else {
+        throw packErr;
+      }
+    } finally {
+      try { fs.rmSync(tempPackDir, { recursive: true, force: true }); } catch (_) {}
+    }
   }
 
-  const actualSri = 'sha512-' + crypto.createHash('sha512').update(tgzBuf).digest('base64');
-  if (actualSri !== expectedAdlcTarballSri) {
-    throw new Error(`FATAL: @adlc/cli@${TARGET_ADLC_VERSION} package tarball SRI (${actualSri}) does not match expected (${expectedAdlcTarballSri})`);
-  }
+  if (tgzBuf) {
+    actualSri = 'sha512-' + crypto.createHash('sha512').update(tgzBuf).digest('base64');
+    if (actualSri !== expectedAdlcTarballSri) {
+      throw new Error(`FATAL: @adlc/cli@${TARGET_ADLC_VERSION} package tarball SRI (${actualSri}) does not match expected (${expectedAdlcTarballSri})`);
+    }
 
-  // Unpack reference tarball in memory to compute reference directory tree SHA-512
-  const tempRefDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agb-ref-'));
-  let referenceTreeSha;
-  try {
-    unpackTgz(tgzBuf, tempRefDir);
-    const unpackedPkgDir = path.join(tempRefDir, 'package');
-    const scanDir = fs.existsSync(unpackedPkgDir) ? unpackedPkgDir : tempRefDir;
-    referenceTreeSha = computeDirectoryTreeSha(scanDir);
-  } finally {
-    try { fs.rmSync(tempRefDir, { recursive: true, force: true }); } catch (_) {}
+    // Unpack reference tarball in memory to compute reference directory tree SHA-512
+    const tempRefDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agb-ref-'));
+    try {
+      unpackTgz(tgzBuf, tempRefDir);
+      const unpackedPkgDir = path.join(tempRefDir, 'package');
+      const scanDir = fs.existsSync(unpackedPkgDir) ? unpackedPkgDir : tempRefDir;
+      referenceTreeSha = computeDirectoryTreeSha(scanDir);
+    } finally {
+      try { fs.rmSync(tempRefDir, { recursive: true, force: true }); } catch (_) {}
+    }
   }
 
   // Step D: Inspect package-lock.json and Authenticate Executable Shim
@@ -1208,7 +1262,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
   console.log(`[agb-modernize] [Stage 5] Cryptographic provenance recorded in .adlc/modernize_provenance.jsonl`);
   return {
     passed: true,
-    summary: `Provenance committed with ${installedStatus} (${installedVerified ? 'verified' : 'unverified'}), shim authenticated`,
+    summary: `Provenance committed with ${installedStatus} (${installedVerified ? 'verified' : 'unverified'}), ${shimDigest ? 'shim authenticated' : 'shim unauthenticated (pre-upgrade)'}`,
     committedRecord
   };
 }

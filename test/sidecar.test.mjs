@@ -182,6 +182,13 @@ test('sidecar: app.js escapes DOM nodes', () => {
   addEventLog({ type: 'phase', ticket: payload, to: payload, detail: payload, ts: 0 });
   const logHtml = els['eventsLog'].children[0].innerHTML;
   assert.ok(!logHtml.includes('<script>'), 'eventsLog must escape event data');
+
+  // When state.pools is reset to null and state.tickets is cleared, render() clears both DOM containers
+  state.pools = null;
+  state.tickets.clear();
+  render();
+  assert.equal(els['poolStatus'].innerHTML, '', 'poolStatus must be cleared when state.pools is null');
+  assert.equal(els['ticketsGrid'].innerHTML, '', 'ticketsGrid must be cleared when state.tickets is empty');
 });
 
 import { spawn } from 'node:child_process';

@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 
 import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/scheduler.mjs';
-import { reapIntegrationWorktrees, resetToBase, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
+import { reapIntegrationWorktrees, resetToBase, cleanEmptyNodeModules, isDirty, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_scheduler_test.json');
@@ -1162,5 +1162,42 @@ test('terminateProcessTree: kills child and all descendant processes in process 
   assert.equal(leaderAlive, false, 'leader process must be terminated');
 });
 
+test('isDirty: preserves leading space on porcelain output so unstaged edits to .adlc/tickets.json are ignored', () => {
+  const repo = makeRepo();
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
+    execFileSync('git', ['add', '-f', '.adlc/tickets.json'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add tickets.json'], { cwd: repo });
 
+    // Modify tracked .adlc/tickets.json without staging -> porcelain line starts with " M .adlc/tickets.json"
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{"tickets":[{"id":"T1"}]}\n');
+    assert.equal(isDirty(repo), false, 'unstaged orchestrator projection edit to .adlc/tickets.json must not make repo dirty');
 
+    // Modify tracked README.md -> must be dirty
+    writeFileSync(join(repo, 'README.md'), 'changed\n');
+    assert.equal(isDirty(repo), true, 'unstaged edit to normal tracked file must be dirty');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('cleanEmptyNodeModules & resetToBase: removes empty node_modules mountpoint directory but preserves non-empty or symlinked node_modules', () => {
+  const repo = makeRepo();
+  try {
+    const wt = createWorktree(repo, 'T-NM', 'main');
+    const nm = join(wt, 'node_modules');
+    mkdirSync(nm, { recursive: true });
+    assert.equal(existsSync(nm), true);
+
+    resetToBase(wt, 'main');
+    assert.equal(existsSync(nm), false, 'empty node_modules directory should be removed by resetToBase');
+
+    // Non-empty node_modules is preserved
+    mkdirSync(join(nm, 'pkg'), { recursive: true });
+    cleanEmptyNodeModules(wt);
+    assert.equal(existsSync(nm), true, 'non-empty node_modules must be preserved');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

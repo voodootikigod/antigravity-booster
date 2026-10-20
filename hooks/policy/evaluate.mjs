@@ -7,8 +7,9 @@
 // path they name is resolved physically and judged against rails, the ADLC
 // trust root and the platform's protected roots, failing closed.
 import { lstatSync, readdirSync, realpathSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { basename, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
@@ -16,7 +17,7 @@ import {
   PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS,
 } from './constants.mjs';
 import {
-  beginEvaluation, boosterDataRoots, hasHomePrefix, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
+  beginEvaluation, boosterDataRoots, hasHomePrefix, isBenignProcRead, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
   matchesScope, physicalResolve, protectedRoots, repoRelative, resolveCandidate,
 } from './paths.mjs';
 import { classifyRunCommand } from './shell.mjs';
@@ -61,11 +62,11 @@ function realOr(p) {
 const unique = (xs) => [...new Set(xs)];
 
 /** Repo lookups are cached per evaluation: the ticket store is read at most once per repo. */
-function makeRepoCache(home) {
+function makeRepoCache(home, homes) {
   const byRoot = new Map();
   return {
     repoAt(absPath) {
-      const root = findAdlcRoot(absPath, { home });
+      const root = findAdlcRoot(absPath, { home, homes });
       if (!root) return { adlc: false };
       if (!byRoot.has(root)) {
         const store = unionActiveRails(root);
@@ -102,14 +103,22 @@ function boosterMcpToolName(name, args) {
 export function extractProbedPaths(toolName, args) {
   const schema = TOOL_PATH_SCHEMAS[toolName];
   if (!schema) return null;
+  const hasReq = schema.required.some((k) => args?.[k] !== undefined && args?.[k] !== null && String(args[k]).trim().length > 0);
+  const hasAlt = Array.isArray(schema.altRequired) && schema.altRequired.some((k) => args?.[k] !== undefined && args?.[k] !== null && String(args[k]).trim().length > 0);
+  if (hasReq && hasAlt) {
+    return { error: `Conflicting path parameters in mutating tool call: ${schema.required.join(', ')} and ${schema.altRequired.join(', ')}` };
+  }
+  const activeKeys = (!hasReq && hasAlt) ? schema.altRequired : schema.required;
+  const inactiveSchemaKeys = new Set([...schema.required, ...(schema.altRequired ?? [])].filter((k) => !activeKeys.includes(k)));
   const paths = [];
-  for (const key of schema.required) {
+  for (const key of activeKeys) {
     const val = args?.[key];
     if (typeof val !== 'string' || val.trim().length === 0) return { error: `Missing required path parameter: ${key}` };
     paths.push(val);
   }
   for (const [key, val] of Object.entries(args ?? {})) {
-    if (schema.required.includes(key) || EXCLUDED_CONTENT_KEYS.has(key)) continue;
+    if (activeKeys.includes(key) || EXCLUDED_CONTENT_KEYS.has(key)) continue;
+    if (inactiveSchemaKeys.has(key) && val !== undefined && val !== null) return { error: `Unexpected path parameter in mutating tool call: ${key}` };
     if (typeof val === 'string' && UNEXPECTED_PATH.test(val)) return { error: `Unexpected path parameter in mutating tool call: ${key}` };
   }
   return { paths };
@@ -160,7 +169,11 @@ function readToolPaths(name, args) {
  * No anchor at all yields [] — callers fail closed.
  */
 function resolveAll(token, ctx) {
-  if (isAbsolute(token) || hasHomePrefix(token)) return [resolveCandidate(token, '/', ctx.home, ctx.platform)];
+  if (hasHomePrefix(token)) {
+    const homes = ctx.homes ?? [ctx.home];
+    return homes.map((h) => resolveCandidate(token, '/', h, ctx.platform));
+  }
+  if (isAbsolute(token)) return [resolveCandidate(token, '/', ctx.home, ctx.platform)];
   return ctx.anchors.map((anchor) => resolveCandidate(token, anchor, ctx.home, ctx.platform));
 }
 
@@ -230,7 +243,7 @@ function containsProtected(r, ctx) {
   return null;
 }
 
-const SHARD_WRITERS = new Set(['write_to_file', 'create_file', 'save_file']);
+const SHARD_WRITERS = new Set(['write_to_file', 'write_file', 'create_file', 'save_file']);
 const SHARD_CONTENT_KEYS = ['CodeContent', 'Content'];
 
 /**
@@ -298,17 +311,21 @@ function stepOne(name, args, ctx) {
   const isRead = READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]);
   let candidates;
   if (isRead) candidates = readToolPaths(name, args);
-  else if (TOOL_PATH_SCHEMAS[name]) candidates = TOOL_PATH_SCHEMAS[name].required.map((k) => args?.[k]).filter((v) => typeof v === 'string').map(toPath);
-  else {
+  else if (TOOL_PATH_SCHEMAS[name]) {
+    const schemaKeys = [...TOOL_PATH_SCHEMAS[name].required, ...(TOOL_PATH_SCHEMAS[name].altRequired ?? [])];
+    candidates = schemaKeys.map((k) => args?.[k]).filter((v) => typeof v === 'string').map(toPath);
+  } else {
     const scan = scanPathLike(args);
     if (scan.overflow) return OVERFLOW;
     candidates = scan.paths;
   }
   for (const token of candidates) {
     for (const r of resolveAll(token, ctx)) {
-      if (r.unresolved && !isRead) return deny('Target path cannot be resolved (symlink loop or oversized path)');
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
         return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (r.unresolved && !(isRead && isBenignProcRead(token, r))) {
+        return deny('Target path cannot be resolved (symlink loop or oversized path)');
       }
       if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
         return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
@@ -325,7 +342,8 @@ function stepOne(name, args, ctx) {
  */
 function schemaViolationVerdict(name, args, reason, ctx) {
   if (ctx.readonly) return deny(reason);
-  const required = (TOOL_PATH_SCHEMAS[name]?.required ?? []).map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
+  const schemaKeys = [...(TOOL_PATH_SCHEMAS[name]?.required ?? []), ...(TOOL_PATH_SCHEMAS[name]?.altRequired ?? [])];
+  const required = schemaKeys.map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
   const scan = scanPathLike(args, { skipContentKeys: true });
   if (scan.overflow) return OVERFLOW;
   if (ctx.anchors.some((a) => {
@@ -475,10 +493,35 @@ export function buildContext(payload, options = {}) {
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;
   const cwd = typeof args?.Cwd === 'string' && isAbsolute(args.Cwd) ? resolve(args.Cwd) : null;
-  const homes = unique([home, realHome]);
+  const extraHomes = [];
+  const homeMarker = /(^|[\/\\])\.agb_home$/;
+  if (typeof env.AGB_USER_HOME === 'string' && isAbsolute(env.AGB_USER_HOME)) {
+    const uh = resolve(env.AGB_USER_HOME);
+    extraHomes.push(uh, realOr(uh));
+  }
+  if (homeMarker.test(home) || homeMarker.test(realHome)) {
+    try {
+      const osHome = userInfo().homedir;
+      if (typeof osHome === 'string' && isAbsolute(osHome)) {
+        const uh = resolve(osHome);
+        extraHomes.push(uh, realOr(uh));
+      }
+    } catch {}
+    try {
+      const selfPath = fileURLToPath(import.meta.url);
+      const geminiMarker = '/' + '.gemini/';
+      const geminiIdx = selfPath.indexOf(geminiMarker);
+      if (geminiIdx > 0) {
+        const uh = resolve(selfPath.slice(0, geminiIdx));
+        extraHomes.push(uh, realOr(uh));
+      }
+    } catch {}
+  }
+  const homes = unique([home, realHome, ...extraHomes]);
   return {
     home,
     realHome,
+    homes,
     platform,
     workspacePaths,
     workspaceRealPaths,
@@ -493,7 +536,7 @@ export function buildContext(payload, options = {}) {
     boosterDataRoots: unique(homes.flatMap((h) => boosterDataRoots(h))),
     limits: { subtreeEntries: options.limits?.subtreeEntries ?? DEFAULT_SUBTREE_ENTRIES },
     storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === 'string' && p.length > 0).map((p) => realOr(resolve(p))),
-    ...makeRepoCache(home),
+    ...makeRepoCache(home, homes),
   };
 }
 

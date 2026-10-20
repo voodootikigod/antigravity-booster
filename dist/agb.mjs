@@ -7559,7 +7559,7 @@ function runHook(command, pluginRoot, home, repo, relPath) {
       USERPROFILE: home
     } : {}
   };
-  if (process.platform === "win32" && command.includes("dist/hooks/pre-tool-use.bundle.mjs")) {
+  if (process.platform === "win32" && command.trim() === "/bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs" && existsSync17(join18(pluginRoot, "bin", "hook-runner.sh")) && existsSync17(join18(pluginRoot, "bin", "node-launcher.sh"))) {
     return spawnSync3(process.execPath, [join18(pluginRoot, "dist", "hooks", "pre-tool-use.bundle.mjs")], {
       cwd: pluginRoot,
       input: JSON.stringify(payload),
@@ -7623,7 +7623,8 @@ function checkPolicyGuard({ pluginRoot, home = homedir3() } = {}) {
     const failure = railVerdict(runHook(command, root, home, repo, SELFTEST_RAIL)) ?? nonRailVerdict(runHook(command, root, home, repo, "lib/foo.mjs"));
     writeHealthLog(home, root, !failure && evaluateStagedAdlcPlugin({ home }).railsTrusted);
     if (failure) return { name, level: "fail", detail: failure, fix };
-    return { name, level: "pass", detail: `denies ${SELFTEST_RAIL} under PATH=${MINIMAL_PATH}`, fix: null };
+    const winNote = process.platform === "win32" ? " (win32 bundle direct evaluation)" : "";
+    return { name, level: "pass", detail: `denies ${SELFTEST_RAIL} under PATH=${MINIMAL_PATH}${winNote}`, fix: null };
   } catch (err) {
     return { name, level: "fail", detail: `self-test could not run: ${err.message}`, fix };
   } finally {
@@ -13046,6 +13047,7 @@ import {
   mkdirSync as mkdirSync13,
   readdirSync as readdirSync11,
   rmSync as rmSync9,
+  rmdirSync as rmdirSync2,
   symlinkSync as symlinkSync4,
   cpSync as cpSync3,
   lstatSync as lstatSync11,
@@ -13080,8 +13082,8 @@ function ensureGitignore(repo) {
   }
 }
 function isDirty(repo) {
-  const status = git(repo, "status", "--porcelain", "-u").trim();
-  if (!status) return false;
+  const status = git(repo, "status", "--porcelain", "-u");
+  if (!status.trim()) return false;
   const lines = status.split("\n");
   for (const line of lines) {
     if (!line.trim()) continue;
@@ -13258,12 +13260,23 @@ function discardProjection(worktree, base = "HEAD") {
     }
   }
 }
+function cleanEmptyNodeModules(worktree) {
+  const nm = join24(worktree, "node_modules");
+  try {
+    const st = lstatSync11(nm);
+    if (st.isDirectory() && !st.isSymbolicLink() && readdirSync11(nm).length === 0) {
+      rmdirSync2(nm);
+    }
+  } catch {
+  }
+}
 function resetToBase(worktree, base = "main") {
   git(worktree, "reset", "--hard", base);
   try {
     git(worktree, "clean", "-fd", "-e", ".git", "-e", "AGENTS.md", "-e", ".adlc", "-e", ".adlc/**", "-e", ".agb_home", "-e", ".agb_home/**");
   } catch {
   }
+  cleanEmptyNodeModules(worktree);
 }
 var JOURNAL_PHASES = {
   PREPARED: "PREPARED",
@@ -15714,7 +15727,7 @@ Fix: ${agyCheck.fix}`);
         status.pools(pools.snapshot());
       }
     }
-    async function prosecuteBranch(t, worktree, builderModel) {
+    async function prosecuteBranch(t, worktree, builderModel, baseRef = base) {
       const prosecutorModel = pools.prosecutorFor(builderModel);
       const { model: activeProsecutor, release } = await acquireWithQuotaHandling(prosecutorModel, {
         role: "prosecutor",
@@ -15736,7 +15749,7 @@ Fix: ${agyCheck.fix}`);
       try {
         return await prosecute({
           ticket: t,
-          diff: branchDiff(worktree, base),
+          diff: branchDiff(worktree, baseRef),
           model: activeProsecutor,
           cwd: scratch,
           logFile: join30(logDir, `${safeId}.jsonl`),
@@ -15818,6 +15831,12 @@ Fix: ${agyCheck.fix}`);
             const preSnapshot = snapshotRootGit(repo);
             const { baseSha: baseRefSha, gitDir: expectedGitDir } = setupAttemptGitDatabase(repo, worktree, base);
             safeWriteWorktreeFile(join30(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
+            const restoreWorktreeBaseRef = () => {
+              try {
+                execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "update-ref", `refs/heads/${base}`, baseRefSha], { cwd: worktree });
+              } catch {
+              }
+            };
             safeResetToBase = () => {
               try {
                 verifyWorktreeGitPointer(worktree, expectedGitDir);
@@ -15828,7 +15847,8 @@ Fix: ${agyCheck.fix}`);
                 } catch {
                 }
               }
-              resetToBase(worktree, base);
+              restoreWorktreeBaseRef();
+              resetToBase(worktree, baseRefSha);
               try {
                 safeWriteWorktreeFile(join30(worktree, "AGENTS.md"), builderAgentsMd(t, gate));
               } catch {
@@ -15885,6 +15905,9 @@ Fix: ${agyCheck.fix}`);
 `);
               } catch {
               }
+            }
+            if (gitPointerOk) {
+              restoreWorktreeBaseRef();
             }
             let candidateSha = null;
             if (build.ok && gitPointerOk) {
@@ -16001,7 +16024,15 @@ Fix: ${agyCheck.fix}`);
                 }
               } else {
                 const changed = scopeCheck.changedFiles;
-                const rails = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate.storeRails])];
+                const activeRailsNow = loadActiveRails(repo);
+                if (!activeRailsNow.ok) {
+                  strikes = 2;
+                  strikeError = compromiseRun(`ticket store unreadable (${activeRailsNow.error})`);
+                  lastFailure = strikeError;
+                  status.strike(t.id, { model, error: strikeError, strikes });
+                  throw new Error(strikeError);
+                }
+                const rails = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate.storeRails, ...activeRailsNow.rails ?? []])];
                 const railCheck = rails.length ? await checkRailsGuard({ worktree, base, rails, adlcBin: runAdlcBin }) : { violations: [] };
                 if (railCheck.operationalError) {
                   strikes = 2;
@@ -16043,6 +16074,7 @@ Fix: ${agyCheck.fix}`);
                   }
                   status.ticket(t.id, { phase: "gating" });
                   const gates = await runGates(gate, worktree, { sandbox: true });
+                  cleanEmptyNodeModules(worktree);
                   await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: gates.ok, strikes }, adlcBin: runAdlcBin });
                   if (!gates.ok) {
                     strikes += 1;
@@ -16056,7 +16088,7 @@ ${g.output}`;
                     let verdict;
                     while (dry < dryNeeded) {
                       status.ticket(t.id, { phase: "prosecuting", detail: `dry ${dry}/${dryNeeded}` });
-                      verdict = await prosecuteBranch(t, worktree, model);
+                      verdict = await prosecuteBranch(t, worktree, model, baseRefSha);
                       if (verdict.verdict !== "ship") break;
                       dry += 1;
                     }
@@ -16099,6 +16131,7 @@ ${JSON.stringify(blocking, null, 2)}`;
                           }
                         }
                         if (cfGitPointerOk) {
+                          restoreWorktreeBaseRef();
                           commitAll(worktree, `${t.id}: ${t.title} (consensus-fix)`);
                           const cfScope = verifyScopeAndAntiNoOp(repo, worktree, baseRefSha, t);
                           if (!cfScope.ok) {
@@ -16108,7 +16141,11 @@ ${JSON.stringify(blocking, null, 2)}`;
                             const activeRailsRes = loadActiveRails(repo);
                             if (!activeRailsRes.ok) {
                               safeResetToBase();
-                              cfFailureReason = `consensus-fix failed to verify active rails: ${activeRailsRes.error}`;
+                              strikes = 2;
+                              strikeError = compromiseRun(`ticket store unreadable (${activeRailsRes.error})`);
+                              lastFailure = strikeError;
+                              status.strike(t.id, { model, error: strikeError, strikes });
+                              throw new Error(strikeError);
                             } else {
                               const cfRailsList = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate?.storeRails ?? [], ...activeRailsRes.rails ?? []])];
                               const cfRails2 = cfRailsList.length ? await checkRailsGuard({ worktree, base, rails: cfRailsList, adlcBin: runAdlcBin }) : { violations: [] };
@@ -16145,13 +16182,14 @@ ${JSON.stringify(blocking, null, 2)}`;
                                 } else {
                                   status.ticket(t.id, { phase: "gating" });
                                   const cfGates = await runGates(gate, worktree, { sandbox: true });
+                                  cleanEmptyNodeModules(worktree);
                                   await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: cfGates.ok, strikes, consensusFix: true }, adlcBin: runAdlcBin });
                                   if (cfGates.ok) {
                                     let cfDry = 0;
                                     let cfVerdict;
                                     while (cfDry < dryNeeded) {
                                       status.ticket(t.id, { phase: "prosecuting", detail: `consensus-fix dry ${cfDry}/${dryNeeded}` });
-                                      cfVerdict = await prosecuteBranch(t, worktree, model);
+                                      cfVerdict = await prosecuteBranch(t, worktree, model, baseRefSha);
                                       if (cfVerdict.verdict !== "ship") break;
                                       cfDry += 1;
                                     }
@@ -16266,6 +16304,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           throw conflictErr;
         }
         const tempRef = `refs/namespaces/attempts/${t.id.toLowerCase()}/rebased`;
+        attemptRefsToClean.add(tempRef);
         execFileSync11(
           "git",
           [
@@ -16280,10 +16319,6 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           { cwd: repo }
         );
         const rebasedSha = execFileSync11("git", ["rev-parse", tempRef], { cwd: repo, encoding: "utf8" }).trim();
-        try {
-          execFileSync11("git", ["update-ref", "-d", tempRef], { cwd: repo });
-        } catch {
-        }
         if (rebasedSha === headBefore) {
           const emptyErr = new Error(`anti-no-op gate failed: zero changes against baseline commit ${headBefore}`);
           emptyErr.kind = "empty_diff";
@@ -16392,6 +16427,10 @@ ${g?.output?.slice(0, 300)}`);
           } catch {
           }
           try {
+            execFileSync11("git", ["update-ref", "-d", tempRef], { cwd: repo });
+          } catch {
+          }
+          try {
             removeWorktree(repo, integrationPath, { force: true });
           } catch {
             try {
@@ -16413,7 +16452,7 @@ ${g?.output?.slice(0, 300)}`);
             } catch {
             }
             try {
-              execFileSync11("git", ["update-ref", "-d", agbRef], { cwd: repo });
+              execFileSync11("git", ["update-ref", "-d", tempRef], { cwd: repo });
             } catch {
             }
             if (journalWritten) {
@@ -16933,7 +16972,7 @@ function bootstrap({
   const tempRun = isNpxTemp();
   let agyCheckFailed = false;
   try {
-    execFileSync14(resolvedAgyBin, ["--version"], { stdio: "ignore", shell: process.platform === "win32" });
+    execFileSync14(resolvedAgyBin, ["--version"], { stdio: "ignore" });
   } catch (err) {
     console.log(`info: agy CLI not found on PATH; bootstrap will attempt to fall back to jetski CLI`);
     agyCheckFailed = true;

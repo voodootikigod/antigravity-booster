@@ -34,7 +34,7 @@ Each launch generates a fresh random token, 16 bytes as hex, and the dashboard U
 
 ### Registration with Antigravity
 
-`agb sidecar` writes a dynamic plugin (`plugin.json` plus `sidecars/agb.json` carrying the token URL, mode `0600`) and runs `agy plugin install` on it. The directory is `AGB_PLUGIN_DIR` if set, otherwise `~/.gemini/agb-sidecar-plugin-<pid>-<port>` (manifest directory: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L407-L433)). If `AGB_PLUGIN_DIR` already holds a `plugin.json` or `sidecars/agb.json`, it refuses to overwrite it. If registration fails, the server keeps running and prints the manifest directory so you can register it by hand ([fallback](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L463-L466)).
+`agb sidecar` writes a dynamic plugin (`plugin.json` plus `sidecars/agb.json` carrying the token URL, mode `0600`) and runs `agy plugin install` on it. The directory is `AGB_PLUGIN_DIR` if set (in unbundled source runs; ignored in the bundled plugin build), otherwise `~/.gemini/agb-sidecar-plugin-<pid>-<port>` (manifest directory: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L407-L433)). If `AGB_PLUGIN_DIR` already holds a `plugin.json` or `sidecars/agb.json`, it refuses to overwrite it. If registration fails, the server keeps running and prints the manifest directory so you can register it by hand ([fallback](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L463-L466)).
 
 </Step>
 <Step>

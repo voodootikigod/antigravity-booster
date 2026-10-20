@@ -23,7 +23,7 @@
 | ADLC_ANTIGRAVITY_PLUGIN_NAME | adlc-antigravity | Not read from the environment: a source constant in lib/plugin-paths.mjs naming the companion plugin's directory under the agy plugins folder. | honoured |
 | ADLC_ANTIGRAVITY_PLUGIN_PATH | unset | Source checkout of the adlc-antigravity plugin to install from. Honoured by bootstrap only in unbundled runs and only together with AGB_DEV_ALLOW_UNVERIFIED_PLUGIN=1. | ignored |
 | AGB_DEV_ALLOW_UNVERIFIED_PLUGIN | unset | Set to 1 (unbundled runs only) to let bootstrap install an unverified companion plugin from ADLC_ANTIGRAVITY_PLUGIN_PATH. | ignored |
-| AGB_PLUGIN_DIR | ~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-&lt;pid&gt;-&lt;port&gt; (sidecar) | Two readers: the companion-plugin handshake manifest directory (ignored by the bundled build) and the directory agb sidecar writes its plugin manifest into (honoured in every build). | honoured |
+| AGB_PLUGIN_DIR | ~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-&lt;pid&gt;-&lt;port&gt; (sidecar) | Two readers (both ignored by the bundled build): the companion-plugin handshake manifest directory and the directory agb sidecar writes its plugin manifest into (honoured in unbundled source runs only). | ignored |
 | AGB_PLUGIN_ROOT | the booster plugin root | Plugin root holding vendor/adlc, used to find the vendored adlc CLI. Unbundled runs only. | ignored |
 
 **Sandbox and gates**

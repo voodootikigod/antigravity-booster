@@ -38,6 +38,7 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
   // Verify YAML frontmatter
   assert.match(content, /^---\n/);
   assert.match(content, /name:\s*modernize/);
+  assert.match(content, /internal:\s*true/);
   assert.match(content, /user-invocable:\s*true/);
   assert.match(content, /license:\s*MIT/);
 
@@ -53,10 +54,13 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
   assert.match(content, /audit\.mjs/);
 });
 
+const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 'roadmap-agy-1.2.8-adlc-1.11.1.md');
+const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, '..', 'vendor', 'adlc', 'package.json');
+
 test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
-  const out = execFileSync('node', [AUDIT_SCRIPT], {
+  const out = execFileSync(process.execPath, [AUDIT_SCRIPT], {
     cwd: join(import.meta.dirname, '..'),
-    env: { ...process.env, AGB_AGY_BIN: FAKE_AGY },
+    env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
     encoding: 'utf8',
   });
 
@@ -79,7 +83,7 @@ test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical co
 
     assert.throws(
       () => {
-        execFileSync('node', [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT], {
           cwd: tempRepo,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -99,9 +103,9 @@ test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical co
 test('Modernize Skill: concurrent writer serialization via exclusive lock', async () => {
   // Spawn two concurrent audit scripts; they must serialize cleanly without corruption
   const p1 = new Promise((resolve, reject) => {
-    const child = spawn('node', [AUDIT_SCRIPT], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT], {
       cwd: join(import.meta.dirname, '..'),
-      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY },
+      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -114,9 +118,9 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   });
 
   const p2 = new Promise((resolve, reject) => {
-    const child = spawn('node', [AUDIT_SCRIPT], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT], {
       cwd: join(import.meta.dirname, '..'),
-      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY },
+      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -150,7 +154,7 @@ test('Modernize Skill: audit.mjs fails closed if agy probe exits with nonzero st
   try {
     assert.throws(
       () => {
-        execFileSync('node', [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT], {
           cwd: join(import.meta.dirname, '..'),
           env: { ...process.env, AGB_AGY_BIN: badAgy },
           encoding: 'utf8',
@@ -187,7 +191,7 @@ exit 0
   try {
     assert.throws(
       () => {
-        execFileSync('node', [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT], {
           cwd: join(import.meta.dirname, '..'),
           env: { ...process.env, AGB_AGY_BIN: incompleteAgy },
           encoding: 'utf8',

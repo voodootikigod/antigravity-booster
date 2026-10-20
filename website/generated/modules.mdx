@@ -3,7 +3,7 @@
 | bin/agb.mjs | (no exports: entry point) |
 | hooks/policy/constants.mjs | AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, DESTRUCTIVE_ROOT_VERBS, EXCLUDED_CONTENT_KEYS, IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, ORCHESTRATION_TOOLS, PATH_MUTATING_TOOLS, PURE_READERS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS |
 | hooks/policy/evaluate.mjs | buildContext, evaluatePayload, extractProbedPaths, isBoosterMcpTool |
-| hooks/policy/paths.mjs | beginEvaluation, boosterDataRoots, expandHome, hasHomePrefix, isImplicitAncestorOnly, isMagicPath, isRailAncestorOnly, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot, matchesScope, physicalResolve, protectedRoots, railStaticPrefix, repoRelative, resolveCandidate, resolveSafeTarget |
+| hooks/policy/paths.mjs | beginEvaluation, boosterDataRoots, expandHome, hasHomePrefix, isBenignProcRead, isImplicitAncestorOnly, isMagicPath, isRailAncestorOnly, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot, matchesScope, physicalResolve, protectedRoots, railStaticPrefix, repoRelative, resolveCandidate, resolveSafeTarget |
 | hooks/policy/shell-lexer.mjs | lexCommandLine |
 | hooks/policy/shell.mjs | classifyRunCommand, isShimInvocation |
 | hooks/policy/verdict.mjs | PASS, ask, deny, mostRestrictive |
@@ -34,7 +34,7 @@
 | lib/semver.mjs | compare, eq, gt, gte, lt, parse |
 | lib/status.mjs | RunStatus, renderStatus, watchStatus |
 | lib/sweep.mjs | expandTargets, sweepToPlan |
-| lib/worktrees.mjs | JOURNAL_PHASES, abortAnyMerge, assertSafeAdlcDir, branchDiff, changedFiles, commitAll, createIntegrationWorktree, createWorktree, currentBranch, deleteBranch, discardProjection, ensureGitignore, isDirty, isMidMerge, mergeWorktree, pruneWorktrees, quarantineIntegrationJournal, readIntegrationJournal, reapIntegrationWorktrees, removeWorktree, resetToBase, unlinkIntegrationJournal, validateWorktreeRoot, writeIntegrationJournal |
+| lib/worktrees.mjs | JOURNAL_PHASES, abortAnyMerge, assertSafeAdlcDir, branchDiff, changedFiles, cleanEmptyNodeModules, commitAll, createIntegrationWorktree, createWorktree, currentBranch, deleteBranch, discardProjection, ensureGitignore, isDirty, isMidMerge, mergeWorktree, pruneWorktrees, quarantineIntegrationJournal, readIntegrationJournal, reapIntegrationWorktrees, removeWorktree, resetToBase, unlinkIntegrationJournal, validateWorktreeRoot, writeIntegrationJournal |
 | mcp/server.mjs | resolveAgbEntry |
 | sidecars/jetski-launcher.mjs | (no exports: entry point) |
 | sidecars/server.mjs | serveSidecar |
