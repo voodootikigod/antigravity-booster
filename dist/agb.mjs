@@ -10484,6 +10484,7 @@ function parseTimeoutMs(timeout) {
 }
 var WRITABLE_GEMINI_RUNTIME_DIRS = /* @__PURE__ */ new Set(["antigravity-cli", "antigravity", "config", "jetski", "tmp", "logs", "locks"]);
 var WRITABLE_ANTIGRAVITY_CLI_ENTRIES = /* @__PURE__ */ new Set([
+  "bin",
   "brain",
   "conversations",
   "crashes",
@@ -10544,7 +10545,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
   try {
     mkdirSync10(join20(targetCli, "plugin_data", "antigravity-booster", "logs"), { recursive: true, mode: 448 });
     mkdirSync10(join20(targetConfig, "projects"), { recursive: true, mode: 448 });
-    for (const sub of ["brain", "conversations", "crashes", "log", "presence", "scratch", "cache"]) {
+    for (const sub of ["bin", "brain", "conversations", "crashes", "log", "presence", "scratch", "cache"]) {
       mkdirSync10(join20(targetCli, sub), { recursive: true, mode: 448 });
     }
   } catch {
