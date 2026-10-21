@@ -10,7 +10,7 @@ import { readPluginContract, SUPPORTED_PLUGIN_CONTRACT } from '../lib/adlc-bridg
 import { runPlan, checkEnforcementAvailable } from '../lib/scheduler.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_handshake_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_handshake_test_${process.pid}.json`);
 
 // B12: the booster verifies the INSTALLED adlc-antigravity plugin speaks the
 // same tickets/hook contract it projects, via the plugin manifest's

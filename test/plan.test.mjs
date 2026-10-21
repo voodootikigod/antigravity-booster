@@ -13,7 +13,7 @@ import { readBrain } from '../lib/brain.mjs';
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const AGB_BIN = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
 
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_plan_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_plan_test_${process.pid}.json`);
 
 const FAKE_ENV_KEYS = [
   'AGB_AGY_BIN', 'FAKE_STATE_DIR', 'FAKE_BRAIN_MODE',

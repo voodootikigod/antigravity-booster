@@ -26,7 +26,7 @@ import { bootstrap, resolvePluginPath } from '../lib/bootstrap.mjs';
 process.env.AGB_PLUGIN_ROOT ??= (await import('node:fs')).mkdtempSync((await import('node:path')).join((await import('node:os')).tmpdir(), 'agb-no-vendor-'));
 
 delete process.env.AGB_PROVIDER;
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_unit_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_unit_test_${process.pid}.json`);
 
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));

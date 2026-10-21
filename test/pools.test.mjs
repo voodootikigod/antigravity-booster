@@ -39,6 +39,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_test_${process.pid}.json`);
+
 function futureIso(seconds) {
   return new Date(Date.now() + seconds * 1000).toISOString();
 }

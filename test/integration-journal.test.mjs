@@ -25,7 +25,7 @@ import {
 const FAKE_AGY = join(import.meta.dirname, 'fixtures', 'fake-agy');
 const PLUGIN_COMPATIBLE = join(import.meta.dirname, 'fixtures', 'fake-adlc-antigravity-plugin-compatible');
 
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_journal_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_journal_test_${process.pid}.json`);
 
 function makeTestRepo() {
   const dir = mkdtempSync(join(tmpdir(), 'agb-journal-test-'));
