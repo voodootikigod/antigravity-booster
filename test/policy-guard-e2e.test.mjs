@@ -4,7 +4,7 @@
 // so the fake plugin root uses a launcher shim that execs this test's Node.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -23,7 +23,8 @@ cpSync(join(REPO, 'bin', 'hook-runner.sh'), join(plugin, 'bin', 'hook-runner.sh'
 cpSync(join(REPO, 'hooks'), join(plugin, 'hooks'), { recursive: true });
 cpSync(join(REPO, 'lib', 'active-rails.mjs'), join(plugin, 'lib', 'active-rails.mjs'));
 // Unbundled sources resolve @adlc/tickets and minimatch via node_modules (ESM ignores NODE_PATH).
-symlinkSync(join(REPO, 'node_modules'), join(plugin, 'node_modules'), 'dir');
+const nmSrc = existsSync(join(REPO, 'node_modules')) ? join(REPO, 'node_modules') : join(REPO, '..', '..', 'node_modules');
+symlinkSync(nmSrc, join(plugin, 'node_modules'), 'dir');
 writeFileSync(
   join(plugin, 'bin', 'node-launcher.sh'),
   `#!/bin/sh\nROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)"\nS="$1"; shift\nexec "${process.execPath}" "$ROOT/$S" "$@"\n`,

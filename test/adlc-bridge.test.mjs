@@ -44,6 +44,9 @@ function pluginValidationErrors(data) {
 }
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
+const HOST_NODE_MODULES = existsSync(join(process.cwd(), 'node_modules'))
+  ? join(process.cwd(), 'node_modules')
+  : join(process.cwd(), '..', '..', 'node_modules');
 
 const FAKE_ENV_KEYS = [
   'AGB_AGY_BIN', 'FAKE_STATE_DIR', 'FAKE_BRAIN_MODE',
@@ -730,7 +733,7 @@ test('resolveAdlcBinary: does not return modified shim pointing outside authenti
     mkdirSync(adlcScopeDir, { recursive: true });
 
     // Copy real @adlc/cli and link package-lock.json from current repo
-    cpSync(join(process.cwd(), 'node_modules', '@adlc', 'cli'), join(adlcScopeDir, 'cli'), { recursive: true });
+    cpSync(join(HOST_NODE_MODULES, '@adlc', 'cli'), join(adlcScopeDir, 'cli'), { recursive: true });
     symlinkSync(join(process.cwd(), 'package-lock.json'), join(root, 'package-lock.json'));
 
     const expectedTarget = join(adlcScopeDir, 'cli', 'bin', 'adlc.mjs');
@@ -816,7 +819,7 @@ test('revalidateAdlcBinary: succeeds on authentic binary and fails closed if tam
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
 
     // Copy actual package files from node_modules/@adlc/cli to create a valid fixture
-    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    const realCliDir = join(HOST_NODE_MODULES, '@adlc', 'cli');
     cpSync(realCliDir, pkgDir, { recursive: true });
 
     const initial = resolveAdlcBinary({ repo: root });
@@ -845,7 +848,7 @@ test('revalidateAdlcBinary: detects .cmd and .bin shims, resolves package target
     const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
 
-    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    const realCliDir = join(HOST_NODE_MODULES, '@adlc', 'cli');
     cpSync(realCliDir, pkgDir, { recursive: true });
 
     // Create a .cmd shim in node_modules/.bin/adlc.cmd
@@ -878,7 +881,7 @@ test('execFileAuthenticatedAdlc: revalidates binary at execution boundary and re
     const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
 
-    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    const realCliDir = join(HOST_NODE_MODULES, '@adlc', 'cli');
     cpSync(realCliDir, pkgDir, { recursive: true });
 
     const initial = resolveAdlcBinary({ repo: root });
@@ -1124,7 +1127,7 @@ test('revalidateAdlcBinary: seals executable when binaryPath is omitted', () => 
   try {
     const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
-    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    const realCliDir = join(HOST_NODE_MODULES, '@adlc', 'cli');
     cpSync(realCliDir, pkgDir, { recursive: true });
 
     const verified = revalidateAdlcBinary(undefined, {
@@ -1295,7 +1298,7 @@ test('revalidateAdlcBinary: authenticates pinned bytes and fails closed on sourc
     const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
 
-    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    const realCliDir = join(HOST_NODE_MODULES, '@adlc', 'cli');
     cpSync(realCliDir, pkgDir, { recursive: true });
 
     const targetBin = join(pkgDir, 'bin', 'adlc.mjs');
@@ -1321,11 +1324,11 @@ test('preventExecutableReplacement: verifies transitive dependency tree digests 
     mkdirSync(coreDir, { recursive: true });
 
     // Copy genuine cli package
-    const realCliDir = join(process.cwd(), 'node_modules', '@adlc', 'cli');
+    const realCliDir = join(HOST_NODE_MODULES, '@adlc', 'cli');
     cpSync(realCliDir, cliDir, { recursive: true });
 
     // Copy genuine core package then tamper with it
-    const realCoreDir = join(process.cwd(), 'node_modules', '@adlc', 'core');
+    const realCoreDir = join(HOST_NODE_MODULES, '@adlc', 'core');
     cpSync(realCoreDir, coreDir, { recursive: true });
 
     // Inject malicious modification into transitive dependency
@@ -1363,7 +1366,7 @@ function withArgvProbe(fn) {
   const root = mkdtempSync(join(process.cwd(), '.test-seal-wrapper-'));
   const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
   mkdirSync(pkgDir, { recursive: true });
-  cpSync(join(process.cwd(), 'node_modules', '@adlc', 'cli'), pkgDir, { recursive: true });
+  cpSync(join(HOST_NODE_MODULES, '@adlc', 'cli'), pkgDir, { recursive: true });
   const probe = join(root, 'argv-probe.cjs');
   const out = join(root, 'argv.txt');
   writeFileSync(probe, `require('node:fs').writeFileSync(${JSON.stringify(out)}, process.argv[1]);\n`);

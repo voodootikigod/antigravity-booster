@@ -56,10 +56,13 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
 
 const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 'roadmap-agy-1.2.8-adlc-1.11.1.md');
 const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, '..', 'vendor', 'adlc', 'package.json');
+const REPO_WITH_NM = existsSync(join(import.meta.dirname, '..', 'node_modules'))
+  ? join(import.meta.dirname, '..')
+  : join(import.meta.dirname, '..', '..', '..');
 
 test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
   const out = execFileSync(process.execPath, [AUDIT_SCRIPT], {
-    cwd: join(import.meta.dirname, '..'),
+    cwd: REPO_WITH_NM,
     env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
     encoding: 'utf8',
   });
@@ -104,7 +107,7 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   // Spawn two concurrent audit scripts; they must serialize cleanly without corruption
   const p1 = new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [AUDIT_SCRIPT], {
-      cwd: join(import.meta.dirname, '..'),
+      cwd: REPO_WITH_NM,
       env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -119,7 +122,7 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
 
   const p2 = new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [AUDIT_SCRIPT], {
-      cwd: join(import.meta.dirname, '..'),
+      cwd: REPO_WITH_NM,
       env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

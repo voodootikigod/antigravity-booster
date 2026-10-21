@@ -158,7 +158,8 @@ test('pass: complete in place', withRepo((r) => {
 }));
 
 test('pass: complete+archive via the real adlc ticket CLI (#86 shape)', withRepo((r) => {
-  const adlc = join(ROOT, 'node_modules', '.bin', 'adlc');
+  const localAdlc = join(ROOT, 'node_modules', '.bin', 'adlc');
+  const adlc = existsSync(localAdlc) ? localAdlc : join(ROOT, '..', '..', 'node_modules', '.bin', 'adlc');
   r.dirStore().base('base0');
   r.git('checkout', '-q', 'main');
   sh(r.dir, adlc, ['ticket', 'create', '--input', '-', '--write'],
