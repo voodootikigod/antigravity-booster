@@ -58,7 +58,11 @@ const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 
 const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, '..', 'vendor', 'adlc', 'package.json');
 const REPO_WITH_NM = (() => {
   let d = join(import.meta.dirname, '..');
-  while (d !== dirname(d) && !existsSync(join(d, 'node_modules'))) d = dirname(d);
+  while (d !== dirname(d)) {
+    const nm = join(d, 'node_modules');
+    if (existsSync(nm) && !lstatSync(nm).isSymbolicLink()) break;
+    d = dirname(d);
+  }
   return d;
 })();
 
