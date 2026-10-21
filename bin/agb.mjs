@@ -16,6 +16,7 @@ import { validatePlan, compilePlan } from '../lib/plan.mjs';
 import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor } from '../lib/doctor.mjs';
+import { resolveAgyBinary } from '../lib/plugin-paths.mjs';
 import { ROLE_MODELS } from '../lib/models.mjs';
 import { IS_BUNDLED } from '../lib/adlc-bridge.mjs';
 
@@ -41,7 +42,7 @@ const COMMANDS = {
     extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
     flags: '--out <file> --force --no-coldstart --no-parallax --no-premortem'
   },
-  preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart' },
+  preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart', flags: '--no-coldstart' },
   doctor: { args: '', desc: 'verify your environment and tools' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
@@ -130,7 +131,7 @@ try {
     }
     const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
-    process.exit(Object.keys(report.failed).length ? 2 : 0);
+    process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'sweep') {
     const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
     if (spec.repo) spec.repo = resolve(spec.repo);
@@ -143,7 +144,7 @@ try {
     console.error(`sweep: ${plan.tickets.length} targets`);
     const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
-    process.exit(Object.keys(report.failed).length ? 2 : 0);
+    process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'review') {
     const repo = resolve(rest[0] ?? '.');
     const ref = rest[1]; // e.g. main...HEAD, a SHA range; default: uncommitted vs HEAD
@@ -153,7 +154,7 @@ try {
       process.exit(0);
     }
     const pools = new PoolSet(undefined, { repo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
     if (!quotaRes.ok) {
       console.error(`review: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -174,7 +175,7 @@ try {
     const skipColdstart = rest.includes('--no-coldstart');
     const pools = new PoolSet(undefined, { repo: targetRepo });
     if (!skipColdstart) {
-      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
       if (!quotaRes.ok) {
         console.error(`preflight: quota telemetry unavailable from agy: ${quotaRes.error}`);
         process.exit(1);
@@ -204,7 +205,7 @@ try {
     }
     const targetRepo = resolve(repo);
     const pools = new PoolSet(undefined, { repo: targetRepo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
     if (!quotaRes.ok) {
       console.error(`plan: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -252,7 +253,7 @@ try {
     console.error('import-brain is deprecated — use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)');
     const targetRepo = resolve(repo);
     const pools = new PoolSet(undefined, { repo: targetRepo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || 'agy');
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
     if (!quotaRes.ok) {
       console.error(`import-brain: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -435,7 +436,7 @@ try {
       }, null, 2) + '\n', { mode: 0o600 });
       wroteManifests = true;
       
-      const agyBin = process.env.AGB_AGY_BIN || 'agy';
+      const agyBin = process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy';
 
       let cleaned = false;
       const onExitCleanup = () => {
