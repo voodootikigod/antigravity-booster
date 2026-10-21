@@ -44,3 +44,22 @@ test('watchStatus: exits with 2 on failure completion', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('watchStatus: exits with 2 when report.compromised is truthy even if failed is empty', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-watch-'));
+  const s = new RunStatus(dir, 'test-run-789');
+  s.flush();
+
+  const watchP = watchStatus(dir, 100);
+
+  s.report({ failed: {}, merged: ['T1'], requests: {}, compromised: 'integrity violation' });
+  await s.writePromise;
+
+  try {
+    const code = await watchP;
+    assert.equal(code, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+

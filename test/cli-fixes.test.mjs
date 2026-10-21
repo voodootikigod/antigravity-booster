@@ -252,3 +252,28 @@ test('sweepToPlan: preserves dollar replacement patterns in target paths literal
   assert.equal(plan.tickets[0].body.includes('Refactor src/$&/$$/file.mjs (#1)'), true);
   assert.deepEqual(plan.tickets[0].scope, ['src/$&/$$/file.mjs']);
 });
+
+test('agb help preflight outputs Flags: --no-coldstart', () => {
+  const r = spawnSync(process.execPath, [AGB_BIN, 'help', 'preflight'], { encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /agb preflight <plan\.json>/);
+  assert.match(r.stdout, /Flags:\s+--no-coldstart/);
+});
+
+test('agb_preflight MCP tool includes noColdstart in inputSchema and forwards flag', async () => {
+  const resList = await mcpExchange([{ id: 101, method: 'tools/list' }]);
+  const preflightTool = resList.get(101).result.tools.find((t) => t.name === 'agb_preflight');
+  assert.ok(preflightTool, 'agb_preflight tool exists');
+  assert.equal(preflightTool.inputSchema.properties.noColdstart?.type, 'boolean');
+
+  const log = join(TMP, 'agb-preflight-argv.json');
+  const preload = join(TMP, 'argv-preflight-preload.mjs');
+  writeFileSync(preload, `import { writeFileSync } from 'node:fs';
+if (/agb\\.mjs$/.test(process.argv[1] ?? '')) writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));
+`);
+  const plan = join(TMP, 'nope-preflight.json');
+  const env = { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${pathToFileURL(preload).href}`.trim() };
+  await mcpExchange([{ id: 102, method: 'tools/call', params: { name: 'agb_preflight', arguments: { plan, noColdstart: true } } }], { env });
+  assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')), ['preflight', plan, '--no-coldstart']);
+});
+

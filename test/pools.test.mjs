@@ -1886,3 +1886,12 @@ test('withLockSync and withLock: timeout measures lock waiting only, not the sta
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('probeQuota and refreshQuota default to defaultAgyBin() via resolveAgyBinary()', () => {
+  const src = readFileSync(new URL('../lib/pools.mjs', import.meta.url), 'utf8');
+  assert.match(src, /function defaultAgyBin\(\)/);
+  assert.match(src, /resolveAgyBinary\(\)/);
+  assert.match(src, /probeQuota\(agyBin = defaultAgyBin\(\)/);
+  assert.match(src, /refreshQuota\(agyBin = defaultAgyBin\(\)\)/);
+});
+
