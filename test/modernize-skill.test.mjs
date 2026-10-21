@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync, lstatSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { bootstrap } from '../lib/bootstrap.mjs';
 
@@ -56,9 +56,11 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
 
 const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 'roadmap-agy-1.2.8-adlc-1.11.1.md');
 const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, '..', 'vendor', 'adlc', 'package.json');
-const REPO_WITH_NM = existsSync(join(import.meta.dirname, '..', 'node_modules'))
-  ? join(import.meta.dirname, '..')
-  : join(import.meta.dirname, '..', '..', '..');
+const REPO_WITH_NM = (() => {
+  let d = join(import.meta.dirname, '..');
+  while (d !== dirname(d) && !existsSync(join(d, 'node_modules'))) d = dirname(d);
+  return d;
+})();
 
 test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
   const out = execFileSync(process.execPath, [AUDIT_SCRIPT], {

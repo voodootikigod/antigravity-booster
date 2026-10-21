@@ -44,9 +44,11 @@ function pluginValidationErrors(data) {
 }
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
-const HOST_NODE_MODULES = existsSync(join(process.cwd(), 'node_modules'))
-  ? join(process.cwd(), 'node_modules')
-  : join(process.cwd(), '..', '..', 'node_modules');
+const HOST_NODE_MODULES = (() => {
+  let d = process.cwd();
+  while (d !== dirname(d) && !existsSync(join(d, 'node_modules'))) d = dirname(d);
+  return join(d, 'node_modules');
+})();
 
 const FAKE_ENV_KEYS = [
   'AGB_AGY_BIN', 'FAKE_STATE_DIR', 'FAKE_BRAIN_MODE',

@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync, writeFileSync, chmodSync, mkdtempSync, rmSync, symlinkSync, copyFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
@@ -158,8 +158,11 @@ test('pass: complete in place', withRepo((r) => {
 }));
 
 test('pass: complete+archive via the real adlc ticket CLI (#86 shape)', withRepo((r) => {
-  const localAdlc = join(ROOT, 'node_modules', '.bin', 'adlc');
-  const adlc = existsSync(localAdlc) ? localAdlc : join(ROOT, '..', '..', 'node_modules', '.bin', 'adlc');
+  const adlc = (() => {
+    let d = ROOT;
+    while (d !== dirname(d) && !existsSync(join(d, 'node_modules', '.bin', 'adlc'))) d = dirname(d);
+    return join(d, 'node_modules', '.bin', 'adlc');
+  })();
   r.dirStore().base('base0');
   r.git('checkout', '-q', 'main');
   sh(r.dir, adlc, ['ticket', 'create', '--input', '-', '--write'],

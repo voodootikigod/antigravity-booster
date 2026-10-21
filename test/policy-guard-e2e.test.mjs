@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cpSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,11 @@ cpSync(join(REPO, 'bin', 'hook-runner.sh'), join(plugin, 'bin', 'hook-runner.sh'
 cpSync(join(REPO, 'hooks'), join(plugin, 'hooks'), { recursive: true });
 cpSync(join(REPO, 'lib', 'active-rails.mjs'), join(plugin, 'lib', 'active-rails.mjs'));
 // Unbundled sources resolve @adlc/tickets and minimatch via node_modules (ESM ignores NODE_PATH).
-const nmSrc = existsSync(join(REPO, 'node_modules')) ? join(REPO, 'node_modules') : join(REPO, '..', '..', 'node_modules');
+const nmSrc = (() => {
+  let d = REPO;
+  while (d !== dirname(d) && !existsSync(join(d, 'node_modules'))) d = dirname(d);
+  return join(d, 'node_modules');
+})();
 symlinkSync(nmSrc, join(plugin, 'node_modules'), 'dir');
 writeFileSync(
   join(plugin, 'bin', 'node-launcher.sh'),
