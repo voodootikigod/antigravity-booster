@@ -3,7 +3,7 @@
 // history replayed from this repo's own object store (skipped when shallow).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, writeFileSync, chmodSync, mkdtempSync, rmSync, symlinkSync, copyFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, chmodSync, mkdtempSync, rmSync, symlinkSync, copyFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
