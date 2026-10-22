@@ -288,3 +288,15 @@ test('stageBuilderGeminiHome: on win32 copies directory entries (e.g. config/plu
   }
 });
 
+test('runAgy sandbox profiles: masks symlinked credentials on Linux bwrap, denies .adlc writes on macOS Seatbelt, and defaults agyBin to resolveAgyBinary(userHome)', () => {
+  const src = readFileSync(new URL('../lib/agy.mjs', import.meta.url), 'utf8');
+  assert.match(src, /resolveAgyBinary\(userHome\)/);
+  assert.match(src, /const st = lst\.isSymbolicLink\(\) \? statSync\(sFile\) : lst;/);
+  assert.match(src, /realpathSync\(sFile\)/);
+  assert.match(src, /\(deny file-write\* \(subpath "\$\{escapedAllowedDir\}\/\.adlc"\)\)/);
+  assert.match(src, /\(deny file-write\* \(subpath "\$\{escapedRealAllowedDir\}\/\.adlc"\)\)/);
+  assert.match(src, /\(allow file-write\* \(subpath "\$\{escapedAllowedDir\}\/\.adlc\/leases"\)\)/);
+  assert.match(src, /\(allow file-write\* \(subpath "\$\{escapedRealAllowedDir\}\/\.adlc\/leases"\)\)/);
+});
+
+

@@ -66,7 +66,8 @@ var TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        plan: { type: "string", description: "Path to plan.json file" }
+        plan: { type: "string", description: "Path to plan.json file" },
+        noColdstart: { type: "boolean", description: "Skip coldstart plan gate" }
       },
       required: ["plan"]
     }
@@ -234,6 +235,7 @@ async function handleToolCall(id, name, args) {
     const absPlan = resolve(planCheck.value);
     targetCwd = dirname(absPlan);
     cliArgs.push("preflight", absPlan);
+    if (args.noColdstart) cliArgs.push("--no-coldstart");
   } else if (name === "agb_status") {
     const repoCheck = requireNonFlagString(args, "repo");
     if (!repoCheck.ok) {

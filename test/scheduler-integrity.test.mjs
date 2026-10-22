@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { runPlan } from '../lib/scheduler.mjs';
 import { snapshotRunIntegrity, diffRunIntegrity, verifyRunIntegrity, ABSENT } from '../lib/run-integrity.mjs';
 
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_integrity_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_integrity_test_${process.pid}.json`);
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));

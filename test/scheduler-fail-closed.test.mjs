@@ -13,7 +13,7 @@ import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 
 import { runPlan } from '../lib/scheduler.mjs';
 
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_fail_closed_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_fail_closed_test_${process.pid}.json`);
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));

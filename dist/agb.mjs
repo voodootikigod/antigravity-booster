@@ -15,46 +15,6 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// lib/digest.mjs
-import { createHash as createHash3 } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-function collect(root, rel, excluded, out) {
-  const abs = rel ? path.join(root, ...rel) : root;
-  for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
-    if (excluded.has(entry.name)) continue;
-    const segs = [...rel, entry.name];
-    const relpath = segs.join("/");
-    const full = path.join(root, ...segs);
-    if (entry.isSymbolicLink()) {
-      out.push({ relpath, payload: `l\0${fs.readlinkSync(full)}` });
-    } else if (entry.isDirectory()) {
-      collect(root, segs, excluded, out);
-    } else if (entry.isFile()) {
-      const isExec = process.platform === "win32" ? relpath.endsWith(".sh") || relpath.endsWith("bin/adlc.mjs") : Boolean(fs.statSync(full).mode & EXEC_BITS);
-      const cls = isExec ? "x" : "f";
-      const h = createHash3("sha256").update(fs.readFileSync(full)).digest("hex");
-      out.push({ relpath, payload: `${cls}\0${h}` });
-    }
-  }
-}
-function computeDirectoryDigest(dir, { exclude = [] } = {}) {
-  if (typeof dir !== "string" || !dir) throw new TypeError("dir must be a non-empty string");
-  if (!fs.statSync(dir).isDirectory()) throw new Error(`Not a directory: ${dir}`);
-  const records = [];
-  collect(dir, [], new Set(exclude), records);
-  records.sort((a, b) => Buffer.compare(Buffer.from(a.relpath), Buffer.from(b.relpath)));
-  const hash = createHash3("sha256");
-  for (const r of records) hash.update(`${r.relpath}\0${r.payload}\0`);
-  return hash.digest("hex");
-}
-var EXEC_BITS;
-var init_digest = __esm({
-  "lib/digest.mjs"() {
-    EXEC_BITS = 73;
-  }
-});
-
 // lib/plugin-paths.mjs
 import { fileURLToPath } from "node:url";
 import { join as join16, dirname as dirname11, basename as basename5 } from "node:path";
@@ -76,7 +36,7 @@ import {
   symlinkSync
 } from "node:fs";
 import { execFileSync as execFileSync4 } from "node:child_process";
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 function isBoosterPluginName(name) {
   return typeof name === "string" && (name === BOOSTER_PLUGIN_NAME || name.startsWith(`${BOOSTER_PLUGIN_NAME}-`));
 }
@@ -205,7 +165,7 @@ function safePluginInstall(sourceDir, targetPluginName, options = {}) {
   }
 }
 function sha512Integrity(file) {
-  return "sha512-" + createHash4("sha512").update(readFileSync13(file)).digest("base64");
+  return "sha512-" + createHash3("sha512").update(readFileSync13(file)).digest("base64");
 }
 function validateTarEntries(tarBin, tarballPath) {
   const listOut = execFileSync4(tarBin, ["-tzf", tarballPath], {
@@ -320,6 +280,46 @@ var init_plugin_paths = __esm({
     log = (msg) => process.stderr.write(`${msg}
 `);
     isVanished = (err) => err?.code === "ENOENT";
+  }
+});
+
+// lib/digest.mjs
+import { createHash as createHash4 } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+function collect(root, rel, excluded, out) {
+  const abs = rel ? path.join(root, ...rel) : root;
+  for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
+    if (excluded.has(entry.name)) continue;
+    const segs = [...rel, entry.name];
+    const relpath = segs.join("/");
+    const full = path.join(root, ...segs);
+    if (entry.isSymbolicLink()) {
+      out.push({ relpath, payload: `l\0${fs.readlinkSync(full)}` });
+    } else if (entry.isDirectory()) {
+      collect(root, segs, excluded, out);
+    } else if (entry.isFile()) {
+      const isExec = process.platform === "win32" ? relpath.endsWith(".sh") || relpath.endsWith("bin/adlc.mjs") : Boolean(fs.statSync(full).mode & EXEC_BITS);
+      const cls = isExec ? "x" : "f";
+      const h = createHash4("sha256").update(fs.readFileSync(full)).digest("hex");
+      out.push({ relpath, payload: `${cls}\0${h}` });
+    }
+  }
+}
+function computeDirectoryDigest(dir, { exclude = [] } = {}) {
+  if (typeof dir !== "string" || !dir) throw new TypeError("dir must be a non-empty string");
+  if (!fs.statSync(dir).isDirectory()) throw new Error(`Not a directory: ${dir}`);
+  const records = [];
+  collect(dir, [], new Set(exclude), records);
+  records.sort((a, b) => Buffer.compare(Buffer.from(a.relpath), Buffer.from(b.relpath)));
+  const hash = createHash4("sha256");
+  for (const r of records) hash.update(`${r.relpath}\0${r.payload}\0`);
+  return hash.digest("hex");
+}
+var EXEC_BITS;
+var init_digest = __esm({
+  "lib/digest.mjs"() {
+    EXEC_BITS = 73;
   }
 });
 
@@ -556,7 +556,7 @@ async function watchStatus(repo, intervalMs = 100) {
 watching (updated ${(/* @__PURE__ */ new Date()).toISOString()})`);
         hasPrinted = true;
       }
-      return Object.keys(state.report.failed).length ? 2 : 0;
+      return Object.keys(state.report.failed).length > 0 || Boolean(state.report.compromised) ? 2 : 0;
     }
     if (!updated && hasPrinted) return false;
     process.stdout.write("\x1B[2J\x1B[H");
@@ -968,7 +968,7 @@ import {
   chmodSync as chmodSync4,
   copyFileSync as copyFileSync6,
   realpathSync as realpathSync10,
-  statSync as statSync8,
+  statSync as statSync9,
   mkdtempSync as mkdtempSync8
 } from "node:fs";
 import { join as join33, dirname as dirname20, resolve as resolve17, sep as sep4, isAbsolute as isAbsolute9, delimiter as delimiter2 } from "node:path";
@@ -1011,7 +1011,7 @@ function treeSize(dir) {
     if (INSTALL_COPY_EXCLUSIONS.includes(e.name)) continue;
     const full = join33(dir, e.name);
     if (e.isDirectory()) total += treeSize(full);
-    else if (e.isFile()) total += statSync8(full).size;
+    else if (e.isFile()) total += statSync9(full).size;
   }
   return total;
 }
@@ -1632,7 +1632,7 @@ __export(server_exports, {
   serveSidecar: () => serveSidecar
 });
 import { createServer } from "node:http";
-import { readFileSync as readFileSync26, statSync as statSync9, existsSync as existsSync31, openSync as openSync11, readSync as readSync4, closeSync as closeSync11, writeFileSync as writeFileSync20, mkdirSync as mkdirSync20, createReadStream } from "node:fs";
+import { readFileSync as readFileSync26, statSync as statSync10, existsSync as existsSync31, openSync as openSync11, readSync as readSync4, closeSync as closeSync11, writeFileSync as writeFileSync20, mkdirSync as mkdirSync20, createReadStream } from "node:fs";
 import { join as join34, dirname as dirname21 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { timingSafeEqual as timingSafeEqual2 } from "node:crypto";
@@ -1690,7 +1690,7 @@ function serveSidecar(repoPath, port = 3333, token = null) {
         return res.end(JSON.stringify({ lines: [], newOffset: 0, runId, repo: repoPath }));
       }
       try {
-        const stats = statSync9(eventsPath);
+        const stats = statSync10(eventsPath);
         if (!Number.isFinite(offset) || offset < 0) offset = 0;
         let isReset = false;
         if (offset > stats.size) {
@@ -5665,8 +5665,9 @@ function scopesOverlap(a, b) {
 }
 
 // lib/agy.mjs
+init_plugin_paths();
 import { spawn as spawn2, execFileSync as execFileSync8 } from "node:child_process";
-import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10, symlinkSync as symlinkSync3, readdirSync as readdirSync9, copyFileSync as copyFileSync4, cpSync as cpSync2 } from "node:fs";
+import { mkdirSync as mkdirSync10, existsSync as existsSync19, readFileSync as readFileSync17, writeFileSync as writeFileSync11, rmdirSync, unlinkSync as unlinkSync5, realpathSync as realpathSync6, openSync as openSync8, writeSync as writeSync3, closeSync as closeSync8, constants as constants4, rmSync as rmSync7, mkdtempSync as mkdtempSync5, lstatSync as lstatSync10, statSync as statSync5, symlinkSync as symlinkSync3, readdirSync as readdirSync9, copyFileSync as copyFileSync4, cpSync as cpSync2 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { tmpdir as tmpdir6, homedir as homedir4 } from "node:os";
 import { dirname as dirname15, join as join20, resolve as resolve10, relative as relative7, isAbsolute as isAbsolute6 } from "node:path";
@@ -8798,6 +8799,7 @@ function tierCandidates(tier, poolHint) {
 }
 
 // lib/pools.mjs
+init_plugin_paths();
 import {
   writeFileSync as writeFileSync10,
   readFileSync as readFileSync16,
@@ -9951,7 +9953,14 @@ async function drainPools(repo, { gracePeriodMs = 1e3 } = {}) {
   });
 }
 var QUOTA_PROBE_TIMEOUT_MS = 3e4;
-async function probeQuota(agyBin = process.env.AGB_AGY_BIN || "agy", { timeoutMs = QUOTA_PROBE_TIMEOUT_MS } = {}) {
+function defaultAgyBin() {
+  try {
+    return process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy";
+  } catch {
+    return process.env.AGB_AGY_BIN || "agy";
+  }
+}
+async function probeQuota(agyBin = defaultAgyBin(), { timeoutMs = QUOTA_PROBE_TIMEOUT_MS } = {}) {
   try {
     const { stdout: stdout2 } = await execFileP(agyBin, ["-p", "/quota", "--output-format", "json"], {
       encoding: "utf8",
@@ -10028,7 +10037,7 @@ var PoolSet = class {
       this.#remotePollTimer = null;
     }
   }
-  async refreshQuota(agyBin = process.env.AGB_AGY_BIN || "agy") {
+  async refreshQuota(agyBin = defaultAgyBin()) {
     try {
       const data = await probeQuota(agyBin);
       this.updateFromQuota(data);
@@ -10484,6 +10493,7 @@ function parseTimeoutMs(timeout) {
 }
 var WRITABLE_GEMINI_RUNTIME_DIRS = /* @__PURE__ */ new Set(["antigravity-cli", "antigravity", "config", "jetski", "tmp", "logs", "locks"]);
 var WRITABLE_ANTIGRAVITY_CLI_ENTRIES = /* @__PURE__ */ new Set([
+  "bin",
   "brain",
   "conversations",
   "crashes",
@@ -10544,7 +10554,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
   try {
     mkdirSync10(join20(targetCli, "plugin_data", "antigravity-booster", "logs"), { recursive: true, mode: 448 });
     mkdirSync10(join20(targetConfig, "projects"), { recursive: true, mode: 448 });
-    for (const sub of ["brain", "conversations", "crashes", "log", "presence", "scratch", "cache"]) {
+    for (const sub of ["bin", "brain", "conversations", "crashes", "log", "presence", "scratch", "cache"]) {
       mkdirSync10(join20(targetCli, sub), { recursive: true, mode: 448 });
     }
   } catch {
@@ -10609,7 +10619,7 @@ async function runAgy({
 }) {
   if (!model || !prompt) throw new Error("runAgy: model and prompt are required");
   const resolvedModel = resolveModelSlug(model);
-  const agyBin = bin ?? process.env.AGB_AGY_BIN ?? "agy";
+  const agyBin = bin ?? process.env.AGB_AGY_BIN ?? (resolveAgyBinary(userHome) || "agy");
   const effectiveTimeout = outputFormat === "stream-json" && (!timeout || timeout === "0") ? "0" : timeout;
   const args = ["--print", prompt, "--print-timeout", effectiveTimeout, "--model", resolvedModel];
   if (typeof conversation === "string" && conversation.trim()) {
@@ -10957,13 +10967,28 @@ async function runAgy({
         for (const sFile of sensitiveFiles) {
           if (existsSync19(sFile)) {
             try {
-              const st = lstatSync10(sFile);
+              const lst = lstatSync10(sFile);
+              const st = lst.isSymbolicLink() ? statSync5(sFile) : lst;
               if (st.isDirectory()) {
                 launchArgs.push("--tmpfs", sFile);
               } else if (st.isFile()) {
                 launchArgs.push("--ro-bind", "/dev/null", sFile);
               }
-            } catch {
+              if (lst.isSymbolicLink()) {
+                const realSFile = realpathSync6(sFile);
+                if (realSFile !== sFile && (realSFile.startsWith(realAllowedDir + "/") || realSFile.startsWith(userHome + "/") || realSFile.startsWith(homedir4() + "/"))) {
+                  if (st.isDirectory()) {
+                    launchArgs.push("--tmpfs", realSFile);
+                  } else if (st.isFile()) {
+                    launchArgs.push("--ro-bind", "/dev/null", realSFile);
+                  }
+                }
+              }
+            } catch (err) {
+              if (err && err.code !== "ENOENT") {
+                process.stderr.write(`[agb] warning: failed to mask sensitive path ${sFile}: ${err.message}
+`);
+              }
             }
           }
         }
@@ -11207,6 +11232,10 @@ async function runAgy({
 (allow file-write* (regex #"^/dev/(null|zero|dtracehelper|tty)"))${extraReadPaths}${extraGitPaths}
 (deny file-write* (subpath "${escapedAllowedDir}/node_modules"))
 (deny file-write* (subpath "${escapedRealAllowedDir}/node_modules"))
+(deny file-write* (subpath "${escapedAllowedDir}/.adlc"))
+(deny file-write* (subpath "${escapedRealAllowedDir}/.adlc"))
+(allow file-write* (subpath "${escapedAllowedDir}/.adlc/leases"))
+(allow file-write* (subpath "${escapedRealAllowedDir}/.adlc/leases"))
 (deny file-read* (subpath "${escapedHome}/.ssh"))
 (deny file-read* (subpath "${escapedHome}/.aws"))
 (deny file-read* (subpath "${escapedHome}/.gnupg"))
@@ -12055,6 +12084,9 @@ var BRAIN_PLAN_SCHEMA = {
   }
 };
 
+// lib/scheduler.mjs
+init_plugin_paths();
+
 // lib/charters.mjs
 import { randomUUID as randomUUID5 } from "node:crypto";
 function fencedUntrusted(label, content, tag = randomUUID5()) {
@@ -12714,6 +12746,7 @@ import { createHash as createHash5 } from "node:crypto";
 import { execFile as execFile6 } from "node:child_process";
 import { promisify as promisify5 } from "node:util";
 import { join as join22 } from "node:path";
+init_plugin_paths();
 var execFileP4 = promisify5(execFile6);
 var MERGE_FORECAST_TIMEOUT_MS = 3e4;
 async function applyMergeForecast(plan, ticketsPath, { adlcBin, repo, graphCoupling } = {}) {
@@ -12840,7 +12873,7 @@ async function preflight(plan, opts = {}) {
       throw new Error("Cannot run preflight: quota telemetry unavailable (circuit breaker tripped)");
     }
     if (!opts.pools.quota) {
-      const q = await opts.pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+      const q = await opts.pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
       if (!q.ok) {
         throw new Error(`Cannot run preflight: quota telemetry unavailable from agy: ${q.error}`);
       }
@@ -12860,10 +12893,14 @@ async function preflight(plan, opts = {}) {
   };
 }
 
+// lib/plan.mjs
+init_plugin_paths();
+
 // lib/brain.mjs
-import { readdirSync as readdirSync10, readFileSync as readFileSync18, statSync as statSync5, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
+import { readdirSync as readdirSync10, readFileSync as readFileSync18, statSync as statSync6, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
 import { join as join23, resolve as resolve11 } from "node:path";
 import { homedir as homedir5 } from "node:os";
+init_plugin_paths();
 var antigravityCliBrain = join23(homedir5(), ".gemini", "antigravity-cli", "brain");
 var antigravityBrain = join23(homedir5(), ".gemini", "antigravity", "brain");
 var jetskiBrain = join23(homedir5(), ".gemini", "jetski", "brain");
@@ -12887,7 +12924,7 @@ function listBrains(brainDir = BRAIN_DIR) {
     for (const id of readdirSync10(bDir)) {
       if (seen.has(id)) continue;
       const dir = join23(bDir, id);
-      const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync21(join23(dir, f))).map((f) => ({ path: join23(dir, f), mtime: statSync5(join23(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
+      const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync21(join23(dir, f))).map((f) => ({ path: join23(dir, f), mtime: statSync6(join23(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
       if (!matchingFiles.length) continue;
       const hitFile = matchingFiles[0].path;
       const firstHeading = readFileSync18(hitFile, "utf8").split("\n").find((l) => l.startsWith("#"))?.replace(/^#+\s*/, "") ?? "(untitled)";
@@ -12902,7 +12939,7 @@ function readBrain(idOrPrefix, brainDir = BRAIN_DIR) {
   const targetId = idOrPrefix ?? activeId;
   const supportedExts = [".md", ".json", ".csv", ".pdf", ".txt"];
   const isLocalFileCandidate = targetId && (targetId.includes("/") || targetId.includes("\\") || supportedExts.some((ext) => targetId.toLowerCase().endsWith(ext)));
-  if (isLocalFileCandidate && existsSync21(targetId) && statSync5(targetId).isFile()) {
+  if (isLocalFileCandidate && existsSync21(targetId) && statSync6(targetId).isFile()) {
     const resolvedPath = resolve11(targetId);
     const content = readFileSync18(resolvedPath, "utf8");
     const firstHeading = content.split("\n").find((l) => l.startsWith("#"))?.replace(/^#+\s*/, "") ?? "(untitled)";
@@ -12910,7 +12947,7 @@ function readBrain(idOrPrefix, brainDir = BRAIN_DIR) {
       id: resolvedPath,
       dir: resolvedPath,
       title: firstHeading,
-      mtime: statSync5(resolvedPath).mtimeMs,
+      mtime: statSync6(resolvedPath).mtimeMs,
       implementationPlan: content,
       task: null,
       sourceType: "local-spec"
@@ -12922,7 +12959,7 @@ function readBrain(idOrPrefix, brainDir = BRAIN_DIR) {
   const hit = all.find((b) => b.id === searchId) ?? all.find((b) => b.id.startsWith(searchId));
   if (!hit) throw new Error(`no brain conversation matching '${searchId}' with plan artifacts`);
   const read = (f) => existsSync21(join23(hit.dir, f)) ? readFileSync18(join23(hit.dir, f), "utf8") : null;
-  const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync21(join23(hit.dir, f))).map((f) => ({ f, mtime: statSync5(join23(hit.dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
+  const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync21(join23(hit.dir, f))).map((f) => ({ f, mtime: statSync6(join23(hit.dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
   const newestPlanFile = matchingFiles[0]?.f;
   const implementationPlan = newestPlanFile ? read(newestPlanFile) : null;
   return { ...hit, implementationPlan, task: read("task.md"), sourceType: "antigravity-brain" };
@@ -12975,7 +13012,7 @@ async function brainToPlan(idOrPrefix, { repo, gate, model = ROLE_MODELS.brainCo
       throw new Error("brain conversion quota telemetry unavailable (circuit breaker tripped)");
     }
     if (!pools.quota) {
-      const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+      const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
       if (!q.ok) {
         throw new Error(`brain conversion quota telemetry unavailable: ${q.error}`);
       }
@@ -14002,7 +14039,7 @@ async function compilePlan(idOrPrefix, {
       throw new Error("Cannot compile plan: quota telemetry unavailable (circuit breaker tripped)");
     }
     if (!pools.quota) {
-      const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+      const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
       if (!q.ok) {
         throw new Error(`Cannot compile plan: quota telemetry unavailable from agy: ${q.error}`);
       }
@@ -14108,7 +14145,7 @@ async function compilePlan(idOrPrefix, {
 init_status();
 
 // lib/active-rails.mjs
-import { existsSync as existsSync24, lstatSync as lstatSync12, statSync as statSync6 } from "node:fs";
+import { existsSync as existsSync24, lstatSync as lstatSync12, statSync as statSync7 } from "node:fs";
 import { dirname as dirname17, join as join27, resolve as resolve13 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
 function isActiveTicket(ticket) {
@@ -14160,13 +14197,13 @@ var loadActiveRails = unionActiveRails;
 init_digest();
 init_plugin_paths();
 import { execFileSync as execFileSync10 } from "node:child_process";
-import { existsSync as existsSync25, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync25, statSync as statSync8 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
 import { join as join28, resolve as resolve14 } from "node:path";
 var GIT_TIMEOUT_MS = 1e4;
 var ABSENT2 = "absent";
 function digestOrAbsent(dir) {
-  if (!existsSync25(dir) || !statSync7(dir).isDirectory()) return ABSENT2;
+  if (!existsSync25(dir) || !statSync8(dir).isDirectory()) return ABSENT2;
   return computeDirectoryDigest(dir, { exclude: [".adlc", ".booster"] });
 }
 function hooksDirFor(cwd) {
@@ -15430,7 +15467,7 @@ async function runPlan(plan, { log: log2 = console.error, project: project2 } = 
   const tickets = plan.tickets;
   const { cycle } = topoSort(tickets);
   if (cycle) throw new Error(`cycle in ticket DAG: ${cycle.join(", ")}`);
-  const agyBin = process.env.AGB_AGY_BIN || "agy";
+  const agyBin = process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy";
   const agyCheck = await checkAgyBinary({ env: process.env });
   if (agyCheck.level !== "pass") {
     throw new Error(`agy binary '${agyBin}' is not spawnable: ${agyCheck.detail}
@@ -15552,7 +15589,7 @@ Fix: ${agyCheck.fix}`);
       await reconcileLeases(repo);
     } catch {
     }
-    const quotaInit = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+    const quotaInit = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
     if (!quotaInit.ok) {
       throw new Error(`Cannot start run: quota telemetry unavailable from agy: ${quotaInit.error}`);
     }
@@ -15645,7 +15682,7 @@ Fix: ${agyCheck.fix}`);
               await new Promise((r) => setTimeout(r, chunkMs));
             }
             try {
-              const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+              const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
               if (!q?.ok) {
                 throw new Error(`Quota refresh failed: ${q?.error || "probe failed"}`);
               }
@@ -15793,7 +15830,7 @@ Fix: ${agyCheck.fix}`);
       let worktree;
       try {
         model = pools.route(t.tier ?? "mid", t.pool_hint);
-        const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+        const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
         if (!q.ok) {
           throw new Error(`Quota telemetry check failed: ${q.error}`);
         }
@@ -15964,7 +16001,7 @@ Fix: ${agyCheck.fix}`);
               }
               if (pools) {
                 try {
-                  await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+                  await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
                 } catch {
                 }
                 const currentPool = poolOf(model);
@@ -16629,6 +16666,7 @@ This is one item of a ${resolved.length}-target sweep. Touch only your target; i
 import { execFileSync as execFileSync13, execFile as execFile9 } from "node:child_process";
 import { promisify as promisify8 } from "node:util";
 import { randomUUID as randomUUID6 } from "node:crypto";
+init_plugin_paths();
 var execFileP7 = promisify8(execFile9);
 var LENSES = {
   correctness: "bugs, broken edge cases, error swallowing, race conditions, wrong logic",
@@ -16710,7 +16748,7 @@ async function reviewFleet({
       throw new Error("Cannot run review fleet: quota telemetry unavailable (circuit breaker tripped)");
     }
     if (!pools.quota) {
-      const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+      const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
       if (!q.ok) {
         throw new Error(`Cannot run review fleet: quota telemetry unavailable from agy: ${q.error}`);
       }
@@ -17071,6 +17109,7 @@ function bootstrap({
 }
 
 // bin/agb.mjs
+init_plugin_paths();
 var rawArgs = process.argv.slice(2);
 var project;
 var filteredArgs = [];
@@ -17092,7 +17131,7 @@ var COMMANDS = {
     extended: "convert \u2192 validate \u2192 overlap/coldstart/parallax gates with feedback loop \u2192 advisory premortem",
     flags: "--out <file> --force --no-coldstart --no-parallax --no-premortem"
   },
-  preflight: { args: "<plan.json>", desc: "plan-time gates: scope overlap + coldstart" },
+  preflight: { args: "<plan.json>", desc: "plan-time gates: scope overlap + coldstart", flags: "--no-coldstart" },
   doctor: { args: "", desc: "verify your environment and tools" },
   brains: { args: "", desc: "list Antigravity plan artifacts (GUI + agy sessions)" },
   "import-brain": { args: "<id> <repo>", desc: "DEPRECATED: raw one-shot conversion (use agb plan)" },
@@ -17169,7 +17208,7 @@ try {
     }
     const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
-    process.exit(Object.keys(report.failed).length ? 2 : 0);
+    process.exit(Object.keys(report.failed).length > 0 || Boolean(report.compromised) ? 2 : 0);
   } else if (cmd === "sweep") {
     const spec = JSON.parse(readFileSync27(rest[0] ?? "sweep.json", "utf8"));
     if (spec.repo) spec.repo = resolve18(spec.repo);
@@ -17182,7 +17221,7 @@ try {
     console.error(`sweep: ${plan.tickets.length} targets`);
     const report = await runPlan(plan, { project });
     console.log(JSON.stringify(report, null, 2));
-    process.exit(Object.keys(report.failed).length ? 2 : 0);
+    process.exit(Object.keys(report.failed).length > 0 || Boolean(report.compromised) ? 2 : 0);
   } else if (cmd === "review") {
     const repo = resolve18(rest[0] ?? ".");
     const ref = rest[1];
@@ -17192,7 +17231,7 @@ try {
       process.exit(0);
     }
     const pools = new PoolSet(void 0, { repo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
     if (!quotaRes.ok) {
       console.error(`review: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -17213,7 +17252,7 @@ try {
     const skipColdstart = rest.includes("--no-coldstart");
     const pools = new PoolSet(void 0, { repo: targetRepo });
     if (!skipColdstart) {
-      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
       if (!quotaRes.ok) {
         console.error(`preflight: quota telemetry unavailable from agy: ${quotaRes.error}`);
         process.exit(1);
@@ -17240,7 +17279,7 @@ try {
     }
     const targetRepo = resolve18(repo);
     const pools = new PoolSet(void 0, { repo: targetRepo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
     if (!quotaRes.ok) {
       console.error(`plan: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -17288,7 +17327,7 @@ try {
     console.error("import-brain is deprecated \u2014 use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)");
     const targetRepo = resolve18(repo);
     const pools = new PoolSet(void 0, { repo: targetRepo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || "agy");
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
     if (!quotaRes.ok) {
       console.error(`import-brain: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -17476,7 +17515,7 @@ try {
         sidecars: ["sidecars/agb.json"]
       }, null, 2) + "\n", { mode: 384 });
       wroteManifests = true;
-      const agyBin = process.env.AGB_AGY_BIN || "agy";
+      const agyBin = process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy";
       let cleaned = false;
       const onExitCleanup = () => {
         if (cleaned) return;

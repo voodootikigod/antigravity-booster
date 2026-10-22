@@ -12,7 +12,7 @@ import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/sch
 import { reapIntegrationWorktrees, resetToBase, cleanEmptyNodeModules, isDirty, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 
-process.env.AGB_QUOTA_STATE = join(tmpdir(), 'agb_pools_scheduler_test.json');
+process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_scheduler_test_${process.pid}.json`);
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
