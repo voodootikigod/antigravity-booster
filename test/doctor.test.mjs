@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor } from '../lib/doctor.mjs';
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
+import { spawnSync } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync } from 'fs';
@@ -523,7 +524,7 @@ test('checkModelCatalog: retired-only and unrecognized-only drift each warn on t
   }
 });
 
-test('checkModelCatalog: runs agy under a pty on linux, without leaving a script log behind', { skip: process.platform !== 'linux' }, async () => {
+test('checkModelCatalog: runs agy under a pty on linux, without leaving a script log behind', { skip: process.platform !== 'linux' || spawnSync('script', ['--version'], { stdio: 'ignore' }).error !== undefined }, async () => {
   const { MODELS } = await import('../lib/models.mjs');
   const all = Object.values(MODELS).flat();
   const dir = mkdtempSync(join(tmpdir(), 'agb-doctor-tty-'));
@@ -543,4 +544,29 @@ test('checkModelCatalog: runs agy under a pty on linux, without leaving a script
 
 test('parseAgyModels: strips a device-attributes query (ESC[>c) that sits directly before a slug', () => {
   assert.deepStrictEqual(parseAgyModels('\u001b[>cgemini-4-argon-low  Gemini 4 Argon (Low)\n'), ['gemini-4-argon-low']);
+});
+
+test('parseAgyModels: error text and table headers are not models', () => {
+  for (const line of [
+    'error   Failed to fetch models',
+    'name    description',
+    'unauthorized  please run agy login',
+    'a.b  c',
+    'Fetching available models...',
+  ]) {
+    assert.deepStrictEqual(parseAgyModels(`${line}\r\n`), [], line);
+  }
+  // ...while real hyphenated slugs, including dotted versions, still parse.
+  assert.deepStrictEqual(parseAgyModels('gemini-3.8-flash-low  Gemini 3.8 Flash (Low)\n'), ['gemini-3.8-flash-low']);
+});
+
+test('checkModelCatalog: error text instead of a listing stays "no models returned"', async () => {
+  const { bin, dir } = fakeAgyModels(['error   Failed to fetch models']);
+  try {
+    const res = await checkModelCatalog({ env: { AGB_AGY_BIN: bin } });
+    assert.strictEqual(res.level, 'warn');
+    assert.match(res.detail, /no models returned/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
