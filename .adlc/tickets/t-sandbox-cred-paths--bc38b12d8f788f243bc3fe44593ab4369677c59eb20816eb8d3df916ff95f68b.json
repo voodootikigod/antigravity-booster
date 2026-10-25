@@ -1,5 +1,5 @@
 {
-  "body": "agy 1.4.6 denies ~/.docker, ~/.kube and ~/_netrc inside the terminal sandbox unless explicitly granted. Add a short section to website/content/docs/concepts/gates-and-sandboxing.mdx describing the change and the explicit-grant remedy, and add a doctor warning when the configured gate command mentions docker or kubectl while the sandbox is enabled. Also run `agy plugin validate` against the shipped companion plugin and record the result in the ticket. Acceptance: npm test green; doc section present; warning covered by a test.",
+  "body": "agy 1.4.6 denies ~/.docker, ~/.kube and ~/_netrc inside the builder agy --sandbox unless explicitly granted. Add a short section to website/content/docs/concepts/gates-and-sandboxing.mdx describing the change and the explicit-grant remedy. DROPPED (owner decision): the doctor warning on gate commands mentioning docker/kubectl; gate commands are restricted to npm by NPM_GATE_RE in lib/plan.mjs and run in a separate network-denied sandbox, so the condition cannot occur. Also run `agy plugin validate --strict` against the shipped companion plugin and record the result. RESULT (agy 1.4.7): antigravity-booster plugin has 2 warnings (AGENTS.md at plugin root should be in rules/; commands/ never loaded); upstream adlc-antigravity 1.7.0 has 7 errors (all 7 prosecutor agents skipped, tools: is a string not a list) plus 2 warnings (adlcContract unknown field), an upstream packaging bug. Acceptance: npm test green; doc section present.",
   "edges": [
     {
       "to": "t-retire-legacy-tickets-json"
@@ -11,9 +11,7 @@
     "lib/gates.mjs"
   ],
   "scope": [
-    "website/content/docs/concepts/gates-and-sandboxing.mdx",
-    "lib/doctor.mjs",
-    "test/doctor.test.mjs"
+    "website/content/docs/concepts/gates-and-sandboxing.mdx"
   ],
   "title": "Document and warn about agy 1.4.6 sandbox credential-path denial"
 }
