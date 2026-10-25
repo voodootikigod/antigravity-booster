@@ -202,6 +202,35 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     assert.equal(RETIRED_35_MAP, RETIRED_MODEL_MAP, 'deprecated alias keeps the exported contract');
   });
 
+  it('inherited object keys are unknown models, never aliases or retired remaps', () => {
+    const warnings = [];
+    const orig = console.warn;
+    console.warn = (msg) => warnings.push(msg);
+    try {
+      for (const key of ['__proto__', 'constructor', 'toString', 'valueOf', 'hasOwnProperty', '  __PROTO__  ']) {
+        assert.equal(resolveModelSlug(key), key, `${key} must pass through unchanged`);
+        assert.throws(() => poolOf(key), /unknown model/, `${key} must not route`);
+      }
+    } finally {
+      console.warn = orig;
+    }
+    assert.deepEqual(warnings, [], 'no false "retired upstream" warning');
+  });
+
+  it('pins which tier + pool_hint combinations have zero candidates', () => {
+    const counts = {};
+    for (const tier of ['cheap', 'mid', 'frontier']) {
+      for (const hint of ['gemini', 'claude', 'claude-gpt', 'gpt-oss']) {
+        counts[`${tier}+${hint}`] = tierCandidates(tier, hint).length;
+      }
+    }
+    assert.deepEqual(counts, {
+      'cheap+gemini': 2, 'cheap+claude': 0, 'cheap+claude-gpt': 0, 'cheap+gpt-oss': 0,
+      'mid+gemini': 2, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
+      'frontier+gemini': 1, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
+    });
+  });
+
   it('no retired name remains a live alias or member', () => {
     for (const retired of RETIRED_SLUGS) {
       assert.ok(!ALL_MODELS.includes(retired));

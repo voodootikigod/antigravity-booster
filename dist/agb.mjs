@@ -8733,12 +8733,12 @@ var ROLE_MODELS = {
 function resolveModelSlug(model) {
   if (typeof model !== "string") return model;
   const normalized = model.trim().toLowerCase();
-  if (RETIRED_MODEL_MAP[normalized]) {
+  if (Object.hasOwn(RETIRED_MODEL_MAP, normalized)) {
     const resolved = RETIRED_MODEL_MAP[normalized];
     console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
     return resolved;
   }
-  if (MODEL_ALIASES[normalized]) return MODEL_ALIASES[normalized];
+  if (Object.hasOwn(MODEL_ALIASES, normalized)) return MODEL_ALIASES[normalized];
   for (const list of Object.values(MODELS)) {
     for (const slug of list) {
       if (slug.toLowerCase() === normalized) return slug;
