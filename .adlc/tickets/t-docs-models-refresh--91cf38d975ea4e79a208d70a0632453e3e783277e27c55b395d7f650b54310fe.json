@@ -4,8 +4,7 @@
   "id": "t-docs-models-refresh",
   "rails": [
     "lib/lock.mjs",
-    "lib/gates.mjs",
-    "lib/models.mjs"
+    "lib/gates.mjs"
   ],
   "scope": [
     "website/content/docs/concepts/pools-and-tiers.mdx",

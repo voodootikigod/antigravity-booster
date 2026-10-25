@@ -8,8 +8,7 @@
   "id": "t-doctor-catalog-drift",
   "rails": [
     "lib/lock.mjs",
-    "lib/gates.mjs",
-    "lib/models.mjs"
+    "lib/gates.mjs"
   ],
   "scope": [
     "lib/doctor.mjs",
