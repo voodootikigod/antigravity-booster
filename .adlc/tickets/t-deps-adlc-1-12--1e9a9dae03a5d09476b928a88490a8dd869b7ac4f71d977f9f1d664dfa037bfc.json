@@ -1,0 +1,15 @@
+{
+  "body": "BLOCKED until the owner has reviewed the @adlc 1.12.0 release notes. Bump @adlc/cli, core, tickets, consensus-fix, flail-detector, gate-manifest, hollow-test, merge-forecast, model-router, rails-guard to 1.12.0 in package.json and regenerate package-lock.json with integrity hashes. Leave @adlc/antigravity at 1.7.0 and do not touch vendor/cache. Update any hardcoded 1.11.1 floor in lib/doctor.mjs only if the release notes require it. Acceptance: npm test green with the new binary; `adlc --version` reports 1.12.0 from the authenticated local shim.",
+  "edges": [],
+  "id": "t-deps-adlc-1-12",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**"
+  ],
+  "scope": [
+    "package.json",
+    "package-lock.json"
+  ],
+  "title": "Bump @adlc/* dependencies from 1.11.1 to 1.12.0"
+}

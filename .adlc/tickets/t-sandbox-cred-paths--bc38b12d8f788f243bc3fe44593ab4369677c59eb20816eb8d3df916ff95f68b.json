@@ -1,0 +1,19 @@
+{
+  "body": "agy 1.4.6 denies ~/.docker, ~/.kube and ~/_netrc inside the terminal sandbox unless explicitly granted. Add a short section to website/content/docs/concepts/gates-and-sandboxing.mdx describing the change and the explicit-grant remedy, and add a doctor warning when the configured gate command mentions docker or kubectl while the sandbox is enabled. Also run `agy plugin validate` against the shipped companion plugin and record the result in the ticket. Acceptance: npm test green; doc section present; warning covered by a test.",
+  "edges": [
+    {
+      "to": "t-retire-legacy-tickets-json"
+    }
+  ],
+  "id": "t-sandbox-cred-paths",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "website/content/docs/concepts/gates-and-sandboxing.mdx",
+    "lib/doctor.mjs",
+    "test/doctor.test.mjs"
+  ],
+  "title": "Document and warn about agy 1.4.6 sandbox credential-path denial"
+}

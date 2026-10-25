@@ -1,0 +1,19 @@
+{
+  "body": "In lib/doctor.mjs add a check that runs `agy models`, parses slugs, and compares them with ALL_MODELS from lib/models.mjs. Report slugs in ALL_MODELS missing upstream as 'retired' and live slugs unknown to booster as 'unrecognized', both as warnings (not failures). If `agy models` is unavailable or fails, return { ok: false, error } without throwing, matching the CLI-integration degrade rule. Add tests using test/fixtures/fake-agy covering clean, drifted, and agy-unavailable cases. Acceptance: npm test green; doctor output names the drifted slugs.",
+  "edges": [
+    {
+      "to": "t-sandbox-cred-paths"
+    }
+  ],
+  "id": "t-doctor-catalog-drift",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/models.mjs"
+  ],
+  "scope": [
+    "lib/doctor.mjs",
+    "test/doctor.test.mjs"
+  ],
+  "title": "agb doctor: warn when the model catalog drifts from live agy models"
+}

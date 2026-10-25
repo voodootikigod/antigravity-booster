@@ -1,0 +1,18 @@
+{
+  "body": "Update website/content/docs concepts/pools-and-tiers, concepts/prosecution, guides/walkthrough, guides/review and guides/writing-plans so every model slug and example matches the post-refresh lib/models.mjs. Reference pages are generated; regenerate them and run the generator check per CONTRIBUTING.md. Do not edit design-history pages for older roadmaps. Acceptance: docs generator check passes; grep for retired slugs in website/content (excluding design-history) returns nothing.",
+  "edges": [],
+  "id": "t-docs-models-refresh",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/models.mjs"
+  ],
+  "scope": [
+    "website/content/docs/concepts/pools-and-tiers.mdx",
+    "website/content/docs/concepts/prosecution.mdx",
+    "website/content/docs/guides/walkthrough.mdx",
+    "website/content/docs/guides/review.mdx",
+    "website/content/docs/guides/writing-plans.mdx"
+  ],
+  "title": "Refresh website docs for the new model catalog"
+}
