@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor } from '../lib/doctor.mjs';
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -410,3 +410,86 @@ test('checkKernelContainment: ignores mocks outside test mode when NODE_ENV is p
   assert.equal(resMocked.kind, 'mock_unavailable');
 });
 
+
+// --- model catalog drift ---
+
+function fakeAgyModels(lines) {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-doctor-models-'));
+  const bin = join(dir, 'agy');
+  writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "models" ]; then\ncat <<'EOT'\n${lines.join('\n')}\nEOT\nfi\n`);
+  chmodSync(bin, 0o755);
+  return { bin, dir };
+}
+
+test('parseAgyModels: keeps slug column, ignores the status line, blanks, and CRLF', () => {
+  const out = 'Fetching available models...\r\ngemini-4-argon-low\tGemini 4 Argon (Low)\r\n\r\ngpt-oss-120b-medium\tGPT-OSS 120B (Medium)\n';
+  assert.deepStrictEqual(parseAgyModels(out), ['gemini-4-argon-low', 'gpt-oss-120b-medium']);
+  assert.deepStrictEqual(parseAgyModels('Fetching available models...\n'), []);
+  assert.deepStrictEqual(parseAgyModels(''), []);
+});
+
+test('compareModelCatalog: reports retired (known, not live) and unrecognized (live, not known)', () => {
+  const r = compareModelCatalog(['a', 'b', 'x'], ['a', 'b', 'c']);
+  assert.deepStrictEqual(r, { retired: ['c'], unrecognized: ['x'] });
+  assert.deepStrictEqual(compareModelCatalog(['a'], ['a']), { retired: [], unrecognized: [] });
+});
+
+test('checkModelCatalog: passes against the live-catalog fixture', async () => {
+  const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
+  const res = await checkModelCatalog({ env: { AGB_AGY_BIN: FAKE_AGY } });
+  assert.strictEqual(res.name, 'Model catalog');
+  assert.strictEqual(res.level, 'pass');
+  assert.strictEqual(res.fix, null);
+});
+
+test('checkModelCatalog: warns and names drifted slugs in both directions', async () => {
+  const { bin, dir } = fakeAgyModels([
+    'Fetching available models...',
+    'gemini-3.8-flash-low\tGemini 3.8 Flash (Low)',
+    'gemini-9-nova-high\tGemini 9 Nova (High)',
+  ]);
+  try {
+    const res = await checkModelCatalog({ env: { AGB_AGY_BIN: bin } });
+    assert.strictEqual(res.level, 'warn');
+    assert.match(res.detail, /gemini-9-nova-high/);
+    assert.match(res.detail, /claude-opus-5-5-high/);
+    assert.match(res.detail, /unrecognized/);
+    assert.match(res.detail, /retired/);
+    assert.ok(res.fix);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('checkModelCatalog: unavailable agy degrades to a warning, never throws', async () => {
+  const res = await checkModelCatalog({ env: { AGB_AGY_BIN: '/does/not/exist' } });
+  assert.strictEqual(res.level, 'warn');
+  assert.match(res.detail, /could not list models/);
+});
+
+test('checkModelCatalog: output with no model rows is a warning, not a pass', async () => {
+  const { bin, dir } = fakeAgyModels(['Fetching available models...']);
+  try {
+    const res = await checkModelCatalog({ env: { AGB_AGY_BIN: bin } });
+    assert.strictEqual(res.level, 'warn');
+    assert.match(res.detail, /no models/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('parseAgyModels: parses a real pty capture (spinner, ANSI, CR overwrite, TAB expanded to spaces)', () => {
+  const pty =
+    '\u001b[>c\r⠋ Fetching available models...\r⠙ Fetching available models...\r\u001b[K' +
+    'gemini-4-argon-medium     Gemini 4 Argon (Medium)\r\n' +
+    'gemini-3.8-flash-high     Gemini 3.8 Flash (High)\r\n' +
+    'claude-opus-5-5-low       Claude Opus 5.5 (Low)\r\n' +
+    'gpt-oss-120b-medium       GPT-OSS 120B (Medium)\r\n';
+  assert.deepStrictEqual(parseAgyModels(pty), [
+    'gemini-4-argon-medium', 'gemini-3.8-flash-high', 'claude-opus-5-5-low', 'gpt-oss-120b-medium',
+  ]);
+});
+
+test('parseAgyModels: ignores prose that merely resembles a row', () => {
+  assert.deepStrictEqual(parseAgyModels('Fetching available models...\nError: not signed in\nTotal 3 models\n'), []);
+});
