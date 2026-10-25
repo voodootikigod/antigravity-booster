@@ -7598,7 +7598,7 @@ async function agyModelsStdout({ env, home }) {
   return stdout2;
 }
 var ANSI_ESCAPE = /\u001b\[[0-9;?>]*[A-Za-z]/g;
-var MODEL_ROW = /^([a-z][a-z0-9.-]*)(?:\t|\s{2,})\S/;
+var MODEL_ROW = /^([a-z][a-z0-9.]*(?:-[a-z0-9.]+)+)(?:\t|\s{2,})\S/;
 function parseAgyModels(stdout2) {
   return String(stdout2).replace(ANSI_ESCAPE, "").split("\n").map((line) => line.replace(/\r+$/, "").split("\r").pop()).map((line) => MODEL_ROW.exec(line)?.[1]).filter(Boolean);
 }
