@@ -162,6 +162,37 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     assert.deepEqual(warnings, []);
   });
 
+  it('every live slug resolves from its `agy models` display name, silently', () => {
+    const display = {
+      'gemini-4-argon-low': 'Gemini 4 Argon (Low)',
+      'gemini-4-argon-medium': 'Gemini 4 Argon (Medium)',
+      'gemini-4-argon-high': 'Gemini 4 Argon (High)',
+      'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
+      'gemini-3.8-flash-medium': 'Gemini 3.8 Flash (Medium)',
+      'gemini-3.8-flash-high': 'Gemini 3.8 Flash (High)',
+      'claude-opus-5-5-low': 'Claude Opus 5.5 (Low)',
+      'claude-opus-5-5-medium': 'Claude Opus 5.5 (Medium)',
+      'claude-opus-5-5-high': 'Claude Opus 5.5 (High)',
+      'claude-sonnet-5-5-low': 'Claude Sonnet 5.5 (Low)',
+      'claude-sonnet-5-5-medium': 'Claude Sonnet 5.5 (Medium)',
+      'claude-sonnet-5-5-high': 'Claude Sonnet 5.5 (High)',
+      'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
+    };
+    assert.deepEqual(Object.keys(display).sort(), [...LIVE_CATALOG].sort());
+    const warnings = [];
+    const orig = console.warn;
+    console.warn = (msg) => warnings.push(msg);
+    try {
+      for (const [slug, name] of Object.entries(display)) {
+        assert.equal(resolveModelSlug(name), slug, name);
+        assert.equal(resolveModelSlug(slug), slug, slug);
+      }
+    } finally {
+      console.warn = orig;
+    }
+    assert.deepEqual(warnings, []);
+  });
+
   it('retired map targets are live and never retired themselves; maps are frozen', () => {
     for (const [from, to] of Object.entries(RETIRED_MODEL_MAP)) {
       assert.ok(LIVE_CATALOG.includes(to), `${from} -> ${to}`);
