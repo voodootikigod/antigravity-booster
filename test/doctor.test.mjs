@@ -540,3 +540,7 @@ test('checkModelCatalog: runs agy under a pty on linux, without leaving a script
     rmSync(join(process.cwd(), 'typescript'), { force: true });
   }
 });
+
+test('parseAgyModels: strips a device-attributes query (ESC[>c) that sits directly before a slug', () => {
+  assert.deepStrictEqual(parseAgyModels('\u001b[>cgemini-4-argon-low  Gemini 4 Argon (Low)\n'), ['gemini-4-argon-low']);
+});
