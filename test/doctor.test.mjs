@@ -4,7 +4,7 @@ import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, pars
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync } from 'fs';
+import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync } from 'fs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
@@ -492,4 +492,51 @@ test('parseAgyModels: parses a real pty capture (spinner, ANSI, CR overwrite, TA
 
 test('parseAgyModels: ignores prose that merely resembles a row', () => {
   assert.deepStrictEqual(parseAgyModels('Fetching available models...\nError: not signed in\nTotal 3 models\n'), []);
+});
+
+test('parseAgyModels: strips colour and cursor escapes, accepts a 2-space or TAB column gap', () => {
+  const out =
+    '\u001b[?25l\u001b[0mgemini-4-argon-low  Gemini 4 Argon (Low)\u001b[0m\n' +
+    '\u001b[1;32mclaude-opus-5-5-high\tClaude Opus 5.5 (High)\n';
+  assert.deepStrictEqual(parseAgyModels(out), ['gemini-4-argon-low', 'claude-opus-5-5-high']);
+  // A single space is prose, not a column gap.
+  assert.deepStrictEqual(parseAgyModels('gemini-4-argon-low Gemini\n'), []);
+});
+
+test('checkModelCatalog: retired-only and unrecognized-only drift each warn on their own', async () => {
+  const { MODELS } = await import('../lib/models.mjs');
+  const all = Object.values(MODELS).flat();
+  const row = (s) => `${s}\t${s}`;
+
+  const retiredOnly = fakeAgyModels(all.slice(1).map(row));
+  const unknownOnly = fakeAgyModels([...all, 'gemini-9-nova-high'].map(row));
+  try {
+    const a = await checkModelCatalog({ env: { AGB_AGY_BIN: retiredOnly.bin } });
+    assert.strictEqual(a.level, 'warn');
+    assert.strictEqual(a.detail, `retired: ${all[0]}`);
+    const b = await checkModelCatalog({ env: { AGB_AGY_BIN: unknownOnly.bin } });
+    assert.strictEqual(b.level, 'warn');
+    assert.strictEqual(b.detail, 'unrecognized: gemini-9-nova-high');
+  } finally {
+    rmSync(retiredOnly.dir, { recursive: true, force: true });
+    rmSync(unknownOnly.dir, { recursive: true, force: true });
+  }
+});
+
+test('checkModelCatalog: runs agy under a pty on linux, without leaving a script log behind', { skip: process.platform !== 'linux' }, async () => {
+  const { MODELS } = await import('../lib/models.mjs');
+  const all = Object.values(MODELS).flat();
+  const dir = mkdtempSync(join(tmpdir(), 'agb-doctor-tty-'));
+  const bin = join(dir, 'agy');
+  // Only prints models when stdout is a terminal, like the real agy.
+  writeFileSync(bin, `#!/bin/sh\nif [ "$1" = "models" ]; then\n  if [ -t 1 ]; then\n${all.map((s) => `    printf '%s\\t%s\\n' '${s}' '${s}'`).join('\n')}\n  else\n    echo "stdout is not a terminal"\n  fi\nfi\n`);
+  chmodSync(bin, 0o755);
+  try {
+    const res = await checkModelCatalog({ env: { AGB_AGY_BIN: bin } });
+    assert.strictEqual(res.level, 'pass', res.detail);
+    assert.strictEqual(existsSync(join(process.cwd(), 'typescript')), false, '`script` must log to /dev/null, not ./typescript');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(join(process.cwd(), 'typescript'), { force: true });
+  }
 });
