@@ -323,6 +323,155 @@ var init_digest = __esm({
   }
 });
 
+// lib/models.mjs
+var models_exports = {};
+__export(models_exports, {
+  ALL_MODELS: () => ALL_MODELS,
+  MODELS: () => MODELS,
+  MODEL_ALIASES: () => MODEL_ALIASES,
+  PROSECUTORS: () => PROSECUTORS,
+  PROSECUTOR_CANDIDATES: () => PROSECUTOR_CANDIDATES,
+  RETIRED_35_MAP: () => RETIRED_35_MAP,
+  RETIRED_MODEL_MAP: () => RETIRED_MODEL_MAP,
+  ROLE_MODELS: () => ROLE_MODELS,
+  TIER_CANDIDATES: () => TIER_CANDIDATES,
+  familyOf: () => familyOf,
+  modelFor: () => modelFor,
+  poolOf: () => poolOf,
+  resolveModelSlug: () => resolveModelSlug,
+  tierCandidates: () => tierCandidates,
+  upstreamPoolOf: () => upstreamPoolOf
+});
+function modelFor(role) {
+  if (ROLE_MODELS[role] === void 0) {
+    throw new Error("Unknown model role: " + role);
+  }
+  return ROLE_MODELS[role];
+}
+function resolveModelSlug(model) {
+  if (typeof model !== "string") return model;
+  const normalized = model.trim().toLowerCase();
+  if (Object.hasOwn(RETIRED_MODEL_MAP, normalized)) {
+    const resolved = RETIRED_MODEL_MAP[normalized];
+    console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
+    return resolved;
+  }
+  if (Object.hasOwn(MODEL_ALIASES, normalized)) return MODEL_ALIASES[normalized];
+  for (const list of Object.values(MODELS)) {
+    for (const slug of list) {
+      if (slug.toLowerCase() === normalized) return slug;
+    }
+  }
+  return model;
+}
+function poolOf(model) {
+  const slug = resolveModelSlug(model);
+  for (const [pool, models] of Object.entries(MODELS)) {
+    if (models.includes(slug)) return pool;
+  }
+  if (typeof slug !== "string") throw new Error(`unknown model: ${slug}`);
+  const normalized = slug.toLowerCase();
+  if (normalized.includes("flash")) return "gemini-flash";
+  if (normalized.includes("gemini")) return "gemini-pro";
+  if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus")) return "claude";
+  if (normalized.includes("gpt")) return "gpt-oss";
+  throw new Error(`unknown model: ${slug}`);
+}
+function familyOf(model) {
+  const pool = poolOf(model);
+  return pool.startsWith("gemini") ? "gemini" : pool;
+}
+function upstreamPoolOf(model) {
+  const pool = poolOf(model);
+  return pool.startsWith("gemini") ? "gemini" : "claude_gpt";
+}
+function tierCandidates(tier, poolHint) {
+  return (TIER_CANDIDATES[tier] ?? TIER_CANDIDATES.mid).filter((m) => {
+    if (!poolHint || poolHint === "auto") return true;
+    const fam = familyOf(m);
+    if (poolHint === "claude-gpt") return fam === "claude" || fam === "gpt-oss";
+    return fam === poolHint;
+  });
+}
+var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, RETIRED_35_MAP, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, ROLE_MODELS;
+var init_models = __esm({
+  "lib/models.mjs"() {
+    MODELS = {
+      "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
+      "gemini-pro": ["gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"],
+      claude: [
+        "claude-sonnet-5-5-low",
+        "claude-sonnet-5-5-medium",
+        "claude-sonnet-5-5-high",
+        "claude-opus-5-5-low",
+        "claude-opus-5-5-medium",
+        "claude-opus-5-5-high"
+      ],
+      "gpt-oss": ["gpt-oss-120b-medium"]
+    };
+    ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
+    MODEL_ALIASES = {
+      "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
+      "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
+      "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
+      "gemini 4 argon (low)": "gemini-4-argon-low",
+      "gemini 4 argon (medium)": "gemini-4-argon-medium",
+      "gemini 4 argon (high)": "gemini-4-argon-high",
+      "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
+      "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
+      "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
+      "claude opus 5.5 (low)": "claude-opus-5-5-low",
+      "claude opus 5.5 (medium)": "claude-opus-5-5-medium",
+      "claude opus 5.5 (high)": "claude-opus-5-5-high",
+      "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
+    };
+    RETIRED_FLASH_GENERATIONS = ["3.5", "3.6", "3.7"];
+    EFFORTS = ["low", "medium", "high"];
+    retiredEntries = [
+      ...RETIRED_FLASH_GENERATIONS.flatMap(
+        (gen) => EFFORTS.flatMap((e) => [
+          [`gemini-${gen}-flash-${e}`, `gemini-3.8-flash-${e}`],
+          [`gemini ${gen} flash (${e})`, `gemini-3.8-flash-${e}`]
+        ])
+      ),
+      ...["low", "high"].flatMap((e) => [
+        [`gemini-3.1-pro-${e}`, `gemini-4-argon-${e}`],
+        [`gemini 3.1 pro (${e})`, `gemini-4-argon-${e}`]
+      ]),
+      ["claude-sonnet-4-6", "claude-sonnet-5-5-medium"],
+      ["claude sonnet 4.6 (thinking)", "claude-sonnet-5-5-medium"],
+      ["claude-opus-4-6-thinking", "claude-opus-5-5-high"],
+      ["claude opus 4.6 (thinking)", "claude-opus-5-5-high"]
+    ];
+    RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
+    RETIRED_35_MAP = RETIRED_MODEL_MAP;
+    TIER_CANDIDATES = {
+      cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
+      mid: ["gemini-3.8-flash-high", "gemini-4-argon-low", "claude-sonnet-5-5-medium"],
+      frontier: ["gemini-4-argon-high", "claude-sonnet-5-5-high", "claude-opus-5-5-high"]
+    };
+    PROSECUTORS = {
+      gemini: "gpt-oss-120b-medium",
+      claude: "gemini-4-argon-high",
+      "gpt-oss": "gemini-4-argon-high"
+    };
+    PROSECUTOR_CANDIDATES = {
+      gemini: ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
+      claude: ["gemini-4-argon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
+      "gpt-oss": ["gemini-4-argon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
+    };
+    ROLE_MODELS = {
+      coldstart: "gemini-3.8-flash-low",
+      premortem: "gemini-4-argon-high",
+      parallaxReader: "gemini-3.8-flash-medium",
+      parallaxJudge: "gemini-4-argon-high",
+      brainConvert: "gemini-4-argon-high",
+      probeDefault: "Gemini 3.8 Flash (Low)",
+      reviewFleetAlternates: ["gemini-3.8-flash-high", "gemini-4-argon-high"]
+    };
+  }
+});
+
 // lib/status.mjs
 var status_exports = {};
 __export(status_exports, {
@@ -7434,19 +7583,57 @@ async function checkAgyBinary({ env = process.env, home = env.HOME || homedir3()
     return { name: "agy CLI", level: "fail", detail: "not found or error", fix: "Install Google Antigravity CLI and ensure it is on PATH." };
   }
 }
+async function agyModelsStdout({ env, home }) {
+  let cmd2 = env.AGB_AGY_BIN || resolveAgyBinary(home);
+  let args = ["models"];
+  if (process.platform === "linux") {
+    const quotedCmd = `'${String(cmd2).replace(/'/g, "'\\''")}'`;
+    args = ["-q", "-e", "-c", `${quotedCmd} models`, "/dev/null"];
+    cmd2 = "script";
+  } else if (process.platform === "darwin") {
+    args = ["-q", "/dev/null", cmd2, "models"];
+    cmd2 = "script";
+  }
+  const { stdout: stdout2 } = await execFileAsync(cmd2, args, { env, timeout: 15e3 });
+  return stdout2;
+}
+var ANSI_ESCAPE = /\u001b\[[0-9;?>]*[A-Za-z]/g;
+var MODEL_ROW = /^([a-z][a-z0-9.-]*)(?:\t|\s{2,})\S/;
+function parseAgyModels(stdout2) {
+  return String(stdout2).replace(ANSI_ESCAPE, "").split("\n").map((line) => line.replace(/\r+$/, "").split("\r").pop()).map((line) => MODEL_ROW.exec(line)?.[1]).filter(Boolean);
+}
+function compareModelCatalog(live, known) {
+  const liveSet = new Set(live);
+  const knownSet = new Set(known);
+  return {
+    retired: known.filter((m) => !liveSet.has(m)),
+    unrecognized: live.filter((m) => !knownSet.has(m))
+  };
+}
+async function checkModelCatalog({ env = process.env, home = env.HOME || homedir3() } = {}) {
+  const name = "Model catalog";
+  let live;
+  try {
+    live = parseAgyModels(await agyModelsStdout({ env, home }));
+  } catch (err) {
+    return { name, level: "warn", detail: "could not list models", fix: "Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor." };
+  }
+  if (live.length === 0) {
+    return { name, level: "warn", detail: "no models returned", fix: "Run `agy models`; if it prints models, report the output format change." };
+  }
+  const { ALL_MODELS: ALL_MODELS2 } = await Promise.resolve().then(() => (init_models(), models_exports));
+  const { retired, unrecognized } = compareModelCatalog(live, ALL_MODELS2);
+  if (retired.length === 0 && unrecognized.length === 0) {
+    return { name, level: "pass", detail: `${live.length} models match`, fix: null };
+  }
+  const parts = [];
+  if (unrecognized.length > 0) parts.push(`unrecognized: ${unrecognized.join(", ")}`);
+  if (retired.length > 0) parts.push(`retired: ${retired.join(", ")}`);
+  return { name, level: "warn", detail: parts.join("; "), fix: "Update MODELS in lib/models.mjs to match `agy models`." };
+}
 async function checkAgyAuth({ env = process.env, home = env.HOME || homedir3() } = {}) {
   try {
-    let cmd2 = env.AGB_AGY_BIN || resolveAgyBinary(home);
-    let args = ["models"];
-    if (process.platform === "linux") {
-      const quotedCmd = `'${String(cmd2).replace(/'/g, "'\\''")}'`;
-      args = ["-q", "-e", "-c", `${quotedCmd} models`, "/dev/null"];
-      cmd2 = "script";
-    } else if (process.platform === "darwin") {
-      args = ["-q", "/dev/null", cmd2, "models"];
-      cmd2 = "script";
-    }
-    const { stdout: stdout2 } = await execFileAsync(cmd2, args, { env, timeout: 15e3 });
+    const stdout2 = await agyModelsStdout({ env, home });
     if (stdout2.trim().length > 0) {
       return { name: "agy Auth", level: "pass", detail: "authenticated", fix: null };
     }
@@ -8627,6 +8814,7 @@ async function runDoctor(opts = {}) {
     checkNodeVersion(opts),
     checkAgyBinary(opts),
     checkAgyAuth(opts),
+    checkModelCatalog(opts),
     checkPlugin(opts),
     checkAdlcBinary(opts),
     checkSandbox(opts),
@@ -8657,126 +8845,8 @@ async function runDoctor(opts = {}) {
   return failed ? 1 : 0;
 }
 
-// lib/models.mjs
-var MODELS = {
-  "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
-  "gemini-pro": ["gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"],
-  claude: [
-    "claude-sonnet-5-5-low",
-    "claude-sonnet-5-5-medium",
-    "claude-sonnet-5-5-high",
-    "claude-opus-5-5-low",
-    "claude-opus-5-5-medium",
-    "claude-opus-5-5-high"
-  ],
-  "gpt-oss": ["gpt-oss-120b-medium"]
-};
-var ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
-var MODEL_ALIASES = {
-  "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
-  "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
-  "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
-  "gemini 4 argon (low)": "gemini-4-argon-low",
-  "gemini 4 argon (medium)": "gemini-4-argon-medium",
-  "gemini 4 argon (high)": "gemini-4-argon-high",
-  "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
-  "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
-  "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
-  "claude opus 5.5 (low)": "claude-opus-5-5-low",
-  "claude opus 5.5 (medium)": "claude-opus-5-5-medium",
-  "claude opus 5.5 (high)": "claude-opus-5-5-high",
-  "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
-};
-var RETIRED_FLASH_GENERATIONS = ["3.5", "3.6", "3.7"];
-var EFFORTS = ["low", "medium", "high"];
-var retiredEntries = [
-  ...RETIRED_FLASH_GENERATIONS.flatMap(
-    (gen) => EFFORTS.flatMap((e) => [
-      [`gemini-${gen}-flash-${e}`, `gemini-3.8-flash-${e}`],
-      [`gemini ${gen} flash (${e})`, `gemini-3.8-flash-${e}`]
-    ])
-  ),
-  ...["low", "high"].flatMap((e) => [
-    [`gemini-3.1-pro-${e}`, `gemini-4-argon-${e}`],
-    [`gemini 3.1 pro (${e})`, `gemini-4-argon-${e}`]
-  ]),
-  ["claude-sonnet-4-6", "claude-sonnet-5-5-medium"],
-  ["claude sonnet 4.6 (thinking)", "claude-sonnet-5-5-medium"],
-  ["claude-opus-4-6-thinking", "claude-opus-5-5-high"],
-  ["claude opus 4.6 (thinking)", "claude-opus-5-5-high"]
-];
-var RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
-var TIER_CANDIDATES = {
-  cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
-  mid: ["gemini-3.8-flash-high", "gemini-4-argon-low", "claude-sonnet-5-5-medium"],
-  frontier: ["gemini-4-argon-high", "claude-sonnet-5-5-high", "claude-opus-5-5-high"]
-};
-var PROSECUTORS = {
-  gemini: "gpt-oss-120b-medium",
-  claude: "gemini-4-argon-high",
-  "gpt-oss": "gemini-4-argon-high"
-};
-var PROSECUTOR_CANDIDATES = {
-  gemini: ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
-  claude: ["gemini-4-argon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
-  "gpt-oss": ["gemini-4-argon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
-};
-var ROLE_MODELS = {
-  coldstart: "gemini-3.8-flash-low",
-  premortem: "gemini-4-argon-high",
-  parallaxReader: "gemini-3.8-flash-medium",
-  parallaxJudge: "gemini-4-argon-high",
-  brainConvert: "gemini-4-argon-high",
-  probeDefault: "Gemini 3.8 Flash (Low)",
-  reviewFleetAlternates: ["gemini-3.8-flash-high", "gemini-4-argon-high"]
-};
-function resolveModelSlug(model) {
-  if (typeof model !== "string") return model;
-  const normalized = model.trim().toLowerCase();
-  if (Object.hasOwn(RETIRED_MODEL_MAP, normalized)) {
-    const resolved = RETIRED_MODEL_MAP[normalized];
-    console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
-    return resolved;
-  }
-  if (Object.hasOwn(MODEL_ALIASES, normalized)) return MODEL_ALIASES[normalized];
-  for (const list of Object.values(MODELS)) {
-    for (const slug of list) {
-      if (slug.toLowerCase() === normalized) return slug;
-    }
-  }
-  return model;
-}
-function poolOf(model) {
-  const slug = resolveModelSlug(model);
-  for (const [pool, models] of Object.entries(MODELS)) {
-    if (models.includes(slug)) return pool;
-  }
-  if (typeof slug !== "string") throw new Error(`unknown model: ${slug}`);
-  const normalized = slug.toLowerCase();
-  if (normalized.includes("flash")) return "gemini-flash";
-  if (normalized.includes("gemini")) return "gemini-pro";
-  if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus")) return "claude";
-  if (normalized.includes("gpt")) return "gpt-oss";
-  throw new Error(`unknown model: ${slug}`);
-}
-function familyOf(model) {
-  const pool = poolOf(model);
-  return pool.startsWith("gemini") ? "gemini" : pool;
-}
-function upstreamPoolOf(model) {
-  const pool = poolOf(model);
-  return pool.startsWith("gemini") ? "gemini" : "claude_gpt";
-}
-function tierCandidates(tier, poolHint) {
-  return (TIER_CANDIDATES[tier] ?? TIER_CANDIDATES.mid).filter((m) => {
-    if (!poolHint || poolHint === "auto") return true;
-    const fam = familyOf(m);
-    if (poolHint === "claude-gpt") return fam === "claude" || fam === "gpt-oss";
-    return fam === poolHint;
-  });
-}
-
 // lib/pools.mjs
+init_models();
 init_plugin_paths();
 import {
   writeFileSync as writeFileSync10,
@@ -10394,6 +10464,7 @@ var PoolSet = class {
 };
 
 // lib/agy.mjs
+init_models();
 var MAX_STREAM_LINE_BYTES = 1024 * 1024;
 var MAX_STREAM_TOTAL_BYTES = 50 * 1024 * 1024;
 var MAX_CONSECUTIVE_GARBAGE_BYTES = 5 * 1024 * 1024;
@@ -12724,6 +12795,7 @@ import { createHash as createHash5 } from "node:crypto";
 import { execFile as execFile6 } from "node:child_process";
 import { promisify as promisify5 } from "node:util";
 import { join as join22 } from "node:path";
+init_models();
 init_plugin_paths();
 var execFileP4 = promisify5(execFile6);
 var MERGE_FORECAST_TIMEOUT_MS = 3e4;
@@ -12878,6 +12950,7 @@ init_plugin_paths();
 import { readdirSync as readdirSync10, readFileSync as readFileSync18, statSync as statSync6, existsSync as existsSync21, writeFileSync as writeFileSync13, mkdirSync as mkdirSync12 } from "node:fs";
 import { join as join23, resolve as resolve11 } from "node:path";
 import { homedir as homedir5 } from "node:os";
+init_models();
 init_plugin_paths();
 var antigravityCliBrain = join23(homedir5(), ".gemini", "antigravity-cli", "brain");
 var antigravityBrain = join23(homedir5(), ".gemini", "antigravity", "brain");
@@ -13521,6 +13594,7 @@ function unlinkIntegrationJournal(repo) {
 }
 
 // lib/plan.mjs
+init_models();
 var execFileP5 = promisify6(execFile7);
 var PREMORTEM_MODEL = ROLE_MODELS.premortem;
 var PARALLAX_READER_MODEL = ROLE_MODELS.parallaxReader;
@@ -16644,6 +16718,7 @@ This is one item of a ${resolved.length}-target sweep. Touch only your target; i
 import { execFileSync as execFileSync13, execFile as execFile9 } from "node:child_process";
 import { promisify as promisify8 } from "node:util";
 import { randomUUID as randomUUID6 } from "node:crypto";
+init_models();
 init_plugin_paths();
 var execFileP7 = promisify8(execFile9);
 var LENSES = {
@@ -17088,6 +17163,7 @@ function bootstrap({
 
 // bin/agb.mjs
 init_plugin_paths();
+init_models();
 var rawArgs = process.argv.slice(2);
 var project;
 var filteredArgs = [];
