@@ -8659,19 +8659,16 @@ async function runDoctor(opts = {}) {
 
 // lib/models.mjs
 var MODELS = {
-  "gemini-flash": [
-    "gemini-3.8-flash-low",
-    "gemini-3.8-flash-medium",
-    "gemini-3.8-flash-high",
-    "gemini-3.7-flash-low",
-    "gemini-3.7-flash-medium",
-    "gemini-3.7-flash-high",
-    "gemini-3.6-flash-low",
-    "gemini-3.6-flash-medium",
-    "gemini-3.6-flash-high"
+  "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
+  "gemini-pro": ["gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"],
+  claude: [
+    "claude-sonnet-5-5-low",
+    "claude-sonnet-5-5-medium",
+    "claude-sonnet-5-5-high",
+    "claude-opus-5-5-low",
+    "claude-opus-5-5-medium",
+    "claude-opus-5-5-high"
   ],
-  "gemini-pro": ["gemini-3.1-pro-low", "gemini-3.1-pro-high"],
-  claude: ["claude-sonnet-4-6", "claude-opus-4-6-thinking"],
   "gpt-oss": ["gpt-oss-120b-medium"]
 };
 var ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
@@ -8679,88 +8676,69 @@ var MODEL_ALIASES = {
   "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
   "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
   "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
-  "gemini 3.7 flash (low)": "gemini-3.7-flash-low",
-  "gemini 3.7 flash (medium)": "gemini-3.7-flash-medium",
-  "gemini 3.7 flash (high)": "gemini-3.7-flash-high",
-  "gemini 3.6 flash (low)": "gemini-3.6-flash-low",
-  "gemini 3.6 flash (medium)": "gemini-3.6-flash-medium",
-  "gemini 3.6 flash (high)": "gemini-3.6-flash-high",
-  "gemini 3.5 flash (low)": "gemini-3.8-flash-low",
-  "gemini 3.5 flash (medium)": "gemini-3.8-flash-medium",
-  "gemini 3.5 flash (high)": "gemini-3.8-flash-high",
-  "gemini-3.5-flash-low": "gemini-3.8-flash-low",
-  "gemini-3.5-flash-medium": "gemini-3.8-flash-medium",
-  "gemini-3.5-flash-high": "gemini-3.8-flash-high",
-  "gemini 3.1 pro (low)": "gemini-3.1-pro-low",
-  "gemini 3.1 pro (high)": "gemini-3.1-pro-high",
-  "claude sonnet 4.6 (thinking)": "claude-sonnet-4-6",
-  "claude opus 4.6 (thinking)": "claude-opus-4-6-thinking",
+  "gemini 4 argon (low)": "gemini-4-argon-low",
+  "gemini 4 argon (medium)": "gemini-4-argon-medium",
+  "gemini 4 argon (high)": "gemini-4-argon-high",
+  "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
+  "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
+  "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
+  "claude opus 5.5 (low)": "claude-opus-5-5-low",
+  "claude opus 5.5 (medium)": "claude-opus-5-5-medium",
+  "claude opus 5.5 (high)": "claude-opus-5-5-high",
   "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
 };
-var RETIRED_35_MAP = {
-  "gemini-3.5-flash-low": "gemini-3.8-flash-low",
-  "gemini-3.5-flash-medium": "gemini-3.8-flash-medium",
-  "gemini-3.5-flash-high": "gemini-3.8-flash-high",
-  "gemini 3.5 flash (low)": "gemini-3.8-flash-low",
-  "gemini 3.5 flash (medium)": "gemini-3.8-flash-medium",
-  "gemini 3.5 flash (high)": "gemini-3.8-flash-high"
-};
+var RETIRED_FLASH_GENERATIONS = ["3.5", "3.6", "3.7"];
+var EFFORTS = ["low", "medium", "high"];
+var retiredEntries = [
+  ...RETIRED_FLASH_GENERATIONS.flatMap(
+    (gen) => EFFORTS.flatMap((e) => [
+      [`gemini-${gen}-flash-${e}`, `gemini-3.8-flash-${e}`],
+      [`gemini ${gen} flash (${e})`, `gemini-3.8-flash-${e}`]
+    ])
+  ),
+  ...["low", "high"].flatMap((e) => [
+    [`gemini-3.1-pro-${e}`, `gemini-4-argon-${e}`],
+    [`gemini 3.1 pro (${e})`, `gemini-4-argon-${e}`]
+  ]),
+  ["claude-sonnet-4-6", "claude-sonnet-5-5-medium"],
+  ["claude sonnet 4.6 (thinking)", "claude-sonnet-5-5-medium"],
+  ["claude-opus-4-6-thinking", "claude-opus-5-5-high"],
+  ["claude opus 4.6 (thinking)", "claude-opus-5-5-high"]
+];
+var RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
 var TIER_CANDIDATES = {
-  cheap: [
-    "gemini-3.8-flash-low",
-    "gemini-3.8-flash-medium",
-    "gemini-3.7-flash-low",
-    "gemini-3.6-flash-low",
-    "gemini-3.6-flash-medium"
-  ],
-  mid: [
-    "gemini-3.8-flash-high",
-    "gemini-3.7-flash-medium",
-    "gemini-3.7-flash-high",
-    "gemini-3.6-flash-high",
-    "gemini-3.1-pro-low",
-    "claude-sonnet-4-6"
-  ],
-  frontier: [
-    "gemini-3.1-pro-high",
-    "claude-sonnet-4-6",
-    "claude-opus-4-6-thinking"
-  ]
+  cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
+  mid: ["gemini-3.8-flash-high", "gemini-4-argon-low", "claude-sonnet-5-5-medium"],
+  frontier: ["gemini-4-argon-high", "claude-sonnet-5-5-high", "claude-opus-5-5-high"]
 };
 var PROSECUTORS = {
   gemini: "gpt-oss-120b-medium",
-  claude: "gemini-3.1-pro-high",
-  "gpt-oss": "gemini-3.1-pro-high"
+  claude: "gemini-4-argon-high",
+  "gpt-oss": "gemini-4-argon-high"
 };
 var PROSECUTOR_CANDIDATES = {
-  gemini: ["gpt-oss-120b-medium", "claude-sonnet-4-6"],
-  claude: ["gemini-3.1-pro-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
-  "gpt-oss": ["gemini-3.1-pro-high", "gemini-3.8-flash-high", "claude-sonnet-4-6"]
+  gemini: ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
+  claude: ["gemini-4-argon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
+  "gpt-oss": ["gemini-4-argon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
 };
 var ROLE_MODELS = {
   coldstart: "gemini-3.8-flash-low",
-  premortem: "gemini-3.1-pro-high",
+  premortem: "gemini-4-argon-high",
   parallaxReader: "gemini-3.8-flash-medium",
-  parallaxJudge: "gemini-3.1-pro-high",
-  brainConvert: "gemini-3.1-pro-high",
+  parallaxJudge: "gemini-4-argon-high",
+  brainConvert: "gemini-4-argon-high",
   probeDefault: "Gemini 3.8 Flash (Low)",
-  reviewFleetAlternates: ["gemini-3.8-flash-high", "gemini-3.1-pro-high"]
+  reviewFleetAlternates: ["gemini-3.8-flash-high", "gemini-4-argon-high"]
 };
 function resolveModelSlug(model) {
   if (typeof model !== "string") return model;
   const normalized = model.trim().toLowerCase();
-  if (RETIRED_35_MAP[normalized]) {
-    const resolved = RETIRED_35_MAP[normalized];
+  if (RETIRED_MODEL_MAP[normalized]) {
+    const resolved = RETIRED_MODEL_MAP[normalized];
     console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
     return resolved;
   }
-  if (MODEL_ALIASES[normalized]) {
-    const resolved = MODEL_ALIASES[normalized];
-    if (normalized.includes("3.5")) {
-      console.warn(`[agb] Warning: model '${model}' is retired upstream; remapped to '${resolved}'.`);
-    }
-    return resolved;
-  }
+  if (MODEL_ALIASES[normalized]) return MODEL_ALIASES[normalized];
   for (const list of Object.values(MODELS)) {
     for (const slug of list) {
       if (slug.toLowerCase() === normalized) return slug;

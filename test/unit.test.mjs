@@ -87,16 +87,14 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.equal(poolOf('gemini-3.8-flash-low'), 'gemini-flash');
   assert.equal(poolOf('gemini-3.8-flash-medium'), 'gemini-flash');
   assert.equal(poolOf('gemini-3.8-flash-high'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.7-flash-low'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.7-flash-medium'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.7-flash-high'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.6-flash-low'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.6-flash-medium'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.6-flash-high'), 'gemini-flash');
+  assert.equal(poolOf('gemini-4-argon-low'), 'gemini-pro');
+  assert.equal(poolOf('gemini-4-argon-medium'), 'gemini-pro');
+  assert.equal(poolOf('gemini-4-argon-high'), 'gemini-pro');
+  assert.equal(poolOf('claude-sonnet-5-5-low'), 'claude');
+  assert.equal(poolOf('claude-opus-5-5-high'), 'claude');
   assert.equal(familyOf('gemini-3.8-flash-high'), 'gemini');
-  assert.equal(familyOf('gemini-3.7-flash-low'), 'gemini');
-  assert.equal(familyOf('gemini-3.6-flash-medium'), 'gemini');
-  assert.equal(familyOf('claude-sonnet-4-6'), 'claude');
+  assert.equal(familyOf('gemini-4-argon-low'), 'gemini');
+  assert.equal(familyOf('claude-sonnet-5-5-medium'), 'claude');
   assert.equal(familyOf('gpt-oss-120b-medium'), 'gpt-oss');
   // test fuzzy/prefix fallback matching
   assert.equal(poolOf('gemini-1.5-flash-custom'), 'gemini-flash');
@@ -112,30 +110,30 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.throws(() => poolOf(123), /unknown model: 123/);
 });
 
-test('resolveModelSlug: maps 3.5 legacy models to 3.8 and resolves display aliases', () => {
+test('resolveModelSlug: maps retired models to live ones and resolves display aliases', () => {
   assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-3.8-flash-low');
   assert.equal(resolveModelSlug('gemini-3.5-flash-medium'), 'gemini-3.8-flash-medium');
   assert.equal(resolveModelSlug('gemini-3.5-flash-high'), 'gemini-3.8-flash-high');
   assert.equal(resolveModelSlug('Gemini 3.5 Flash (Low)'), 'gemini-3.8-flash-low');
   assert.equal(resolveModelSlug('Gemini 3.8 Flash (High)'), 'gemini-3.8-flash-high');
-  assert.equal(resolveModelSlug('Gemini 3.7 Flash (Medium)'), 'gemini-3.7-flash-medium');
-  assert.equal(resolveModelSlug('Gemini 3.6 Flash (Low)'), 'gemini-3.6-flash-low');
-  assert.equal(resolveModelSlug('Claude Sonnet 4.6 (Thinking)'), 'claude-sonnet-4-6');
+  assert.equal(resolveModelSlug('Gemini 3.7 Flash (Medium)'), 'gemini-3.8-flash-medium');
+  assert.equal(resolveModelSlug('Gemini 3.6 Flash (Low)'), 'gemini-3.8-flash-low');
+  assert.equal(resolveModelSlug('Claude Sonnet 4.6 (Thinking)'), 'claude-sonnet-5-5-medium');
+  assert.equal(resolveModelSlug('Claude Sonnet 5.5 (Medium)'), 'claude-sonnet-5-5-medium');
 });
 
 test('tierCandidates: filters by pool_hint including claude-gpt alias', () => {
   const cheapGemini = tierCandidates('cheap', 'gemini');
   assert.ok(cheapGemini.includes('gemini-3.8-flash-low'));
-  assert.ok(cheapGemini.includes('gemini-3.7-flash-low'));
-  assert.ok(cheapGemini.includes('gemini-3.6-flash-low'));
+  assert.ok(cheapGemini.includes('gemini-3.8-flash-medium'));
 
   const frontierClaude = tierCandidates('frontier', 'claude');
-  assert.ok(frontierClaude.includes('claude-sonnet-4-6'));
-  assert.ok(!frontierClaude.includes('gemini-3.1-pro-high'));
+  assert.ok(frontierClaude.includes('claude-sonnet-5-5-high'));
+  assert.ok(!frontierClaude.includes('gemini-4-argon-high'));
 
   const frontierClaudeGpt = tierCandidates('frontier', 'claude-gpt');
-  assert.ok(frontierClaudeGpt.includes('claude-sonnet-4-6'));
-  assert.ok(!frontierClaudeGpt.includes('gemini-3.1-pro-high'));
+  assert.ok(frontierClaudeGpt.includes('claude-sonnet-5-5-high'));
+  assert.ok(!frontierClaudeGpt.includes('gemini-4-argon-high'));
 });
 
 test('runAgy: success round-trip via fake binary', async () => {
@@ -279,12 +277,12 @@ test('PoolSet.route: reservation spreads concurrent dispatches across pools', ()
   assert.equal(pools.route('mid'), 'gemini-3.8-flash-high');
   // Second mid ticket (no slot acquired yet — the bug case) must NOT pick
   // claude again; reservation pushes it to the idle gemini-pro pool.
-  assert.equal(pools.route('mid'), 'gemini-3.1-pro-low');
+  assert.equal(pools.route('mid'), 'gemini-4-argon-low');
   // pool_hint still constrains family (but both are gemini now, so it falls back to load ratio: 1/8 < 1/4)
   assert.equal(pools.route('mid', 'gemini'), 'gemini-3.8-flash-high');
   // unroute frees the assignment so the pool rebalances.
-  pools.unroute('gemini-3.1-pro-low');
-  pools.unroute('gemini-3.1-pro-low');
+  pools.unroute('gemini-4-argon-low');
+  pools.unroute('gemini-4-argon-low');
   assert.equal(pools.reserved['gemini-pro'], 0);
 });
 
