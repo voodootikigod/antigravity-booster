@@ -11,7 +11,7 @@ import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
 import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, assertNoLegacyTicketStore, detectTicketStoreBackend, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, execAuthenticatedAdlc, spawnAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
-import { compilePlan } from '../lib/plan.mjs';
+import { compilePlan, projectionErrorIsFatal } from '../lib/plan.mjs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
@@ -437,6 +437,15 @@ test('round-trip: a successful compilePlan writes a projection adlc coldstart ac
     rmSync(brainDir, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });
   }
+});
+
+test('compilePlan: only a legacy ticket store is fatal in the projection catch; other projection errors stay warnings', () => {
+  const legacy = Object.assign(new Error('legacy'), { code: 'LEGACY_TICKET_STORE' });
+  assert.equal(projectionErrorIsFatal(legacy), true);
+  assert.equal(projectionErrorIsFatal(new Error('disk full')), false);
+  assert.equal(projectionErrorIsFatal(Object.assign(new Error('x'), { code: 'EACCES' })), false);
+  assert.equal(projectionErrorIsFatal(null), false);
+  assert.equal(projectionErrorIsFatal(undefined), false);
 });
 
 test('compilePlan: a legacy tickets.json is refused before any brain or model work', async () => {

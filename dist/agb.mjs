@@ -14264,6 +14264,9 @@ async function parallaxEdges(plan, {
     }
   }));
 }
+function projectionErrorIsFatal(err) {
+  return err?.code === "LEGACY_TICKET_STORE";
+}
 async function compilePlan(idOrPrefix, {
   repo,
   gate,
@@ -14371,6 +14374,7 @@ async function compilePlan(idOrPrefix, {
         log2(`plan: merge-forecast flagged ${forecast.gateFailures.length} scheduling risk(s) (advisory, not a compile blocker): ${forecast.gateFailures.join("; ")}`);
       }
     } catch (err) {
+      if (projectionErrorIsFatal(err)) throw err;
       log2(`plan: warning \u2014 could not write the ADLC ticket store projection to ${repo}: ${err.message}`);
     }
   }
