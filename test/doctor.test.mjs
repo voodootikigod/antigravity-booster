@@ -281,7 +281,7 @@ test('resolveAdlcBinary: fails when package version is below floor', () => {
 test('checkAdlcBinary: passes on current repo with local @adlc/cli', async () => {
   const res = await checkAdlcBinary({ cwd: process.cwd() });
   assert.equal(res.level, 'pass');
-  assert.match(res.detail, /^v1.12\./);
+  assert.match(res.detail, /^v1\.12\./);
 });
 
 test('checkAdlcBinary: fails when local @adlc/cli fails package manifest authentication', async () => {
