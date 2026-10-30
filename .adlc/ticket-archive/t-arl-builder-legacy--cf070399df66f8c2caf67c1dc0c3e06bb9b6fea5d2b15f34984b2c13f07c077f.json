@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T11:08:20.901Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "4d7f755d0dbf78f889c7921f6f1d0fc95341baea4bfa64f4f96b635b0932e2e3",
+    "ticketHash": "f3910075d731b786fbda9019e59a0dfe2b79c1af7b0d89b75f9f5668b7b897bd",
+    "version": 1
+  },
   "body": "Adversarial review round 8 (codex): when the retire ticket dropped the tickets.json exclusion from staging, nothing rejects a legacy .adlc/tickets.json that a builder creates or force-adds, and an empty ticket scope skips the scope check, so the candidate can advance main with both stores present and the next run fails closed. Fix in lib/scheduler.mjs verifyScopeAndAntiNoOp: any changed path (including rename/copy src and dest, and deletions) equal to .adlc/tickets.json is rejected with kind scope_violation and a LEGACY_TICKET_STORE message, before the rail and scope checks, independent of ticket scope. Add regression tests in test/git-sandbox-candidate-isolation.test.mjs (or the nearest verifyScopeAndAntiNoOp suite): a candidate adding .adlc/tickets.json with an empty scope and with a matching broad scope is rejected, an ordinary change still passes. Acceptance: npm test green; new tests fail without the fix; rails-guard clean for lib/lock.mjs and lib/gates.mjs.",
+  "completed": true,
   "edges": [],
   "id": "t-arl-builder-legacy",
   "rails": [

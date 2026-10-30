@@ -28,7 +28,8 @@ The modernization audit is fully implemented as a standalone, zero-dependency No
 
 ```bash
 # Universal cross-platform runner (Linux, macOS, Windows PowerShell / CMD)
-node skills/modernize/scripts/audit.mjs [TARGET_ADLC_VERSION] [PINNED_ADLC_REF] [TARGET_AGY_VERSION] [PINNED_AGY_REF]
+node skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
+# the two target versions are required (no stale default), e.g.: audit.mjs 1.12.0 "" 1.4.7
 ```
 
 ### The 5 Automated Audit Stages

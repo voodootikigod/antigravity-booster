@@ -73,6 +73,7 @@ const REPO_WITH_NM = (() => {
 // throwaway key) with the registry digests of the published @adlc/cli@1.12.0
 // tarball and the sha256 of the pinned changelog fixture, never the real store.
 const AUDIT_ADLC_TARGET = '1.12.0';
+const AUDIT_AGY_TARGET = '1.2.8';
 const AUDIT_TEST_KEY = 'agb-test-only-admin-key';
 function auditTrustEnv() {
   const home = makeTempDir('agb-mod-trust-home-');
@@ -92,7 +93,7 @@ test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
   const trust = auditTrustEnv();
   let out;
   try {
-    out = execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET], {
+    out = execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
       cwd: REPO_WITH_NM,
       env: trust.env,
       encoding: 'utf8',
@@ -112,6 +113,21 @@ test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
   assert.match(out, /All checks PASSED/);
 });
 
+test('Modernize Skill: audit.mjs refuses to run without explicit release targets', () => {
+  for (const args of [[], ['1.12.0'], ['1.12.0', '', '']]) {
+    assert.throws(
+      () => execFileSync(process.execPath, [AUDIT_SCRIPT, ...args], {
+        cwd: join(import.meta.dirname, '..'),
+        env: { ...process.env, ADLC_TARGET_VERSION: '', AGY_TARGET_VERSION: '', AGB_AGY_BIN: FAKE_AGY },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+      (err) => err.status === 1 && /explicit release targets/.test(String(err.stderr)) && /trust-anchor\.mjs/.test(String(err.stderr)),
+      `args ${JSON.stringify(args)} must be refused`,
+    );
+  }
+});
+
 test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical containment breach)', () => {
   const tempRepo = makeTempDir('agb-symlink-test-');
   const targetAdlc = makeTempDir('agb-target-adlc-');
@@ -121,7 +137,7 @@ test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical co
 
     assert.throws(
       () => {
-        execFileSync(process.execPath, [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
           cwd: tempRepo,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -142,7 +158,7 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   // Spawn two concurrent audit scripts; they must serialize cleanly without corruption
   const trust = auditTrustEnv();
   const p1 = new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
       cwd: REPO_WITH_NM,
       env: trust.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -157,7 +173,7 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   });
 
   const p2 = new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
       cwd: REPO_WITH_NM,
       env: trust.env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -199,7 +215,7 @@ test('Modernize Skill: audit.mjs fails closed if agy probe exits with nonzero st
   try {
     assert.throws(
       () => {
-        execFileSync(process.execPath, [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
           cwd: join(import.meta.dirname, '..'),
           env: { ...process.env, AGB_AGY_BIN: badAgy },
           encoding: 'utf8',
@@ -236,7 +252,7 @@ exit 0
   try {
     assert.throws(
       () => {
-        execFileSync(process.execPath, [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
           cwd: join(import.meta.dirname, '..'),
           env: { ...process.env, AGB_AGY_BIN: incompleteAgy },
           encoding: 'utf8',

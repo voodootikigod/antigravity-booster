@@ -1,0 +1,17 @@
+{
+  "body": "Owner decision (after adversarial review rounds 2/5/9): audit.mjs must not silently default to the previous release. A run without an ADLC target (argv[2] / ADLC_TARGET_VERSION) and an agy target (argv[4] / AGY_TARGET_VERSION) exits 1 before any probing, with a usage message that names the 1.12.0 / 1.4.7 command and the trust-anchor helper. The pinned refs keep their derived defaults. Update skills/modernize/SKILL.md usage text, sync mirrors with npm run skills:sync, and update test/modernize-skill.test.mjs so every audit invocation passes explicit targets (the pipeline tests keep their 1.12.0 ADLC and 1.2.8 agy fixtures) and add a test that a no-target run is refused. Acceptance: npm test green; the new test fails without the change.",
+  "edges": [],
+  "id": "t-arl-audit-explicit-targets",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "skills/modernize/scripts/audit.mjs",
+    "skills/modernize/SKILL.md",
+    ".claude/skills/modernize/**",
+    ".agents/skills/modernize/**",
+    "test/modernize-skill.test.mjs"
+  ],
+  "title": "Modernize audit requires explicit release targets"
+}

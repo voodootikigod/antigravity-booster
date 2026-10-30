@@ -12,7 +12,7 @@
  *   Stage 5: Cryptographic Provenance & Release Digest Verification
  *
  * Usage:
- *   node skills/modernize/scripts/audit.mjs [TARGET_ADLC_VERSION] [PINNED_ADLC_REF] [TARGET_AGY_VERSION] [PINNED_AGY_REF]
+ *   node skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
  */
 
 import fs from 'node:fs';
@@ -23,9 +23,20 @@ import zlib from 'node:zlib';
 import cp from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const TARGET_ADLC_VERSION = process.argv[2] || process.env.ADLC_TARGET_VERSION || '1.11.1';
-const PINNED_ADLC_REF = process.argv[3] || process.env.ADLC_PINNED_REF || '902f5a6b189ffaa0119a6d47d4e56574fbcda712';
-const TARGET_AGY_VERSION = process.argv[4] || process.env.AGY_TARGET_VERSION || '1.2.8';
+const TARGET_ADLC_VERSION = process.argv[2] || process.env.ADLC_TARGET_VERSION;
+const TARGET_AGY_VERSION = process.argv[4] || process.env.AGY_TARGET_VERSION;
+if (!TARGET_ADLC_VERSION || !TARGET_AGY_VERSION) {
+  // No silent default: auditing a stale release would certify the wrong baseline.
+  console.error([
+    'FATAL: the audit needs explicit release targets (ADLC and agy versions).',
+    'Usage: node skills/modernize/scripts/audit.mjs <ADLC_VERSION> [PINNED_ADLC_REF] <AGY_VERSION> [PINNED_AGY_REF]',
+    'Example: node skills/modernize/scripts/audit.mjs 1.12.0 "" 1.4.7',
+    'Stage 5 needs an operator-signed trust anchor for each target: run skills/modernize/scripts/trust-anchor.mjs first (dry run, then --write).',
+  ].join('\n'));
+  process.exit(1);
+}
+// 1.11.1 keeps its recorded commit; any other target resolves its release tag, never another release's commit.
+const PINNED_ADLC_REF = process.argv[3] || process.env.ADLC_PINNED_REF || (TARGET_ADLC_VERSION === '1.11.1' ? '902f5a6b189ffaa0119a6d47d4e56574fbcda712' : `v${TARGET_ADLC_VERSION}`);
 const PINNED_AGY_REF = process.argv[5] || process.env.AGY_PINNED_REF || `v${TARGET_AGY_VERSION}`;
 
 const IMMUTABLE_AGY_CHANGELOG_SHA256 = '52da0789b7fe6eb634d5dbf3288b51b600d5401a1374c415a83b8e99d70951e3';
