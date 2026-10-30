@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T00:36:34.720Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "517b2648e0989eeb129acd7691c67bca0ba12effb67db70a9b2024ed8ea7eb4e",
+    "ticketHash": "52825d75ec5b16557ea7f6f9397319de283caf04268582f74f71e5d4f7c20869",
+    "version": 1
+  },
   "body": "In lib/models.mjs: add gemini-4-argon-{low,medium,high} to the gemini-pro bucket and claude-{opus,sonnet}-5-5-{low,medium,high} to the claude bucket; remove gemini-3.7-flash-*, gemini-3.6-flash-*, gemini-3.1-pro-*, claude-sonnet-4-6, claude-opus-4-6-thinking from MODELS. Replace RETIRED_35_MAP with a generic RETIRED_MODEL_MAP (3.5 -> 3.8 flash, 3.7/3.6 -> 3.8 flash, 3.1-pro -> gemini-4-argon, claude-sonnet-4-6 -> claude-sonnet-5-5-medium, claude-opus-4-6-thinking -> claude-opus-5-5-high) and keep resolveModelSlug warning on remap. Re-point TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES and ROLE_MODELS to live slugs while keeping prosecutor/builder family independence. Update test/fixtures/fake-agy to emit the live catalog and update the registry/pools/unit tests, adding a test that every default role, tier and prosecutor slug is a member of ALL_MODELS and that every retired slug resolves to a live one. Acceptance: npm test green; no default references a slug absent from `agy models`.",
+  "completed": true,
   "edges": [
     {
       "to": "t-doctor-catalog-drift"
@@ -18,7 +27,10 @@
     "test/models-registry.test.mjs",
     "test/pools.test.mjs",
     "test/unit.test.mjs",
-    "test/fixtures/fake-agy"
+    "test/fixtures/fake-agy",
+    "test/review.test.mjs",
+    "test/models-live-catalog.test.mjs",
+    "dist/agb.mjs"
   ],
   "title": "Refresh model catalog to live agy 1.4.7 (Argon, Claude 5.5) and retire dead slugs"
 }
