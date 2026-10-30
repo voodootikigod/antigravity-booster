@@ -73,6 +73,17 @@ describe('trust-anchor: parity with audit.mjs', () => {
     assert.equal(extractAgySection(md, '1.4.7'), '## 1.4.7\nnew');
   });
 
+  it('extractAgySection requires an exact version token, in both copies', () => {
+    const auditFnRef = auditFn('extractAgySection');
+    const longer = '# Log\n\n## 1.4.70\nwrong\n\n## 1.4.7.1\nalso wrong\n\n## 1.4.6\nold\n';
+    const bracketed = '# Log\n\n## [v1.4.7] - 2026-10-01\nright\n\n## 1.4.70\nwrong\n';
+    for (const fn of [extractAgySection, auditFnRef]) {
+      assert.equal(fn(longer, '1.4.7'), null, 'a 1.4.70 or 1.4.7.1 heading is not 1.4.7');
+      assert.equal(fn(bracketed, '1.4.7'), '## [v1.4.7] - 2026-10-01\nright');
+      assert.equal(fn('<section id="v1.4.70">x</section>', '1.4.7'), null);
+    }
+  });
+
   it('computeDirectoryTreeSha matches audit.mjs and rejects symlinks', () => {
     const dir = tmpDir();
     fs.mkdirSync(path.join(dir, 'lib'));
