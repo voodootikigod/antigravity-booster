@@ -256,6 +256,30 @@ test('verifyScopeAndAntiNoOp: rejects multi-hop symlink escaping containment', (
   }
 });
 
+test('verifyScopeAndAntiNoOp: a builder-introduced legacy .adlc/tickets.json is rejected whatever the ticket scope', () => {
+  const repo = makeTestRepo();
+  try {
+    const baseSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    const wt = createWorktree(repo, 'T1', 'main');
+    setupAttemptGitDatabase(repo, wt, 'main');
+
+    mkdirSync(join(wt, '.adlc'), { recursive: true });
+    writeFileSync(join(wt, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
+    writeFileSync(join(wt, 'T1.txt'), 'hello T1\n');
+    execFileSync('git', ['add', '-f', '.adlc/tickets.json', 'T1.txt'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'add T1 and a legacy store'], { cwd: wt });
+
+    for (const scope of [[], ['**'], ['.adlc/**', 'T1.txt']]) {
+      const res = verifyScopeAndAntiNoOp(repo, wt, baseSha, { id: 'T1', scope, rails: [] });
+      assert.equal(res.ok, false, `scope ${JSON.stringify(scope)} must not admit the legacy store`);
+      assert.equal(res.kind, 'scope_violation');
+      assert.match(res.error, /LEGACY_TICKET_STORE/);
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('verifyRootGitIntegrity: rejects mutations to unrelated scheduler refs and invalid commit provenance', () => {
   const repo = makeTestRepo();
   try {

@@ -15265,6 +15265,9 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
     for (const p of pathsToCheck) {
       if (!p) continue;
       changedPaths.push(p);
+      if (p === ".adlc/tickets.json") {
+        return { ok: false, kind: "scope_violation", error: "LEGACY_TICKET_STORE: a builder may not touch the retired .adlc/tickets.json; run `adlc ticket store migrate` outside the build" };
+      }
       const norm = path2.posix.normalize(p);
       if (norm !== p || p.startsWith("/") || p.startsWith("\\") || p.split("/").some((s) => s === "." || s === "..")) {
         return { ok: false, kind: "scope_violation", error: `Unnormalized or traversal path: ${p}` };
