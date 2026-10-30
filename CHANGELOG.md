@@ -20,6 +20,9 @@ rather than enumerate.
 
 ### Changed
 
+- **BREAKING: the legacy single-file `.adlc/tickets.json` ticket backend is retired.** `agb` now writes only the `.adlc/tickets/` directory store. A target repo that still has `.adlc/tickets.json` (alone, beside the directory store, or as a symlink) makes `agb plan` and `agb run` fail with `LEGACY_TICKET_STORE` before anything is changed, and `agb doctor` reports `Ticket Store: fail`. Nothing is deleted or rewritten; run `adlc ticket store migrate` and commit the result. The `.gitignore` stanza no longer un-ignores `.adlc/tickets.json`, and a stray `tickets.json` now counts as a dirty tree. The CI rails guard and the in-session policy guard still protect and reject the legacy file.
+- **Model catalog refreshed for agy 1.4.7**: `lib/models.mjs` now holds Gemini 3.8 Flash, Gemini 4 Argon, Claude Sonnet 5.5, Claude Opus 5.5 (frontier tier only) and GPT-OSS 120B. Retired Gemini 3.5/3.6/3.7 Flash, Gemini 3.1 Pro and Claude 4.6 names remap like-for-like with a warning. `agb doctor` gains a `Model catalog` row (pass or warn only) that compares the table to `agy models`.
+
 - MCP `agb_run` no longer advertises a `concurrency` parameter; a call that supplies one now returns a tool error naming it instead of being silently ignored (`agb run` has no concurrency flag; use the plan's `caps`).
 
 ### Fixed

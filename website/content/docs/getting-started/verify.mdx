@@ -25,6 +25,7 @@ The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/ant
 | `Node.js` | pass / fail | `Upgrade Node.js to v22.19.0 or newer.` | [L20-L24](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L20-L24) |
 | `agy CLI` | pass / fail | Too old: `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` Unparseable version: `Ensure agy outputs standard SemVer version string.` Missing: `Install Google Antigravity CLI and ensure it is on PATH.` | [C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26), [L35-L54](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L35-L54) |
 | `agy Auth` | pass / fail | ``Run `agy login` to authenticate.`` | [L71-L75](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L71-L75) |
+| `Model catalog` | pass / warn | Drift: ``Update MODELS in lib/models.mjs to match `agy models`.`` Listing failed: ``Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor.`` Empty listing: ``Run `agy models`; if it prints models, report the output format change.`` Never fails the run. | `lib/doctor.mjs` |
 | `adlc-antigravity plugin` | pass / warn / fail | See [plugin states](#adlc-antigravity-plugin) | [L151-L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L166) |
 | `adlc CLI` | pass / warn / fail | See [adlc CLI](#adlc-cli) | [L315-L354](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L315-L354) |
 | `Sandbox` | pass / fail | See [Sandbox](#sandbox) | [L1086-L1146](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1086-L1146) |
@@ -100,12 +101,13 @@ The other probe kinds are `sandbox_exec_unavailable` (macOS), `powershell_missin
 
 | Detail | Level | Fix text |
 | --- | --- | --- |
-| `both legacy and directory stores` | fail | ``The plugin fails closed when both exist. Run `adlc ticket store migrate` (or remove .adlc/tickets.json).`` |
+| `legacy single-file store (retired)` | fail | ``agb no longer supports .adlc/tickets.json. Run `adlc ticket store migrate` and commit the result.`` |
+| `both legacy and directory stores` | fail | ``The legacy .adlc/tickets.json is retired and the plugin fails closed when both exist. Run `adlc ticket store migrate`, then remove .adlc/tickets.json.`` |
 | `orphaned directory store (no .store.json)` | warn | ``Likely an interrupted projection — the next `agb plan` recovers it, or run `adlc ticket doctor`.`` |
 | `none (created on first projection)` | pass | — |
 | `store corruption: ...` | fail | ``Run `adlc ticket doctor` to diagnose and repair ticket store issues.`` |
 
-The conflict is detected by `detectTicketStoreBackend`, which returns `'both'` when `.adlc/tickets/` and the legacy `.adlc/tickets.json` both exist ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L176)). The plugin treats that state as fail-closed, so resolve it before running anything.
+A legacy file is detected by `detectTicketStoreBackend`, which returns `'legacy'` for a lone `.adlc/tickets.json` (a symlink counts, even a dangling one) and `'both'` when `.adlc/tickets/` and the legacy file both exist ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L176)). `agb plan` and `agb run` throw `LEGACY_TICKET_STORE` for either state before changing anything, so resolve it before running anything.
 
 ## Next steps
 

@@ -65,7 +65,7 @@ Each conversion is checked by `validatePlan` plus the scope-overlap forecast. Th
 <Step>
 ### Project, route and forecast
 
-Only a plan with no blocking findings is published. The compiler writes it into the repository's ADLC ticket store (the `.adlc/tickets/` directory store, or legacy `.adlc/tickets.json` if that is the backend in use) so the `adlc-antigravity` rails-guard hook and the `adlc` CLI see the same active tickets. It then cross-checks tiers with `adlc model-router` and annotates `plan.concurrencyCap` with `adlc merge-forecast` ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L682-L712)). All three steps are best-effort: if `adlc` is missing or a write fails, a warning is logged and the compile still succeeds. `plan.json`, written by the CLI, stays the execution artifact; the ticket store is a generated view of it.
+Only a plan with no blocking findings is published. The compiler writes it into the repository's ADLC ticket store (the `.adlc/tickets/` directory store; a repo that still carries the retired single-file `.adlc/tickets.json` fails the compile with `LEGACY_TICKET_STORE` and the instruction to run `adlc ticket store migrate`) so the `adlc-antigravity` rails-guard hook and the `adlc` CLI see the same active tickets. It then cross-checks tiers with `adlc model-router` and annotates `plan.concurrencyCap` with `adlc merge-forecast` ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L682-L712)). All three steps are best-effort: if `adlc` is missing or a write fails, a warning is logged and the compile still succeeds. `plan.json`, written by the CLI, stays the execution artifact; the ticket store is a generated view of it.
 </Step>
 </Steps>
 

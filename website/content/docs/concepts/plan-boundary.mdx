@@ -49,7 +49,7 @@ Blocking findings get exactly **one** feedback re-conversion, then the gates run
 
 ### Projection and advisory tiers
 
-A blocking-free plan is projected into the ADLC ticket store (the `.adlc/tickets/` directory store, or the legacy `.adlc/tickets.json` in an unmigrated repo) so the plugin's rails hook and the `adlc` CLI see the same active tickets ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L198)). `adlc model-router` then cross-checks tiers and `adlc merge-forecast` sets `plan.concurrencyCap`. Both are advisory and degrade to a warning when unavailable ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L685-L704)).
+A blocking-free plan is projected into the ADLC ticket store (the `.adlc/tickets/` directory store; a repo with the retired `.adlc/tickets.json` is refused with `LEGACY_TICKET_STORE`) so the plugin's rails hook and the `adlc` CLI see the same active tickets ([lib/adlc-bridge.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/adlc-bridge.mjs#L198)). `adlc model-router` then cross-checks tiers and `adlc merge-forecast` sets `plan.concurrencyCap`. Both are advisory and degrade to a warning when unavailable ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L685-L704)).
 
 </Step>
 </Steps>
