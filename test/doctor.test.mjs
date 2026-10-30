@@ -186,14 +186,15 @@ test('checkTicketStore: reports the directory backend', async () => {
   }
 });
 
-test('checkTicketStore: reports the legacy backend', async () => {
+test('checkTicketStore: FAILS on the retired legacy backend with the migrate instruction', async () => {
   const d = mkdtempSync(join(tmpdir(), 'agb-test-store-legacy-'));
   try {
     mkdirSync(join(d, '.adlc'), { recursive: true });
     writeFileSync(join(d, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
     const res = await checkTicketStore({ cwd: d });
-    assert.equal(res.level, 'pass');
+    assert.equal(res.level, 'fail');
     assert.match(res.detail, /legacy/);
+    assert.match(res.fix, /adlc ticket store migrate/);
   } finally {
     rmSync(d, { recursive: true, force: true });
   }

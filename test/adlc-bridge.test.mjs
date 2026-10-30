@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, execAuthenticatedAdlc, spawnAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, assertNoLegacyTicketStore, detectTicketStoreBackend, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, execAuthenticatedAdlc, spawnAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
 import { compilePlan } from '../lib/plan.mjs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
@@ -224,33 +224,29 @@ test('writeAdlcTickets: re-projection removes stale shards from a prior projecti
   }
 });
 
-test('writeAdlcTickets: a legacy-only repo keeps its legacy tickets.json (1.x bridge)', () => {
+const T1 = [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }];
+
+test('writeAdlcTickets: a legacy-only repo fails closed with the migrate instruction and is left untouched', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   try {
     mkdirSync(join(repo, '.adlc'), { recursive: true });
     writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
-    const tickets = [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }];
-    const path = writeAdlcTickets(repo, tickets);
-    assert.equal(path, join(repo, '.adlc', 'tickets.json'));
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { tickets });
-    assert.ok(!existsSync(join(repo, '.adlc', 'tickets', '.store.json')), 'no directory store created beside the legacy file');
+    assert.throws(() => writeAdlcTickets(repo, T1), (e) => e.code === 'LEGACY_TICKET_STORE' && /adlc ticket store migrate/.test(e.message));
+    assert.equal(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'), '{ "tickets": [] }\n', 'legacy file not rewritten');
+    assert.ok(!existsSync(join(repo, '.adlc', 'tickets')), 'no directory store created beside the legacy file');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
 });
 
-test('writeAdlcTickets: when BOTH stores exist, the directory store wins and the legacy projection is removed', () => {
+test('writeAdlcTickets: when BOTH stores exist it fails closed and deletes nothing', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   try {
-    // Simulate the conflicted state the plugin fails closed on.
-    writeAdlcTickets(repo, [{ id: 'T1', title: 'a', body: 'x', scope: ['a'], rails: [], edges: [] }]);
+    writeAdlcTickets(repo, T1);
     writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
-    const path = writeAdlcTickets(repo, [{ id: 'T2', title: 'b', body: 'y', scope: ['b'], rails: [], edges: [] }]);
-    assert.equal(path, join(repo, '.adlc', 'tickets'));
-    assert.ok(!existsSync(join(repo, '.adlc', 'tickets.json')), 'legacy projection artifact removed — both-stores is a fail-closed state for the plugin');
-    const { tickets: loaded, errors } = loadTickets(join(repo, '.adlc', 'tickets.json'));
-    assert.deepEqual(errors, []);
-    assert.deepEqual(loaded.map((t) => t.id), ['T2']);
+    assert.throws(() => writeAdlcTickets(repo, [{ ...T1[0], id: 'T2' }]), (e) => e.code === 'LEGACY_TICKET_STORE' && /beside the directory store/.test(e.message));
+    assert.ok(existsSync(join(repo, '.adlc', 'tickets.json')), 'legacy file never silently deleted');
+    assert.deepEqual(readdirSync(join(repo, '.adlc', 'tickets')).filter((n) => n !== '.store.json').length, 1, 'directory store not rewritten');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -316,7 +312,7 @@ test('writeAdlcTickets: a symlink planted AT the shard name is unlinked, not wri
   }
 });
 
-test('writeAdlcTickets: a symlinked legacy tickets.json is unlinked, not written through', () => {
+test('writeAdlcTickets: a symlinked or dangling legacy tickets.json is refused and never written through', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   const victimDir = mkdtempSync(join(tmpdir(), 'agb-bridge-victim-'));
   try {
@@ -324,13 +320,28 @@ test('writeAdlcTickets: a symlinked legacy tickets.json is unlinked, not written
     writeFileSync(victim, 'precious\n');
     mkdirSync(join(repo, '.adlc'), { recursive: true });
     symlinkSync(victim, join(repo, '.adlc', 'tickets.json'));
-    const path = writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]);
+    assert.throws(() => writeAdlcTickets(repo, T1), (e) => e.code === 'LEGACY_TICKET_STORE');
     assert.equal(readFileSync(victim, 'utf8'), 'precious\n', 'symlink target untouched');
-    assert.ok(!lstatSync(path).isSymbolicLink(), 'legacy file is a regular file now');
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).tickets.map((t) => t.id), ['T1']);
+    assert.ok(lstatSync(join(repo, '.adlc', 'tickets.json')).isSymbolicLink(), 'symlink left in place');
+
+    rmSync(join(repo, '.adlc', 'tickets.json'));
+    symlinkSync(join(victimDir, 'missing.json'), join(repo, '.adlc', 'tickets.json'));
+    assert.equal(detectTicketStoreBackend(repo), 'legacy', 'a dangling symlink is still a legacy store');
+    assert.throws(() => writeAdlcTickets(repo, T1), (e) => e.code === 'LEGACY_TICKET_STORE');
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(victimDir, { recursive: true, force: true });
+  }
+});
+
+test('assertNoLegacyTicketStore: passes for none and directory stores', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  try {
+    assert.doesNotThrow(() => assertNoLegacyTicketStore(repo));
+    writeAdlcTickets(repo, T1);
+    assert.doesNotThrow(() => assertNoLegacyTicketStore(repo));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
 
@@ -425,6 +436,26 @@ test('round-trip: a successful compilePlan writes a projection adlc coldstart ac
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('round-trip: compilePlan on a repo with a legacy tickets.json fails closed, not as a warning', async () => {
+  const brainDir = makeBrainDir();
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-legacy-'));
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
+    await withFakeAgy({}, async () => {
+      await assert.rejects(
+        compilePlan('aaaa', { repo, brainDir, premortem: false }),
+        (e) => e.code === 'LEGACY_TICKET_STORE' && /adlc ticket store migrate/.test(e.message),
+      );
+    });
+    assert.equal(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'), '{ "tickets": [] }\n', 'legacy file untouched');
+    assert.ok(!existsSync(join(repo, '.adlc', 'tickets')), 'no directory store created beside the legacy file');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(brainDir, { recursive: true, force: true });
   }
 });
 

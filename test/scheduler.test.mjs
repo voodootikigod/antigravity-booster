@@ -574,39 +574,31 @@ test('runPlan: a repo with a COMMITTED directory store still integrates (project
   }
 });
 
-test('runPlan: a repo with a COMMITTED legacy tickets.json still integrates (projection discarded before rebase)', async () => {
+test('runPlan: a repo with a COMMITTED legacy tickets.json fails closed before any mutation', async () => {
   const repo = makeRepo();
   try {
-    // Same failure mode as the committed directory store, legacy backend: the
-    // worktree rail projection overwrites the TRACKED tickets.json (written in
-    // kind on legacy repos); commitAll excludes it, so without the pre-rebase
-    // discard it sits as an unstaged tracked change and `git rebase` refuses.
     const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
-    writeFileSync(join(repo, '.gitignore'),
-      '.worktrees/\n.booster/\n.adlc/*\n!.adlc/tickets.json\n!.adlc/tickets/\n!.adlc/tickets/**\n' +
-      '!.adlc/ticket-archive/\n!.adlc/ticket-archive/**\n!.adlc/specs/\n!.adlc/config.json\n');
     mkdirSync(join(repo, '.adlc'), { recursive: true });
-    writeFileSync(join(repo, '.adlc', 'tickets.json'), JSON.stringify({
-      tickets: [
-        { id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: [], edges: [] },
-        { id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'], rails: [], edges: [] },
-      ],
-    }, null, 2) + '\n');
-    g('add', '-A'); g('commit', '-qm', 'commit legacy ticket store');
+    const legacy = JSON.stringify({ tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: [], edges: [] }] }, null, 2) + '\n';
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), legacy);
+    g('add', '-f', '-A'); g('commit', '-qm', 'commit legacy ticket store');
+    const head = g('rev-parse', 'HEAD');
 
-    const report = await withEnv(
-      { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, AGB_SANDBOX_GATES: '0' },
-      () => runPlan({
-        repo,
-        gate: { test: 'true' },
-        tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'] }],
-      }, quiet)
+    await assert.rejects(
+      withEnv(
+        { AGB_AGY_BIN: FAKE_AGY, AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE, AGB_SANDBOX_GATES: '0' },
+        () => runPlan({
+          repo,
+          gate: { test: 'true' },
+          tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'] }],
+        }, quiet)
+      ),
+      (e) => e.code === 'LEGACY_TICKET_STORE' && /adlc ticket store migrate/.test(e.message),
     );
-    assert.deepEqual(Object.keys(report.failed), [], `nothing failed — ${JSON.stringify(report.failed)}`);
-    assert.equal(report.merged.length, 1);
-    const committed = JSON.parse(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'));
-    assert.equal(committed.tickets.length, 2, 'committed legacy store untouched on main');
-    assert.equal(g('status', '--porcelain').trim(), '', 'main tree clean after the run');
+    assert.equal(g('rev-parse', 'HEAD'), head, 'base ref not advanced');
+    assert.equal(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'), legacy, 'legacy file untouched');
+    assert.equal(g('status', '--porcelain').trim(), '', 'main tree clean');
+    assert.ok(!existsSync(join(repo, '.worktrees')), 'no worktree created');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -1162,17 +1154,17 @@ test('terminateProcessTree: kills child and all descendant processes in process 
   assert.equal(leaderAlive, false, 'leader process must be terminated');
 });
 
-test('isDirty: preserves leading space on porcelain output so unstaged edits to .adlc/tickets.json are ignored', () => {
+test('isDirty: preserves leading space on porcelain output so unstaged edits to .adlc/tickets/ shards are ignored', () => {
   const repo = makeRepo();
   try {
-    mkdirSync(join(repo, '.adlc'), { recursive: true });
-    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
-    execFileSync('git', ['add', '-f', '.adlc/tickets.json'], { cwd: repo });
-    execFileSync('git', ['commit', '-qm', 'add tickets.json'], { cwd: repo });
+    mkdirSync(join(repo, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets', 'T1.json'), '{}\n');
+    execFileSync('git', ['add', '-f', '.adlc/tickets/T1.json'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add ticket shard'], { cwd: repo });
 
-    // Modify tracked .adlc/tickets.json without staging -> porcelain line starts with " M .adlc/tickets.json"
-    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{"tickets":[{"id":"T1"}]}\n');
-    assert.equal(isDirty(repo), false, 'unstaged orchestrator projection edit to .adlc/tickets.json must not make repo dirty');
+    // Modify the tracked shard without staging -> porcelain line starts with " M .adlc/tickets/T1.json"
+    writeFileSync(join(repo, '.adlc', 'tickets', 'T1.json'), '{"id":"T1"}\n');
+    assert.equal(isDirty(repo), false, 'unstaged orchestrator projection edit to a ticket shard must not make repo dirty');
 
     // Modify tracked README.md -> must be dirty
     writeFileSync(join(repo, 'README.md'), 'changed\n');

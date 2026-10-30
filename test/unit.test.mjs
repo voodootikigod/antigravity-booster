@@ -547,10 +547,11 @@ test('worktrees: create → edit → commit → diff → merge lifecycle', () =>
     // Full canonical ADLC stanza: the directory ticket store, its archive, and
     // specs must all be un-ignored, matching `adlc ticket store migrate` and
     // the adlc-antigravity plugin's adlc-init.
-    for (const line of ['.adlc/*', '!.adlc/tickets.json', '!.adlc/tickets/', '!.adlc/tickets/**',
+    for (const line of ['.adlc/*', '!.adlc/tickets/', '!.adlc/tickets/**',
       '!.adlc/ticket-archive/', '!.adlc/ticket-archive/**', '!.adlc/specs/', '!.adlc/config.json']) {
       assert.ok(gi.split('\n').includes(line), `canonical stanza line present: ${line}`);
     }
+    assert.ok(!gi.split('\n').includes('!.adlc/tickets.json'), 'retired legacy file is no longer un-ignored');
     assert.match(g('log', '--oneline', '-1'), /gitignore agb working dirs/);
 
     const wt = createWorktree(dir, 'T9', 'main');
@@ -655,7 +656,7 @@ test('createWorktree: rejects symlinked .worktrees directory', () => {
   }
 });
 
-test('isDirty: returns false when untracked ticket store exists in .adlc/tickets/ or .adlc/tickets.json', () => {
+test('isDirty: ignores an untracked .adlc/tickets/ store but NOT a retired .adlc/tickets.json', () => {
   const { dir } = makeRepo();
   try {
     mkdirSync(join(dir, '.adlc', 'tickets'), { recursive: true });
@@ -664,7 +665,7 @@ test('isDirty: returns false when untracked ticket store exists in .adlc/tickets
     assert.equal(isDirty(dir), false, 'untracked directory ticket store must not make repo dirty');
 
     writeFileSync(join(dir, '.adlc', 'tickets.json'), '{}');
-    assert.equal(isDirty(dir), false, 'untracked legacy tickets.json must not make repo dirty');
+    assert.equal(isDirty(dir), true, 'a retired legacy tickets.json is no longer exempt from the dirty-tree guard');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
