@@ -7778,8 +7778,15 @@ async function agyModelsStdout({ env, home }) {
     args = ["-q", "/dev/null", cmd2, "models"];
     cmd2 = "script";
   }
-  const { stdout: stdout2 } = await execFileAsync(cmd2, args, { env, timeout: 15e3 });
-  return stdout2;
+  try {
+    const { stdout: stdout2 } = await execFileAsync(cmd2, args, { env, timeout: 15e3 });
+    return stdout2;
+  } catch (err) {
+    if (cmd2 !== "script") throw err;
+    const direct = env.AGB_AGY_BIN || resolveAgyBinary(home);
+    const { stdout: stdout2 } = await execFileAsync(direct, ["models"], { env, timeout: 15e3 });
+    return stdout2;
+  }
 }
 var ANSI_ESCAPE = /\u001b\[[0-9;?>]*[A-Za-z]/g;
 var MODEL_ROW = /^([a-z][a-z0-9.]*(?:-[a-z0-9.]+)+)(?:\t|\s{2,})\S/;
@@ -7800,7 +7807,7 @@ async function checkModelCatalog({ env = process.env, home = env.HOME || homedir
   try {
     live = parseAgyModels(await agyModelsStdout({ env, home }));
   } catch (err) {
-    return { name, level: "warn", detail: "could not list models", fix: "Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor." };
+    return { name, level: "warn", detail: `could not list models (${String(err?.message ?? err).split("\n")[0].slice(0, 120)})`, fix: "Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor." };
   }
   if (live.length === 0) {
     return { name, level: "warn", detail: "no models returned", fix: "Run `agy models`; if it prints models, report the output format change." };

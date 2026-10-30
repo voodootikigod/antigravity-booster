@@ -444,6 +444,13 @@ test('checkModelCatalog: passes against the live-catalog fixture', async () => {
   assert.strictEqual(res.fix, null);
 });
 
+test('checkModelCatalog: falls back to a direct run when the pty wrapper is unavailable', async () => {
+  const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
+  // No PATH entry holds `script`, so the pty run fails and the direct run must be used.
+  const res = await checkModelCatalog({ env: { AGB_AGY_BIN: FAKE_AGY, PATH: '/nonexistent' } });
+  assert.strictEqual(res.level, 'pass');
+});
+
 test('checkModelCatalog: warns and names drifted slugs in both directions', async () => {
   const { bin, dir } = fakeAgyModels([
     'Fetching available models...',
