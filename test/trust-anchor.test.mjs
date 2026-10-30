@@ -106,6 +106,26 @@ describe('trust-anchor: parity with audit.mjs', () => {
   });
 });
 
+describe('trust-anchor: tarball identity', () => {
+  const tgzOf = (name, version) => makeTgz({ 'package/package.json': JSON.stringify({ name, version }) });
+
+  it('digestTarball refuses a tarball of another version or package when a version is requested', () => {
+    assert.throws(() => digestTarball(tgzOf('@adlc/cli', '1.11.1'), '1.12.0'), /not @adlc\/cli@1\.12\.0/);
+    assert.throws(() => digestTarball(tgzOf('@adlc/core', '1.12.0'), '1.12.0'), /not @adlc\/cli@1\.12\.0/);
+    assert.ok(digestTarball(tgzOf('@adlc/cli', '1.12.0'), '1.12.0').adlcTarballSri);
+  });
+
+  it('audit.mjs enforces the same identity check on the unpacked archive', () => {
+    const check = auditFn('assertCliTarballIdentity');
+    const dir = tmpDir();
+    fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
+    assert.throws(() => check(dir, '1.12.0'), /not @adlc\/cli@1\.12\.0/);
+    assert.doesNotThrow(() => check(dir, '1.11.1'));
+    fs.rmSync(path.join(dir, 'package.json'));
+    assert.throws(() => check(dir, '1.12.0'), /no readable package\.json/);
+  });
+});
+
 describe('trust-anchor: store read/write', () => {
   it('writes mode 0600, round-trips, and verifies the signature', () => {
     const store = path.join(tmpDir(), 'sub', 'trusted_packages.json');
@@ -144,7 +164,7 @@ describe('trust-anchor: CLI', () => {
     const tgz = path.join(work, 'cli.tgz');
     fs.writeFileSync(agy, '## 1.4.7\nnotes\n\n## 1.4.6\nold\n');
     fs.writeFileSync(adlc, '# adlc changelog\n');
-    fs.writeFileSync(tgz, makeTgz({ 'package/package.json': '{}' }));
+    fs.writeFileSync(tgz, makeTgz({ 'package/package.json': '{"name":"@adlc/cli","version":"1.12.0"}' }));
     const args = ['--agy-version', '1.4.7', '--adlc-version', '1.12.0', '--agy-notes', agy, '--adlc-changelog', adlc, '--tarball', tgz];
     const run = (extra, env = {}) =>
       execFileSync(process.execPath, [HELPER, ...args, ...extra], {
@@ -152,7 +172,7 @@ describe('trust-anchor: CLI', () => {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-    return { home, run, store: path.join(home, '.adlc', 'trusted_packages.json') };
+    return { home, tgz, run, store: path.join(home, '.adlc', 'trusted_packages.json') };
   }
 
   it('dry run prints digests and writes nothing', () => {
@@ -160,6 +180,13 @@ describe('trust-anchor: CLI', () => {
     const out = run([]);
     assert.match(out, /sha256 [0-9a-f]{64}/);
     assert.match(out, /Dry run: nothing written/);
+    assert.equal(fs.existsSync(store), false);
+  });
+
+  it('refuses to attest a tarball that is not the requested ADLC version, and writes nothing', () => {
+    const { run, store, tgz } = setup();
+    fs.writeFileSync(tgz, makeTgz({ 'package/package.json': '{"name":"@adlc/cli","version":"1.11.1"}' }));
+    assert.throws(() => run(['--write', '--yes'], { ADLC_ADMIN_KEY: KEY }), /not @adlc\/cli@1\.12\.0/);
     assert.equal(fs.existsSync(store), false);
   });
 

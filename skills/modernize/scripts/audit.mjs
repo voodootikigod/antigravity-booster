@@ -81,6 +81,20 @@ async function fetchText(urlStr, timeoutMs = 15000) {
 }
 
 // Helper: Extract Antigravity changelog section without regex EOF vulnerabilities
+// The archive must really be @adlc/cli at the audited version; matching only a
+// digest would let a valid older tarball stand in for a newer release.
+function assertCliTarballIdentity(pkgDir, version) {
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
+  } catch (err) {
+    throw new Error(`FATAL: @adlc/cli tarball has no readable package.json: ${err.message}`);
+  }
+  if (manifest?.name !== '@adlc/cli' || manifest?.version !== version) {
+    throw new Error(`FATAL: tarball is ${manifest?.name}@${manifest?.version}, not @adlc/cli@${version}`);
+  }
+}
+
 function extractAgySection(raw, ver) {
   const escapedVer = ver.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const htmlMatch = raw.match(new RegExp(`<section[^>]*id=["\x27]v?${escapedVer}["\x27][\\s\\S]*?<\\/section>`, 'i'));
@@ -955,6 +969,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
       unpackTgz(tgzBuf, tempRefDir);
       const unpackedPkgDir = path.join(tempRefDir, 'package');
       const scanDir = fs.existsSync(unpackedPkgDir) ? unpackedPkgDir : tempRefDir;
+      assertCliTarballIdentity(scanDir, TARGET_ADLC_VERSION);
       referenceTreeSha = computeDirectoryTreeSha(scanDir);
     } finally {
       try { fs.rmSync(tempRefDir, { recursive: true, force: true }); } catch (_) {}

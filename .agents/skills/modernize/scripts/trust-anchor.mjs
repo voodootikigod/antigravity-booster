@@ -126,11 +126,26 @@ function loadTarball(adlcVersion, tarballPath) {
   }
 }
 
-export function digestTarball(tgzBuf) {
+// Mirrors assertCliTarballIdentity in audit.mjs: the archive must really be the
+// release being attested, or a valid older tarball could be signed under a newer version.
+export function assertCliTarballIdentity(pkgDir, version) {
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
+  } catch (err) {
+    throw new Error(`@adlc/cli tarball has no readable package.json: ${err.message}`);
+  }
+  if (manifest?.name !== '@adlc/cli' || manifest?.version !== version) {
+    throw new Error(`tarball is ${manifest?.name}@${manifest?.version}, not @adlc/cli@${version}`);
+  }
+}
+
+export function digestTarball(tgzBuf, expectedVersion) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agb-trust-ref-'));
   try {
     unpackTgz(tgzBuf, tmp);
     const pkg = path.join(tmp, 'package');
+    if (expectedVersion !== undefined) assertCliTarballIdentity(fs.existsSync(pkg) ? pkg : tmp, expectedVersion);
     return {
       adlcTarballSri: 'sha512-' + crypto.createHash('sha512').update(tgzBuf).digest('base64'),
       packageTreeSha512: computeDirectoryTreeSha(fs.existsSync(pkg) ? pkg : tmp),
@@ -201,7 +216,7 @@ async function main() {
   }
   const agySection = extractAgySection(agyRaw, o.agyVersion);
   const adlcRaw = await fetchText(adlcSrc);
-  const tarball = digestTarball(loadTarball(o.adlcVersion, o.tarball));
+  const tarball = digestTarball(loadTarball(o.adlcVersion, o.tarball), o.adlcVersion);
 
   const release = {
     agy: { agyChangelogSha256: sha256(agySection ?? agyRaw) },
