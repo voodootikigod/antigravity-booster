@@ -46,7 +46,7 @@ export function extractAgySection(raw, ver) {
   const escaped = ver.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const html = raw.match(new RegExp(`<section[^>]*id=["']v?${escaped}["'][\\s\\S]*?<\\/section>`, 'i'));
   if (html) return html[0].trim();
-  const start = raw.match(new RegExp(`(^|\\n)##\\s*\\[?v?${escaped}(?![0-9A-Za-z]|\\.\\d)\\]?`, 'i'));
+  const start = raw.match(new RegExp(`(^|\\n)##\\s*\\[?v?${escaped}(?![0-9A-Za-z]|\\.\\d|-[0-9A-Za-z])\\]?`, 'i'));
   if (!start) return null;
   const rest = raw.slice(start.index + (start[1] ? 1 : 0));
   const next = rest.slice(start[0].length).match(/(^|\n)##\s*\[?v?\d/);

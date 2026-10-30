@@ -81,6 +81,9 @@ describe('trust-anchor: parity with audit.mjs', () => {
       assert.equal(fn(longer, '1.4.7'), null, 'a 1.4.70 or 1.4.7.1 heading is not 1.4.7');
       assert.equal(fn(bracketed, '1.4.7'), '## [v1.4.7] - 2026-10-01\nright');
       assert.equal(fn('<section id="v1.4.70">x</section>', '1.4.7'), null);
+      assert.equal(fn('## 1.4.7-beta\nx\n\n## 1.4.6\nold\n', '1.4.7'), null, 'a prerelease heading is not the stable release');
+      assert.equal(fn('## [1.4.7-rc.1] - 2026-10-01\nx\n', '1.4.7'), null);
+      assert.equal(fn('## 1.4.7 (2026-10-01)\nok\n', '1.4.7'), '## 1.4.7 (2026-10-01)\nok');
     }
   });
 

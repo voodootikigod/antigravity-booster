@@ -99,7 +99,7 @@ function extractAgySection(raw, ver) {
   const escapedVer = ver.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const htmlMatch = raw.match(new RegExp(`<section[^>]*id=["\x27]v?${escapedVer}["\x27][\\s\\S]*?<\\/section>`, 'i'));
   if (htmlMatch) return htmlMatch[0].trim();
-  const headingRegex = new RegExp(`(^|\\n)##\\s*\\[?v?${escapedVer}(?![0-9A-Za-z]|\\.\\d)\\]?`, 'i');
+  const headingRegex = new RegExp(`(^|\\n)##\\s*\\[?v?${escapedVer}(?![0-9A-Za-z]|\\.\\d|-[0-9A-Za-z])\\]?`, 'i');
   const startMatch = raw.match(headingRegex);
   if (!startMatch) return null;
   const startIndex = startMatch.index + (startMatch[1] ? 1 : 0);
