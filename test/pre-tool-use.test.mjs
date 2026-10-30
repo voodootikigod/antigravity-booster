@@ -375,6 +375,19 @@ test('Worker: unresolvable ticket denies every mutation in an ADLC repo', () => 
   assert.match(v.reason, /cannot be resolved/);
 });
 
+test('Worker: a retired legacy tickets.json never authorises a worker mutation scope', () => {
+  const root = join(fx.base, 'legacy');
+  mkdirSync(join(root, 'lib'), { recursive: true });
+  writeFileSync(join(root, 'lib', 'feature.mjs'), '// feature\n');
+  mkdirSync(join(root, '.adlc'), { recursive: true });
+  writeFileSync(join(root, '.adlc', 'config.json'), '{}\n');
+  writeFileSync(join(root, '.adlc', 'tickets.json'),
+    JSON.stringify({ tickets: [{ id: 'T1', title: 't', body: 'b', scope: ['**'], rails: [], edges: [] }] }) + '\n');
+  const v = run('write_to_file', { TargetFile: join(root, 'lib/feature.mjs') }, root, WORKER);
+  assert.equal(v.decision, 'deny');
+  assert.match(v.reason, /LEGACY_TICKET_STORE/);
+});
+
 test('Worker: non-ADLC targets follow normal non-ADLC policy (A.6 item 3)', () => {
   assert.equal(run('write_to_file', { TargetFile: join(fx.plain, 'x.mjs') }, fx.plain, WORKER).decision, 'pass');
   assert.equal(shell('make', fx.plain, WORKER).decision, 'pass');

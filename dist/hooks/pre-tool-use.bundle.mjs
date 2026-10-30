@@ -2058,6 +2058,9 @@ function unionActiveRails(repoRoot) {
   return { ok: true, adlc: true, hasActiveTickets: active.length > 0, rails: [...rails].sort() };
 }
 function resolveTicket(repoRoot, id) {
+  if (lstatSync6(join9(repoRoot, ".adlc", "tickets.json"), { throwIfNoEntry: false })) {
+    return { ok: false, error: "LEGACY_TICKET_STORE: .adlc/tickets.json is the retired single-file backend; run `adlc ticket store migrate`" };
+  }
   const loaded = loadSnapshot(repoRoot);
   if (!loaded.ok) return { ok: false, error: loaded.error };
   const ticket = loaded.snapshot?.get(id);
