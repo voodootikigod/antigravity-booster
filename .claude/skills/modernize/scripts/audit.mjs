@@ -450,8 +450,10 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   const modelsIdentified = [];
   const candidateModels = [
     'gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low',
-    'gemini-3.7-flash-high', 'gemini-3.6-flash-high', 'gemini-3.1-pro-high',
-    'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'
+    'gemini-4-argon-high', 'gemini-4-argon-medium', 'gemini-4-argon-low',
+    'claude-sonnet-5-5-high', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-low',
+    'claude-opus-5-5-high', 'claude-opus-5-5-medium', 'claude-opus-5-5-low',
+    'gpt-oss-120b-medium'
   ];
   for (const m of candidateModels) {
     if (agyModelsText.includes(m)) modelsIdentified.push(m);

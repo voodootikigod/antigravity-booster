@@ -14,7 +14,7 @@ agy --print <prompt> --print-timeout <timeout> --model <slug>
     [--project <name> --add-dir <cwd>] [--conversation <id>] [--sandbox]
 ```
 
-The arguments are built as an array and spawned without a shell, so nothing in a prompt is shell-interpreted ([argument list](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L249-L260)). Display names such as `Gemini 3.5 Flash (Low)` are mapped to agy model slugs first. The agy binary is `AGB_AGY_BIN` if set, else `agy` on `PATH`.
+The arguments are built as an array and spawned without a shell, so nothing in a prompt is shell-interpreted ([argument list](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L249-L260)). Display names such as `Gemini 3.8 Flash (Low)` are mapped to agy model slugs first. The agy binary is `AGB_AGY_BIN` if set, else `agy` on `PATH`.
 
 ```mermaid
 sequenceDiagram
