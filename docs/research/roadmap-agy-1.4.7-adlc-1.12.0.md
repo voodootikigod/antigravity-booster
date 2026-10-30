@@ -115,7 +115,7 @@ Edge convention: an edge `{ "to": X }` on a ticket means that ticket completes b
       "title": "agb doctor: warn when the model catalog drifts from live agy models",
       "body": "In lib/doctor.mjs add a check that runs `agy models`, parses slugs, and compares them with ALL_MODELS from lib/models.mjs. Report slugs in ALL_MODELS missing upstream as 'retired' and live slugs unknown to booster as 'unrecognized', both as warnings (not failures). If `agy models` is unavailable or fails, return { ok: false, error } without throwing, matching the CLI-integration degrade rule. Add tests using test/fixtures/fake-agy covering clean, drifted, and agy-unavailable cases. Acceptance: npm test green; doctor output names the drifted slugs.",
       "scope": ["lib/doctor.mjs", "test/doctor.test.mjs"],
-      "rails": ["lib/lock.mjs", "lib/gates.mjs", "lib/models.mjs"],
+      "rails": ["lib/lock.mjs", "lib/gates.mjs"],
       "edges": [{ "to": "t-sandbox-cred-paths" }],
       "tier": "cheap",
       "pool_hint": "gemini"
@@ -155,7 +155,7 @@ Edge convention: an edge `{ "to": X }` on a ticket means that ticket completes b
       "title": "Refresh website docs for the new model catalog",
       "body": "Update website/content/docs concepts/pools-and-tiers, concepts/prosecution, guides/walkthrough, guides/review and guides/writing-plans so every model slug and example matches the post-refresh lib/models.mjs. Reference pages are generated; regenerate them and run the generator check per CONTRIBUTING.md. Do not edit design-history pages for older roadmaps. Acceptance: docs generator check passes; grep for retired slugs in website/content (excluding design-history) returns nothing.",
       "scope": ["website/content/docs/concepts/pools-and-tiers.mdx", "website/content/docs/concepts/prosecution.mdx", "website/content/docs/guides/walkthrough.mdx", "website/content/docs/guides/review.mdx", "website/content/docs/guides/writing-plans.mdx"],
-      "rails": ["lib/lock.mjs", "lib/gates.mjs", "lib/models.mjs"],
+      "rails": ["lib/lock.mjs", "lib/gates.mjs"],
       "edges": [],
       "tier": "cheap",
       "pool_hint": "gemini"
