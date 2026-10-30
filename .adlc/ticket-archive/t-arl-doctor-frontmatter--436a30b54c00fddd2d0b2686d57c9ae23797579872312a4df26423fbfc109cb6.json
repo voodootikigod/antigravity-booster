@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T19:09:54.565Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "ddd387fb320c63d42f961e8e8a6258bc088044a8bc97604816b9a864448deb15",
+    "ticketHash": "5f459dad5aad801f0b1c88e3c4dd3f841279c8f0afa8e50d6320fda067128a24",
+    "version": 1
+  },
   "body": "Adversarial review round 13 (codex, high): website/content/docs/reference/cli/doctor.mdx has a markdown table row on line 2, inside the YAML frontmatter, left by an earlier edit; it breaks the page. The Model catalog row already lives in website/content/docs/getting-started/verify.mdx, which doctor.mdx points to for every check id. Delete the stray line so the frontmatter is only title and description, regenerate with cd website && npm run gen and confirm no generated diff, and check the page parses (frontmatter is valid YAML). Acceptance: frontmatter valid; npm run gen leaves website/generated unchanged; npm test green.",
+  "completed": true,
   "edges": [],
   "id": "t-arl-doctor-frontmatter",
   "rails": [

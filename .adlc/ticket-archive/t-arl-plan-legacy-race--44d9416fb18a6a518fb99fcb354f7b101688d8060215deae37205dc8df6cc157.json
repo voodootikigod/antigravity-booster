@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T19:09:55.288Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "40a7398aacc6ab0ef583e49269d8743820c61b5172213ae81b1a48003f590e52",
+    "ticketHash": "46d44140667b657b5f27458f3e43f4a80e913fc13b9529b67de45ed427d7398a",
+    "version": 1
+  },
   "body": "Adversarial review round 14 (codex): the projection try/catch in lib/plan.mjs logs any error as a warning, so a legacy .adlc/tickets.json that appears after the late assertNoLegacyTicketStore (cross-process race) is thrown by writeAdlcTickets and swallowed, letting compilePlan succeed with no ticket-store projection. Fix: the catch rethrows errors with code LEGACY_TICKET_STORE (decision isolated in an exported pure predicate projectionErrorIsFatal so it is unit-testable, since the window is not deterministically reproducible), every other projection error stays a warning. Add tests: predicate true only for LEGACY_TICKET_STORE; and compilePlan source of the catch uses it. Acceptance: npm test green; rails untouched.",
+  "completed": true,
   "edges": [],
   "id": "t-arl-plan-legacy-race",
   "rails": [
