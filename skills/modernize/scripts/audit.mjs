@@ -649,12 +649,15 @@ async function runStage3DeltaMatrix(stage1Data = {}, stage2Data = {}) {
   // Dynamic Pillar 1: Model Catalog Delta
   let knownModels = [];
   try {
-    const agyPath = path.join(repoRoot, 'lib', 'agy.mjs');
-    if (fs.existsSync(agyPath) && !fs.lstatSync(agyPath).isSymbolicLink()) {
-      const content = fs.readFileSync(agyPath, 'utf8');
-      const matches = content.match(/['"`](gemini-[^'"`]+|claude-[^'"`]+|gpt-oss-[^'"`]+)['"`]/g);
-      if (matches) {
-        knownModels = [...new Set(matches.map(m => m.replace(/['"`]/g, '')))];
+    // The registry lives in lib/models.mjs; lib/agy.mjs only re-exports it.
+    for (const file of ['models.mjs', 'agy.mjs']) {
+      const modelsPath = path.join(repoRoot, 'lib', file);
+      if (fs.existsSync(modelsPath) && !fs.lstatSync(modelsPath).isSymbolicLink()) {
+        const content = fs.readFileSync(modelsPath, 'utf8');
+        const matches = content.match(/['"`](gemini-[^'"`]+|claude-[^'"`]+|gpt-oss-[^'"`]+)['"`]/g);
+        if (matches) {
+          knownModels = [...new Set([...knownModels, ...matches.map(m => m.replace(/['"`]/g, ''))])];
+        }
       }
     }
   } catch {}
