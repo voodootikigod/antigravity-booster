@@ -25,7 +25,7 @@ test('npm pack --dry-run includes every plugin component and runtime asset', () 
     'lib/job-object-wrapper.ps1', 'lib/sandbox-probe-helper.mjs']) {
     assert.ok(files.has(exact), `missing ${exact}`);
   }
-  for (const dir of ['commands/', 'agents/', 'hooks/', 'mcp/', 'skills/', 'sidecars/', 'docs/calibration/', 'templates/']) {
+  for (const dir of ['assets/', 'rules/', 'commands/', 'agents/', 'hooks/', 'mcp/', 'skills/', 'sidecars/', 'docs/calibration/', 'templates/']) {
     assert.ok(has(dir), `missing ${dir}`);
   }
   for (const excluded of ['test/', '.adlc/', '.agents/', 'node_modules/']) {

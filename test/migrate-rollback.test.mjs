@@ -202,11 +202,14 @@ test('pre-flight: a source that fails agy plugin validate, or lacks a component 
   } finally { bad.cleanup(); }
 });
 
-test('validate output parser reads real agy lines (ANSI, skipped categories)', () => {
+test('validate output parser reads real agy lines (ANSI, skipped categories, and agy 1.4.x dot summary)', () => {
   const real = '  \x1b[32m[ok]\x1b[0m    .\n          \x1b[32m✔\x1b[0m skills      : 2 processed\n' +
     '          \x1b[32m✔\x1b[0m commands    : 7 processed (converted to skills)\n          - mcpServers  : skipped (not found)\n' +
     '          \x1b[32m✔\x1b[0m hooks       : 1 processed\n';
   assert.deepEqual(parseValidateOutput(real), { skills: 2, commands: 7, hooks: 1 });
+  const v14 = '\x1b[32m✔\x1b[0m antigravity-booster  \x1b[2m(plugin.json)\x1b[0m\n' +
+    '  skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1 · sidecars 0\n\nValidation passed.\n';
+  assert.deepEqual(parseValidateOutput(v14), { skills: 7, agents: 3, rules: 1, hooks: 1, mcpServers: 1, sidecars: 0 });
   assert.deepEqual(parseValidateOutput(undefined), {});
 });
 

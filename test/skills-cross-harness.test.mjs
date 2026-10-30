@@ -36,8 +36,19 @@ function scratchRepo(t, skills = { alpha: { 'SKILL.md': '---\nname: alpha\ndescr
 
 // ---------------------------------------------------------------- real repo
 
-test('the repo ships the three project skills from skills/', () => {
-  assert.deepEqual(canonicalSkills(ROOT), ['modernize', 'release', 'release-audit']);
+test('the repo ships the seven agb-* user skills and three project maintainer skills from skills/', () => {
+  assert.deepEqual(canonicalSkills(ROOT), [
+    'agb-bootstrap',
+    'agb-doctor',
+    'agb-migrate',
+    'agb-plan',
+    'agb-review',
+    'agb-run',
+    'agb-sidecar',
+    'modernize',
+    'release',
+    'release-audit',
+  ]);
 });
 
 test('every skill has frontmatter all three harnesses accept', () => {
