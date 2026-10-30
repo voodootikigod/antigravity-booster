@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T10:51:58.098Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "1f37a1c34bc355169fddb1fe2abb76050f50d7a93d6a92f8795acd920dbdc103",
+    "ticketHash": "7acc0eed7c016d524b355a7a106eb9ba925f485220da3c2972e44c8e0e97f14c",
+    "version": 1
+  },
   "body": "Adversarial review round 7 (codex): extractAgySection now rejects alphanumeric and dot-digit suffixes but still accepts a hyphen suffix, so a 1.4.7-beta heading is hashed and attested as 1.4.7. Extend the boundary lookahead in skills/modernize/scripts/audit.mjs and skills/modernize/scripts/trust-anchor.mjs (identical behaviour) to also reject a hyphen followed by an alphanumeric. Add regression tests to test/trust-anchor.test.mjs (1.4.7-beta, 1.4.7-rc.1 rejected; a bracketed or space-terminated exact heading still matches). Sync mirrors with npm run skills:sync. Acceptance: npm test green; the new tests fail without the fix.",
+  "completed": true,
   "edges": [],
   "id": "t-arl-prerelease-heading",
   "rails": [
