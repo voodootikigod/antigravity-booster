@@ -74,7 +74,7 @@ Claims marked `[probed]` were verified live on this machine. Claims marked `[reg
 ---
 
 ## 5. Open Questions for the Owner
-1. Read the `@adlc` 1.12.0 release notes (not retrievable from the tarball) before approving the dependency bump. Was anything breaking, for example `merge-forecast`, `rails-guard`, or ticket-store changes?
+1. ~~Read the `@adlc` 1.12.0 release notes before approving the dependency bump.~~ **Resolved 2026-10-30: the owner reviewed the release notes and approved the bump** (`t-deps-adlc-1-12`). Compatibility evidence: the full suite passes against the real 1.12.0 binary, the 1.12.0 behaviour changes that touched this repo were fixed (rail must match a file, hollow-test reads `watchdog.mjs` from the vendored bundle, three new `@adlc/*` packages in the CLI's dependency closure), and every pinned digest was recomputed from registry tarballs and independently re-verified by the prosecutor.
 2. ~~Retire the legacy `.adlc/tickets.json` backend?~~ **Resolved 2026-10-25: owner approved retiring it** (`t-retire-legacy-tickets-json`; the migrate path stays).
 3. ~~Should `claude-opus-5-5-*` be in default tiers?~~ **Resolved 2026-10-25: frontier-only.**
 
