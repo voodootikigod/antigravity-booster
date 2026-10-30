@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T11:20:39.441Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "0e1569ff24a6754a8c2ad13da044bdbb36c5dc39de4fe6c469dc656a336e2c84",
+    "ticketHash": "96bb659c5159614f65b6897e4d1ebb971450fc0bc6cd6f9d1985fb2fde9df07e",
+    "version": 1
+  },
   "body": "Owner decision (after adversarial review rounds 2/5/9): audit.mjs must not silently default to the previous release. A run without an ADLC target (argv[2] / ADLC_TARGET_VERSION) and an agy target (argv[4] / AGY_TARGET_VERSION) exits 1 before any probing, with a usage message that names the 1.12.0 / 1.4.7 command and the trust-anchor helper. The pinned refs keep their derived defaults. Update skills/modernize/SKILL.md usage text, sync mirrors with npm run skills:sync, and update test/modernize-skill.test.mjs so every audit invocation passes explicit targets (the pipeline tests keep their 1.12.0 ADLC and 1.2.8 agy fixtures) and add a test that a no-target run is refused. Acceptance: npm test green; the new test fails without the change.",
+  "completed": true,
   "edges": [],
   "id": "t-arl-audit-explicit-targets",
   "rails": [

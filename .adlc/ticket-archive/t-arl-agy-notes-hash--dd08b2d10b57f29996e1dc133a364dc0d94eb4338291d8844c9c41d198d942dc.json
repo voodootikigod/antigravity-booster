@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T11:20:40.879Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "3751b0c0801311511a0d344b3e17703a7d75528db2896b726e9bdef43953939d",
+    "ticketHash": "01f4911345eeff1f098aeb1a6fc37614e3f7f01882ee84082267add62e5fb2fe",
+    "version": 1
+  },
   "body": "Adversarial review round 11 (codex, re-raised with new evidence): audit.mjs Stage 5 accepts a local roadmap as Antigravity release-note provenance whenever the expected digest string merely appears in it, both for a non-HTTP AGY_RELEASE_URL (isLocalRoadmap) and, reachable with default URLs, in the offline fallback when both network fetches fail (agyOfflineVerified). Remove both includes()-based acceptances: the release-note bytes (section or full document) must hash to the signed anchor or the known digest set, otherwise fail closed. The audit tests must therefore sign the sha256 of their local fixture into the throwaway trust store. Add a regression test that a local release-notes file which only embeds the expected digest text is rejected. Acceptance: npm test green; the new test fails without the change; mirrors synced.",
+  "completed": true,
   "edges": [],
   "id": "t-arl-agy-notes-hash",
   "rails": [
