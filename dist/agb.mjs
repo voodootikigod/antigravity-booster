@@ -5960,11 +5960,20 @@ function planTicketToRailTicket(t) {
 }
 function detectTicketStoreBackend(repo) {
   const hasDirectory = existsSync16(join17(repo, ".adlc", "tickets", ".store.json"));
-  const hasLegacy = existsSync16(join17(repo, ".adlc", "tickets.json"));
+  const hasLegacy = lstatSync7(join17(repo, ".adlc", "tickets.json"), { throwIfNoEntry: false }) !== void 0;
   if (hasDirectory && hasLegacy) return "both";
   if (hasDirectory) return "directory";
   if (hasLegacy) return "legacy";
   return "none";
+}
+function assertNoLegacyTicketStore(repo) {
+  const backend = detectTicketStoreBackend(repo);
+  if (backend !== "legacy" && backend !== "both") return;
+  const err = new Error(
+    `legacy ticket store found at ${join17(repo, ".adlc", "tickets.json")}` + (backend === "both" ? " beside the directory store" : "") + `; the single-file backend is retired. Run \`adlc ticket store migrate\` in ${repo} and commit the result, then retry.`
+  );
+  err.code = "LEGACY_TICKET_STORE";
+  throw err;
 }
 function writeAdlcTickets(repo, tickets) {
   const dir = join17(repo, ".adlc");
@@ -5972,16 +5981,8 @@ function writeAdlcTickets(repo, tickets) {
     throw new Error(`refusing to project tickets through a symlink: ${dir}`);
   }
   mkdirSync7(dir, { recursive: true });
+  assertNoLegacyTicketStore(repo);
   const backend = detectTicketStoreBackend(repo);
-  if (backend === "legacy") {
-    const path3 = join17(dir, "tickets.json");
-    try {
-      if (!lstatSync7(path3).isFile()) rmSync4(path3, { force: true });
-    } catch {
-    }
-    writeFileSync8(path3, JSON.stringify({ tickets }, null, 2) + "\n");
-    return path3;
-  }
   const { initializeDirectoryStore: initializeDirectoryStore2, ticketFilename: ticketFilename2, prettyCanonicalJson: prettyCanonicalJson2, ACTIVE_MANIFEST: ACTIVE_MANIFEST2 } = ticketsLib();
   const storeDir = join17(dir, "tickets");
   for (const p of [dir, storeDir]) {
@@ -6019,7 +6020,6 @@ function writeAdlcTickets(repo, tickets) {
     } catch {
     }
   }
-  if (backend === "both") rmSync4(join17(dir, "tickets.json"), { force: true });
   const keep = /* @__PURE__ */ new Set([".store.json"]);
   for (const t of tickets) {
     const shard = ticketFilename2(t.id);
@@ -8719,7 +8719,15 @@ async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo =
       name: "Ticket Store",
       level: "fail",
       detail: "both legacy and directory stores",
-      fix: "The plugin fails closed when both exist. Run `adlc ticket store migrate` (or remove .adlc/tickets.json)."
+      fix: "The legacy .adlc/tickets.json is retired and the plugin fails closed when both exist. Run `adlc ticket store migrate`, then remove .adlc/tickets.json."
+    };
+  }
+  if (backend === "legacy") {
+    return {
+      name: "Ticket Store",
+      level: "fail",
+      detail: "legacy single-file store (retired)",
+      fix: "agb no longer supports .adlc/tickets.json. Run `adlc ticket store migrate` and commit the result."
     };
   }
   if (backend === "none" && existsSync17(join18(cwd, ".adlc", "tickets"))) {
@@ -13155,7 +13163,6 @@ function ensureGitignore(repo) {
     ".worktrees/",
     ".booster/",
     ".adlc/*",
-    "!.adlc/tickets.json",
     "!.adlc/tickets/",
     "!.adlc/tickets/**",
     "!.adlc/ticket-archive/",
@@ -13179,7 +13186,7 @@ function isDirty(repo) {
     if (file.startsWith('"') && file.endsWith('"')) {
       file = file.slice(1, -1);
     }
-    if (file === ".adlc/tickets" || file.startsWith(".adlc/tickets/") || file === ".adlc/tickets.json") {
+    if (file === ".adlc/tickets" || file.startsWith(".adlc/tickets/")) {
       continue;
     }
     return true;
@@ -13326,7 +13333,6 @@ function commitAll(worktree, message) {
     "-A",
     "--",
     ":(exclude)AGENTS.md",
-    ":(exclude).adlc/tickets.json",
     ":(exclude).adlc/tickets",
     ":(exclude).agb_home",
     ":(exclude).agb_home/**"
@@ -13337,7 +13343,7 @@ function commitAll(worktree, message) {
   return true;
 }
 function discardProjection(worktree, base = "HEAD") {
-  for (const p of ["AGENTS.md", ".adlc/tickets", ".adlc/tickets.json"]) {
+  for (const p of ["AGENTS.md", ".adlc/tickets"]) {
     try {
       git(worktree, "checkout", base, "--", p);
     } catch {
@@ -14155,6 +14161,7 @@ async function compilePlan(idOrPrefix, {
   const pm = premortem ? await premortemPlan(plan, brain, { pools, project: finalProject, repo }) : null;
   const ok2 = gates.blocking.length === 0;
   if (ok2) {
+    assertNoLegacyTicketStore(repo);
     try {
       try {
         ensureGitignore(repo);
@@ -15022,7 +15029,7 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
   const g = (cwd, ...args) => execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, ...args], { cwd, encoding: "utf8" }).trim();
   const statusOut = execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "status", "--porcelain=v1", "-z"], { cwd: worktreePath });
   if (statusOut.length > 0) {
-    execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "add", "-A", "--", ":(exclude)AGENTS.md", ":(exclude).adlc/tickets.json", ":(exclude).adlc/tickets", ":(exclude).agb_home", ":(exclude).agb_home/**"], { cwd: worktreePath });
+    execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "add", "-A", "--", ":(exclude)AGENTS.md", ":(exclude).adlc/tickets", ":(exclude).agb_home", ":(exclude).agb_home/**"], { cwd: worktreePath });
     try {
       execFileSync11("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH2}`, "commit", "--no-verify", "--no-gpg-sign", "-q", "-m", "agb: candidate attempt commit"], { cwd: worktreePath });
     } catch {
@@ -15556,6 +15563,7 @@ Fix: ${agyCheck.fix}`);
       }
     }
   }
+  assertNoLegacyTicketStore(repo);
   const onBranch = currentBranch2(repo);
   if (onBranch !== base) {
     throw new Error(`repo ${repo} is on '${onBranch}', not the plan's base '${base}'. Checkout ${base} before running (agb advances ${base} by ref update; the checkout must match the base being advanced).`);
