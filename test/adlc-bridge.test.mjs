@@ -439,6 +439,21 @@ test('round-trip: a successful compilePlan writes a projection adlc coldstart ac
   }
 });
 
+test('compilePlan: a legacy tickets.json is refused before any brain or model work', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-legacy-early-'));
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
+    // brainDir does not exist: reaching brain resolution would throw a different error.
+    await assert.rejects(
+      compilePlan('nope', { repo, brainDir: join(repo, 'no-such-brain-dir'), premortem: false }),
+      (e) => e.code === 'LEGACY_TICKET_STORE',
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('round-trip: compilePlan on a repo with a legacy tickets.json fails closed, not as a warning', async () => {
   const brainDir = makeBrainDir();
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-legacy-'));

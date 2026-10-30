@@ -5980,8 +5980,8 @@ function writeAdlcTickets(repo, tickets) {
   if (lstatSync7(dir, { throwIfNoEntry: false })?.isSymbolicLink()) {
     throw new Error(`refusing to project tickets through a symlink: ${dir}`);
   }
-  mkdirSync7(dir, { recursive: true });
   assertNoLegacyTicketStore(repo);
+  mkdirSync7(dir, { recursive: true });
   const backend = detectTicketStoreBackend(repo);
   const { initializeDirectoryStore: initializeDirectoryStore2, ticketFilename: ticketFilename2, prettyCanonicalJson: prettyCanonicalJson2, ACTIVE_MANIFEST: ACTIVE_MANIFEST2 } = ticketsLib();
   const storeDir = join17(dir, "tickets");
@@ -14092,6 +14092,7 @@ async function compilePlan(idOrPrefix, {
 } = {}) {
   const finalProject = project2 ?? `agb-plan-${Date.now()}`;
   if (!repo) throw new Error("compilePlan: repo is required");
+  assertNoLegacyTicketStore(repo);
   if (pools) {
     if (pools.circuitBreakerTripped) {
       throw new Error("Cannot compile plan: quota telemetry unavailable (circuit breaker tripped)");
