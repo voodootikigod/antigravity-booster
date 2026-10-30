@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { writeStore } from '../skills/modernize/scripts/trust-anchor.mjs';
 
@@ -80,6 +81,7 @@ function auditTrustEnv() {
   const home = makeTempDir('agb-mod-trust-home-');
   writeStore(join(home, '.adlc', 'trusted_packages.json'), {
     releases: {
+      [AUDIT_AGY_TARGET]: { agyChangelogSha256: createHash('sha256').update(readFileSync(AGY_RELEASE_FIXTURE)).digest('hex') },
       [AUDIT_ADLC_TARGET]: {
         adlcTarballSri: 'sha512-s/KSv0lx0VQhGOEp6Y2WJ3P9KxL8gZvollSJcVcrvbhGUU9HrUZ/tn0PO7zHVCk0UpmJpBBQk39VZNTP1JVxXQ==',
         packageTreeSha512: '6818baf1923a72d8230761800c6f4ea5f7ac2a9a1d3362eb960317b685d80a6c90f434534ef222fe4a0fbd033cd0d96f48bbe984b636d9927b3bd9d4052bcc45',
@@ -126,6 +128,29 @@ test('Modernize Skill: audit.mjs refuses to run without explicit release targets
       (err) => err.status === 1 && /explicit release targets/.test(String(err.stderr)) && /trust-anchor\.mjs/.test(String(err.stderr)),
       `args ${JSON.stringify(args)} must be refused`,
     );
+  }
+});
+
+test('Modernize Skill: Stage 5 hashes the Antigravity release notes and never trusts an embedded digest marker', () => {
+  const trust = auditTrustEnv();
+  const notesDir = makeTempDir('agb-mod-notes-');
+  try {
+    const signed = readFileSync(AGY_RELEASE_FIXTURE, 'utf8');
+    const digest = createHash('sha256').update(signed).digest('hex');
+    const forged = join(notesDir, 'notes.md');
+    writeFileSync(forged, `# not the release notes\n\nexpected digest: ${digest}\n`);
+    assert.throws(
+      () => execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
+        cwd: REPO_WITH_NM,
+        env: { ...trust.env, AGY_RELEASE_URL: forged },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+      (err) => /release notes SHA-256/.test(String(err.stderr)),
+    );
+  } finally {
+    rmSync(trust.home, { recursive: true, force: true });
+    rmSync(notesDir, { recursive: true, force: true });
   }
 });
 

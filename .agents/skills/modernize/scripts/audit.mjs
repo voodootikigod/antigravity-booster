@@ -869,7 +869,6 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
   // Step B: Fetch & Verify Changelog Artifacts
   console.log(`[agb-modernize] Fetching Antigravity release notes: ${AGY_RELEASE_URL}`);
   let agyContent = null;
-  let agyOfflineVerified = false;
   try {
     agyContent = await fetchText(AGY_RELEASE_URL);
   } catch (err) {
@@ -878,43 +877,28 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
         console.warn(`[agb-modernize] Warning: Could not fetch ${AGY_RELEASE_URL}: ${err.message}. Trying global changelog...`);
         agyContent = await fetchText('https://antigravity.google/changelog');
       } catch (fallbackErr) {
-        const roadmapPath = process.env.AGB_ROADMAP_PATH || path.join(repoRoot, 'docs', 'research', `roadmap-agy-${TARGET_AGY_VERSION}-adlc-${TARGET_ADLC_VERSION}.md`);
-        if (fs.existsSync(roadmapPath)) {
-          const roadmapRaw = fs.readFileSync(roadmapPath, 'utf8');
-          if (roadmapRaw.includes(expectedAgyChangelogSha256)) {
-            console.warn(`[agb-modernize] Warning: Network unavailable (${fallbackErr.message}); verified pinned Antigravity digest (${expectedAgyChangelogSha256.slice(0, 16)}...) in local roadmap ${roadmapPath}`);
-            agyOfflineVerified = true;
-          }
-        }
-        if (!agyOfflineVerified) throw fallbackErr;
+        // No offline acceptance: a digest string inside a repository roadmap is not
+        // the release notes. The notes' bytes must be fetched and hashed.
+        throw fallbackErr;
       }
     } else {
       throw err;
     }
   }
 
-  let actualAgySha256 = expectedAgyChangelogSha256;
-  if (!agyOfflineVerified) {
-    const agySection = extractAgySection(agyContent, TARGET_AGY_VERSION);
-    actualAgySha256 = agySection ? crypto.createHash('sha256').update(agySection).digest('hex') : null;
-    const actualAgyFullSha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
-    const knownAgyDigests = KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION[TARGET_AGY_VERSION] || new Set();
-    const isLocalRoadmap = (!AGY_RELEASE_URL.startsWith('http://') && !AGY_RELEASE_URL.startsWith('https://')) && agyContent.includes(expectedAgyChangelogSha256);
-    const agyDigestMatches = (
-      isLocalRoadmap ||
-      (actualAgySha256 !== null && (actualAgySha256 === expectedAgyChangelogSha256 || knownAgyDigests.has(actualAgySha256))) ||
-      actualAgyFullSha256 === expectedAgyChangelogSha256 ||
-      knownAgyDigests.has(actualAgyFullSha256)
-    );
-    if (!agyDigestMatches) {
-      throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256 ?? 'missing-section'} / full: ${actualAgyFullSha256}) does not match expected (${expectedAgyChangelogSha256})`);
-    }
-    if (isLocalRoadmap) {
-      actualAgySha256 = expectedAgyChangelogSha256;
-    } else if (actualAgySha256 === null) {
-      actualAgySha256 = actualAgyFullSha256;
-    }
+  const agySection = extractAgySection(agyContent, TARGET_AGY_VERSION);
+  let actualAgySha256 = agySection ? crypto.createHash('sha256').update(agySection).digest('hex') : null;
+  const actualAgyFullSha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
+  const knownAgyDigests = KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION[TARGET_AGY_VERSION] || new Set();
+  const agyDigestMatches = (
+    (actualAgySha256 !== null && (actualAgySha256 === expectedAgyChangelogSha256 || knownAgyDigests.has(actualAgySha256))) ||
+    actualAgyFullSha256 === expectedAgyChangelogSha256 ||
+    knownAgyDigests.has(actualAgyFullSha256)
+  );
+  if (!agyDigestMatches) {
+    throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256 ?? 'missing-section'} / full: ${actualAgyFullSha256}) does not match expected (${expectedAgyChangelogSha256})`);
   }
+  if (actualAgySha256 === null) actualAgySha256 = actualAgyFullSha256;
 
   console.log(`[agb-modernize] Fetching ADLC changelog: ${ADLC_CHANGELOG_URL}`);
   let adlcContent;
