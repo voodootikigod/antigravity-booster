@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { bootstrap } from '../lib/bootstrap.mjs';
+import { writeStore } from '../skills/modernize/scripts/trust-anchor.mjs';
 
 const FAKE_AGY = join(import.meta.dirname, 'fixtures', 'fake-agy');
 const AUDIT_SCRIPT = join(import.meta.dirname, '..', 'skills', 'modernize', 'scripts', 'audit.mjs');
@@ -55,7 +56,7 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
 });
 
 const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 'roadmap-agy-1.2.8-adlc-1.11.1.md');
-const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, '..', 'vendor', 'adlc', 'package.json');
+const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, 'fixtures', 'adlc-changelog-fixture-1.11.1.json');
 const REPO_WITH_NM = (() => {
   let d = join(import.meta.dirname, '..');
   while (d !== dirname(d)) {
@@ -66,12 +67,39 @@ const REPO_WITH_NM = (() => {
   return d;
 })();
 
+
+// Stage 5 only has built-in anchors for ADLC 1.11.1; any later target needs an
+// operator-signed trust store. These tests sign a throwaway store (temp HOME,
+// throwaway key) with the registry digests of the published @adlc/cli@1.12.0
+// tarball and the sha256 of the pinned changelog fixture, never the real store.
+const AUDIT_ADLC_TARGET = '1.12.0';
+const AUDIT_TEST_KEY = 'agb-test-only-admin-key';
+function auditTrustEnv() {
+  const home = makeTempDir('agb-mod-trust-home-');
+  writeStore(join(home, '.adlc', 'trusted_packages.json'), {
+    releases: {
+      [AUDIT_ADLC_TARGET]: {
+        adlcTarballSri: 'sha512-s/KSv0lx0VQhGOEp6Y2WJ3P9KxL8gZvollSJcVcrvbhGUU9HrUZ/tn0PO7zHVCk0UpmJpBBQk39VZNTP1JVxXQ==',
+        packageTreeSha512: '6818baf1923a72d8230761800c6f4ea5f7ac2a9a1d3362eb960317b685d80a6c90f434534ef222fe4a0fbd033cd0d96f48bbe984b636d9927b3bd9d4052bcc45',
+        adlcChangelogSha256: '0b036f0b4e50bb8b9d7a5c198d715981fd695521a1a41f3c4eceedba027477e4',
+      },
+    },
+  }, AUDIT_TEST_KEY);
+  return { home, env: { ...process.env, HOME: home, ADLC_ADMIN_KEY: AUDIT_TEST_KEY, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, AGB_ROADMAP_PATH: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' } };
+}
+
 test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
-  const out = execFileSync(process.execPath, [AUDIT_SCRIPT], {
-    cwd: REPO_WITH_NM,
-    env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
-    encoding: 'utf8',
-  });
+  const trust = auditTrustEnv();
+  let out;
+  try {
+    out = execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET], {
+      cwd: REPO_WITH_NM,
+      env: trust.env,
+      encoding: 'utf8',
+    });
+  } finally {
+    rmSync(trust.home, { recursive: true, force: true });
+  }
 
   assert.match(out, /Stage 1 \(Live Runtime Probes\):\s*\[PASS\]/);
   assert.match(out, /Stage 2 \(Static Codebase Audit\):\s*\[PASS\]/);
@@ -111,10 +139,11 @@ test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical co
 
 test('Modernize Skill: concurrent writer serialization via exclusive lock', async () => {
   // Spawn two concurrent audit scripts; they must serialize cleanly without corruption
+  const trust = auditTrustEnv();
   const p1 = new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [AUDIT_SCRIPT], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET], {
       cwd: REPO_WITH_NM,
-      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
+      env: trust.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -127,9 +156,9 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   });
 
   const p2 = new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [AUDIT_SCRIPT], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET], {
       cwd: REPO_WITH_NM,
-      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
+      env: trust.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -141,7 +170,13 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
     });
   });
 
-  const [res1, res2] = await Promise.all([p1, p2]);
+  let res1;
+  let res2;
+  try {
+    [res1, res2] = await Promise.all([p1, p2]);
+  } finally {
+    rmSync(trust.home, { recursive: true, force: true });
+  }
   assert.match(res1, /All checks PASSED/);
   assert.match(res2, /All checks PASSED/);
 

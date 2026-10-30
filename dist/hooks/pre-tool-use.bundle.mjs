@@ -332,7 +332,7 @@ var require_brace_expansion = __commonJS({
 // hooks/policy/evaluate.mjs
 import { lstatSync as lstatSync8, readdirSync as readdirSync6, realpathSync as realpathSync2 } from "node:fs";
 import { homedir as homedir2, userInfo } from "node:os";
-import { basename as basename5, isAbsolute as isAbsolute5, join as join11, resolve as resolve8 } from "node:path";
+import { basename as basename5, isAbsolute as isAbsolute5, join as join12, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // node_modules/@adlc/tickets/lib/pointer.mjs
@@ -551,7 +551,7 @@ var TICKET_FIELDS = [
     name: "rails",
     type: "string[]",
     required: false,
-    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Once any ticket declares rails the ticket store itself becomes a frozen trust root, so later ticket writes need ADLC_RAILS_BYPASS=1.",
+    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Once any ticket declares rails the ticket store itself becomes a frozen trust root, so later ticket writes need ADLC_RAILS_BYPASS=1.",
     schema: { type: "array", items: { type: "string" } }
   },
   {
@@ -660,8 +660,8 @@ var TicketSnapshot = class {
 };
 
 // node_modules/@adlc/tickets/lib/store.mjs
-import { existsSync as existsSync9, lstatSync as lstatSync5, readdirSync as readdirSync4 } from "node:fs";
-import { isAbsolute as isAbsolute2, join as join7, resolve as resolve4 } from "node:path";
+import { existsSync as existsSync10, lstatSync as lstatSync5, readdirSync as readdirSync4 } from "node:fs";
+import { isAbsolute as isAbsolute2, join as join8, resolve as resolve4 } from "node:path";
 
 // node_modules/@adlc/tickets/lib/stores/directory.mjs
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
@@ -738,12 +738,12 @@ var DirectoryTicketStore = class {
 };
 
 // node_modules/@adlc/tickets/lib/stores/legacy.mjs
-import { existsSync as existsSync8, lstatSync as lstatSync4, readFileSync as readFileSync7 } from "node:fs";
-import { basename as basename2, dirname as dirname7 } from "node:path";
+import { existsSync as existsSync9, lstatSync as lstatSync4, readFileSync as readFileSync8 } from "node:fs";
+import { basename as basename2, dirname as dirname8 } from "node:path";
 
 // node_modules/@adlc/tickets/lib/transaction.mjs
-import { existsSync as existsSync7, readFileSync as readFileSync6 } from "node:fs";
-import { basename, dirname as dirname6, isAbsolute, join as join6, relative as relative2, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync8, readFileSync as readFileSync7 } from "node:fs";
+import { basename, dirname as dirname7, isAbsolute, join as join7, relative as relative2, resolve as resolve3 } from "node:path";
 import { randomUUID as randomUUID2 } from "node:crypto";
 
 // node_modules/@adlc/tickets/lib/lock.mjs
@@ -833,10 +833,10 @@ function releaseTicketLock(lock, { removeLock = rmSync } = {}) {
 }
 
 // node_modules/@adlc/tickets/lib/evidence.mjs
-import { closeSync as closeSync3, existsSync as existsSync5, fsyncSync as fsyncSync2, mkdirSync as mkdirSync4, openSync as openSync3, readFileSync as readFileSync4, unlinkSync as unlinkSync2, writeFileSync as writeFileSync4 } from "node:fs";
+import { closeSync as closeSync3, existsSync as existsSync6, fsyncSync as fsyncSync2, mkdirSync as mkdirSync4, openSync as openSync3, readFileSync as readFileSync5, unlinkSync as unlinkSync2, writeFileSync as writeFileSync4 } from "node:fs";
 import { createHmac as createHmac2, randomUUID } from "node:crypto";
 import { hostname as hostname2 } from "node:os";
-import { dirname as dirname5, join as join4 } from "node:path";
+import { dirname as dirname6, join as join5 } from "node:path";
 
 // node_modules/@adlc/tickets/lib/durability.mjs
 import {
@@ -917,19 +917,52 @@ function durableRemove(path2, options) {
 }
 
 // node_modules/@adlc/tickets/lib/manifest-segments.mjs
-import { existsSync as existsSync4, lstatSync as lstatSync2, readdirSync as readdirSync2, readFileSync as readFileSync3, writeFileSync as writeFileSync3, openSync as openSync2, readSync, closeSync as closeSync2, unlinkSync, mkdirSync as mkdirSync3, constants as fsConstants } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
+import { dirname as dirname5, join as join4 } from "node:path";
+
+// node_modules/@adlc/tickets/lib/manifest-primitives.mjs
+import {
+  existsSync as existsSync4,
+  lstatSync as lstatSync2,
+  readdirSync as readdirSync2,
+  readFileSync as readFileSync3,
+  writeFileSync as writeFileSync3,
+  openSync as openSync2,
+  readSync,
+  closeSync as closeSync2,
+  unlinkSync,
+  mkdirSync as mkdirSync3,
+  constants as fsConstants
+} from "node:fs";
 import { execFileSync } from "node:child_process";
 import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import { dirname as dirname4, join as join3, relative, sep } from "node:path";
 var SEGMENT_DIRNAME = "manifest.d";
 var SEGMENT_NAME_RE = /^[a-z0-9-]{1,40}-[0-9A-HJKMNP-TV-Z]{26}\.jsonl$/;
-var RESERVED_NAMES = /* @__PURE__ */ new Set([".store.json"]);
+var RESERVED_NAMES = /* @__PURE__ */ new Set([".store.json", ".lineage"]);
 var MARKER_NAME = ".store.json";
 var LINEAGE_NAME = ".lineage";
 var MARKER_FORMAT = "adlc-manifest-segments";
 var MARKER_VERSION = 1;
+var LOCK_SUFFIX = ".lock";
 var MAX_LOCAL_JSON_BYTES = 4096;
 var MAX_LOCK_OWNER_BYTES = 512;
+var MAX_FIRST_LINE_BYTES = 65536;
+var ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+var OVERSIZED_FIRST_ENTRY = /* @__PURE__ */ Symbol("oversized-first-entry");
+var MALFORMED_FIRST_ENTRY = /* @__PURE__ */ Symbol("malformed-first-entry");
+function segmentDirPath(dir = ".adlc") {
+  return join3(dir, SEGMENT_DIRNAME);
+}
+function segmentPath(dir = ".adlc", name) {
+  return join3(segmentDirPath(dir), name);
+}
+function markerPath(dir = ".adlc") {
+  return join3(segmentDirPath(dir), MARKER_NAME);
+}
+function lineagePath(dir = ".adlc") {
+  return join3(segmentDirPath(dir), LINEAGE_NAME);
+}
 function looksLikeGenuineLedgerLock(path2, size) {
   if (size === 0) return true;
   if (size >= MAX_LOCK_OWNER_BYTES) return false;
@@ -940,141 +973,14 @@ function looksLikeGenuineLedgerLock(path2, size) {
   }
   return Boolean(parsed) && typeof parsed === "object" && !Array.isArray(parsed) && typeof parsed.token === "string" && typeof parsed.pid === "number" && typeof parsed.hostname === "string" && typeof parsed.startedAt === "string";
 }
-function segmentDirPath(dir) {
-  return join3(dir, SEGMENT_DIRNAME);
-}
-function segmentPath(dir, name) {
-  return join3(segmentDirPath(dir), name);
-}
-function markerPath(dir) {
-  return join3(segmentDirPath(dir), MARKER_NAME);
-}
-function lineagePath(dir) {
-  return join3(segmentDirPath(dir), LINEAGE_NAME);
-}
-function discoverSegments(dir) {
-  const segDir = segmentDirPath(dir);
-  let dirStat;
+function isSymlinkOrOtherNonRegular(path2) {
+  let st;
   try {
-    dirStat = lstatSync2(segDir);
+    st = lstatSync2(path2);
   } catch {
-    return { valid: [], invalid: [] };
+    return false;
   }
-  if (dirStat.isSymbolicLink()) return { valid: [], invalid: [{ name: ".", reason: "manifest.d/ is a symlink" }] };
-  if (!dirStat.isDirectory()) return { valid: [], invalid: [{ name: ".", reason: "manifest.d/ is not a directory" }] };
-  let names;
-  try {
-    names = readdirSync2(segDir).sort();
-  } catch (err) {
-    return { valid: [], invalid: [{ name: ".", reason: `cannot read manifest.d/: ${err.message}` }] };
-  }
-  const valid = [];
-  const invalid2 = [];
-  for (const name of names) {
-    if (RESERVED_NAMES.has(name)) continue;
-    let st;
-    try {
-      st = lstatSync2(join3(segDir, name));
-    } catch (err) {
-      invalid2.push({ name, reason: `cannot stat: ${err.message}` });
-      continue;
-    }
-    if (st.isSymbolicLink()) {
-      invalid2.push({ name, reason: "symlink" });
-      continue;
-    }
-    if (st.isDirectory()) {
-      invalid2.push({ name, reason: "nested directory" });
-      continue;
-    }
-    if (!st.isFile()) {
-      invalid2.push({ name, reason: "not a regular file" });
-      continue;
-    }
-    if (name === LINEAGE_NAME) continue;
-    if (name.endsWith(".lock")) {
-      if (looksLikeGenuineLedgerLock(join3(segDir, name), st.size)) continue;
-      invalid2.push({ name, reason: "lock-suffixed object is not a genuine advisory lock" });
-      continue;
-    }
-    if (!SEGMENT_NAME_RE.test(name)) {
-      invalid2.push({ name, reason: "bad filename grammar" });
-      continue;
-    }
-    valid.push(name);
-  }
-  return { valid, invalid: invalid2 };
-}
-function readRawLines(filePath) {
-  if (!existsSync4(filePath)) return [];
-  return readFileSync3(filePath, "utf8").split("\n").filter((line) => line.trim() !== "");
-}
-function parseLines(lines) {
-  return lines.map((line) => {
-    try {
-      return JSON.parse(line);
-    } catch {
-      return null;
-    }
-  }).filter(Boolean);
-}
-function canonicalEntryBytes(entry) {
-  if (entry.sigVersion === 2) {
-    const { sig: _sig, ...signed } = entry;
-    return canonicalJson(signed);
-  }
-  const canonical = { seq: entry.seq, gate: entry.gate, ts: entry.ts };
-  if (entry.ticket !== void 0) canonical.ticket = entry.ticket;
-  if (entry.data !== void 0) canonical.data = entry.data;
-  canonical.files = entry.files;
-  canonical.prev = entry.prev;
-  return JSON.stringify(canonical);
-}
-function entrySigValid(key, entry) {
-  if (typeof entry.sig !== "string" || entry.sig.length === 0) return false;
-  const expected = createHmac("sha256", key).update(canonicalEntryBytes(entry)).digest("hex");
-  const a = Buffer.from(entry.sig, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-function chainIsIntact(lines, key = null) {
-  let prevLine = null;
-  let prevSeq = 0;
-  let seenSignedEntry = false;
-  for (const line of lines) {
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      return false;
-    }
-    const expectedPrev = prevLine === null ? null : sha256(prevLine);
-    if (entry?.prev !== expectedPrev || entry?.seq !== prevSeq + 1) return false;
-    if (key !== null) {
-      const hasSig = typeof entry?.sig === "string" && entry.sig.length > 0;
-      if (hasSig) {
-        if (!entrySigValid(key, entry)) return false;
-        seenSignedEntry = true;
-      } else if (seenSignedEntry) {
-        return false;
-      }
-    }
-    prevLine = line;
-    prevSeq = entry.seq;
-  }
-  return true;
-}
-function forestChainsIntact(dir, { key = null } = {}) {
-  if (!chainIsIntact(readRawLines(join3(dir, "manifest.jsonl")), key)) return false;
-  const { valid, invalid: invalid2 } = discoverSegments(dir);
-  if (invalid2.length > 0) return false;
-  return valid.every((name) => chainIsIntact(readRawLines(segmentPath(dir, name)), key));
-}
-function readForestEntries(dir) {
-  const root = parseLines(readRawLines(join3(dir, "manifest.jsonl")));
-  const segments = discoverSegments(dir).valid.flatMap((name) => parseLines(readRawLines(segmentPath(dir, name))));
-  return [...root, ...segments];
+  return !st.isFile();
 }
 function readBoundedJsonNoFollow(path2) {
   let st;
@@ -1101,24 +1007,95 @@ function readBoundedJsonNoFollow(path2) {
     closeSync2(fd);
   }
 }
-function hasActivationMarker(dir) {
+function hasActivationMarker(dir = ".adlc") {
   const parsed = readBoundedJsonNoFollow(markerPath(dir));
   return Boolean(parsed) && typeof parsed === "object" && parsed.format === MARKER_FORMAT && parsed.version === MARKER_VERSION;
 }
-function rootEndsInCutover(dir) {
-  const raw = readRawLines(join3(dir, "manifest.jsonl"));
-  if (raw.length === 0) return false;
+function rootEndsInCutover(dir = ".adlc") {
+  const rootPath = join3(dir, "manifest.jsonl");
+  if (!existsSync4(rootPath)) return false;
+  let content;
   try {
-    const last = JSON.parse(raw.at(-1));
+    content = readFileSync3(rootPath, "utf8");
+  } catch {
+    return false;
+  }
+  const lines = content.split("\n").filter((line) => line.trim() !== "");
+  if (lines.length === 0) return false;
+  try {
+    const last = JSON.parse(lines.at(-1));
     return Boolean(last) && typeof last === "object" && last.gate === "manifest-cutover";
   } catch {
     return false;
   }
 }
-function isSegmentedRepo(dir) {
+function isSegmentedRepo(dir = ".adlc") {
   return hasActivationMarker(dir) || rootEndsInCutover(dir);
 }
-var ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+function discoverSegments(dir = ".adlc") {
+  const segDir = segmentDirPath(dir);
+  let dirStat;
+  try {
+    dirStat = lstatSync2(segDir);
+  } catch {
+    return { valid: [], invalid: [] };
+  }
+  if (dirStat.isSymbolicLink()) {
+    return { valid: [], invalid: [{ name: ".", reason: "manifest.d/ is a symlink" }] };
+  }
+  if (!dirStat.isDirectory()) {
+    return { valid: [], invalid: [{ name: ".", reason: "manifest.d/ is not a directory" }] };
+  }
+  const valid = [];
+  const invalid2 = [];
+  const seenLower = /* @__PURE__ */ new Map();
+  let names;
+  try {
+    names = readdirSync2(segDir).sort();
+  } catch (err) {
+    return { valid: [], invalid: [{ name: ".", reason: `cannot read manifest.d/: ${err.message}` }] };
+  }
+  for (const name of names) {
+    if (RESERVED_NAMES.has(name)) continue;
+    const full = join3(segDir, name);
+    let st;
+    try {
+      st = lstatSync2(full);
+    } catch (err) {
+      invalid2.push({ name, reason: `cannot stat: ${err.message}` });
+      continue;
+    }
+    if (st.isSymbolicLink()) {
+      invalid2.push({ name, reason: "symlink" });
+      continue;
+    }
+    if (st.isDirectory()) {
+      invalid2.push({ name, reason: "nested directory" });
+      continue;
+    }
+    if (!st.isFile()) {
+      invalid2.push({ name, reason: "not a regular file" });
+      continue;
+    }
+    if (name.endsWith(LOCK_SUFFIX)) {
+      if (looksLikeGenuineLedgerLock(full, st.size)) continue;
+      invalid2.push({ name, reason: "lock-suffixed object is not a genuine advisory lock" });
+      continue;
+    }
+    if (!SEGMENT_NAME_RE.test(name)) {
+      invalid2.push({ name, reason: "bad filename grammar" });
+      continue;
+    }
+    const lower = name.toLowerCase();
+    if (seenLower.has(lower)) {
+      invalid2.push({ name, reason: `case-colliding with ${seenLower.get(lower)}` });
+      continue;
+    }
+    seenLower.set(lower, name);
+    valid.push(name);
+  }
+  return { valid, invalid: invalid2 };
+}
 function encodeUlidPart(value, width) {
   let remaining = BigInt(value);
   let output = "";
@@ -1134,6 +1111,9 @@ function generateSegmentUlid(now = Date.now(), entropy = randomBytes(10)) {
   const random = BigInt(`0x${entropy.toString("hex")}`);
   return `${encodeUlidPart(BigInt(now), 10)}${encodeUlidPart(random, 16)}`;
 }
+function ulidOf(segmentName) {
+  return segmentName.slice(segmentName.length - ".jsonl".length - 26, segmentName.length - ".jsonl".length);
+}
 function deriveSlug(branchName) {
   const lowered = String(branchName ?? "").toLowerCase();
   const substituted = lowered.replace(/[^a-z0-9-]+/g, "-");
@@ -1141,30 +1121,25 @@ function deriveSlug(branchName) {
   const truncated = collapsed.slice(0, 40).replace(/-+$/g, "");
   return truncated || "segment";
 }
-function currentBranch(cwd) {
+function currentBranch(cwd = process.cwd()) {
   try {
-    const out = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const out = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim();
     return out === "" || out === "HEAD" ? null : out;
   } catch {
     return null;
   }
 }
-function readLineageToken(dir) {
+function readLineageToken(dir = ".adlc") {
   const token = readBoundedJsonNoFollow(lineagePath(dir));
   if (!token || typeof token !== "object") return null;
   if (typeof token.segment !== "string" || typeof token.ulid !== "string" || typeof token.branch !== "string") return null;
   return token;
 }
-function isSymlinkOrOtherNonRegular(path2) {
-  let st;
-  try {
-    st = lstatSync2(path2);
-  } catch {
-    return false;
-  }
-  return !st.isFile();
-}
-function writeLineageToken(dir, token) {
+function writeLineageToken(dir = ".adlc", token) {
   mkdirSync3(segmentDirPath(dir), { recursive: true });
   const p = lineagePath(dir);
   if (isSymlinkOrOtherNonRegular(p)) unlinkSync(p);
@@ -1175,23 +1150,18 @@ function writeLineageToken(dir, token) {
     closeSync2(fd);
   }
 }
-function ulidOf(segmentName) {
-  return segmentName.slice(segmentName.length - ".jsonl".length - 26, segmentName.length - ".jsonl".length);
-}
-function peekOpenSegment(dir, { cwd = dirname4(dir) } = {}) {
+function peekOpenSegment(dir = ".adlc", { cwd = dir && dir !== ".adlc" ? dirname4(dir) : process.cwd() } = {}) {
   const branch = currentBranch(cwd);
   const token = readLineageToken(dir);
   if (branch !== null && token && token.branch === branch) {
-    if (discoverSegments(dir).valid.includes(token.segment) && ulidOf(token.segment) === token.ulid) {
+    const { valid } = discoverSegments(dir);
+    if (valid.includes(token.segment) && ulidOf(token.segment) === token.ulid) {
       return { name: token.segment, isNew: false };
     }
   }
   return null;
 }
-var MAX_FIRST_LINE_BYTES = 65536;
-var OVERSIZED_FIRST_ENTRY = /* @__PURE__ */ Symbol("oversized-first-entry");
-var MALFORMED_FIRST_ENTRY = /* @__PURE__ */ Symbol("malformed-first-entry");
-function firstEntryOf(dir, segmentName) {
+function firstEntryOf(dir = ".adlc", segmentName) {
   let fd;
   try {
     fd = openSync2(segmentPath(dir, segmentName), fsConstants.O_RDONLY);
@@ -1213,7 +1183,7 @@ function firstEntryOf(dir, segmentName) {
     closeSync2(fd);
   }
 }
-function recoverOpenSegment(dir, { cwd = dirname4(dir) } = {}) {
+function recoverOpenSegment(dir = ".adlc", { cwd = dir && dir !== ".adlc" ? dirname4(dir) : process.cwd() } = {}) {
   const peeked = peekOpenSegment(dir, { cwd });
   if (peeked) return peeked;
   const branch = currentBranch(cwd);
@@ -1247,7 +1217,7 @@ function recoverOpenSegment(dir, { cwd = dirname4(dir) } = {}) {
   }
   return { name: candidates[0], isNew: false };
 }
-function assertSegmentPathCommittable(dir, name) {
+function assertSegmentPathCommittable(dir = ".adlc", name) {
   const probeCwd = dirname4(dir);
   const env = { ...process.env };
   delete env.ADLC_MANIFEST_KEY;
@@ -1275,7 +1245,63 @@ function assertSegmentPathCommittable(dir, name) {
     throw new Error(`git check-ignore failed while probing segment ${name} \u2014 cannot verify the segment is committable, refusing to record evidence blindly`);
   }
 }
-function resolveOpenSegment(dir, { cwd = dirname4(dir), key = null } = {}) {
+function canonicalEntryBytes(entry) {
+  if (entry.sigVersion === 2) {
+    const { sig: _sig, segment: _segment, ...signed } = entry;
+    return canonicalJson(signed);
+  }
+  const canonical = {
+    seq: entry.seq,
+    gate: entry.gate,
+    ts: entry.ts
+  };
+  if (entry.ticket !== void 0) canonical.ticket = entry.ticket;
+  if (entry.data !== void 0) canonical.data = entry.data;
+  canonical.files = entry.files;
+  canonical.prev = entry.prev;
+  return JSON.stringify(canonical);
+}
+function entrySigValid(key, entry) {
+  if (typeof entry?.sig !== "string" || entry.sig.length === 0) return false;
+  const expected = createHmac("sha256", key).update(canonicalEntryBytes(entry)).digest("hex");
+  const a = Buffer.from(entry.sig, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+function isChainIntact(lines, key) {
+  if (lines.length === 0) return false;
+  let prevLine = null;
+  let prevSeq = 0;
+  let seenSignedEntry = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      return false;
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+    if (i === 0 && !Object.hasOwn(entry, "anchor")) return false;
+    if (i > 0 && Object.hasOwn(entry, "anchor")) return false;
+    const expectedPrev = prevLine === null ? null : sha256(prevLine);
+    if (entry.prev !== expectedPrev || entry.seq !== prevSeq + 1) return false;
+    if (key !== null) {
+      const hasSig = typeof entry.sig === "string" && entry.sig.length > 0;
+      if (hasSig) {
+        if (!entrySigValid(key, entry)) return false;
+        seenSignedEntry = true;
+      } else if (seenSignedEntry) {
+        return false;
+      }
+    }
+    prevLine = line;
+    prevSeq = entry.seq;
+  }
+  return true;
+}
+function resolveOpenSegment(dir = ".adlc", { cwd = dir && dir !== ".adlc" ? dirname4(dir) : process.cwd(), key = null } = {}) {
   const markerDoc = readBoundedJsonNoFollow(markerPath(dir));
   if (markerDoc && markerDoc.auth === "keyed" && key === null) {
     throw new Error(
@@ -1287,14 +1313,18 @@ function resolveOpenSegment(dir, { cwd = dirname4(dir), key = null } = {}) {
   if (key !== null) {
     const recovered = recoverOpenSegment(dir, { cwd });
     if (recovered) {
-      const lines = readRawLines(segmentPath(dir, recovered.name));
+      let lines = [];
+      const segFile = segmentPath(dir, recovered.name);
+      if (existsSync4(segFile)) {
+        lines = readFileSync3(segFile, "utf8").split("\n").filter((l) => l.trim() !== "");
+      }
       let first = null;
       try {
         first = JSON.parse(lines[0]);
       } catch {
       }
       const firstAuthenticated = Boolean(first) && first.sigVersion === 2 && entrySigValid(key, first);
-      if (!chainIsIntact(lines, key) || !firstAuthenticated) {
+      if (!isChainIntact(lines, key) || !firstAuthenticated) {
         throw new Error(
           `segment ${recovered.name} declares this branch but cannot be authenticated with the configured key (broken chain, or its branch-bearing first entry lacks a verified v2 signature) \u2014 refusing to extend it, and refusing to mint a duplicate past it (that would silently fork this branch's lineage)`
         );
@@ -1315,8 +1345,12 @@ function resolveOpenSegment(dir, { cwd = dirname4(dir), key = null } = {}) {
     }
   }
   const branch = currentBranch(cwd);
-  const rootLines = readRawLines(join3(dir, "manifest.jsonl"));
-  const rootLast = rootLines.at(-1) ?? null;
+  const rootPath = join3(dir, "manifest.jsonl");
+  let rootLast = null;
+  if (existsSync4(rootPath)) {
+    const rootLines = readFileSync3(rootPath, "utf8").split("\n").filter((l) => l.trim() !== "");
+    rootLast = rootLines.at(-1) ?? null;
+  }
   let anchor = null;
   if (rootLast !== null) {
     let lastEntry = null;
@@ -1334,6 +1368,59 @@ function resolveOpenSegment(dir, { cwd = dirname4(dir), key = null } = {}) {
   return { name, isNew: true, anchor, ...branch !== null ? { branch } : {} };
 }
 
+// node_modules/@adlc/tickets/lib/manifest-segments.mjs
+function readRawLines(filePath) {
+  if (!existsSync5(filePath)) return [];
+  return readFileSync4(filePath, "utf8").split("\n").filter((line) => line.trim() !== "");
+}
+function parseLines(lines) {
+  return lines.map((line) => {
+    try {
+      return JSON.parse(line);
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+}
+function chainIsIntact(lines, key = null) {
+  let prevLine = null;
+  let prevSeq = 0;
+  let seenSignedEntry = false;
+  for (const line of lines) {
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      return false;
+    }
+    const expectedPrev = prevLine === null ? null : sha256(prevLine);
+    if (entry?.prev !== expectedPrev || entry?.seq !== prevSeq + 1) return false;
+    if (key !== null) {
+      const hasSig = typeof entry?.sig === "string" && entry.sig.length > 0;
+      if (hasSig) {
+        if (!entrySigValid(key, entry)) return false;
+        seenSignedEntry = true;
+      } else if (seenSignedEntry) {
+        return false;
+      }
+    }
+    prevLine = line;
+    prevSeq = entry.seq;
+  }
+  return true;
+}
+function forestChainsIntact(dir, { key = null } = {}) {
+  if (!chainIsIntact(readRawLines(join4(dir, "manifest.jsonl")), key)) return false;
+  const { valid, invalid: invalid2 } = discoverSegments(dir);
+  if (invalid2.length > 0) return false;
+  return valid.every((name) => chainIsIntact(readRawLines(segmentPath(dir, name)), key));
+}
+function readForestEntries(dir) {
+  const root = parseLines(readRawLines(join4(dir, "manifest.jsonl")));
+  const segments = discoverSegments(dir).valid.flatMap((name) => parseLines(readRawLines(segmentPath(dir, name))));
+  return [...root, ...segments];
+}
+
 // node_modules/@adlc/tickets/lib/key-contract.mjs
 function validateKeyParam(key) {
   if (key === null) return null;
@@ -1347,7 +1434,7 @@ function validateKeyParam(key) {
 var sleep2 = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 function withManifestLock(path2, fn, { retries = 400, delayMs = 5 } = {}) {
   const lockPath = `${path2}.lock`;
-  mkdirSync4(dirname5(path2), { recursive: true });
+  mkdirSync4(dirname6(path2), { recursive: true });
   const owner = { version: 1, token: randomUUID(), pid: process.pid, hostname: hostname2(), startedAt: (/* @__PURE__ */ new Date()).toISOString() };
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     let descriptor;
@@ -1369,7 +1456,7 @@ function withManifestLock(path2, fn, { retries = 400, delayMs = 5 } = {}) {
       return fn();
     } finally {
       try {
-        const current = JSON.parse(readFileSync4(lockPath, "utf8"));
+        const current = JSON.parse(readFileSync5(lockPath, "utf8"));
         if (current.token === owner.token) unlinkSync2(lockPath);
       } catch {
       }
@@ -1418,11 +1505,11 @@ function recordSegmentedTicketEvidence(dir, { gate, data, transactionId, operati
     }
     const existing = findMatchingEvidence(readForestEntries(dir), { gate, data, transactionId, operation, action, ticketId, ticketHash: ticketHash2, storeHash: storeHash2, archiveHash, key, acceptLegacyMatch });
     if (existing) return existing;
-    const resolved = resolveOpenSegment(dir, { cwd: dirname5(dir), key });
+    const resolved = resolveOpenSegment(dir, { cwd: dirname6(dir), key });
     const targetPath = segmentPath(dir, resolved.name);
-    mkdirSync4(dirname5(targetPath), { recursive: true });
+    mkdirSync4(dirname6(targetPath), { recursive: true });
     return withManifestLock(targetPath, () => {
-      const content = existsSync5(targetPath) ? readFileSync4(targetPath, "utf8") : "";
+      const content = existsSync6(targetPath) ? readFileSync5(targetPath, "utf8") : "";
       const rawLines = content.split("\n").filter((line) => line.trim() !== "");
       if (resolved.isNew && rawLines.length > 0) {
         throw conflict("INVALID_MANIFEST", `segment ${resolved.name} was expected to be new but already has content`);
@@ -1465,7 +1552,7 @@ function recordSegmentedTicketEvidence(dir, { gate, data, transactionId, operati
       } finally {
         closeSync3(descriptor);
       }
-      fsyncDirectory(dirname5(targetPath));
+      fsyncDirectory(dirname6(targetPath));
       return entry;
     });
   });
@@ -1487,7 +1574,7 @@ function recordTicketEvidence(root, {
   acceptLegacyMatch = false
 } = {}) {
   const signingKey = validateKeyParam(key);
-  const dir = join4(root, ".adlc");
+  const dir = join5(root, ".adlc");
   const data = {
     operation,
     action,
@@ -1511,9 +1598,9 @@ function recordTicketEvidence(root, {
   if (isSegmentedRepo(dir)) {
     return recordSegmentedTicketEvidence(dir, { gate, data, transactionId, operation, action, ticketId, ticketHash: ticketHash2, storeHash: storeHash2, archiveHash, key: signingKey, acceptLegacyMatch });
   }
-  const path2 = join4(root, ".adlc/manifest.jsonl");
+  const path2 = join5(root, ".adlc/manifest.jsonl");
   return withManifestLock(path2, () => {
-    const content = existsSync5(path2) ? readFileSync4(path2, "utf8") : "";
+    const content = existsSync6(path2) ? readFileSync5(path2, "utf8") : "";
     const lines = content.split("\n").filter((line) => line.trim());
     if (isSegmentedRepo(dir)) {
       throw conflict("MANIFEST_FROZEN", "manifest chain is frozen; this repo uses .adlc/manifest.d/ \u2014 upgrade adlc if you are seeing this locally");
@@ -1563,14 +1650,14 @@ function recordTicketEvidence(root, {
     } finally {
       closeSync3(descriptor);
     }
-    fsyncDirectory(dirname5(path2));
+    fsyncDirectory(dirname6(path2));
     return entry;
   });
 }
 
 // node_modules/@adlc/tickets/lib/trust-root.mjs
-import { existsSync as existsSync6, lstatSync as lstatSync3, readFileSync as readFileSync5, readdirSync as readdirSync3 } from "node:fs";
-import { join as join5 } from "node:path";
+import { existsSync as existsSync7, lstatSync as lstatSync3, readFileSync as readFileSync6, readdirSync as readdirSync3 } from "node:fs";
+import { join as join6 } from "node:path";
 var STORE_MARKER = ".store.json";
 function assertNotSymlink(path2) {
   let stat;
@@ -1595,11 +1682,11 @@ function storeDeclaresRails(tickets) {
   });
 }
 function archiveDeclaresRails(root) {
-  const directory = join5(root, ARCHIVE_DIRECTORY);
-  const legacy = join5(root, LEGACY_ARCHIVE_FILE);
+  const directory = join6(root, ARCHIVE_DIRECTORY);
+  const legacy = join6(root, LEGACY_ARCHIVE_FILE);
   assertNotSymlink(directory);
   assertNotSymlink(legacy);
-  if (existsSync6(directory)) {
+  if (existsSync7(directory)) {
     let entries;
     try {
       entries = readdirSync3(directory, { withFileTypes: true });
@@ -1610,7 +1697,7 @@ function archiveDeclaresRails(root) {
     for (const entry of entries) {
       if (entry.name === STORE_MARKER) {
         try {
-          const marker = JSON.parse(readFileSync5(join5(directory, entry.name), "utf8"));
+          const marker = JSON.parse(readFileSync6(join6(directory, entry.name), "utf8"));
           if (!marker || typeof marker !== "object" || typeof marker.format !== "string") return true;
           sawMarker = true;
         } catch {
@@ -1618,11 +1705,11 @@ function archiveDeclaresRails(root) {
         }
         continue;
       }
-      if (entry.isSymbolicLink()) assertNotSymlink(join5(directory, entry.name));
+      if (entry.isSymbolicLink()) assertNotSymlink(join6(directory, entry.name));
       if (!entry.isFile()) return true;
       let parsed;
       try {
-        parsed = JSON.parse(readFileSync5(join5(directory, entry.name), "utf8"));
+        parsed = JSON.parse(readFileSync6(join6(directory, entry.name), "utf8"));
       } catch {
         return true;
       }
@@ -1631,9 +1718,9 @@ function archiveDeclaresRails(root) {
     }
     if (!sawMarker) return true;
   }
-  if (existsSync6(legacy)) {
+  if (existsSync7(legacy)) {
     try {
-      const parsed = JSON.parse(readFileSync5(legacy, "utf8"));
+      const parsed = JSON.parse(readFileSync6(legacy, "utf8"));
       if (storeDeclaresRails(parsed?.tickets)) return true;
     } catch {
       return true;
@@ -1642,26 +1729,26 @@ function archiveDeclaresRails(root) {
   return false;
 }
 function manifestRecordsBypass(root) {
-  const rootManifest = join5(root, ".adlc", "manifest.jsonl");
-  const segments = join5(root, ".adlc", "manifest.d");
+  const rootManifest = join6(root, ".adlc", "manifest.jsonl");
+  const segments = join6(root, ".adlc", "manifest.d");
   assertNotSymlink(rootManifest);
   assertNotSymlink(segments);
   const files = [rootManifest];
-  if (existsSync6(segments)) {
+  if (existsSync7(segments)) {
     try {
       for (const entry of readdirSync3(segments, { withFileTypes: true })) {
-        if (entry.isSymbolicLink()) assertNotSymlink(join5(segments, entry.name));
-        if (entry.isFile() && entry.name.endsWith(".jsonl")) files.push(join5(segments, entry.name));
+        if (entry.isSymbolicLink()) assertNotSymlink(join6(segments, entry.name));
+        if (entry.isFile() && entry.name.endsWith(".jsonl")) files.push(join6(segments, entry.name));
       }
     } catch {
       return true;
     }
   }
   for (const file of files) {
-    if (!existsSync6(file)) continue;
+    if (!existsSync7(file)) continue;
     let text;
     try {
-      text = readFileSync5(file, "utf8");
+      text = readFileSync6(file, "utf8");
     } catch {
       return true;
     }
@@ -1679,7 +1766,7 @@ function manifestRecordsBypass(root) {
   return false;
 }
 function repoDeclaresRails(root, tickets) {
-  assertNotSymlink(join5(root, ".adlc"));
+  assertNotSymlink(join6(root, ".adlc"));
   return storeDeclaresRails(tickets) || archiveDeclaresRails(root) || manifestRecordsBypass(root);
 }
 function assertWriteIsSignable({ key, allowUnsigned = false } = {}) {
@@ -1697,7 +1784,7 @@ function assertSignableTrustRootWrite(tickets, { key, allowUnsigned = false, roo
 }
 
 // node_modules/@adlc/tickets/lib/transaction.mjs
-var fileHash = (path2) => sha256(readFileSync6(path2));
+var fileHash = (path2) => sha256(readFileSync7(path2));
 function journalPath(root, path2) {
   const absolute = resolve3(path2);
   const rel = relative2(resolve3(root), absolute);
@@ -1725,17 +1812,17 @@ function applyLegacyTransaction(store, tickets, { expectedSnapshotHash, operatio
   validateTickets(tickets);
   const transactionId = randomUUID2();
   const lock = existingLock ?? acquireTicketLock(root, { transactionId, command: `ticket:${operation}` });
-  const transactionRoot = join6(root, TRANSACTION_DIRECTORY, transactionId);
+  const transactionRoot = join7(root, TRANSACTION_DIRECTORY, transactionId);
   try {
     const before = store.load();
     if (expectedSnapshotHash && before.hash !== expectedSnapshotHash) throw conflict("STALE_SNAPSHOT", `expected ${expectedSnapshotHash}, found ${before.hash}`);
     const bypassAudit = transactionChangesAnything(before, tickets, []) ? bypassAuditPlan(before, { operation, evidenceRequired, key, allowUnsigned, root }) : null;
     const target = resolve3(store.path);
     const recordedTarget = journalPath(root, target);
-    const stage = join6(transactionRoot, "stage", basename(store.path));
-    const backup = join6(transactionRoot, "backup", basename(store.path));
-    durableMkdir(dirname6(stage));
-    durableMkdir(dirname6(backup));
+    const stage = join7(transactionRoot, "stage", basename(store.path));
+    const backup = join7(transactionRoot, "backup", basename(store.path));
+    durableMkdir(dirname7(stage));
+    durableMkdir(dirname7(backup));
     durableWrite(stage, prettyCanonicalJson({ tickets }));
     durableCopy(target, backup);
     const afterHash = storeHash(tickets);
@@ -1763,7 +1850,7 @@ function applyLegacyTransaction(store, tickets, { expectedSnapshotHash, operatio
         afterHash: fileHash(stage)
       }]
     };
-    durableWrite(join6(transactionRoot, "journal.json"), `${JSON.stringify(journal, null, 2)}
+    durableWrite(join7(transactionRoot, "journal.json"), `${JSON.stringify(journal, null, 2)}
 `);
     faultInjector?.("journal-prepared", { transactionId, operations: 1 });
     const temporary = `${target}.txn-${transactionId}`;
@@ -1782,12 +1869,12 @@ function applyLegacyTransaction(store, tickets, { expectedSnapshotHash, operatio
       ...bypassAudit ? { gate: bypassAudit.gate, bypass: true, storeHashBefore: bypassAudit.storeHashBefore } : {}
     });
     journal.state = "complete";
-    durableWrite(join6(transactionRoot, "journal.json"), `${JSON.stringify(journal, null, 2)}
+    durableWrite(join7(transactionRoot, "journal.json"), `${JSON.stringify(journal, null, 2)}
 `);
     durableRemove(transactionRoot, { recursive: true, force: true });
     return after;
   } catch (error) {
-    if (!existsSync7(join6(transactionRoot, "journal.json")) && existsSync7(transactionRoot)) durableRemove(transactionRoot, { recursive: true, force: true });
+    if (!existsSync8(join7(transactionRoot, "journal.json")) && existsSync8(transactionRoot)) durableRemove(transactionRoot, { recursive: true, force: true });
     throw error;
   } finally {
     if (!existingLock) releaseTicketLock(lock);
@@ -1797,9 +1884,9 @@ function applyLegacyTransaction(store, tickets, { expectedSnapshotHash, operatio
 // node_modules/@adlc/tickets/lib/stores/legacy.mjs
 function repositoryRootFor(path2, explicit) {
   if (explicit !== null && explicit !== void 0) return explicit;
-  const parent = dirname7(path2);
-  if (basename2(path2) === basename2(LEGACY_FILE) && basename2(parent) === dirname7(LEGACY_FILE)) {
-    return dirname7(parent);
+  const parent = dirname8(path2);
+  if (basename2(path2) === basename2(LEGACY_FILE) && basename2(parent) === dirname8(LEGACY_FILE)) {
+    return dirname8(parent);
   }
   throw invalid(
     "AMBIGUOUS_STORE_ROOT",
@@ -1811,7 +1898,7 @@ var LegacyTicketStore = class {
     this.path = path2;
   }
   exists() {
-    return existsSync8(this.path);
+    return existsSync9(this.path);
   }
   /**
    * `root` is where the trust-root evidence is read from — the archive, the manifest,
@@ -1832,11 +1919,11 @@ var LegacyTicketStore = class {
     if (!this.exists()) throw operational("STORE_NOT_FOUND", `tickets file not found: ${this.path}`);
     const stat = lstatSync4(this.path);
     if (stat.isSymbolicLink() || !stat.isFile()) throw invalid("UNSAFE_STORE_PATH", `${this.path} must be a regular file`);
-    const parentStat = lstatSync4(dirname7(this.path));
-    if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) throw invalid("UNSAFE_STORE_PATH", `${dirname7(this.path)} must be a real directory`);
+    const parentStat = lstatSync4(dirname8(this.path));
+    if (parentStat.isSymbolicLink() || !parentStat.isDirectory()) throw invalid("UNSAFE_STORE_PATH", `${dirname8(this.path)} must be a real directory`);
     let parsed;
     try {
-      parsed = JSON.parse(readFileSync7(this.path, "utf8"));
+      parsed = JSON.parse(readFileSync8(this.path, "utf8"));
     } catch (error) {
       throw invalid("INVALID_JSON", `invalid JSON in ${this.path}: ${error.message}`);
     }
@@ -1849,10 +1936,10 @@ var LegacyTicketStore = class {
 };
 
 // node_modules/@adlc/tickets/lib/store.mjs
-var rooted = (root, path2) => isAbsolute2(path2) ? path2 : join7(root, path2);
+var rooted = (root, path2) => isAbsolute2(path2) ? path2 : join8(root, path2);
 function pendingTransactions(root = ".") {
-  const path2 = join7(root, TRANSACTION_DIRECTORY);
-  if (!existsSync9(path2)) return [];
+  const path2 = join8(root, TRANSACTION_DIRECTORY);
+  if (!existsSync10(path2)) return [];
   const stat = lstatSync5(path2);
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw conflict("RECOVERY_REQUIRED", `${path2} is not a safe transaction directory`);
   return readdirSync4(path2).filter((entry) => !entry.startsWith(".")).sort();
@@ -1877,8 +1964,8 @@ function detectTicketStore(options = {}) {
     if (path2.endsWith(".json")) return new LegacyTicketStore(path2);
     return new DirectoryTicketStore(path2);
   }
-  const legacy = new LegacyTicketStore(join7(root, LEGACY_FILE));
-  const directory = new DirectoryTicketStore(join7(root, ACTIVE_DIRECTORY));
+  const legacy = new LegacyTicketStore(join8(root, LEGACY_FILE));
+  const directory = new DirectoryTicketStore(join8(root, ACTIVE_DIRECTORY));
   if (legacy.exists() && directory.exists()) throw conflict("AMBIGUOUS_STORE", "both .adlc/tickets.json and .adlc/tickets/ exist; complete or roll back migration");
   if (directory.exists()) return directory;
   if (legacy.exists()) return legacy;
@@ -1892,13 +1979,16 @@ var SLASH = "/".charCodeAt(0);
 // node_modules/@adlc/tickets/lib/manifest-rails.mjs
 var MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketplace.json"]);
 
+// node_modules/@adlc/tickets/lib/rail-existence.mjs
+var GIT_MAX_BUFFER = 256 * 1024 * 1024;
+
 // node_modules/@adlc/tickets/lib/prompt.mjs
 import { createInterface } from "node:readline/promises";
 
 // lib/active-rails.mjs
-import { existsSync as existsSync10, lstatSync as lstatSync6, statSync } from "node:fs";
+import { existsSync as existsSync11, lstatSync as lstatSync6, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname as dirname8, join as join8, resolve as resolve5 } from "node:path";
+import { dirname as dirname9, join as join9, resolve as resolve5 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
 function isActiveTicket(ticket) {
   if (!ticket || typeof ticket !== "object") return true;
@@ -1918,21 +2008,21 @@ function findAdlcRoot(targetPath, { home = homedir(), homes } = {}) {
   let outermost = null;
   let curr = resolve5(targetPath);
   for (; ; ) {
-    const isRoot = curr === "/" || curr === dirname8(curr);
-    const hasAdlc = !homeDirs.has(curr) && !isRoot && isSymlinkOrDirectory(join8(curr, ".adlc"));
+    const isRoot = curr === "/" || curr === dirname9(curr);
+    const hasAdlc = !homeDirs.has(curr) && !isRoot && isSymlinkOrDirectory(join9(curr, ".adlc"));
     if (hasAdlc) {
-      if (existsSync10(join8(curr, ".git"))) return curr;
+      if (existsSync11(join9(curr, ".git"))) return curr;
       outermost = curr;
     }
-    const parent = dirname8(curr);
+    const parent = dirname9(curr);
     if (parent === curr) return outermost;
     curr = parent;
   }
 }
 function hasSymlinkStorePath(repoRoot) {
-  for (const rel of [".adlc", join8(".adlc", "tickets"), join8(".adlc", "tickets.json")]) {
+  for (const rel of [".adlc", join9(".adlc", "tickets"), join9(".adlc", "tickets.json")]) {
     try {
-      const st = lstatSync6(join8(repoRoot, rel), { throwIfNoEntry: false });
+      const st = lstatSync6(join9(repoRoot, rel), { throwIfNoEntry: false });
       if (st?.isSymbolicLink()) return true;
     } catch {
       return true;
@@ -1952,7 +2042,7 @@ function loadSnapshot(repoRoot) {
   }
 }
 function unionActiveRails(repoRoot) {
-  const adlcSt = lstatSync6(join8(repoRoot, ".adlc"), { throwIfNoEntry: false });
+  const adlcSt = lstatSync6(join9(repoRoot, ".adlc"), { throwIfNoEntry: false });
   if (!adlcSt) {
     return { ok: true, adlc: false, hasActiveTickets: false, rails: [] };
   }
@@ -2084,8 +2174,8 @@ var TICKET_STORE_DIR = ".adlc/tickets";
 var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls", "wc"]);
 
 // hooks/policy/paths.mjs
-import { existsSync as existsSync11, lstatSync as lstatSync7, readlinkSync, realpathSync } from "node:fs";
-import { dirname as dirname9, basename as basename3, isAbsolute as isAbsolute3, join as join9, relative as relative3, resolve as resolve6, sep as sep3 } from "node:path";
+import { existsSync as existsSync12, lstatSync as lstatSync7, readlinkSync, realpathSync } from "node:fs";
+import { dirname as dirname10, basename as basename3, isAbsolute as isAbsolute3, join as join10, relative as relative3, resolve as resolve6, sep as sep3 } from "node:path";
 
 // node_modules/minimatch/dist/esm/index.js
 var import_brace_expansion = __toESM(require_brace_expansion(), 1);
@@ -3421,7 +3511,7 @@ minimatch.unescape = unescape;
 var SHARD_NAME = /^[^/]+--[0-9a-f]{64}\.json$/;
 var HOME_PREFIX = /^(~[A-Za-z0-9._-]*|\$HOME|\$\{HOME\})(?=\/|$)/;
 function expandHome(token, home) {
-  return token.replace(HOME_PREFIX, (m) => m.startsWith("~") && m.length > 1 ? join9(dirname9(home), m.slice(1)) : home);
+  return token.replace(HOME_PREFIX, (m) => m.startsWith("~") && m.length > 1 ? join10(dirname10(home), m.slice(1)) : home);
 }
 function hasHomePrefix(token) {
   return HOME_PREFIX.test(token);
@@ -3490,7 +3580,7 @@ function physicalResolve(input, base = "/", platform = process.platform) {
     const comp = stack.pop();
     if (comp === "" || comp === ".") continue;
     if (comp === "..") {
-      current = dirname9(current);
+      current = dirname10(current);
       if (current.length < root.length) current = root;
       if (missingDepth > 0) missingDepth -= 1;
       continue;
@@ -3550,24 +3640,24 @@ function isWithin(child, parent, platform = process.platform) {
 }
 function protectedRoots(home) {
   return [
-    join9(home, ".gemini"),
-    join9(home, ".config", "antigravity-booster"),
-    join9(home, ".local", "bin", "agb"),
-    join9(home, ".local", "share", "fnm"),
-    join9(home, ".local", "share", "mise"),
-    join9(home, ".asdf"),
-    join9(home, ".volta"),
-    join9(home, ".nodenv"),
-    join9(home, ".nvm"),
-    join9(home, "n"),
+    join10(home, ".gemini"),
+    join10(home, ".config", "antigravity-booster"),
+    join10(home, ".local", "bin", "agb"),
+    join10(home, ".local", "share", "fnm"),
+    join10(home, ".local", "share", "mise"),
+    join10(home, ".asdf"),
+    join10(home, ".volta"),
+    join10(home, ".nodenv"),
+    join10(home, ".nvm"),
+    join10(home, "n"),
     "/opt/homebrew",
     "/usr/local"
   ];
 }
 function boosterDataRoots(home) {
   return [
-    join9(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster"),
-    join9(home, ".config", "antigravity-booster")
+    join10(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster"),
+    join10(home, ".config", "antigravity-booster")
   ];
 }
 var PROC_ROOT_PREFIX = /^(?:\/proc\/(?:self|thread-self|\d+)\/root)+(?=\/|$)/;
@@ -3626,7 +3716,7 @@ function matchImplicitRail(rel, repoRoot, platform) {
     return `${TICKET_STORE_DIR}/`;
   }
   if (covers(rel, TICKET_STORE_DIR, platform)) {
-    if (existsSync11(join9(repoRoot, rel))) return "existing ticket shard";
+    if (existsSync12(join10(repoRoot, rel))) return "existing ticket shard";
     const name = rel.slice(TICKET_STORE_DIR.length + 1);
     if (name.includes("/") || !SHARD_NAME.test(name)) return `${TICKET_STORE_DIR}/`;
   }
@@ -3673,7 +3763,7 @@ function isRailAncestorOnly(rel, rail, platform) {
 
 // hooks/policy/shell.mjs
 import { readdirSync as readdirSync5 } from "node:fs";
-import { basename as basename4, dirname as dirname10, isAbsolute as isAbsolute4, join as join10, relative as relative4, resolve as resolve7, sep as sep4 } from "node:path";
+import { basename as basename4, dirname as dirname11, isAbsolute as isAbsolute4, join as join11, relative as relative4, resolve as resolve7, sep as sep4 } from "node:path";
 
 // hooks/policy/shell-lexer.mjs
 var GLOB_CHARS = /* @__PURE__ */ new Set(["*", "?", "["]);
@@ -3968,13 +4058,13 @@ function isStage1(sub) {
   return rest.every((t) => !t.startsWith("-") || allowed.some((re) => re.test(t)));
 }
 function shimForms(home, realHome) {
-  return /* @__PURE__ */ new Set(["~/.local/bin/agb", "$HOME/.local/bin/agb", "${HOME}/.local/bin/agb", join10(home, ".local/bin/agb"), join10(realHome, ".local/bin/agb")]);
+  return /* @__PURE__ */ new Set(["~/.local/bin/agb", "$HOME/.local/bin/agb", "${HOME}/.local/bin/agb", join11(home, ".local/bin/agb"), join11(realHome, ".local/bin/agb")]);
 }
 function isShimInvocation(argv, ctx) {
   if (shimForms(ctx.home, ctx.realHome).has(argv[0])) return true;
   if ((argv[0] === "/bin/sh" || argv[0] === "sh") && argv[2] === "dist/agb.mjs" && typeof argv[1] === "string") {
     const launcher = resolve7(expandHome(argv[1], ctx.home));
-    const pluginsDir = join10(ctx.home, ".gemini", "config", "plugins");
+    const pluginsDir = join11(ctx.home, ".gemini", "config", "plugins");
     return /\/antigravity-booster(-[^/]+)?\/bin\/node-launcher\.sh$/.test(launcher) && isWithin(launcher, pluginsDir, ctx.platform);
   }
   return false;
@@ -4067,7 +4157,7 @@ var askOrDeny = (ctx, reason) => ctx.headless ? deny(reason) : ask(reason);
 function trustRootSamples(repo) {
   const samples = [...IMPLICIT_RAIL_FILES, ...IMPLICIT_RAIL_DIRS, ...IMPLICIT_RAIL_DIRS.map((d) => `${d}/x`), TICKET_STORE_DIR];
   try {
-    for (const name of readdirSync5(join10(repo.root, TICKET_STORE_DIR))) samples.push(`${TICKET_STORE_DIR}/${name}`);
+    for (const name of readdirSync5(join11(repo.root, TICKET_STORE_DIR))) samples.push(`${TICKET_STORE_DIR}/${name}`);
   } catch {
   }
   return samples;
@@ -4086,7 +4176,7 @@ function globTargetVerdict(token, cwd, ctx) {
   const roots = ctx.protectedRoots;
   for (const h of homes) {
     const absPattern = resolve7(cwd, expandHome(token, h));
-    const staticDir = dirname10(absPattern.slice(0, absPattern.search(GLOB_CHARS2) + 1));
+    const staticDir = dirname11(absPattern.slice(0, absPattern.search(GLOB_CHARS2) + 1));
     if (roots.some((root) => isWithin(staticDir, root, ctx.platform) || staticDir !== "/" && isWithin(root, staticDir, ctx.platform))) {
       return deny("Glob in a shell command reaches platform configuration, plugins, or Node runtimes");
     }
@@ -4421,7 +4511,7 @@ function subtreeHoldsAdlc(dir, limit) {
       seen += 1;
       if (seen > limit) return "too-large";
       if (entry.name === ".adlc" && (entry.isDirectory() || entry.isSymbolicLink())) return true;
-      if (entry.isDirectory() && !SUBTREE_SKIP.has(entry.name)) queue.push(join11(current, entry.name));
+      if (entry.isDirectory() && !SUBTREE_SKIP.has(entry.name)) queue.push(join12(current, entry.name));
     }
   }
   return false;

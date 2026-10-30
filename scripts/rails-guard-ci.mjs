@@ -31,7 +31,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const OID = /^[0-9a-f]{40,64}$/;
 const TICKET_HASH_DOMAIN = 'adlc:ticket:v1\0';
 
-// ---- canonical forms: mirror of @adlc/tickets@1.11.1 lib/canonical.mjs and
+// ---- canonical forms: mirror of @adlc/tickets@1.12.0 lib/canonical.mjs and
 // lib/filename.mjs (sorted-by-UTF-8-bytes object rebuild, then JSON.stringify,
 // so integer-like keys order exactly as the library's output). Pinned by parity tests.
 const byBytes = (a, b) => Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
