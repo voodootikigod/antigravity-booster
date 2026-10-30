@@ -1,7 +1,8 @@
 // Native agy plugin layout (T-PLUGIN-01-CORE, spec §2.1, §4.1, §4.5, Appendix A D3/D7/D9).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -175,7 +176,7 @@ test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, r
 });
 
 test('layout: stageMarketplacePlugin produces clean bundle + marketplace.json and passes agy plugin validate --strict with 0 warnings/notes', () => {
-  const staged = stageMarketplacePlugin({ repoRoot: ROOT });
+  const staged = stageMarketplacePlugin();
   try {
     assert.equal(existsSync(join(staged.pluginDir, 'AGENTS.md')), false, 'root AGENTS.md excluded from staged bundle');
     assert.equal(existsSync(join(staged.pluginDir, 'commands')), false, 'legacy commands/ excluded from staged bundle');
@@ -195,5 +196,18 @@ test('layout: stageMarketplacePlugin produces clean bundle + marketplace.json an
     }
   } finally {
     rmSync(staged.stageRoot, { recursive: true, force: true });
+  }
+
+  // Also verify staging into a nested explicit outDir and re-staging over an existing directory
+  const baseTmp = mkdtempSync(join(tmpdir(), 'agb-mp-custom-'));
+  try {
+    const nestedOut = join(baseTmp, 'nested', 'stage');
+    const s1 = stageMarketplacePlugin({ outDir: nestedOut });
+    assert.equal(s1.stageRoot, nestedOut);
+    writeFileSync(join(s1.pluginDir, 'stale.txt'), 'stale');
+    const s2 = stageMarketplacePlugin({ outDir: nestedOut });
+    assert.equal(existsSync(join(s2.pluginDir, 'stale.txt')), false, 'previous pluginDir contents cleared on re-stage');
+  } finally {
+    rmSync(baseTmp, { recursive: true, force: true });
   }
 });

@@ -202,7 +202,7 @@ test('pre-flight: a source that fails agy plugin validate, or lacks a component 
   } finally { bad.cleanup(); }
 });
 
-test('validate output parser reads real agy lines (ANSI, skipped categories, and agy 1.4.x dot summary)', () => {
+test('validate output parser reads real agy lines (ANSI, skipped categories, and agy 1.4.x dot summary)', async () => {
   const real = '  \x1b[32m[ok]\x1b[0m    .\n          \x1b[32m✔\x1b[0m skills      : 2 processed\n' +
     '          \x1b[32m✔\x1b[0m commands    : 7 processed (converted to skills)\n          - mcpServers  : skipped (not found)\n' +
     '          \x1b[32m✔\x1b[0m hooks       : 1 processed\n';
@@ -211,6 +211,21 @@ test('validate output parser reads real agy lines (ANSI, skipped categories, and
     '  skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1 · sidecars 0\n\nValidation passed.\n';
   assert.deepEqual(parseValidateOutput(v14), { skills: 7, agents: 3, rules: 1, hooks: 1, mcpServers: 1, sidecars: 0 });
   assert.deepEqual(parseValidateOutput(undefined), {});
+
+  // Verify validateBooster against agy 1.4.x dot-summary output when hooks is 0 (must fail naming hooks)
+  const ctx = setup();
+  try {
+    const v14NoHooksAgy = join(ctx.root, 'agy-v14-no-hooks');
+    writeFileSync(
+      v14NoHooksAgy,
+      '#!/bin/sh\nif [ "$1" = "plugin" ] && [ "$2" = "validate" ]; then\n  echo "✔ antigravity-booster (plugin.json)"\n  echo "  skills 7 · agents 3 · rules 1 · hooks 0 · mcpServers 1 · sidecars 0"\n  exit 0\nfi\nexec "' + FAKE_AGY + '" "$@"\n',
+      { mode: 0o755 },
+    );
+    assert.equal(await run(ctx, { agyBin: v14NoHooksAgy }), 1);
+    assert.match(ctx.errs.join('\n'), /missing component categories: hooks/);
+  } finally {
+    ctx.cleanup();
+  }
 });
 
 test('MIGRATED: re-run refused without --force; --force re-runs and keeps the baseline byte-identical', async () => {

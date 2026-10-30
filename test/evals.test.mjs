@@ -16,6 +16,7 @@ import {
   twoProportionZTest,
 } from '../evals/stats.mjs';
 import {
+  CALIBRATION_ANCHORS,
   runPerf8TicketDagScenario,
   runPerf16TicketScaleScenario,
   runAccCrossModelProsecutionScenario,
@@ -23,9 +24,15 @@ import {
 } from '../evals/scenarios.mjs';
 import { runAllEvals, renderMarkdownReport } from '../evals/runner.mjs';
 
-test('stats: mulberry32 PRNG is deterministic across identical seeds', () => {
+test('stats: mulberry32 PRNG is deterministic across identical seeds and default seed', () => {
+  const rDefault = mulberry32();
   const r1 = mulberry32(20261030);
   const r2 = mulberry32(20261030);
+  const firstVal = rDefault();
+  assert.equal(firstVal, 0.8795690659899265);
+  assert.equal(r1(), firstVal);
+  assert.equal(r2(), firstVal);
+  assert.equal(mulberry32(1)(), 0.6270739405881613);
   for (let i = 0; i < 20; i++) {
     assert.equal(r1(), r2());
   }
@@ -67,6 +74,13 @@ test('stats: descriptive and inferential primitives compute expected values', ()
 });
 
 test('scenarios: all 4 statistical scenarios are deterministic and satisfy significance & effect-size bounds', () => {
+  assert.equal(CALIBRATION_ANCHORS.probeDatePrimary, '2026-06-11');
+  assert.equal(CALIBRATION_ANCHORS.probeDateSecondary, '2026-07-14');
+  assert.equal(CALIBRATION_ANCHORS.poolCaps['gemini-flash'], 6);
+  assert.equal(CALIBRATION_ANCHORS.poolCaps['gemini-pro'], 4);
+  assert.equal(CALIBRATION_ANCHORS.poolCaps.claude, 4);
+  assert.equal(CALIBRATION_ANCHORS.poolCaps['gpt-oss'], 2);
+
   const s1a = runPerf8TicketDagScenario({ trials: 100, seed: 20261030 });
   const s1b = runPerf8TicketDagScenario({ trials: 100, seed: 20261030 });
   assert.deepEqual(s1a, s1b, 'Perf-1 scenario must be 100% deterministic for fixed seed');
