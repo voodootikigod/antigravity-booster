@@ -92,6 +92,14 @@ async function fetchText(urlStr, timeoutMs = 15000) {
 }
 
 // Helper: Extract Antigravity changelog section without regex EOF vulnerabilities
+// A tarball-derived tree digest must equal the operator-signed one when present;
+// otherwise a stale or wrong signed digest would never be noticed.
+function assertReferenceTreeMatchesAnchor(actual, expected) {
+  if (expected && actual !== expected) {
+    throw new Error(`FATAL: package tree SHA-512 (${actual}) does not match the signed trust anchor (${expected})`);
+  }
+}
+
 // The archive must really be @adlc/cli at the audited version; matching only a
 // digest would let a valid older tarball stand in for a newer release.
 function assertCliTarballIdentity(pkgDir, version) {
@@ -985,6 +993,7 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
       const scanDir = fs.existsSync(unpackedPkgDir) ? unpackedPkgDir : tempRefDir;
       assertCliTarballIdentity(scanDir, TARGET_ADLC_VERSION);
       referenceTreeSha = computeDirectoryTreeSha(scanDir);
+      assertReferenceTreeMatchesAnchor(referenceTreeSha, expectedAdlcTreeSha512);
     } finally {
       try { fs.rmSync(tempRefDir, { recursive: true, force: true }); } catch (_) {}
     }

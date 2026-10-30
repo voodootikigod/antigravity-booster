@@ -51,6 +51,7 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
   assert.match(content, /Stage 5:/);
   assert.match(content, /Codeweight & Tech-Debt Pruning/);
   assert.match(content, /Pillar 6: Deprecation & Codeweight Pruning/);
+  assert.doesNotMatch(content, /roadmap-agy-1\.2\.8-adlc-1\.11\.1/, 'the skill must name the roadmap by its target arguments, not a past release');
   assert.match(content, /Adversarial-Review & Fix Loop/);
   assert.match(content, /audit\.mjs/);
 });

@@ -129,6 +129,15 @@ describe('trust-anchor: tarball identity', () => {
   });
 });
 
+describe('audit.mjs: signed tree anchor', () => {
+  it('assertReferenceTreeMatchesAnchor rejects a mismatched signed tree digest and ignores an absent one', () => {
+    const check = auditFn('assertReferenceTreeMatchesAnchor');
+    assert.throws(() => check('aaa', 'bbb'), /does not match the signed trust anchor/);
+    assert.doesNotThrow(() => check('aaa', 'aaa'));
+    assert.doesNotThrow(() => check('aaa', null));
+  });
+});
+
 describe('trust-anchor: store read/write', () => {
   it('writes mode 0600, round-trips, and verifies the signature', () => {
     const store = path.join(tmpDir(), 'sub', 'trusted_packages.json');
