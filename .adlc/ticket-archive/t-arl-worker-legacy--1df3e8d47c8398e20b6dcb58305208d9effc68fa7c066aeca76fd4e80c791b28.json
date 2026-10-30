@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-30T10:46:05.211Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "dafa6ad26dca8e83c6794c13b112fe56b79aade6adeb17c1eb087155d2c50759",
+    "ticketHash": "52f58595c042c93fdd0c1b74dfe59d59deb0925a0f9c7a7f00630c917291e9e2",
+    "version": 1
+  },
   "body": "Adversarial review round 4 (codex, high) showed that hooks/policy/evaluate.mjs workerScopeVerdict authorises a headless worker mutation from resolveTicket() in lib/active-rails.mjs, which reads whatever backend @adlc/tickets loads, including a retired legacy .adlc/tickets.json. A stale or attacker-supplied legacy ticket with a broad scope could widen a worker authorised mutation scope even though agb plan/run now refuse a legacy store. Fix: resolveTicket returns { ok:false, error: LEGACY_TICKET_STORE ... adlc ticket store migrate } whenever .adlc/tickets.json exists (lstat, so a dangling symlink counts) before any scope is read; workerScopeVerdict already denies when resolution fails. unionActiveRails (deny-only rails union) is deliberately unchanged: a legacy store there can only add protected paths. Add regression tests in test/active-rails.test.mjs (legacy-only, legacy plus directory store, dangling symlink) and a worker-scope test through the pre-tool-use policy path in test/pre-tool-use.test.mjs; rebuild dist so the shipped hook bundle carries the fix. Acceptance: npm test green; the new tests fail without the fix.",
+  "completed": true,
   "edges": [],
   "id": "t-arl-worker-legacy",
   "rails": [
