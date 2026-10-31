@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="none" role="img" aria-label="Antigravity Booster logo">
+  <defs>
+    <linearGradient id="agb-badge-bg" x1="28" y1="28" x2="228" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="55%" stop-color="#1E1B4B"/>
+      <stop offset="100%" stop-color="#311042"/>
+    </linearGradient>
+    <linearGradient id="agb-border" x1="28" y1="28" x2="228" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="50%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#F472B6"/>
+    </linearGradient>
+    <linearGradient id="agb-thruster" x1="128" y1="56" x2="128" y2="204" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="55%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#F97316"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 10.9% safe margin (28px inset on 256x256 canvas) for Marketplace light & dark cards -->
+  <rect x="28" y="28" width="200" height="200" rx="44" fill="url(#agb-badge-bg)" stroke="url(#agb-border)" stroke-width="6"/>
+
+  <!-- Parallel DAG orchestration edges -->
+  <path d="M128 74 L76 132 M128 74 L180 132 M76 132 L128 190 M180 132 L128 190" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-opacity="0.55"/>
+
+  <!-- Central Booster chevron / upward antigravity vector -->
+  <path d="M128 58 L168 122 L144 122 L144 176 L112 176 L112 122 L88 122 Z" fill="url(#agb-thruster)"/>
+  <path d="M128 58 L168 122 L144 122 L144 176 L112 176 L112 122 L88 122 Z" stroke="#F8FAFC" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- DAG worker nodes (multi-pool fleet) -->
+  <circle cx="128" cy="62" r="9" fill="#F8FAFC" stroke="#0F172A" stroke-width="3"/>
+  <circle cx="76" cy="132" r="11" fill="#38BDF8" stroke="#F8FAFC" stroke-width="3"/>
+  <circle cx="180" cy="132" r="11" fill="#A855F7" stroke="#F8FAFC" stroke-width="3"/>
+  <circle cx="128" cy="192" r="11" fill="#F97316" stroke="#F8FAFC" stroke-width="3"/>
+</svg>

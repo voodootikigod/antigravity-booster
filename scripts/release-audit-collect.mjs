@@ -122,8 +122,8 @@ export const UNITS = Object.freeze([
   {
     id: 'surface:skills',
     kind: 'skills',
-    label: 'Shipped skills (modernize, release, release-audit) and their scripts',
-    paths: ['skills'],
+    label: 'Shipped plugin skills (agb, agb-*) and repo maintainer skills (modernize, release, release-audit)',
+    paths: ['skills', 'maintainer-skills'],
     rails: [],
   },
   {
@@ -313,7 +313,7 @@ export function isEscalated(issue) {
 }
 
 /** Repo-relative path mentions in free text, restricted to the declared surfaces' roots. */
-const PATH_RE = /(?:^|[\s`'"(,:])((?:bin|lib|hooks|mcp|dist|vendor|sidecars|skills|commands|agents|templates|scripts|docs)\/[A-Za-z0-9._/-]*|hooks\.json|mcp_config\.json|plugin\.json)/g;
+const PATH_RE = /(?:^|[\s`'"(,:])((?:bin|lib|hooks|mcp|dist|vendor|sidecars|skills|maintainer-skills|commands|agents|templates|scripts|docs)\/[A-Za-z0-9._/-]*|hooks\.json|mcp_config\.json|plugin\.json)/g;
 
 /**
  * Route one issue to a surface, by descending evidence strength:

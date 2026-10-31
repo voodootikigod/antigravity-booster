@@ -103,7 +103,7 @@ Each forward step writes the state file only after it finishes ([lib/migrate.mjs
 <Tabs items={['agb migrate', 'agb migrate --rollback']}>
 <Tab value="agb migrate">
 
-Runs a pre-flight validation of the booster plugin, takes the lock, then acts on the current state ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L567-L613)):
+Runs a pre-flight validation of the booster plugin (`parseValidateOutput` in `lib/migrate.mjs` parses both legacy `agy 1.2.x` `✔ <cat> : <n> processed` lines and `agy 1.4.x` `skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1 · sidecars 0` dot-summary lines), takes the lock, then acts on the current state ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L567-L613)):
 
 - **none:** start from the snapshot step.
 - **`SNAPSHOT_CREATED`, `SYMLINKS_RECORDED`, `PLUGINS_STAGED`:** resume from that state.

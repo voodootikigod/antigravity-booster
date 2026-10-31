@@ -17,11 +17,11 @@ import {
   digestTarball,
   readExistingPayload,
   writeStore,
-} from '../skills/modernize/scripts/trust-anchor.mjs';
+} from '../maintainer-skills/modernize/scripts/trust-anchor.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const HELPER = path.join(here, '..', 'skills', 'modernize', 'scripts', 'trust-anchor.mjs');
-const AUDIT_SRC = fs.readFileSync(path.join(here, '..', 'skills', 'modernize', 'scripts', 'audit.mjs'), 'utf8');
+const HELPER = path.join(here, '..', 'maintainer-skills', 'modernize', 'scripts', 'trust-anchor.mjs');
+const AUDIT_SRC = fs.readFileSync(path.join(here, '..', 'maintainer-skills', 'modernize', 'scripts', 'audit.mjs'), 'utf8');
 const KEY = 'test-admin-key';
 
 function tmpDir() {

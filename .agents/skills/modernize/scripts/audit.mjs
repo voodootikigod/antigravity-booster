@@ -12,7 +12,7 @@
  *   Stage 5: Cryptographic Provenance & Release Digest Verification
  *
  * Usage:
- *   node skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
+ *   node maintainer-skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
  */
 
 import fs from 'node:fs';
@@ -29,9 +29,9 @@ if (!TARGET_ADLC_VERSION || !TARGET_AGY_VERSION) {
   // No silent default: auditing a stale release would certify the wrong baseline.
   console.error([
     'FATAL: the audit needs explicit release targets (ADLC and agy versions).',
-    'Usage: node skills/modernize/scripts/audit.mjs <ADLC_VERSION> [PINNED_ADLC_REF] <AGY_VERSION> [PINNED_AGY_REF]',
-    'Example: node skills/modernize/scripts/audit.mjs 1.12.0 "" 1.4.7',
-    'Stage 5 needs an operator-signed trust anchor for each target: run skills/modernize/scripts/trust-anchor.mjs first (dry run, then --write).',
+    'Usage: node maintainer-skills/modernize/scripts/audit.mjs <ADLC_VERSION> [PINNED_ADLC_REF] <AGY_VERSION> [PINNED_AGY_REF]',
+    'Example: node maintainer-skills/modernize/scripts/audit.mjs 1.12.0 "" 1.4.7',
+    'Stage 5 needs an operator-signed trust anchor for each target: run maintainer-skills/modernize/scripts/trust-anchor.mjs first (dry run, then --write).',
   ].join('\n'));
   process.exit(1);
 }

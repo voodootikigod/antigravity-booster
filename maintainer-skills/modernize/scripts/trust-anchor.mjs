@@ -8,7 +8,7 @@
  * release notes it prints, never from an unattended agent.
  *
  * Usage:
- *   node skills/modernize/scripts/trust-anchor.mjs --agy-version 1.4.7 --adlc-version 1.12.0 \
+ *   node maintainer-skills/modernize/scripts/trust-anchor.mjs --agy-version 1.4.7 --adlc-version 1.12.0 \
  *     [--agy-notes <path|url>] [--adlc-changelog <path|url>] [--tarball <path>] [--write [--yes]]
  *
  * Dry-run by default: prints digests and sources, writes nothing.
@@ -256,7 +256,7 @@ async function main() {
   };
   writeStore(STORE_PATH, payload, key);
   console.log(`\nSigned and wrote ${STORE_PATH} (mode 0600).`);
-  console.log(`Now run the audit with the same sources:\n  AGY_RELEASE_URL='${agySrc}' ADLC_CHANGELOG_URL='${adlcSrc}' node skills/modernize/scripts/audit.mjs ${o.adlcVersion} <adlc-ref> ${o.agyVersion} v${o.agyVersion}`);
+  console.log(`Now run the audit with the same sources:\n  AGY_RELEASE_URL='${agySrc}' ADLC_CHANGELOG_URL='${adlcSrc}' node maintainer-skills/modernize/scripts/audit.mjs ${o.adlcVersion} <adlc-ref> ${o.agyVersion} v${o.agyVersion}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

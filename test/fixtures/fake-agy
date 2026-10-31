@@ -81,18 +81,55 @@ if [ "$1" = "plugin" ]; then
       echo "fake-agy: refusing to uninstall outside a temp HOME" >&2
       exit 1 ;;
     validate)
-      dir="${3:-.}"
+      shift 2
+      json_out=0
+      dir="."
+      for arg in "$@"; do
+        case "$arg" in
+          --json) json_out=1 ;;
+          --strict) ;;
+          *) dir="$arg" ;;
+        esac
+      done
       if [ "${FAKE_AGY_VALIDATE_MODE:-ok}" = "fail" ]; then
         echo "error: simulated validate failure for $dir" >&2
         exit 1
       fi
       if [ -f "$dir/plugin.json" ]; then
+        if [ "$json_out" -eq 1 ]; then
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const d = process.argv[1];
+            const pkg = JSON.parse(fs.readFileSync(path.join(d, "plugin.json"), "utf8"));
+            const countDir = (sub, ext) => {
+              const p = path.join(d, sub);
+              if (!fs.existsSync(p)) return 0;
+              return fs.readdirSync(p).filter((f) => !ext || f.endsWith(ext)).length;
+            };
+            const components = {
+              skills: countDir("skills"),
+              agents: countDir("agents", ".md"),
+              rules: countDir("rules", ".md"),
+              hooks: fs.existsSync(path.join(d, "hooks.json")) ? 1 : 0,
+              mcpServers: (fs.existsSync(path.join(d, "mcp.json")) || fs.existsSync(path.join(d, "mcp_config.json"))) ? 1 : 0,
+              sidecars: 0,
+            };
+            console.log(JSON.stringify({
+              name: pkg.name || "plugin",
+              manifest: "plugin.json",
+              valid: true,
+              components,
+              findings: [],
+            }));
+          ' "$dir"
+          exit 0
+        fi
         # Mirror real agy: one line per component category.
         echo "  [ok]    $dir"
         if [ -d "$dir/skills" ]; then echo "          ✔ skills      : 1 processed"; else echo "          - skills      : skipped (not found)"; fi
         if [ -d "$dir/agents" ]; then echo "          ✔ agents      : 1 processed"; else echo "          - agents      : skipped (not found)"; fi
         if [ -d "$dir/commands" ]; then echo "          ✔ commands    : 1 processed (converted to skills)"; else echo "          - commands    : skipped (not found)"; fi
-        if [ -f "$dir/mcp_config.json" ]; then echo "          ✔ mcpServers  : 1 processed"; else echo "          - mcpServers  : skipped (not found)"; fi
+        if [ -f "$dir/mcp_config.json" ] || [ -f "$dir/mcp.json" ]; then echo "          ✔ mcpServers  : 1 processed"; else echo "          - mcpServers  : skipped (not found)"; fi
         if [ -f "$dir/hooks.json" ]; then echo "          ✔ hooks       : 1 processed"; else echo "          - hooks       : skipped (not found)"; fi
         exit 0
       fi

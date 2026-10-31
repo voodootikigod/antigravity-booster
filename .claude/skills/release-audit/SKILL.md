@@ -214,7 +214,7 @@ layout), and `scripts/` is not in `package.json` `files`, so none of this ships 
 
 ## Harness notes
 
-The same `SKILL.md` runs in Claude Code, Codex and agy (canonical copy in `skills/`, mirrored
+The same `SKILL.md` runs in Claude Code, Codex and agy (canonical copy in `maintainer-skills/`, mirrored
 to `.claude/skills/` and `.agents/skills/` by `npm run skills:sync`). Phases A and C are plain
 `node` scripts and identical everywhere. Only the fan-out (B) and the report (5) differ.
 

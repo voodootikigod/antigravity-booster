@@ -1,17 +1,20 @@
 #!/usr/bin/env node
-// sync-skills — mirror the canonical skills/ tree into the per-harness discovery dirs.
+// sync-skills — mirror the canonical maintainer-skills/ tree into the per-harness discovery dirs.
 //
-// WHY. One skill, three harnesses, three discovery paths:
+// WHY. User-facing plugin skills (agb, agb-*) live in root skills/ and are loaded
+// by Antigravity when the plugin is installed. Repo-only maintainer skills
+// (modernize, release, release-audit) live in maintainer-skills/ so they are NEVER
+// exposed to end users who install the plugin, and are mirrored into workspace
+// discovery directories for local development in this repository:
 //   Claude Code  -> .claude/skills/<name>/SKILL.md
 //   Codex CLI    -> .agents/skills/<name>/SKILL.md   (repo scope)
 //   agy          -> .agents/skills/<name>/SKILL.md   (workspace scope)
-// skills/<name>/ is the only place a skill is edited (it is also what ships in the
-// npm package and the agy plugin). The mirrors are byte-for-byte copies, never
-// symlinks: Windows checkouts break on them and lib/migrate.mjs rejects skill links.
+// The mirrors are byte-for-byte copies, never symlinks: Windows checkouts break on
+// them and lib/migrate.mjs rejects skill links.
 //
 // Only skills this script has written (recorded in each mirror's .agb-synced.json)
-// or that exist in skills/ are managed. A foreign skill sitting in a mirror dir is
-// never read, overwritten or deleted.
+// or that exist in maintainer-skills/ are managed. A foreign skill sitting in a
+// mirror dir is never read, overwritten or deleted.
 //
 // Usage:
 //   node scripts/sync-skills.mjs          # write the mirrors
@@ -25,9 +28,15 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-export const SOURCE_DIR = 'skills';
+export const SOURCE_DIR = 'maintainer-skills';
+export const PLUGIN_SKILLS_DIR = 'skills';
 export const MIRRORS = ['.claude/skills', '.agents/skills'];
 export const MANIFEST = '.agb-synced.json';
+
+function resolveSourceDir(root) {
+  if (existsSync(join(root, SOURCE_DIR))) return SOURCE_DIR;
+  return PLUGIN_SKILLS_DIR;
+}
 
 /** Sorted repo-relative file list under dir. Symlinks are refused, not followed. */
 function listFiles(dir, base = dir) {
@@ -41,9 +50,19 @@ function listFiles(dir, base = dir) {
   return out.sort();
 }
 
-/** Skill names under skills/: directories that carry a SKILL.md. */
+/** Maintainer skill names under maintainer-skills/ (or skills/ in scratch test repos). */
 export function canonicalSkills(root = ROOT) {
-  const src = join(root, SOURCE_DIR);
+  const src = join(root, resolveSourceDir(root));
+  if (!existsSync(src)) return [];
+  return readdirSync(src, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && existsSync(join(src, e.name, 'SKILL.md')))
+    .map((e) => e.name)
+    .sort();
+}
+
+/** User-facing plugin skill names under root skills/: directories that carry a SKILL.md. */
+export function pluginSkills(root = ROOT) {
+  const src = join(root, PLUGIN_SKILLS_DIR);
   if (!existsSync(src)) return [];
   return readdirSync(src, { withFileTypes: true })
     .filter((e) => e.isDirectory() && existsSync(join(src, e.name, 'SKILL.md')))
@@ -92,6 +111,7 @@ function diffSkill(srcDir, dstDir) {
  * Returns { ok, problems: string[], written: string[] } and never throws on drift.
  */
 export function syncSkills({ root = ROOT, check = false, mirrors = MIRRORS } = {}) {
+  const srcDirName = resolveSourceDir(root);
   const names = canonicalSkills(root);
   const problems = [];
   const written = [];
@@ -102,7 +122,7 @@ export function syncSkills({ root = ROOT, check = false, mirrors = MIRRORS } = {
     const stale = previouslyManaged.filter((n) => !names.includes(n));
 
     for (const name of names) {
-      const src = join(root, SOURCE_DIR, name);
+      const src = join(root, srcDirName, name);
       const dst = join(mirrorDir, name);
       const drift = diffSkill(src, dst);
       if (drift.length === 0) continue;

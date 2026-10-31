@@ -335,7 +335,8 @@ test('bootstrap: compatible installed plugin contract completes (links booster s
   const homeDir = mkdtempSync(join(tmpdir(), 'agb-handshake-home-'));
   try {
     bootstrap({ destination: destDir, home: homeDir, pluginPath: PLUGIN_COMPATIBLE, agyBin: FAKE_AGY, force: true });
-    assert.ok(existsSync(join(destDir, 'release')), 'booster-owned skills still installed');
+    assert.ok(existsSync(join(destDir, 'agb')), 'booster-owned skills still installed');
+    assert.equal(existsSync(join(destDir, 'release')), false, 'internal release skill not exposed');
   } finally {
     rmSync(destDir, { recursive: true, force: true });
     rmSync(homeDir, { recursive: true, force: true });

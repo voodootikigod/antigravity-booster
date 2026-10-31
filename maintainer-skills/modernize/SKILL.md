@@ -24,11 +24,11 @@ Triggers on:
 
 ## Workflow
 
-The modernization audit is fully implemented as a standalone, zero-dependency Node.js script located at [`skills/modernize/scripts/audit.mjs`](scripts/audit.mjs). It executes the complete 5-stage modernization pipeline portably across Linux, macOS, and Windows (PowerShell / CMD / Bash):
+The modernization audit is fully implemented as a standalone, zero-dependency Node.js script located at [`maintainer-skills/modernize/scripts/audit.mjs`](scripts/audit.mjs). It executes the complete 5-stage modernization pipeline portably across Linux, macOS, and Windows (PowerShell / CMD / Bash):
 
 ```bash
 # Universal cross-platform runner (Linux, macOS, Windows PowerShell / CMD)
-node skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
+node maintainer-skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
 # the two target versions are required (no stale default), e.g.: audit.mjs 1.12.0 "" 1.4.7
 ```
 

@@ -25,13 +25,35 @@ The `agy` minimum exists because `agb` drives workers with `--output-format stre
 <Steps>
 <Step>
 
-### Install the plugin from git
+### Install the plugin from the Antigravity Marketplace or git
+
+In Antigravity `>= 1.4.11`, you can install **Antigravity Booster** from the **Antigravity Plugin Marketplace** (`Customizations > Marketplace` in the desktop app, `/plugin` Discover tab in the CLI, or via `agy plugin install`):
+
+<Tabs items={['Marketplace (CLI)', 'Git URL', 'Custom Marketplace Feed']}>
+<Tab value="Marketplace (CLI)">
+
+```sh
+agy plugin install antigravity-booster@antigravity-plugins-official
+```
+
+</Tab>
+<Tab value="Git URL">
 
 ```sh
 agy plugin install https://github.com/voodootikigod/antigravity-booster.git
 ```
 
-You don't need `npm install`: the runtime ships prebuilt under `dist/`, and the `adlc-antigravity` companion plugin ships as a vendored release tarball.
+</Tab>
+<Tab value="Custom Marketplace Feed">
+
+```sh
+agy plugin install antigravity-booster@https://www.agybooster.com/marketplace.json
+```
+
+</Tab>
+</Tabs>
+
+You don't need `npm install`: the runtime ships prebuilt under `dist/`, and the `adlc-antigravity` companion plugin ships as a vendored release tarball. Once installed, the `Customizations > Installed` detail view surfaces three starter prompt chips (`suggestedPrompts` in `plugin.json`) for `/agb`, `/agb-plan`, and `/agb-review`, and you can type `/agb <description>` in any session to route natural-language requests to the right `agb` command.
 
 </Step>
 <Step>
@@ -70,7 +92,7 @@ fish_add_path ~/.local/bin
 </Tab>
 </Tabs>
 
-The Antigravity slash commands (`/agb-run`, `/agb-doctor`, `/agb-migrate`, ...) tell the model to run `~/.local/bin/agb <subcommand>`, so they also depend on the shim.
+The Antigravity slash commands (`/agb <description>`, `/agb-run`, `/agb-doctor`, `/agb-migrate`, ...) tell the model to run `~/.local/bin/agb <subcommand>`, so they also depend on the shim.
 
 </Step>
 <Step>

@@ -97,7 +97,7 @@ function forwardToStderr(buf) {
   if (buf && buf.length > 0) process.stderr.write(buf);
 }
 function isExcludedFromCopy(srcPath) {
-  return INSTALL_COPY_EXCLUSIONS.includes(basename5(srcPath));
+  return STAGE_COPY_EXCLUSIONS.includes(basename5(srcPath));
 }
 function copyPluginTree(src, dst) {
   mkdirSync6(dst, { recursive: true });
@@ -264,7 +264,7 @@ function installTerminalShim({ home = homedir(), force = false } = {}) {
     return { ok: false, error: `could not install terminal shim at ${shimPath}: ${err.message}` };
   }
 }
-var BUNDLED_ADLC_ANTIGRAVITY_VERSION, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, VENDORED_ADLC_ANTIGRAVITY_TARBALL, BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, INSTALL_COPY_EXCLUSIONS, AGY_INSTALL_TIMEOUT_MS, TAR_LIST_TIMEOUT_MS, TAR_EXTRACT_TIMEOUT_MS, TERMINAL_SHIM_CONTENT, log, isVanished;
+var BUNDLED_ADLC_ANTIGRAVITY_VERSION, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, VENDORED_ADLC_ANTIGRAVITY_TARBALL, BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, INSTALL_COPY_EXCLUSIONS, STAGE_COPY_EXCLUSIONS, AGY_INSTALL_TIMEOUT_MS, TAR_LIST_TIMEOUT_MS, TAR_EXTRACT_TIMEOUT_MS, TERMINAL_SHIM_CONTENT, log, isVanished;
 var init_plugin_paths = __esm({
   "lib/plugin-paths.mjs"() {
     BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
@@ -273,6 +273,7 @@ var init_plugin_paths = __esm({
     BOOSTER_PLUGIN_NAME = "antigravity-booster";
     ADLC_ANTIGRAVITY_PLUGIN_NAME = "adlc-antigravity";
     INSTALL_COPY_EXCLUSIONS = Object.freeze(["node_modules", ".worktrees", ".git"]);
+    STAGE_COPY_EXCLUSIONS = Object.freeze([...INSTALL_COPY_EXCLUSIONS, "maintainer-skills", ".claude", ".agents"]);
     AGY_INSTALL_TIMEOUT_MS = 6e4;
     TAR_LIST_TIMEOUT_MS = 15e3;
     TAR_EXTRACT_TIMEOUT_MS = 3e4;
@@ -1175,6 +1176,14 @@ function parseValidateOutput(text) {
   const counts = {};
   const clean = String(text ?? "").replace(ANSI_SGR, "");
   for (const m of clean.matchAll(/^\s*✔\s+(\w+)\s*:\s*(\d+)\s+processed/gm)) counts[m[1]] = Number(m[2]);
+  if (Object.keys(counts).length === 0) {
+    for (const line of clean.split(/\r?\n/)) {
+      if (!line.includes("\xB7")) continue;
+      for (const m of line.matchAll(/\b(skills|agents|commands|rules|hooks|mcpServers|sidecars)\s+(\d+)\b/g)) {
+        counts[m[1]] = Number(m[2]);
+      }
+    }
+  }
   return counts;
 }
 function agyValidate(agyBin, dir, home) {
@@ -1193,7 +1202,8 @@ function agyValidate(agyBin, dir, home) {
 function validateBooster(agyBin, dir, home) {
   const v = agyValidate(agyBin, dir, home);
   if (!v.ok) return v;
-  const missing = BOOSTER_CATEGORIES.filter((c) => !(v.counts[c] > 0));
+  const required = "sidecars" in v.counts || "rules" in v.counts ? BOOSTER_CATEGORIES_V14 : BOOSTER_CATEGORIES;
+  const missing = required.filter((c) => !(v.counts[c] > 0));
   return missing.length ? { ok: false, error: `agy plugin validate ${dir} is missing component categories: ${missing.join(", ")}` } : v;
 }
 function readImports(p) {
@@ -1755,7 +1765,7 @@ function finishUninstallCommand({ home = homedir9(), token, uninstallerDir, agyB
 `)))(`error: ${r.error}`);
   return r.ok ? 0 : 1;
 }
-var SNAPSHOT_SIZE_CAP_BYTES, HANDOVER_TIMEOUT_MS, PLUGIN_NAMES, BOOSTER_CATEGORIES, ANSI_SGR, VIRGIN_RESET_STATES, COMPLETION_NOTICE, MigrateError, isUnder, sleep3;
+var SNAPSHOT_SIZE_CAP_BYTES, HANDOVER_TIMEOUT_MS, PLUGIN_NAMES, BOOSTER_CATEGORIES, BOOSTER_CATEGORIES_V14, ANSI_SGR, VIRGIN_RESET_STATES, COMPLETION_NOTICE, MigrateError, isUnder, sleep3;
 var init_migrate = __esm({
   "lib/migrate.mjs"() {
     init_migration_lock();
@@ -1765,6 +1775,7 @@ var init_migrate = __esm({
     HANDOVER_TIMEOUT_MS = 2e3;
     PLUGIN_NAMES = [BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME];
     BOOSTER_CATEGORIES = ["skills", "agents", "commands", "mcpServers", "hooks"];
+    BOOSTER_CATEGORIES_V14 = ["skills", "agents", "mcpServers", "hooks"];
     ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
     VIRGIN_RESET_STATES = /* @__PURE__ */ new Set(["SNAPSHOT_CREATED", "SYMLINKS_RECORDED"]);
     COMPLETION_NOTICE = "Migration successful. Global npm package may be uninstalled: npm uninstall -g antigravity-booster. CLI commands remain available via ~/.local/bin/agb and slash commands (/agb-doctor, /agb-bootstrap, /agb-migrate).";
@@ -17296,6 +17307,20 @@ function bootstrap({
       console.log("installation directory is stable: using symlinks for auto-upgrades");
     }
     const skills = readdirSync13(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    for (const retired of ["modernize", "release", "release-audit"]) {
+      const retiredDst = join32(destination, retired);
+      const retiredStat = lstatSync14(retiredDst, { throwIfNoEntry: false });
+      if (retiredStat && retiredStat.isSymbolicLink()) {
+        try {
+          const target = resolve16(dirname20(retiredDst), readlinkSync3(retiredDst));
+          if (target === resolve16(join32(skillsSrc, retired))) {
+            rmSync13(retiredDst, { recursive: true, force: true });
+            console.log(`removed stale internal skill symlink: ${retired}`);
+          }
+        } catch {
+        }
+      }
+    }
     for (const name of skills) {
       const src = join32(skillsSrc, name);
       const dst = join32(destination, name);

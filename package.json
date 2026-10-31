@@ -19,8 +19,10 @@
     "agb": "dist/agb.mjs"
   },
   "files": [
+    "assets/",
     "bin/",
     "lib/",
+    "rules/",
     "skills/",
     "commands/",
     "agents/",
@@ -41,6 +43,8 @@
     "build:hooks": "esbuild hooks/pre-tool-use.mjs --bundle --platform=node --format=esm --outfile=dist/hooks/pre-tool-use.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
     "build": "npm run build:agb && npm run build:mcp && npm run build:hooks && npm run vendor:bundle && node scripts/check-bundle-externals.mjs",
     "test": "node --test test/*.test.mjs",
+    "plugin:validate": "node scripts/stage-marketplace-plugin.mjs --validate-strict",
+    "eval": "node evals/runner.mjs",
     "skills:sync": "node scripts/sync-skills.mjs",
     "skills:check": "node scripts/sync-skills.mjs --check",
     "coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-exclude='vendor/**' test/*.test.mjs",

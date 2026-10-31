@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { canonicalSkills, syncSkills, syncMain, isSafeSkillName, MIRRORS, MANIFEST } from '../scripts/sync-skills.mjs';
+import { canonicalSkills, pluginSkills, syncSkills, syncMain, isSafeSkillName, MIRRORS, MANIFEST } from '../scripts/sync-skills.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -34,15 +34,36 @@ function scratchRepo(t, skills = { alpha: { 'SKILL.md': '---\nname: alpha\ndescr
   return root;
 }
 
+function allSkillPaths(root = ROOT) {
+  return [
+    ...pluginSkills(root).map((name) => ({ name, path: join(root, 'skills', name, 'SKILL.md') })),
+    ...canonicalSkills(root).map((name) => ({ name, path: join(root, 'maintainer-skills', name, 'SKILL.md') })),
+  ];
+}
+
 // ---------------------------------------------------------------- real repo
 
-test('the repo ships the three project skills from skills/', () => {
-  assert.deepEqual(canonicalSkills(ROOT), ['modernize', 'release', 'release-audit']);
+test('root skills/ holds strictly the eight user-facing agb skills, while maintainer-skills/ holds the three internal repo skills', () => {
+  assert.deepEqual(pluginSkills(ROOT), [
+    'agb',
+    'agb-bootstrap',
+    'agb-doctor',
+    'agb-migrate',
+    'agb-plan',
+    'agb-review',
+    'agb-run',
+    'agb-sidecar',
+  ]);
+  assert.deepEqual(canonicalSkills(ROOT), [
+    'modernize',
+    'release',
+    'release-audit',
+  ]);
 });
 
-test('every skill has frontmatter all three harnesses accept', () => {
-  for (const name of canonicalSkills(ROOT)) {
-    const text = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8');
+test('every skill (plugin and maintainer) has frontmatter all three harnesses accept', () => {
+  for (const { name, path: skillPath } of allSkillPaths(ROOT)) {
+    const text = readFileSync(skillPath, 'utf8');
     const fm = frontmatter(text);
     assert.ok(fm, `${name}: SKILL.md must open with YAML frontmatter`);
     assert.match(fm, new RegExp(`^name: ${name}$`, 'm'), `${name}: frontmatter name must equal the directory name`);
@@ -57,16 +78,19 @@ test('every skill has frontmatter all three harnesses accept', () => {
   }
 });
 
-test('the harness mirrors are byte-identical to skills/', () => {
+test('the harness mirrors are byte-identical to maintainer-skills/ and exclude plugin skills', () => {
   const r = syncSkills({ root: ROOT, check: true });
   assert.deepEqual(r.problems, [], 'run `npm run skills:sync` and commit the mirrors');
   assert.equal(r.ok, true);
 });
 
-test('both discovery dirs carry every skill', () => {
+test('both discovery dirs carry every maintainer skill and never duplicate user-facing plugin skills', () => {
   for (const mirror of MIRRORS) {
     for (const name of canonicalSkills(ROOT)) {
       assert.ok(existsSync(join(ROOT, mirror, name, 'SKILL.md')), `${mirror}/${name}/SKILL.md must exist`);
+    }
+    for (const name of pluginSkills(ROOT)) {
+      assert.equal(existsSync(join(ROOT, mirror, name)), false, `${mirror}/${name} must not exist (plugin skills live in root skills/)`);
     }
   }
 });
@@ -74,8 +98,8 @@ test('both discovery dirs carry every skill', () => {
 test('a Claude-only tool in a skill body always comes with a stated fallback', () => {
   // Workflow / Artifact / Agent exist only in Claude Code. A body may name them,
   // but Codex and agy runs must be told what to do instead.
-  for (const name of canonicalSkills(ROOT)) {
-    const text = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8');
+  for (const { name, path: skillPath } of allSkillPaths(ROOT)) {
+    const text = readFileSync(skillPath, 'utf8');
     if (!/\*\*(Workflow|Artifact)\*\*|Workflow\(|`Workflow`|Artifact tool/.test(text)) continue;
     assert.match(text, /## Harness notes/, `${name}: names a Claude-only tool, so it needs a "## Harness notes" section`);
     for (const harness of ['Claude Code', 'Codex', 'agy']) {
@@ -86,8 +110,8 @@ test('a Claude-only tool in a skill body always comes with a stated fallback', (
 
 test('no skill body relies on a bare slash command to reach another skill', () => {
   // Codex invokes skills as $name and agy by name; "/release" only works in Claude Code.
-  for (const name of canonicalSkills(ROOT)) {
-    const body = readFileSync(join(ROOT, 'skills', name, 'SKILL.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+  for (const { name, path: skillPath } of allSkillPaths(ROOT)) {
+    const body = readFileSync(skillPath, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
     const hits = [...body.matchAll(/(^|[\s(`])\/(release|release-audit|modernize|adversarial-review)\b/g)].map((m) => m[0].trim());
     assert.deepEqual(hits, [], `${name}: say "the release skill", not a slash command`);
   }

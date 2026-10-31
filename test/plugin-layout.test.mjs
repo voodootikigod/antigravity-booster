@@ -1,10 +1,12 @@
 // Native agy plugin layout (T-PLUGIN-01-CORE, spec §2.1, §4.1, §4.5, Appendix A D3/D7/D9).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { stageMarketplacePlugin, validateStagedPluginStrict } from '../scripts/stage-marketplace-plugin.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const readJson = (rel) => JSON.parse(readFileSync(join(ROOT, rel), 'utf8'));
@@ -17,6 +19,7 @@ const EXPECTED_COMMANDS = [
   'agb-review.md',
   'agb-run.md',
   'agb-sidecar.md',
+  'agb.md',
 ];
 const EXPECTED_AGENTS = ['fleet-scheduler.md', 'prosecutor.md', 'spec-linter.md'];
 
@@ -144,4 +147,74 @@ test('layout: agy plugin validate processes skills, agents, commands, mcpServers
     assert.match(out, /commands\s*(?::\s*\d+\s+processed|\s+\d+|: never loaded)/, `commands not processed:\n${out}`);
   }
   assert.match(out, /Validation passed/i, `Validation did not pass:\n${out}`);
+});
+
+test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, rules/AGENTS.md, and 7 agb-* skills', () => {
+  const manifest = readJson('plugin.json');
+  assert.equal(manifest.displayName, 'Antigravity Booster');
+  assert.equal(manifest.logo, 'assets/logo.svg');
+  assert.equal(manifest.homepage, 'https://www.agybooster.com');
+  assert.equal(manifest.repository, 'https://github.com/voodootikigod/antigravity-booster');
+  assert.ok(Array.isArray(manifest.suggestedPrompts) && manifest.suggestedPrompts.length === 3, 'suggestedPrompts must have 3 starter prompts');
+  for (const p of manifest.suggestedPrompts) {
+    assert.ok(typeof p === 'string' && p.length >= 20, `invalid suggestedPrompt: ${p}`);
+  }
+  const logoSvg = readFileSync(join(ROOT, 'assets', 'logo.svg'), 'utf8');
+  assert.match(logoSvg, /viewBox="0 0 256 256"/);
+  assert.match(logoSvg, /width="256"/);
+  assert.match(logoSvg, /height="256"/);
+
+  const rulesMd = readFileSync(join(ROOT, 'rules', 'AGENTS.md'), 'utf8');
+  assert.match(rulesMd, /mcp__agb__agb_plan/);
+  assert.match(rulesMd, /\/agb-run/);
+
+  const expectedPluginSkills = ['agb', 'agb-bootstrap', 'agb-doctor', 'agb-migrate', 'agb-plan', 'agb-review', 'agb-run', 'agb-sidecar'];
+  assert.deepEqual(
+    readdirSync(join(ROOT, 'skills')).sort(),
+    expectedPluginSkills,
+    'root skills/ must hold strictly the 8 user-facing plugin skills (no internal maintainer skills)',
+  );
+  for (const skill of expectedPluginSkills) {
+    const skillPath = join(ROOT, 'skills', skill, 'SKILL.md');
+    assert.ok(existsSync(skillPath), `missing native skill ${skillPath}`);
+    const content = readFileSync(skillPath, 'utf8');
+    assert.match(content, new RegExp(`^---\\nname: ${skill}\\ndescription: .+\\n---`, 'm'));
+  }
+});
+
+test('layout: stageMarketplacePlugin produces clean bundle + marketplace.json and passes agy plugin validate --strict with 0 warnings/notes', () => {
+  const staged = stageMarketplacePlugin();
+  try {
+    assert.equal(existsSync(join(staged.pluginDir, 'AGENTS.md')), false, 'root AGENTS.md excluded from staged bundle');
+    assert.equal(existsSync(join(staged.pluginDir, 'commands')), false, 'legacy commands/ excluded from staged bundle');
+    assert.equal(existsSync(join(staged.pluginDir, 'rules', 'AGENTS.md')), true, 'rules/AGENTS.md present');
+    assert.equal(existsSync(join(staged.pluginDir, 'assets', 'logo.svg')), true, 'assets/logo.svg present');
+    assert.equal(existsSync(join(staged.pluginDir, 'skills', 'modernize')), false, 'maintainer-only skills excluded');
+    assert.equal(existsSync(join(staged.pluginDir, 'skills', 'agb-run', 'SKILL.md')), true, 'user-facing skills included');
+    assert.equal(staged.catalog.name, 'agybooster');
+    assert.equal(staged.catalog.plugins.length, 2);
+
+    const strictRes = validateStagedPluginStrict(staged.pluginDir);
+    if (!strictRes.skipped) {
+      assert.equal(strictRes.ok, true, JSON.stringify(strictRes));
+      assert.equal(strictRes.errors, 0);
+      assert.equal(strictRes.warnings, 0);
+      assert.equal(strictRes.notes, 0);
+    }
+  } finally {
+    rmSync(staged.stageRoot, { recursive: true, force: true });
+  }
+
+  // Also verify staging into a nested explicit outDir and re-staging over an existing directory
+  const baseTmp = mkdtempSync(join(tmpdir(), 'agb-mp-custom-'));
+  try {
+    const nestedOut = join(baseTmp, 'nested', 'stage');
+    const s1 = stageMarketplacePlugin({ outDir: nestedOut });
+    assert.equal(s1.stageRoot, nestedOut);
+    writeFileSync(join(s1.pluginDir, 'stale.txt'), 'stale');
+    const s2 = stageMarketplacePlugin({ outDir: nestedOut });
+    assert.equal(existsSync(join(s2.pluginDir, 'stale.txt')), false, 'previous pluginDir contents cleared on re-stage');
+  } finally {
+    rmSync(baseTmp, { recursive: true, force: true });
+  }
 });
