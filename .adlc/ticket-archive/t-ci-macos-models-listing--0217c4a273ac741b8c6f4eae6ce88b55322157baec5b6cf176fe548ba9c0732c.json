@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-10-31T13:58:25.525Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "377164664a98dbcb6cbed7f72019f0871ba37305f4fc4097f224520df716b9c2",
+    "ticketHash": "baeb7942c9adf304572231bc0579dde0254a378d3f01f5523d8e4ade4b5b7d58",
+    "version": 1
+  },
   "body": "PR #137 CI: on macos-latest every checkModelCatalog test returns \"could not list models\". lib/doctor.mjs agyModelsStdout runs agy models under `script` (a pty, because the real agy needs a TTY); BSD script exits non-zero when stdin is not a TTY (CI), and the catch swallows it. Fix: if the pty run fails, fall back to running the binary directly once; a real agy that truly needs a TTY then still fails and the check warns as before, while an agy (or fake) that can print without one is read correctly. Include the failure reason in the warning detail to make such cases diagnosable. Add a test that forces the pty wrapper to be unavailable (PATH without script) and still passes against the live-catalog fixture. Acceptance: npm test green on Linux; macOS CI green.",
   "completed": true,
   "edges": [],
