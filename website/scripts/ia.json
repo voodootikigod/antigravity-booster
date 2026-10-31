@@ -67,6 +67,7 @@
         "log-formats",
         "exit-and-error-codes",
         "calibration",
+        "benchmarks",
         "agy-integration",
         "security"
       ]

@@ -24,14 +24,124 @@
 
 ---
 
+## Pareto Frontier & 80/20 Root-Cause Analysis
+
+### 1. Speed–Accuracy Pareto Frontier (Throughput vs. Defect Detection Recall)
+
+In standard single-session or single-family agent workflows, teams face a trade-off between **build velocity** (tickets merged per minute) and **verification rigor** (defect detection recall). Adding in-session review passes increases recall but slows down the parent session. Because `agb` offloads both builders and cross-family prosecutors across 4 concurrent quota pools in isolated git worktrees, it **shifts the entire Pareto frontier outward** — strictly dominating both Naive `agy` and Raw `agy` (Best Practices) on both axes simultaneously:
+
+| Operating Regime | 8-Ticket Throughput (tickets/min) | 16-Ticket Scale Throughput (tickets/min) | Defect Detection Recall (%) | Post-Review Escape Rate (%) | Safety Hazard Block Rate (%) | Pareto Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Straight `agy` (Serial, Builder Only)** | 0.96/min | 1.95/min | 21.8% | 78.2% | 56.3% | Dominated |
+| **Straight `agy` (Serial + Same-Model Review)** | 0.83/min | 1.62/min | 52.0% | 48.0% | 56.3% | Dominated |
+| **Straight `agy` (Naive 1-Pool Parallel)** | 2.46/min | 3.20/min | 52.0% | 48.0% | 56.3% | Dominated |
+| **Raw `agy` (Best Practices: `/plan` + `/teamwork` + `adversarial-reviewer`)** | 2.60/min | 3.71/min | 73.6% | 26.4% | 80.3% | Sub-frontier (Single-Family Bound) |
+| **Antigravity + Booster (`agb` Multi-Pool DAG + Cross-Model Fleet)** | **3.47/min** | **7.40/min** | **92.4%** | **7.6%** | **98.0%** | **Pareto-Optimal Frontier** |
+
+```mermaid
+xychart-beta
+    title "Speed-Accuracy Pareto Frontier: Recall (%) vs. 16-Ticket Throughput (x10 tickets/min)"
+    x-axis ["Serial (No Review)", "Serial (+Review)", "Naive 1-Pool", "Raw agy (Best Practices)", "Antigravity + Booster (agb)"]
+    y-axis "Score (% Recall / Scaled Throughput)" 0 --> 100
+    bar [22, 52, 52, 74, 92]
+    line [19.5, 16.2, 32.0, 37.1, 74.0]
+```
+
+---
+
+### 2. Pareto Analysis of Escaped Defects (Why Single-Family Review Leaves a 26.4% Escape Tail)
+
+Ranking the 5 defect classes by their escaped-defect volume under **Raw `agy` (Best Practices)** ($132$ escaped defects out of $500$) reveals a sharp Pareto concentration: **the top 3 defect classes account for `71.2%` of all escaped defects, and the top 4 account for `87.9%`**.
+
+| Rank | Defect Class | Raw `agy` Best Practices Escapes ($N=100$) | Share of Best-Practices Escapes | Cumulative Share (%) | `agb` Cross-Model Escapes ($N=100$) | `agb` Escape Reduction vs. Best Practices |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| **#1** | **Spec Ambiguity & Unicode/Locale Boundary (Probe 6 class)** | 42 | 31.8% | **31.8%** | **3** | **-92.9%** |
+| **#2** | **Lock / TOCTOU / Async Interleaving Race** | 29 | 22.0% | **53.8%** | **12** | **-58.6%** |
+| **#3** | **Auth, Attestation & Trust-Boundary Bypass** | 23 | 17.4% | **71.2%** | **8** | **-65.2%** |
+| **#4** | **Silent Error Swallowing & Partial-Failure Leak** | 22 | 16.7% | **87.9%** | **11** | **-50.0%** |
+| **#5** | **Off-by-One & State Machine Transition Defect** | 16 | 12.1% | **100.0%** | **4** | **-75.0%** |
+
+```mermaid
+xychart-beta
+    title "Pareto Chart of Escaped Defects in Raw agy (Best Practices) vs. Cumulative Share (%)"
+    x-axis ["Spec & Unicode", "Concurrency Race", "Auth Boundary", "Silent Error Leak", "Off-by-One / State"]
+    y-axis "Escaped Defects / Cumulative %" 0 --> 100
+    bar [42, 29, 23, 22, 16]
+    line [31.8, 53.8, 71.2, 87.9, 100]
+```
+
+---
+
+### 3. Pareto Analysis of Wall-Clock Latency Overhead (Where Time Is Lost Without `agb`)
+
+#### 3a. Straight `agy` Serial (`576.1s`) vs. `agb` (`138.5s`): $\Delta = 437.5s$ Excess Latency
+
+| Rank | Latency Overhead Driver | Excess Seconds (s) | Share of Excess Time (%) | Cumulative Share (%) | `agb` Architectural Elimination Mechanism |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| **#1** | **Unparallelized Serial Turn Execution** | 228.4s | 52.2% | **52.2%** | Topological wave fan-out across isolated git worktrees (`lib/scheduler.mjs`, `lib/worktrees.mjs`) |
+| **#2** | **Context Window Token Inflation (+7.5%/step)** | 98.6s | 22.5% | **74.7%** | Fresh cold-start context per ticket (`--print` worker per shard) |
+| **#3** | **Shared-Tree Regression & Rework Cycles** | 62.8s | 14.4% | **89.1%** | Per-ticket scope containment + pre-merge verification gate (`lib/gates.mjs`) |
+| **#4** | **Sequential Per-Step Test Gate Runs** | 31.2s | 7.1% | **96.2%** | Concurrent worktree test execution before serialized fast-forward merge |
+| **#5** | **Single-Bucket Frontier Contention** | 16.6s | 3.8% | **100.0%** | Tier-based model routing (`low -> gemini-flash`, `mid -> gemini-pro/sonnet`) |
+
+```mermaid
+xychart-beta
+    title "Pareto Chart of Excess Latency Drivers: Straight agy Serial vs. agb (437.6s Delta)"
+    x-axis ["Serial Turns", "Context Inflation", "Shared-Tree Rework", "Serial Test Runs", "Single-Pool Queue"]
+    y-axis "Excess Seconds / Cumulative %" 0 --> 240
+    bar [228.4, 98.6, 62.8, 31.2, 16.6]
+    line [52.2, 74.7, 89.1, 96.2, 100.0]
+```
+
+#### 3b. Raw `agy` Best Practices (`274.2s`) vs. `agb` (`132.0s`) at 16-Ticket Scale: $\Delta = 142.1s$ Excess Latency
+
+| Rank | Best-Practices Bottleneck at 16-Ticket Scale | Excess Seconds (s) | Share of Excess Time (%) | Cumulative Share (%) | Why Native `agy` Primitives Cannot Eliminate It |
+| :---: | :--- | :---: | :---: | :---: | :--- |
+| **#1** | **Single-Family Pool Queueing & 120s Timeouts** | 73.1s | 51.4% | **51.4%** | `invoke_subagent` `Model` enum (`inherit\|flash_lite\|flash\|pro`) cannot cross model families (`Gemini` vs. `Claude/GPT`) |
+| **#2** | **Parent LLM Wave-Orchestration Turns** | 33.5s | 23.6% | **75.0%** | `/teamwork` requires an LLM parent turn between waves; `agb` uses a 0-token Node event loop |
+| **#3** | **In-Session Sequential Subagent Review** | 21.1s | 14.8% | **89.8%** | Parent session must spawn and summarize `adversarial-reviewer` turns serially per wave |
+| **#4** | **Uncoordinated Scope / Interface Merge Fixups** | 14.5s | 10.2% | **100.0%** | Native `/plan` lacks `agb plan`'s static glob-overlap & cross-model parallax contract compiler |
+
+```mermaid
+xychart-beta
+    title "Pareto Chart of Latency Overhead: Raw agy (Best Practices) vs. agb at 16-Ticket Scale"
+    x-axis ["1-Family Pool Timeouts", "LLM Wave Turns", "In-Session Review", "Merge Fixups"]
+    y-axis "Excess Seconds / Cumulative %" 0 --> 100
+    bar [73.1, 33.5, 21.1, 14.5]
+    line [51.4, 75.0, 89.8, 100.0]
+```
+
+---
+
+### 4. Pareto Analysis of Safety Hazard Escapes ($N = 300$ Adversarial Hazards)
+
+Under **Raw `agy` Best Practices**, `59` out of `300` safety hazards still escape (**`64.4%` of which come from a single source: hollow/tautological tests** that pass `npm test` and look plausible to a static code reviewer, but fail to kill AST mutants):
+
+| Rank | Safety Hazard Class | Prompt-Only Escapes ($N=100$) | Raw `agy` Best-Practices Escapes ($N=100$) | Share of Best-Practices Escapes | Cumulative Share (%) | `agb` Mechanical Gate Escapes ($N=100$) |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| **#1** | **Hollow Tests (Surviving AST Mutants)** | 67 | 38 | 64.4% | **64.4%** | **6** |
+| **#2** | **Frozen Rail Tampering (lib/lock.mjs, .adlc/**)** | 38 | 11 | 18.6% | **83.1%** | **0** |
+| **#3** | **Out-of-Scope File Creep (scope glob violation)** | 26 | 10 | 16.9% | **100.0%** | **0** |
+
+```mermaid
+xychart-beta
+    title "Pareto Chart of Safety Hazard Escapes in Raw agy (Best Practices) vs. Cumulative Share (%)"
+    x-axis ["Hollow Tests (Mutants)", "Frozen Rail Tampering", "Out-of-Scope Drift"]
+    y-axis "Escaped Hazards / Cumulative %" 0 --> 100
+    bar [38, 11, 10]
+    line [64.4, 83.1, 100]
+```
+
+---
+
 ## Why `agb` Outperforms Even Raw `agy` With Best Practices
 
 Even when an expert developer applies every native Antigravity best practice (`/plan`, `/teamwork`, `invoke_subagent(Workspace: 'share', Model: 'flash' | 'pro')`, `AGENTS.md`, `doubt-driven-development`, and `adversarial-reviewer`), four structural platform boundaries remain that only `agb`'s out-of-process architecture can cross:
 
 1. **Zero-Token Deterministic DAG Orchestration vs. LLM-in-the-Loop Wave Coordination:** In raw `agy`, a parent agent must wake up between subagent waves, read subagent transcripts, resolve worktree merges, and emit tool calls (~9.5s LLM turn per wave). `agb` runs a 0-token Node scheduler (`lib/scheduler.mjs`) with an atomic `mkdir` merge lock (`lib/lock.mjs`).
 2. **True Cross-Family Routing Across Both 5-Hour Quota Buckets:** Native `invoke_subagent` only accepts `Model: 'inherit' | 'flash_lite' | 'flash' | 'pro'` within the active session's model family. It cannot read `/quota` JSON or spawn a Gemini worker from a Claude session (or vice versa) to tap the second independent 5-hour quota bucket (`Gemini Models` vs. `Claude and GPT models`).
-3. **Cross-Family Prosecution + 4 Orthogonal Specialist Lenses vs. Single-Family Generalist Subagent:** Running `adversarial-reviewer` in a fresh subagent lifts recall from `52.2%` to `73.6%`, but because it runs in the same model family as the builder, it shares correlated blind spots on spec ambiguity / Unicode boundaries (`58.0%` recall vs. `97.0%` in `agb`).
-4. **Mechanical Pre-Execution & AST Mutation Gates vs. Advisory `AGENTS.md` Rules:** `AGENTS.md` rules and code review catch ~86–88% of rail/scope violations and ~62% of weak tests, whereas `agb`'s `PreToolUse` hook (`hooks/pre-tool-use.mjs`) and `adlc rails-guard` enforce a **100% deterministic block** before the tool executes, and `adlc hollow-test` runs real AST mutation testing against the test suite.
+3. **Cross-Family Prosecution + 4 Orthogonal Specialist Lenses vs. Single-Family Generalist Subagent:** Running `adversarial-reviewer` in a fresh subagent lifts recall from `52.0%` to `73.6%`, but because it runs in the same model family as the builder, it shares correlated blind spots on spec ambiguity / Unicode boundaries (`58.0%` recall vs. `97.0%` in `agb`).
+4. **Mechanical Pre-Execution & AST Mutation Gates vs. Advisory `AGENTS.md` Rules:** `AGENTS.md` rules and code review catch ~89–90% of rail/scope violations and ~62% of weak tests, whereas `agb`'s `PreToolUse` hook (`hooks/pre-tool-use.mjs`) and `adlc rails-guard` enforce a **100% deterministic block** before the tool executes, and `adlc hollow-test` runs real AST mutation testing against the test suite.
 
 ---
 
