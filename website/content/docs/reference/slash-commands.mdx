@@ -1,9 +1,9 @@
 ---
 title: "Slash commands"
-description: "The /agb-* commands the plugin adds to Antigravity, generated from commands/*.md."
+description: "The /agb and /agb-* commands the plugin adds to Antigravity, generated from commands/*.md."
 ---
 
-The plugin ships one slash command per Markdown file in [`commands/`](https://github.com/voodootikigod/antigravity-booster/blob/main/commands) and mirrors all seven as native Antigravity plugin skills under [`skills/`](https://github.com/voodootikigod/antigravity-booster/blob/main/skills) (`skills/agb-*/SKILL.md`) so both native `agy 1.4.x` plugins and imported Claude Code / Gemini CLI extensions expose `/agb-*`. Each command tells the agent to run the `~/.local/bin/agb` terminal shim with the user's arguments, so every slash command is a thin wrapper around the [CLI](/docs/reference/cli) command of the same name. The table is generated from each file's frontmatter and its H1 usage line.
+The plugin ships one slash command per Markdown file in [`commands/`](https://github.com/voodootikigod/antigravity-booster/blob/main/commands) and mirrors all eight (`/agb` umbrella router plus the seven `/agb-*` subcommands) as native Antigravity plugin skills under [`skills/`](https://github.com/voodootikigod/antigravity-booster/blob/main/skills) (`skills/agb/SKILL.md` and `skills/agb-*/SKILL.md`) so both native `agy 1.4.x` plugins and imported Claude Code / Gemini CLI extensions expose `/agb <description>` and `/agb-*`. Typing `/agb <description>` routes any natural-language task or subcommand (`plan`, `run`, `review`, `doctor`, `bootstrap`, `migrate`, `sidecar`, `status`, `preflight`, `validate`, `pool`, `brains`, `sweep`) to the right `agb` workflow, while each `/agb-*` command is a direct wrapper around the [CLI](/docs/reference/cli) command of the same name. The table is generated from each file's frontmatter and its H1 usage line.
 
 <include>../../../generated/slash-commands.mdx</include>
 

@@ -19,6 +19,7 @@ const EXPECTED_COMMANDS = [
   'agb-review.md',
   'agb-run.md',
   'agb-sidecar.md',
+  'agb.md',
 ];
 const EXPECTED_AGENTS = ['fleet-scheduler.md', 'prosecutor.md', 'spec-linter.md'];
 
@@ -167,7 +168,7 @@ test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, r
   assert.match(rulesMd, /mcp__agb__agb_plan/);
   assert.match(rulesMd, /\/agb-run/);
 
-  for (const skill of ['agb-bootstrap', 'agb-doctor', 'agb-migrate', 'agb-plan', 'agb-review', 'agb-run', 'agb-sidecar']) {
+  for (const skill of ['agb', 'agb-bootstrap', 'agb-doctor', 'agb-migrate', 'agb-plan', 'agb-review', 'agb-run', 'agb-sidecar']) {
     const skillPath = join(ROOT, 'skills', skill, 'SKILL.md');
     assert.ok(existsSync(skillPath), `missing native skill ${skillPath}`);
     const content = readFileSync(skillPath, 'utf8');

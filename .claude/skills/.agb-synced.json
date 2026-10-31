@@ -1,5 +1,6 @@
 {
   "managed": [
+    "agb",
     "agb-bootstrap",
     "agb-doctor",
     "agb-migrate",

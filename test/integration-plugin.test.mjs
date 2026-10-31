@@ -20,6 +20,7 @@ test('PreToolUse: the legacy auto-approve-tests hook is gone and no hook registr
 
 test('commands: slash command md files exist and are well-formed', () => {
   const commandFiles = [
+    'agb.md',
     'agb-plan.md',
     'agb-run.md',
     'agb-review.md',
@@ -34,10 +35,14 @@ test('commands: slash command md files exist and are well-formed', () => {
     assert.ok(existsSync(filePath), `Command file ${file} must exist`);
 
     const content = readFileSync(filePath, 'utf8');
-    assert.match(content, /^---[\s\S]+?name:\s*agb-/, `File ${file} must declare name in frontmatter`);
+    assert.match(content, /^---[\s\S]+?name:\s*agb(?:-|\b)/, `File ${file} must declare name in frontmatter`);
     assert.match(content, /description:/, `File ${file} must declare description in frontmatter`);
-    const sub = file.replace(/^agb-/, '').replace(/\.md$/, '');
-    assert.match(content, new RegExp('```sh\\n~/\\.local/bin/agb ' + sub), `File ${file} must show the shim invocation in a shell block`);
+    if (file === 'agb.md') {
+      assert.match(content, /```sh\n~\/\.local\/bin\/agb plan/, 'agb.md must show shim invocation in a shell block');
+    } else {
+      const sub = file.replace(/^agb-/, '').replace(/\.md$/, '');
+      assert.match(content, new RegExp('```sh\\n~/\\.local/bin/agb ' + sub), `File ${file} must show the shim invocation in a shell block`);
+    }
   }
 });
 

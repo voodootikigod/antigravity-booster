@@ -1,7 +1,9 @@
 # Antigravity Booster (`agb`) Session Orchestration Rules
 
-When the `antigravity-booster` plugin is enabled in this workspace, prefer its deterministic multi-agent orchestration tools (`mcp__agb__*`) and `/agb-*` skills whenever a task spans multiple files, independent subsystems, or pre-merge verification:
+When the `antigravity-booster` plugin is enabled in this workspace, prefer its deterministic multi-agent orchestration tools (`mcp__agb__*`) and `/agb` (or `/agb-*`) skills whenever a task spans multiple files, independent subsystems, or pre-merge verification:
 
+0. **Umbrella Natural-Language Router (`/agb <description>`)**
+   - Users can invoke `/agb <description>` (or `/antigravity-booster:agb <description>`) with any natural-language task or subcommand (`plan`, `run`, `review`, `doctor`, `bootstrap`, `migrate`, `sidecar`, `status`, `preflight`, `validate`, `pool`, `brains`, `sweep`) and it automatically routes to the right `agb` workflow.
 1. **Environment & First-Run Readiness (`agb_doctor` / `/agb-doctor`, `/agb-bootstrap`)**
    - Before starting a fleet run or if `agb` reports a missing runtime/companion plugin, invoke `mcp__agb__agb_doctor` (or `/agb-doctor`). If `~/.local/bin/agb` is not yet installed, instruct the user to run `/agb-bootstrap` once.
 2. **Spec-to-DAG Decomposition (`agb_plan` / `/agb-plan`)**
