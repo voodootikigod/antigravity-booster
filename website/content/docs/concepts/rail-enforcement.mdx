@@ -9,7 +9,7 @@ A **rail** is a path glob that must not change while the ticket declaring it is 
 
 ```mermaid
 flowchart LR
-  S[".adlc/tickets/ (or legacy .adlc/tickets.json)"] --> H["In session: PreToolUse policy guard"]
+  S[".adlc/tickets/"] --> H["In session: PreToolUse policy guard"]
   S --> R["agb run: enforcement gate + per-ticket adlc rails-guard"]
   S --> C["CI: rails-guard on every PR"]
 ```

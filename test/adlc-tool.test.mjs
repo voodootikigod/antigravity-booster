@@ -19,7 +19,7 @@ function withFakeAdlc(scriptBody, fn) {
   const pkgJsonPath = join(tmpDir, 'package.json');
   writeFileSync(pkgJsonPath, JSON.stringify({
     name: '@adlc/cli',
-    version: '1.11.1',
+    version: '1.12.0',
     bin: { adlc: './fake.sh' },
   }));
 

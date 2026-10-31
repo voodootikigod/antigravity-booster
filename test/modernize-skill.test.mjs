@@ -4,7 +4,9 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, existsSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { bootstrap } from '../lib/bootstrap.mjs';
+import { writeStore } from '../skills/modernize/scripts/trust-anchor.mjs';
 
 const FAKE_AGY = join(import.meta.dirname, 'fixtures', 'fake-agy');
 const AUDIT_SCRIPT = join(import.meta.dirname, '..', 'skills', 'modernize', 'scripts', 'audit.mjs');
@@ -50,12 +52,13 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
   assert.match(content, /Stage 5:/);
   assert.match(content, /Codeweight & Tech-Debt Pruning/);
   assert.match(content, /Pillar 6: Deprecation & Codeweight Pruning/);
+  assert.doesNotMatch(content, /roadmap-agy-1\.2\.8-adlc-1\.11\.1/, 'the skill must name the roadmap by its target arguments, not a past release');
   assert.match(content, /Adversarial-Review & Fix Loop/);
   assert.match(content, /audit\.mjs/);
 });
 
 const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 'roadmap-agy-1.2.8-adlc-1.11.1.md');
-const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, '..', 'vendor', 'adlc', 'package.json');
+const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, 'fixtures', 'adlc-changelog-fixture-1.11.1.json');
 const REPO_WITH_NM = (() => {
   let d = join(import.meta.dirname, '..');
   while (d !== dirname(d)) {
@@ -66,21 +69,89 @@ const REPO_WITH_NM = (() => {
   return d;
 })();
 
+
+// Stage 5 only has built-in anchors for ADLC 1.11.1; any later target needs an
+// operator-signed trust store. These tests sign a throwaway store (temp HOME,
+// throwaway key) with the registry digests of the published @adlc/cli@1.12.0
+// tarball and the sha256 of the pinned changelog fixture, never the real store.
+const AUDIT_ADLC_TARGET = '1.12.0';
+const AUDIT_AGY_TARGET = '1.2.8';
+const AUDIT_TEST_KEY = 'agb-test-only-admin-key';
+function auditTrustEnv() {
+  const home = makeTempDir('agb-mod-trust-home-');
+  writeStore(join(home, '.adlc', 'trusted_packages.json'), {
+    releases: {
+      [AUDIT_AGY_TARGET]: { agyChangelogSha256: createHash('sha256').update(readFileSync(AGY_RELEASE_FIXTURE)).digest('hex') },
+      [AUDIT_ADLC_TARGET]: {
+        adlcTarballSri: 'sha512-s/KSv0lx0VQhGOEp6Y2WJ3P9KxL8gZvollSJcVcrvbhGUU9HrUZ/tn0PO7zHVCk0UpmJpBBQk39VZNTP1JVxXQ==',
+        packageTreeSha512: '6818baf1923a72d8230761800c6f4ea5f7ac2a9a1d3362eb960317b685d80a6c90f434534ef222fe4a0fbd033cd0d96f48bbe984b636d9927b3bd9d4052bcc45',
+        adlcChangelogSha256: '0b036f0b4e50bb8b9d7a5c198d715981fd695521a1a41f3c4eceedba027477e4',
+      },
+    },
+  }, AUDIT_TEST_KEY);
+  return { home, env: { ...process.env, HOME: home, ADLC_ADMIN_KEY: AUDIT_TEST_KEY, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, AGB_ROADMAP_PATH: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' } };
+}
+
 test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
-  const out = execFileSync(process.execPath, [AUDIT_SCRIPT], {
-    cwd: REPO_WITH_NM,
-    env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
-    encoding: 'utf8',
-  });
+  const trust = auditTrustEnv();
+  let out;
+  try {
+    out = execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
+      cwd: REPO_WITH_NM,
+      env: trust.env,
+      encoding: 'utf8',
+    });
+  } finally {
+    rmSync(trust.home, { recursive: true, force: true });
+  }
 
   assert.match(out, /Stage 1 \(Live Runtime Probes\):\s*\[PASS\]/);
   assert.match(out, /Stage 2 \(Static Codebase Audit\):\s*\[PASS\]/);
   assert.match(out, /Codeweight audit: lib\/ total \d+ lines/);
   assert.match(out, /Stage 3 \(Subsystem Delta Matrix\):\s*\[PASS\]/);
   assert.match(out, /Pillar 6: Deprecation & Codeweight Pruning/);
+  assert.match(out, /Pillar 1: Model Catalog & Dual-Pool Quota Routing: Verified 13 models aligned with live runtime/, 'the registry in lib/models.mjs matches the live catalog, so nothing is reported as new');
   assert.match(out, /Stage 4 \(Roadmap DAG Validation\):\s*\[PASS\]/);
   assert.match(out, /Stage 5 \(Provenance & Release Ledger\):\s*\[PASS\]/);
   assert.match(out, /All checks PASSED/);
+});
+
+test('Modernize Skill: audit.mjs refuses to run without explicit release targets', () => {
+  for (const args of [[], ['1.12.0'], ['1.12.0', '', '']]) {
+    assert.throws(
+      () => execFileSync(process.execPath, [AUDIT_SCRIPT, ...args], {
+        cwd: join(import.meta.dirname, '..'),
+        env: { ...process.env, ADLC_TARGET_VERSION: '', AGY_TARGET_VERSION: '', AGB_AGY_BIN: FAKE_AGY },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+      (err) => err.status === 1 && /explicit release targets/.test(String(err.stderr)) && /trust-anchor\.mjs/.test(String(err.stderr)),
+      `args ${JSON.stringify(args)} must be refused`,
+    );
+  }
+});
+
+test('Modernize Skill: Stage 5 hashes the Antigravity release notes and never trusts an embedded digest marker', () => {
+  const trust = auditTrustEnv();
+  const notesDir = makeTempDir('agb-mod-notes-');
+  try {
+    const signed = readFileSync(AGY_RELEASE_FIXTURE, 'utf8');
+    const digest = createHash('sha256').update(signed).digest('hex');
+    const forged = join(notesDir, 'notes.md');
+    writeFileSync(forged, `# not the release notes\n\nexpected digest: ${digest}\n`);
+    assert.throws(
+      () => execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
+        cwd: REPO_WITH_NM,
+        env: { ...trust.env, AGY_RELEASE_URL: forged },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+      (err) => /release notes SHA-256/.test(String(err.stderr)),
+    );
+  } finally {
+    rmSync(trust.home, { recursive: true, force: true });
+    rmSync(notesDir, { recursive: true, force: true });
+  }
 });
 
 test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical containment breach)', () => {
@@ -92,7 +163,7 @@ test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical co
 
     assert.throws(
       () => {
-        execFileSync(process.execPath, [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
           cwd: tempRepo,
           encoding: 'utf8',
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -111,10 +182,11 @@ test('Modernize Skill: audit.mjs fails closed if .adlc is a symlink (physical co
 
 test('Modernize Skill: concurrent writer serialization via exclusive lock', async () => {
   // Spawn two concurrent audit scripts; they must serialize cleanly without corruption
+  const trust = auditTrustEnv();
   const p1 = new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [AUDIT_SCRIPT], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
       cwd: REPO_WITH_NM,
-      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
+      env: trust.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -127,9 +199,9 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
   });
 
   const p2 = new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [AUDIT_SCRIPT], {
+    const child = spawn(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
       cwd: REPO_WITH_NM,
-      env: { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGY_RELEASE_URL: AGY_RELEASE_FIXTURE, ADLC_CHANGELOG_URL: ADLC_CHANGELOG_FIXTURE, PATH: '/usr/bin:/bin' },
+      env: trust.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -141,7 +213,13 @@ test('Modernize Skill: concurrent writer serialization via exclusive lock', asyn
     });
   });
 
-  const [res1, res2] = await Promise.all([p1, p2]);
+  let res1;
+  let res2;
+  try {
+    [res1, res2] = await Promise.all([p1, p2]);
+  } finally {
+    rmSync(trust.home, { recursive: true, force: true });
+  }
   assert.match(res1, /All checks PASSED/);
   assert.match(res2, /All checks PASSED/);
 
@@ -163,7 +241,7 @@ test('Modernize Skill: audit.mjs fails closed if agy probe exits with nonzero st
   try {
     assert.throws(
       () => {
-        execFileSync(process.execPath, [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
           cwd: join(import.meta.dirname, '..'),
           env: { ...process.env, AGB_AGY_BIN: badAgy },
           encoding: 'utf8',
@@ -200,7 +278,7 @@ exit 0
   try {
     assert.throws(
       () => {
-        execFileSync(process.execPath, [AUDIT_SCRIPT], {
+        execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
           cwd: join(import.meta.dirname, '..'),
           env: { ...process.env, AGB_AGY_BIN: incompleteAgy },
           encoding: 'utf8',

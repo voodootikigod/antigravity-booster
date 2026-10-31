@@ -59,6 +59,14 @@ Builders are launched with `agy --sandbox` and on top of a kernel containment fl
 | Linux | bubblewrap, verified by a probe run with `--unshare-pid` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1046-L1071)) | Builder refused; `systemd-run` and `unshare` are not accepted as fallbacks |
 | Windows | A Job Object via `powershell.exe`, which bounds process lifetime but not filesystem or network; `agb` also requires the active Windows sandbox check to pass ([lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L646-L660)) | Builder refused unless a valid bypass attestation exists |
 
+### Credential directories (agy 1.4.6 and later)
+
+Builders run under `agy --sandbox`. From agy 1.4.6 that sandbox no longer lets commands read or modify `~/.docker`, `~/.kube` or `~/_netrc` unless you grant access explicitly; earlier versions left `~/.docker` and `~/.kube` writable. A builder ticket that pushes to a container registry or talks to a Kubernetes cluster can therefore fail where it used to succeed, and the failure shows up as a failed command in the builder transcript, not as an `agb` error.
+
+Gate commands are unaffected. They run in their own sandbox (above) with the network denied, and never had these credentials.
+
+Keep registry and cluster work out of builder tickets. Deploy from outside `agb`, after the merge decision, which stays with a human. If a builder genuinely needs one of these paths, grant it explicitly in agy's sandbox configuration (see the agy 1.4.6 release notes) and scope the credential as narrowly as you can.
+
 ### Windows bypass attestation
 
 [C22](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L407-L429) On Windows only, a builder may run without the full sandbox if `.adlc/config.json` holds a valid `sandboxBypassAttestation`. It must:

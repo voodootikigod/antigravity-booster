@@ -110,13 +110,13 @@ describe('models-registry: single source of truth', () => {
     assert.equal(resolveModelSlug('gemini-3.8-flash-low'), 'gemini-3.8-flash-low');
     assert.equal(resolveModelSlug('  GEMINI-3.8-FLASH-LOW  '), 'gemini-3.8-flash-low');
 
-    // Retired 3.5 mappings
+    // Retired mappings
     assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-3.8-flash-low');
     assert.equal(resolveModelSlug('gemini 3.5 flash (high)'), 'gemini-3.8-flash-high');
 
     // Model aliases
     assert.equal(resolveModelSlug('gemini 3.8 flash (low)'), 'gemini-3.8-flash-low');
-    assert.equal(resolveModelSlug('claude sonnet 4.6 (thinking)'), 'claude-sonnet-4-6');
+    assert.equal(resolveModelSlug('claude sonnet 5.5 (medium)'), 'claude-sonnet-5-5-medium');
     assert.equal(resolveModelSlug('gpt-oss 120b (medium)'), 'gpt-oss-120b-medium');
 
     // Unknown string
@@ -125,8 +125,8 @@ describe('models-registry: single source of truth', () => {
 
   it('poolOf resolves pools and prefix fallbacks or throws on unknown', () => {
     assert.equal(poolOf('gemini-3.8-flash-low'), 'gemini-flash');
-    assert.equal(poolOf('gemini-3.1-pro-high'), 'gemini-pro');
-    assert.equal(poolOf('claude-sonnet-4-6'), 'claude');
+    assert.equal(poolOf('gemini-4-argon-high'), 'gemini-pro');
+    assert.equal(poolOf('claude-sonnet-5-5-medium'), 'claude');
     assert.equal(poolOf('gpt-oss-120b-medium'), 'gpt-oss');
 
     // Fallback prefixes
@@ -144,13 +144,13 @@ describe('models-registry: single source of truth', () => {
 
   it('familyOf and upstreamPoolOf group pools properly', () => {
     assert.equal(familyOf('gemini-3.8-flash-low'), 'gemini');
-    assert.equal(familyOf('gemini-3.1-pro-high'), 'gemini');
-    assert.equal(familyOf('claude-sonnet-4-6'), 'claude');
+    assert.equal(familyOf('gemini-4-argon-high'), 'gemini');
+    assert.equal(familyOf('claude-sonnet-5-5-medium'), 'claude');
     assert.equal(familyOf('gpt-oss-120b-medium'), 'gpt-oss');
 
     assert.equal(upstreamPoolOf('gemini-3.8-flash-low'), 'gemini');
-    assert.equal(upstreamPoolOf('gemini-3.1-pro-high'), 'gemini');
-    assert.equal(upstreamPoolOf('claude-sonnet-4-6'), 'claude_gpt');
+    assert.equal(upstreamPoolOf('gemini-4-argon-high'), 'gemini');
+    assert.equal(upstreamPoolOf('claude-sonnet-5-5-medium'), 'claude_gpt');
     assert.equal(upstreamPoolOf('gpt-oss-120b-medium'), 'claude_gpt');
   });
 
@@ -182,17 +182,17 @@ describe('models-registry: single source of truth', () => {
     const pools = new PoolSet();
     assert.deepEqual(pools.prosecutorsFor('gemini-3.8-flash-low'), [
       'gpt-oss-120b-medium',
-      'claude-sonnet-4-6',
+      'claude-sonnet-5-5-medium',
     ]);
-    assert.deepEqual(pools.prosecutorsFor('claude-sonnet-4-6'), [
-      'gemini-3.1-pro-high',
+    assert.deepEqual(pools.prosecutorsFor('claude-sonnet-5-5-medium'), [
+      'gemini-4-argon-high',
       'gemini-3.8-flash-high',
       'gpt-oss-120b-medium',
     ]);
     assert.deepEqual(pools.prosecutorsFor('gpt-oss-120b-medium'), [
-      'gemini-3.1-pro-high',
+      'gemini-4-argon-high',
       'gemini-3.8-flash-high',
-      'claude-sonnet-4-6',
+      'claude-sonnet-5-5-medium',
     ]);
 
     const saved = PROSECUTOR_CANDIDATES.gemini;
@@ -219,13 +219,13 @@ describe('models-registry: single source of truth', () => {
       assert.equal(defaultRow.model, ROLE_MODELS.probeDefault);
       assert.equal(defaultRow.width, 1);
 
-      const customOut = execFileSync(process.execPath, [agbBin, 'probe', '1', 'claude-sonnet-4-6'], {
+      const customOut = execFileSync(process.execPath, [agbBin, 'probe', '1', 'claude-sonnet-5-5-medium'], {
         cwd: tmp,
         env,
         encoding: 'utf8',
       }).trim();
       const customRow = JSON.parse(customOut);
-      assert.equal(customRow.model, 'claude-sonnet-4-6');
+      assert.equal(customRow.model, 'claude-sonnet-5-5-medium');
       assert.equal(customRow.width, 1);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

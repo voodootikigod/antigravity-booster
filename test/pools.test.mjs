@@ -766,7 +766,7 @@ test('PoolSet: releasing a slot in one subpool wakes waiters in another subpool 
     assert.equal(pools.familyInFlight('gemini'), 2);
 
     let proWoken = false;
-    const proPromise = pools.acquire('gemini-3.1-pro-high', { repo }).then((rel) => {
+    const proPromise = pools.acquire('gemini-4-argon-high', { repo }).then((rel) => {
       proWoken = true;
       return rel;
     });
@@ -793,17 +793,17 @@ test('PoolSet: releasing a slot in one subpool wakes waiters in another subpool 
 
 test('PoolSet: route() prefers models with positive capacity when some candidate pools are depleted', () => {
   const pools = new PoolSet({ 'gemini-pro': 0, claude: 4 });
-  // frontier tier has gemini-3.1-pro-high and claude-sonnet-4-6
+  // frontier tier has gemini-4-argon-high and claude-sonnet-5-5-high
   const picked = pools.route('frontier');
-  assert.equal(picked, 'claude-sonnet-4-6', 'route should avoid 0-capacity gemini-pro and pick claude-sonnet-4-6');
+  assert.equal(picked, 'claude-sonnet-5-5-high', 'route should avoid 0-capacity gemini-pro and pick claude-sonnet-5-5-high');
   pools.unroute(picked);
 });
 
 test('PoolSet: prosecutorFor() prefers models with positive capacity when primary is depleted', () => {
   const pools = new PoolSet({ 'gpt-oss': 0, claude: 4 });
-  // for gemini builder, primary prosecutor is gpt-oss-120b-medium, alternate is claude-sonnet-4-6
+  // for gemini builder, primary prosecutor is gpt-oss-120b-medium, alternate is claude-sonnet-5-5-medium
   const pros = pools.prosecutorFor('gemini-3.8-flash-low');
-  assert.equal(pros, 'claude-sonnet-4-6', 'prosecutorFor should avoid 0-capacity gpt-oss and pick claude-sonnet-4-6');
+  assert.equal(pros, 'claude-sonnet-5-5-medium', 'prosecutorFor should avoid 0-capacity gpt-oss and pick claude-sonnet-5-5-medium');
 });
 
 test('registerLeaseWorkerPid: fails closed when process start time cannot be verified', async () => {

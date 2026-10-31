@@ -1,0 +1,10 @@
+{
+  "name": "@adlc/cli-vendored-by-antigravity-booster",
+  "version": "1.11.1",
+  "private": true,
+  "description": "Booster-owned, bundled subset of the @adlc CLI (8 verbs) for zero-node_modules plugin installs. Built by `npm run vendor:bundle`; do not edit dist/ by hand.",
+  "type": "module",
+  "bin": {
+    "adlc": "bin/adlc.mjs"
+  }
+}

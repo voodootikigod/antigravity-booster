@@ -12,9 +12,9 @@ Every model belongs to one **model pool**, and every model pool belongs to one *
 
 | Model pool | Models | Upstream family | Default cap |
 | --- | --- | --- | --- |
-| `gemini-flash` | `gemini-3.8-flash-{low,medium,high}`, `gemini-3.7-flash-{low,medium,high}`, `gemini-3.6-flash-{low,medium,high}` | `gemini` | 8 |
-| `gemini-pro` | `gemini-3.1-pro-low`, `gemini-3.1-pro-high` | `gemini` | 4 |
-| `claude` | `claude-sonnet-4-6`, `claude-opus-4-6-thinking` | `claude_gpt` | 4 |
+| `gemini-flash` | `gemini-3.8-flash-{low,medium,high}` | `gemini` | 8 |
+| `gemini-pro` | `gemini-4-argon-{low,medium,high}` | `gemini` | 4 |
+| `claude` | `claude-sonnet-5-5-{low,medium,high}`, `claude-opus-5-5-{low,medium,high}` | `claude_gpt` | 4 |
 | `gpt-oss` | `gpt-oss-120b-medium` | `claude_gpt` | 2 |
 
 Model lists: [lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L90-L104). Default per-pool caps (`DEFAULT_CAPS`): [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L71-L76). Family mapping: [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L769-L773).
@@ -45,9 +45,9 @@ A ticket's `tier` (default `mid`) picks a candidate list. Candidates are listed 
 
 | Tier | Candidates (`TIER_CANDIDATES`) |
 | --- | --- |
-| `cheap` | `gemini-3.8-flash-low`, `gemini-3.8-flash-medium`, `gemini-3.7-flash-low`, `gemini-3.6-flash-low`, `gemini-3.6-flash-medium` |
-| `mid` | `gemini-3.8-flash-high`, `gemini-3.7-flash-medium`, `gemini-3.7-flash-high`, `gemini-3.6-flash-high`, `gemini-3.1-pro-low`, `claude-sonnet-4-6` |
-| `frontier` | `gemini-3.1-pro-high`, `claude-sonnet-4-6`, `claude-opus-4-6-thinking` |
+| `cheap` | `gemini-3.8-flash-low`, `gemini-3.8-flash-medium` |
+| `mid` | `gemini-3.8-flash-high`, `gemini-4-argon-low`, `claude-sonnet-5-5-medium` |
+| `frontier` | `gemini-4-argon-high`, `claude-sonnet-5-5-high`, `claude-opus-5-5-high` |
 
 `route()` prefers candidates whose pool and family both have capacity, then picks the one with the lowest reserved-to-cap ratio ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1770-L1790)).
 
@@ -71,11 +71,11 @@ The prosecutor always comes from a different family than the builder ([lib/pools
 
 | Builder family | Preferred prosecutor | Fallbacks, in order |
 | --- | --- | --- |
-| `gemini` | `gpt-oss-120b-medium` | `claude-sonnet-4-6` |
-| `claude` | `gemini-3.1-pro-high` | `gemini-3.8-flash-high`, `gpt-oss-120b-medium` |
-| `gpt-oss` | `gemini-3.1-pro-high` | `gemini-3.8-flash-high`, `claude-sonnet-4-6` |
+| `gemini` | `gpt-oss-120b-medium` | `claude-sonnet-5-5-medium` |
+| `claude` | `gemini-4-argon-high` | `gemini-3.8-flash-high`, `gpt-oss-120b-medium` |
+| `gpt-oss` | `gemini-4-argon-high` | `gemini-3.8-flash-high`, `claude-sonnet-5-5-medium` |
 
-[C20](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L107) Gemini builders are prosecuted by `gpt-oss-120b-medium`; Claude and gpt-oss builders by `gemini-3.1-pro-high`. `prosecutorFor` takes the first candidate whose pool and family have capacity ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1800-L1825)). See [Prosecution](/docs/concepts/prosecution).
+[C20](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L107) Gemini builders are prosecuted by `gpt-oss-120b-medium`; Claude and gpt-oss builders by `gemini-4-argon-high`. `prosecutorFor` takes the first candidate whose pool and family have capacity ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1800-L1825)). See [Prosecution](/docs/concepts/prosecution).
 
 <Callout type="info">
 Calibration probes behind these caps are listed on the [calibration](/docs/reference/calibration) page. Draining a pool during a run is covered in [Operating tips](/docs/guides/operating-tips).

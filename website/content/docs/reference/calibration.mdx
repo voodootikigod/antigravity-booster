@@ -35,7 +35,7 @@ The 2026-06-11 report is kept unchanged in the repository as a historical record
 ```bash
 agb probe [widths] [model]
 # defaults: widths 2,4,8 and model "Gemini 3.8 Flash (Low)"
-agb probe 2,4,8 "Claude Sonnet 4.6 (Thinking)"
+agb probe 2,4,8 "Claude Sonnet 5.5 (Medium)"
 ```
 
 For each width the probe sends that many concurrent `Reply with exactly: PONG-<i>` prompts with a 120 s timeout; a request counts as ok only if agy succeeds and the output contains its own sentinel ([probe loop](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L319-L338)). Each row is printed to stdout as JSON: `model`, `width`, `ok`, `wall_ms`, `median_ms`, `max_ms`.

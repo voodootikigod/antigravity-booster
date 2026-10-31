@@ -17,7 +17,7 @@ import {
 import { Repo, ROOT, GUARD, baseTicket, archivedShard, sh } from './fixtures/rails-guard-ci/repo.mjs';
 
 // @adlc/tickets does not export lib/canonical.mjs or lib/filename.mjs; load them
-// by file path from the installed (pinned 1.11.1) devDependency.
+// by file path from the installed (pinned 1.12.0) devDependency.
 const ticketsDir = join(createRequire(import.meta.url).resolve('@adlc/tickets/package.json'), '..');
 const lib = await import(pathToFileURL(join(ticketsDir, 'lib', 'canonical.mjs')).href);
 const libName = await import(pathToFileURL(join(ticketsDir, 'lib', 'filename.mjs')).href);
@@ -33,7 +33,7 @@ const expect = (r, code, re) => {
 const T = (id, extra) => baseTicket(id, extra);
 
 // ---------------------------------------------------------------- parity
-test('parity: mirror is pinned to @adlc/tickets 1.11.1', () => assert.equal(TICKETS_VERSION, '1.11.1'));
+test('parity: mirror is pinned to @adlc/tickets 1.12.0', () => assert.equal(TICKETS_VERSION, '1.12.0'));
 
 test('parity: ticketFilename matches @adlc/tickets and the real shard name', () => {
   assert.equal(ticketFilename('T-LOCKEXEC-SEAL-COVERAGE'),
@@ -165,6 +165,8 @@ test('pass: complete+archive via the real adlc ticket CLI (#86 shape)', withRepo
   })();
   r.dirStore().base('base0');
   r.git('checkout', '-q', 'main');
+  // adlc >= 1.12.0 refuses a rail that matches no file, so the railed path must exist.
+  r.write('lib/r.mjs', 'export {};\n');
   sh(r.dir, adlc, ['ticket', 'create', '--input', '-', '--write'],
     { input: JSON.stringify({ id: 'T-A', title: 'a', body: 'b', scope: ['x'], rails: ['lib/r.mjs'], edges: [] }) });
   r.commit('ticket');

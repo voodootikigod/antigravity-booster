@@ -49,7 +49,7 @@ test('reviewFleet: captures quota admission errors per lens without crashing or 
     quota: { raw: {}, models: {} },
     refreshQuota: async () => ({ ok: true }),
     acquire: async (model, opts) => {
-      if (model.includes('pro')) {
+      if (model.includes('argon')) {
         throw new Error('pro quota exhausted');
       }
       return () => {};

@@ -45,7 +45,7 @@
     "skills:check": "node scripts/sync-skills.mjs --check",
     "coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-exclude='vendor/**' test/*.test.mjs",
     "coverage:check": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-exclude='vendor/**' --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=86 test/*.test.mjs",
-    "vendor:bundle": "esbuild vendor/adlc/src/dispatch.mjs --bundle --platform=node --format=esm --outfile=vendor/adlc/dist/adlc.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --log-level=warning"
+    "vendor:bundle": "esbuild vendor/adlc/src/dispatch.mjs --bundle --platform=node --format=esm --outfile=vendor/adlc/dist/adlc.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --log-level=warning && node -e \"require('node:fs').copyFileSync('node_modules/@adlc/hollow-test/lib/watchdog.mjs','vendor/adlc/dist/watchdog.mjs')\""
   },
   "engines": {
     "node": ">=22.19.0"
@@ -57,16 +57,16 @@
   },
   "devDependencies": {
     "@adlc/antigravity": "1.7.0",
-    "@adlc/cli": "1.11.1",
-    "@adlc/consensus-fix": "1.11.1",
-    "@adlc/core": "1.11.1",
-    "@adlc/flail-detector": "1.11.1",
-    "@adlc/gate-manifest": "1.11.1",
-    "@adlc/hollow-test": "1.11.1",
-    "@adlc/merge-forecast": "1.11.1",
-    "@adlc/model-router": "1.11.1",
-    "@adlc/rails-guard": "1.11.1",
-    "@adlc/tickets": "1.11.1",
+    "@adlc/cli": "1.12.0",
+    "@adlc/consensus-fix": "1.12.0",
+    "@adlc/core": "1.12.0",
+    "@adlc/flail-detector": "1.12.0",
+    "@adlc/gate-manifest": "1.12.0",
+    "@adlc/hollow-test": "1.12.0",
+    "@adlc/merge-forecast": "1.12.0",
+    "@adlc/model-router": "1.12.0",
+    "@adlc/rails-guard": "1.12.0",
+    "@adlc/tickets": "1.12.0",
     "esbuild": "0.28.2",
     "minimatch": "10.0.1"
   }

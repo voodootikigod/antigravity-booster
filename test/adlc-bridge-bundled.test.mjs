@@ -26,7 +26,7 @@ test('importing the bridge unbundled does not throw (no ReferenceError on __AGB_
 });
 
 test('KNOWN_VENDORED_ADLC pins the committed vendor/adlc exactly', () => {
-  assert.equal(KNOWN_VENDORED_ADLC.version, '1.11.1');
+  assert.equal(KNOWN_VENDORED_ADLC.version, '1.12.0');
   assert.equal(computeDirectoryDigest(join(ROOT, 'vendor', 'adlc')), KNOWN_VENDORED_ADLC.treeDigest);
 });
 
@@ -35,7 +35,7 @@ test('Tier 1: a pristine vendored adlc resolves with source "vendored"', () => {
   const r = resolveAdlcBinary({ repo: base, env: {}, pluginRoot: root });
   assert.equal(r.ok, true, r.error);
   assert.equal(r.source, 'vendored');
-  assert.equal(r.version, '1.11.1');
+  assert.equal(r.version, '1.12.0');
   assert.equal(r.binary, join(root, 'vendor', 'adlc', 'bin', 'adlc.mjs'));
 });
 

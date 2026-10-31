@@ -144,6 +144,26 @@ test('resolveTicket: missing id and unreadable store both fail closed', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('resolveTicket: a retired legacy .adlc/tickets.json is refused, alone, beside the directory store, or dangling', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const legacy = JSON.stringify({ tickets: [{ id: 'T1', title: 't', body: 'b', scope: ['**'], rails: [], edges: [] }] }) + '\n';
+  const alone = makeRepo({ store: false });
+  const both = makeRepo();
+  const dangling = makeRepo();
+  try {
+    writeFileSync(join(alone, '.adlc', 'tickets.json'), legacy);
+    writeFileSync(join(both, '.adlc', 'tickets.json'), legacy);
+    writeShard(both, { id: 'T1', scope: ['lib/**'] });
+    symlinkSync(join(dangling, 'nowhere.json'), join(dangling, '.adlc', 'tickets.json'));
+    writeShard(dangling, { id: 'T1', scope: ['lib/**'] });
+    for (const root of [alone, both, dangling]) {
+      const r = resolveTicket(root, 'T1');
+      assert.equal(r.ok, false);
+      assert.match(r.error, /^LEGACY_TICKET_STORE: .*adlc ticket store migrate/);
+    }
+  } finally { for (const r of [alone, both, dangling]) rmSync(r, { recursive: true, force: true }); }
+});
+
 test('unionActiveRails: fails closed when .adlc or .adlc/tickets is a symlink', async () => {
   const { symlinkSync } = await import('node:fs');
   const root = makeRepo({ adlc: false });

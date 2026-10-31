@@ -12,7 +12,7 @@
  *   Stage 5: Cryptographic Provenance & Release Digest Verification
  *
  * Usage:
- *   node skills/modernize/scripts/audit.mjs [TARGET_ADLC_VERSION] [PINNED_ADLC_REF] [TARGET_AGY_VERSION] [PINNED_AGY_REF]
+ *   node skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
  */
 
 import fs from 'node:fs';
@@ -23,9 +23,20 @@ import zlib from 'node:zlib';
 import cp from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const TARGET_ADLC_VERSION = process.argv[2] || process.env.ADLC_TARGET_VERSION || '1.11.1';
-const PINNED_ADLC_REF = process.argv[3] || process.env.ADLC_PINNED_REF || '902f5a6b189ffaa0119a6d47d4e56574fbcda712';
-const TARGET_AGY_VERSION = process.argv[4] || process.env.AGY_TARGET_VERSION || '1.2.8';
+const TARGET_ADLC_VERSION = process.argv[2] || process.env.ADLC_TARGET_VERSION;
+const TARGET_AGY_VERSION = process.argv[4] || process.env.AGY_TARGET_VERSION;
+if (!TARGET_ADLC_VERSION || !TARGET_AGY_VERSION) {
+  // No silent default: auditing a stale release would certify the wrong baseline.
+  console.error([
+    'FATAL: the audit needs explicit release targets (ADLC and agy versions).',
+    'Usage: node skills/modernize/scripts/audit.mjs <ADLC_VERSION> [PINNED_ADLC_REF] <AGY_VERSION> [PINNED_AGY_REF]',
+    'Example: node skills/modernize/scripts/audit.mjs 1.12.0 "" 1.4.7',
+    'Stage 5 needs an operator-signed trust anchor for each target: run skills/modernize/scripts/trust-anchor.mjs first (dry run, then --write).',
+  ].join('\n'));
+  process.exit(1);
+}
+// 1.11.1 keeps its recorded commit; any other target resolves its release tag, never another release's commit.
+const PINNED_ADLC_REF = process.argv[3] || process.env.ADLC_PINNED_REF || (TARGET_ADLC_VERSION === '1.11.1' ? '902f5a6b189ffaa0119a6d47d4e56574fbcda712' : `v${TARGET_ADLC_VERSION}`);
 const PINNED_AGY_REF = process.argv[5] || process.env.AGY_PINNED_REF || `v${TARGET_AGY_VERSION}`;
 
 const IMMUTABLE_AGY_CHANGELOG_SHA256 = '52da0789b7fe6eb634d5dbf3288b51b600d5401a1374c415a83b8e99d70951e3';
@@ -81,11 +92,33 @@ async function fetchText(urlStr, timeoutMs = 15000) {
 }
 
 // Helper: Extract Antigravity changelog section without regex EOF vulnerabilities
+// A tarball-derived tree digest must equal the operator-signed one when present;
+// otherwise a stale or wrong signed digest would never be noticed.
+function assertReferenceTreeMatchesAnchor(actual, expected) {
+  if (expected && actual !== expected) {
+    throw new Error(`FATAL: package tree SHA-512 (${actual}) does not match the signed trust anchor (${expected})`);
+  }
+}
+
+// The archive must really be @adlc/cli at the audited version; matching only a
+// digest would let a valid older tarball stand in for a newer release.
+function assertCliTarballIdentity(pkgDir, version) {
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf8'));
+  } catch (err) {
+    throw new Error(`FATAL: @adlc/cli tarball has no readable package.json: ${err.message}`);
+  }
+  if (manifest?.name !== '@adlc/cli' || manifest?.version !== version) {
+    throw new Error(`FATAL: tarball is ${manifest?.name}@${manifest?.version}, not @adlc/cli@${version}`);
+  }
+}
+
 function extractAgySection(raw, ver) {
   const escapedVer = ver.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const htmlMatch = raw.match(new RegExp(`<section[^>]*id=["\x27]v?${escapedVer}["\x27][\\s\\S]*?<\\/section>`, 'i'));
   if (htmlMatch) return htmlMatch[0].trim();
-  const headingRegex = new RegExp(`(^|\\n)##\\s*\\[?v?${escapedVer}\\]?`, 'i');
+  const headingRegex = new RegExp(`(^|\\n)##\\s*\\[?v?${escapedVer}(?![0-9A-Za-z]|\\.\\d|-[0-9A-Za-z])\\]?`, 'i');
   const startMatch = raw.match(headingRegex);
   if (!startMatch) return null;
   const startIndex = startMatch.index + (startMatch[1] ? 1 : 0);
@@ -450,8 +483,10 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   const modelsIdentified = [];
   const candidateModels = [
     'gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low',
-    'gemini-3.7-flash-high', 'gemini-3.6-flash-high', 'gemini-3.1-pro-high',
-    'claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'
+    'gemini-4-argon-high', 'gemini-4-argon-medium', 'gemini-4-argon-low',
+    'claude-sonnet-5-5-high', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-low',
+    'claude-opus-5-5-high', 'claude-opus-5-5-medium', 'claude-opus-5-5-low',
+    'gpt-oss-120b-medium'
   ];
   for (const m of candidateModels) {
     if (agyModelsText.includes(m)) modelsIdentified.push(m);
@@ -633,12 +668,15 @@ async function runStage3DeltaMatrix(stage1Data = {}, stage2Data = {}) {
   // Dynamic Pillar 1: Model Catalog Delta
   let knownModels = [];
   try {
-    const agyPath = path.join(repoRoot, 'lib', 'agy.mjs');
-    if (fs.existsSync(agyPath) && !fs.lstatSync(agyPath).isSymbolicLink()) {
-      const content = fs.readFileSync(agyPath, 'utf8');
-      const matches = content.match(/['"`](gemini-[^'"`]+|claude-[^'"`]+|gpt-oss-[^'"`]+)['"`]/g);
-      if (matches) {
-        knownModels = [...new Set(matches.map(m => m.replace(/['"`]/g, '')))];
+    // The registry lives in lib/models.mjs; lib/agy.mjs only re-exports it.
+    for (const file of ['models.mjs', 'agy.mjs']) {
+      const modelsPath = path.join(repoRoot, 'lib', file);
+      if (fs.existsSync(modelsPath) && !fs.lstatSync(modelsPath).isSymbolicLink()) {
+        const content = fs.readFileSync(modelsPath, 'utf8');
+        const matches = content.match(/['"`](gemini-[^'"`]+|claude-[^'"`]+|gpt-oss-[^'"`]+)['"`]/g);
+        if (matches) {
+          knownModels = [...new Set([...knownModels, ...matches.map(m => m.replace(/['"`]/g, ''))])];
+        }
       }
     }
   } catch {}
@@ -831,7 +869,6 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
   // Step B: Fetch & Verify Changelog Artifacts
   console.log(`[agb-modernize] Fetching Antigravity release notes: ${AGY_RELEASE_URL}`);
   let agyContent = null;
-  let agyOfflineVerified = false;
   try {
     agyContent = await fetchText(AGY_RELEASE_URL);
   } catch (err) {
@@ -840,43 +877,28 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
         console.warn(`[agb-modernize] Warning: Could not fetch ${AGY_RELEASE_URL}: ${err.message}. Trying global changelog...`);
         agyContent = await fetchText('https://antigravity.google/changelog');
       } catch (fallbackErr) {
-        const roadmapPath = process.env.AGB_ROADMAP_PATH || path.join(repoRoot, 'docs', 'research', `roadmap-agy-${TARGET_AGY_VERSION}-adlc-${TARGET_ADLC_VERSION}.md`);
-        if (fs.existsSync(roadmapPath)) {
-          const roadmapRaw = fs.readFileSync(roadmapPath, 'utf8');
-          if (roadmapRaw.includes(expectedAgyChangelogSha256)) {
-            console.warn(`[agb-modernize] Warning: Network unavailable (${fallbackErr.message}); verified pinned Antigravity digest (${expectedAgyChangelogSha256.slice(0, 16)}...) in local roadmap ${roadmapPath}`);
-            agyOfflineVerified = true;
-          }
-        }
-        if (!agyOfflineVerified) throw fallbackErr;
+        // No offline acceptance: a digest string inside a repository roadmap is not
+        // the release notes. The notes' bytes must be fetched and hashed.
+        throw fallbackErr;
       }
     } else {
       throw err;
     }
   }
 
-  let actualAgySha256 = expectedAgyChangelogSha256;
-  if (!agyOfflineVerified) {
-    const agySection = extractAgySection(agyContent, TARGET_AGY_VERSION);
-    actualAgySha256 = agySection ? crypto.createHash('sha256').update(agySection).digest('hex') : null;
-    const actualAgyFullSha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
-    const knownAgyDigests = KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION[TARGET_AGY_VERSION] || new Set();
-    const isLocalRoadmap = (!AGY_RELEASE_URL.startsWith('http://') && !AGY_RELEASE_URL.startsWith('https://')) && agyContent.includes(expectedAgyChangelogSha256);
-    const agyDigestMatches = (
-      isLocalRoadmap ||
-      (actualAgySha256 !== null && (actualAgySha256 === expectedAgyChangelogSha256 || knownAgyDigests.has(actualAgySha256))) ||
-      actualAgyFullSha256 === expectedAgyChangelogSha256 ||
-      knownAgyDigests.has(actualAgyFullSha256)
-    );
-    if (!agyDigestMatches) {
-      throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256 ?? 'missing-section'} / full: ${actualAgyFullSha256}) does not match expected (${expectedAgyChangelogSha256})`);
-    }
-    if (isLocalRoadmap) {
-      actualAgySha256 = expectedAgyChangelogSha256;
-    } else if (actualAgySha256 === null) {
-      actualAgySha256 = actualAgyFullSha256;
-    }
+  const agySection = extractAgySection(agyContent, TARGET_AGY_VERSION);
+  let actualAgySha256 = agySection ? crypto.createHash('sha256').update(agySection).digest('hex') : null;
+  const actualAgyFullSha256 = crypto.createHash('sha256').update(agyContent).digest('hex');
+  const knownAgyDigests = KNOWN_AGY_CHANGELOG_SHA256_BY_VERSION[TARGET_AGY_VERSION] || new Set();
+  const agyDigestMatches = (
+    (actualAgySha256 !== null && (actualAgySha256 === expectedAgyChangelogSha256 || knownAgyDigests.has(actualAgySha256))) ||
+    actualAgyFullSha256 === expectedAgyChangelogSha256 ||
+    knownAgyDigests.has(actualAgyFullSha256)
+  );
+  if (!agyDigestMatches) {
+    throw new Error(`FATAL: Antigravity ${TARGET_AGY_VERSION} release notes SHA-256 (${actualAgySha256 ?? 'missing-section'} / full: ${actualAgyFullSha256}) does not match expected (${expectedAgyChangelogSha256})`);
   }
+  if (actualAgySha256 === null) actualAgySha256 = actualAgyFullSha256;
 
   console.log(`[agb-modernize] Fetching ADLC changelog: ${ADLC_CHANGELOG_URL}`);
   let adlcContent;
@@ -953,7 +975,9 @@ async function runStage5ProvenanceVerification(adlcDir, repoRoot) {
       unpackTgz(tgzBuf, tempRefDir);
       const unpackedPkgDir = path.join(tempRefDir, 'package');
       const scanDir = fs.existsSync(unpackedPkgDir) ? unpackedPkgDir : tempRefDir;
+      assertCliTarballIdentity(scanDir, TARGET_ADLC_VERSION);
       referenceTreeSha = computeDirectoryTreeSha(scanDir);
+      assertReferenceTreeMatchesAnchor(referenceTreeSha, expectedAdlcTreeSha512);
     } finally {
       try { fs.rmSync(tempRefDir, { recursive: true, force: true }); } catch (_) {}
     }

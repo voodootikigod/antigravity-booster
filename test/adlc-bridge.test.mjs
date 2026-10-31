@@ -10,8 +10,8 @@ import crypto from 'node:crypto';
 import { loadTickets } from '@adlc/core/tickets';
 import { ticketFilename } from '@adlc/tickets';
 
-import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, execAuthenticatedAdlc, spawnAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
-import { compilePlan } from '../lib/plan.mjs';
+import { planToAdlcTickets, planTicketToRailTicket, writeAdlcTickets, assertNoLegacyTicketStore, detectTicketStoreBackend, authenticateAdlcPackage, resolveAdlcBinary, revalidateAdlcBinary, execFileAuthenticatedAdlc, execAuthenticatedAdlc, spawnAuthenticatedAdlc, resolveExecutionCommand, semverGte, parseSemver, KNOWN_ADLC_DIGESTS, isTemporaryOrWorldWritablePath, preventExecutableReplacement, recoverStaleExecutableLocks, pinExecutable } from '../lib/adlc-bridge.mjs';
+import { compilePlan, projectionErrorIsFatal } from '../lib/plan.mjs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
@@ -224,33 +224,29 @@ test('writeAdlcTickets: re-projection removes stale shards from a prior projecti
   }
 });
 
-test('writeAdlcTickets: a legacy-only repo keeps its legacy tickets.json (1.x bridge)', () => {
+const T1 = [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }];
+
+test('writeAdlcTickets: a legacy-only repo fails closed with the migrate instruction and is left untouched', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   try {
     mkdirSync(join(repo, '.adlc'), { recursive: true });
     writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
-    const tickets = [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }];
-    const path = writeAdlcTickets(repo, tickets);
-    assert.equal(path, join(repo, '.adlc', 'tickets.json'));
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { tickets });
-    assert.ok(!existsSync(join(repo, '.adlc', 'tickets', '.store.json')), 'no directory store created beside the legacy file');
+    assert.throws(() => writeAdlcTickets(repo, T1), (e) => e.code === 'LEGACY_TICKET_STORE' && /adlc ticket store migrate/.test(e.message));
+    assert.equal(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'), '{ "tickets": [] }\n', 'legacy file not rewritten');
+    assert.ok(!existsSync(join(repo, '.adlc', 'tickets')), 'no directory store created beside the legacy file');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
 });
 
-test('writeAdlcTickets: when BOTH stores exist, the directory store wins and the legacy projection is removed', () => {
+test('writeAdlcTickets: when BOTH stores exist it fails closed and deletes nothing', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   try {
-    // Simulate the conflicted state the plugin fails closed on.
-    writeAdlcTickets(repo, [{ id: 'T1', title: 'a', body: 'x', scope: ['a'], rails: [], edges: [] }]);
+    writeAdlcTickets(repo, T1);
     writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
-    const path = writeAdlcTickets(repo, [{ id: 'T2', title: 'b', body: 'y', scope: ['b'], rails: [], edges: [] }]);
-    assert.equal(path, join(repo, '.adlc', 'tickets'));
-    assert.ok(!existsSync(join(repo, '.adlc', 'tickets.json')), 'legacy projection artifact removed — both-stores is a fail-closed state for the plugin');
-    const { tickets: loaded, errors } = loadTickets(join(repo, '.adlc', 'tickets.json'));
-    assert.deepEqual(errors, []);
-    assert.deepEqual(loaded.map((t) => t.id), ['T2']);
+    assert.throws(() => writeAdlcTickets(repo, [{ ...T1[0], id: 'T2' }]), (e) => e.code === 'LEGACY_TICKET_STORE' && /beside the directory store/.test(e.message));
+    assert.ok(existsSync(join(repo, '.adlc', 'tickets.json')), 'legacy file never silently deleted');
+    assert.deepEqual(readdirSync(join(repo, '.adlc', 'tickets')).filter((n) => n !== '.store.json').length, 1, 'directory store not rewritten');
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -316,7 +312,7 @@ test('writeAdlcTickets: a symlink planted AT the shard name is unlinked, not wri
   }
 });
 
-test('writeAdlcTickets: a symlinked legacy tickets.json is unlinked, not written through', () => {
+test('writeAdlcTickets: a symlinked or dangling legacy tickets.json is refused and never written through', () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
   const victimDir = mkdtempSync(join(tmpdir(), 'agb-bridge-victim-'));
   try {
@@ -324,13 +320,28 @@ test('writeAdlcTickets: a symlinked legacy tickets.json is unlinked, not written
     writeFileSync(victim, 'precious\n');
     mkdirSync(join(repo, '.adlc'), { recursive: true });
     symlinkSync(victim, join(repo, '.adlc', 'tickets.json'));
-    const path = writeAdlcTickets(repo, [{ id: 'T1', title: 'x', body: 'y', scope: ['a'], rails: [], edges: [] }]);
+    assert.throws(() => writeAdlcTickets(repo, T1), (e) => e.code === 'LEGACY_TICKET_STORE');
     assert.equal(readFileSync(victim, 'utf8'), 'precious\n', 'symlink target untouched');
-    assert.ok(!lstatSync(path).isSymbolicLink(), 'legacy file is a regular file now');
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')).tickets.map((t) => t.id), ['T1']);
+    assert.ok(lstatSync(join(repo, '.adlc', 'tickets.json')).isSymbolicLink(), 'symlink left in place');
+
+    rmSync(join(repo, '.adlc', 'tickets.json'));
+    symlinkSync(join(victimDir, 'missing.json'), join(repo, '.adlc', 'tickets.json'));
+    assert.equal(detectTicketStoreBackend(repo), 'legacy', 'a dangling symlink is still a legacy store');
+    assert.throws(() => writeAdlcTickets(repo, T1), (e) => e.code === 'LEGACY_TICKET_STORE');
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(victimDir, { recursive: true, force: true });
+  }
+});
+
+test('assertNoLegacyTicketStore: passes for none and directory stores', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-repo-'));
+  try {
+    assert.doesNotThrow(() => assertNoLegacyTicketStore(repo));
+    writeAdlcTickets(repo, T1);
+    assert.doesNotThrow(() => assertNoLegacyTicketStore(repo));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
 
@@ -425,6 +436,50 @@ test('round-trip: a successful compilePlan writes a projection adlc coldstart ac
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('compilePlan: only a legacy ticket store is fatal in the projection catch; other projection errors stay warnings', () => {
+  const legacy = Object.assign(new Error('legacy'), { code: 'LEGACY_TICKET_STORE' });
+  assert.equal(projectionErrorIsFatal(legacy), true);
+  assert.equal(projectionErrorIsFatal(new Error('disk full')), false);
+  assert.equal(projectionErrorIsFatal(Object.assign(new Error('x'), { code: 'EACCES' })), false);
+  assert.equal(projectionErrorIsFatal(null), false);
+  assert.equal(projectionErrorIsFatal(undefined), false);
+});
+
+test('compilePlan: a legacy tickets.json is refused before any brain or model work', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-legacy-early-'));
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
+    // brainDir does not exist: reaching brain resolution would throw a different error.
+    await assert.rejects(
+      compilePlan('nope', { repo, brainDir: join(repo, 'no-such-brain-dir'), premortem: false }),
+      (e) => e.code === 'LEGACY_TICKET_STORE',
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('round-trip: compilePlan on a repo with a legacy tickets.json fails closed, not as a warning', async () => {
+  const brainDir = makeBrainDir();
+  const repo = mkdtempSync(join(tmpdir(), 'agb-bridge-legacy-'));
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'tickets.json'), '{ "tickets": [] }\n');
+    await withFakeAgy({}, async () => {
+      await assert.rejects(
+        compilePlan('aaaa', { repo, brainDir, premortem: false }),
+        (e) => e.code === 'LEGACY_TICKET_STORE' && /adlc ticket store migrate/.test(e.message),
+      );
+    });
+    assert.equal(readFileSync(join(repo, '.adlc', 'tickets.json'), 'utf8'), '{ "tickets": [] }\n', 'legacy file untouched');
+    assert.ok(!existsSync(join(repo, '.adlc', 'tickets')), 'no directory store created beside the legacy file');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(brainDir, { recursive: true, force: true });
   }
 });
 
@@ -552,7 +607,7 @@ test('authenticateAdlcPackage: validates lockfile entry, integrity, and version 
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
       name: '@adlc/cli',
-      version: '1.11.1',
+      version: '1.12.0',
       bin: { adlc: './bin/adlc.js' },
     }));
     writeFileSync(join(pkgDir, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
@@ -577,7 +632,7 @@ test('authenticateAdlcPackage: validates lockfile entry, integrity, and version 
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.11.1',
+          version: '1.12.0',
         },
       },
     }));
@@ -608,14 +663,14 @@ test('authenticateAdlcPackage: validates lockfile entry, integrity, and version 
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.11.1',
+          version: '1.12.0',
           integrity: 'sha512-validintegrity',
         },
       },
     }));
     const valid = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), lockPath);
     assert.equal(valid.ok, true);
-    assert.equal(valid.version, '1.11.1');
+    assert.equal(valid.version, '1.12.0');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -628,7 +683,7 @@ test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha2
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
       name: '@adlc/cli',
-      version: '1.11.1',
+      version: '1.12.0',
       bin: { adlc: './bin/adlc.js' },
     }));
     writeFileSync(join(pkgDir, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
@@ -640,7 +695,7 @@ test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha2
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.11.1',
+          version: '1.12.0',
           integrity: 'sha512-wrong-integrity',
         },
       },
@@ -655,14 +710,14 @@ test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha2
     assert.match(badIntegrity.error, /integrity mismatch for @adlc\/cli/);
 
     // Update lockfile to correct known integrity
-    const known = KNOWN_ADLC_DIGESTS['1.11.1'];
+    const known = KNOWN_ADLC_DIGESTS['1.12.0'];
     writeFileSync(lockPath, JSON.stringify({
       name: 'test-project',
       version: '1.0.0',
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.11.1',
+          version: '1.12.0',
           integrity: known.integrity,
         },
       },
@@ -759,7 +814,7 @@ test('resolveAdlcBinary: custom override rejects temporary directory on all plat
   try {
     const pkg = join(tmp, 'pkg');
     mkdirSync(pkg);
-    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './adlc' } }));
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.12.0', bin: { adlc: './adlc' } }));
     const bin = join(pkg, 'adlc');
     writeFileSync(bin, '#!/usr/bin/env node\n');
     chmodSync(bin, 0o755);
@@ -778,7 +833,7 @@ test('resolveAdlcBinary: custom override rejects world-writable path', () => {
   try {
     const pkg = join(safeBase, 'pkg');
     mkdirSync(pkg);
-    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './adlc' } }));
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.12.0', bin: { adlc: './adlc' } }));
     const bin = join(pkg, 'adlc');
     writeFileSync(bin, '#!/usr/bin/env node\n');
     chmodSync(bin, 0o777); // World-writable!
@@ -799,7 +854,7 @@ test('resolveAdlcBinary: rejects binary if any ancestor directory is world-writa
     mkdirSync(subDir, { recursive: true });
     const pkg = join(subDir, 'pkg');
     mkdirSync(pkg);
-    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.11.1', bin: { adlc: './adlc' } }));
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.12.0', bin: { adlc: './adlc' } }));
     const bin = join(pkg, 'adlc');
     writeFileSync(bin, '#!/usr/bin/env node\n');
     chmodSync(bin, 0o755); // File itself is not world-writable!
@@ -1028,7 +1083,7 @@ test('preventExecutableReplacement: does not mutate persistent permissions and p
 
     // Simulate an ancestor directory left without write bits by an earlier crash
     const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
-    writeFileSync(join(pkgDir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
+    writeFileSync(join(pkgDir, 'package.json'), '{"name":"@adlc/cli","version":"1.12.0"}');
     chmodSync(pkgDir, 0o555); // write bit stripped
 
     // preventExecutableReplacement must recover write bits and not strip permissions from sub/root
@@ -1096,12 +1151,12 @@ test('resolveAdlcBinary: custom override resolves shims in .bin to @adlc/cli pac
 
     const pkgJson = {
       name: '@adlc/cli',
-      version: '1.11.1',
+      version: '1.12.0',
       bin: './bin/adlc.js',
     };
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify(pkgJson));
     const targetScript = join(pkgBinDir, 'adlc.js');
-    writeFileSync(targetScript, '#!/usr/bin/env node\nconsole.log("adlc 1.11.1");\n');
+    writeFileSync(targetScript, '#!/usr/bin/env node\nconsole.log("adlc 1.12.0");\n');
     chmodSync(targetScript, 0o755);
 
     const shimCmd = join(binDir, 'adlc.cmd');
@@ -1118,7 +1173,7 @@ test('resolveAdlcBinary: custom override resolves shims in .bin to @adlc/cli pac
     });
     assert.equal(res.ok, true, `must resolve custom shim: ${res.error}`);
     assert.equal(res.source, 'custom-override');
-    assert.equal(res.version, '1.11.1');
+    assert.equal(res.version, '1.12.0');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1211,12 +1266,12 @@ test('preventExecutableReplacement: copies entire dependency closure without sym
     mkdirSync(join(cliDir, 'bin'), { recursive: true });
     mkdirSync(coreDir, { recursive: true });
 
-    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
+    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.12.0"}');
     const fakeBin = join(cliDir, 'bin', 'adlc.mjs');
     writeFileSync(fakeBin, '#!/usr/bin/env node\nimport "@adlc/core";\n');
     chmodSync(fakeBin, 0o755);
 
-    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.11.1"}');
+    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.12.0"}');
     writeFileSync(join(coreDir, 'index.js'), 'export const core = true;\n');
 
     const seal = preventExecutableReplacement(fakeBin);
@@ -1272,12 +1327,12 @@ test('preventExecutableReplacement: rejects symlinks in copied dependencies', ()
     mkdirSync(join(cliDir, 'bin'), { recursive: true });
     mkdirSync(coreDir, { recursive: true });
 
-    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
+    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.12.0"}');
     const fakeBin = join(cliDir, 'bin', 'adlc.mjs');
     writeFileSync(fakeBin, '#!/usr/bin/env node\nconsole.log(1);\n');
     chmodSync(fakeBin, 0o755);
 
-    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.11.1"}');
+    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.12.0"}');
     // Plant an internal symlink inside dependency
     const outsideTarget = join(tmpdir(), `agb-sym-target-${crypto.randomUUID()}`);
     writeFileSync(outsideTarget, 'malicious');

@@ -8,7 +8,7 @@ A green gate shows the tests pass. It does not show the change is right. After a
 
 ## Who prosecutes whom
 
-[C20](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L107) Gemini builders are prosecuted by `gpt-oss-120b-medium`; Claude and gpt-oss builders by `gemini-3.1-pro-high`. If the preferred prosecutor's pool has no capacity, `agb` falls back to the next cross-family candidate ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1800-L1825)). The full table is on [Pools and tiers](/docs/concepts/pools-and-tiers#prosecutor-mapping).
+[C20](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L107) Gemini builders are prosecuted by `gpt-oss-120b-medium`; Claude and gpt-oss builders by `gemini-4-argon-high`. If the preferred prosecutor's pool has no capacity, `agb` falls back to the next cross-family candidate ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1800-L1825)). The full table is on [Pools and tiers](/docs/concepts/pools-and-tiers#prosecutor-mapping).
 
 The prosecutor runs read-only in a scratch directory with an 8-minute timeout and must answer in a JSON schema ([lib/prosecute.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/prosecute.mjs#L91-L104), [lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1620-L1643)).
 

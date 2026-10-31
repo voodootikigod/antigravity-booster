@@ -23,7 +23,7 @@ agb keeps run state next to the code it builds, in three repo-local directories,
 │   ├── agb-integration-<8 hex>/      disposable merge worktrees
 │   └── .attempt_git/                 per-attempt git state
 └── .adlc/
-    ├── tickets/  or  tickets.json    ticket store (tracked)
+    ├── tickets/                      ticket store (tracked)
     ├── ticket-archive/               archived tickets (tracked)
     ├── config.json                   ADLC trust root (tracked)
     ├── integration_journal.json      merge transaction journal
@@ -52,7 +52,7 @@ Each ticket builds in `.worktrees/agb-<id>` on branch `agb/<id>`, with the id lo
 
 ### `.adlc/`
 
-- **Ticket store.** Either the directory store `.adlc/tickets/` (one JSON shard per ticket) or the legacy single file `.adlc/tickets.json`. `agb doctor` fails when both exist, because the plugin fails closed in that state ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1159-L1163)).
+- **Ticket store.** The directory store `.adlc/tickets/` (one JSON shard per ticket). The legacy single file `.adlc/tickets.json` is retired: `agb plan` and `agb run` refuse a repo that still has one (`LEGACY_TICKET_STORE`), and `agb doctor` fails on it, alone or beside the directory store. Run `adlc ticket store migrate` to convert it ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1159-L1163)).
 - **`integration_journal.json`.** The merge transaction journal, written atomically (temp file, fsync, rename) ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L388)). Its phases are `PREPARED`, `GATES_PASSED`, `REF_ADVANCED` and `FINALIZED` ([JOURNAL_PHASES](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/worktrees.mjs#L268-L273)). At startup, `reconcileIntegrationJournal` rolls back or completes whatever a crashed run left behind. See [Integration journal](/docs/internals/integration-journal).
 - **`leases/`.** One `<leaseId>.heartbeat` per pool lease held by a live builder ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L776)). Inside the builder sandbox this directory is masked with a tmpfs so a builder cannot forge leases ([bwrap mount](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L393-L398)).
 - **`graph-coupling.json`.** Optional coupling data passed to `adlc merge-forecast` ([C25](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/preflight.mjs#L38)).

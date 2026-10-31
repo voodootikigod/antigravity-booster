@@ -28,13 +28,14 @@ The modernization audit is fully implemented as a standalone, zero-dependency No
 
 ```bash
 # Universal cross-platform runner (Linux, macOS, Windows PowerShell / CMD)
-node skills/modernize/scripts/audit.mjs [TARGET_ADLC_VERSION] [PINNED_ADLC_REF] [TARGET_AGY_VERSION] [PINNED_AGY_REF]
+node skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED_ADLC_REF] <TARGET_AGY_VERSION> [PINNED_AGY_REF]
+# the two target versions are required (no stale default), e.g.: audit.mjs 1.12.0 "" 1.4.7
 ```
 
 ### The 5 Automated Audit Stages
 
 1. **Stage 1: Live Antigravity Runtime & agy CLI Probing**:
-   - Executes live probes on the machine: captures installed `agy` version (target `1.2.8`) and `adlc` version (target `1.11.1`).
+   - Executes live probes on the machine: captures the installed `agy` and `adlc` versions and compares them with the target versions you pass on the command line.
    - Identifies live model catalog entries (Gemini 3.8 / 3.7 / 3.6 variants, Claude, GPT).
    - Probes supported CLI flags (`--output-format stream-json`, `--json-schema`, `--sandbox`, `--print-timeout`, `--project`, `--effort`).
 
@@ -53,7 +54,7 @@ node skills/modernize/scripts/audit.mjs [TARGET_ADLC_VERSION] [PINNED_ADLC_REF] 
      - Pillar 6: Deprecation & Codeweight Pruning (retiring obsolete shims and workarounds)
 
 4. **Stage 4: Implementation Roadmap & Ticket DAG Validation**:
-   - Extracts and parses the canonical machine-readable ticket plan from `docs/research/roadmap-agy-1.2.8-adlc-1.11.1.md`.
+   - Extracts and parses the canonical machine-readable ticket plan from `docs/research/roadmap-agy-<agy target>-adlc-<adlc target>.md` (override with `AGB_ROADMAP_PATH`).
    - Executes booster's native `validatePlan()` validator from `lib/plan.mjs`.
    - Asserts 9 tickets, 0 structural validation errors, complete DAG acyclicity, and verification that mandatory candidate rails (`lib/lock.mjs`, `lib/gates.mjs`) remain permanently frozen across all tickets that do not explicitly touch them.
 
