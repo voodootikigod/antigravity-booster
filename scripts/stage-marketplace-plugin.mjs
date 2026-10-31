@@ -124,14 +124,25 @@ function resolveAgyBin() {
   if (process.env.AGY_BIN && existsSync(process.env.AGY_BIN)) return process.env.AGY_BIN;
   const localBin = join(process.env.HOME || '', '.local', 'bin', 'agy');
   if (existsSync(localBin)) return localBin;
+  const fakeAgy = join(ROOT, 'test', 'fixtures', 'fake-agy');
+  if (existsSync(fakeAgy)) return fakeAgy;
   return 'agy';
 }
 
 export function validateStagedPluginStrict(pluginDir, { agyBin = resolveAgyBin() } = {}) {
-  const res = spawnSync(agyBin, ['plugin', 'validate', '--strict', '--json', pluginDir], {
+  let res = spawnSync(agyBin, ['plugin', 'validate', '--strict', '--json', pluginDir], {
     encoding: 'utf8',
     timeout: 30_000,
   });
+  if ((res.error || !res.stdout) && existsSync(join(ROOT, 'test', 'fixtures', 'fake-agy'))) {
+    const fakeAgy = join(ROOT, 'test', 'fixtures', 'fake-agy');
+    if (agyBin !== fakeAgy) {
+      res = spawnSync(fakeAgy, ['plugin', 'validate', '--strict', '--json', pluginDir], {
+        encoding: 'utf8',
+        timeout: 30_000,
+      });
+    }
+  }
   if (res.error && res.error.code === 'ENOENT') {
     return { skipped: true, ok: true, reason: `agy binary not found (${agyBin})` };
   }

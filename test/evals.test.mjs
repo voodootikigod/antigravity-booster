@@ -86,22 +86,30 @@ test('scenarios: all 4 statistical scenarios are deterministic and satisfy signi
   assert.deepEqual(s1a, s1b, 'Perf-1 scenario must be 100% deterministic for fixed seed');
   assert.ok(s1a.comparisons.agbVsSerial.speedup.ratioOfMeans >= 2.5, 'Perf-1 speedup vs serial >= 2.5x');
   assert.ok(s1a.comparisons.agbVsSinglePool.speedup.ratioOfMeans >= 1.25, 'Perf-1 speedup vs single-pool >= 1.25x');
+  assert.ok(s1a.comparisons.agbVsBestPractices.speedup.ratioOfMeans >= 1.2, 'Perf-1 speedup vs best-practices >= 1.2x');
   assert.ok(s1a.comparisons.agbVsSerial.mannWhitney.pValue < 0.0001);
+  assert.ok(s1a.comparisons.agbVsBestPractices.mannWhitney.pValue < 0.0001);
 
   const s2 = runPerf16TicketScaleScenario({ trials: 100, seed: 20261031 });
   assert.ok(s2.comparisons.speedup.ratioOfMeans >= 2.0, 'Perf-2 speedup >= 2.0x');
+  assert.ok(s2.comparisons.speedupVsBestPractices.ratioOfMeans >= 1.3, 'Perf-2 speedup vs best-practices >= 1.3x');
   assert.ok(s2.comparisons.p95ReductionPct >= 45, 'Perf-2 P95 tail latency reduction >= 45%');
   assert.ok(s2.comparisons.timeoutProportionTest.pValue < 0.0001);
+  assert.ok(s2.comparisons.timeoutProportionVsBestPracticesTest.pValue < 0.0001);
 
   const s3 = runAccCrossModelProsecutionScenario({ trials: 100, seed: 20261101 });
   assert.ok(s3.arms.agbCrossModelProsecutorFleet.recall.p >= 0.88, 'Acc-1 recall >= 88%');
+  assert.ok(s3.arms.rawAgyBestPractices.recall.p > s3.arms.straightAgySameModelReview.recall.p);
   assert.ok(s3.comparisons.escapeRateAgbVsSameModel.relativeReduction >= 0.75, 'Acc-1 escape reduction >= 75%');
+  assert.ok(s3.comparisons.escapeRateAgbVsBestPractices.relativeReduction >= 0.50, 'Acc-1 escape reduction vs best-practices >= 50%');
   assert.ok(s3.comparisons.recallAgbVsSameModel.pValue < 0.0001);
+  assert.ok(s3.comparisons.recallAgbVsBestPractices.pValue < 0.0001);
 
   const s4 = runAccMechanicalSafetyGatesScenario({ trials: 100, seed: 20261102 });
   assert.equal(s4.hazards.frozenRailMutation.agbRate.p, 1.0, 'PreToolUse + rails-guard blocks 100% of rail mutations');
   assert.equal(s4.hazards.outOfScopeDrift.agbRate.p, 1.0, 'Worktree scope gate blocks 100% of scope violations');
   assert.ok(s4.overall.escapeReductionTest.pValue < 0.0001);
+  assert.ok(s4.overall.escapeReductionVsBestPracticesTest.pValue < 0.0001);
 });
 
 test('runner: runAllEvals verifies all invariants, runs live mechanical probes, and renders markdown report', () => {

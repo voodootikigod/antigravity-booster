@@ -64,14 +64,14 @@ npm run eval
 node evals/runner.mjs --json
 ```
 
-Across $N = 100$ paired Monte Carlo trials per scenario (seed `20261030`), `agb` demonstrates statistically significant ($p < 0.0001$) improvements over straight Antigravity (`agy`) without Booster:
+Across $N = 100$ paired Monte Carlo trials per scenario (seed `20261030`), `agb` demonstrates statistically significant ($p < 0.0001$) improvements over both **naive Straight Antigravity (`agy`)** and **Raw `agy` with Best Practices** (`/plan`, `/teamwork`, `invoke_subagent(Workspace: 'share', Model: 'flash' | 'pro')`, `AGENTS.md`, and `adversarial-reviewer` in a fresh subagent context):
 
-| Benchmark Scenario | Straight `agy` Baseline | Antigravity + Booster (`agb`) | Relative Improvement / Effect Size | Statistical Significance |
-| --- | --- | --- | --- | --- |
-| **8-Ticket Feature DAG Latency (Mean / P95)** | `571.5s` / `644.5s` (Serial)<br/>`173.6s` / `219.9s` (1-Pool) | **`136.6s` / `151.9s`** | **`4.18x` faster** vs. Serial (95% CI `[4.12x, 4.24x]`)<br/>**`1.27x` faster** vs. 1-Pool ($d = 12.55$) | $p < 0.0001$ (Mann-Whitney $U$) |
-| **16-Ticket Scale Refactor Latency (Mean / P95)** | `320.3s` / `355.9s` | **`126.9s` / `168.6s`** | **`2.52x` faster**; **`-52.6%` P95 tail latency** ($d = 5.60$) | $p < 0.0001$ (Mann-Whitney $U$) |
-| **Pool Rate-Limit Timeout Rate (1,600 Dispatches)** | `24.8%` (95% CI `[22.8%, 27.0%]`) | **`0.4%`** (95% CI `[0.2%, 0.9%]`) | **`-98.2%` timeout reduction** | $z = 20.76, p < 0.0001$ |
-| **5h Frontier Pool Quota Consumed (8-Ticket DAG)** | `18.9%` (Serial) / `15.8%` (1-Pool) | **`4.8%`** | **`-74.6%` frontier quota saved** | Deterministic bucket split |
-| **Defect Detection Recall (500 Seeded Defects)** | `20.8%` (No review)<br/>`52.2%` (Same-model review) | **`91.6%`** (Cross-model prosecutor + 4-lens fleet) | **`+39.4 pp` recall** over same-model review (F1 **`0.936`** vs. `0.645`) | $z = 13.86, p < 0.0001$ |
-| **Post-Review Defect Escape Rate** | `79.2%` (No review)<br/>`47.8%` (Same-model review) | **`8.4%`** | **`-82.4%` fewer escaped defects** vs. same-model review | $z = 13.86, p < 0.0001$ |
-| **Safety Hazard Prevention (Rails, Scope, Mutants)** | `55.3%` blocked (Prompt-only) | **`99.3%` blocked** (**100%** on rails & scope) | **`-98.5%` hazard escape reduction** | $z = 12.87, p < 0.0001$ |
+| Benchmark Scenario | Straight `agy` (Naive) | Raw `agy` (Best Practices) | Antigravity + Booster (`agb`) | `agb` Gain vs. Best Practices (and vs. Naive) | Statistical Significance (vs. Best Practices) |
+| --- | --- | --- | --- | --- | --- |
+| **8-Ticket Feature DAG Latency (Mean / P95)** | `576.1s` / `647.0s` (Serial)<br/>`194.8s` / `265.0s` (1-Pool) | `184.4s` / `216.2s` | **`138.5s` / `160.4s`** | **`1.33x` faster** vs. Best Practices ($d = 2.84$)<br/>**`4.16x` faster** vs. Serial | $p < 0.0001$ (Mann-Whitney $U$) |
+| **16-Ticket Scale Refactor Latency (Mean / P95)** | `312.5s` / `354.9s` | `274.2s` / `366.3s` | **`132.0s` / `173.7s`** | **`2.08x` faster** vs. Best Practices (**`-52.6%` P95**)<br/>**`2.37x` faster** vs. Naive | $p < 0.0001$ (Mann-Whitney $U$) |
+| **Pool Rate-Limit Timeout Rate (1,600 Dispatches)** | `24.1%` (`[22.1%, 26.3%]`) | `9.3%` (`[8.0%, 10.8%]`) | **`1.2%`** (`[0.8%, 1.8%]`) | **`-87.2%` timeouts** vs. Best Practices<br/>**`-95.1%`** vs. Naive | $z = 10.30, p < 0.0001$ |
+| **5h Frontier Pool Quota Consumed (8-Ticket DAG)** | `18.9%` (Serial) / `15.6%` (1-Pool) | `10.5%` | **`4.8%`** | **`-54.2%` frontier quota** vs. Best Practices<br/>**`-74.6%`** vs. Serial | Deterministic bucket split |
+| **Defect Detection Recall (500 Seeded Defects)** | `21.8%` (No review)<br/>`52.0%` (Same-model) | `73.6%` (`adversarial-reviewer` subagent) | **`92.4%`** (Cross-family prosecutor + 4-lens fleet) | **`+18.8 pp` recall** vs. Best Practices<br/>**`+40.4 pp`** vs. Same-Model | $z = 7.91, p < 0.0001$ |
+| **Post-Review Defect Escape Rate** | `78.2%` (No review)<br/>`48.0%` (Same-model) | `26.4%` | **`7.6%`** | **`-71.2%` fewer escaped defects** vs. Best Practices<br/>**`-84.2%`** vs. Same-Model | $z = 7.91, p < 0.0001$ |
+| **Safety Hazard Prevention (Rails, Scope, Mutants)** | `56.3%` blocked (Prompt-only) | `80.3%` blocked (`AGENTS.md` + review) | **`98.0%` blocked** (**100%** on rails & scope) | **`-89.8%` hazard escapes** vs. Best Practices<br/>**`-95.4%`** vs. Naive | $z = 6.96, p < 0.0001$ |
