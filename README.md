@@ -13,7 +13,9 @@ merges only what passes your build and test gates.
 
 ## Install
 
-Requires `agy` >= 1.2.6 and Node >= 22.19.0.
+Requires `agy` >= 1.2.6 (`>= 1.4.11` for the Antigravity Plugin Marketplace) and Node >= 22.19.0.
+
+Install from the **Antigravity Plugin Marketplace** (`Customizations > Marketplace` in the desktop app, `/plugin` Discover tab in the CLI, or `agy plugin install antigravity-booster@antigravity-plugins-official`), or directly from git:
 
 ```sh
 agy plugin install https://github.com/voodootikigod/antigravity-booster.git

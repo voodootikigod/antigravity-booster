@@ -8,6 +8,8 @@ rather than enumerate.
 ## [Unreleased]
 
 ### Added
+- **Antigravity Plugin Marketplace packaging, native `/agb-*` skills & session rules** (`t-marketplace-packaging`): upgraded `plugin.json` with `displayName`, search-optimized `description`, `logo` (`assets/logo.svg`), 3 `suggestedPrompts` starter chips, `homepage`, and `repository`; added `rules/AGENTS.md` for always-on session orchestration guidance; exposed all 7 user-facing `/agb-*` commands (`agb-bootstrap`, `agb-doctor`, `agb-migrate`, `agb-plan`, `agb-review`, `agb-run`, `agb-sidecar`) as native Antigravity plugin skills under `skills/agb-*/SKILL.md`; and added `scripts/stage-marketplace-plugin.mjs` (`npm run plugin:validate`) to stage a clean Marketplace bundle and `marketplace.json` catalog that passes `agy plugin validate --strict --json` with 0 errors, 0 warnings, and 0 notes.
+- **Reproducible statistical evaluation & benchmark suite (`evals/` / `npm run eval`)** (`t-eval-benchmark-suite`): zero-dependency statistical engine (`evals/stats.mjs`, `evals/scenarios.mjs`, `evals/runner.mjs`, `docs/benchmarks/marketplace-eval-report.md`) evaluating 4 empirically calibrated scenarios ($N = 100$ paired Monte Carlo runs per scenario, grounded in `docs/calibration/probes-2026-06-11.md` and `docs/calibration/probes-2026-07-14.md`) plus live mechanical probes of `PreToolUse` rail blocking and `agy 1.4.x` validator output parsing.
 - **Warm second-strike builder resumption via `agy --conversation`** (#25, `AGB_WARM_STRIKES`): builder strikes preserve session state and retry via conversation continuation rather than cold starts when retrying on the same model.
 - **Centralized model registry in `lib/models.mjs`** (#21): unified model slugs, aliases, quota pool mappings, and tier candidates across CLI, scheduler, and gates.
 - **Shared `runAdlcTool()` wrapper across 6 call sites** (#20): consolidated `adlc <tool> --json` invocation and exit-code-2 JSON payload recovery in `lib/adlc-tool.mjs`.
@@ -25,6 +27,7 @@ rather than enumerate.
 
 ### Fixed
 
+- `agb migrate` pre-flight and post-stage validation (`parseValidateOutput` and `validateBooster` in `lib/migrate.mjs`) now parses the `agy 1.4.x` dot-separated summary format (`skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1 · sidecars 0`) alongside legacy `agy 1.2.x` output without failing when `commands` is omitted by native `agy 1.4.x` validation.
 - The MCP server's `serverInfo.version` now reports the plugin's `package.json` version (it was hard-coded to `0.7.0`), from the same source as `agb --version`.
 - `agb --help` and the unknown-command error print real line breaks instead of a literal `\n`.
 - `agb probe` writes `probes-<day>.md`, matching the committed calibration reports, and the `DEFAULT_CAPS` comment cites the existing `docs/calibration/probes-2026-07-14.md`.
