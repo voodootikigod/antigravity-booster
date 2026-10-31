@@ -7,7 +7,7 @@
  *   has 0% timeouts and p50=26.7s..28.8s; width=8 spikes to p90=68.4s and 25% 120s timeouts;
  *   Probe 6 cross-family prosecution: Claude builder missed Unicode whitespace edge case,
  *   Gemini Flash prosecutor caught it in 11.1s with verdict="block").
- * - `docs/calibration/probes-2026-07-14.md` (pool caps: gemini-flash=6, gemini-pro=4,
+ * - `docs/calibration/probes-2026-07-14.md` (pool caps: gemini-flash=8, gemini-pro=4,
  *   claude=4, gpt-oss=2; independent 5h/weekly quota buckets across Gemini vs Claude/GPT).
  */
 import {
@@ -26,7 +26,7 @@ export const CALIBRATION_ANCHORS = Object.freeze({
   probeDatePrimary: '2026-06-11',
   probeDateSecondary: '2026-07-14',
   poolCaps: Object.freeze({
-    'gemini-flash': 6,
+    'gemini-flash': 8,
     'gemini-pro': 4,
     claude: 4,
     'gpt-oss': 2,

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { resolveAgyBinary } from '../lib/plugin-paths.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -122,19 +123,21 @@ export function stageMarketplacePlugin({
 
 function resolveAgyBin() {
   if (process.env.AGY_BIN && existsSync(process.env.AGY_BIN)) return process.env.AGY_BIN;
-  const localBin = join(process.env.HOME || '', '.local', 'bin', 'agy');
-  if (existsSync(localBin)) return localBin;
-  const fakeAgy = join(ROOT, 'test', 'fixtures', 'fake-agy');
-  if (existsSync(fakeAgy)) return fakeAgy;
-  return 'agy';
+  return resolveAgyBinary();
 }
 
-export function validateStagedPluginStrict(pluginDir, { agyBin = resolveAgyBin() } = {}) {
+export function validateStagedPluginStrict(pluginDir, options = {}) {
+  const explicitBin = Boolean(options.agyBin || (process.env.AGY_BIN && existsSync(process.env.AGY_BIN)));
+  const agyBin = options.agyBin ?? resolveAgyBin();
   let res = spawnSync(agyBin, ['plugin', 'validate', '--strict', '--json', pluginDir], {
     encoding: 'utf8',
     timeout: 30_000,
   });
-  if ((res.error || !res.stdout) && existsSync(join(ROOT, 'test', 'fixtures', 'fake-agy'))) {
+  if (
+    !explicitBin
+    && (res.error?.code === 'ENOENT' || res.error?.code === 'EAGAIN')
+    && existsSync(join(ROOT, 'test', 'fixtures', 'fake-agy'))
+  ) {
     const fakeAgy = join(ROOT, 'test', 'fixtures', 'fake-agy');
     if (agyBin !== fakeAgy) {
       res = spawnSync(fakeAgy, ['plugin', 'validate', '--strict', '--json', pluginDir], {
@@ -185,7 +188,7 @@ export function validateStagedPluginStrict(pluginDir, { agyBin = resolveAgyBin()
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   let outDir = null;
   let validateStrict = false;

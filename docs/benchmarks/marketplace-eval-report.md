@@ -74,7 +74,7 @@ xychart-beta
 
 ### 3. Pareto Analysis of Wall-Clock Latency Overhead (Where Time Is Lost Without `agb`)
 
-#### 3a. Straight `agy` Serial (`576.1s`) vs. `agb` (`138.5s`): $\Delta = 437.5s$ Excess Latency
+#### 3a. Straight `agy` Serial (`576.1s`) vs. `agb` (`138.5s`): $\Delta = 437.6s$ Excess Latency
 
 | Rank | Latency Overhead Driver | Excess Seconds (s) | Share of Excess Time (%) | Cumulative Share (%) | `agb` Architectural Elimination Mechanism |
 | :---: | :--- | :---: | :---: | :---: | :--- |
@@ -93,7 +93,7 @@ xychart-beta
     line [52.2, 74.7, 89.1, 96.2, 100.0]
 ```
 
-#### 3b. Raw `agy` Best Practices (`274.2s`) vs. `agb` (`132.0s`) at 16-Ticket Scale: $\Delta = 142.1s$ Excess Latency
+#### 3b. Raw `agy` Best Practices (`274.2s`) vs. `agb` (`132.0s`) at 16-Ticket Scale: $\Delta = 142.2s$ Excess Latency
 
 | Rank | Best-Practices Bottleneck at 16-Ticket Scale | Excess Seconds (s) | Share of Excess Time (%) | Cumulative Share (%) | Why Native `agy` Primitives Cannot Eliminate It |
 | :---: | :--- | :---: | :---: | :---: | :--- |
@@ -168,7 +168,7 @@ xychart-beta
 
 ## 2. Performance Benchmark 2 (`perf-16-ticket-scale`): 16-Ticket Refactoring Under Rate-Limit Pressure
 
-Directly models the server-side queueing knee measured in `docs/calibration/probes-2026-06-11.md` (Probe 5), where dispatching 8 concurrent sessions against a single model pool causes P90 latency to spike to `68.4s` and triggers a `25%` timeout rate at `120s`. Even with manual subagent batching across `flash` and `pro` in Raw `agy` Best Practices, all workers remain inside one model family and suffer ~9.3% timeouts under sustained 16-ticket load. `agb` distributes work across both quota groups (`gemini-flash: 6, gemini-pro: 4, claude: 4, gpt-oss: 2`), keeping every pool at or below its zero-timeout knee:
+Directly models the server-side queueing knee measured in `docs/calibration/probes-2026-06-11.md` (Probe 5), where dispatching 8 concurrent sessions against a single model pool causes P90 latency to spike to `68.4s` and triggers a `25%` timeout rate at `120s`. Even with manual subagent batching across `flash` and `pro` in Raw `agy` Best Practices, all workers remain inside one model family and suffer ~9.3% timeouts under sustained 16-ticket load. `agb` distributes work across both quota groups (`gemini-flash: 8, gemini-pro: 4, claude: 4, gpt-oss: 2`), keeping every pool at or below its zero-timeout knee:
 
 | Execution Mode | Mean Latency (s) | Median P50 (s) | P95 Tail Latency (s) | Throughput (tickets/min) | Timeouts / 1,600 Dispatches | Timeout Rate (95% Wilson CI) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -209,8 +209,8 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 
 | Safety Hazard Class | Straight `agy` (Prompt-Only) | Raw `agy` Best Practices (`AGENTS.md` + Review) | Antigravity + Booster (`agb` Mechanical Gates) | $z$-Test (`agb` vs. Best Practices) |
 | :--- | :---: | :---: | :---: | :--- |
-| **Frozen Rail Tampering (`lib/lock.mjs`, `.adlc/**`)** | 62.0% (62/100) | 89.0% (89/100) | **100.0% (100/100)** via `PreToolUse` + `rails-guard` | $z = 3.41, p 0.0006$ |
-| **Out-of-Scope File Creep (`scope` glob violation)** | 74.0% (74/100) | 90.0% (90/100) | **100.0% (100/100)** via worktree scope gate | $z = 3.24, p 0.0012$ |
+| **Frozen Rail Tampering (`lib/lock.mjs`, `.adlc/**`)** | 62.0% (62/100) | 89.0% (89/100) | **100.0% (100/100)** via `PreToolUse` + `rails-guard` | $z = 3.41, p = 0.0006$ |
+| **Out-of-Scope File Creep (`scope` glob violation)** | 74.0% (74/100) | 90.0% (90/100) | **100.0% (100/100)** via worktree scope gate | $z = 3.24, p = 0.0012$ |
 | **Hollow Tests (Green `npm test`, Surviving Mutants)** | 33.0% (33/100) | 62.0% (62/100) | **94.0% (94/100)** via `adlc hollow-test` AST mutation gate | $z = 5.46, p < 0.0001$ |
 | **Combined Safety Gate Prevention ($N = 300$)** | 56.3% (169/300) | 80.3% (241/300) | **98.0% (294/300)** | **$z = 6.96, p < 0.0001$** |
 

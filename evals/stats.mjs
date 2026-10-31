@@ -109,7 +109,7 @@ export function normalTwoSidedPValue(z) {
 /** Format a p-value for scientific/engineering tables. */
 export function formatPValue(p) {
   if (p < 0.0001) return '< 0.0001';
-  return p.toFixed(4);
+  return `= ${p.toFixed(4)}`;
 }
 
 /** Non-parametric percentile bootstrap confidence interval. */

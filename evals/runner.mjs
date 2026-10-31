@@ -122,6 +122,12 @@ export function runLiveMechanicalProbes({ repoRoot = ROOT } = {}) {
  * Run the full evaluation suite and return structured results + invariant check status.
  */
 export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } = {}) {
+  if (!Number.isInteger(trials) || trials <= 0) {
+    throw new RangeError(`runAllEvals: trials must be a positive integer (received ${trials})`);
+  }
+  if (!Number.isInteger(seed)) {
+    throw new RangeError(`runAllEvals: seed must be a finite integer (received ${seed})`);
+  }
   const perf8 = runPerf8TicketDagScenario({ trials, seed });
   const perf16 = runPerf16TicketScaleScenario({ trials, seed: seed + 1 });
   const accProsecution = runAccCrossModelProsecutionScenario({ trials, seed: seed + 2 });
@@ -333,7 +339,7 @@ xychart-beta
 
 ### 3. Pareto Analysis of Wall-Clock Latency Overhead (Where Time Is Lost Without \`agb\`)
 
-#### 3a. Straight \`agy\` Serial (\`${fmt(s8Serial.mean)}s\`) vs. \`agb\` (\`${fmt(s8Agb.mean)}s\`): $\\Delta = ${fmt(s8Serial.mean - s8Agb.mean)}s$ Excess Latency
+#### 3a. Straight \`agy\` Serial (\`${fmt(s8Serial.mean)}s\`) vs. \`agb\` (\`${fmt(s8Agb.mean)}s\`): $\\Delta = ${(Number(fmt(s8Serial.mean)) - Number(fmt(s8Agb.mean))).toFixed(1)}s$ Excess Latency
 
 | Rank | Latency Overhead Driver | Excess Seconds (s) | Share of Excess Time (%) | Cumulative Share (%) | \`agb\` Architectural Elimination Mechanism |
 | :---: | :--- | :---: | :---: | :---: | :--- |
@@ -352,7 +358,7 @@ xychart-beta
     line [52.2, 74.7, 89.1, 96.2, 100.0]
 \`\`\`
 
-#### 3b. Raw \`agy\` Best Practices (\`${fmt(s16Bp.latencySec.mean)}s\`) vs. \`agb\` (\`${fmt(s16Agb.latencySec.mean)}s\`) at 16-Ticket Scale: $\\Delta = ${fmt(s16Bp.latencySec.mean - s16Agb.latencySec.mean)}s$ Excess Latency
+#### 3b. Raw \`agy\` Best Practices (\`${fmt(s16Bp.latencySec.mean)}s\`) vs. \`agb\` (\`${fmt(s16Agb.latencySec.mean)}s\`) at 16-Ticket Scale: $\\Delta = ${(Number(fmt(s16Bp.latencySec.mean)) - Number(fmt(s16Agb.latencySec.mean))).toFixed(1)}s$ Excess Latency
 
 | Rank | Best-Practices Bottleneck at 16-Ticket Scale | Excess Seconds (s) | Share of Excess Time (%) | Cumulative Share (%) | Why Native \`agy\` Primitives Cannot Eliminate It |
 | :---: | :--- | :---: | :---: | :---: | :--- |
@@ -430,7 +436,7 @@ xychart-beta
 
 ## 2. Performance Benchmark 2 (\`perf-16-ticket-scale\`): 16-Ticket Refactoring Under Rate-Limit Pressure
 
-Directly models the server-side queueing knee measured in \`docs/calibration/probes-2026-06-11.md\` (Probe 5), where dispatching 8 concurrent sessions against a single model pool causes P90 latency to spike to \`68.4s\` and triggers a \`25%\` timeout rate at \`120s\`. Even with manual subagent batching across \`flash\` and \`pro\` in Raw \`agy\` Best Practices, all workers remain inside one model family and suffer ~${pct(s16Bp.timeoutRate.p)} timeouts under sustained 16-ticket load. \`agb\` distributes work across both quota groups (\`gemini-flash: 6, gemini-pro: 4, claude: 4, gpt-oss: 2\`), keeping every pool at or below its zero-timeout knee:
+Directly models the server-side queueing knee measured in \`docs/calibration/probes-2026-06-11.md\` (Probe 5), where dispatching 8 concurrent sessions against a single model pool causes P90 latency to spike to \`68.4s\` and triggers a \`25%\` timeout rate at \`120s\`. Even with manual subagent batching across \`flash\` and \`pro\` in Raw \`agy\` Best Practices, all workers remain inside one model family and suffer ~${pct(s16Bp.timeoutRate.p)} timeouts under sustained 16-ticket load. \`agb\` distributes work across both quota groups (\`gemini-flash: 8, gemini-pro: 4, claude: 4, gpt-oss: 2\`), keeping every pool at or below its zero-timeout knee:
 
 | Execution Mode | Mean Latency (s) | Median P50 (s) | P95 Tail Latency (s) | Throughput (tickets/min) | Timeouts / 1,600 Dispatches | Timeout Rate (95% Wilson CI) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -491,7 +497,7 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 `;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   let trials = 100;
   let seed = 20261030;
@@ -499,10 +505,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   let reportPath = null;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--trials' && args[i + 1]) {
+    if (args[i] === '--trials') {
       trials = Number(args[++i]);
-    } else if (args[i] === '--seed' && args[i + 1]) {
+      if (!Number.isInteger(trials) || trials <= 0) {
+        process.stderr.write(`error: --trials requires a positive integer (got ${args[i]})\n`);
+        process.exit(1);
+      }
+    } else if (args[i] === '--seed') {
       seed = Number(args[++i]);
+      if (!Number.isInteger(seed)) {
+        process.stderr.write(`error: --seed requires an integer (got ${args[i]})\n`);
+        process.exit(1);
+      }
     } else if (args[i] === '--json') {
       jsonMode = true;
     } else if (args[i] === '--write-report' && args[i + 1]) {

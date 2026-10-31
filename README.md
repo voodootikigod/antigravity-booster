@@ -35,6 +35,7 @@ reference, internals) lives on the docs site:
 - [Installation](https://www.agybooster.com/docs/getting-started/installation)
 - [Quickstart](https://www.agybooster.com/docs/getting-started/quickstart)
 - [CLI reference](https://www.agybooster.com/docs/reference/cli)
+- [Benchmarks & Statistical Evals](https://www.agybooster.com/docs/reference/benchmarks)
 - [Security model](https://www.agybooster.com/docs/reference/security)
 
 Working *on* this repo? Read [AGENTS.md](AGENTS.md) first: the ADLC is

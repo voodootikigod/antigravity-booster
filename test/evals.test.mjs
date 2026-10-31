@@ -14,6 +14,7 @@ import {
   mannWhitneyU,
   wilsonScoreInterval,
   twoProportionZTest,
+  formatPValue,
 } from '../evals/stats.mjs';
 import {
   CALIBRATION_ANCHORS,
@@ -71,12 +72,14 @@ test('stats: descriptive and inferential primitives compute expected values', ()
   const zTest = twoProportionZTest(95, 100, 40, 100);
   assert.ok(zTest.z > 8.0);
   assert.ok(zTest.pValue < 0.0001);
+  assert.equal(formatPValue(0.00001), '< 0.0001');
+  assert.equal(formatPValue(0.0006), '= 0.0006');
 });
 
 test('scenarios: all 4 statistical scenarios are deterministic and satisfy significance & effect-size bounds', () => {
   assert.equal(CALIBRATION_ANCHORS.probeDatePrimary, '2026-06-11');
   assert.equal(CALIBRATION_ANCHORS.probeDateSecondary, '2026-07-14');
-  assert.equal(CALIBRATION_ANCHORS.poolCaps['gemini-flash'], 6);
+  assert.equal(CALIBRATION_ANCHORS.poolCaps['gemini-flash'], 8);
   assert.equal(CALIBRATION_ANCHORS.poolCaps['gemini-pro'], 4);
   assert.equal(CALIBRATION_ANCHORS.poolCaps.claude, 4);
   assert.equal(CALIBRATION_ANCHORS.poolCaps['gpt-oss'], 2);
@@ -120,4 +123,7 @@ test('runner: runAllEvals verifies all invariants, runs live mechanical probes, 
   assert.match(md, /## Executive Summary: Headline Statistical Gains/);
   assert.match(md, /xychart-beta/);
   assert.match(md, /Live Mechanical Runtime Probes/);
+  assert.throws(() => runAllEvals({ trials: 0 }), /positive integer/);
+  assert.throws(() => runAllEvals({ trials: -5 }), /positive integer/);
+  assert.throws(() => runAllEvals({ trials: 10, seed: Number.NaN }), /finite integer/);
 });

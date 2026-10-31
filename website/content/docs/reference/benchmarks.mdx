@@ -19,7 +19,7 @@ Rather than relying on ungrounded synthetic assumptions, the simulation paramete
 | :--- | :--- | :--- | :--- |
 | **Single-Pool Concurrency Knee (`width = 1..4`)** | `0%` timeouts; median `26.7s..28.8s` | Probe 5 (`2026-06-11`) | Operating at or below `width = 4` on a frontier pool yields flat latency and zero rate-limit drops. |
 | **Single-Pool Burst Collapse (`width = 8`)** | `25%` timeout rate (`2/8` at `120s`); P90 spikes to `68.4s` | Probe 5 (`2026-06-11`) | Unconstrained subagent fan-out on a single model family hits server-side queueing and 120s print timeouts. |
-| **Independent Quota-Family Buckets** | `Gemini Models` vs. `Claude and GPT models` (`5h` & `weekly`) | Probe 4 (`2026-07-14`) | Routing across `gemini-flash` (`6`), `gemini-pro` (`4`), `claude` (`4`), and `gpt-oss` (`2`) provides `16` concurrent slots below every pool's knee. |
+| **Independent Quota-Family Buckets** | `Gemini Models` vs. `Claude and GPT models` (`5h` & `weekly`) | Probe 4 (`2026-07-14`) | Routing across `gemini-flash` (`8`), `gemini-pro` (`4`), `claude` (`4`), and `gpt-oss` (`2`) provides `18` concurrent slots below every pool's knee. |
 | **Cross-Family Prosecution Latency & Catch** | `11.1s` median; caught Unicode defect missed by builder | Probe 6 (`2026-06-11`) | A cross-family `gemini-3-flash` prosecutor catches representation blind spots left by a `claude-sonnet` builder. |
 
 ### The Three Comparison Arms
@@ -197,10 +197,10 @@ Evaluates an 8-ticket feature build-out structured as a 3-wave DAG (Wave 1: 4 fo
 
 | Execution Mode | Mean Latency (s) | SD (s) | 95% Bootstrap CI (s) | Median P50 (s) | P90 (s) | P95 (s) | IQR (s) | 5h Frontier Quota Used | Merge Conflict Retry Rate |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Straight `agy` (Serial Single-Session)** | `576.1s` | `46.5s` | `[567.1s, 585.2s]` | `569.7s` | `635.9s` | `647.0s` | `62.6s` | `18.9%` | `0.0%` |
-| **Straight `agy` (Naive 1-Pool Parallel)** | `194.8s` | `32.7s` | `[188.6s, 201.3s]` | `183.7s` | `245.5s` | `265.0s` | `43.2s` | `15.6%` | `33.0%` |
-| **Raw `agy` (Best Practices: `/plan` + `/teamwork` + `share`)** | `184.4s` | `19.4s` | `[180.8s, 188.3s]` | `179.9s` | `211.7s` | `216.2s` | `21.2s` | `10.5%` | `16.0%` |
-| **Antigravity + Booster (`agb` Multi-Pool DAG)** | **`138.5s`** | **`11.9s`** | **`[136.2s, 140.9s]`** | **`138.6s`** | **`153.2s`** | **`160.4s`** | **`15.4s`** | **`4.8%`** | **`0.0%`** |
+| **Straight `agy` (Serial Single-Session)** | `576.1s` | `46.5s` | `[566.5s, 585.1s]` | `576.3s` | `636.8s` | `647.0s` | `64.7s` | `18.9%` | `0.0%` |
+| **Straight `agy` (Naive 1-Pool Parallel)** | `194.8s` | `32.7s` | `[188.9s, 201.4s]` | `184.9s` | `249.3s` | `265.0s` | `37.8s` | `15.6%` | `28.0%` |
+| **Raw `agy` (Best Practices: `/plan` + `/teamwork` + `share`)** | `184.4s` | `19.4s` | `[180.8s, 188.2s]` | `180.7s` | `210.0s` | `216.2s` | `24.4s` | `10.5%` | `18.0%` |
+| **Antigravity + Booster (`agb` Multi-Pool DAG)** | **`138.5s`** | **`11.9s`** | **`[136.1s, 141.0s]`** | **`137.7s`** | **`154.3s`** | **`160.4s`** | **`20.4s`** | **`4.8%`** | **`0.0%`** |
 
 <Mermaid
   chart={`xychart-beta
