@@ -10,7 +10,7 @@
 // handed a path.
 //
 // The skill's canonical script lives in a markdown fence
-// (skills/release-audit/references/workflow-script.md) so that it is
+// (maintainer-skills/release-audit/references/workflow-script.md) so that it is
 // reviewable prose-adjacent and is not mistaken for a module `npm test` should
 // execute. This reads that fence, injects the document, and writes the result.
 //
@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
-export const WORKFLOW_MD = 'skills/release-audit/references/workflow-script.md';
+export const WORKFLOW_MD = 'maintainer-skills/release-audit/references/workflow-script.md';
 
 export function parseArgs(argv) {
   const out = { input: null, out: null, prompts: false };

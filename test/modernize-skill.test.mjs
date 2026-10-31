@@ -6,26 +6,40 @@ import { dirname, join } from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { bootstrap } from '../lib/bootstrap.mjs';
-import { writeStore } from '../skills/modernize/scripts/trust-anchor.mjs';
+import { writeStore } from '../maintainer-skills/modernize/scripts/trust-anchor.mjs';
 
 const FAKE_AGY = join(import.meta.dirname, 'fixtures', 'fake-agy');
-const AUDIT_SCRIPT = join(import.meta.dirname, '..', 'skills', 'modernize', 'scripts', 'audit.mjs');
+const AUDIT_SCRIPT = join(import.meta.dirname, '..', 'maintainer-skills', 'modernize', 'scripts', 'audit.mjs');
 
 function makeTempDir(prefix = 'agb-mod-test-') {
   return mkdtempSync(join(tmpdir(), prefix));
 }
 
-test('Modernize Skill: bootstrap discovery and linking', () => {
+test('Modernize Skill: bootstrap does NOT expose internal skills (modernize, release, release-audit) and cleans up stale symlinks', () => {
   const destDir = makeTempDir('agb-dest-skills-');
   const homeDir = makeTempDir('agb-mod-home-');
   try {
+    // Plant a stale symlink to old skills/modernize location to verify cleanup
+    const oldTarget = join(import.meta.dirname, '..', 'skills', 'modernize');
+    symlinkSync(oldTarget, join(destDir, 'modernize'));
+    assert.ok(lstatSync(join(destDir, 'modernize')).isSymbolicLink());
+
     bootstrap({ destination: destDir, home: homeDir, agyBin: FAKE_AGY });
     const entries = readdirSync(destDir);
-    assert.ok(entries.includes('modernize'), 'modernize skill directory was discovered and linked');
-    const skillMdPath = join(destDir, 'modernize', 'SKILL.md');
-    assert.ok(existsSync(skillMdPath), 'SKILL.md is accessible in linked skill directory');
-    const content = readFileSync(skillMdPath, 'utf8');
-    assert.match(content, /name:\s*modernize/);
+    assert.ok(entries.includes('agb'), 'agb router skill was linked');
+    assert.equal(entries.includes('modernize'), false, 'internal modernize skill must not be linked into user skills');
+    assert.equal(entries.includes('release'), false, 'internal release skill must not be linked into user skills');
+    assert.equal(entries.includes('release-audit'), false, 'internal release-audit skill must not be linked into user skills');
+
+    const stagedSkills = readdirSync(join(homeDir, '.gemini', 'config', 'plugins', 'antigravity-booster', 'skills'));
+    assert.equal(stagedSkills.includes('modernize'), false, 'staged plugin must not contain modernize');
+    assert.equal(stagedSkills.includes('release'), false, 'staged plugin must not contain release');
+    assert.equal(stagedSkills.includes('release-audit'), false, 'staged plugin must not contain release-audit');
+    assert.equal(
+      existsSync(join(homeDir, '.gemini', 'config', 'plugins', 'antigravity-booster', 'maintainer-skills')),
+      false,
+      'staged plugin must exclude maintainer-skills/',
+    );
   } finally {
     rmSync(destDir, { recursive: true, force: true });
     rmSync(homeDir, { recursive: true, force: true });
@@ -33,8 +47,8 @@ test('Modernize Skill: bootstrap discovery and linking', () => {
 });
 
 test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
-  const skillMdPath = join(import.meta.dirname, '..', 'skills', 'modernize', 'SKILL.md');
-  assert.ok(existsSync(skillMdPath), 'skills/modernize/SKILL.md exists');
+  const skillMdPath = join(import.meta.dirname, '..', 'maintainer-skills', 'modernize', 'SKILL.md');
+  assert.ok(existsSync(skillMdPath), 'maintainer-skills/modernize/SKILL.md exists');
   const content = readFileSync(skillMdPath, 'utf8');
 
   // Verify YAML frontmatter

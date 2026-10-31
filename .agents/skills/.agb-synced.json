@@ -1,13 +1,5 @@
 {
   "managed": [
-    "agb",
-    "agb-bootstrap",
-    "agb-doctor",
-    "agb-migrate",
-    "agb-plan",
-    "agb-review",
-    "agb-run",
-    "agb-sidecar",
     "modernize",
     "release",
     "release-audit"

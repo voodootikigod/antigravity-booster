@@ -19,7 +19,7 @@ import { SUITE_UNITS, expectedSuiteUnits, PROBE_SEVERITY } from '../scripts/rele
 import { workflowArgs, UNITS, parseArgs } from '../scripts/release-audit-collect.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const SKILL_DIR = join(ROOT, 'skills', 'release-audit');
+const SKILL_DIR = join(ROOT, 'maintainer-skills', 'release-audit');
 const SKILL_MD = join(SKILL_DIR, 'SKILL.md');
 const WORKFLOW_MD = join(SKILL_DIR, 'references', 'workflow-script.md');
 

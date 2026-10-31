@@ -97,7 +97,7 @@ function forwardToStderr(buf) {
   if (buf && buf.length > 0) process.stderr.write(buf);
 }
 function isExcludedFromCopy(srcPath) {
-  return INSTALL_COPY_EXCLUSIONS.includes(basename5(srcPath));
+  return STAGE_COPY_EXCLUSIONS.includes(basename5(srcPath));
 }
 function copyPluginTree(src, dst) {
   mkdirSync6(dst, { recursive: true });
@@ -264,7 +264,7 @@ function installTerminalShim({ home = homedir(), force = false } = {}) {
     return { ok: false, error: `could not install terminal shim at ${shimPath}: ${err.message}` };
   }
 }
-var BUNDLED_ADLC_ANTIGRAVITY_VERSION, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, VENDORED_ADLC_ANTIGRAVITY_TARBALL, BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, INSTALL_COPY_EXCLUSIONS, AGY_INSTALL_TIMEOUT_MS, TAR_LIST_TIMEOUT_MS, TAR_EXTRACT_TIMEOUT_MS, TERMINAL_SHIM_CONTENT, log, isVanished;
+var BUNDLED_ADLC_ANTIGRAVITY_VERSION, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, VENDORED_ADLC_ANTIGRAVITY_TARBALL, BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, INSTALL_COPY_EXCLUSIONS, STAGE_COPY_EXCLUSIONS, AGY_INSTALL_TIMEOUT_MS, TAR_LIST_TIMEOUT_MS, TAR_EXTRACT_TIMEOUT_MS, TERMINAL_SHIM_CONTENT, log, isVanished;
 var init_plugin_paths = __esm({
   "lib/plugin-paths.mjs"() {
     BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
@@ -273,6 +273,7 @@ var init_plugin_paths = __esm({
     BOOSTER_PLUGIN_NAME = "antigravity-booster";
     ADLC_ANTIGRAVITY_PLUGIN_NAME = "adlc-antigravity";
     INSTALL_COPY_EXCLUSIONS = Object.freeze(["node_modules", ".worktrees", ".git"]);
+    STAGE_COPY_EXCLUSIONS = Object.freeze([...INSTALL_COPY_EXCLUSIONS, "maintainer-skills", ".claude", ".agents"]);
     AGY_INSTALL_TIMEOUT_MS = 6e4;
     TAR_LIST_TIMEOUT_MS = 15e3;
     TAR_EXTRACT_TIMEOUT_MS = 3e4;
@@ -17306,6 +17307,20 @@ function bootstrap({
       console.log("installation directory is stable: using symlinks for auto-upgrades");
     }
     const skills = readdirSync13(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    for (const retired of ["modernize", "release", "release-audit"]) {
+      const retiredDst = join32(destination, retired);
+      const retiredStat = lstatSync14(retiredDst, { throwIfNoEntry: false });
+      if (retiredStat && retiredStat.isSymbolicLink()) {
+        try {
+          const target = resolve16(dirname20(retiredDst), readlinkSync3(retiredDst));
+          if (target === resolve16(join32(skillsSrc, retired))) {
+            rmSync13(retiredDst, { recursive: true, force: true });
+            console.log(`removed stale internal skill symlink: ${retired}`);
+          }
+        } catch {
+        }
+      }
+    }
     for (const name of skills) {
       const src = join32(skillsSrc, name);
       const dst = join32(destination, name);

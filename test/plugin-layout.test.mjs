@@ -168,7 +168,13 @@ test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, r
   assert.match(rulesMd, /mcp__agb__agb_plan/);
   assert.match(rulesMd, /\/agb-run/);
 
-  for (const skill of ['agb', 'agb-bootstrap', 'agb-doctor', 'agb-migrate', 'agb-plan', 'agb-review', 'agb-run', 'agb-sidecar']) {
+  const expectedPluginSkills = ['agb', 'agb-bootstrap', 'agb-doctor', 'agb-migrate', 'agb-plan', 'agb-review', 'agb-run', 'agb-sidecar'];
+  assert.deepEqual(
+    readdirSync(join(ROOT, 'skills')).sort(),
+    expectedPluginSkills,
+    'root skills/ must hold strictly the 8 user-facing plugin skills (no internal maintainer skills)',
+  );
+  for (const skill of expectedPluginSkills) {
     const skillPath = join(ROOT, 'skills', skill, 'SKILL.md');
     assert.ok(existsSync(skillPath), `missing native skill ${skillPath}`);
     const content = readFileSync(skillPath, 'utf8');
