@@ -29,23 +29,23 @@ Planning stays in Antigravity. `agb plan` compiles the brain artifact (or a Mark
 
 ## Measured impact
 
-Across *N* = 100 paired Monte Carlo trials (`npm run eval`, seed `20261030`) calibrated against [empirical CLI probes](/docs/reference/calibration), `agb` outperforms both **Naive Straight `agy`** and **Raw `agy` with Best Practices** (`/plan` + `/teamwork` + `Workspace: 'share'` + `adversarial-reviewer` subagents):
+Across 100 paired runs per workload (`npm run eval`, calibrated against [live CLI probes](/docs/reference/calibration)), `agb` outperforms both a **default single-session `agy` workflow** and a **well-tuned `agy` + best practices setup** (`/plan` + `/teamwork` + shared worktrees + `adversarial-reviewer` subagents):
 
-| Benchmark Scenario | Straight `agy` (Naive) | Raw `agy` (Best Practices) | Antigravity + Booster (`agb`) | `agb` vs. Best Practices |
+| Workload | Default `agy` | `agy` + best practices | With `agb` | Gain vs. best practices |
 | :--- | :--- | :--- | :--- | :--- |
-| **16-Ticket DAG Throughput** | `732.0s` (`1.31 / min`) | `538.9s` (`1.78 / min`) | **`228.5s` (`4.20 / min`)** | **`2.36x` faster** (`p = 2.0e-18`, `r_rb = 1.00`) |
-| **8-Wide Burst Resilience** | `68.5s` (`25.8%` timeout) | `57.2s` (`4.2%` timeout) | **`30.8s` (`0.0%` timeout)** | **`1.85x` faster, `0%` drops** (`p = 2.0e-18`) |
-| **Cross-Model Prosecution** | `71.6%` escape (`28.4%` recall) | `25.4%` escape (`74.6%` recall) | **`5.4%` escape (`94.6%` recall)** | **`-20.0 pp` escape** (`OR = 6.22`, `p = 1.2e-19`) |
-| **Mechanical Safety Gates** | `31.0%` contained (`207` breaches) | `74.0%` contained (`78` breaches) | **`100.0%` contained (`0` breaches)** | **`+26.0 pp` containment** (`OR = ∞`, `p = 2.8e-26`) |
+| **16-ticket feature build** | `12m 12s` (`1.31 / min`) | `8m 59s` (`1.78 / min`) | **`3m 49s` (`4.20 / min`)** | **`2.36x` faster** (saves `~5m 10s`) |
+| **8-agent parallel burst** | `68.5s` (`25.8%` timeouts) | `57.2s` (`4.2%` timeouts) | **`30.8s` (`0%` timeouts)** | **`1.85x` faster, `0%` drops** |
+| **Pre-merge bug detection** | `28.4%` caught (`71.6%` escape) | `74.6%` caught (`25.4%` escape) | **`94.6%` caught (`5.4%` escape)** | **`4.7x` fewer escaped bugs** |
+| **Protected-file & scope safety** | `31.0%` blocked (`207` breaches) | `74.0%` blocked (`78` breaches) | **`100%` blocked (`0` breaches)** | **Zero rail breaches** |
 
-See [Benchmarks & Statistical Evals](/docs/reference/benchmarks) for the full methodology, Wilcoxon & Fisher hypothesis tests, Pareto frontier charts, and 80/20 root-cause breakdowns.
+See [Benchmarks & Statistical Evals](/docs/reference/benchmarks) for the full methodology, hypothesis tests, Pareto frontier charts, and 80/20 root-cause breakdowns.
 
 ## How these docs are organized
 
 <Cards>
   <Card title="Getting Started" href="/docs/getting-started/installation" description="Install the plugin, bootstrap, run your first plan, and verify your environment." />
   <Card title="Concepts" href="/docs/concepts/overview" description="The four layers, quota pools, gates, prosecution and rail enforcement." />
-  <Card title="Benchmarks & Evals" href="/docs/reference/benchmarks" description="Statistical evals, Pareto frontier and 80/20 root-cause analysis vs. Raw agy." />
+  <Card title="Benchmarks & Evals" href="/docs/reference/benchmarks" description="How agb compares to default and best-practices Antigravity setups." />
   <Card title="Guides" href="/docs/guides/walkthrough" description="Task-oriented walkthroughs: writing plans, sweeps, review, the sidecar dashboard." />
   <Card title="Reference" href="/docs/reference/cli" description="Every command, flag, schema, environment variable and exit code." />
   <Card title="Internals" href="/docs/internals/architecture" description="How agb is built: run lifecycle, integration journal, plugin and migration." />
