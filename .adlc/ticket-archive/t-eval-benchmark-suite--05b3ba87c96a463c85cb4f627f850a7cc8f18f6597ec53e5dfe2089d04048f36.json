@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-01T17:18:50.988Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "93b78dd3a09cf70f9601c716b34fd8b3cb4f329e386bab9cbe7ca3091e5ca2cf",
+    "ticketHash": "93282a91fd5b0707956699901f74b7813b110f1548df2f10b2ee64e026aeac2a",
+    "version": 1
+  },
   "body": "Build a deterministic, zero-dependency statistical evaluation and benchmark framework in evals/ comparing Straight Antigravity (agy solo serial, agy single-pool fan-out, agy same-model self-review, agy prompt-only rail instructions) against Antigravity + Booster (agb quota-pool-aware DAG scheduler, cross-family prosecutor + 4-specialist review fleet, PreToolUse policy guard + adlc rails-guard + adlc hollow-test + adlc flail-detector):\n1. Create evals/stats.mjs implementing seeded PRNG (mulberry32), descriptive statistics (mean, sd, median, p90, p95, iqr), bootstrapCI (95% CI, B=2000), cohensD, mannWhitneyU (two-sided normal-approximated p-value), twoProportionZTest, wilsonScoreInterval, and pairedRatioSummary.\n2. Create evals/scenarios.mjs implementing 4 empirically calibrated scenarios (N=100 paired runs per scenario, grounded in docs/calibration/probes-2026-06-11.md and probes-2026-07-14.md): Perf-1 (8-ticket feature DAG), Perf-2 (16-ticket scale refactoring under pool rate limits), Acc-1 (500-defect cross-model prosecution vs. same-model self-review corpus), and Acc-2 (300-hazard mechanical safety gate evaluation).\n3. Create evals/runner.mjs (and npm run eval script) that executes the 4 scenarios plus live mechanical probes of PreToolUse rail blocking and agy 1.4.x validator output parsing, verifies all statistical invariants, and writes docs/benchmarks/marketplace-eval-report.md.\n4. Add unit and statistical invariant tests in test/evals.test.mjs.\n\nAcceptance Criteria:\n- `node --test test/evals.test.mjs` exits 0.\n- `node evals/runner.mjs --write-report docs/benchmarks/marketplace-eval-report.md` exits 0.",
+  "completed": true,
   "edges": [
     {
       "kind": "depends_on",
