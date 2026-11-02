@@ -23,6 +23,11 @@ import {
   runAccCrossModelProsecutionScenario,
   runAccMechanicalSafetyGatesScenario,
 } from '../evals/scenarios.mjs';
+import {
+  runLivePolicyCorpusBenchmark,
+  runLiveHookLatencyBenchmark,
+  runLiveOrchestratorOverheadBenchmark,
+} from '../evals/live-bench.mjs';
 import { runAllEvals, renderMarkdownReport } from '../evals/runner.mjs';
 
 test('stats: mulberry32 PRNG is deterministic across identical seeds and default seed', () => {
@@ -115,14 +120,41 @@ test('scenarios: all 4 statistical scenarios are deterministic and satisfy signi
   assert.ok(s4.overall.escapeReductionVsBestPracticesTest.pValue < 0.0001);
 });
 
+test('live-bench: 40-vector policy corpus, hook latency breakdown, and orchestrator overhead satisfy all invariants', () => {
+  const corpus = runLivePolicyCorpusBenchmark();
+  assert.equal(corpus.ok, true, JSON.stringify(corpus));
+  assert.equal(corpus.adversarialTotal, 20);
+  assert.equal(corpus.adversarialBlocked, 20);
+  assert.equal(corpus.adversarialRecall, 1.0);
+  assert.equal(corpus.benignTotal, 20);
+  assert.equal(corpus.benignPassed, 20);
+  assert.equal(corpus.benignFalsePositiveRate, 0.0);
+
+  const latency = runLiveHookLatencyBenchmark({ iterations: 3 });
+  assert.equal(latency.ok, true, JSON.stringify(latency));
+  assert.equal(latency.subprocessAllExitedZero, true);
+  assert.ok(latency.tiers.inProcessEvaluatePayloadMs.p50 < 25);
+  assert.ok(latency.tiers.hookRunnerEndToEndMs.p50 < 500);
+
+  const orch = runLiveOrchestratorOverheadBenchmark({ cycles: 16 });
+  assert.equal(orch.ok, true, JSON.stringify(orch));
+  assert.ok(orch.totalOverheadMs < 500);
+  assert.ok(orch.shareOf8TicketBuildPct < 0.5);
+});
+
 test('runner: runAllEvals verifies all invariants, runs live mechanical probes, and renders markdown report', () => {
   const results = runAllEvals({ trials: 100, seed: 20261030 });
   assert.equal(results.ok, true, JSON.stringify(results.invariants));
   assert.equal(results.liveProbes.ok, true, JSON.stringify(results.liveProbes));
+  assert.equal(results.liveProbes.probes.preToolUseBlocksOutOfScope.ok, true);
+  assert.equal(results.liveBenchmarks.policyCorpus.ok, true);
+  assert.equal(results.liveBenchmarks.hookLatency.ok, true);
+  assert.equal(results.liveBenchmarks.orchestratorOverhead.ok, true);
   const md = renderMarkdownReport(results);
   assert.match(md, /## Executive Summary: Headline Statistical Gains/);
   assert.match(md, /xychart-beta/);
   assert.match(md, /Live Mechanical Runtime Probes/);
+  assert.match(md, /Live Policy Corpus, Hook Latency & Orchestrator Overhead Benchmarks/);
   assert.throws(() => runAllEvals({ trials: 0 }), /positive integer/);
   assert.throws(() => runAllEvals({ trials: -5 }), /positive integer/);
   assert.throws(() => runAllEvals({ trials: 10, seed: Number.NaN }), /finite integer/);

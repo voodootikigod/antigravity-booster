@@ -54,10 +54,15 @@ function fixture({ pristine = false } = {}) {
 }
 
 /** Install a mock node pretending to be `version` at an absolute path; returns the path. */
-function mockNode(path, version, marker = version) {
+function mockNode(path, version, marker = version, { rawVOutput } = {}) {
   mkdirSync(dirname(path), { recursive: true });
   const [maj, min] = version.split('.').map(Number);
+  const vOut = rawVOutput !== undefined ? rawVOutput : `v${version}`;
   writeFileSync(path, `#!/bin/sh
+if [ "$1" = "-v" ] || [ "$1" = "--version" ]; then
+  printf '%s\\n' "${vOut}"
+  exit 0
+fi
 if [ "$1" = "-e" ]; then
   [ ${maj} -gt 22 ] && exit 0
   [ ${maj} -eq 22 ] && [ ${min} -ge 19 ] && exit 0
@@ -189,6 +194,37 @@ describe('bin/node-launcher.sh', { skip }, () => {
         });
         assert.equal(r.status, 0, r.stderr);
         assert.deepEqual(JSON.parse(r.stdout), ['builder']);
+      });
+
+      test('falls back cleanly to node -e when node -v emits non-digit version tokens (no Illegal number crash under set -e)', () => {
+        const fx = fixture();
+        mockNode(fnmPath(fx.home, '22.11.0'), '22.11.0', '22.11.0', { rawVOutput: 'v22a.11b.0' });
+        mockNode(fnmPath(fx.home, '24.1.0'), '24.1.0', '24.1.0', { rawVOutput: 'v24x.1y.0' });
+        const r = run(fx, ['dist/hello.mjs', 'fallback'], { shell });
+        assert.equal(r.status, 0, r.stderr);
+        assert.match(r.stderr, /MOCKNODE:24\.1\.0/);
+        assert.deepEqual(JSON.parse(r.stdout), ['fallback']);
+      });
+
+      test('HOME with trailing slash resolves cleanly without double-slash trust-check mismatch', () => {
+        const fx = fixture();
+        mockNode(fnmPath(fx.home, '22.19.0'), '22.19.0');
+        const r = run(fx, ['dist/hello.mjs', 'trailing'], {
+          shell,
+          env: { HOME: `${fx.home}/` },
+        });
+        assert.equal(r.status, 0, r.stderr);
+        assert.deepEqual(JSON.parse(r.stdout), ['trailing']);
+      });
+
+      test('relative same-directory symlink inside trusted version manager resolves cleanly', () => {
+        const fx = fixture();
+        const binDir = join(fx.home, '.local/share/fnm/node-versions/v22.19.0/installation/bin');
+        mockNode(join(binDir, 'node-real'), '22.19.0');
+        symlinkSync('node-real', join(binDir, 'node'));
+        const r = run(fx, ['dist/hello.mjs', 'rel-sym'], { shell });
+        assert.equal(r.status, 0, r.stderr);
+        assert.deepEqual(JSON.parse(r.stdout), ['rel-sym']);
       });
     });
   }

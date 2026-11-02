@@ -7,7 +7,8 @@
  * plus live mechanical runtime probes against `evaluatePayload` (`hooks/policy/evaluate.mjs`),
  * `parseValidateOutput` (`lib/migrate.mjs`), and `stageMarketplacePlugin` (`scripts/stage-marketplace-plugin.mjs`).
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { formatPValue } from './stats.mjs';
@@ -18,58 +19,105 @@ import {
   runAccCrossModelProsecutionScenario,
   runAccMechanicalSafetyGatesScenario,
 } from './scenarios.mjs';
+import {
+  runLivePolicyCorpusBenchmark,
+  runLiveHookLatencyBenchmark,
+  runLiveOrchestratorOverheadBenchmark,
+} from './live-bench.mjs';
 import { evaluatePayload } from '../hooks/policy/evaluate.mjs';
+import { writeAdlcTickets } from '../lib/adlc-bridge.mjs';
 import { parseValidateOutput } from '../lib/migrate.mjs';
 import { stageMarketplacePlugin, validateStagedPluginStrict } from '../scripts/stage-marketplace-plugin.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Execute live mechanical runtime probes against the repository's real enforcement modules.
+ * Execute live mechanical runtime probes against the repository's real enforcement modules
+ * using a self-contained hermetic ADLC workspace fixture.
  */
 export function runLiveMechanicalProbes({ repoRoot = ROOT } = {}) {
-  // Probe 1: PreToolUse hook blocks write_file to standing rail `lib/lock.mjs`
-  const railWriteVerdict = evaluatePayload(
-    {
-      workspacePaths: [repoRoot],
-      toolCall: {
-        name: 'write_file',
-        args: { Path: join(repoRoot, 'lib', 'lock.mjs'), Content: '// tamper' },
-      },
-    },
-    { env: { ADLC_TICKET: 't-marketplace-packaging' } },
-  );
+  const probeRepo = realpathSync(mkdtempSync(join(tmpdir(), 'agb-eval-probe-')));
+  let railWriteVerdict;
+  let trustRootVerdict;
+  let inScopeVerdict;
+  let outOfScopeVerdict;
 
-  // Probe 2: PreToolUse hook blocks write_file to `.adlc/config.json` trust root
-  const trustRootVerdict = evaluatePayload(
-    {
-      workspacePaths: [repoRoot],
-      toolCall: {
-        name: 'write_file',
-        args: { Path: join(repoRoot, '.adlc', 'config.json'), Content: '{}' },
-      },
-    },
-    { env: {} },
-  );
+  try {
+    mkdirSync(join(probeRepo, '.git'), { recursive: true });
+    mkdirSync(join(probeRepo, '.adlc'), { recursive: true });
+    writeFileSync(join(probeRepo, '.adlc', 'config.json'), '{}\n', 'utf8');
+    mkdirSync(join(probeRepo, 'lib'), { recursive: true });
+    writeFileSync(join(probeRepo, 'lib', 'lock.mjs'), '// rail\n', 'utf8');
+    writeFileSync(join(probeRepo, 'plugin.json'), '{}\n', 'utf8');
+    writeFileSync(join(probeRepo, 'README.md'), '# readme\n', 'utf8');
 
-  // Probe 3: PreToolUse hook allows in-scope write_file
-  const inScopeVerdict = evaluatePayload(
-    {
-      workspacePaths: [repoRoot],
-      toolCall: {
-        name: 'write_file',
-        args: { Path: join(repoRoot, 'plugin.json'), Content: '{}' },
-      },
-    },
-    { env: { ADLC_TICKET: 't-marketplace-packaging' } },
-  );
+    const probeTicket = {
+      id: 't-hermetic-probe',
+      title: 'Hermetic live mechanical probe ticket',
+      body: 'Verify PreToolUse rail, trust-root, and worker scope enforcement.',
+      scope: ['plugin.json', 'src/**'],
+      rails: ['lib/lock.mjs'],
+      edges: [],
+    };
+    writeAdlcTickets(probeRepo, [probeTicket]);
 
-  // Probe 4: agy 1.4.x validator summary parser
+    // Probe 1: PreToolUse hook blocks write_file to declared frozen rail `lib/lock.mjs`
+    railWriteVerdict = evaluatePayload(
+      {
+        workspacePaths: [probeRepo],
+        toolCall: {
+          name: 'write_file',
+          args: { Path: join(probeRepo, 'lib', 'lock.mjs'), Content: '// tamper' },
+        },
+      },
+      { env: { AGB_WORKER_TICKET: probeTicket.id } },
+    );
+
+    // Probe 2: PreToolUse hook blocks write_file to `.adlc/config.json` trust root
+    trustRootVerdict = evaluatePayload(
+      {
+        workspacePaths: [probeRepo],
+        toolCall: {
+          name: 'write_file',
+          args: { Path: join(probeRepo, '.adlc', 'config.json'), Content: '{}' },
+        },
+      },
+      { env: {} },
+    );
+
+    // Probe 3: PreToolUse hook allows in-scope write_file under AGB_WORKER_TICKET
+    inScopeVerdict = evaluatePayload(
+      {
+        workspacePaths: [probeRepo],
+        toolCall: {
+          name: 'write_file',
+          args: { Path: join(probeRepo, 'plugin.json'), Content: '{}' },
+        },
+      },
+      { env: { AGB_WORKER_TICKET: probeTicket.id } },
+    );
+
+    // Probe 4: PreToolUse hook blocks out-of-scope write_file under AGB_WORKER_TICKET
+    outOfScopeVerdict = evaluatePayload(
+      {
+        workspacePaths: [probeRepo],
+        toolCall: {
+          name: 'write_file',
+          args: { Path: join(probeRepo, 'README.md'), Content: '# out of scope' },
+        },
+      },
+      { env: { AGB_WORKER_TICKET: probeTicket.id } },
+    );
+  } finally {
+    rmSync(probeRepo, { recursive: true, force: true });
+  }
+
+  // Probe 5: agy 1.4.x validator summary parser
   const parsedV14 = parseValidateOutput(
     '✔ antigravity-booster  (plugin.json)\n  skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1 · sidecars 0\n',
   );
 
-  // Probe 5: Marketplace staging + strict validation
+  // Probe 6: Marketplace staging + strict validation
   const staged = stageMarketplacePlugin({ repoRoot });
   let strictValidation;
   try {
@@ -81,6 +129,7 @@ export function runLiveMechanicalProbes({ repoRoot = ROOT } = {}) {
   const allPassed = railWriteVerdict.decision === 'deny'
     && trustRootVerdict.decision === 'deny'
     && inScopeVerdict.decision === 'pass'
+    && outOfScopeVerdict.decision === 'deny'
     && parsedV14.skills === 7
     && parsedV14.rules === 1
     && strictValidation.ok === true;
@@ -101,6 +150,11 @@ export function runLiveMechanicalProbes({ repoRoot = ROOT } = {}) {
       preToolUseAllowsInScope: {
         ok: inScopeVerdict.decision === 'pass',
         decision: inScopeVerdict.decision,
+      },
+      preToolUseBlocksOutOfScope: {
+        ok: outOfScopeVerdict.decision === 'deny',
+        decision: outOfScopeVerdict.decision,
+        reason: outOfScopeVerdict.reason,
       },
       migrateParsesAgy14ValidateOutput: {
         ok: parsedV14.skills === 7 && parsedV14.rules === 1,
@@ -133,6 +187,9 @@ export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } =
   const accProsecution = runAccCrossModelProsecutionScenario({ trials, seed: seed + 2 });
   const accSafetyGates = runAccMechanicalSafetyGatesScenario({ trials, seed: seed + 3 });
   const liveProbes = runLiveMechanicalProbes({ repoRoot });
+  const policyCorpus = runLivePolicyCorpusBenchmark();
+  const hookLatency = runLiveHookLatencyBenchmark({ repoRoot });
+  const orchestratorOverhead = runLiveOrchestratorOverheadBenchmark();
 
   const invariants = {
     perf8SpeedupGt2_5x: perf8.comparisons.agbVsSerial.speedup.ratioOfMeans >= 2.5,
@@ -156,6 +213,10 @@ export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } =
     accSafetyEscapeReductionVsBestPracticesStatSig:
       accSafetyGates.overall.escapeReductionVsBestPracticesTest.pValue < 0.0001,
     liveMechanicalProbesPass: liveProbes.ok,
+    livePolicyCorpusRecall100Pct: policyCorpus.adversarialRecall === 1.0,
+    livePolicyCorpusZeroFalsePositives: policyCorpus.benignFalsePositiveRate === 0.0,
+    liveHookLatencyWithinBounds: hookLatency.ok,
+    liveOrchestratorOverheadUnder500Ms: orchestratorOverhead.ok,
   };
 
   const ok = Object.values(invariants).every(Boolean);
@@ -175,6 +236,11 @@ export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } =
       accSafetyGates,
     },
     liveProbes,
+    liveBenchmarks: {
+      policyCorpus,
+      hookLatency,
+      orchestratorOverhead,
+    },
   };
 }
 
@@ -492,8 +558,38 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 | \`PreToolUse\` blocks \`write_file\` on frozen rail \`lib/lock.mjs\` | **${results.liveProbes.probes.preToolUseBlocksFrozenRail.ok ? 'PASS' : 'FAIL'}** | \`decision: "${results.liveProbes.probes.preToolUseBlocksFrozenRail.decision}"\` (${results.liveProbes.probes.preToolUseBlocksFrozenRail.reason}) |
 | \`PreToolUse\` blocks \`write_file\` on \`.adlc/config.json\` trust root | **${results.liveProbes.probes.preToolUseBlocksTrustRoot.ok ? 'PASS' : 'FAIL'}** | \`decision: "${results.liveProbes.probes.preToolUseBlocksTrustRoot.decision}"\` (${results.liveProbes.probes.preToolUseBlocksTrustRoot.reason}) |
 | \`PreToolUse\` allows in-scope \`write_file\` on \`plugin.json\` | **${results.liveProbes.probes.preToolUseAllowsInScope.ok ? 'PASS' : 'FAIL'}** | \`decision: "${results.liveProbes.probes.preToolUseAllowsInScope.decision}"\` |
+| \`PreToolUse\` blocks out-of-scope \`write_file\` on \`README.md\` (\`AGB_WORKER_TICKET\`) | **${results.liveProbes.probes.preToolUseBlocksOutOfScope.ok ? 'PASS' : 'FAIL'}** | \`decision: "${results.liveProbes.probes.preToolUseBlocksOutOfScope.decision}"\` (${results.liveProbes.probes.preToolUseBlocksOutOfScope.reason}) |
 | \`parseValidateOutput\` parses \`agy 1.4.x\` dot-summary format | **${results.liveProbes.probes.migrateParsesAgy14ValidateOutput.ok ? 'PASS' : 'FAIL'}** | \`${JSON.stringify(results.liveProbes.probes.migrateParsesAgy14ValidateOutput.counts)}\` |
 | Staged Marketplace bundle passes \`agy plugin validate --strict\` | **${results.liveProbes.probes.marketplaceBundleStrictValidation.ok ? 'PASS' : 'FAIL'}** | \`errors: ${results.liveProbes.probes.marketplaceBundleStrictValidation.errors}, warnings: ${results.liveProbes.probes.marketplaceBundleStrictValidation.warnings}, notes: ${results.liveProbes.probes.marketplaceBundleStrictValidation.notes}\` |
+
+---
+
+## 6. Live Policy Corpus, Hook Latency & Orchestrator Overhead Benchmarks
+
+### 6a. 40-Vector Live Policy Guard Corpus (\`evaluatePayload\`)
+
+| Corpus Partition | Vectors Evaluated | Passed / Blocked | Recall / False-Positive Rate | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **Adversarial Attack Vectors** (rail edits, trust-root tampering, symlink traversal, \`file://\` authority, destructive git/shell globs, out-of-scope worker writes) | ${results.liveBenchmarks.policyCorpus.adversarialTotal} | **${results.liveBenchmarks.policyCorpus.adversarialBlocked} / ${results.liveBenchmarks.policyCorpus.adversarialTotal} blocked** | **${pct(results.liveBenchmarks.policyCorpus.adversarialRecall)} Recall** | **${results.liveBenchmarks.policyCorpus.adversarialRecall === 1.0 ? 'PASS' : 'FAIL'}** |
+| **Benign Developer & Worker Workflows** (inspection tools, Stage-1 readers, \`adlc ticket create\`, worker \`npm test\`, in-scope mutations) | ${results.liveBenchmarks.policyCorpus.benignTotal} | **${results.liveBenchmarks.policyCorpus.benignPassed} / ${results.liveBenchmarks.policyCorpus.benignTotal} passed** | **${pct(results.liveBenchmarks.policyCorpus.benignFalsePositiveRate)} False Positives** | **${results.liveBenchmarks.policyCorpus.benignFalsePositiveRate === 0.0 ? 'PASS' : 'FAIL'}** |
+
+### 6b. \`PreToolUse\` Hook Execution Latency Breakdown (Live Wall-Clock Milliseconds)
+
+| Execution Layer | Min (ms) | Median P50 (ms) | P95 (ms) | Mean (ms) |
+| :--- | :---: | :---: | :---: | :---: |
+| **In-Process \`evaluatePayload()\`** | ${fmt(results.liveBenchmarks.hookLatency.tiers.inProcessEvaluatePayloadMs.min, 2)} ms | **${fmt(results.liveBenchmarks.hookLatency.tiers.inProcessEvaluatePayloadMs.p50, 2)} ms** | ${fmt(results.liveBenchmarks.hookLatency.tiers.inProcessEvaluatePayloadMs.p95, 2)} ms | ${fmt(results.liveBenchmarks.hookLatency.tiers.inProcessEvaluatePayloadMs.mean, 2)} ms |
+| **Direct \`node dist/hooks/pre-tool-use.bundle.mjs\`** | ${fmt(results.liveBenchmarks.hookLatency.tiers.directNodeBundleMs.min, 1)} ms | **${fmt(results.liveBenchmarks.hookLatency.tiers.directNodeBundleMs.p50, 1)} ms** | ${fmt(results.liveBenchmarks.hookLatency.tiers.directNodeBundleMs.p95, 1)} ms | ${fmt(results.liveBenchmarks.hookLatency.tiers.directNodeBundleMs.mean, 1)} ms |
+| **\`/bin/sh bin/node-launcher.sh\` + Bundle (\`node -v\` fast-path)** | ${fmt(results.liveBenchmarks.hookLatency.tiers.nodeLauncherWrapperMs.min, 1)} ms | **${fmt(results.liveBenchmarks.hookLatency.tiers.nodeLauncherWrapperMs.p50, 1)} ms** | ${fmt(results.liveBenchmarks.hookLatency.tiers.nodeLauncherWrapperMs.p95, 1)} ms | ${fmt(results.liveBenchmarks.hookLatency.tiers.nodeLauncherWrapperMs.mean, 1)} ms |
+| **End-to-End \`/bin/sh bin/hook-runner.sh\` + Watchdog + Launcher + Bundle** | ${fmt(results.liveBenchmarks.hookLatency.tiers.hookRunnerEndToEndMs.min, 1)} ms | **${fmt(results.liveBenchmarks.hookLatency.tiers.hookRunnerEndToEndMs.p50, 1)} ms** | ${fmt(results.liveBenchmarks.hookLatency.tiers.hookRunnerEndToEndMs.p95, 1)} ms | ${fmt(results.liveBenchmarks.hookLatency.tiers.hookRunnerEndToEndMs.mean, 1)} ms |
+
+### 6c. Pure-Node Orchestrator Overhead vs. 8-Ticket Build Wall-Clock Time
+
+| Orchestrator Subsystem | Measured Wall-Clock Overhead (ms) | Share of 149.2s 8-Ticket DAG Build |
+| :--- | :---: | :---: |
+| **8-Ticket ADLC Store Projection + Active Rail Union (\`lib/adlc-bridge.mjs\`, \`lib/active-rails.mjs\`)** | ${fmt(results.liveBenchmarks.orchestratorOverhead.ticketProjectionMs, 2)} ms | ${fmt((results.liveBenchmarks.orchestratorOverhead.ticketProjectionMs / 149200) * 100, 4)}% |
+| **16 Quota-Pool State Lock Cycles (\`lib/pools.mjs\` \`withLockSync\`)** | ${fmt(results.liveBenchmarks.orchestratorOverhead.poolStateLockMs, 2)} ms | ${fmt((results.liveBenchmarks.orchestratorOverhead.poolStateLockMs / 149200) * 100, 4)}% |
+| **16 Atomic Repository Merge-Lock Cycles (\`lib/lock.mjs\` \`acquireRepoLock\`)** | ${fmt(results.liveBenchmarks.orchestratorOverhead.mergeLockMs, 2)} ms | ${fmt((results.liveBenchmarks.orchestratorOverhead.mergeLockMs / 149200) * 100, 4)}% |
+| **Total Pure-Node Orchestration Overhead** | **${fmt(results.liveBenchmarks.orchestratorOverhead.totalOverheadMs, 2)} ms** | **${fmt(results.liveBenchmarks.orchestratorOverhead.shareOf8TicketBuildPct, 4)}%** |
 `;
 }
 
