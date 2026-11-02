@@ -128,13 +128,18 @@ is_valid_node() {
       _maj="${_v%%.*}"
       _rest="${_v#*.}"
       _min="${_rest%%.*}"
-      case "${_maj}.${_min}" in
-        ''|*[!0-9.]*|.*|*.) ;;
+      case "$_maj" in
+        ''|*[!0-9]*) ;;
         *)
-          if [ "$_maj" -gt 22 ] || { [ "$_maj" -eq 22 ] && [ "$_min" -ge 19 ]; }; then
-            return 0
-          fi
-          return 1
+          case "$_min" in
+            ''|*[!0-9]*) ;;
+            *)
+              if [ "$_maj" -gt 22 ] || { [ "$_maj" -eq 22 ] && [ "$_min" -ge 19 ]; }; then
+                return 0
+              fi
+              return 1
+              ;;
+          esac
           ;;
       esac
       ;;
