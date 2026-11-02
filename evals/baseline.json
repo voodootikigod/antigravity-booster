@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-02",
+  "seed": 20261030,
+  "trialsPerScenario": 100,
+  "referenceMetrics": {
+    "perf8SpeedupVsSerial": 4.16,
+    "perf8SpeedupVsBestPractices": 1.33,
+    "perf16SpeedupVsNaive": 2.37,
+    "perf16SpeedupVsBestPractices": 2.08,
+    "accProsecutionRecall": 0.924,
+    "accProsecutionEscapeRate": 0.076,
+    "accSafetyHazardBlockRate": 0.98,
+    "inProcessEvaluateP50Ms": 0.32,
+    "launcherOverheadP50Ms": 10.0,
+    "hookRunnerE2eP50Ms": 79.5,
+    "orchestratorOverheadMs": 5.94
+  },
+  "ratchets": {
+    "minPerf8SpeedupVsSerial": 2.5,
+    "minPerf8SpeedupVsBestPractices": 1.2,
+    "minPerf16SpeedupVsNaive": 2.0,
+    "minPerf16SpeedupVsBestPractices": 1.3,
+    "minAccProsecutionRecall": 0.88,
+    "minPolicyCorpusRecall": 1.0,
+    "maxPolicyCorpusFalsePositiveRate": 0.0,
+    "minPolicyFuzzerBlockRate": 1.0,
+    "minPolicyFuzzerBenignPassRate": 1.0,
+    "maxPolicyFuzzerP95Ms": 5.0,
+    "minPlanCompilerOverlapRecall": 1.0,
+    "maxPlanCompilerSerialFalsePositiveRate": 0.0,
+    "minPlanCompilerGateTamperBlockRate": 1.0,
+    "minProsecutorAndReviewPassRate": 1.0,
+    "minSchedulerDagPass": true,
+    "maxInProcessEvaluateP50Ms": 5.0,
+    "maxHookRunnerE2eP50Ms": 250.0,
+    "maxOrchestratorOverheadMs": 500.0
+  }
+}

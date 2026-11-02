@@ -255,3 +255,41 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 | **16 Quota-Pool State Lock Cycles (`lib/pools.mjs` `withLockSync`)** | 1.34 ms | 0.0009% |
 | **16 Atomic Repository Merge-Lock Cycles (`lib/lock.mjs` `acquireRepoLock`)** | 2.25 ms | 0.0015% |
 | **Total Pure-Node Orchestration Overhead** | **5.94 ms** | **0.0040%** |
+
+### 6d. Plan Compiler, Scope-Overlap & Gate-Integrity Golden Corpus (`lib/plan.mjs`, `lib/preflight.mjs`)
+
+| Compiler Gate Dimension | Corpus Cases | Caught / Allowed | Recall / False-Positive Rate | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **Concurrent Scope Overlaps** (exact collisions, parent/child globs, diamond branches, trailing slashes) | 10 | **10 / 10 vetoed** | **100.0% Recall** | **PASS** |
+| **Transitively Serialized & Disjoint DAGs** (`reachability()` multi-hop chains, diamond joins, fan-in/out) | 10 | **10 / 10 allowed** | **0.0% False Positives** | **PASS** |
+| **Gate Script & Plan Tampering** (`verifyGateScriptIntegrity` lifecycle hooks, delegated scripts, `adlcBin`) | 10 | **10 / 10 blocked** | **100.0% Block Rate** | **PASS** |
+
+### 6e. Prosecutor & Review Fleet Mechanical Contract Benchmark (`lib/prosecute.mjs`, `lib/review.mjs`)
+
+| Contract / Convergence Invariant | Result | Verified Behavior |
+| :--- | :---: | :--- |
+| **Empty & Oversize (>120k) Diff Guards** | **PASS** | Blocks empty diffs (`charge: 'spec'`) and boilerplate-padded diffs (`charge: 'scope'`) |
+| **High / Critical Severity Overrides Model `ship`** | **PASS** | Mechanical severity gate forces `verdict: 'block'` regardless of model opinion |
+| **Low-Severity Nit Preserves `ship`** | **PASS** | Non-blocking findings are surfaced without halting merge |
+| **`adlc hollow-test` AST Mutant Survivor Override** | **PASS** | Surviving mutant forces `verdict: 'block'` even when model votes `ship` |
+| **Empty `block` Schema Violation Guard** | **PASS** | `verdict: 'block'` with empty findings is rejected as `schema_violation` |
+| **4-Lens Review Fleet Deduplication & Error Anti-Convergence** | **PASS** | Deduplicates cross-lens findings; lens errors reset `dry = 0` (`converged: false`) |
+
+### 6f. Live Hermetic Scheduler DAG & Strike-Recovery Replay (`lib/scheduler.mjs`)
+
+| Scheduler Replay Scenario | Merged Tickets | Pool Requests | Active Lease Leaks | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **4-Ticket Diamond DAG (Reverse Declaration Order)** | `T1 -> {T2, T3} -> T4` | 8 | 0 | **PASS** |
+| **Strike-1 Prosecutor Block $\rightarrow$ Fix $\rightarrow$ Strike-2 Ship** | 1 / 1 | 3 | 0 | **PASS** |
+| **Strike-1 Gate Failure $\rightarrow$ Strike-2 Warm Regeneration** | 1 / 1 | 3 | 0 | **PASS** |
+
+### 6g. Seeded Metamorphic Policy Fuzzer (`hooks/policy/*`, $N = 120$ Cases)
+
+| Fuzz Partition | Cases | Blocked / Passed | Rate | P50 / P95 Latency | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Adversarial Evasion Families (1–5)** (path traversal, `/proc/self/root`, shell prefix wrappers, nested `sh -c`, depth > 64 overflow) | 100 | **100 / 100 blocked** | **100.0%** | 0.25 ms / 0.58 ms | **PASS** |
+| **Benign Worker & Developer Ops (Family 6)** (in-scope writes, Stage-1 git readers, worker `npm test` / `node --test`) | 20 | **20 / 20 passed** | **100.0%** | 0.25 ms / 0.58 ms | **PASS** |
+
+### 6h. Committed Baseline Regression Ratchet (`evals/baseline.json`, Recorded `2026-11-02`)
+
+- **Overall Ratchet Status:** **PASS (0 Regressions across 18 Ratchet Gates)**

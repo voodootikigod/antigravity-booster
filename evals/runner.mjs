@@ -7,7 +7,7 @@
  * plus live mechanical runtime probes against `evaluatePayload` (`hooks/policy/evaluate.mjs`),
  * `parseValidateOutput` (`lib/migrate.mjs`), and `stageMarketplacePlugin` (`scripts/stage-marketplace-plugin.mjs`).
  */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,12 @@ import {
   runLiveHookLatencyBenchmark,
   runLiveOrchestratorOverheadBenchmark,
 } from './live-bench.mjs';
+import {
+  runLivePlanCompilerBenchmark,
+  runLiveProsecutorAndReviewBenchmark,
+  runLiveSchedulerDagBenchmark,
+  runLivePolicyFuzzerBenchmark,
+} from './subsystem-bench.mjs';
 import { evaluatePayload } from '../hooks/policy/evaluate.mjs';
 import { writeAdlcTickets } from '../lib/adlc-bridge.mjs';
 import { parseValidateOutput } from '../lib/migrate.mjs';
@@ -172,10 +178,96 @@ export function runLiveMechanicalProbes({ repoRoot = ROOT } = {}) {
   };
 }
 
+export function loadBaseline(baselinePath = join(ROOT, 'evals', 'baseline.json')) {
+  return JSON.parse(readFileSync(baselinePath, 'utf8'));
+}
+
+/**
+ * Compare current evaluation results against the committed `evals/baseline.json` ratchet.
+ */
+export function compareAgainstBaseline(results, baseline = loadBaseline()) {
+  const r = baseline.ratchets;
+  const ref = baseline.referenceMetrics;
+  const { perf8, perf16, accProsecution, accSafetyGates } = results.scenarios;
+  const {
+    policyCorpus,
+    hookLatency,
+    orchestratorOverhead,
+    planCompiler,
+    prosecutorAndReview,
+    schedulerDag,
+    policyFuzzer,
+  } = results.liveBenchmarks;
+
+  const launcherOverheadP50Ms =
+    hookLatency.tiers.nodeLauncherWrapperMs.p50 - hookLatency.tiers.directNodeBundleMs.p50;
+
+  const checks = {
+    perf8SpeedupVsSerial: perf8.comparisons.agbVsSerial.speedup.ratioOfMeans >= r.minPerf8SpeedupVsSerial,
+    perf8SpeedupVsBestPractices:
+      perf8.comparisons.agbVsBestPractices.speedup.ratioOfMeans >= r.minPerf8SpeedupVsBestPractices,
+    perf16SpeedupVsNaive: perf16.comparisons.speedup.ratioOfMeans >= r.minPerf16SpeedupVsNaive,
+    perf16SpeedupVsBestPractices:
+      perf16.comparisons.speedupVsBestPractices.ratioOfMeans >= r.minPerf16SpeedupVsBestPractices,
+    accProsecutionRecall:
+      accProsecution.arms.agbCrossModelProsecutorFleet.recall.p >= r.minAccProsecutionRecall,
+    policyCorpusRecall: policyCorpus.adversarialRecall >= r.minPolicyCorpusRecall,
+    policyCorpusFalsePositives:
+      policyCorpus.benignFalsePositiveRate <= r.maxPolicyCorpusFalsePositiveRate,
+    policyFuzzerBlockRate: policyFuzzer.adversarialBlockRate >= r.minPolicyFuzzerBlockRate,
+    policyFuzzerBenignPassRate: policyFuzzer.benignPassRate >= r.minPolicyFuzzerBenignPassRate,
+    policyFuzzerLatency: policyFuzzer.p95EvaluateMs <= r.maxPolicyFuzzerP95Ms,
+    planCompilerOverlapRecall: planCompiler.overlapRecall >= r.minPlanCompilerOverlapRecall,
+    planCompilerSerialFalsePositives:
+      planCompiler.serialFalsePositiveRate <= r.maxPlanCompilerSerialFalsePositiveRate,
+    planCompilerGateTamperBlockRate:
+      planCompiler.gateTamperBlockRate >= r.minPlanCompilerGateTamperBlockRate,
+    prosecutorAndReviewPassRate:
+      prosecutorAndReview.passRate >= r.minProsecutorAndReviewPassRate,
+    schedulerDagPass: schedulerDag.ok === r.minSchedulerDagPass,
+    inProcessEvaluateLatency:
+      hookLatency.tiers.inProcessEvaluatePayloadMs.p50 <= r.maxInProcessEvaluateP50Ms,
+    hookRunnerE2eLatency:
+      hookLatency.tiers.hookRunnerEndToEndMs.p50 <= r.maxHookRunnerE2eP50Ms,
+    orchestratorOverheadLatency:
+      orchestratorOverhead.totalOverheadMs <= r.maxOrchestratorOverheadMs,
+  };
+
+  const deltas = {
+    perf8SpeedupVsSerialDelta:
+      perf8.comparisons.agbVsSerial.speedup.ratioOfMeans - ref.perf8SpeedupVsSerial,
+    perf8SpeedupVsBestPracticesDelta:
+      perf8.comparisons.agbVsBestPractices.speedup.ratioOfMeans - ref.perf8SpeedupVsBestPractices,
+    perf16SpeedupVsBestPracticesDelta:
+      perf16.comparisons.speedupVsBestPractices.ratioOfMeans - ref.perf16SpeedupVsBestPractices,
+    accProsecutionRecallDelta:
+      accProsecution.arms.agbCrossModelProsecutorFleet.recall.p - ref.accProsecutionRecall,
+    inProcessEvaluateP50DeltaMs:
+      hookLatency.tiers.inProcessEvaluatePayloadMs.p50 - ref.inProcessEvaluateP50Ms,
+    launcherOverheadP50DeltaMs: launcherOverheadP50Ms - ref.launcherOverheadP50Ms,
+    hookRunnerE2eP50DeltaMs:
+      hookLatency.tiers.hookRunnerEndToEndMs.p50 - ref.hookRunnerE2eP50Ms,
+    orchestratorOverheadDeltaMs:
+      orchestratorOverhead.totalOverheadMs - ref.orchestratorOverheadMs,
+  };
+
+  const failedChecks = Object.entries(checks)
+    .filter(([, pass]) => !pass)
+    .map(([name]) => name);
+
+  return {
+    ok: failedChecks.length === 0,
+    recordedAt: baseline.recordedAt,
+    checks,
+    failedChecks,
+    deltas,
+  };
+}
+
 /**
  * Run the full evaluation suite and return structured results + invariant check status.
  */
-export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } = {}) {
+export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } = {}) {
   if (!Number.isInteger(trials) || trials <= 0) {
     throw new RangeError(`runAllEvals: trials must be a positive integer (received ${trials})`);
   }
@@ -190,6 +282,25 @@ export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } =
   const policyCorpus = runLivePolicyCorpusBenchmark();
   const hookLatency = runLiveHookLatencyBenchmark({ repoRoot });
   const orchestratorOverhead = runLiveOrchestratorOverheadBenchmark();
+  const planCompiler = runLivePlanCompilerBenchmark();
+  const prosecutorAndReview = await runLiveProsecutorAndReviewBenchmark();
+  const schedulerDag = await runLiveSchedulerDagBenchmark();
+  const policyFuzzer = runLivePolicyFuzzerBenchmark({ seed });
+
+  const liveBenchmarks = {
+    policyCorpus,
+    hookLatency,
+    orchestratorOverhead,
+    planCompiler,
+    prosecutorAndReview,
+    schedulerDag,
+    policyFuzzer,
+  };
+
+  const baselineRatchet = compareAgainstBaseline({
+    scenarios: { perf8, perf16, accProsecution, accSafetyGates },
+    liveBenchmarks,
+  });
 
   const invariants = {
     perf8SpeedupGt2_5x: perf8.comparisons.agbVsSerial.speedup.ratioOfMeans >= 2.5,
@@ -217,6 +328,11 @@ export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } =
     livePolicyCorpusZeroFalsePositives: policyCorpus.benignFalsePositiveRate === 0.0,
     liveHookLatencyWithinBounds: hookLatency.ok,
     liveOrchestratorOverheadUnder500Ms: orchestratorOverhead.ok,
+    livePlanCompilerCorpusPass: planCompiler.ok,
+    liveProsecutorAndReviewPass: prosecutorAndReview.ok,
+    liveSchedulerDagPass: schedulerDag.ok,
+    livePolicyFuzzerPass: policyFuzzer.ok,
+    baselineRegressionRatchetPass: baselineRatchet.ok,
   };
 
   const ok = Object.values(invariants).every(Boolean);
@@ -236,11 +352,8 @@ export function runAllEvals({ trials = 100, seed = 20261030, repoRoot = ROOT } =
       accSafetyGates,
     },
     liveProbes,
-    liveBenchmarks: {
-      policyCorpus,
-      hookLatency,
-      orchestratorOverhead,
-    },
+    liveBenchmarks,
+    baselineRatchet,
   };
 }
 
@@ -590,6 +703,44 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 | **16 Quota-Pool State Lock Cycles (\`lib/pools.mjs\` \`withLockSync\`)** | ${fmt(results.liveBenchmarks.orchestratorOverhead.poolStateLockMs, 2)} ms | ${fmt((results.liveBenchmarks.orchestratorOverhead.poolStateLockMs / 149200) * 100, 4)}% |
 | **16 Atomic Repository Merge-Lock Cycles (\`lib/lock.mjs\` \`acquireRepoLock\`)** | ${fmt(results.liveBenchmarks.orchestratorOverhead.mergeLockMs, 2)} ms | ${fmt((results.liveBenchmarks.orchestratorOverhead.mergeLockMs / 149200) * 100, 4)}% |
 | **Total Pure-Node Orchestration Overhead** | **${fmt(results.liveBenchmarks.orchestratorOverhead.totalOverheadMs, 2)} ms** | **${fmt(results.liveBenchmarks.orchestratorOverhead.shareOf8TicketBuildPct, 4)}%** |
+
+### 6d. Plan Compiler, Scope-Overlap & Gate-Integrity Golden Corpus (\`lib/plan.mjs\`, \`lib/preflight.mjs\`)
+
+| Compiler Gate Dimension | Corpus Cases | Caught / Allowed | Recall / False-Positive Rate | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **Concurrent Scope Overlaps** (exact collisions, parent/child globs, diamond branches, trailing slashes) | ${results.liveBenchmarks.planCompiler.overlapTotal} | **${results.liveBenchmarks.planCompiler.overlapCaught} / ${results.liveBenchmarks.planCompiler.overlapTotal} vetoed** | **${pct(results.liveBenchmarks.planCompiler.overlapRecall)} Recall** | **${results.liveBenchmarks.planCompiler.overlapRecall === 1.0 ? 'PASS' : 'FAIL'}** |
+| **Transitively Serialized & Disjoint DAGs** (\`reachability()\` multi-hop chains, diamond joins, fan-in/out) | ${results.liveBenchmarks.planCompiler.serialTotal} | **${results.liveBenchmarks.planCompiler.serialAllowed} / ${results.liveBenchmarks.planCompiler.serialTotal} allowed** | **${pct(results.liveBenchmarks.planCompiler.serialFalsePositiveRate)} False Positives** | **${results.liveBenchmarks.planCompiler.serialFalsePositiveRate === 0.0 ? 'PASS' : 'FAIL'}** |
+| **Gate Script & Plan Tampering** (\`verifyGateScriptIntegrity\` lifecycle hooks, delegated scripts, \`adlcBin\`) | ${results.liveBenchmarks.planCompiler.gateTamperTotal} | **${results.liveBenchmarks.planCompiler.gateTamperBlocked} / ${results.liveBenchmarks.planCompiler.gateTamperTotal} blocked** | **${pct(results.liveBenchmarks.planCompiler.gateTamperBlockRate)} Block Rate** | **${results.liveBenchmarks.planCompiler.gateTamperBlockRate === 1.0 ? 'PASS' : 'FAIL'}** |
+
+### 6e. Prosecutor & Review Fleet Mechanical Contract Benchmark (\`lib/prosecute.mjs\`, \`lib/review.mjs\`)
+
+| Contract / Convergence Invariant | Result | Verified Behavior |
+| :--- | :---: | :--- |
+| **Empty & Oversize (>120k) Diff Guards** | **${results.liveBenchmarks.prosecutorAndReview.checks.emptyDiffBlocked && results.liveBenchmarks.prosecutorAndReview.checks.oversizeDiffBlocked ? 'PASS' : 'FAIL'}** | Blocks empty diffs (\`charge: 'spec'\`) and boilerplate-padded diffs (\`charge: 'scope'\`) |
+| **High / Critical Severity Overrides Model \`ship\`** | **${results.liveBenchmarks.prosecutorAndReview.checks.highSeverityOverridesShip && results.liveBenchmarks.prosecutorAndReview.checks.criticalSeverityOverridesShip ? 'PASS' : 'FAIL'}** | Mechanical severity gate forces \`verdict: 'block'\` regardless of model opinion |
+| **Low-Severity Nit Preserves \`ship\`** | **${results.liveBenchmarks.prosecutorAndReview.checks.lowSeverityPreservesShip ? 'PASS' : 'FAIL'}** | Non-blocking findings are surfaced without halting merge |
+| **\`adlc hollow-test\` AST Mutant Survivor Override** | **${results.liveBenchmarks.prosecutorAndReview.checks.hollowTestSurvivorOverridesShip ? 'PASS' : 'FAIL'}** | Surviving mutant forces \`verdict: 'block'\` even when model votes \`ship\` |
+| **Empty \`block\` Schema Violation Guard** | **${results.liveBenchmarks.prosecutorAndReview.checks.emptyBlockRejectedAsSchemaViolation ? 'PASS' : 'FAIL'}** | \`verdict: 'block'\` with empty findings is rejected as \`schema_violation\` |
+| **4-Lens Review Fleet Deduplication & Error Anti-Convergence** | **${results.liveBenchmarks.prosecutorAndReview.checks.cleanConvergenceInDryRounds && results.liveBenchmarks.prosecutorAndReview.checks.crossLensDeduplication && results.liveBenchmarks.prosecutorAndReview.checks.lensErrorPreventsFalseConvergence ? 'PASS' : 'FAIL'}** | Deduplicates cross-lens findings; lens errors reset \`dry = 0\` (\`converged: false\`) |
+
+### 6f. Live Hermetic Scheduler DAG & Strike-Recovery Replay (\`lib/scheduler.mjs\`)
+
+| Scheduler Replay Scenario | Merged Tickets | Pool Requests | Active Lease Leaks | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **4-Ticket Diamond DAG (Reverse Declaration Order)** | \`${results.liveBenchmarks.schedulerDag.scenarios.diamondDagReverseOrder.canonicalOrder}\` | ${results.liveBenchmarks.schedulerDag.scenarios.diamondDagReverseOrder.totalRequests} | ${results.liveBenchmarks.schedulerDag.scenarios.diamondDagReverseOrder.leakedLeases} | **${results.liveBenchmarks.schedulerDag.scenarios.diamondDagReverseOrder.ok ? 'PASS' : 'FAIL'}** |
+| **Strike-1 Prosecutor Block $\\rightarrow$ Fix $\\rightarrow$ Strike-2 Ship** | ${results.liveBenchmarks.schedulerDag.scenarios.prosecutorBlockThenFixRecovery.mergedCount} / 1 | ${results.liveBenchmarks.schedulerDag.scenarios.prosecutorBlockThenFixRecovery.totalRequests} | 0 | **${results.liveBenchmarks.schedulerDag.scenarios.prosecutorBlockThenFixRecovery.ok ? 'PASS' : 'FAIL'}** |
+| **Strike-1 Gate Failure $\\rightarrow$ Strike-2 Warm Regeneration** | ${results.liveBenchmarks.schedulerDag.scenarios.strikeOneGateFailThenStrikeTwoRegenRecovery.mergedCount} / 1 | ${results.liveBenchmarks.schedulerDag.scenarios.strikeOneGateFailThenStrikeTwoRegenRecovery.totalRequests} | 0 | **${results.liveBenchmarks.schedulerDag.scenarios.strikeOneGateFailThenStrikeTwoRegenRecovery.ok ? 'PASS' : 'FAIL'}** |
+
+### 6g. Seeded Metamorphic Policy Fuzzer (\`hooks/policy/*\`, $N = ${results.liveBenchmarks.policyFuzzer.totalFuzzCases}$ Cases)
+
+| Fuzz Partition | Cases | Blocked / Passed | Rate | P50 / P95 Latency | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Adversarial Evasion Families (1–5)** (path traversal, \`/proc/self/root\`, shell prefix wrappers, nested \`sh -c\`, depth > 64 overflow) | ${results.liveBenchmarks.policyFuzzer.adversarialTotal} | **${results.liveBenchmarks.policyFuzzer.adversarialBlocked} / ${results.liveBenchmarks.policyFuzzer.adversarialTotal} blocked** | **${pct(results.liveBenchmarks.policyFuzzer.adversarialBlockRate)}** | ${fmt(results.liveBenchmarks.policyFuzzer.p50EvaluateMs, 2)} ms / ${fmt(results.liveBenchmarks.policyFuzzer.p95EvaluateMs, 2)} ms | **${results.liveBenchmarks.policyFuzzer.adversarialBlockRate === 1.0 ? 'PASS' : 'FAIL'}** |
+| **Benign Worker & Developer Ops (Family 6)** (in-scope writes, Stage-1 git readers, worker \`npm test\` / \`node --test\`) | ${results.liveBenchmarks.policyFuzzer.benignTotal} | **${results.liveBenchmarks.policyFuzzer.benignPassed} / ${results.liveBenchmarks.policyFuzzer.benignTotal} passed** | **${pct(results.liveBenchmarks.policyFuzzer.benignPassRate)}** | ${fmt(results.liveBenchmarks.policyFuzzer.p50EvaluateMs, 2)} ms / ${fmt(results.liveBenchmarks.policyFuzzer.p95EvaluateMs, 2)} ms | **${results.liveBenchmarks.policyFuzzer.benignPassRate === 1.0 ? 'PASS' : 'FAIL'}** |
+
+### 6h. Committed Baseline Regression Ratchet (\`evals/baseline.json\`, Recorded \`${results.baselineRatchet.recordedAt}\`)
+
+- **Overall Ratchet Status:** **${results.baselineRatchet.ok ? 'PASS (0 Regressions across 18 Ratchet Gates)' : `FAIL (${results.baselineRatchet.failedChecks.join(', ')})`}**
 `;
 }
 
@@ -620,7 +771,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
   }
 
-  const results = runAllEvals({ trials, seed });
+  const results = await runAllEvals({ trials, seed });
   const md = renderMarkdownReport(results);
 
   if (reportPath) {

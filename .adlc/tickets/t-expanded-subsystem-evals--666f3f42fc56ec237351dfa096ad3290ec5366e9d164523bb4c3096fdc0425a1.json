@@ -1,0 +1,20 @@
+{
+  "id": "t-expanded-subsystem-evals",
+  "title": "Build 5-pillar live subsystem evals and relative regression baseline ratchet",
+  "body": "Expand the Antigravity Booster evaluation suite with 5 deterministic live evaluation pillars: (1) Plan Compiler, Scope-Overlap & Gate-Integrity Corpus (`runLivePlanCompilerBenchmark`), (2) Prosecutor & Review Fleet Mechanical Contract & Convergence Benchmark (`runLiveProsecutorAndReviewBenchmark`), (3) Hermetic Scheduler DAG & Strike-Recovery Benchmark (`runLiveSchedulerDagBenchmark`), (4) Seeded Metamorphic Fuzzing of `PreToolUse` Policy (`runLivePolicyFuzzerBenchmark`), and (5) Committed Baseline Ratchet & Relative Regression Detector (`evals/baseline.json` + `compareAgainstBaseline` in `evals/runner.mjs`).",
+  "scope": [
+    "evals/subsystem-bench.mjs",
+    "evals/baseline.json",
+    "evals/runner.mjs",
+    "test/evals.test.mjs",
+    "docs/benchmarks/marketplace-eval-report.md"
+  ],
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "hooks/policy/**",
+    "mcp/server.mjs"
+  ],
+  "edges": []
+}
