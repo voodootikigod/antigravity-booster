@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-01T17:18:51.353Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "a22700597dd3ae1d6005c1d4f2971d5d4ef81d6172aec505452ea5513ad7a849",
+    "ticketHash": "a490ac0e53dd0c861ef82af465cfc91a6547e716914f8c2b065792188d5e9d65",
+    "version": 1
+  },
   "body": "Upgrade antigravity-booster for strict conformance with Google Antigravity Plugin Marketplace (agy >= 1.4.11):\n1. Update plugin.json with displayName ('Antigravity Booster'), search-optimized description, logo ('assets/logo.svg'), suggestedPrompts (3 zero-friction starter prompts for /agb-doctor, /agb-plan, /agb-review), homepage ('https://www.agybooster.com'), and repository ('https://github.com/voodootikigod/antigravity-booster').\n2. Create assets/logo.svg (256x256 square vector badge, transparent canvas, >=10% outer margin, high contrast for light/dark themes).\n3. Create rules/AGENTS.md with concise always-on session orchestration guidance for mcp__agb__* tools and /agb-* skills.\n4. Expose all 7 user-facing slash commands (agb-bootstrap, agb-doctor, agb-migrate, agb-plan, agb-review, agb-run, agb-sidecar) as native Antigravity plugin skills in skills/<name>/SKILL.md and sync to .claude/skills and .agents/skills.\n5. Update parseValidateOutput and validateBooster in lib/migrate.mjs (and rebuild dist/agb.mjs) to parse both legacy agy 1.2.x ('✔ <cat> : <n> processed') and agy 1.4.x ('skills <n> · agents <n> · ...') output formats without failing when 'commands' is omitted in agy 1.4.x.\n6. Add scripts/stage-marketplace-plugin.mjs and npm script 'plugin:validate' to stage a clean Marketplace plugin bundle + marketplace.json catalog and verify agy plugin validate --strict --json passes with 0 errors, 0 warnings, and 0 notes.\n7. Update package.json files array to include assets/ and rules/, and add tests in test/plugin-layout.test.mjs and test/migrate-rollback.test.mjs.\n\nAcceptance Criteria:\n- `node --test test/plugin-layout.test.mjs test/commands.test.mjs test/migrate-rollback.test.mjs test/packaging.test.mjs` exits 0.\n- `node scripts/stage-marketplace-plugin.mjs --validate-strict` exits 0 with 0 errors, 0 warnings, 0 notes.",
+  "completed": true,
   "edges": [],
   "id": "t-marketplace-packaging",
   "rails": [
