@@ -16,16 +16,63 @@ esac
 # Resolve full symlink chain iteratively in pure POSIX sh
 resolve_full_path() {
   _tgt="$1"
+  while [ "${_tgt%/}" != "$_tgt" ] && [ "$_tgt" != "/" ]; do
+    _tgt="${_tgt%/}"
+  done
+  if [ "$_tgt" = "/" ]; then
+    printf '/\n'
+    return 0
+  fi
   while [ -L "$_tgt" ]; do
-    _dir="$(CDPATH='' cd -- "$(dirname -- "$_tgt")" 2>/dev/null && pwd -P)"
+    case "$_tgt" in
+      */*) _dir_part="${_tgt%/*}"; [ -n "$_dir_part" ] || _dir_part="/" ;;
+      *)   _dir_part="." ;;
+    esac
+    _dir="$(CDPATH='' cd -- "$_dir_part" 2>/dev/null && pwd -P)"
     _link="$(readlink "$_tgt" 2>/dev/null || true)"
+    while [ "${_link%/}" != "$_link" ] && [ "$_link" != "/" ]; do
+      _link="${_link%/}"
+    done
     case "$_link" in
       /*) _tgt="$_link" ;;
-      *)  _tgt="$_dir/$_link" ;;
+      *)
+        if [ "$_dir" = "/" ]; then
+          _tgt="/$_link"
+        else
+          _tgt="$_dir/$_link"
+        fi
+        ;;
     esac
+    if [ "$_tgt" = "/" ]; then
+      printf '/\n'
+      return 0
+    fi
   done
-  _dir="$(CDPATH='' cd -- "$(dirname -- "$_tgt")" 2>/dev/null && pwd -P)"
-  printf '%s/%s\n' "$_dir" "$(basename -- "$_tgt")"
+  case "$_tgt" in
+    */*) _dir_part="${_tgt%/*}"; [ -n "$_dir_part" ] || _dir_part="/"; _base_part="${_tgt##*/}" ;;
+    *)   _dir_part="."; _base_part="$_tgt" ;;
+  esac
+  _dir="$(CDPATH='' cd -- "$_dir_part" 2>/dev/null && pwd -P)"
+  if [ "$_dir" = "/" ]; then
+    printf '/%s\n' "$_base_part"
+  else
+    printf '%s/%s\n' "$_dir" "$_base_part"
+  fi
+}
+
+REAL_HOME=""
+REAL_USER_HOME=""
+HOMES_RESOLVED=0
+
+ensure_real_homes() {
+  [ "$HOMES_RESOLVED" -eq 0 ] || return 0
+  REAL_HOME="$(resolve_full_path "$HOME" 2>/dev/null || printf '%s\n' "$HOME")"
+  if [ "$USER_HOME" = "$HOME" ]; then
+    REAL_USER_HOME="$REAL_HOME"
+  else
+    REAL_USER_HOME="$(resolve_full_path "$USER_HOME" 2>/dev/null || printf '%s\n' "$USER_HOME")"
+  fi
+  HOMES_RESOLVED=1
 }
 
 is_valid_node() {
@@ -49,8 +96,7 @@ is_valid_node() {
   esac
 
   # Security: Candidate must reside within trusted system prefixes or standard version managers
-  REAL_HOME="$(resolve_full_path "$HOME" 2>/dev/null || printf '%s\n' "$HOME")"
-  REAL_USER_HOME="$(resolve_full_path "$USER_HOME" 2>/dev/null || printf '%s\n' "$USER_HOME")"
+  ensure_real_homes
   TRUSTED=0
   case "$REAL_CANDIDATE" in
     /opt/homebrew/*|/usr/local/*|/usr/*|/bin/*|/System/*) TRUSTED=1 ;;
@@ -73,6 +119,26 @@ is_valid_node() {
         ;;
     esac
   done
+
+  # Fast path: C++ `node -v` avoids booting V8 (~4ms vs ~21ms for `node -e`)
+  _ver="$("$candidate" -v 2>/dev/null || true)"
+  case "$_ver" in
+    v*.*.*)
+      _v="${_ver#v}"
+      _maj="${_v%%.*}"
+      _rest="${_v#*.}"
+      _min="${_rest%%.*}"
+      case "${_maj}.${_min}" in
+        ''|*[!0-9.]*|.*|*.) ;;
+        *)
+          if [ "$_maj" -gt 22 ] || { [ "$_maj" -eq 22 ] && [ "$_min" -ge 19 ]; }; then
+            return 0
+          fi
+          return 1
+          ;;
+      esac
+      ;;
+  esac
 
   "$candidate" -e '
     const [maj, min] = process.versions.node.split(".").map(Number);

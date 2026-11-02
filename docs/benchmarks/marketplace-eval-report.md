@@ -223,5 +223,35 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 | `PreToolUse` blocks `write_file` on frozen rail `lib/lock.mjs` | **PASS** | `decision: "deny"` (Target path matches frozen rail: lib/lock.mjs) |
 | `PreToolUse` blocks `write_file` on `.adlc/config.json` trust root | **PASS** | `decision: "deny"` (Target path matches standing ADLC implicit rail: .adlc/config.json) |
 | `PreToolUse` allows in-scope `write_file` on `plugin.json` | **PASS** | `decision: "pass"` |
+| `PreToolUse` blocks out-of-scope `write_file` on `README.md` (`AGB_WORKER_TICKET`) | **PASS** | `decision: "deny"` (Headless worker for ticket t-hermetic-probe attempted mutation outside declared ticket scope: README.md) |
 | `parseValidateOutput` parses `agy 1.4.x` dot-summary format | **PASS** | `{"skills":7,"agents":3,"rules":1,"hooks":1,"mcpServers":1,"sidecars":0}` |
 | Staged Marketplace bundle passes `agy plugin validate --strict` | **PASS** | `errors: 0, warnings: 0, notes: 0` |
+
+---
+
+## 6. Live Policy Corpus, Hook Latency & Orchestrator Overhead Benchmarks
+
+### 6a. 40-Vector Live Policy Guard Corpus (`evaluatePayload`)
+
+| Corpus Partition | Vectors Evaluated | Passed / Blocked | Recall / False-Positive Rate | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **Adversarial Attack Vectors** (rail edits, trust-root tampering, symlink traversal, `file://` authority, destructive git/shell globs, out-of-scope worker writes) | 20 | **20 / 20 blocked** | **100.0% Recall** | **PASS** |
+| **Benign Developer & Worker Workflows** (inspection tools, Stage-1 readers, `adlc ticket create`, worker `npm test`, in-scope mutations) | 20 | **20 / 20 passed** | **0.0% False Positives** | **PASS** |
+
+### 6b. `PreToolUse` Hook Execution Latency Breakdown (Live Wall-Clock Milliseconds)
+
+| Execution Layer | Min (ms) | Median P50 (ms) | P95 (ms) | Mean (ms) |
+| :--- | :---: | :---: | :---: | :---: |
+| **In-Process `evaluatePayload()`** | 0.30 ms | **0.32 ms** | 0.37 ms | 0.33 ms |
+| **Direct `node dist/hooks/pre-tool-use.bundle.mjs`** | 43.1 ms | **48.4 ms** | 49.4 ms | 46.9 ms |
+| **`/bin/sh bin/node-launcher.sh` + Bundle (`node -v` fast-path)** | 52.3 ms | **58.4 ms** | 59.1 ms | 56.3 ms |
+| **End-to-End `/bin/sh bin/hook-runner.sh` + Watchdog + Launcher + Bundle** | 75.7 ms | **79.5 ms** | 81.7 ms | 79.3 ms |
+
+### 6c. Pure-Node Orchestrator Overhead vs. 8-Ticket Build Wall-Clock Time
+
+| Orchestrator Subsystem | Measured Wall-Clock Overhead (ms) | Share of 149.2s 8-Ticket DAG Build |
+| :--- | :---: | :---: |
+| **8-Ticket ADLC Store Projection + Active Rail Union (`lib/adlc-bridge.mjs`, `lib/active-rails.mjs`)** | 2.35 ms | 0.0016% |
+| **16 Quota-Pool State Lock Cycles (`lib/pools.mjs` `withLockSync`)** | 1.34 ms | 0.0009% |
+| **16 Atomic Repository Merge-Lock Cycles (`lib/lock.mjs` `acquireRepoLock`)** | 2.25 ms | 0.0015% |
+| **Total Pure-Node Orchestration Overhead** | **5.94 ms** | **0.0040%** |
