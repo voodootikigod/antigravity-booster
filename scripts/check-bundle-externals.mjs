@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { isBuiltin as nodeIsBuiltin, builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-export const DEFAULT_BUNDLES = ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs'];
+export const DEFAULT_BUNDLES = ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs', 'vendor/adlc/dist/watchdog.mjs'];
 
 const BUILTINS = new Set(builtinModules);
 
@@ -26,6 +26,7 @@ const CALL_PATTERN = /\b(?:import|(?:__)?require\d*(?:\s*\.\s*resolve)?)\s*\(([^
 const CREATE_REQUIRE_IDENT = '(?:createRequire\\d*|__agbCreateRequire\\d*)';
 const DIRECT_CREATE_REQUIRE_PATTERN = new RegExp(`\\b${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)(?:\\s*\\.\\s*resolve)?\\s*\\(([^)]+)\\)`, 'g');
 const BOUND_CREATE_REQUIRE_DECL = new RegExp(`(?:\\b(?:const|let|var)\\s+|(?:^|[;,{}\\n])\\s*)([A-Za-z_$][\\w$]*)\\s*=\\s*(?:[\\w$]+\\.)?${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)`, 'gm');
+const PROCESS_BINDING_PATTERN = /\bprocess\s*\.\s*(?:binding|_linkedBinding|dlopen)\s*\(([^)]+)\)/g;
 
 export function isBuiltin(specifier) {
   if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;
@@ -64,6 +65,10 @@ export function findExternalSpecifiers(source) {
   }
   for (const m of source.matchAll(DIRECT_CREATE_REQUIRE_PATTERN)) {
     recordCallArg(m[1], found);
+  }
+  for (const m of source.matchAll(PROCESS_BINDING_PATTERN)) {
+    const raw = m[1].trim().replace(/^["'`]|["'`]$/g, '');
+    found.add(`process.binding:${raw}`);
   }
   for (const decl of source.matchAll(BOUND_CREATE_REQUIRE_DECL)) {
     const ident = decl[1];

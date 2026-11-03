@@ -387,14 +387,29 @@ for (const [label, shell] of SHELLS) {
       assert.equal(decisionOf(r), 'deny');
     });
 
-    test('read-only tool targeting .migration.lock or ~/.config/antigravity-booster during fallback -> deny', async () => {
-      for (const target of ['/h/.migration.lock', '/h/.config/antigravity-booster/state.json']) {
+      test('read-only tool targeting .migration.lock or ~/.config/antigravity-booster during fallback -> deny', async () => {
+      for (const target of [
+        '/h/.migration.lock',
+        '/h/.config/antigravity-booster/state.json',
+        '/h/.gemini/antigravity-cli/plugin_data/x/../antigravity-booster/logs/hooks.log',
+      ]) {
         const r = await go({
           payload: payloadFor(READ_TOOL, { args: { AbsolutePath: target } }),
           env: { STUB_MODE: 'crash' },
         });
         assertInvariant(r);
         assert.equal(decisionOf(r), 'deny', target);
+      }
+    });
+
+    test('read_file and file_search pass through during fallback in ADLC repo when targeting non-protected path', async () => {
+      for (const toolName of ['read_file', 'file_search']) {
+        const r = await go({
+          payload: payloadFor(toolName, { args: { Path: path.join(ADLC_REPO, 'README.md') } }),
+          env: { STUB_MODE: 'crash' },
+        });
+        assertInvariant(r);
+        assert.equal(decisionOf(r), '', toolName);
       }
     });
 

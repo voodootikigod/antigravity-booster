@@ -1,0 +1,26 @@
+{
+  "body": "1. In `hooks/policy/shell.mjs`: validate `npm test --` flags against `TEST_FLAG_OK` in `isTestCommand`; in `classifySubcommand`, when `argv.length === 0`, run `checkTargets` on redirects (`sub.redirects.length > 0`) and route `rawSub.argv.length > 0 || sub.dynamic` (e.g. `env -S`, bare `exec`/`env`/`sudo`) through `stage5` while preserving `PASS` for static variable assignments (`FOO=1`); in `classifyLine`, only skip `classifySubcommand` on compound workspace `cd` when `sub.redirects.length === 0 && sub.assignments.length === 0 && unwrapped.assignments.length === 0`.\n2. In `hooks/policy/constants.mjs` and `bin/hook-runner.sh`: add `file_search` to `READ_ONLY_TOOLS` and `read_file|file_search` to `hook-runner.sh` `IS_READ_ONLY`; broaden `TARGETS_PROTECTED` fallback regex in `bin/hook-runner.sh` to catch `..` segments and `\\u00`.\n3. In `bin/node-launcher.sh`: add a 40-hop ceiling in `resolve_full_path()` on cyclic symlinks.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-audit-w1-cli-mcp-install"
+    }
+  ],
+  "id": "t-audit-w2-policy-guard",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs"
+  ],
+  "scope": [
+    "hooks/policy/shell.mjs",
+    "hooks/policy/constants.mjs",
+    "bin/hook-runner.sh",
+    "bin/node-launcher.sh",
+    "test/pre-tool-use.test.mjs",
+    "test/hook-runner.test.mjs",
+    "test/node-launcher.test.mjs"
+  ],
+  "title": "Harden PreToolUse policy guard shell classifier, hook-runner fallback, and node-launcher symlink hops"
+}

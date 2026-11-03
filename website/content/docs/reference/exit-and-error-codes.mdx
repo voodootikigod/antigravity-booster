@@ -18,10 +18,10 @@ Any exception that reaches the top level prints `agb: <message>` and exits 1 ([t
 |---|---|---|
 | `--version`, `--help`, `<cmd> --help` | 0 | Printed version or usage ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L82-L103)). |
 | unknown command | 1 | `agb: unknown command` ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L106-L111)). |
-| `run` | 0 | Every ticket merged. |
+| `run` | 0 | Every ticket merged (`report.failed` is empty and `report.compromised` is null). |
 | | 1 | Plan invalid ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L125-L129)), or the run could not start (lock held, no quota telemetry). |
-| | 2 | At least one ticket in `report.failed` ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L132)). |
-| `sweep` | 0 / 1 / 2 | Same as `run`; 1 also covers an invalid sweep spec ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L133-L145)). |
+| | 2 | At least one ticket in `report.failed` or `report.compromised` is set ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L132)). |
+| `sweep` | 0 / 1 / 2 | Same as `run` (`2` when `report.failed` is non-empty or `report.compromised` is set); 1 also covers an invalid sweep spec ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L133-L145)). |
 | `validate` | 0 | Prints `plan valid`. |
 | | 2 | Plan invalid; errors on stderr ([C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L286-L292)). Note this differs from `run`, which uses 1. |
 | | 1 | Plan file missing or not JSON (top-level catch). |
@@ -44,7 +44,8 @@ Any exception that reaches the top level prints `agb: <message>` and exits 1 ([t
 | `sidecar` | 1 | Missing or invalid `--port`, or unknown flag ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L372-L398)). |
 | | 130 / 143 | Stopped by SIGINT / SIGTERM after cleanup ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L462-L463)). |
 | `pool drain` | 0 / 1 | Drained / unknown subcommand ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L472-L482)). |
-| `bootstrap`, `brains` | 0 | Errors surface through the top-level catch (1). |
+| `bootstrap` | 0 / 1 | 0 when all bootstrap steps pass; 1 (`process.exitCode = 1`) when any step fails or throws. |
+| `brains` | 0 | Errors surface through the top-level catch (1). |
 
 ## Error classes
 

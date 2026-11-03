@@ -148,4 +148,4 @@ When the run ends, `agb run` prints the report as JSON and writes it to `.booste
 | `enforcementAvailable` / `enforcementReason` | Whether live in-session rail enforcement was active, and why not |
 | `compromised` | `null`, or the reason the run's integrity check failed |
 
-The exit code is `0` when `failed` is empty and `2` otherwise; an invalid plan exits `1` (exit: [C27](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L124-L132)). See [Exit and error codes](/docs/reference/exit-and-error-codes).
+The exit code is `0` when `failed` is empty and `compromised` is null, and `2` otherwise; an invalid plan exits `1` (exit: [C27](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L124-L132)). See [Exit and error codes](/docs/reference/exit-and-error-codes).

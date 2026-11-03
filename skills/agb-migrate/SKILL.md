@@ -22,7 +22,7 @@ Both directions take the migration lock; if the command reports the lock is held
 Use your shell tool (`run_command`) to run the antigravity-booster terminal shim, passing the user's arguments through unchanged (quote each argument; never interpolate untrusted text into a larger shell string):
 
 ```sh
-~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force]
+~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```
 
 Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 1 = failure or error).

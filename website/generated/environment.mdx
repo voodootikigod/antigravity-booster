@@ -14,17 +14,18 @@
 | AGB_WARM_STRIKES | 1 | Set to 0 to disable warm second-strike builder resumption via agy --conversation &lt;id&gt; when a ticket fails its first attempt on the same model. | honoured |
 | AGB_WORKER_MODE | set by agb | Set by agb on read-only worker agy processes (value readonly). The PreToolUse guard denies mutations and never prompts while it is set. | honoured |
 | AGB_WORKER_TICKET | set by agb | Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts. | honoured |
+| AGY_BIN | agy | Override path for the agy CLI executable used by scripts/stage-marketplace-plugin.mjs when validating staged plugin bundles. | honoured |
 | ANTIGRAVITY_CONVERSATION_ID | set by Antigravity | Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes. | honoured |
 
 **Plugin resolution**
 
 | Name | Default | Description | Bundled |
 | --- | --- | --- | --- |
-| ADLC_ANTIGRAVITY_PLUGIN_NAME | adlc-antigravity | Not read from the environment: a source constant in lib/plugin-paths.mjs naming the companion plugin's directory under the agy plugins folder. | honoured |
 | ADLC_ANTIGRAVITY_PLUGIN_PATH | unset | Source checkout of the adlc-antigravity plugin to install from. Honoured by bootstrap only in unbundled runs and only together with AGB_DEV_ALLOW_UNVERIFIED_PLUGIN=1. | ignored |
 | AGB_DEV_ALLOW_UNVERIFIED_PLUGIN | unset | Set to 1 (unbundled runs only) to let bootstrap install an unverified companion plugin from ADLC_ANTIGRAVITY_PLUGIN_PATH. | ignored |
 | AGB_PLUGIN_DIR | ~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-&lt;pid&gt;-&lt;port&gt; (sidecar) | Two readers (both ignored by the bundled build): the companion-plugin handshake manifest directory and the directory agb sidecar writes its plugin manifest into (honoured in unbundled source runs only). | ignored |
 | AGB_PLUGIN_ROOT | the booster plugin root | Plugin root holding vendor/adlc, used to find the vendored adlc CLI. Unbundled runs only. | ignored |
+| PLUGIN_ROOT | set by Antigravity | Plugin root directory exported by Antigravity (via $&#123;PLUGIN_ROOT&#125; in hooks.json and mcp_config.json) and resolved by bin/hook-runner.sh and bin/node-launcher.sh. | honoured |
 
 **Sandbox and gates**
 

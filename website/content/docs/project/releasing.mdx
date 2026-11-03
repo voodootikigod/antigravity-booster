@@ -18,7 +18,7 @@ flowchart LR
 
 ## The release skill
 
-[`skills/release`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/release/SKILL.md) runs the maintainer side. It checks for a clean, up-to-date `main`, a `repository.url`, no `file:` dependencies and a passing `npm test`. Then it bumps the version with `npm version --no-git-tag-version` and moves the `[Unreleased]` changelog entries under the new version. The bump lands through a PR because `main` is protected. After the merge, the maintainer tags the merged commit and pushes the tag.
+[`maintainer-skills/release`](https://github.com/voodootikigod/antigravity-booster/blob/main/maintainer-skills/release/SKILL.md) (originally [`skills/release`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/skills/release/SKILL.md) in v1.0.0) runs the maintainer side. It checks for a clean, up-to-date `main`, a `repository.url`, no `file:` dependencies and a passing `npm test`. Then it bumps the version with `npm version --no-git-tag-version` and moves the `[Unreleased]` changelog entries under the new version. The bump lands through a PR because `main` is protected. After the merge, the maintainer tags the merged commit and pushes the tag.
 
 <Callout type="info">
 The generic `/release` skill reads its project facts from `.claude/release-profile.md`, which is tracked in this repository even though the rest of `.claude/` is ignored. The profile names the bump sites, the preconditions (including the website generator check), the `npm-publish` environment and the registry checks that prove a publish landed.

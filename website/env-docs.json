@@ -92,11 +92,18 @@
       "description": "Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts."
     },
     {
-      "name": "ADLC_ANTIGRAVITY_PLUGIN_NAME",
-      "group": "plugin-resolution",
-      "default": "adlc-antigravity",
+      "name": "AGY_BIN",
+      "group": "core",
+      "default": "agy",
       "bundledIgnored": false,
-      "description": "Not read from the environment: a source constant in lib/plugin-paths.mjs naming the companion plugin's directory under the agy plugins folder."
+      "description": "Override path for the agy CLI executable used by scripts/stage-marketplace-plugin.mjs when validating staged plugin bundles."
+    },
+    {
+      "name": "PLUGIN_ROOT",
+      "group": "plugin-resolution",
+      "default": "set by Antigravity",
+      "bundledIgnored": false,
+      "description": "Plugin root directory exported by Antigravity (via ${PLUGIN_ROOT} in hooks.json and mcp_config.json) and resolved by bin/hook-runner.sh and bin/node-launcher.sh."
     },
     {
       "name": "ADLC_ANTIGRAVITY_PLUGIN_PATH",
@@ -360,6 +367,10 @@
     }
   ],
   "ignore": [
+    {
+      "name": "ADLC_ANTIGRAVITY_PLUGIN_NAME",
+      "reason": "Module-internal constant name in lib/paths.mjs, not an environment variable."
+    },
     {
       "name": "AGB_USER_HOME",
       "reason": "Internal variable exported by bin/node-launcher.sh to pass the host user home directory into the PreToolUse policy guard when HOME is isolated to .agb_home."

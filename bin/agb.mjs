@@ -43,12 +43,12 @@ const COMMANDS = {
     flags: '--out <file> --force --no-coldstart --no-parallax --no-premortem'
   },
   preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart', flags: '--no-coldstart' },
-  doctor: { args: '', desc: 'verify your environment and tools' },
+  doctor: { args: '[repo]', desc: 'verify your environment and tools' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
   status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
   sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
-  probe: { args: '[widths]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
+  probe: { args: '[widths] [model]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '[--force] [--force-reinstall]', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
   migrate: {
@@ -284,7 +284,8 @@ try {
     console.error('The TUI has been removed. Use the native sidecar dashboard instead (`agb sidecar`).');
     process.exit(1);
   } else if (cmd === 'doctor') {
-    process.exitCode = await runDoctor();
+    const repoArg = rest.find((a) => !a.startsWith('-'));
+    process.exitCode = await runDoctor(repoArg ? { cwd: resolve(repoArg) } : {});
   } else if (cmd === 'validate') {
     const { errors } = loadPlan(rest[0] ?? 'plan.json');
     if (errors.length) {
@@ -297,6 +298,22 @@ try {
     const forceReinstall = rest.includes('--force-reinstall');
     bootstrap({ force, forceReinstall });
   } else if (cmd === 'migrate') {
+    const MIGRATE_BOOL_FLAGS = new Set(['--force', '--rollback', '--force-rollback', '--break-lock', '--finish-uninstall']);
+    const MIGRATE_VALUE_FLAGS = new Set(['--token', '--uninstaller-dir', '--agy-bin', '--baseline']);
+    for (let i = 0; i < rest.length; i++) {
+      const token = rest[i];
+      if (MIGRATE_BOOL_FLAGS.has(token)) continue;
+      if (MIGRATE_VALUE_FLAGS.has(token)) {
+        if (i + 1 >= rest.length || typeof rest[i + 1] !== 'string' || rest[i + 1].startsWith('--')) {
+          console.error(`Missing value for ${token}`);
+          process.exit(1);
+        }
+        i += 1;
+        continue;
+      }
+      console.error(`Unknown flag for agb migrate: ${token}`);
+      process.exit(1);
+    }
     const { migrate, breakLock, finishUninstallCommand } = await import('../lib/migrate.mjs');
     const flagValue = (name) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : undefined; };
     const force = rest.includes('--force');

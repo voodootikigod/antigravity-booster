@@ -34,7 +34,7 @@ const GROUP_TITLES = {
   adlc: 'ADLC toolkit',
 };
 const ENV_SCAN_DIRS = ['lib', 'bin', 'mcp', 'hooks', 'sidecars', 'scripts'];
-const ENV_TOKEN = /\b(?:AGB|ADLC|ANTIGRAVITY)_[A-Z0-9_]+\b/g;
+const ENV_TOKEN = /\b(?:(?:AGB|ADLC|ANTIGRAVITY)_[A-Z0-9_]+|PLUGIN_ROOT|AGY_BIN)\b/g;
 
 class GenError extends Error {
   constructor(file, line, reason) {

@@ -842,3 +842,19 @@ test('handOverUninstall sets USERPROFILE alongside HOME on Windows so homedir() 
   assert.match(migrateSrc, /HOME:\s*home,\s*\.\.\.\(isWin\s*\?\s*\{\s*USERPROFILE:\s*home\s*\}\s*:\s*\{\}\)/);
 });
 
+test('treeSize excludes STAGE_COPY_EXCLUSIONS (.claude, .agents, maintainer-skills)', () => {
+  const d = mkdtempSync(join(tmpdir(), 'agb-treesize-'));
+  try {
+    mkdirSync(join(d, '.claude'), { recursive: true });
+    mkdirSync(join(d, '.agents'), { recursive: true });
+    mkdirSync(join(d, 'maintainer-skills'), { recursive: true });
+    writeFileSync(join(d, '.claude', 'big.bin'), 'x'.repeat(1024));
+    writeFileSync(join(d, '.agents', 'big.bin'), 'x'.repeat(1024));
+    writeFileSync(join(d, 'maintainer-skills', 'big.bin'), 'x'.repeat(1024));
+    writeFileSync(join(d, 'keep.txt'), 'hello');
+    assert.equal(treeSize(d), 5);
+  } finally {
+    rmSync(d, { recursive: true, force: true });
+  }
+});
+

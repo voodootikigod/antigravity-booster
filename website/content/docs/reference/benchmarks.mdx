@@ -272,12 +272,13 @@ Evaluates hazard interception across 300 adversarial failure modes (100 frozen r
 
 ## Live Mechanical Runtime Probes
 
-In addition to the *N* = 100 Monte Carlo distributions, every execution of `npm run eval` runs five live runtime verification probes directly against the repository's production enforcement modules ([`hooks/policy/evaluate.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/hooks/policy/evaluate.mjs), [`lib/migrate.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/lib/migrate.mjs), and [`scripts/stage-marketplace-plugin.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/scripts/stage-marketplace-plugin.mjs)):
+In addition to the *N* = 100 Monte Carlo distributions and the 5-pillar live subsystem benchmark suite (`evals/`), every execution of `npm run eval` (and `test/evals.test.mjs`) runs six live mechanical verification probes (`B1`–`B6`) directly against the repository's production enforcement modules ([`hooks/policy/evaluate.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/hooks/policy/evaluate.mjs), [`lib/migrate.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/lib/migrate.mjs), [`bin/node-launcher.sh`](https://github.com/voodootikigod/antigravity-booster/blob/main/bin/node-launcher.sh), and [`scripts/stage-marketplace-plugin.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/scripts/stage-marketplace-plugin.mjs)):
 
 | Runtime Probe | Target Module | Expected Invariant | Observed Verdict |
 | :--- | :--- | :--- | :--- |
-| **Frozen Rail Write Interception** | `evaluatePayload` (`hooks/policy/evaluate.mjs`) | Blocks `write_file` targeting `lib/lock.mjs` | `decision: "deny"` (`PASS`) |
-| **Trust-Root Tamper Interception** | `evaluatePayload` (`hooks/policy/evaluate.mjs`) | Blocks `write_file` targeting `.adlc/config.json` | `decision: "deny"` (`PASS`) |
-| **In-Scope Write Authorization** | `evaluatePayload` (`hooks/policy/evaluate.mjs`) | Permits `write_file` on in-scope ticket paths | `decision: "pass"` (`PASS`) |
-| **`agy 1.4.x` Validator Summary Parsing** | `parseValidateOutput` (`lib/migrate.mjs`) | Parses `skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1` | `{"skills":7,"agents":3,"rules":1,"hooks":1,"mcpServers":1}` (`PASS`) |
-| **Strict Marketplace Bundle Validation** | `validateStagedPluginStrict` (`scripts/stage-marketplace-plugin.mjs`) | Passes `agy plugin validate --strict --json` with 0 findings | `errors: 0, warnings: 0, notes: 0` (`PASS`) |
+| **`B1` — Frozen Rail Write Interception** | `evaluatePayload` (`hooks/policy/evaluate.mjs`) | Blocks `write_file` targeting `lib/lock.mjs` | `decision: "deny"` (`PASS`) |
+| **`B2` — Trust-Root Tamper Interception** | `evaluatePayload` (`hooks/policy/evaluate.mjs`) | Blocks `write_file` targeting `.adlc/config.json` | `decision: "deny"` (`PASS`) |
+| **`B3` — In-Scope Write Authorization** | `evaluatePayload` (`hooks/policy/evaluate.mjs`) | Permits `write_file` on in-scope ticket paths | `decision: "pass"` (`PASS`) |
+| **`B4` — `agy 1.4.x` Validator Summary Parsing** | `parseValidateOutput` (`lib/migrate.mjs`) | Parses `skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1` | `{"skills":7,"agents":3,"rules":1,"hooks":1,"mcpServers":1}` (`PASS`) |
+| **`B5` — Strict Marketplace Bundle Validation** | `validateStagedPluginStrict` (`scripts/stage-marketplace-plugin.mjs`) | Passes `agy plugin validate --strict --json` with 0 findings | `errors: 0, warnings: 0, notes: 0` (`PASS`) |
+| **`B6` — `node-launcher.sh` PATH Fast-Path** | `bin/node-launcher.sh` | Resolves ambient `PATH` Node `>= 22.19.0` without filesystem scan | `status: 0` (`PASS`) |

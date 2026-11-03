@@ -3,7 +3,7 @@ name: agb-bootstrap
 description: Install or refresh antigravity-booster's ADLC doctrine plugin, skills and the ~/.local/bin/agb terminal shim
 ---
 
-# /agb-bootstrap [--force-reinstall]
+# /agb-bootstrap [--force] [--force-reinstall]
 
 Installs the pinned `@adlc/antigravity` doctrine plugin from the vendored tarball, wires the ADLC skills into `~/.gemini/skills`, and installs the `~/.local/bin/agb` terminal shim that every other `/agb-*` command uses. It is idempotent: re-running it verifies and repairs the installation. `--force-reinstall` replaces an existing doctrine plugin or a modified shim.
 
@@ -12,7 +12,7 @@ Installs the pinned `@adlc/antigravity` doctrine plugin from the vendored tarbal
 If `~/.local/bin/agb` already exists, use your shell tool (`run_command`) to run it, passing the user's arguments through unchanged:
 
 ```sh
-~/.local/bin/agb bootstrap [--force-reinstall]
+~/.local/bin/agb bootstrap [--force] [--force-reinstall]
 ```
 
 Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user.

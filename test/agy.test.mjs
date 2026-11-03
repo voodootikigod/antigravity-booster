@@ -288,7 +288,7 @@ test('stageBuilderGeminiHome: on win32 copies directory entries (e.g. config/plu
   }
 });
 
-test('runAgy sandbox profiles: masks symlinked credentials on Linux bwrap, denies .adlc writes on macOS Seatbelt, and defaults agyBin to resolveAgyBinary(userHome)', () => {
+test('runAgy sandbox profiles: masks symlinked credentials on Linux bwrap, denies .adlc writes on macOS Seatbelt, and defaults agyBin to resolveAgyBinary(userHome)', async () => {
   const src = readFileSync(new URL('../lib/agy.mjs', import.meta.url), 'utf8');
   assert.match(src, /resolveAgyBinary\(userHome\)/);
   assert.match(src, /const st = lst\.isSymbolicLink\(\) \? statSync\(sFile\) : lst;/);
@@ -297,6 +297,32 @@ test('runAgy sandbox profiles: masks symlinked credentials on Linux bwrap, denie
   assert.match(src, /\(deny file-write\* \(subpath "\$\{escapedRealAllowedDir\}\/\.adlc"\)\)/);
   assert.match(src, /\(allow file-write\* \(subpath "\$\{escapedAllowedDir\}\/\.adlc\/leases"\)\)/);
   assert.match(src, /\(allow file-write\* \(subpath "\$\{escapedRealAllowedDir\}\/\.adlc\/leases"\)\)/);
+
+  // Behavioral test: calling runAgy with both `bin` and `AGB_AGY_BIN` omitted must resolve via userHome without TDZ ReferenceError
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agb-tdz-home-'));
+  const savedHome = process.env.AGB_HOME_DIR;
+  const savedAgyBin = process.env.AGB_AGY_BIN;
+  process.env.AGB_HOME_DIR = fakeHome;
+  delete process.env.AGB_AGY_BIN;
+  try {
+    const agyDir = join(fakeHome, '.local', 'bin');
+    mkdirSync(agyDir, { recursive: true });
+    const agyScript = join(agyDir, 'agy');
+    writeFileSync(agyScript, '#!/bin/sh\necho "tdz-ok"\n', { mode: 0o755 });
+    const res = await runAgy({
+      model: 'gemini-3-pro',
+      prompt: 'tdz check',
+      sandbox: false,
+    });
+    assert.equal(res.ok, true, res.error);
+    assert.match(res.output, /tdz-ok/);
+  } finally {
+    if (savedHome === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHome;
+    if (savedAgyBin === undefined) delete process.env.AGB_AGY_BIN;
+    else process.env.AGB_AGY_BIN = savedAgyBin;
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
 });
 
 

@@ -25,8 +25,8 @@ The lifecycle is described in [Run lifecycle](/docs/internals/run-lifecycle).
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Every ticket merged. |
+| 0 | Every ticket merged (`failed` is empty and `compromised` is null). |
 | 1 | The plan is invalid (errors printed to stderr) or an internal error occurred. |
-| 2 | At least one ticket failed (the report's `failed` map is not empty). |
+| 2 | At least one ticket failed (`failed` map is not empty) or `compromised` is set. |
 
 Evidence: [C10](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L125-L132).

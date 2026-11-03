@@ -312,10 +312,12 @@ test('sidecar: recovers from oversized lines without stalling', async () => {
     const res1 = await fetchP(`http://127.0.0.1:${port}/events?offset=0`);
     const json1 = JSON.parse(res1.data);
     assert.equal(json1.lines.length, 1);
-    assert.ok(json1.newOffset > 0, 'Offset should advance to skip oversized line');
+    assert.equal(json1.warning, 'Dropped oversized line');
+    assert.equal(json1.newOffset, Buffer.byteLength(huge, 'utf8'), 'Offset should advance past the entire oversized line on first poll');
 
     const res2 = await fetchP(`http://127.0.0.1:${port}/events?offset=${json1.newOffset}`);
     const json2 = JSON.parse(res2.data);
+    assert.equal(json2.warning, undefined, 'Second poll should not emit a spurious corrupt-JSON warning');
     // Eventually it should find the normal line
     const foundNormal = json2.lines.some(l => typeof l === 'string' && l.includes('"t": 1'));
     assert.ok(foundNormal, 'Should continue reading past oversized line');

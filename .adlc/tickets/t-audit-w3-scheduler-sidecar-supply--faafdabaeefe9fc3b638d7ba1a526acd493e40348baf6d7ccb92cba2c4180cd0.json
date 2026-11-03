@@ -1,0 +1,33 @@
+{
+  "body": "1. In `lib/scheduler.mjs`: include `...(activeRailsNow.rails ?? [])` in `cfRails` before `checkCounterFile()` at line 2068; replace raw `execFileSync('git', ['cat-file', '-e', ...])` at line 781 with `g(repo, 'cat-file', '-e', `${baseRefSha}:${p}`)`; also add `.git` to `test/scheduler.test.mjs` `initRepo` / verify fixture.\n2. In `lib/review.mjs`: remove raw `console.error('LENS ERRORS DETECTED:', ...)` at line 164.\n3. In `sidecars/app.js`: wrap `${data.warning}` in `${escapeHtml(data.warning)}` at line 71.\n4. In `sidecars/server.mjs`: scan forward in 64 KiB chunks when `lastNewline === -1` and `offset + toRead < stats.size` so `newOffset` advances past the entire oversized line on the first poll.\n5. In `scripts/stage-marketplace-plugin.mjs`: add `'commands'` to `MARKETPLACE_RUNTIME_PATHS`.\n6. In `scripts/check-bundle-externals.mjs`: add `'vendor/adlc/dist/watchdog.mjs'` to `DEFAULT_BUNDLES` and detect `process.(binding|_linkedBinding|dlopen)` in `scanSource()`.\n7. In `scripts/update-adlc-digests.mjs`, `.github/workflows/ci.yml`, and `.github/workflows/publish.yml`: reject `--write` + `--skip-registry`, check all 9 `VENDORED_PACKAGES` in `--skip-registry` mode, resolve Issue #136 in `ci.yml`, and enforce `plugin.json === package.json` version lockstep + `node website/scripts/gen-reference.mjs --check`.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-audit-w2b-active-rails-tmpdir"
+    }
+  ],
+  "id": "t-audit-w3-scheduler-sidecar-supply",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "lib/scheduler.mjs",
+    "lib/review.mjs",
+    "sidecars/app.js",
+    "sidecars/server.mjs",
+    "scripts/stage-marketplace-plugin.mjs",
+    "scripts/check-bundle-externals.mjs",
+    "scripts/update-adlc-digests.mjs",
+    ".github/workflows/publish.yml",
+    ".github/workflows/ci.yml",
+    "test/scheduler.test.mjs",
+    "test/review.test.mjs",
+    "test/sidecar.test.mjs",
+    "test/plugin-manifest.test.mjs",
+    "test/check-bundle-externals.test.mjs",
+    "test/update-adlc-digests.test.mjs"
+  ],
+  "title": "Fix scheduler counter-file rails & git cat-file wrapper, review console noise, sidecar warning XSS & oversized line skip, marketplace commands staging, bundle externals watchdog, and CI/digest checks"
+}

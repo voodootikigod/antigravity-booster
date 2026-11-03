@@ -27,9 +27,9 @@ test('findExternalSpecifiers: catches static, side-effect, re-export, dynamic an
   assert.deepEqual(findExternalSpecifiers(src), ['@adlc/core', '@adlc/tickets', 'left-pad', 'minimatch', 'side-effect-pkg']);
 });
 
-test('DEFAULT_BUNDLES covers all four shipped bundles (incl. vendored adlc)', async () => {
+test('DEFAULT_BUNDLES covers all five shipped bundles (incl. vendored adlc and watchdog)', async () => {
   const { DEFAULT_BUNDLES } = await import('../scripts/check-bundle-externals.mjs');
-  assert.deepEqual(DEFAULT_BUNDLES, ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs']);
+  assert.deepEqual(DEFAULT_BUNDLES, ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs', 'vendor/adlc/dist/watchdog.mjs']);
 });
 
 test('findExternalSpecifiers: catches template literals and dynamic/computed call expressions', () => {
@@ -86,6 +86,19 @@ test('findExternalSpecifiers: catches esbuild __require and __require.resolve he
     'const ok2 = __require.resolve("node:path");',
   ].join('\n');
   assert.deepEqual(findExternalSpecifiers(src), ['external-resolve-via-helper', 'external-via-esbuild-helper']);
+});
+
+test('findExternalSpecifiers: catches process.binding, process._linkedBinding, and process.dlopen', () => {
+  const src = [
+    'const b1 = process.binding("spawn_sync");',
+    'const b2 = process._linkedBinding("uv");',
+    'process.dlopen(mod, "/tmp/addon.node");',
+  ].join('\n');
+  assert.deepEqual(findExternalSpecifiers(src), [
+    'process.binding:mod, "/tmp/addon.node',
+    'process.binding:spawn_sync',
+    'process.binding:uv',
+  ]);
 });
 
 

@@ -112,6 +112,14 @@ jobs:
             echo "$STATUS" >&2
             exit 1
           fi
+          node scripts/update-adlc-digests.mjs --skip-registry
+          node website/scripts/gen-reference.mjs --check
+          PKG_VER="$(node -p "require('./package.json').version")"
+          PLUGIN_VER="$(node -p "require('./plugin.json').version")"
+          if [ "$PKG_VER" != "$PLUGIN_VER" ]; then
+            echo "error: package.json ($PKG_VER) and plugin.json ($PLUGIN_VER) versions are out of sync" >&2
+            exit 1
+          fi
 
       - name: Shellcheck POSIX launchers
         run: shellcheck -s sh bin/node-launcher.sh bin/hook-runner.sh

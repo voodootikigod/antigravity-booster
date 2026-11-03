@@ -94,6 +94,10 @@ export function renderBlock(d) {
 function main(argv) {
   const write = argv.includes('--write');
   const offline = argv.includes('--skip-registry');
+  if (write && offline) {
+    process.stderr.write('update-adlc-digests: --write cannot be combined with --skip-registry\n');
+    return 1;
+  }
   if (!existsSync(join(ROOT, 'vendor', 'adlc'))) {
     process.stderr.write('update-adlc-digests: vendor/adlc is missing; run npm run vendor:bundle first\n');
     return 1;
@@ -112,10 +116,21 @@ function main(argv) {
   const lockfilePath = join(ROOT, 'package-lock.json');
   if (existsSync(lockfilePath)) {
     const lock = JSON.parse(readFileSync(lockfilePath, 'utf8'));
-    const coreVersion = lock.packages?.['node_modules/@adlc/core']?.version ?? lock.dependencies?.['@adlc/core']?.version;
-    if (coreVersion && digests.version !== coreVersion) {
-      process.stderr.write(`update-adlc-digests: vendored version (${digests.version}) does not match package-lock @adlc/core version (${coreVersion})\n`);
-      return 1;
+    for (const pkg of VENDORED_PACKAGES) {
+      const lockEntry = lock.packages?.[`node_modules/${pkg}`] ?? lock.dependencies?.[pkg];
+      const pkgVersion = lockEntry?.version;
+      if (pkgVersion && digests.version !== pkgVersion) {
+        process.stderr.write(`update-adlc-digests: vendored version (${digests.version}) does not match package-lock ${pkg} version (${pkgVersion})\n`);
+        return 1;
+      }
+      const localPkgJson = join(ROOT, 'node_modules', pkg, 'package.json');
+      if (existsSync(localPkgJson)) {
+        const installedVersion = JSON.parse(readFileSync(localPkgJson, 'utf8')).version;
+        if (pkgVersion && installedVersion !== pkgVersion) {
+          process.stderr.write(`update-adlc-digests: installed ${pkg}@${installedVersion} does not match package-lock (${pkgVersion})\n`);
+          return 1;
+        }
+      }
     }
   }
   const source = readFileSync(BRIDGE, 'utf8');

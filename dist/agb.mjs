@@ -1158,7 +1158,7 @@ function writeJsonAtomic(file, value, mode = 420) {
 function treeSize(dir) {
   let total = 0;
   for (const e of readdirSync14(dir, { withFileTypes: true })) {
-    if (INSTALL_COPY_EXCLUSIONS.includes(e.name)) continue;
+    if (STAGE_COPY_EXCLUSIONS.includes(e.name)) continue;
     const full = join34(dir, e.name);
     if (e.isDirectory()) total += treeSize(full);
     else if (e.isFile()) total += statSync9(full).size;
@@ -1316,11 +1316,11 @@ function step3Snapshot(ctx, state) {
   for (const name of PLUGIN_NAMES) {
     const dir = join34(p.plugins, name);
     if (existsSync31(dir) && treeSize(dir) > SNAPSHOT_SIZE_CAP_BYTES) {
-      throw new MigrateError(`staged plugin ${dir} exceeds ${SNAPSHOT_SIZE_CAP_BYTES / 1024 / 1024} MB after excluding ${INSTALL_COPY_EXCLUSIONS.join(", ")}; remove large files from it (or reinstall it cleanly) and re-run agb migrate`);
+      throw new MigrateError(`staged plugin ${dir} exceeds ${SNAPSHOT_SIZE_CAP_BYTES / 1024 / 1024} MB after excluding ${STAGE_COPY_EXCLUSIONS.join(", ")}; remove large files from it (or reinstall it cleanly) and re-run agb migrate`);
     }
   }
   for (const name of PLUGIN_NAMES) {
-    const present = INSTALL_COPY_EXCLUSIONS.filter((x) => existsSync31(join34(p.plugins, name, x)));
+    const present = STAGE_COPY_EXCLUSIONS.filter((x) => existsSync31(join34(p.plugins, name, x)));
     if (present.length) {
       ctx.warn(`warning: ${join34(p.plugins, name)} contains ${present.join(", ")}; these are not snapshotted (spec D13) and will not come back on rollback. Copy them elsewhere first if you need them.`);
     }
@@ -1878,10 +1878,28 @@ function serveSidecar(repoPath, port = 3333, token = null) {
             }
             if (lastNewline === -1) {
               if (offset + toRead < stats.size) {
+                let scanPos = offset + toRead;
+                const scanBuf = Buffer.alloc(65536);
+                while (scanPos < stats.size) {
+                  const n = readSync4(fd, scanBuf, 0, Math.min(scanBuf.length, stats.size - scanPos), scanPos);
+                  if (n <= 0) break;
+                  let nl = -1;
+                  for (let j = 0; j < n; j++) {
+                    if (scanBuf[j] === 10) {
+                      nl = j;
+                      break;
+                    }
+                  }
+                  if (nl !== -1) {
+                    scanPos += nl + 1;
+                    break;
+                  }
+                  scanPos += n;
+                }
                 res.writeHead(200, { "Content-Type": "application/json" });
                 return res.end(JSON.stringify({
                   lines: [buffer.toString("utf8", 0, toRead)],
-                  newOffset: offset + toRead,
+                  newOffset: scanPos,
                   runId,
                   repo: repoPath,
                   reset: isReset,
@@ -7812,11 +7830,11 @@ function compareModelCatalog(live, known) {
     unrecognized: live.filter((m) => !knownSet.has(m))
   };
 }
-async function checkModelCatalog({ env = process.env, home = env.HOME || homedir3() } = {}) {
+async function checkModelCatalog({ env = process.env, home = env.HOME || homedir3(), modelsPromise } = {}) {
   const name = "Model catalog";
   let live;
   try {
-    live = parseAgyModels(await agyModelsStdout({ env, home }));
+    live = parseAgyModels(await (modelsPromise ?? agyModelsStdout({ env, home })));
   } catch (err) {
     return { name, level: "warn", detail: `could not list models (${String(err?.message ?? err).split("\n")[0].slice(0, 120)})`, fix: "Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor." };
   }
@@ -7833,10 +7851,10 @@ async function checkModelCatalog({ env = process.env, home = env.HOME || homedir
   if (retired.length > 0) parts.push(`retired: ${retired.join(", ")}`);
   return { name, level: "warn", detail: parts.join("; "), fix: "Update MODELS in lib/models.mjs to match `agy models`." };
 }
-async function checkAgyAuth({ env = process.env, home = env.HOME || homedir3() } = {}) {
+async function checkAgyAuth({ env = process.env, home = env.HOME || homedir3(), modelsPromise } = {}) {
   try {
-    const stdout2 = await agyModelsStdout({ env, home });
-    if (stdout2.trim().length > 0) {
+    const stdout2 = await (modelsPromise ?? agyModelsStdout({ env, home }));
+    if (parseAgyModels(stdout2).length > 0) {
       return { name: "agy Auth", level: "pass", detail: "authenticated", fix: null };
     }
     return { name: "agy Auth", level: "fail", detail: "no models returned", fix: "Run `agy login` to authenticate." };
@@ -9020,11 +9038,17 @@ async function checkTicketStore({ cwd = process.cwd(), env = process.env, repo =
   return { name: "Ticket Store", level: "pass", detail, fix: null };
 }
 async function runDoctor(opts = {}) {
+  const env = opts.env ?? process.env;
+  const home = opts.home ?? (env.HOME || homedir3());
+  const modelsPromise = agyModelsStdout({ env, home });
+  modelsPromise.catch(() => {
+  });
+  const sharedOpts = { ...opts, modelsPromise };
   const checks = [
     checkNodeVersion(opts),
     checkAgyBinary(opts),
-    checkAgyAuth(opts),
-    checkModelCatalog(opts),
+    checkAgyAuth(sharedOpts),
+    checkModelCatalog(sharedOpts),
     checkPlugin(opts),
     checkAdlcBinary(opts),
     checkSandbox(opts),
@@ -10878,6 +10902,7 @@ async function runAgy({
 }) {
   if (!model || !prompt) throw new Error("runAgy: model and prompt are required");
   const resolvedModel = resolveModelSlug(model);
+  const userHome = process.env.AGB_HOME_DIR || homedir4();
   const agyBin = bin ?? process.env.AGB_AGY_BIN ?? (resolveAgyBinary(userHome) || "agy");
   const effectiveTimeout = outputFormat === "stream-json" && (!timeout || timeout === "0") ? "0" : timeout;
   const args = ["--print", prompt, "--print-timeout", effectiveTimeout, "--model", resolvedModel];
@@ -10895,7 +10920,6 @@ async function runAgy({
     args.push("--add-dir", cwd ?? ".");
   }
   const isBuilder = role === "builder";
-  const userHome = process.env.AGB_HOME_DIR || homedir4();
   const effectiveEnv = env ? { ...process.env, ...env } : process.env;
   let effectiveSandbox = sandbox;
   let verifiedBypass = null;
@@ -15297,7 +15321,7 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
       const isDeletedOrSrc = rec.status === "D" || (rec.status === "R" || rec.status === "C") && p === rec.src;
       if (isDeletedOrSrc) {
         try {
-          execFileSync11("git", ["cat-file", "-e", `${baseRefSha}:${p}`], { cwd: repo });
+          g(repo, "cat-file", "-e", `${baseRefSha}:${p}`);
         } catch {
           return { ok: false, kind: "scope_violation", error: `Deleted path did not exist in baseline: ${p}` };
         }
@@ -16426,7 +16450,7 @@ ${g.output}`;
                       strikeError = `prosecution block (findings):
 ${JSON.stringify(blocking, null, 2)}`;
                       status.ticket(t.id, { phase: "fixing", detail: `${blocking.length} findings` });
-                      const cfRails = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate?.storeRails ?? []])];
+                      const cfRails = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate?.storeRails ?? [], ...activeRailsNow.rails ?? []])];
                       const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, rails: cfRails, adlcBin: runAdlcBin });
                       let cfFailureReason = null;
                       if (cf.ok && cf.applied) {
@@ -17074,9 +17098,6 @@ async function reviewFleet({
       })
     );
     lastErrors = results.filter((r) => r.error).map((r) => ({ lens: r.lens, model: r.model, error: r.error }));
-    if (lastErrors.length > 0) {
-      console.error("LENS ERRORS DETECTED:", JSON.stringify(lastErrors, null, 2));
-    }
     const fresh = results.flatMap((r) => r.findings).filter((f) => !seen.has(key(f)));
     for (const f of fresh) seen.set(key(f), f);
     log2(`round ${rounds}: ${fresh.length} new finding(s), ${seen.size} total, ${lastErrors.length} lens error(s)`);
@@ -17313,7 +17334,8 @@ function bootstrap({
       if (retiredStat && retiredStat.isSymbolicLink()) {
         try {
           const target = resolve16(dirname20(retiredDst), readlinkSync3(retiredDst));
-          if (target === resolve16(join32(skillsSrc, retired))) {
+          const normalizedTarget = target.replace(/\\/g, "/");
+          if (target === resolve16(join32(skillsSrc, retired)) || !existsSync29(retiredDst) && normalizedTarget.endsWith(`/antigravity-booster/skills/${retired}`)) {
             rmSync13(retiredDst, { recursive: true, force: true });
             console.log(`removed stale internal skill symlink: ${retired}`);
           }
@@ -17423,12 +17445,12 @@ var COMMANDS = {
     flags: "--out <file> --force --no-coldstart --no-parallax --no-premortem"
   },
   preflight: { args: "<plan.json>", desc: "plan-time gates: scope overlap + coldstart", flags: "--no-coldstart" },
-  doctor: { args: "", desc: "verify your environment and tools" },
+  doctor: { args: "[repo]", desc: "verify your environment and tools" },
   brains: { args: "", desc: "list Antigravity plan artifacts (GUI + agy sessions)" },
   "import-brain": { args: "<id> <repo>", desc: "DEPRECATED: raw one-shot conversion (use agb plan)" },
   status: { args: "[repo]", desc: "render the live dashboard for a repo's current run", flags: "--watch [--interval <ms>]" },
   sidecar: { args: "[repo]", desc: "launch the HTTP server for the Antigravity Sidecar UI", flags: "[--port <port>]" },
-  probe: { args: "[widths]", desc: "measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md" },
+  probe: { args: "[widths] [model]", desc: "measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md" },
   validate: { args: "<plan>", desc: "validate a plan file without running anything" },
   bootstrap: { args: "[--force] [--force-reinstall]", desc: "wire ADLC skills into ~/.gemini/skills (aliases: setup, install)" },
   migrate: {
@@ -17647,7 +17669,8 @@ try {
     console.error("The TUI has been removed. Use the native sidecar dashboard instead (`agb sidecar`).");
     process.exit(1);
   } else if (cmd === "doctor") {
-    process.exitCode = await runDoctor();
+    const repoArg = rest.find((a) => !a.startsWith("-"));
+    process.exitCode = await runDoctor(repoArg ? { cwd: resolve18(repoArg) } : {});
   } else if (cmd === "validate") {
     const { errors } = loadPlan(rest[0] ?? "plan.json");
     if (errors.length) {
@@ -17660,6 +17683,22 @@ try {
     const forceReinstall = rest.includes("--force-reinstall");
     bootstrap({ force, forceReinstall });
   } else if (cmd === "migrate") {
+    const MIGRATE_BOOL_FLAGS = /* @__PURE__ */ new Set(["--force", "--rollback", "--force-rollback", "--break-lock", "--finish-uninstall"]);
+    const MIGRATE_VALUE_FLAGS = /* @__PURE__ */ new Set(["--token", "--uninstaller-dir", "--agy-bin", "--baseline"]);
+    for (let i = 0; i < rest.length; i++) {
+      const token = rest[i];
+      if (MIGRATE_BOOL_FLAGS.has(token)) continue;
+      if (MIGRATE_VALUE_FLAGS.has(token)) {
+        if (i + 1 >= rest.length || typeof rest[i + 1] !== "string" || rest[i + 1].startsWith("--")) {
+          console.error(`Missing value for ${token}`);
+          process.exit(1);
+        }
+        i += 1;
+        continue;
+      }
+      console.error(`Unknown flag for agb migrate: ${token}`);
+      process.exit(1);
+    }
     const { migrate: migrate2, breakLock: breakLock2, finishUninstallCommand: finishUninstallCommand2 } = await Promise.resolve().then(() => (init_migrate(), migrate_exports));
     const flagValue = (name) => {
       const i = rest.indexOf(name);

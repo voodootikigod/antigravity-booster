@@ -1,10 +1,10 @@
 | Command | Usage | Description |
 | --- | --- | --- |
-| /agb-bootstrap | /agb-bootstrap [--force-reinstall] | Install or refresh antigravity-booster's ADLC doctrine plugin, skills and the ~/.local/bin/agb terminal shim |
+| /agb-bootstrap | /agb-bootstrap [--force] [--force-reinstall] | Install or refresh antigravity-booster's ADLC doctrine plugin, skills and the ~/.local/bin/agb terminal shim |
 | /agb-doctor | /agb-doctor | Verify your environment and tools |
 | /agb-migrate | /agb-migrate [--rollback] [--force-rollback] [--force] [--break-lock] | Migrate from the npm-global/legacy install to the native agy plugin, or roll back |
-| /agb-plan | /agb-plan &lt;id &#124; spec.md&gt; &lt;repo-path&gt; [--out &lt;file&gt;] [--force] [--no-coldstart] [--no-parallax] [--no-premortem] | Compile an Antigravity brain plan or spec file into plan.json |
-| /agb-review | /agb-review [repo-path] [ref] | Read-only lens fleet over a diff, loop-until-dry |
-| /agb-run | /agb-run &lt;plan.json&gt; | Execute a ticket DAG (build, gate, prosecute, merge) |
+| /agb-plan | /agb-plan &lt;id &#124; spec.md&gt; &lt;repo-path&gt; [--out &lt;file&gt;] [--force] [--no-coldstart] [--no-parallax] [--no-premortem] [--project &lt;name&gt;] | Compile an Antigravity brain plan or spec file into plan.json |
+| /agb-review | /agb-review [repo-path] [ref] [--project &lt;name&gt;] | Read-only lens fleet over a diff, loop-until-dry |
+| /agb-run | /agb-run &lt;plan.json&gt; [--project &lt;name&gt;] | Execute a ticket DAG (build, gate, prosecute, merge) |
 | /agb-sidecar | /agb-sidecar [repo-path] [--port &lt;port&gt;] | Launch the HTTP server for the Antigravity Sidecar UI |
 | /agb | /agb &lt;description&gt; | Route any natural-language task description or subcommand (/agb &lt;description&gt;) to the right agb workflow (plan, run, review, doctor, bootstrap, migrate, sidecar) |

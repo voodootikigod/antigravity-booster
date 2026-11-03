@@ -47,7 +47,8 @@ agy plugin install https://github.com/voodootikigod/antigravity-booster.git
 <Tab value="Custom Marketplace Feed">
 
 ```sh
-agy plugin install antigravity-booster@https://www.agybooster.com/marketplace.json
+npm run plugin:stage-marketplace -- /tmp/agb-marketplace
+agy plugin install antigravity-booster@/tmp/agb-marketplace/marketplace.json
 ```
 
 </Tab>

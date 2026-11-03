@@ -1,0 +1,31 @@
+{
+  "body": "1. Align `commands/agb.md` and `skills/agb/SKILL.md` with `bin/agb.mjs` (`migrate [--rollback] [--force-rollback] [--force] [--break-lock]`, `sidecar [repo-path] [--port <port>]` without `--open`, `pool drain [repo-path]`, `import-brain <id-or-prefix> <repo-path>`, `bootstrap [--force] [--force-reinstall]`, plus `brains` and `sweep` rows in `commands/agb.md`).\n2. Wire optional `[repo]` on `agb doctor [repo]` in `bin/agb.mjs`, update `COMMANDS.probe.args = '[widths] [model]'`, validate `agb migrate` flags by index (consuming values for `--token`, `--uninstaller-dir`, `--agy-bin`, `--baseline` and failing closed on unknown flags), and add `[--force]` to `commands/agb-bootstrap.md`.\n3. In `mcp/server.mjs`, validate `targetCwd` is an existing directory (`-32602` on error), resolve `agb_plan` `--out` against `targetCwd`, fail closed in `resolveAgbEntry` when `bundled === true`, and handle `ping`.\n4. In `lib/doctor.mjs`, require `parseAgyModels(stdout).length > 0` in `checkAgyAuth` and share `modelsPromise` in `runDoctor()`; in `lib/bootstrap.mjs`, unlink dangling retired maintainer-skill symlinks pointing to `/antigravity-booster/skills/<retired>`; in `lib/migrate.mjs`, check `STAGE_COPY_EXCLUSIONS` in `treeSize()` and `step3Snapshot()`.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-audit-w0-agy-tdz"
+    }
+  ],
+  "id": "t-audit-w1-cli-mcp-install",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "hooks/**"
+  ],
+  "scope": [
+    "bin/agb.mjs",
+    "commands/agb.md",
+    "commands/agb-bootstrap.md",
+    "skills/agb/SKILL.md",
+    "mcp/server.mjs",
+    "lib/doctor.mjs",
+    "lib/bootstrap.mjs",
+    "lib/migrate.mjs",
+    "test/cli.test.mjs",
+    "test/doctor.test.mjs",
+    "test/migrate-rollback.test.mjs",
+    "test/plugin-paths.test.mjs"
+  ],
+  "title": "Align /agb router, CLI migrate flag validation, MCP server targetCwd & ping, and doctor/install hygiene"
+}

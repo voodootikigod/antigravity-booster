@@ -26,6 +26,9 @@ export const MARKETPLACE_RUNTIME_PATHS = [
   'assets',
   'rules',
   'agents',
+  // Note: 'commands' is intentionally omitted from the staged Marketplace bundle
+  // because all 8 slash commands ship as native skills under skills/<name>/SKILL.md,
+  // and `agy plugin validate --strict` warns on a top-level `commands/` directory.
   'hooks',
   'mcp',
   'sidecars',

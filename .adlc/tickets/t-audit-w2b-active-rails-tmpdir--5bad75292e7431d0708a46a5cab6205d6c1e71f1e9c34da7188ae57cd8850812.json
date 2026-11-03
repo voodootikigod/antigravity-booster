@@ -1,0 +1,21 @@
+{
+  "body": "Skip OS top-level temp roots (`tmpdir()`, `/tmp`, `/private/tmp`, `/var/tmp`) in `lib/active-rails.mjs` (`findAdlcRoot`) and `bin/hook-runner.sh` (`has_adlc_ancestor`) just like `$HOME` and `/` so a stray `/tmp/.adlc` session ledger never hijacks projects or test fixtures under `/tmp`.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-audit-w2-policy-guard"
+    }
+  ],
+  "id": "t-audit-w2b-active-rails-tmpdir",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs"
+  ],
+  "scope": [
+    "lib/active-rails.mjs",
+    "test/active-rails.test.mjs"
+  ],
+  "title": "Skip OS temp roots (/tmp, tmpdir) in findAdlcRoot and has_adlc_ancestor"
+}

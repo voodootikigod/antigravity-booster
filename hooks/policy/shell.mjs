@@ -180,7 +180,11 @@ function isStage2(sub, cwd, ctx) {
 function isTestCommand(sub) {
   if (sub.dynamic || sub.assignments.length > 0 || sub.redirects.length > 0) return false;
   const [cmd, a1, a2] = sub.argv;
-  if (cmd === 'npm' && a1 === 'test') return sub.argv.length === 2 || a2 === '--';
+  if (cmd === 'npm' && a1 === 'test') {
+    if (sub.argv.length === 2) return true;
+    if (a2 !== '--') return false;
+    return sub.argv.slice(3).every((t) => !t.startsWith('-') || TEST_FLAG_OK.test(t));
+  }
   if (cmd === 'npm' && a1 === 'run' && sub.argv.length === 3) return a2 === 'test' || /^test:[\w.:-]+$/.test(a2);
   if (cmd !== 'node' || a1 !== '--test') return false;
   // Only flags that cannot write files (e.g. not --test-reporter-destination; P5 round 3 W2).
@@ -345,7 +349,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd =
     }
     const repo = ctx.repoAt(r.real);
     repos.push(repo);
-    if (!repo.adlc || stage1 || dirChange) continue;
+    if (!repo.adlc || stage1 || (dirChange && !writeTargets.has(token))) continue;
     if (!repo.store.ok) return { verdict: deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified'), repos };
     const rel = repoRelative(r.real, repo.root);
     if (rel === null || rel === '') continue; // repo root: handled by the destructive-root check
@@ -414,8 +418,22 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   const unwrapped = unwrap(rawSub.argv);
   const sub = { ...rawSub, argv: unwrapped.argv, assignments: [...rawSub.assignments, ...unwrapped.assignments] };
   const argv = sub.argv;
-  if (argv.length === 0) return PASS;
   const cwdRepo = ctx.repoAt(cwd);
+  if (argv.length === 0) {
+    if (sub.redirects.length > 0) {
+      const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1: false, shim: false, dirChange: false, verbs: {}, testCmd: false });
+      if (targetVerdict.decision === 'deny') return targetVerdict;
+      const contextRepos = [cwdRepo, ...ctx.workspacePaths.map((w) => ctx.repoAt(w)), ...repos];
+      return mostRestrictive([
+        targetVerdict,
+        stage5(ctx, contextRepos, 'Shell redirection without command in an active-rail ADLC repository requires operator confirmation'),
+      ]);
+    }
+    if (rawSub.argv.length > 0 || sub.dynamic) {
+      return stage5(ctx, [cwdRepo, ...ctx.workspacePaths.map((w) => ctx.repoAt(w))], 'Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation');
+    }
+    return PASS;
+  }
 
   // Inline scripts are classified like the outer command line (P5 round 2).
   const inline = inlineScript(argv);
@@ -491,13 +509,15 @@ function classifyLine(line, cwd, ctx, depth) {
       continue;
     }
     if (setsCdpath(sub)) cdpath = true;
-    const argv = effectiveArgv(sub.argv);
+    const unwrapped = unwrap(sub.argv);
+    const argv = unwrapped.argv;
     if (DIR_CHANGE.has(argv[0])) {
       const target = dirChangeTarget(sub, current, ctx, cdpath);
       const targetReal = target !== null ? physicalResolve(target, current, ctx.platform) : null;
       const wsReals = ctx.workspaceRealPaths ?? ctx.workspacePaths.map((w) => physicalResolve(w, '/', ctx.platform) ?? w);
       const intoWorkspace = targetReal !== null && wsReals.some((wReal) => isWithin(targetReal, wReal, ctx.platform));
-      if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx, depth));
+      const cleanCd = sub.redirects.length === 0 && sub.assignments.length === 0 && unwrapped.assignments.length === 0;
+      if (!(subs.length > 1 && intoWorkspace && cleanCd)) verdicts.push(classifySubcommand(sub, current, ctx, depth));
       current = targetReal;
       continue;
     }
