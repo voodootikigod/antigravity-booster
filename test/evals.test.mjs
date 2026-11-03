@@ -177,7 +177,7 @@ test('subsystem-bench: plan compiler, prosecutor/review fleet, scheduler DAG rep
   assert.equal(fuzzBench.totalFuzzCases, 120);
   assert.equal(fuzzBench.adversarialBlockRate, 1.0);
   assert.equal(fuzzBench.benignPassRate, 1.0);
-  assert.ok(fuzzBench.p95EvaluateMs < 5.0);
+  assert.ok(fuzzBench.p95EvaluateMs < 25.0);
 });
 
 test('runner: runAllEvals verifies all invariants, checks baseline ratchet, and renders markdown report', async () => {

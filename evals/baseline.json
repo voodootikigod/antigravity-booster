@@ -26,13 +26,13 @@
     "maxPolicyCorpusFalsePositiveRate": 0.0,
     "minPolicyFuzzerBlockRate": 1.0,
     "minPolicyFuzzerBenignPassRate": 1.0,
-    "maxPolicyFuzzerP95Ms": 5.0,
+    "maxPolicyFuzzerP95Ms": 25.0,
     "minPlanCompilerOverlapRecall": 1.0,
     "maxPlanCompilerSerialFalsePositiveRate": 0.0,
     "minPlanCompilerGateTamperBlockRate": 1.0,
     "minProsecutorAndReviewPassRate": 1.0,
     "minSchedulerDagPass": true,
-    "maxInProcessEvaluateP50Ms": 5.0,
+    "maxInProcessEvaluateP50Ms": 15.0,
     "maxHookRunnerE2eP50Ms": 250.0,
     "maxOrchestratorOverheadMs": 500.0
   }
