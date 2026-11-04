@@ -1,0 +1,30 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-04T12:51:00.063Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "ffe6da21ef95be435bb855a97ab7e05857ec422538183dbc92cb7fbc45f14aef",
+    "ticketHash": "6f94a78924f304aa9b85fc97b3973733f41d12ceb76a49a1910644886ced5077",
+    "version": 1
+  },
+  "body": "Fix the missing website favicon by adding `website/app/icon.svg` (standalone Flight Director's Console `AgbMark` vector icon), `website/app/apple-icon.tsx` (`180x180` PNG Apple Touch Icon via `next/og`), `website/app/favicon.ico` (`32x32` ICO for legacy `/favicon.ico` requests), and root `metadata` in `website/app/layout.tsx`.",
+  "completed": true,
+  "edges": [],
+  "id": "t-website-favicon",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "hooks/policy/**",
+    "mcp/server.mjs"
+  ],
+  "scope": [
+    "website/app/icon.svg",
+    "website/app/apple-icon.tsx",
+    "website/app/favicon.ico",
+    "website/app/layout.tsx",
+    "website/scripts/check-site.mjs",
+    "website/scripts/test/check-site.test.mjs"
+  ],
+  "title": "Add website favicon, Apple touch icon, and root metadata"
+}

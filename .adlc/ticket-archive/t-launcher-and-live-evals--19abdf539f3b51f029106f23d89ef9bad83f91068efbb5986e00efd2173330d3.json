@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-04T12:50:59.674Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "43572c95a35c7e4fea063ba8a97cdd814290577dc91b23c72d3199bac555d12c",
+    "ticketHash": "77df0fdd325972c5b329b41808a9eb8b0248e137e3c8f411220cb0828eea7855",
+    "version": 1
+  },
   "body": "1. Optimize bin/node-launcher.sh with a POSIX-safe resolve_full_path (eliminating dirname/basename subshell forks and lazily caching REAL_HOME/REAL_USER_HOME) and a strict numeric C++ node -v fast-path (with immediate reject on < 22.19 and fallback to node -e on unparseable output).\n2. Make runLiveMechanicalProbes in evals/runner.mjs self-contained using a hermetic ADLC fixture via writeAdlcTickets and AGB_WORKER_TICKET, plus an explicit out-of-scope denial probe.\n3. Add evals/live-bench.mjs with 3 deterministic live runtime evaluations (40-vector policy corpus, hook latency breakdown, orchestrator overhead) and comprehensive tests in test/evals.test.mjs and test/node-launcher.test.mjs.\n\nAcceptance Criteria:\n- shellcheck -s sh bin/node-launcher.sh bin/hook-runner.sh exits 0.\n- node --test test/node-launcher.test.mjs test/evals.test.mjs exits 0.\n- node evals/runner.mjs --write-report docs/benchmarks/marketplace-eval-report.md exits 0.\n- npm test && npm run coverage:check && npm run plugin:validate exits 0.",
+  "completed": true,
   "edges": [],
   "id": "t-launcher-and-live-evals",
   "rails": [
