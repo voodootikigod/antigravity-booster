@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-05T15:27:24.448Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b573215ba5675b27d7f4b8e2cf62c6a63e54487a656db52e5f4735c6c1e50835",
+    "ticketHash": "ec48d5598b6bea5f53fefb28498dcf9fd71cc700edc03088a97b4cb1550fb782",
+    "version": 1
+  },
   "body": "Hoist `const userHome = process.env.AGB_HOME_DIR || homedir();` above `const agyBin = ...` in `lib/agy.mjs` (line 251) so calling `runAgy()` with `bin` omitted and `process.env.AGB_AGY_BIN` unset does not throw a TDZ `ReferenceError`. Add a behavioral regression test in `test/agy.test.mjs` verifying `runAgy()` resolves `agy` via `resolveAgyBinary(userHome)` when both `bin` and `AGB_AGY_BIN` are omitted.",
   "completed": true,
   "edges": [],

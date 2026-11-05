@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-05T15:27:23.323Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "54cae0af5cee763d415ceabb4a8bcd52685b5cb11e21670cf9bd584d602e4d15",
+    "ticketHash": "9dd9a6359414c06478ef96ffb84f29f2bfe1abda7f39e2e1d9da98411e377cb8",
+    "version": 1
+  },
   "body": "Skip OS top-level temp roots (`tmpdir()`, `/tmp`, `/private/tmp`, `/var/tmp`) in `lib/active-rails.mjs` (`findAdlcRoot`) and `bin/hook-runner.sh` (`has_adlc_ancestor`) just like `$HOME` and `/` so a stray `/tmp/.adlc` session ledger never hijacks projects or test fixtures under `/tmp`.",
   "completed": true,
   "edges": [
