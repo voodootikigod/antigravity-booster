@@ -5,6 +5,11 @@ import { dirname, join, resolve, isAbsolute } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const IS_MAIN = process.argv[1] && (
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url) ||
+  process.argv[1].endsWith('/mcp/server.mjs') ||
+  process.argv[1].endsWith('/dist/mcp-server.mjs')
+);
 
 const activeProcesses = new Map();
 const cancelledRequests = new Set();
@@ -31,7 +36,7 @@ const IS_BUNDLED = typeof __AGB_BUNDLED__ !== 'undefined' && __AGB_BUNDLED__ ===
 
 export function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED) {
   const candidate = bundled ? join(dir, 'agb.mjs') : join(dir, '..', 'bin', 'agb.mjs');
-  if (existsSync(candidate)) return { cmd: process.execPath, args: [candidate] };
+  if (bundled || existsSync(candidate)) return { cmd: process.execPath, args: [candidate] };
   return { cmd: 'agb', args: [] };
 }
 
@@ -123,40 +128,43 @@ const TOOLS = [
 ];
 
 // No `output` stream: readline must never echo anything onto stdout.
-const rl = readline.createInterface({
-  input: process.stdin,
-  terminal: false
-});
+if (IS_MAIN) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    terminal: false
+  });
 
-rl.on('line', async (line) => {
-  if (!line.trim()) return;
-  try {
-    const request = JSON.parse(line);
-    if (request.jsonrpc !== '2.0') {
-      sendError(request.id, -32600, 'Invalid Request');
-      return;
+  rl.on('line', async (line) => {
+    if (!line.trim()) return;
+    try {
+      const request = JSON.parse(line);
+      if (request.jsonrpc !== '2.0') {
+        sendError(request.id, -32600, 'Invalid Request');
+        return;
+      }
+      
+      // Handle cancellation notification (standard MCP 2024-11-05 and legacy $/cancel)
+      if (request.method === 'notifications/cancelled' || request.method === '$/cancel') {
+        const cancelParams = request.params;
+        const targetId = cancelParams?.requestId ?? cancelParams?.id;
+        handleCancelNotification({ id: targetId });
+        return;
+      }
+
+      // Ignore other notifications (messages without an ID)
+      if (request.id === undefined || request.id === null) {
+        return;
+      }
+
+
+      await handleRequest(request);
+    } catch (err) {
+      logDiagnostic(`parse error: ${err.message}`);
+      sendError(null, -32700, `Parse error: ${err.message}`);
     }
-    
-    // Handle cancellation notification (standard MCP 2024-11-05 and legacy $/cancel)
-    if (request.method === 'notifications/cancelled' || request.method === '$/cancel') {
-      const cancelParams = request.params;
-      const targetId = cancelParams?.requestId ?? cancelParams?.id;
-      handleCancelNotification({ id: targetId });
-      return;
-    }
-
-    // Ignore other notifications (messages without an ID)
-    if (request.id === undefined || request.id === null) {
-      return;
-    }
-
-
-    await handleRequest(request);
-  } catch (err) {
-    logDiagnostic(`parse error: ${err.message}`);
-    sendError(null, -32700, `Parse error: ${err.message}`);
-  }
-});
+  });
+  rl.on('close', () => { cleanup(); process.exit(0); });
+}
 
 async function handleRequest(req) {
   const { method, params, id } = req;
@@ -172,6 +180,11 @@ async function handleRequest(req) {
         version: readPackageVersion()
       }
     });
+    return;
+  }
+
+  if (method === 'ping') {
+    sendResult(id, {});
     return;
   }
 
@@ -200,6 +213,17 @@ function requireNonFlagString(args, key) {
   return { ok: true, value: val };
 }
 
+function validateDirectory(dirPath, paramName, rawVal = dirPath) {
+  let isDir = false;
+  try {
+    isDir = statSync(dirPath).isDirectory();
+  } catch {}
+  if (!isDir) {
+    return { ok: false, error: `Invalid parameter '${paramName}': directory does not exist: ${rawVal}` };
+  }
+  return { ok: true };
+}
+
 async function handleToolCall(id, name, args) {
   let cliArgs = [...baseArgs];
   let targetCwd;
@@ -210,6 +234,8 @@ async function handleToolCall(id, name, args) {
     const repoCheck = requireNonFlagString(args, 'repo');
     if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
     targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
+    if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     const rawSpec = specCheck.value;
     const specInTarget = resolve(targetCwd, rawSpec);
     const specInAmbient = resolve(rawSpec);
@@ -228,6 +254,8 @@ async function handleToolCall(id, name, args) {
       const outCheck = requireNonFlagString(args, 'out');
       if (!outCheck.ok) { sendError(id, -32602, outCheck.error); return; }
       cliArgs.push('--out', resolve(targetCwd, outCheck.value));
+    } else {
+      cliArgs.push('--out', resolve(targetCwd, 'plan.json'));
     }
     if (args.force) cliArgs.push('--force');
     if (args.noColdstart) cliArgs.push('--no-coldstart');
@@ -247,39 +275,43 @@ async function handleToolCall(id, name, args) {
     if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
     const absPlan = resolve(planCheck.value);
     targetCwd = dirname(absPlan);
+    const dirCheck = validateDirectory(targetCwd, 'plan', planCheck.value);
+    if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('run', absPlan);
   } else if (name === 'agb_preflight') {
     const planCheck = requireNonFlagString(args, 'plan');
     if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
     const absPlan = resolve(planCheck.value);
     targetCwd = dirname(absPlan);
+    const dirCheck = validateDirectory(targetCwd, 'plan', planCheck.value);
+    if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('preflight', absPlan);
     if (args.noColdstart) cliArgs.push('--no-coldstart');
   } else if (name === 'agb_status') {
     const repoCheck = requireNonFlagString(args, 'repo');
     if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
     targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
+    if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('status', targetCwd);
   } else if (name === 'agb_doctor') {
     if (args.repo !== undefined) {
       const repoCheck = requireNonFlagString(args, 'repo');
       if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
       const resolvedRepo = resolve(repoCheck.value);
-      let isDir = false;
-      try {
-        isDir = statSync(resolvedRepo).isDirectory();
-      } catch {}
-      if (!isDir) {
-        sendError(id, -32602, `Invalid parameter 'repo': directory does not exist: ${repoCheck.value}`);
-        return;
-      }
+      const dirCheck = validateDirectory(resolvedRepo, 'repo', repoCheck.value);
+      if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
       targetCwd = resolvedRepo;
+      cliArgs.push('doctor', targetCwd);
+    } else {
+      cliArgs.push('doctor');
     }
-    cliArgs.push('doctor');
   } else if (name === 'agb_review') {
     const repoCheck = requireNonFlagString(args, 'repo');
     if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
     targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
+    if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('review', targetCwd);
     if (args.ref !== undefined) {
       const refCheck = requireNonFlagString(args, 'ref');
@@ -297,7 +329,7 @@ async function handleToolCall(id, name, args) {
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe']
     };
-    if (targetCwd && existsSync(targetCwd)) {
+    if (targetCwd) {
       spawnOpts.cwd = targetCwd;
     }
     const child = spawn(agbCmd, cliArgs, spawnOpts);
@@ -410,14 +442,15 @@ function cleanup() {
   activeProcesses.clear();
 }
 
-process.on('uncaughtException', (err) => {
-  logDiagnostic(`uncaught exception: ${err?.stack || err}`);
-});
-process.on('unhandledRejection', (err) => {
-  logDiagnostic(`unhandled rejection: ${err?.stack || err}`);
-});
-process.on('exit', cleanup);
-process.on('SIGINT', () => { cleanup(); process.exit(0); });
-process.on('SIGTERM', () => { cleanup(); process.exit(0); });
-rl.on('close', () => { cleanup(); process.exit(0); });
+if (IS_MAIN) {
+  process.on('uncaughtException', (err) => {
+    logDiagnostic(`uncaught exception: ${err?.stack || err}`);
+  });
+  process.on('unhandledRejection', (err) => {
+    logDiagnostic(`unhandled rejection: ${err?.stack || err}`);
+  });
+  process.on('exit', cleanup);
+  process.on('SIGINT', () => { cleanup(); process.exit(0); });
+  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+}
 

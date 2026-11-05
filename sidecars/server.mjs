@@ -98,12 +98,27 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
             if (lastNewline === -1) {
               if (offset + toRead < stats.size) {
                 // The chunk contains no newline and we haven't reached EOF.
-                // We are stuck on an oversized line. We just return what we have and advance offset.
-                // The client will fail JSON.parse until it hits the next newline.
+                // Scan forward in 64 KiB chunks until the next newline (or stats.size)
+                // so newOffset advances past the entire oversized line on the first poll.
+                let scanPos = offset + toRead;
+                const scanBuf = Buffer.alloc(65536);
+                while (scanPos < stats.size) {
+                  const n = readSync(fd, scanBuf, 0, Math.min(scanBuf.length, stats.size - scanPos), scanPos);
+                  if (n <= 0) break;
+                  let nl = -1;
+                  for (let j = 0; j < n; j++) {
+                    if (scanBuf[j] === 10) { nl = j; break; }
+                  }
+                  if (nl !== -1) {
+                    scanPos += nl + 1;
+                    break;
+                  }
+                  scanPos += n;
+                }
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 return res.end(JSON.stringify({ 
                   lines: [buffer.toString('utf8', 0, toRead)], 
-                  newOffset: offset + toRead, 
+                  newOffset: scanPos, 
                   runId, 
                   repo: repoPath, 
                   reset: isReset, 

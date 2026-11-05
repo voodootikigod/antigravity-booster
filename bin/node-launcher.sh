@@ -23,7 +23,12 @@ resolve_full_path() {
     printf '/\n'
     return 0
   fi
+  _hops=0
   while [ -L "$_tgt" ]; do
+    _hops=$((_hops + 1))
+    if [ "$_hops" -gt 40 ]; then
+      return 1
+    fi
     case "$_tgt" in
       */*) _dir_part="${_tgt%/*}"; [ -n "$_dir_part" ] || _dir_part="/" ;;
       *)   _dir_part="." ;;

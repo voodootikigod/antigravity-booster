@@ -1987,7 +1987,7 @@ import { createInterface } from "node:readline/promises";
 
 // lib/active-rails.mjs
 import { existsSync as existsSync11, lstatSync as lstatSync6, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname as dirname9, join as join9, resolve as resolve5 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
 function isActiveTicket(ticket) {
@@ -2004,12 +2004,18 @@ function isSymlinkOrDirectory(path2) {
   }
 }
 function findAdlcRoot(targetPath, { home = homedir(), homes } = {}) {
-  const homeDirs = new Set((Array.isArray(homes) && homes.length > 0 ? homes : [home]).map((h) => resolve5(h)));
+  const skipDirs = /* @__PURE__ */ new Set([
+    ...(Array.isArray(homes) && homes.length > 0 ? homes : [home]).map((h) => resolve5(h)),
+    resolve5(tmpdir()),
+    "/tmp",
+    "/private/tmp",
+    "/var/tmp"
+  ]);
   let outermost = null;
   let curr = resolve5(targetPath);
   for (; ; ) {
     const isRoot = curr === "/" || curr === dirname9(curr);
-    const hasAdlc = !homeDirs.has(curr) && !isRoot && isSymlinkOrDirectory(join9(curr, ".adlc"));
+    const hasAdlc = !skipDirs.has(curr) && !isRoot && isSymlinkOrDirectory(join9(curr, ".adlc"));
     if (hasAdlc) {
       if (existsSync11(join9(curr, ".git"))) return curr;
       outermost = curr;
@@ -2074,6 +2080,7 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "read_file",
   "grep_search",
   "code_search",
+  "file_search",
   "list_directory",
   "read_url_content",
   "read_browser_page",
@@ -4092,7 +4099,11 @@ function isStage2(sub, cwd, ctx) {
 function isTestCommand(sub) {
   if (sub.dynamic || sub.assignments.length > 0 || sub.redirects.length > 0) return false;
   const [cmd, a1, a2] = sub.argv;
-  if (cmd === "npm" && a1 === "test") return sub.argv.length === 2 || a2 === "--";
+  if (cmd === "npm" && a1 === "test") {
+    if (sub.argv.length === 2) return true;
+    if (a2 !== "--") return false;
+    return sub.argv.slice(3).every((t) => !t.startsWith("-") || TEST_FLAG_OK.test(t));
+  }
   if (cmd === "npm" && a1 === "run" && sub.argv.length === 3) return a2 === "test" || /^test:[\w.:-]+$/.test(a2);
   if (cmd !== "node" || a1 !== "--test") return false;
   return sub.argv.slice(2).every((t) => !t.startsWith("-") || TEST_FLAG_OK.test(t));
@@ -4225,7 +4236,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd =
       }
       const repo = ctx.repoAt(r.real);
       repos.push(repo);
-      if (!repo.adlc || stage1 || dirChange) continue;
+      if (!repo.adlc || stage1 || dirChange && !writeTargets.has(token)) continue;
       if (!repo.store.ok) return { verdict: deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified"), repos };
       const rel = repoRelative(r.real, repo.root);
       if (rel === null || rel === "") continue;
@@ -4282,8 +4293,22 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   const unwrapped = unwrap(rawSub.argv);
   const sub = { ...rawSub, argv: unwrapped.argv, assignments: [...rawSub.assignments, ...unwrapped.assignments] };
   const argv = sub.argv;
-  if (argv.length === 0) return PASS;
   const cwdRepo = ctx.repoAt(cwd);
+  if (argv.length === 0) {
+    if (sub.redirects.length > 0) {
+      const { verdict: targetVerdict2, repos: repos2 } = checkTargets(sub, cwd, ctx, { stage1: false, shim: false, dirChange: false, verbs: {}, testCmd: false });
+      if (targetVerdict2.decision === "deny") return targetVerdict2;
+      const contextRepos2 = [cwdRepo, ...ctx.workspacePaths.map((w) => ctx.repoAt(w)), ...repos2];
+      return mostRestrictive([
+        targetVerdict2,
+        stage5(ctx, contextRepos2, "Shell redirection without command in an active-rail ADLC repository requires operator confirmation")
+      ]);
+    }
+    if (rawSub.argv.length > 0 || sub.dynamic) {
+      return stage5(ctx, [cwdRepo, ...ctx.workspacePaths.map((w) => ctx.repoAt(w))], "Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation");
+    }
+    return PASS;
+  }
   const inline = inlineScript(argv);
   if (inline !== null) {
     if (depth >= MAX_NESTING) return deny("Nested shell scripts too deep to verify");
@@ -4346,13 +4371,15 @@ function classifyLine(line, cwd, ctx, depth) {
       continue;
     }
     if (setsCdpath(sub)) cdpath = true;
-    const argv = effectiveArgv(sub.argv);
+    const unwrapped = unwrap(sub.argv);
+    const argv = unwrapped.argv;
     if (DIR_CHANGE.has(argv[0])) {
       const target = dirChangeTarget(sub, current, ctx, cdpath);
       const targetReal = target !== null ? physicalResolve(target, current, ctx.platform) : null;
       const wsReals = ctx.workspaceRealPaths ?? ctx.workspacePaths.map((w) => physicalResolve(w, "/", ctx.platform) ?? w);
       const intoWorkspace = targetReal !== null && wsReals.some((wReal) => isWithin(targetReal, wReal, ctx.platform));
-      if (!(subs.length > 1 && intoWorkspace)) verdicts.push(classifySubcommand(sub, current, ctx, depth));
+      const cleanCd = sub.redirects.length === 0 && sub.assignments.length === 0 && unwrapped.assignments.length === 0;
+      if (!(subs.length > 1 && intoWorkspace && cleanCd)) verdicts.push(classifySubcommand(sub, current, ctx, depth));
       current = targetReal;
       continue;
     }

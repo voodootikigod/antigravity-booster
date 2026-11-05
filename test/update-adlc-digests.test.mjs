@@ -87,3 +87,9 @@ test('verifyAgainstLockfile: detects manifest field mismatch between installed p
   }
 });
 
+test('Combining --write and --skip-registry is rejected with exit 1', () => {
+  const r = spawnSync(process.execPath, ['scripts/update-adlc-digests.mjs', '--write', '--skip-registry'], { cwd: ROOT, encoding: 'utf8' });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /--write cannot be combined with --skip-registry/);
+});
+

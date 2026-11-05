@@ -1,0 +1,29 @@
+{
+  "body": "1. Fix flag/env/prompt drift across `commands/agb-plan.md`, `commands/agb-run.md`, `commands/agb-review.md`, `skills/agb-plan/SKILL.md`, `skills/agb-run/SKILL.md`, `skills/agb-review/SKILL.md`, `skills/agb-migrate/SKILL.md`, and `.agents/skills/release/SKILL.md`.\n2. Update `website/scripts/gen-reference.mjs` to harvest env vars across `lib/`, `bin/`, `hooks/`, and `mcp/` and add missing entries to `website/env-docs.json`.\n3. Update `README.md`, `USAGE.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/guidelines.md`, `docs/execution-example.md`, and `website/content/docs/**`.\n4. Run `npm run skills:sync`, `npm --prefix website run gen:reference`, and `npm run build`.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-audit-w3-scheduler-sidecar-supply"
+    }
+  ],
+  "id": "t-audit-w4-docs-website-dist",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "commands/**",
+    "skills/**",
+    ".agents/skills/**",
+    "README.md",
+    "USAGE.md",
+    "ARCHITECTURE.md",
+    "CONTRIBUTING.md",
+    "docs/**",
+    "website/**",
+    "dist/**",
+    "vendor/**"
+  ],
+  "title": "Sync commands & skills docs, website reference generator & env-docs, prose documentation, and rebuild dist bundles"
+}

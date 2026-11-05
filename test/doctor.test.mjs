@@ -50,6 +50,19 @@ test('checkAgyAuth: fails when FAKE_AGY_MODE=empty', async () => {
   assert.equal(res.level, 'fail');
 });
 
+test('checkAgyAuth: fails when agy models prints only banner/error prose without model rows', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-auth-banner-'));
+  const bin = join(dir, 'agy');
+  writeFileSync(bin, '#!/bin/sh\necho "Fetching available models..."\necho "Error: not signed in"\n', { mode: 0o755 });
+  try {
+    const res = await checkAgyAuth({ env: { AGB_AGY_BIN: bin } });
+    assert.equal(res.level, 'fail');
+    assert.equal(res.detail, 'no models returned');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('checkAdlcBinary: warns when missing', async () => {
   const d = mkdtempSync(join(tmpdir(), 'agb-test-missing-adlc-'));
   try {

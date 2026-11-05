@@ -68,7 +68,7 @@ async function pollEvents() {
       
       if (data.warning) {
         if (!state.done) {
-          runStatus.innerHTML = `<span class="pulse" style="background-color: var(--danger)"></span>${data.warning}`;
+          runStatus.innerHTML = `<span class="pulse" style="background-color: var(--danger)"></span>${escapeHtml(data.warning)}`;
           runStatus.className = 'run-status status-badge status-failed';
         }
       } else if (runStatus.className.includes('status-failed') && (runStatus.innerHTML.includes('Dropped oversized line') || runStatus.innerHTML.includes('Dropped unparseable JSON line'))) {

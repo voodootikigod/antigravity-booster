@@ -591,3 +591,21 @@ test('symlinked workspacePaths and physical Cwd resolve to the same physical wor
   }
 });
 
+test('Wave 2 hardening: npm test -- flag validation, empty-argv redirects/wrappers, compound cd redirects, and file_search', () => {
+  // file_search is in READ_ONLY_TOOLS and allowed in read-only mode
+  assert.equal(run('file_search', { SearchPath: fx.active }, fx.active, READONLY).decision, 'pass');
+  assert.equal(run('file_search', { SearchPath: join(fx.home, '.gemini/antigravity-cli/plugin_data/antigravity-booster') }, fx.active, READONLY).decision, 'deny');
+
+  // npm test -- with valid TEST_FLAG_OK flag passes in worker mode, but --test-reporter-destination=lib/lock.mjs is denied
+  assert.equal(shell('npm test -- --test-name-pattern=foo', fx.active, WORKER).decision, 'pass');
+  assert.equal(shell('npm test -- --test-reporter-destination=lib/lock.mjs', fx.active, WORKER).decision, 'deny');
+
+  // Redirection without command (> lib/lock.mjs) and bare wrapper (env -S / exec > lib/lock.mjs)
+  assert.equal(shell('> lib/lock.mjs', fx.active, INTERACTIVE).decision, 'deny');
+  assert.equal(shell('exec > lib/lock.mjs', fx.active, INTERACTIVE).decision, 'deny');
+  assert.equal(shell('env -S "rm -f lib/lock.mjs"', fx.active, WORKER).decision, 'deny');
+
+  // Compound cd into workspace with redirection onto a rail must be denied
+  assert.equal(shell('cd lib > lib/lock.mjs && git status', fx.active, INTERACTIVE).decision, 'deny');
+});
+

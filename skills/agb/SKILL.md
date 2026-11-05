@@ -19,11 +19,11 @@ Inspect the user's `<description>` and select the matching workflow below:
 | **Pre-flight or validate a `plan.json` without running builders** (e.g. *"preflight plan.json"*, *"validate plan.json"*) | **Preflight / Validate** | `~/.local/bin/agb preflight <plan.json>` (`mcp__agb__agb_preflight`) or `~/.local/bin/agb validate <plan.json>` |
 | **Review, prosecute, or audit a branch / diff before merge** (e.g. *"review this branch"*, *"is this safe to merge"*, *"prosecute diff against main"*) | **Review** (`/agb-review`) | `~/.local/bin/agb review [repo-path] [ref]` or `mcp__agb__agb_review` |
 | **Check environment health, quota pools, ADLC companion plugin, or sandbox readiness** (e.g. *"doctor"*, *"check my setup"*, *"verify environment"*) | **Doctor** (`/agb-doctor`) | `~/.local/bin/agb doctor [repo-path]` or `mcp__agb__agb_doctor` |
-| **Check live fleet run status or quota pool caps** (e.g. *"status"*, *"what is the fleet doing"*, *"check quota pools"*) | **Status / Pool** | `~/.local/bin/agb status [repo-path]` (`mcp__agb__agb_status`) or `~/.local/bin/agb pool` |
-| **List or import Antigravity brain plan artifacts** (e.g. *"list brains"*, *"import brain"*) | **Brains** | `~/.local/bin/agb brains` or `~/.local/bin/agb import-brain <id-or-prefix>` |
-| **Open or start the live sidecar telemetry dashboard** (e.g. *"sidecar"*, *"open dashboard"*, *"monitor run"*) | **Sidecar** (`/agb-sidecar`) | `~/.local/bin/agb sidecar [repo-path] [--port <port>] [--open]` |
+| **Check live fleet run status or drain active quota pool leases** (e.g. *"status"*, *"what is the fleet doing"*, *"drain quota pools"*) | **Status / Pool** | `~/.local/bin/agb status [repo-path]` (`mcp__agb__agb_status`) or `~/.local/bin/agb pool drain [repo-path]` |
+| **List or import Antigravity brain plan artifacts** (e.g. *"list brains"*, *"import brain"*) | **Brains** | `~/.local/bin/agb brains` or `~/.local/bin/agb import-brain <id-or-prefix> <repo-path>` |
+| **Open or start the live sidecar telemetry dashboard** (e.g. *"sidecar"*, *"open dashboard"*, *"monitor run"*) | **Sidecar** (`/agb-sidecar`) | `~/.local/bin/agb sidecar [repo-path] [--port <port>]` (start in the background) |
 | **First-run setup or repairing `~/.local/bin/agb` & `adlc-antigravity`** (e.g. *"bootstrap"*, *"setup"*, *"install shim"*) | **Bootstrap** (`/agb-bootstrap`) | `~/.local/bin/agb bootstrap [--force] [--force-reinstall]` |
-| **Migrate from a legacy npm-global or git-checkout install** (e.g. *"migrate"*, *"upgrade from npm"*, *"rollback migration"*) | **Migrate** (`/agb-migrate`) | `~/.local/bin/agb migrate [--dry-run] [--yes] [--rollback]` |
+| **Migrate from a legacy npm-global or git-checkout install** (e.g. *"migrate"*, *"upgrade from npm"*, *"rollback migration"*) | **Migrate** (`/agb-migrate`) | `~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]` |
 | **Run a multi-repository sweep** (e.g. *"sweep sweep.json"*) | **Sweep** | `~/.local/bin/agb sweep <sweep.json>` |
 
 ## How to run the selected command
@@ -36,11 +36,12 @@ Use your shell tool (`run_command`) from the user's workspace (or the matching `
 ~/.local/bin/agb review [repo-path] [ref]
 ~/.local/bin/agb doctor [repo-path]
 ~/.local/bin/agb status [repo-path]
+~/.local/bin/agb pool drain [repo-path]
 ~/.local/bin/agb preflight <plan.json>
 ~/.local/bin/agb validate <plan.json>
-~/.local/bin/agb sidecar [repo-path] [--port <port>] [--open]
+~/.local/bin/agb sidecar [repo-path] [--port <port>]
 ~/.local/bin/agb bootstrap [--force] [--force-reinstall]
-~/.local/bin/agb migrate [--dry-run] [--yes] [--rollback]
+~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```
 
 Wait for the command to finish, then report its output and exit code (`0` = pass, `2` = gate failure or findings, `1` = usage or internal error) to the user.

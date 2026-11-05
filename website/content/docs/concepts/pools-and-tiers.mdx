@@ -17,7 +17,7 @@ Every model belongs to one **model pool**, and every model pool belongs to one *
 | `claude` | `claude-sonnet-5-5-{low,medium,high}`, `claude-opus-5-5-{low,medium,high}` | `claude_gpt` | 4 |
 | `gpt-oss` | `gpt-oss-120b-medium` | `claude_gpt` | 2 |
 
-Model lists: [lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L90-L104). Default per-pool caps (`DEFAULT_CAPS`): [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L71-L76). Family mapping: [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L769-L773).
+Model lists (`MODELS`, `TIER_CANDIDATES`, `PROSECUTORS`, and `PROSECUTOR_CANDIDATES` are centralized in `lib/models.mjs` and re-exported by `lib/pools.mjs` and `lib/agy.mjs`): [lib/agy.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L90-L104). Default per-pool caps (`DEFAULT_CAPS`): [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L71-L76). Family mapping: [lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L769-L773).
 
 | Upstream family (`BASE_CAPS` key) | Matches `/quota` pool | Base cap |
 | --- | --- | --- |

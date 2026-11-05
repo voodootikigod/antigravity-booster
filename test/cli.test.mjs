@@ -175,3 +175,21 @@ test('agb status against a synthetic .booster/run.json', () => {
   assert(out.includes('T1'));
   assert(out.includes('merged'));
 });
+
+test('agb migrate rejects unknown flags and missing value flags with exit code 1', () => {
+  const resUnknown = spawnSync(process.execPath, [AGB_BIN, 'migrate', '--dry-run'], { encoding: 'utf8' });
+  assert.strictEqual(resUnknown.status, 1);
+  assert.match(resUnknown.stderr, /Unknown flag for agb migrate: --dry-run/);
+
+  const resMissingVal = spawnSync(process.execPath, [AGB_BIN, 'migrate', '--finish-uninstall', '--token'], { encoding: 'utf8' });
+  assert.strictEqual(resMissingVal.status, 1);
+  assert.match(resMissingVal.stderr, /Missing value for --token/);
+});
+
+test('mcp resolveAgbEntry fails closed to bundled agb.mjs when bundled=true', async () => {
+  const { resolveAgbEntry } = await import('../mcp/server.mjs');
+  const nonExistentDir = join(TMP, 'no-such-bundle-dir');
+  const bundledEntry = resolveAgbEntry(nonExistentDir, true);
+  assert.strictEqual(bundledEntry.cmd, process.execPath);
+  assert.deepStrictEqual(bundledEntry.args, [join(nonExistentDir, 'agb.mjs')]);
+});

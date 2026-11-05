@@ -92,6 +92,20 @@
       "description": "Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts."
     },
     {
+      "name": "AGY_BIN",
+      "group": "core",
+      "default": "agy",
+      "bundledIgnored": false,
+      "description": "Override path for the agy CLI executable used by scripts/stage-marketplace-plugin.mjs when validating staged plugin bundles."
+    },
+    {
+      "name": "PLUGIN_ROOT",
+      "group": "plugin-resolution",
+      "default": "set by Antigravity",
+      "bundledIgnored": false,
+      "description": "Plugin root directory exported by Antigravity (via ${PLUGIN_ROOT} in hooks.json and mcp_config.json) and resolved by bin/hook-runner.sh and bin/node-launcher.sh."
+    },
+    {
       "name": "ADLC_ANTIGRAVITY_PLUGIN_NAME",
       "group": "plugin-resolution",
       "default": "adlc-antigravity",

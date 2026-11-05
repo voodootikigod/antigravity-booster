@@ -3,7 +3,7 @@
 // Tool names are agy 1.2.16 CORTEX_STEP_TYPE_* names, lowercased.
 
 export const READ_ONLY_TOOLS = new Set([
-  'view_file', 'read_file', 'grep_search', 'code_search', 'list_directory',
+  'view_file', 'read_file', 'grep_search', 'code_search', 'file_search', 'list_directory',
   'read_url_content', 'read_browser_page', 'search_web',
   'list_resources', 'read_resource', 'ask_question',
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',

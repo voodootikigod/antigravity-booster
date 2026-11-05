@@ -188,7 +188,7 @@ export function syncMain(argv = process.argv.slice(2), { log = console.log, err 
       log(`skills mirrors in sync (${canonicalSkills(root).length} skills x ${MIRRORS.length} harness dirs)`);
       return 0;
     }
-    err('skills mirrors have drifted from skills/ — run: npm run skills:sync');
+    err('skills mirrors have drifted from maintainer-skills/ — run: npm run skills:sync');
     for (const p of result.problems) err(`  ${p}`);
     return 1;
   }

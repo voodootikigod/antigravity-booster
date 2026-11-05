@@ -1,0 +1,23 @@
+{
+  "body": "Update `CHANGELOG.md`, `AGENTS.md`, `scripts/sync-skills.mjs`, `maintainer-skills/modernize/SKILL.md`, and `.claude/skills/modernize/SKILL.md` for Wave 4 release audit remediation.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-audit-w4-docs-website-dist"
+    }
+  ],
+  "id": "t-audit-w4b-changelog-agents-sync",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "scripts/sync-skills.mjs",
+    "maintainer-skills/**",
+    ".claude/skills/**"
+  ],
+  "title": "Update CHANGELOG.md, AGENTS.md, scripts/sync-skills.mjs, and maintainer-skills/modernize/SKILL.md"
+}

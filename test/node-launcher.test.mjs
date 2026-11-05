@@ -385,3 +385,13 @@ test('Run 3 Finding 7: planted node binary inside .agb_home is rejected and host
   const parsed = JSON.parse(r.stdout);
   assert.equal(parsed.userHome, fx.home);
 });
+
+test('resolve_full_path terminates cleanly on cyclic symlinks instead of looping forever', () => {
+  const fx = fixture();
+  mockNode(fnmPath(fx.home, '22.19.0'), '22.19.0');
+  const cyclicNode = fnmPath(fx.home, '22.99.0');
+  mkdirSync(dirname(cyclicNode), { recursive: true });
+  symlinkSync(cyclicNode, cyclicNode);
+  const r = run(fx, ['dist/hello.mjs']);
+  assert.equal(r.status, 0, r.stderr);
+});

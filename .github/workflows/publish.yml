@@ -79,8 +79,13 @@ jobs:
           # published, and npm provenance would attest to the wrong version.
           TAG_VERSION="${REF_NAME#v}"
           PKG_VERSION="$(node -p "require('./package.json').version")"
+          PLUGIN_VERSION="$(node -p "require('./plugin.json').version")"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag $REF_NAME implies version $TAG_VERSION but package.json says $PKG_VERSION."
+            exit 1
+          fi
+          if [ "$PKG_VERSION" != "$PLUGIN_VERSION" ]; then
+            echo "::error::package.json ($PKG_VERSION) and plugin.json ($PLUGIN_VERSION) versions are out of sync."
             exit 1
           fi
           echo "Publishing version $PKG_VERSION"

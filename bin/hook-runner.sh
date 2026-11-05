@@ -134,21 +134,27 @@ emit_fallback() {
       [ -n "$_target" ] || continue
       _curr="$_target"
       while [ -n "$_curr" ] && [ "$_curr" != "/" ] && [ "$_curr" != "." ]; do
-        if [ -d "$_curr/.adlc" ]; then
-          touch "$TMP_DIR/has_adlc_dir"
-        fi
-        if [ -d "$_curr/.adlc/tickets" ]; then
-          for _shard in "$_curr/.adlc/tickets"/*.json; do
-            if [ -f "$_shard" ]; then
-              # Active ticket: status NOT in completed, closed, or archived (fail closed)
-              if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"(completed|closed|archived)"' "$_shard" 2>/dev/null; then
-                # Signal active in-flight ticket to outer scope
-                touch "$TMP_DIR/has_active_tickets"
-                break 2
-              fi
+        case "$_curr" in
+          "${HOME%/}" | "${AGB_USER_HOME%/}" | "${TMPDIR%/}" | /tmp | /private/tmp | /var/tmp)
+            ;;
+          *)
+            if [ -d "$_curr/.adlc" ]; then
+              touch "$TMP_DIR/has_adlc_dir"
             fi
-          done
-        fi
+            if [ -d "$_curr/.adlc/tickets" ]; then
+              for _shard in "$_curr/.adlc/tickets"/*.json; do
+                if [ -f "$_shard" ]; then
+                  # Active ticket: status NOT in completed, closed, or archived (fail closed)
+                  if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"(completed|closed|archived)"' "$_shard" 2>/dev/null; then
+                    # Signal active in-flight ticket to outer scope
+                    touch "$TMP_DIR/has_active_tickets"
+                    break 2
+                  fi
+                fi
+              done
+            fi
+            ;;
+        esac
         _curr="$(dirname -- "$_curr")"
       done
     done
@@ -195,13 +201,13 @@ emit_fallback() {
 
     IS_READ_ONLY=0
     case "$TOOL_NAME" in
-      view_file|grep_search|code_search|list_directory|read_url_content|read_browser_page|search_web|list_resources|read_resource|ask_question|view_file_outline|read_terminal|read_notebook|command_status|find_by_name|manage_task)
+      view_file|read_file|grep_search|code_search|file_search|list_directory|read_url_content|read_browser_page|search_web|list_resources|read_resource|ask_question|view_file_outline|read_terminal|read_notebook|command_status|find_by_name|manage_task)
         IS_READ_ONLY=1
         ;;
     esac
 
     TARGETS_PROTECTED=0
-    if grep -Eq '\.migration\.lock|plugin_data/(\.?/)*antigravity-booster|\.config/(\.?/)*antigravity-booster' "$TMP_IN" 2>/dev/null; then
+    if grep -Eq '\.migration\.lock|antigravity-booster|plugin_data|/\.\.(/|\"|$)|\\u00' "$TMP_IN" 2>/dev/null; then
       TARGETS_PROTECTED=1
     fi
 

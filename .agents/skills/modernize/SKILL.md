@@ -56,7 +56,7 @@ node maintainer-skills/modernize/scripts/audit.mjs <TARGET_ADLC_VERSION> [PINNED
 4. **Stage 4: Implementation Roadmap & Ticket DAG Validation**:
    - Extracts and parses the canonical machine-readable ticket plan from `docs/research/roadmap-agy-<agy target>-adlc-<adlc target>.md` (override with `AGB_ROADMAP_PATH`).
    - Executes booster's native `validatePlan()` validator from `lib/plan.mjs`.
-   - Asserts 9 tickets, 0 structural validation errors, complete DAG acyclicity, and verification that mandatory candidate rails (`lib/lock.mjs`, `lib/gates.mjs`) remain permanently frozen across all tickets that do not explicitly touch them.
+   - Asserts a non-empty ticket DAG (`plan.tickets.length >= 1`), 0 structural validation errors, complete DAG acyclicity, and verification that mandatory candidate rails (`lib/lock.mjs`, `lib/gates.mjs`) remain permanently frozen across all tickets that do not explicitly touch them.
 
 5. **Stage 5: Cryptographic Provenance & Release Digest Verification**:
    - Executes an airtight cryptographic verification and durable provenance pipeline:
