@@ -1,7 +1,7 @@
 {
   "name": "antigravity-booster",
   "displayName": "Antigravity Booster",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Parallel multi-agent fleet orchestrator for Google Antigravity: compiles specs into ticket DAGs, dispatches isolated git-worktree builders across Gemini and Claude/GPT quota pools, and enforces ADLC frozen rails and cross-model diff prosecution.",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
