@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-05T15:27:22.555Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "c909b6c1af552b7d45f3dc5e2a8493960aa61b1917f4e6f3ece13f74307779ed",
+    "ticketHash": "3694506ec61b8953cd7a4f9e9f17aef61435e8788cf463dd2661a02a98d8df79",
+    "version": 1
+  },
   "body": "1. Fix flag/env/prompt drift across `commands/agb-plan.md`, `commands/agb-run.md`, `commands/agb-review.md`, `skills/agb-plan/SKILL.md`, `skills/agb-run/SKILL.md`, `skills/agb-review/SKILL.md`, `skills/agb-migrate/SKILL.md`, and `.agents/skills/release/SKILL.md`.\n2. Update `website/scripts/gen-reference.mjs` to harvest env vars across `lib/`, `bin/`, `hooks/`, and `mcp/` and add missing entries to `website/env-docs.json`.\n3. Update `README.md`, `USAGE.md`, `ARCHITECTURE.md`, `CONTRIBUTING.md`, `docs/guidelines.md`, `docs/execution-example.md`, and `website/content/docs/**`.\n4. Run `npm run skills:sync`, `npm --prefix website run gen:reference`, and `npm run build`.",
   "completed": true,
   "edges": [

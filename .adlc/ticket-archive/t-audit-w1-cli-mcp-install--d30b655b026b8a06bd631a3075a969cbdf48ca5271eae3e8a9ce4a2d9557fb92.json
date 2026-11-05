@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-05T15:27:24.072Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "0cfdf9f1b8d4b364fd6e5ad1bb27589b4a4a73bb1b46f8b006791082ac0f0876",
+    "ticketHash": "7e3f4827a6725ed9d60315ee3b85d36e7f4be8176a3c81cf7734ed72865f5109",
+    "version": 1
+  },
   "body": "1. Align `commands/agb.md` and `skills/agb/SKILL.md` with `bin/agb.mjs` (`migrate [--rollback] [--force-rollback] [--force] [--break-lock]`, `sidecar [repo-path] [--port <port>]` without `--open`, `pool drain [repo-path]`, `import-brain <id-or-prefix> <repo-path>`, `bootstrap [--force] [--force-reinstall]`, plus `brains` and `sweep` rows in `commands/agb.md`).\n2. Wire optional `[repo]` on `agb doctor [repo]` in `bin/agb.mjs`, update `COMMANDS.probe.args = '[widths] [model]'`, validate `agb migrate` flags by index (consuming values for `--token`, `--uninstaller-dir`, `--agy-bin`, `--baseline` and failing closed on unknown flags), and add `[--force]` to `commands/agb-bootstrap.md`.\n3. In `mcp/server.mjs`, validate `targetCwd` is an existing directory (`-32602` on error), resolve `agb_plan` `--out` against `targetCwd`, fail closed in `resolveAgbEntry` when `bundled === true`, and handle `ping`.\n4. In `lib/doctor.mjs`, require `parseAgyModels(stdout).length > 0` in `checkAgyAuth` and share `modelsPromise` in `runDoctor()`; in `lib/bootstrap.mjs`, unlink dangling retired maintainer-skill symlinks pointing to `/antigravity-booster/skills/<retired>`; in `lib/migrate.mjs`, check `STAGE_COPY_EXCLUSIONS` in `treeSize()` and `step3Snapshot()`.",
   "completed": true,
   "edges": [

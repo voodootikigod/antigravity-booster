@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-05T15:27:23.704Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "696583eef7b9d0507803ac5a22bb429072809d20fb20ebe3b0b9e3eab75c9a60",
+    "ticketHash": "cd74738868aa3043de2626ef35c96e22ce66d2ca721cc6b8dc78e6240a7caff5",
+    "version": 1
+  },
   "body": "1. In `hooks/policy/shell.mjs`: validate `npm test --` flags against `TEST_FLAG_OK` in `isTestCommand`; in `classifySubcommand`, when `argv.length === 0`, run `checkTargets` on redirects (`sub.redirects.length > 0`) and route `rawSub.argv.length > 0 || sub.dynamic` (e.g. `env -S`, bare `exec`/`env`/`sudo`) through `stage5` while preserving `PASS` for static variable assignments (`FOO=1`); in `classifyLine`, only skip `classifySubcommand` on compound workspace `cd` when `sub.redirects.length === 0 && sub.assignments.length === 0 && unwrapped.assignments.length === 0`.\n2. In `hooks/policy/constants.mjs` and `bin/hook-runner.sh`: add `file_search` to `READ_ONLY_TOOLS` and `read_file|file_search` to `hook-runner.sh` `IS_READ_ONLY`; broaden `TARGETS_PROTECTED` fallback regex in `bin/hook-runner.sh` to catch `..` segments and `\\u00`.\n3. In `bin/node-launcher.sh`: add a 40-hop ceiling in `resolve_full_path()` on cyclic symlinks.",
   "completed": true,
   "edges": [

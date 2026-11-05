@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-05T15:27:22.938Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "11c8f597091e1371399e4fe4c07f212e5c2b1a0c840eed3c5c6be66df6a3e4f1",
+    "ticketHash": "5123272f97c892056272d0a080d67911d51e1c1093e79716b4e8144167302a94",
+    "version": 1
+  },
   "body": "1. In `lib/scheduler.mjs`: include `...(activeRailsNow.rails ?? [])` in `cfRails` before `checkCounterFile()` at line 2068; replace raw `execFileSync('git', ['cat-file', '-e', ...])` at line 781 with `g(repo, 'cat-file', '-e', `${baseRefSha}:${p}`)`; also add `.git` to `test/scheduler.test.mjs` `initRepo` / verify fixture.\n2. In `lib/review.mjs`: remove raw `console.error('LENS ERRORS DETECTED:', ...)` at line 164.\n3. In `sidecars/app.js`: wrap `${data.warning}` in `${escapeHtml(data.warning)}` at line 71.\n4. In `sidecars/server.mjs`: scan forward in 64 KiB chunks when `lastNewline === -1` and `offset + toRead < stats.size` so `newOffset` advances past the entire oversized line on the first poll.\n5. In `scripts/stage-marketplace-plugin.mjs`: add `'commands'` to `MARKETPLACE_RUNTIME_PATHS`.\n6. In `scripts/check-bundle-externals.mjs`: add `'vendor/adlc/dist/watchdog.mjs'` to `DEFAULT_BUNDLES` and detect `process.(binding|_linkedBinding|dlopen)` in `scanSource()`.\n7. In `scripts/update-adlc-digests.mjs`, `.github/workflows/ci.yml`, and `.github/workflows/publish.yml`: reject `--write` + `--skip-registry`, check all 9 `VENDORED_PACKAGES` in `--skip-registry` mode, resolve Issue #136 in `ci.yml`, and enforce `plugin.json === package.json` version lockstep + `node website/scripts/gen-reference.mjs --check`.",
   "completed": true,
   "edges": [

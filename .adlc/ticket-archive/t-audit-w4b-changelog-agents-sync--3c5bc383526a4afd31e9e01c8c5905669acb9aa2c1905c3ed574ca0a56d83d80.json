@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-05T15:27:22.177Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "61967693ddb2e600b57755dc0b6c28d5458d068f7cb6a73e8844ba81c01f5781",
+    "ticketHash": "6efd46d674b7359c23cebd660ee22c6eea311ec822d168d77dac539da10aaba3",
+    "version": 1
+  },
   "body": "Update `CHANGELOG.md`, `AGENTS.md`, `scripts/sync-skills.mjs`, `maintainer-skills/modernize/SKILL.md`, and `.claude/skills/modernize/SKILL.md` for Wave 4 release audit remediation.",
   "completed": true,
   "edges": [

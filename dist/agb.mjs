@@ -13624,15 +13624,19 @@ function createIntegrationWorktree(repo, token, base = "main") {
   mkdirSync13(join25(repo, ".worktrees"), { recursive: true });
   validateWorktreeRoot(repo);
   try {
-    git(repo, "clone", "--shared", "--no-tags", "-b", base, repo, path3);
+    git(repo, "clone", "--shared", "--no-tags", "--no-checkout", repo, path3);
+    git(path3, "checkout", "--detach", base);
   } catch {
     git(repo, "worktree", "add", "--detach", path3, base);
   }
   try {
-    git(path3, "config", "commit.gpgsign", "false");
-    git(path3, "config", "core.hooksPath", NULL_HOOKS_PATH);
-    git(path3, "config", "user.name", "agb-integrator");
-    git(path3, "config", "user.email", "agb@local");
+    const dotGit = join25(path3, ".git");
+    if (existsSync23(dotGit) && lstatSync11(dotGit).isDirectory()) {
+      git(path3, "config", "commit.gpgsign", "false");
+      git(path3, "config", "core.hooksPath", NULL_HOOKS_PATH);
+      git(path3, "config", "user.name", "agb-integrator");
+      git(path3, "config", "user.email", "agb@local");
+    }
   } catch {
   }
   const repoModules = join25(repo, "node_modules");
