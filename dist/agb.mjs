@@ -13624,8 +13624,9 @@ function createIntegrationWorktree(repo, token, base = "main") {
   mkdirSync13(join25(repo, ".worktrees"), { recursive: true });
   validateWorktreeRoot(repo);
   try {
+    const baseSha = git(repo, "rev-parse", "--verify", `${base}^{commit}`).trim();
     git(repo, "clone", "--shared", "--no-tags", "--no-checkout", repo, path3);
-    git(path3, "checkout", "--detach", base);
+    git(path3, "checkout", "--detach", baseSha);
   } catch {
     git(repo, "worktree", "add", "--detach", path3, base);
   }

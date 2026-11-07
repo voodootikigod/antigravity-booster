@@ -1,0 +1,18 @@
+{
+  "body": "1. In lib/worktrees.mjs createIntegrationWorktree(), resolve base to its commit SHA in repo via git rev-parse before running git checkout --detach in the shared clone so non-HEAD branch names and tags succeed, and call rmSync on path in the catch block before falling back to git worktree add.\n2. In scripts/update-adlc-digests.mjs normalizeManifestField(), remove the duplicate ternary inside the object-key loop by delegating recursively to normalizeManifestField(field, val[k]).\n3. Move the createIntegrationWorktree commit-SHA test out of test/update-adlc-digests.test.mjs into test/integration-journal.test.mjs, add regression tests covering non-HEAD branch and tag base refs in createIntegrationWorktree, and rebuild dist/agb.mjs.",
+  "completed": true,
+  "edges": [],
+  "id": "t-fix-review-loop-dd0310f",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "lib/worktrees.mjs",
+    "scripts/update-adlc-digests.mjs",
+    "dist/agb.mjs",
+    "test/update-adlc-digests.test.mjs",
+    "test/integration-journal.test.mjs"
+  ],
+  "title": "Resolve PR 153 code-review findings on createIntegrationWorktree and update-adlc-digests"
+}

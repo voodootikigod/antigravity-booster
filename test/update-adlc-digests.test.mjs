@@ -117,35 +117,27 @@ test('verifyAgainstLockfile: normalizes leading ./ and key order on bin field be
     const res = verifyAgainstLockfile('@adlc/nonexistent-test-pkg', { root });
     assert.equal(res.ok, false);
     assert.doesNotMatch(res.error, /manifest field 'bin' mismatch against lockfile/);
+
+    // Also verify string-shorthand bin in package.json against object bin in package-lock.json
+    writeFileSync(join(root, 'node_modules', '@adlc', 'nonexistent-test-pkg', 'package.json'), JSON.stringify({
+      name: '@adlc/nonexistent-test-pkg',
+      version: '1.0.0',
+      bin: './bin/nonexistent-test-pkg.mjs'
+    }));
+    writeFileSync(join(root, 'package-lock.json'), JSON.stringify({
+      packages: {
+        'node_modules/@adlc/nonexistent-test-pkg': {
+          version: '1.0.0',
+          integrity: 'sha512-abc==',
+          bin: { 'nonexistent-test-pkg': 'bin/nonexistent-test-pkg.mjs' }
+        }
+      }
+    }));
+    const resStr = verifyAgainstLockfile('@adlc/nonexistent-test-pkg', { root });
+    assert.equal(resStr.ok, false);
+    assert.doesNotMatch(resStr.error, /manifest field 'bin' mismatch against lockfile/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
-
-test('createIntegrationWorktree: accepts a 40-char commit SHA base without mutating parent repo .git/config', async () => {
-  const { createIntegrationWorktree, reapIntegrationWorktrees } = await import('../lib/worktrees.mjs');
-  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
-  const { execFileSync } = await import('node:child_process');
-  const { tmpdir } = await import('node:os');
-  const repo = mkdtempSync(join(tmpdir(), 'agb-int-wt-sha-'));
-  try {
-    execFileSync('git', ['init', '-b', 'main'], { cwd: repo });
-    execFileSync('git', ['config', 'user.name', 'Test Owner'], { cwd: repo });
-    execFileSync('git', ['config', 'user.email', 'owner@example.com'], { cwd: repo });
-    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: repo });
-    writeFileSync(join(repo, 'README.md'), '# test\n');
-    execFileSync('git', ['add', 'README.md'], { cwd: repo });
-    execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo });
-    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
-    const wt = createIntegrationWorktree(repo, '12345678-aaaa', sha);
-    const parentName = execFileSync('git', ['config', '--local', '--get', 'user.name'], { cwd: repo, encoding: 'utf8' }).trim();
-    const wtName = execFileSync('git', ['config', '--local', '--get', 'user.name'], { cwd: wt, encoding: 'utf8' }).trim();
-    assert.equal(parentName, 'Test Owner');
-    assert.equal(wtName, 'agb-integrator');
-    reapIntegrationWorktrees(repo);
-  } finally {
-    rmSync(repo, { recursive: true, force: true });
-  }
-});
-
 

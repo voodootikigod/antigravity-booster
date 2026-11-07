@@ -128,6 +128,51 @@ test('Integration Worktree: creation, isolation, and reaping', () => {
   }
 });
 
+test('Integration Worktree: accepts commit SHA, non-HEAD branch, and tag base refs without mutating parent repo .git/config', () => {
+  const repo = makeTestRepo();
+  try {
+    const g = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+    const sha = g('rev-parse', 'HEAD');
+
+    // Create a non-HEAD branch and a tag on a distinct commit, then return repo HEAD to main
+    g('checkout', '-qb', 'release-branch');
+    writeFileSync(join(repo, 'release.txt'), 'release content\n');
+    g('add', 'release.txt');
+    g('commit', '-qm', 'release commit');
+    const releaseSha = g('rev-parse', 'HEAD');
+    g('tag', 'v0.0.1-test');
+    g('checkout', '-q', 'main');
+
+    for (const [token, baseRef, expectedSha] of [
+      ['11111111-aaaa', sha, sha],
+      ['22222222-bbbb', 'release-branch', releaseSha],
+      ['33333333-cccc', 'v0.0.1-test', releaseSha],
+    ]) {
+      const wt = createIntegrationWorktree(repo, token, baseRef);
+      const wtHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: wt, encoding: 'utf8' }).trim();
+      const parentName = g('config', '--local', '--get', 'user.name');
+      const wtName = execFileSync('git', ['config', '--local', '--get', 'user.name'], { cwd: wt, encoding: 'utf8' }).trim();
+      assert.equal(wtHead, expectedSha, `integration worktree checked out expected commit for ${baseRef}`);
+      assert.equal(parentName, 'Test', 'parent repo .git/config user.name is untouched');
+      assert.equal(wtName, 'agb-integrator', 'isolated integration clone configures agb-integrator');
+    }
+
+    // Also verify pre-existing leftover directory at target path is cleanly replaced
+    const staleDir = join(repo, '.worktrees', 'agb-integration-44444444', '.git');
+    mkdirSync(staleDir, { recursive: true });
+    writeFileSync(join(staleDir, 'HEAD'), 'corrupt\n');
+    const recoveredWt = createIntegrationWorktree(repo, '44444444-dddd', 'release-branch');
+    assert.equal(
+      execFileSync('git', ['rev-parse', 'HEAD'], { cwd: recoveredWt, encoding: 'utf8' }).trim(),
+      releaseSha
+    );
+
+    reapIntegrationWorktrees(repo);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('Integration Journal: startup crash recovery across all 4 phases', async () => {
   const repo = makeTestRepo();
   const g = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
