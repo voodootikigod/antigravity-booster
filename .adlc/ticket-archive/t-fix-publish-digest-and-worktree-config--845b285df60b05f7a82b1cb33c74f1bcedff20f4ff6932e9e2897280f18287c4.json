@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-07T13:56:30.075Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "2d9553ffb9119de849c0c570561a6b9b705783c2fb470b953fe2ee6e4e3b6e08",
+    "ticketHash": "b25bc4ba4755578a3c6250d2efaa66ff7e766f2848d042f06fa1a0a73e8842f9",
+    "version": 1
+  },
   "body": "1. In scripts/update-adlc-digests.mjs verifyAgainstLockfile(), normalize manifest field comparisons against package-lock.json by sorting object keys and stripping leading './' from bin paths (which npm strips in package-lock.json), fixing the publish.yml failure on @adlc/rails-guard@1.12.0.\n2. In lib/worktrees.mjs createIntegrationWorktree(), use git clone --shared --no-tags --no-checkout followed by git checkout --detach <base> so commit-SHA base refs succeed without falling back to a linked git worktree, and guard git config writes behind an independent .git directory check so the host repository's .git/config is never mutated with user.name=agb-integrator.\n3. Add regression tests in test/update-adlc-digests.test.mjs and test/worktrees.test.mjs and rebuild dist/.",
   "completed": true,
   "edges": [],

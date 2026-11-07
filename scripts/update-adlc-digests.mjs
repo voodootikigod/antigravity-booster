@@ -27,14 +27,16 @@ export const VENDORED_PACKAGES = [
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 const sri512 = (buf) => `sha512-${createHash('sha512').update(buf).digest('base64')}`;
 
-const normalizeManifestField = (field, val) => {
+const normalizeManifestField = (field, val, pkg = '') => {
+  if (field === 'bin' && typeof val === 'string' && pkg) {
+    return { [pkg.split('/').pop()]: val.replace(/^\.\//, '') };
+  }
   if (val === null || typeof val !== 'object' || Array.isArray(val)) {
     return field === 'bin' && typeof val === 'string' ? val.replace(/^\.\//, '') : val;
   }
   const out = {};
   for (const k of Object.keys(val).sort()) {
-    const v = val[k];
-    out[k] = field === 'bin' && typeof v === 'string' ? v.replace(/^\.\//, '') : normalizeManifestField(field, v);
+    out[k] = normalizeManifestField(field, val[k]);
   }
   return out;
 };
@@ -50,8 +52,8 @@ export function verifyAgainstLockfile(pkg, { root = ROOT } = {}) {
   for (const field of ['version', 'dependencies', 'optionalDependencies', 'bin']) {
     if (
       entry[field] !== undefined &&
-      JSON.stringify(normalizeManifestField(field, localManifest[field] ?? {})) !==
-        JSON.stringify(normalizeManifestField(field, entry[field]))
+      JSON.stringify(normalizeManifestField(field, localManifest[field] ?? {}, pkg)) !==
+        JSON.stringify(normalizeManifestField(field, entry[field], pkg))
     ) {
       return { ok: false, error: `${pkg}@${entry.version}: manifest field '${field}' mismatch against lockfile` };
     }
