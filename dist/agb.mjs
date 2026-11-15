@@ -17173,14 +17173,30 @@ async function reviewFleet({
     rounds += 1;
     const results = await Promise.all(
       lenses.map(async (lens, i) => {
-        const model = models?.[i % (models?.length ?? 1)] ?? ROLE_MODELS.reviewFleetAlternates[i % ROLE_MODELS.reviewFleetAlternates.length];
+        let model = models?.[i % (models?.length ?? 1)] ?? ROLE_MODELS.reviewFleetAlternates[i % ROLE_MODELS.reviewFleetAlternates.length];
         let release = () => {
         };
         if (pools) {
           try {
             release = await pools.acquire(model, { repo });
           } catch (err) {
-            return { lens, model, error: `quota admission failed: ${err.message}`, findings: [] };
+            let acquiredFallback = false;
+            if (!models && err?.kind === "quota_depleted") {
+              const fallbacks = PROSECUTOR_CANDIDATES[familyOf(model)] ?? [];
+              for (let k = 0; k < fallbacks.length; k++) {
+                const candidate = fallbacks[(i + k) % fallbacks.length];
+                try {
+                  release = await pools.acquire(candidate, { repo });
+                  model = candidate;
+                  acquiredFallback = true;
+                  break;
+                } catch {
+                }
+              }
+            }
+            if (!acquiredFallback) {
+              return { lens, model, error: `quota admission failed: ${err.message}`, findings: [] };
+            }
           }
         }
         try {
