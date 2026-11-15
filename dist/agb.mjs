@@ -2048,7 +2048,7 @@ import { fileURLToPath as fileURLToPath6 } from "node:url";
 import { writeFileSync as writeFileSync17, mkdtempSync as mkdtempSync7, rmSync as rmSync12, existsSync as existsSync28, readFileSync as readFileSync23, readdirSync as readdirSync12, realpathSync as realpathSync9, mkdirSync as mkdirSync16, lstatSync as lstatSync13, readlinkSync as readlinkSync2, openSync as openSync10, closeSync as closeSync10, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
 import { execFileSync as execFileSync11, execFile as execFile8 } from "node:child_process";
 import { promisify as promisify7 } from "node:util";
-import { tmpdir as tmpdir8 } from "node:os";
+import { tmpdir as tmpdir8, platform as platform2 } from "node:os";
 import path2, { join as join31, resolve as resolve15, isAbsolute as isAbsolute8, dirname as dirname19, basename as basename8 } from "node:path";
 import { pathToFileURL } from "node:url";
 import crypto5 from "node:crypto";
@@ -8240,13 +8240,13 @@ function withFileLockSync(lockPath, fn, { timeoutMs = 1e4 } = {}) {
 function verifyWindowsSandboxAttestation({
   repo = process.cwd(),
   env = process.env,
-  platform: platform2 = process.platform,
+  platform: platform3 = process.platform,
   configPath = join19(repo, ".adlc", "config.json"),
   homeDir = env.AGB_HOME_DIR || homedir3(),
   consumeNonce = true
 } = {}) {
-  if (platform2 !== "win32") {
-    return { valid: false, reason: `Sandbox bypass attestation is only supported on Windows (platform is ${platform2})` };
+  if (platform3 !== "win32") {
+    return { valid: false, reason: `Sandbox bypass attestation is only supported on Windows (platform is ${platform3})` };
   }
   if (!existsSync18(configPath)) {
     return { valid: false, reason: "missing .adlc/config.json" };
@@ -8279,8 +8279,8 @@ function verifyWindowsSandboxAttestation({
       return { valid: false, reason: `missing required field in attestation: ${field}` };
     }
   }
-  if (att.acknowledgedPlatform !== platform2) {
-    return { valid: false, reason: `platform mismatch: ${att.acknowledgedPlatform} !== ${platform2}` };
+  if (att.acknowledgedPlatform !== platform3) {
+    return { valid: false, reason: `platform mismatch: ${att.acknowledgedPlatform} !== ${platform3}` };
   }
   const ts = Date.parse(att.timestamp);
   const exp = Date.parse(att.expiresAt);
@@ -8828,12 +8828,12 @@ async function verifyWindowsSandboxActive({ cwd = process.cwd(), env = process.e
     }
   }
 }
-function checkKernelContainment(platform2 = process.platform, options = {}) {
-  let effectivePlatform = platform2;
+function checkKernelContainment(platform3 = process.platform, options = {}) {
+  let effectivePlatform = platform3;
   let env = process.env;
-  if (typeof platform2 === "object" && platform2 !== null) {
-    effectivePlatform = platform2.platform ?? process.platform;
-    env = platform2.env ?? process.env;
+  if (typeof platform3 === "object" && platform3 !== null) {
+    effectivePlatform = platform3.platform ?? process.platform;
+    env = platform3.env ?? process.env;
   } else if (options && typeof options === "object") {
     env = options.env ?? process.env;
   }
@@ -8892,19 +8892,19 @@ function checkKernelContainment(platform2 = process.platform, options = {}) {
   }
   return { supported: false, mechanism: null, kind: "unsupported_platform", detail: `Unsupported platform: ${effectivePlatform}` };
 }
-async function checkSandbox({ env = process.env, platform: platform2 = process.platform, cwd = process.cwd() } = {}) {
+async function checkSandbox({ env = process.env, platform: platform3 = process.platform, cwd = process.cwd() } = {}) {
   if (env.AGB_SANDBOX_GATES === "0") {
     return { name: "Sandbox", level: "pass", detail: "bypassed via env", fix: null };
   }
-  if (platform2 === "darwin") {
-    const containment = checkKernelContainment(platform2, { env });
+  if (platform3 === "darwin") {
+    const containment = checkKernelContainment(platform3, { env });
     if (containment.supported) {
       return { name: "Sandbox", level: "pass", detail: "sandbox-exec available", fix: null };
     }
     return { name: "Sandbox", level: "fail", detail: "sandbox-exec missing or unusable", fix: "macOS sandbox-exec is missing or unusable. Set AGB_SANDBOX_GATES=0 to bypass." };
   }
-  if (platform2 === "linux") {
-    const containment = checkKernelContainment(platform2, { env });
+  if (platform3 === "linux") {
+    const containment = checkKernelContainment(platform3, { env });
     if (containment.supported) {
       return { name: "Sandbox", level: "pass", detail: "bwrap available", fix: null };
     }
@@ -8923,13 +8923,13 @@ async function checkSandbox({ env = process.env, platform: platform2 = process.p
       fix: "Linux bubblewrap (bwrap) is missing. apt install bubblewrap or set AGB_SANDBOX_GATES=0 to bypass."
     };
   }
-  if (platform2 === "win32") {
+  if (platform3 === "win32") {
     const configPath = join19(cwd, ".adlc", "config.json");
     if (existsSync18(configPath)) {
       try {
         const config = JSON.parse(readFileSync16(configPath, "utf8"));
         if (config.sandboxBypassAttestation) {
-          const attRes = verifyWindowsSandboxAttestation({ repo: cwd, env, platform: platform2, cwd, consumeNonce: false });
+          const attRes = verifyWindowsSandboxAttestation({ repo: cwd, env, platform: platform3, cwd, consumeNonce: false });
           if (attRes.valid) {
             return { name: "Sandbox", level: "pass", detail: "bypassed via verified HMAC attestation", fix: null };
           }
@@ -8951,7 +8951,7 @@ async function checkSandbox({ env = process.env, platform: platform2 = process.p
     }
     return await verifyWindowsSandboxActive({ cwd, env });
   }
-  return { name: "Sandbox", level: "fail", detail: `unsupported platform: ${platform2}`, fix: "Sandbox is only supported on macOS, Linux, and Windows. Set AGB_SANDBOX_GATES=0 to bypass." };
+  return { name: "Sandbox", level: "fail", detail: `unsupported platform: ${platform3}`, fix: "Sandbox is only supported on macOS, Linux, and Windows. Set AGB_SANDBOX_GATES=0 to bypass." };
 }
 async function checkBrainDir({ env = process.env, home = homedir3() } = {}) {
   const custom = env.AGB_BRAIN_DIR;
@@ -10813,12 +10813,12 @@ function isAllowedEnvVar(key2, env = process.env) {
   }
   return ENV_ALLOWLIST.includes(key2) || key2.startsWith("AGB_") || key2.startsWith("ADLC_") || key2 === "ANTIGRAVITY_CONVERSATION_ID";
 }
-function verifySandboxBypassAttestation(repoPath, platform2 = process.platform, { consumeNonce = true, env = process.env } = {}) {
-  if (platform2 !== "win32") {
-    return { valid: false, reason: `Sandbox bypass attestation is only supported on Windows (platform is ${platform2})` };
+function verifySandboxBypassAttestation(repoPath, platform3 = process.platform, { consumeNonce = true, env = process.env } = {}) {
+  if (platform3 !== "win32") {
+    return { valid: false, reason: `Sandbox bypass attestation is only supported on Windows (platform is ${platform3})` };
   }
   const effectiveEnv = env ? { ...process.env, ...env } : process.env;
-  return verifyWindowsSandboxAttestation({ repo: repoPath, platform: platform2, consumeNonce, env: effectiveEnv });
+  return verifyWindowsSandboxAttestation({ repo: repoPath, platform: platform3, consumeNonce, env: effectiveEnv });
 }
 function isAgyTimeout(out) {
   const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -10857,9 +10857,9 @@ var WRITABLE_ANTIGRAVITY_CLI_ENTRIES = /* @__PURE__ */ new Set([
   "last_check.timestamp",
   "settings.json.bak"
 ]);
-function stageGeminiEntry(entry, srcPath, dstPath, platform2) {
+function stageGeminiEntry(entry, srcPath, dstPath, platform3) {
   if (lstatSync10(dstPath, { throwIfNoEntry: false })) return;
-  if (platform2 !== "win32") {
+  if (platform3 !== "win32") {
     try {
       symlinkSync3(srcPath, dstPath);
     } catch {
@@ -10878,7 +10878,7 @@ function stageGeminiEntry(entry, srcPath, dstPath, platform2) {
     }
   }
 }
-function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
+function stageBuilderGeminiHome(cwd, userHome, platform3 = process.platform) {
   let worktreeDir = cwd;
   try {
     worktreeDir = realpathSync6(cwd);
@@ -10910,7 +10910,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
     try {
       for (const entry of readdirSync9(realGemini, { withFileTypes: true })) {
         if (WRITABLE_GEMINI_RUNTIME_DIRS.has(entry.name) || entry.name.startsWith("agb-sidecar-plugin-")) continue;
-        stageGeminiEntry(entry, join21(realGemini, entry.name), join21(targetGemini, entry.name), platform2);
+        stageGeminiEntry(entry, join21(realGemini, entry.name), join21(targetGemini, entry.name), platform3);
       }
     } catch {
     }
@@ -10919,7 +10919,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
       try {
         for (const entry of readdirSync9(realConfig, { withFileTypes: true })) {
           if (entry.name === "projects") continue;
-          stageGeminiEntry(entry, join21(realConfig, entry.name), join21(targetConfig, entry.name), platform2);
+          stageGeminiEntry(entry, join21(realConfig, entry.name), join21(targetConfig, entry.name), platform3);
         }
       } catch {
       }
@@ -10929,7 +10929,7 @@ function stageBuilderGeminiHome(cwd, userHome, platform2 = process.platform) {
       try {
         for (const entry of readdirSync9(realCli, { withFileTypes: true })) {
           if (WRITABLE_ANTIGRAVITY_CLI_ENTRIES.has(entry.name)) continue;
-          stageGeminiEntry(entry, join21(realCli, entry.name), join21(targetCli, entry.name), platform2);
+          stageGeminiEntry(entry, join21(realCli, entry.name), join21(targetCli, entry.name), platform3);
         }
       } catch {
       }
@@ -10961,7 +10961,7 @@ async function runAgy({
   sanitizeEnv = false,
   onSpawn,
   worker,
-  platform: platform2 = process.platform
+  platform: platform3 = process.platform
 }) {
   if (!model || !prompt) throw new Error("runAgy: model and prompt are required");
   const resolvedModel = resolveModelSlug(model);
@@ -10989,16 +10989,16 @@ async function runAgy({
   let verifiedBypass = null;
   if (isBuilder) {
     if (!sandbox) {
-      if (platform2 !== "win32") {
+      if (platform3 !== "win32") {
         return Promise.resolve({
           ok: false,
           output: "",
           ms: 0,
-          error: `Builder sandbox is mandatory on ${platform2} and cannot be disabled or bypassed.`,
+          error: `Builder sandbox is mandatory on ${platform3} and cannot be disabled or bypassed.`,
           kind: "containment_unavailable"
         });
       }
-      verifiedBypass = verifySandboxBypassAttestation(repo ?? cwd, platform2, { env: effectiveEnv });
+      verifiedBypass = verifySandboxBypassAttestation(repo ?? cwd, platform3, { env: effectiveEnv });
       if (!verifiedBypass.valid) {
         return Promise.resolve({
           ok: false,
@@ -11023,16 +11023,16 @@ async function runAgy({
   let bwrapCreatedLocalNm = null;
   if (isBuilder) {
     if (!containment) {
-      if (platform2 !== "win32") {
+      if (platform3 !== "win32") {
         return Promise.resolve({
           ok: false,
           output: "",
           ms: 0,
-          error: `Builder containment is mandatory on ${platform2} and cannot be disabled or bypassed.`,
+          error: `Builder containment is mandatory on ${platform3} and cannot be disabled or bypassed.`,
           kind: "containment_unavailable"
         });
       }
-      const bypass = verifiedBypass ?? verifySandboxBypassAttestation(repo ?? cwd, platform2, { env: effectiveEnv });
+      const bypass = verifiedBypass ?? verifySandboxBypassAttestation(repo ?? cwd, platform3, { env: effectiveEnv });
       if (!bypass.valid) {
         return Promise.resolve({
           ok: false,
@@ -11043,18 +11043,18 @@ async function runAgy({
         });
       }
     } else {
-      const containmentCheck = checkKernelContainment(platform2, { env: effectiveEnv });
+      const containmentCheck = checkKernelContainment(platform3, { env: effectiveEnv });
       if (!containmentCheck.supported) {
-        if (platform2 !== "win32") {
+        if (platform3 !== "win32") {
           return Promise.resolve({
             ok: false,
             output: "",
             ms: 0,
-            error: `Kernel containment floor unavailable on ${platform2}: ${containmentCheck.detail}. Attestation bypass is restricted to Windows.`,
+            error: `Kernel containment floor unavailable on ${platform3}: ${containmentCheck.detail}. Attestation bypass is restricted to Windows.`,
             kind: "containment_unavailable"
           });
         }
-        const bypass = verifiedBypass ?? verifySandboxBypassAttestation(repo ?? cwd, platform2, { env: effectiveEnv });
+        const bypass = verifiedBypass ?? verifySandboxBypassAttestation(repo ?? cwd, platform3, { env: effectiveEnv });
         if (!bypass.valid) {
           return Promise.resolve({
             ok: false,
@@ -11405,7 +11405,7 @@ async function runAgy({
             launchArgs.push("--ro-bind", realGeminiDir, realGeminiDir);
           }
           if (isBuilder && cwd) {
-            stageBuilderGeminiHome(cwd, userHome, platform2);
+            stageBuilderGeminiHome(cwd, userHome, platform3);
           }
         }
         launchArgs.push("--", bwrapAgyBin, ...args);
@@ -11414,7 +11414,7 @@ async function runAgy({
         if (!bypass?.valid) {
           const activeRes = await verifyWindowsSandboxActive({ cwd: cwd ?? repo, env: effectiveEnv });
           if (activeRes.level !== "pass") {
-            bypass = verifySandboxBypassAttestation(repo ?? cwd, platform2, { consumeNonce: true, env: effectiveEnv });
+            bypass = verifySandboxBypassAttestation(repo ?? cwd, platform3, { consumeNonce: true, env: effectiveEnv });
             if (!bypass.valid) {
               return {
                 ok: false,
@@ -11659,7 +11659,7 @@ async function runAgy({
       delete spawnEnv.GIT_DIR;
       delete spawnEnv.GIT_WORK_TREE;
       if (cwd) {
-        const agbHome = stageBuilderGeminiHome(cwd, userHome, platform2);
+        const agbHome = stageBuilderGeminiHome(cwd, userHome, platform3);
         spawnEnv.HOME = agbHome;
         spawnEnv.XDG_CONFIG_HOME = agbHome;
       } else if (!spawnEnv.HOME && process.env.HOME) {
@@ -15522,34 +15522,57 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   }
 }
 var CONSENSUS_FIX_TIMEOUT_MS = 3e5;
+var shellQuote = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+function wrapConsensusGateCommand(cmd2, worktree, { env = process.env, plat = platform2(), sandboxTmpDir } = {}) {
+  if (env.AGB_SANDBOX_GATES === "0") return { ok: true, cmd: cmd2 };
+  if (!sandboxTmpDir || !gateSandboxAvailable(env)) {
+    return { ok: false, error: `consensus-fix skipped: gate sandbox unavailable on ${plat}` };
+  }
+  if (plat === "darwin") {
+    const profileFile = join31(sandboxTmpDir, "gate.sb");
+    writeFileSync17(profileFile, sandboxProfile(worktree));
+    return { ok: true, cmd: ["sandbox-exec", "-f", profileFile, "/bin/sh", "-c", cmd2].map(shellQuote).join(" ") };
+  }
+  const emptyRoDir = join31(sandboxTmpDir, "empty-ro");
+  mkdirSync16(emptyRoDir, { recursive: true });
+  return { ok: true, cmd: ["bwrap", ...linuxBwrapArgs(worktree, cmd2, emptyRoDir)].map(shellQuote).join(" ") };
+}
 async function runConsensusFix({ worktree, testCmd, railsCmd, files, rails = [], adlcBin }) {
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
   }
-  const effectiveRailsCmd = railsCmd || (Array.isArray(rails) && rails.length > 0 ? testCmd : null);
-  const args = ["--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
-  if (effectiveRailsCmd) {
-    args.push("--rails", effectiveRailsCmd, "--require-rails");
+  const sandboxTmpDir = mkdtempSync7(join31(tmpdir8(), "agb-cf-sbx-"));
+  try {
+    const wrappedTest = wrapConsensusGateCommand(testCmd, worktree, { sandboxTmpDir });
+    if (!wrappedTest.ok) return { ok: false, applied: false, error: wrappedTest.error };
+    const effectiveRailsCmd = railsCmd || (Array.isArray(rails) && rails.length > 0 ? testCmd : null);
+    const args = ["--allow-dirty", "--test-cmd", wrappedTest.cmd, "--files", files.join(",")];
+    if (effectiveRailsCmd) {
+      const wrappedRails = wrapConsensusGateCommand(effectiveRailsCmd, worktree, { sandboxTmpDir });
+      args.push("--rails", wrappedRails.cmd, "--require-rails");
+    }
+    args.push("--apply", "--json");
+    const res = await runAdlcTool({
+      tool: "consensus-fix",
+      args,
+      cwd: worktree,
+      timeoutMs: CONSENSUS_FIX_TIMEOUT_MS,
+      adlcBin,
+      repo: worktree
+    });
+    if (!res.ok) {
+      return { ok: false, applied: false, error: res.error };
+    }
+    const parsed = res.parsed;
+    return {
+      ok: true,
+      applied: !!parsed.applied,
+      survivors: parsed.survivors?.length ?? 0,
+      allDivergent: !!parsed.allDivergent
+    };
+  } finally {
+    rmSync12(sandboxTmpDir, { recursive: true, force: true });
   }
-  args.push("--apply", "--json");
-  const res = await runAdlcTool({
-    tool: "consensus-fix",
-    args,
-    cwd: worktree,
-    timeoutMs: CONSENSUS_FIX_TIMEOUT_MS,
-    adlcBin,
-    repo: worktree
-  });
-  if (!res.ok) {
-    return { ok: false, applied: false, error: res.error };
-  }
-  const parsed = res.parsed;
-  return {
-    ok: true,
-    applied: !!parsed.applied,
-    survivors: parsed.survivors?.length ?? 0,
-    allDivergent: !!parsed.allDivergent
-  };
 }
 var GATE_MANIFEST_TIMEOUT_MS = 15e3;
 async function recordGate({ repo, gateName, ticketId, data, adlcBin }) {
