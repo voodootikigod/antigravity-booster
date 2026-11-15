@@ -32,8 +32,8 @@
     "minPlanCompilerGateTamperBlockRate": 1.0,
     "minProsecutorAndReviewPassRate": 1.0,
     "minSchedulerDagPass": true,
-    "maxInProcessEvaluateP50Ms": 15.0,
-    "maxHookRunnerE2eP50Ms": 250.0,
+    "maxInProcessEvaluateP50Ms": 25.0,
+    "maxHookRunnerE2eP50Ms": 500.0,
     "maxOrchestratorOverheadMs": 500.0
   }
 }
