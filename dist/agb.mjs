@@ -11686,55 +11686,14 @@ async function runAgy({
     if (process.platform !== "win32") {
       spawnOpts.detached = true;
     }
-    let p;
+    let p = null;
+    let syncSpawnErr = null;
     try {
       p = spawn2(launchBin, launchArgs, spawnOpts);
     } catch (spawnErr) {
-      if (argsTempFile) {
-        try {
-          unlinkSync5(argsTempFile);
-        } catch {
-        }
-      }
-      if (argsTempDir) {
-        try {
-          rmSync7(argsTempDir, { recursive: true, force: true });
-        } catch {
-        }
-      }
-      if (bwrapTempDir) {
-        try {
-          rmSync7(bwrapTempDir, { recursive: true, force: true });
-        } catch {
-        }
-      }
-      if (bwrapCreatedLocalNm) {
-        try {
-          rmdirSync(bwrapCreatedLocalNm);
-        } catch {
-        }
-      }
-      const errorMsg = `spawn: ${spawnErr.message}`;
-      const result = {
-        ok: false,
-        output: "",
-        ms: Date.now() - t0,
-        error: errorMsg,
-        kind: "spawn",
-        conversationId: null,
-        ...outputFormat === "stream-json" ? { events: [], terminalResult: null } : {}
-      };
-      if (logFile) {
-        try {
-          mkdirSync10(dirname16(logFile), { recursive: true, mode: 448 });
-          writeFileSync11(logFile, JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), model, cwd, strike, ms: result.ms, prompt, output: "", ok: false, role, kind: "spawn", error: errorMsg }) + "\n", { flag: "a", mode: 384 });
-        } catch {
-        }
-      }
-      resolve19(result);
-      return;
+      syncSpawnErr = spawnErr;
     }
-    if (pipePromptViaStdin && p.stdin) {
+    if (pipePromptViaStdin && p?.stdin) {
       p.stdin.on("error", () => {
       });
       p.stdin.end(prompt, "utf8");
@@ -12193,6 +12152,10 @@ async function runAgy({
       }
       resolve19(result);
     };
+    if (syncSpawnErr) {
+      void finish(null, null, syncSpawnErr);
+      return;
+    }
     p.stdout.on("data", (d) => {
       if (killReason) return;
       const chunk = Buffer.isBuffer(d) ? d : Buffer.from(d);

@@ -114,6 +114,7 @@ test('findExternalSpecifiers: catches process.binding, process._linkedBinding, a
 
 test('main: verifies default bundles, normalizes ./ and absolute bundle paths, and fails on disallowed externals or missing files', async () => {
   const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { execFileSync } = await import('node:child_process');
   const { tmpdir } = await import('node:os');
   const { join, resolve } = await import('node:path');
   const { main } = await import('../scripts/check-bundle-externals.mjs');
@@ -127,6 +128,10 @@ test('main: verifies default bundles, normalizes ./ and absolute bundle paths, a
     const badBundle = join(tmp, 'bad.mjs');
     writeFileSync(badBundle, 'import "typescript";\n');
     assert.equal(main([badBundle]), 1, 'non-allowlisted bundle importing typescript fails');
+    assert.throws(
+      () => execFileSync(process.execPath, ['scripts/check-bundle-externals.mjs', badBundle], { stdio: 'pipe' }),
+      (err) => err.status === 1,
+    );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

@@ -86,6 +86,17 @@ test('reviewFleet: handles >128 KiB diffs via stdin piping without E2BIG and con
     });
     assert.equal(res.converged, true, JSON.stringify(res.errors));
     assert.deepEqual(res.errors, []);
+
+    const execErrRes = await reviewFleet({
+      diff: 'diff --git a/x.mjs b/x.mjs\n+1',
+      context: Symbol('unstringifiable-context'),
+      lenses: ['correctness'],
+      dryRounds: 1,
+      maxRounds: 1,
+    });
+    assert.equal(execErrRes.converged, false);
+    assert.equal(execErrRes.errors.length, 1);
+    assert.match(execErrRes.errors[0].error, /^execution failed:/);
   } finally {
     if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
     if (prevVerdict === undefined) delete process.env.FAKE_PROSECUTOR_VERDICT; else process.env.FAKE_PROSECUTOR_VERDICT = prevVerdict;
