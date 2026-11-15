@@ -165,4 +165,10 @@ test('spawn: a world-writable vendored path is refused (no pin copy protects it)
   const v = revalidateAdlcBinary(null, { bundled: true, pluginRoot, env: {} });
   assert.equal(v.ok, false);
   assert.match(v.error, /dist is world-writable/);
+
+  const pluginRootTs = fakePluginRoot('spawn-writable-ts-worker');
+  chmodSync(join(pluginRootTs, 'vendor', 'adlc', 'dist', 'syntax-check-typescript.mjs'), 0o666);
+  const vTs = revalidateAdlcBinary(null, { bundled: true, pluginRoot: pluginRootTs, env: {} });
+  assert.equal(vTs.ok, false);
+  assert.match(vTs.error, /syntax-check-typescript\.mjs is world-writable/);
 });

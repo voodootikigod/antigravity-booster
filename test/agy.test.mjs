@@ -325,4 +325,39 @@ test('runAgy sandbox profiles: masks symlinked credentials on Linux bwrap, denie
   }
 });
 
+test('runAgy: pipes oversized prompts (> MAX_ARGV_PROMPT_BYTES) via --input-format text on stdin without E2BIG', async () => {
+  const mock = makeMockScript([
+    'bytes=$(wc -c)',
+    'printf "ARGS:%s|BYTES:%s\\n" "$*" "$bytes"',
+  ]);
+  try {
+    const bigPrompt = 'DIFF-HEADER\n' + 'x'.repeat(140_000);
+    const res = await runAgy({
+      bin: mock.bin,
+      model: 'gemini-4-argon-high',
+      prompt: bigPrompt,
+      sandbox: false,
+    });
+    assert.equal(res.ok, true, res.error);
+    assert.match(res.output, /ARGS:--input-format text --print-timeout/);
+    assert.doesNotMatch(res.output, /--print DIFF-HEADER/);
+    assert.match(res.output, new RegExp(`BYTES:\\s*${Buffer.byteLength(bigPrompt, 'utf8')}`));
+  } finally {
+    mock.cleanup();
+  }
+});
+
+test('runAgy: synchronous spawn() failure resolves { ok: false, kind: "spawn" } instead of rejecting', async () => {
+  // Null byte in binary path triggers a synchronous TypeError/ERR_INVALID_ARG_VALUE inside child_process.spawn
+  const res = await runAgy({
+    bin: '/invalid/\0/agy',
+    model: 'gemini-4-argon-high',
+    prompt: 'short prompt',
+    sandbox: false,
+  });
+  assert.equal(res.ok, false);
+  assert.equal(res.kind, 'spawn');
+  assert.match(res.error, /^spawn:/);
+});
+
 

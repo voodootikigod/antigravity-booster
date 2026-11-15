@@ -30,7 +30,7 @@ if (!TARGET_ADLC_VERSION || !TARGET_AGY_VERSION) {
   console.error([
     'FATAL: the audit needs explicit release targets (ADLC and agy versions).',
     'Usage: node maintainer-skills/modernize/scripts/audit.mjs <ADLC_VERSION> [PINNED_ADLC_REF] <AGY_VERSION> [PINNED_AGY_REF]',
-    'Example: node maintainer-skills/modernize/scripts/audit.mjs 1.12.0 "" 1.4.7',
+    'Example: node maintainer-skills/modernize/scripts/audit.mjs 1.13.0 "" 1.5.9',
     'Stage 5 needs an operator-signed trust anchor for each target: run maintainer-skills/modernize/scripts/trust-anchor.mjs first (dry run, then --write).',
   ].join('\n'));
   process.exit(1);

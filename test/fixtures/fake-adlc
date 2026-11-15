@@ -175,6 +175,18 @@ if [ "$1" = "merge-forecast" ]; then
     veto)
       echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":3,"scheduleWidth":3,"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"signalsEvaluated":{"scopeOverlap":true,"namespaceCollision":true,"importRadius":true,"coChange":true,"graphCoupling":false},"warnings":[],"gateFailures":["1 high-risk pair(s) would run concurrently: T1-T2"]}'
       exit 2 ;;
+    foundation-first)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":1,"scheduleWidth":4,"certifiedWidth":1,"backpressureWidth":null,"recommendedWidth":1,"signalsEvaluated":{"scopeOverlap":true,"namespaceCollision":true,"importRadius":true,"coChange":true,"graphCoupling":false},"warnings":[],"gateFailures":[]}'
+      exit 0 ;;
+    backpressure)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":4,"scheduleWidth":4,"certifiedWidth":4,"backpressureWidth":2,"recommendedWidth":2,"signalsEvaluated":{"scopeOverlap":true,"namespaceCollision":true,"importRadius":true,"coChange":true,"graphCoupling":false},"warnings":[],"gateFailures":[]}'
+      exit 0 ;;
+    null-signals)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":2,"scheduleWidth":2,"certifiedWidth":2,"backpressureWidth":null,"recommendedWidth":2,"signalsEvaluated":null,"warnings":[],"gateFailures":[]}'
+      exit 0 ;;
+    array-signals)
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":2,"scheduleWidth":2,"certifiedWidth":2,"backpressureWidth":null,"recommendedWidth":2,"signalsEvaluated":["scopeOverlap"],"warnings":[],"gateFailures":[]}'
+      exit 0 ;;
     *)
       echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":3,"scheduleWidth":3,"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"signalsEvaluated":{"scopeOverlap":true,"namespaceCollision":true,"importRadius":true,"coChange":true,"graphCoupling":false},"warnings":[],"gateFailures":[]}'
       exit 0 ;;

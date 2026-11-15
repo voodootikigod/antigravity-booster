@@ -217,7 +217,8 @@ Edge convention: `{ "to": X }` on ticket A means A completes before X starts.
         "scripts/rails-guard-ci.mjs"
       ],
       "edges": [
-        { "to": "t-adlc-1-13-integrations" }
+        { "to": "t-adlc-1-13-integrations" },
+        { "to": "t-fix-vendor-ts-worker-mode" }
       ],
       "tier": "mid",
       "pool_hint": "gemini"
@@ -264,9 +265,66 @@ Edge convention: `{ "to": X }` on ticket A means A completes before X starts.
         "vendor/cache/**",
         "scripts/rails-guard-ci.mjs"
       ],
-      "edges": [],
+      "edges": [
+        { "to": "t-fix-p5-prosecution" }
+      ],
       "tier": "cheap",
       "pool_hint": "gemini"
+    },
+    {
+      "id": "t-fix-vendor-ts-worker-mode",
+      "title": "Normalize vendor/adlc/dist/syntax-check-typescript.mjs mode to 0644 for win32 digest parity",
+      "body": "Normalize file mode of `vendor/adlc/dist/syntax-check-typescript.mjs` to `0644` in `package.json` `vendor:bundle` so `computeDirectoryDigest` produces identical SHA-512 tree digests on POSIX and Windows (`win32`), refresh `KNOWN_VENDORED_ADLC` via `node scripts/update-adlc-digests.mjs --write`, and rebuild `dist/**`. Acceptance: `npm run build && node --test test/digest.test.mjs` green.",
+      "scope": [
+        "package.json",
+        "vendor/adlc/dist/syntax-check-typescript.mjs",
+        "lib/adlc-bridge.mjs",
+        "dist/**"
+      ],
+      "rails": [
+        "lib/lock.mjs",
+        "lib/gates.mjs",
+        "vendor/cache/**",
+        "scripts/rails-guard-ci.mjs"
+      ],
+      "edges": [
+        { "to": "t-fix-p5-prosecution" }
+      ],
+      "tier": "cheap",
+      "pool_hint": "gemini"
+    },
+    {
+      "id": "t-fix-p5-prosecution",
+      "title": "Remediate P5 adversarial review findings, review-fleet E2BIG/lock bugs, and hollow-test survivors",
+      "body": "Resolve P5 adversarial review findings F2-F9, live agb review dogfooding bugs, and adlc hollow-test mutation survivors across lib/agy.mjs, lib/pools.mjs, lib/review.mjs, lib/adlc-bridge.mjs, lib/preflight.mjs, lib/scheduler.mjs, hooks/policy/{constants,evaluate}.mjs, scripts/check-bundle-externals.mjs, modernize audit mirrors, docs, dist bundles, and tests. Acceptance: `npm run build && npm run coverage:check && npx adlc hollow-test --base main` green.",
+      "scope": [
+        "lib/agy.mjs",
+        "lib/pools.mjs",
+        "lib/review.mjs",
+        "lib/adlc-bridge.mjs",
+        "lib/preflight.mjs",
+        "lib/scheduler.mjs",
+        "hooks/policy/constants.mjs",
+        "hooks/policy/evaluate.mjs",
+        "scripts/check-bundle-externals.mjs",
+        "maintainer-skills/modernize/scripts/audit.mjs",
+        ".claude/skills/modernize/scripts/audit.mjs",
+        ".agents/skills/modernize/scripts/audit.mjs",
+        "website/content/docs/internals/policy-guard.mdx",
+        "website/generated/**",
+        "docs/research/roadmap-agy-1.5.9-adlc-1.13.0.md",
+        "dist/**",
+        "test/**"
+      ],
+      "rails": [
+        "lib/lock.mjs",
+        "lib/gates.mjs",
+        "vendor/cache/**",
+        "scripts/rails-guard-ci.mjs"
+      ],
+      "edges": [],
+      "tier": "frontier",
+      "pool_hint": "claude"
     }
   ]
 }

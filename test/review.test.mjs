@@ -71,3 +71,24 @@ test('reviewFleet: captures quota admission errors per lens without crashing or 
   }
 });
 
+test('reviewFleet: handles >128 KiB diffs via stdin piping without E2BIG and converges cleanly', async () => {
+  const prevAgy = process.env.AGB_AGY_BIN;
+  const prevVerdict = process.env.FAKE_PROSECUTOR_VERDICT;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+  process.env.FAKE_PROSECUTOR_VERDICT = 'ship';
+  try {
+    const hugeDiff = 'diff --git a/big.mjs b/big.mjs\n+' + 'a'.repeat(145_000);
+    const res = await reviewFleet({
+      diff: hugeDiff,
+      lenses: ['correctness', 'security'],
+      dryRounds: 1,
+      maxRounds: 2,
+    });
+    assert.equal(res.converged, true, JSON.stringify(res.errors));
+    assert.deepEqual(res.errors, []);
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+    if (prevVerdict === undefined) delete process.env.FAKE_PROSECUTOR_VERDICT; else process.env.FAKE_PROSECUTOR_VERDICT = prevVerdict;
+  }
+});
+

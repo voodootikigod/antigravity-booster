@@ -1,0 +1,31 @@
+{
+  "body": "Resolve P5 adversarial review findings F2-F9, live agb review dogfooding bugs, and adlc hollow-test mutation survivors: (1) lib/agy.mjs pipes prompts > 24 KiB via --input-format text on stdin and catches synchronous spawn() errors cleanly; (2) lib/pools.mjs withLock only awaits Thenable callbacks so synchronous lock callbacks do not hold agb_pools_shared.lock across microtasks and self-deadlock withLockSync; (3) lib/review.mjs scopes quota-admission catch strictly to pools.acquire(); (4) hooks/policy/evaluate.mjs + constants.mjs close bare-filename ScriptPath/Cwd stepOne checks, physicalResolve Cwd symlink/.. and empty-workspace fail-closed checks, swarm workspace enum validation, unanchored swarm relative-path denial, and bare root-rail checks in swarm/run_workflow; (5) lib/adlc-bridge.mjs adds vendor/adlc/dist/syntax-check-typescript.mjs to unsafeVendoredPath; (6) lib/preflight.mjs computes plan.concurrencyCap from scheduleWidth bounded by backpressureWidth and lib/scheduler.mjs enforces plan.concurrencyCap in dispatch(); (7) lib/scheduler.mjs runConsensusFix supports railsCmd (gate.build || testCmd) and requires NPM_GATE_RE unless AGB_SANDBOX_GATES=0; (8) test/fixtures/fake-agy defaults --version to 1.5.9 and test/modernize-skill.test.mjs runs against 1.5.9 + temp repo without polluting live modernize_provenance.jsonl; (9) scripts/check-bundle-externals.mjs normalizes CLI paths relative to ROOT; (10) sync policy-guard.mdx, audit.mjs mirrors, roadmap DAG, dist bundles, and mutation-killing tests. Acceptance: npm run build && npm run coverage:check && npx adlc hollow-test --base main green.",
+  "edges": [],
+  "id": "t-fix-p5-prosecution",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "lib/pools.mjs",
+    "lib/review.mjs",
+    "lib/adlc-bridge.mjs",
+    "lib/preflight.mjs",
+    "lib/scheduler.mjs",
+    "hooks/policy/constants.mjs",
+    "hooks/policy/evaluate.mjs",
+    "scripts/check-bundle-externals.mjs",
+    "maintainer-skills/modernize/scripts/audit.mjs",
+    ".claude/skills/modernize/scripts/audit.mjs",
+    ".agents/skills/modernize/scripts/audit.mjs",
+    "website/content/docs/internals/policy-guard.mdx",
+    "website/generated/**",
+    "docs/research/roadmap-agy-1.5.9-adlc-1.13.0.md",
+    "dist/**",
+    "test/**"
+  ],
+  "title": "Remediate P5 adversarial review findings, review-fleet E2BIG/lock bugs, and hollow-test survivors"
+}

@@ -172,3 +172,102 @@ test('runPlan: consensus-fix candidate violating rails is discarded and falls ba
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('runPlan: consensus-fix passes gate.build as --rails + --require-rails and skips unsandboxed non-npm commands by default', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-cf-build-state-'));
+  try {
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify({ name: 'cf-test', version: '0.0.0', scripts: { 'lint-check': 'node -e "process.exit(0)"', test: 'node -e "process.exit(0)"' } }, null, 2) + '\n',
+    );
+    execFileSync('git', ['add', 'package.json'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add package.json'], { cwd: repo });
+
+    // 1. With gate.build configured, --rails receives gate.build while --test-cmd receives gate.test
+    const r1 = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_STATE_DIR: state,
+        FAKE_PROSECUTOR_VERDICT: 'block-then-ship', AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { build: 'npm run lint-check', test: 'npm test' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+      }, quiet)
+    );
+    assert.deepEqual(r1.merged, ['T1']);
+    const inv1 = readFileSync(join(state, 'consensus-fix-invocations'), 'utf8');
+    assert.match(inv1, /test-cmd=npm test files=T1\.txt rails=npm run lint-check require-rails=true/);
+
+    // 2. Without AGB_SANDBOX_GATES=0, non-npm shell commands in gate.test are NOT sent unsandboxed to consensus-fix
+    const repoNoPkg = makeRepo();
+    const state2 = mkdtempSync(join(tmpdir(), 'agb-cf-sandbox-state-'));
+    try {
+      const r2 = await withEnv(
+        {
+          AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_STATE_DIR: state2,
+          FAKE_PROSECUTOR_VERDICT: 'block-then-ship',
+        },
+        () => runPlan({
+          repo: repoNoPkg,
+          gate: { test: 'true' },
+          tickets: [{ id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'] }],
+        }, quiet)
+      );
+      assert.deepEqual(r2.merged, ['T2']);
+      assert.throws(() => readFileSync(join(state2, 'consensus-fix-invocations'), 'utf8'), /ENOENT/);
+    } finally {
+      rmSync(repoNoPkg, { recursive: true, force: true });
+      rmSync(state2, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: plan.concurrencyCap bounds concurrent active ticket dispatches', async () => {
+  const { PoolSet } = await import('../lib/pools.mjs');
+  for (const [cap, expectedMax] of [[1, 1], [2, 2]]) {
+    const repo = makeRepo();
+    try {
+      const pools = new PoolSet(undefined, { repo });
+      const origAcquire = pools.acquire.bind(pools);
+      let activeBuilders = 0;
+      let maxActiveBuilders = 0;
+      pools.acquire = async (model, opts) => {
+        const release = await origAcquire(model, opts);
+        if (opts?.ticketId) {
+          activeBuilders += 1;
+          maxActiveBuilders = Math.max(maxActiveBuilders, activeBuilders);
+          await new Promise((r) => setTimeout(r, 80));
+          const wrapped = async (...a) => {
+            activeBuilders -= 1;
+            return release(...a);
+          };
+          Object.assign(wrapped, release);
+          return wrapped;
+        }
+        return release;
+      };
+      const report = await withEnv(
+        { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, AGB_SANDBOX_GATES: '0' },
+        () => runPlan({
+          repo,
+          pools,
+          concurrencyCap: cap,
+          gate: { test: 'true' },
+          tickets: [
+            { id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] },
+            { id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'] },
+          ],
+        }, quiet)
+      );
+      assert.deepEqual(report.merged.sort(), ['T1', 'T2']);
+      assert.equal(maxActiveBuilders, expectedMax, `concurrencyCap=${cap}`);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }
+});

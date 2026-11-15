@@ -37,7 +37,7 @@ function makeFixture() {
   return {
     base,
     home,
-    active: mk('active', { tickets: [{ id: 'T1', rails: ['lib/lock.mjs', 'lib/gates.mjs'], scope: ['lib/feature.mjs', 'test/**'] }] }),
+    active: mk('active', { tickets: [{ id: 'T1', rails: ['lib/lock.mjs', 'lib/gates.mjs', 'CODEOWNERS'], scope: ['lib/feature.mjs', 'test/**'] }] }),
     inactive: mk('inactive', { tickets: [{ id: 'T9', rails: [], scope: ['lib/**'] }] }),
     plain: mk('plain'),
     cleanup: () => rmSync(base, { recursive: true, force: true }),
@@ -695,11 +695,108 @@ test('run_workflow: enforces ScriptPath, Cwd, and nested Args against rails, tru
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp' }, fx.active).decision, 'deny');
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: 'lib' }, fx.active).decision, 'deny');
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '' }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '' }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: 123 }, fx.plain).decision, 'deny');
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp' }, fx.plain).decision, 'pass');
+
+  // Missing workspacePaths with omitted Cwd fails closed instead of falling back to '/'
+  assert.equal(
+    evaluatePayload({ toolCall: { name: 'run_workflow', args: { Script: 'print(1)' } }, workspacePaths: [] }, { env: INTERACTIVE, home: fx.home, platform: 'linux' }).decision,
+    'deny',
+  );
 
   // Plain workspace referencing an active-rail ADLC repo via Args -> deny on rail, ask on non-rail
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp', Args: { f: join(fx.active, 'lib/lock.mjs') } }, fx.plain).decision, 'deny');
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp', Args: { repo: fx.active } }, fx.plain).decision, 'ask');
+});
+
+test('swarm & run_workflow: symlink escapes, bare-filename rails, workspace enum, and prose-key exemptions', () => {
+  const protectedBin = join(fx.home, '.local/bin/agb');
+  const boosterSecret = join(fx.home, '.gemini/antigravity-cli/plugin_data/antigravity-booster/secret.json');
+
+  // Every SWARM_PROSE_KEYS string/array field carrying an exact protected path passes Step 1
+  for (const ws of ['inherit', 'share', 'branch']) {
+    assert.equal(
+      run('swarm', {
+        action: 'CODEOWNERS',
+        workspace: ws,
+        model: 'CODEOWNERS',
+        name: 'CODEOWNERS',
+        fork: 'CODEOWNERS',
+        brief: protectedBin,
+        title: protectedBin,
+        tasks: [protectedBin],
+        toolAction: protectedBin,
+        toolSummary: protectedBin,
+      }, fx.active).decision,
+      'pass',
+    );
+  }
+  // Also verify SWARM_META_KEYS 'workspace' exemption when a rail shares a valid mode name ('share')
+  const wsRailRepo = join(fx.base, 'ws-rail-repo');
+  mkdirSync(join(wsRailRepo, '.adlc'), { recursive: true });
+  writeFileSync(join(wsRailRepo, '.adlc', 'config.json'), '{}\n');
+  initializeDirectoryStore(join(wsRailRepo, '.adlc', 'tickets'));
+  writeFileSync(
+    join(wsRailRepo, '.adlc', 'tickets', ticketFilename('TW')),
+    JSON.stringify({ id: 'TW', title: 't', body: 'b', scope: [], rails: ['share'], edges: [] }, null, 2) + '\n',
+  );
+  assert.equal(run('swarm', { action: 'add', workspace: 'share' }, wsRailRepo).decision, 'pass');
+
+  // Invalid swarm workspace mode (arbitrary path or non-enum) fails closed
+  assert.equal(run('swarm', { action: 'add', workspace: '/tmp/outside' }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', workspace: 'custom' }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', workspace: 42 }, fx.plain).decision, 'deny');
+
+  // Relative path in swarm with no workspacePaths fails closed
+  assert.equal(
+    evaluatePayload({ toolCall: { name: 'swarm', args: { action: 'add', target: 'lib/feature.mjs' } }, workspacePaths: [] }, { env: INTERACTIVE, home: fx.home, platform: 'linux' }).decision,
+    'deny',
+  );
+
+  // Bare root-level rail token ('CODEOWNERS') is caught in non-meta swarm args and run_workflow Args
+  assert.equal(run('swarm', { action: 'add', target: 'CODEOWNERS' }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { file: 'CODEOWNERS' } }, fx.active).decision, 'deny');
+
+  // Bare-filename symlinks in plain/inactive workspaces pointing to protected roots or booster data are denied in Step 1
+  const wfBinLink = join(fx.plain, 'wf-bin.py');
+  const wfDataLink = join(fx.plain, 'wf-data.py');
+  const inactCfgLink = join(fx.inactive, 'cfg-link');
+  symlinkSync(protectedBin, wfBinLink);
+  symlinkSync(boosterSecret, wfDataLink);
+  symlinkSync(join(fx.inactive, '.adlc', 'config.json'), inactCfgLink);
+
+  assert.equal(run('run_workflow', { ScriptPath: 'wf-bin.py' }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: 'wf-data.py' }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { ref: 'wf-bin.py' } }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', target: 'wf-bin.py' }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', target: 'cfg-link' }, fx.inactive).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { ref: 'cfg-link' } }, fx.inactive).decision, 'deny');
+
+  // Cwd symlink/.. traversal escaping an ADLC workspace and Cwd symlink loop both fail closed
+  const outsideDir = join(fx.base, 'outside-target');
+  mkdirSync(join(outsideDir, 'sub'), { recursive: true });
+  const escapeLink = join(fx.active, 'escape-sub');
+  symlinkSync(join(outsideDir, 'sub'), escapeLink);
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: `${escapeLink}/..` }, fx.active).decision, 'deny');
+
+  const loopLink = join(fx.plain, 'cwd-loop');
+  symlinkSync(loopLink, loopLink);
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: loopLink }, fx.plain).decision, 'deny');
+
+  // Every WORKFLOW_PROSE_KEYS string field carrying an exact protected path passes Step 1
+  assert.equal(
+    run('run_workflow', {
+      Script: protectedBin,
+      Description: protectedBin,
+      toolAction: protectedBin,
+      toolSummary: protectedBin,
+      WaitMsBeforeAsync: 5000,
+    }, fx.plain).decision,
+    'pass',
+  );
+  // Hostile path string in WaitMsBeforeAsync is NOT treated as prose -> denied in Step 1
+  assert.equal(run('run_workflow', { Script: 'print(1)', WaitMsBeforeAsync: protectedBin }, fx.plain).decision, 'deny');
 });
 
 

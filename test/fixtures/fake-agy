@@ -250,7 +250,7 @@ case "${FAKE_AGY_MODE:-}" in
 esac
 
 if [ "$1" = "--version" ]; then
-  echo "agy version 1.2.8"
+  echo "agy version ${FAKE_AGY_VERSION:-1.5.9}"
   exit 0
 fi
 

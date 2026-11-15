@@ -7505,6 +7505,7 @@ function unsafeVendoredPath(pluginRoot) {
     join18(vendorDir, "bin", "adlc.mjs"),
     join18(vendorDir, "dist"),
     join18(vendorDir, "dist", "adlc.bundle.mjs"),
+    join18(vendorDir, "dist", "syntax-check-typescript.mjs"),
     join18(vendorDir, "dist", "watchdog.mjs")
   ];
   for (const p of paths2) {
@@ -9350,7 +9351,11 @@ async function withLock(lockFile = getLockFile(), fn, { timeoutMs = 1e4, retryMs
     throw new Error(`Timeout acquiring lock on ${lockFile} after ${timeoutMs}ms`);
   }
   try {
-    return await fn();
+    const res = fn();
+    if (res && typeof res.then === "function") {
+      return await res;
+    }
+    return res;
   } finally {
     try {
       if (existsSync19(lockFile)) {
@@ -10759,6 +10764,7 @@ init_models();
 var MAX_STREAM_LINE_BYTES = 1024 * 1024;
 var MAX_STREAM_TOTAL_BYTES = 50 * 1024 * 1024;
 var MAX_CONSECUTIVE_GARBAGE_BYTES = 5 * 1024 * 1024;
+var MAX_ARGV_PROMPT_BYTES = 24 * 1024;
 var ENV_ALLOWLIST = [
   "PATH",
   "USER",
@@ -10962,7 +10968,8 @@ async function runAgy({
   const userHome = process.env.AGB_HOME_DIR || homedir4();
   const agyBin = bin ?? process.env.AGB_AGY_BIN ?? (resolveAgyBinary(userHome) || "agy");
   const effectiveTimeout = outputFormat === "stream-json" && (!timeout || timeout === "0") ? "0" : timeout;
-  const args = ["--print", prompt, "--print-timeout", effectiveTimeout, "--model", resolvedModel];
+  const pipePromptViaStdin = Buffer.byteLength(prompt, "utf8") > MAX_ARGV_PROMPT_BYTES;
+  const args = pipePromptViaStdin ? ["--input-format", "text", "--print-timeout", effectiveTimeout, "--model", resolvedModel] : ["--print", prompt, "--print-timeout", effectiveTimeout, "--model", resolvedModel];
   if (typeof conversation === "string" && conversation.trim()) {
     args.push("--conversation", conversation.trim());
   }
@@ -11675,11 +11682,63 @@ async function runAgy({
       } catch {
       }
     }
-    const spawnOpts = { cwd, stdio: ["ignore", "pipe", "pipe"], env: spawnEnv };
+    const spawnOpts = { cwd, stdio: [pipePromptViaStdin ? "pipe" : "ignore", "pipe", "pipe"], env: spawnEnv };
     if (process.platform !== "win32") {
       spawnOpts.detached = true;
     }
-    const p = spawn2(launchBin, launchArgs, spawnOpts);
+    let p;
+    try {
+      p = spawn2(launchBin, launchArgs, spawnOpts);
+    } catch (spawnErr) {
+      if (argsTempFile) {
+        try {
+          unlinkSync5(argsTempFile);
+        } catch {
+        }
+      }
+      if (argsTempDir) {
+        try {
+          rmSync7(argsTempDir, { recursive: true, force: true });
+        } catch {
+        }
+      }
+      if (bwrapTempDir) {
+        try {
+          rmSync7(bwrapTempDir, { recursive: true, force: true });
+        } catch {
+        }
+      }
+      if (bwrapCreatedLocalNm) {
+        try {
+          rmdirSync(bwrapCreatedLocalNm);
+        } catch {
+        }
+      }
+      const errorMsg = `spawn: ${spawnErr.message}`;
+      const result = {
+        ok: false,
+        output: "",
+        ms: Date.now() - t0,
+        error: errorMsg,
+        kind: "spawn",
+        conversationId: null,
+        ...outputFormat === "stream-json" ? { events: [], terminalResult: null } : {}
+      };
+      if (logFile) {
+        try {
+          mkdirSync10(dirname16(logFile), { recursive: true, mode: 448 });
+          writeFileSync11(logFile, JSON.stringify({ ts: (/* @__PURE__ */ new Date()).toISOString(), model, cwd, strike, ms: result.ms, prompt, output: "", ok: false, role, kind: "spawn", error: errorMsg }) + "\n", { flag: "a", mode: 384 });
+        } catch {
+        }
+      }
+      resolve19(result);
+      return;
+    }
+    if (pipePromptViaStdin && p.stdin) {
+      p.stdin.on("error", () => {
+      });
+      p.stdin.end(prompt, "utf8");
+    }
     const originalPid = p?.pid ?? null;
     const originalStartTime = originalPid ? getProcessStartTime2(originalPid) : null;
     if (typeof onSpawn === "function" && p) {
@@ -13114,12 +13173,17 @@ async function applyMergeForecast(plan, ticketsPath, { adlcBin, repo, graphCoupl
   }
   const parsed = res.parsed;
   const firstWaveWidth = parsed.firstWaveWidth ?? parsed.certifiedWidth ?? null;
+  const scheduleWidth = typeof parsed.scheduleWidth === "number" ? parsed.scheduleWidth : null;
   const signalsEvaluated = parsed.signalsEvaluated && typeof parsed.signalsEvaluated === "object" && !Array.isArray(parsed.signalsEvaluated) ? parsed.signalsEvaluated : null;
-  plan.concurrencyCap = parsed.recommendedWidth ?? firstWaveWidth;
+  let concurrencyCap = scheduleWidth ?? parsed.recommendedWidth ?? firstWaveWidth;
+  if (typeof concurrencyCap === "number" && typeof parsed.backpressureWidth === "number" && parsed.backpressureWidth > 0) {
+    concurrencyCap = Math.min(concurrencyCap, parsed.backpressureWidth);
+  }
+  plan.concurrencyCap = concurrencyCap;
   return {
     ok: true,
     firstWaveWidth,
-    scheduleWidth: parsed.scheduleWidth ?? null,
+    scheduleWidth,
     certifiedWidth: parsed.certifiedWidth,
     recommendedWidth: parsed.recommendedWidth,
     backpressureWidth: parsed.backpressureWidth,
@@ -15495,13 +15559,22 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   }
 }
 var CONSENSUS_FIX_TIMEOUT_MS = 3e5;
-async function runConsensusFix({ worktree, testCmd, files, rails = [], adlcBin }) {
+var SAFE_NPM_GATE_RE = /^npm (test|run [a-zA-Z0-9_:-]+)$/;
+async function runConsensusFix({ worktree, testCmd, railsCmd, files, rails = [], adlcBin }) {
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
   }
+  const effectiveRailsCmd = railsCmd || (Array.isArray(rails) && rails.length > 0 ? testCmd : null);
+  if (process.env.AGB_SANDBOX_GATES !== "0") {
+    for (const cmd2 of [testCmd, effectiveRailsCmd].filter(Boolean)) {
+      if (!SAFE_NPM_GATE_RE.test(cmd2)) {
+        return { ok: false, applied: false, error: `consensus-fix skipped: gate command '${cmd2}' requires sandboxed execution` };
+      }
+    }
+  }
   const args = ["--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
-  if (Array.isArray(rails) && rails.length > 0) {
-    args.push("--rails", testCmd, "--require-rails");
+  if (effectiveRailsCmd) {
+    args.push("--rails", effectiveRailsCmd, "--require-rails");
   }
   args.push("--apply", "--json");
   const res = await runAdlcTool({
@@ -15941,14 +16014,16 @@ Fix: ${agyCheck.fix}`);
     }, dispatch = function() {
       if (fleetAborted) return;
       for (const t of tickets) {
-        if (isReady(t)) running.push(runTicket(t));
-      }
-      for (const t of tickets) {
         if (!started.has(t.id) && preds[t.id].some((p) => failed.has(p))) {
           started.add(t.id);
           failed.set(t.id, `blocked by failed predecessor`);
           status.ticket(t.id, { phase: "blocked" });
         }
+      }
+      for (const t of tickets) {
+        const activeTickets = started.size - merged.size - failed.size;
+        if (activeTickets >= maxConcurrency) break;
+        if (isReady(t)) running.push(runTicket(t));
       }
     };
     ensureGitignore(repo);
@@ -16521,7 +16596,7 @@ ${g.output}`;
 ${JSON.stringify(blocking, null, 2)}`;
                       status.ticket(t.id, { phase: "fixing", detail: `${blocking.length} findings` });
                       const cfRails = [.../* @__PURE__ */ new Set([...t.rails ?? [], ...railGate?.storeRails ?? [], ...activeRailsNow.rails ?? []])];
-                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, files: changed, rails: cfRails, adlcBin: runAdlcBin });
+                      const cf = await runConsensusFix({ worktree, testCmd: gate?.test, railsCmd: gate?.build, files: changed, rails: cfRails, adlcBin: runAdlcBin });
                       let cfFailureReason = null;
                       if (cf.ok && cf.applied) {
                         let cfGitPointerOk = false;
@@ -16941,6 +17016,7 @@ ${g?.output?.slice(0, 300)}`);
       });
       await turn;
     }
+    const maxConcurrency = typeof plan.concurrencyCap === "number" && Number.isFinite(plan.concurrencyCap) && plan.concurrencyCap >= 1 ? Math.floor(plan.concurrencyCap) : Infinity;
     dispatch();
     let settled = 0;
     while (settled < running.length) {
@@ -17137,10 +17213,14 @@ async function reviewFleet({
         const model = models?.[i % (models?.length ?? 1)] ?? ROLE_MODELS.reviewFleetAlternates[i % ROLE_MODELS.reviewFleetAlternates.length];
         let release = () => {
         };
-        try {
-          if (pools) {
+        if (pools) {
+          try {
             release = await pools.acquire(model, { repo });
+          } catch (err) {
+            return { lens, model, error: `quota admission failed: ${err.message}`, findings: [] };
           }
+        }
+        try {
           requests += 1;
           const res = await runAgy({
             model,
@@ -17161,7 +17241,7 @@ async function reviewFleet({
             return { lens, model, error: "unparseable", findings: [] };
           }
         } catch (err) {
-          return { lens, model, error: `quota admission failed: ${err.message}`, findings: [] };
+          return { lens, model, error: `execution failed: ${err.message}`, findings: [] };
         } finally {
           await release();
         }
