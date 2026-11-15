@@ -399,7 +399,20 @@ var init_models = __esm({
   "lib/models.mjs"() {
     MODELS = {
       "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
-      "gemini-pro": ["gemini-4-argon-low", "gemini-4-argon-medium", "gemini-4-argon-high"],
+      "gemini-pro": [
+        "gemini-4-argon-low",
+        "gemini-4-argon-medium",
+        "gemini-4-argon-high",
+        "gemini-4-carbon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-carbon-high",
+        "gemini-4-hydrogen-low",
+        "gemini-4-hydrogen-medium",
+        "gemini-4-hydrogen-high",
+        "gemini-4-hydrogen-xhigh",
+        "gemini-pro-orchestrator",
+        "gemini-pro-orchestrator-argon"
+      ],
       claude: [
         "claude-sonnet-5-5-low",
         "claude-sonnet-5-5-medium",
@@ -418,6 +431,15 @@ var init_models = __esm({
       "gemini 4 argon (low)": "gemini-4-argon-low",
       "gemini 4 argon (medium)": "gemini-4-argon-medium",
       "gemini 4 argon (high)": "gemini-4-argon-high",
+      "gemini 4 carbon (low)": "gemini-4-carbon-low",
+      "gemini 4 carbon (medium)": "gemini-4-carbon-medium",
+      "gemini 4 carbon (high)": "gemini-4-carbon-high",
+      "gemini 4 hydrogen (low)": "gemini-4-hydrogen-low",
+      "gemini 4 hydrogen (medium)": "gemini-4-hydrogen-medium",
+      "gemini 4 hydrogen (high)": "gemini-4-hydrogen-high",
+      "gemini 4 hydrogen (xhigh)": "gemini-4-hydrogen-xhigh",
+      "orchestrator (carbon)": "gemini-pro-orchestrator",
+      "orchestrator (argon)": "gemini-pro-orchestrator-argon",
       "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
       "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
       "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
@@ -448,8 +470,19 @@ var init_models = __esm({
     RETIRED_35_MAP = RETIRED_MODEL_MAP;
     TIER_CANDIDATES = {
       cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
-      mid: ["gemini-3.8-flash-high", "gemini-4-argon-low", "claude-sonnet-5-5-medium"],
-      frontier: ["gemini-4-argon-high", "claude-sonnet-5-5-high", "claude-opus-5-5-high"]
+      mid: [
+        "gemini-3.8-flash-high",
+        "gemini-4-argon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-hydrogen-medium",
+        "claude-sonnet-5-5-medium"
+      ],
+      frontier: [
+        "gemini-4-argon-high",
+        "gemini-4-carbon-high",
+        "claude-sonnet-5-5-high",
+        "claude-opus-5-5-high"
+      ]
     };
     PROSECUTORS = {
       gemini: "gpt-oss-120b-medium",
@@ -458,8 +491,8 @@ var init_models = __esm({
     };
     PROSECUTOR_CANDIDATES = {
       gemini: ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
-      claude: ["gemini-4-argon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
-      "gpt-oss": ["gemini-4-argon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
+      claude: ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
+      "gpt-oss": ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
     };
     ROLE_MODELS = {
       coldstart: "gemini-3.8-flash-low",

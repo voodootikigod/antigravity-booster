@@ -17,12 +17,21 @@ import {
   tierCandidates,
 } from '../lib/models.mjs';
 
-// Snapshot of `agy models` (agy 1.4.7). Update together with lib/models.mjs;
+// Snapshot of `agy models` (agy 1.5.9). Update together with lib/models.mjs;
 // `agb doctor` (t-doctor-catalog-drift) reports drift against the live CLI.
 const LIVE_CATALOG = [
+  'gemini-4-carbon-low',
+  'gemini-4-carbon-medium',
+  'gemini-4-carbon-high',
   'gemini-4-argon-low',
   'gemini-4-argon-medium',
   'gemini-4-argon-high',
+  'gemini-4-hydrogen-low',
+  'gemini-4-hydrogen-medium',
+  'gemini-4-hydrogen-high',
+  'gemini-4-hydrogen-xhigh',
+  'gemini-pro-orchestrator',
+  'gemini-pro-orchestrator-argon',
   'gemini-3.8-flash-low',
   'gemini-3.8-flash-medium',
   'gemini-3.8-flash-high',
@@ -43,7 +52,7 @@ const RETIRED_SLUGS = [
   'claude-sonnet-4-6', 'claude-opus-4-6-thinking',
 ];
 
-describe('models-live-catalog: MODELS matches agy 1.4.7', () => {
+describe('models-live-catalog: MODELS matches agy 1.5.9', () => {
   it('ALL_MODELS equals the live catalog exactly', () => {
     assert.deepEqual([...ALL_MODELS].sort(), [...LIVE_CATALOG].sort());
   });
@@ -51,9 +60,27 @@ describe('models-live-catalog: MODELS matches agy 1.4.7', () => {
   it('buckets the new models into the right pools and families', () => {
     assert.equal(poolOf('gemini-4-argon-high'), 'gemini-pro');
     assert.equal(familyOf('gemini-4-argon-low'), 'gemini');
+    assert.equal(poolOf('gemini-4-carbon-high'), 'gemini-pro');
+    assert.equal(familyOf('gemini-4-carbon-low'), 'gemini');
+    assert.equal(poolOf('gemini-4-hydrogen-xhigh'), 'gemini-pro');
+    assert.equal(familyOf('gemini-4-hydrogen-medium'), 'gemini');
+    assert.equal(poolOf('gemini-pro-orchestrator'), 'gemini-pro');
+    assert.equal(poolOf('gemini-pro-orchestrator-argon'), 'gemini-pro');
     assert.equal(poolOf('claude-opus-5-5-high'), 'claude');
     assert.equal(poolOf('claude-sonnet-5-5-medium'), 'claude');
     assert.equal(poolOf('gemini-3.8-flash-high'), 'gemini-flash');
+  });
+
+  it('excludes orchestrator coordinator personas from leaf builder tiers and prosecutors', () => {
+    for (const [tier, list] of Object.entries(TIER_CANDIDATES)) {
+      for (const m of list) assert.ok(!m.includes('orchestrator'), `${tier} must not schedule orchestrator ${m}`);
+    }
+    for (const m of Object.values(PROSECUTORS)) {
+      assert.ok(!m.includes('orchestrator'), `PROSECUTORS must not schedule orchestrator ${m}`);
+    }
+    for (const list of Object.values(PROSECUTOR_CANDIDATES)) {
+      for (const m of list) assert.ok(!m.includes('orchestrator'), `PROSECUTOR_CANDIDATES must not schedule orchestrator ${m}`);
+    }
   });
 });
 
@@ -164,9 +191,18 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
 
   it('every live slug resolves from its `agy models` display name, silently', () => {
     const display = {
+      'gemini-4-carbon-low': 'Gemini 4 Carbon (Low)',
+      'gemini-4-carbon-medium': 'Gemini 4 Carbon (Medium)',
+      'gemini-4-carbon-high': 'Gemini 4 Carbon (High)',
       'gemini-4-argon-low': 'Gemini 4 Argon (Low)',
       'gemini-4-argon-medium': 'Gemini 4 Argon (Medium)',
       'gemini-4-argon-high': 'Gemini 4 Argon (High)',
+      'gemini-4-hydrogen-low': 'Gemini 4 Hydrogen (Low)',
+      'gemini-4-hydrogen-medium': 'Gemini 4 Hydrogen (Medium)',
+      'gemini-4-hydrogen-high': 'Gemini 4 Hydrogen (High)',
+      'gemini-4-hydrogen-xhigh': 'Gemini 4 Hydrogen (XHigh)',
+      'gemini-pro-orchestrator': 'Orchestrator (Carbon)',
+      'gemini-pro-orchestrator-argon': 'Orchestrator (Argon)',
       'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
       'gemini-3.8-flash-medium': 'Gemini 3.8 Flash (Medium)',
       'gemini-3.8-flash-high': 'Gemini 3.8 Flash (High)',
@@ -226,8 +262,8 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     }
     assert.deepEqual(counts, {
       'cheap+gemini': 2, 'cheap+claude': 0, 'cheap+claude-gpt': 0, 'cheap+gpt-oss': 0,
-      'mid+gemini': 2, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
-      'frontier+gemini': 1, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
+      'mid+gemini': 4, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
+      'frontier+gemini': 2, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
     });
   });
 

@@ -186,11 +186,13 @@ describe('models-registry: single source of truth', () => {
     ]);
     assert.deepEqual(pools.prosecutorsFor('claude-sonnet-5-5-medium'), [
       'gemini-4-argon-high',
+      'gemini-4-carbon-high',
       'gemini-3.8-flash-high',
       'gpt-oss-120b-medium',
     ]);
     assert.deepEqual(pools.prosecutorsFor('gpt-oss-120b-medium'), [
       'gemini-4-argon-high',
+      'gemini-4-carbon-high',
       'gemini-3.8-flash-high',
       'claude-sonnet-5-5-medium',
     ]);
@@ -253,7 +255,7 @@ describe('models-registry: single source of truth', () => {
   });
 
   it('no raw model string literals exist in lib/*.mjs outside lib/models.mjs', () => {
-    const regex = /['"](?:gemini-3\.[0-9][^'"]*|claude-(?:sonnet|opus)-[0-9][^'"]*|gpt-oss-[0-9][^'"]*)['"]/g;
+    const regex = /['"](?:gemini-(?:3\.[0-9]|4-|pro-orchestrator)[^'"]*|claude-(?:sonnet|opus)-[0-9][^'"]*|gpt-oss-[0-9][^'"]*)['"]/g;
     const libDir = join(process.cwd(), 'lib');
     const files = readdirSync(libDir).filter((f) => f.endsWith('.mjs') && f !== 'models.mjs');
 
