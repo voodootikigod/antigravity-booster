@@ -219,12 +219,12 @@ test('runPlan: dispatch propagates blocked status transitively across reverse-or
         tickets: [
           { id: 'T3', title: 'downstream leaf', body: 'x', scope: ['T3.txt'], edges: [] },
           { id: 'T2', title: 'middle node', body: 'x', scope: ['T2.txt'], edges: [{ to: 'T3' }] },
-          { id: 'T1', title: 'failing root', body: 'x', scope: ['OUT_OF_SCOPE.txt'], edges: [{ to: 'T2' }] },
-          { id: 'T4', title: 'independent', body: 'x', scope: ['T4.txt'], edges: [] },
+          { id: 'T1', title: 'failing node', body: 'x', scope: ['OUT_OF_SCOPE.txt'], edges: [{ to: 'T2' }] },
+          { id: 'T0', title: 'merging root', body: 'x', scope: ['T0.txt'], edges: [{ to: 'T1' }] },
         ],
       }, quiet)
     );
-    assert.deepEqual(report.merged, ['T4']);
+    assert.deepEqual(report.merged, ['T0']);
     assert.ok(report.failed.T1 && report.failed.T1 !== 'blocked by failed predecessor');
     assert.equal(report.failed.T2, 'blocked by failed predecessor');
     assert.equal(report.failed.T3, 'blocked by failed predecessor');
