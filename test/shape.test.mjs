@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,6 +14,7 @@ import {
 } from '../lib/shape.mjs';
 import { safeExtractJson } from '../lib/json.mjs';
 import { validateJsonSchema, COLDSTART_SCHEMA } from '../lib/schemas.mjs';
+import { writeArtifactFileAtomically } from '../lib/plan-integrity.mjs';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
@@ -255,5 +256,62 @@ test('parseStructuredSpec { gate } option, non-DAG sequenceDiagram ignore, and A
     if (prevEnv === undefined) delete process.env.AGB_GRAPH_COUPLING_FILE;
     else process.env.AGB_GRAPH_COUPLING_FILE = prevEnv;
     rmSync(tmpRepo, { recursive: true, force: true });
+  }
+});
+
+test('writeArtifactFileAtomically: allows symlinked ancestor of rootDir (macOS /var -> /private/var) while rejecting symlinks inside rootDir and escapes', () => {
+  const base = mkdtempSync(join(tmpdir(), 'agb-artifact-sym-'));
+  try {
+    const realParent = join(base, 'real-parent');
+    const realRepo = join(realParent, 'repo');
+    mkdirSync(realRepo, { recursive: true });
+    const symlinkParent = join(base, 'sym-parent');
+    symlinkSync(realParent, symlinkParent);
+    const symlinkRepo = join(symlinkParent, 'repo');
+
+    // Same symlinked alias for dir and rootDir
+    const okRes = writeArtifactFileAtomically(join(symlinkRepo, '.booster'), 'agb_plan_artifact.md', '# Hello\n', { rootDir: symlinkRepo });
+    assert.equal(okRes.ok, true, `Expected symlinked rootDir ancestor to succeed, got: ${okRes.error}`);
+    assert.equal(readFileSync(join(realRepo, '.booster', 'agb_plan_artifact.md'), 'utf8'), '# Hello\n');
+
+    // Cross-alias: symlinked dir with canonical rootDir (e.g. tmpdir() vs git rev-parse)
+    const crossAlias1 = writeArtifactFileAtomically(join(symlinkRepo, '.booster'), 'cross1.md', '# Cross1\n', { rootDir: realRepo });
+    assert.equal(crossAlias1.ok, true, `Expected symlinked dir + canonical rootDir to succeed, got: ${crossAlias1.error}`);
+    assert.equal(readFileSync(join(realRepo, '.booster', 'cross1.md'), 'utf8'), '# Cross1\n');
+
+    // Cross-alias: canonical dir with symlinked rootDir
+    const crossAlias2 = writeArtifactFileAtomically(join(realRepo, '.booster'), 'cross2.md', '# Cross2\n', { rootDir: symlinkRepo });
+    assert.equal(crossAlias2.ok, true, `Expected canonical dir + symlinked rootDir to succeed, got: ${crossAlias2.error}`);
+    assert.equal(readFileSync(join(realRepo, '.booster', 'cross2.md'), 'utf8'), '# Cross2\n');
+
+    // Directory name starting with '..' inside rootDir is not treated as escape
+    const dotDotDir = writeArtifactFileAtomically(join(symlinkRepo, '..cache'), 'ok.md', '# Cache\n', { rootDir: realRepo });
+    assert.equal(dotDotDir.ok, true, `Expected ..cache inside rootDir to succeed, got: ${dotDotDir.error}`);
+
+    const outsideDir = join(base, 'outside');
+    mkdirSync(outsideDir, { recursive: true });
+    symlinkSync(outsideDir, join(realRepo, 'linked-sub'));
+    const badLink = writeArtifactFileAtomically(join(symlinkRepo, 'linked-sub', 'nested'), 'out.md', 'nope', { rootDir: symlinkRepo });
+    assert.equal(badLink.ok, false);
+    assert.match(badLink.error, /symbolic link not allowed/);
+
+    // Symlinked targetPath is rejected
+    const outsideFile = join(outsideDir, 'target.md');
+    writeFileSync(outsideFile, 'do-not-overwrite');
+    symlinkSync(outsideFile, join(realRepo, '.booster', 'symlinked-target.md'));
+    const badTarget = writeArtifactFileAtomically(join(realRepo, '.booster'), 'symlinked-target.md', 'nope', { rootDir: realRepo });
+    assert.equal(badTarget.ok, false);
+    assert.match(badTarget.error, /refusing to overwrite symbolic link/);
+
+    // Without rootDir, symlinked dir is rejected
+    const badNoRoot = writeArtifactFileAtomically(join(realRepo, 'linked-sub'), 'out.md', 'nope');
+    assert.equal(badNoRoot.ok, false);
+    assert.match(badNoRoot.error, /symbolic link not allowed/);
+
+    const badEscape = writeArtifactFileAtomically(outsideDir, 'out.md', 'nope', { rootDir: symlinkRepo });
+    assert.equal(badEscape.ok, false);
+    assert.match(badEscape.error, /escapes root/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
   }
 });
