@@ -17173,7 +17173,7 @@ async function reviewFleet({
     rounds += 1;
     const results = await Promise.all(
       lenses.map(async (lens, i) => {
-        let model = models?.[i % (models?.length ?? 1)] ?? ROLE_MODELS.reviewFleetAlternates[i % ROLE_MODELS.reviewFleetAlternates.length];
+        let model = models?.length ? models[i % models.length] : ROLE_MODELS.reviewFleetAlternates[i % ROLE_MODELS.reviewFleetAlternates.length];
         let release = () => {
         };
         if (pools) {
