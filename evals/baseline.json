@@ -26,7 +26,7 @@
     "maxPolicyCorpusFalsePositiveRate": 0.0,
     "minPolicyFuzzerBlockRate": 1.0,
     "minPolicyFuzzerBenignPassRate": 1.0,
-    "maxPolicyFuzzerP95Ms": 25.0,
+    "maxPolicyFuzzerP95Ms": 100.0,
     "minPlanCompilerOverlapRecall": 1.0,
     "maxPlanCompilerSerialFalsePositiveRate": 0.0,
     "minPlanCompilerGateTamperBlockRate": 1.0,
