@@ -121,10 +121,10 @@ test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
 
   assert.match(out, /Stage 1 \(Live Runtime Probes\):\s*\[PASS\]/);
   assert.match(out, /Stage 2 \(Static Codebase Audit\):\s*\[PASS\]/);
-  assert.match(out, /Codeweight audit: lib\/ total \d+ lines/);
+  assert.match(out, /Codeweight audit: lib\/ total \d+ lines \([\d.]+ KB\)\. Found 0 pruning candidate\(s\)\./);
   assert.match(out, /Stage 3 \(Subsystem Delta Matrix\):\s*\[PASS\]/);
-  assert.match(out, /Pillar 6: Deprecation & Codeweight Pruning/);
-  assert.match(out, /Pillar 1: Model Catalog & Dual-Pool Quota Routing: Verified 13 models aligned with live runtime/, 'the registry in lib/models.mjs matches the live catalog, so nothing is reported as new');
+  assert.match(out, /Pillar 6: Deprecation & Codeweight Pruning: Codebase clean of deprecated models and dead shims/);
+  assert.match(out, /Pillar 1: Model Catalog & Dual-Pool Quota Routing: Verified 22 models aligned with live runtime/, 'the registry in lib/models.mjs matches the live catalog, so nothing is reported as new');
   assert.match(out, /Stage 4 \(Roadmap DAG Validation\):\s*\[PASS\]/);
   assert.match(out, /Stage 5 \(Provenance & Release Ledger\):\s*\[PASS\]/);
   assert.match(out, /All checks PASSED/);
@@ -308,4 +308,39 @@ exit 0
     rmSync(tempBinDir, { recursive: true, force: true });
   }
 });
+
+test('Modernize Skill: Stage 2 flags reintroduced legacy dual-write or inline 3.5 maps while ignoring fail-closed detector', () => {
+  const tempRepo = makeTempDir('agb-pruning-test-');
+  const trust = auditTrustEnv();
+  try {
+    mkdirSync(join(tempRepo, 'lib'), { recursive: true });
+    mkdirSync(join(tempRepo, '.adlc'), { recursive: true });
+    for (const rel of readdirSync(join(REPO_WITH_NM, 'lib')).filter((f) => f.endsWith('.mjs'))) {
+      writeFileSync(join(tempRepo, 'lib', rel), readFileSync(join(REPO_WITH_NM, 'lib', rel)));
+    }
+    // Reintroduce inline gemini-3.5- map in agy.mjs and legacy dual-write in adlc-bridge.mjs
+    writeFileSync(
+      join(tempRepo, 'lib', 'agy.mjs'),
+      `${readFileSync(join(REPO_WITH_NM, 'lib', 'agy.mjs'), 'utf8')}\nconst RETIRED_35_MAP_INLINE = 'gemini-3.5-pro';\n`,
+    );
+    writeFileSync(
+      join(tempRepo, 'lib', 'adlc-bridge.mjs'),
+      `${readFileSync(join(REPO_WITH_NM, 'lib', 'adlc-bridge.mjs'), 'utf8')}\nexport function writeLegacy() { writeFileSync('tickets.json', '{}'); }\n`,
+    );
+    writeFileSync(join(tempRepo, 'package.json'), readFileSync(join(REPO_WITH_NM, 'package.json')));
+    symlinkSync(join(REPO_WITH_NM, 'node_modules'), join(tempRepo, 'node_modules'), 'dir');
+
+    const out = execFileSync(process.execPath, [AUDIT_SCRIPT, AUDIT_ADLC_TARGET, '', AUDIT_AGY_TARGET], {
+      cwd: tempRepo,
+      env: trust.env,
+      encoding: 'utf8',
+    });
+    assert.match(out, /Found 2 pruning candidate\(s\)\./);
+    assert.match(out, /Identified 2 codeweight reduction target\(s\): Model Fallbacks \(lib\/agy\.mjs\), Lega/);
+  } finally {
+    rmSync(trust.home, { recursive: true, force: true });
+    rmSync(tempRepo, { recursive: true, force: true });
+  }
+});
+
 

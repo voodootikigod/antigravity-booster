@@ -484,6 +484,9 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
   const candidateModels = [
     'gemini-3.8-flash-high', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-low',
     'gemini-4-argon-high', 'gemini-4-argon-medium', 'gemini-4-argon-low',
+    'gemini-4-carbon-high', 'gemini-4-carbon-medium', 'gemini-4-carbon-low',
+    'gemini-4-hydrogen-xhigh', 'gemini-4-hydrogen-high', 'gemini-4-hydrogen-medium', 'gemini-4-hydrogen-low',
+    'gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon',
     'claude-sonnet-5-5-high', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-low',
     'claude-opus-5-5-high', 'claude-opus-5-5-medium', 'claude-opus-5-5-low',
     'gpt-oss-120b-medium'
@@ -602,13 +605,14 @@ async function runStage2StaticAudit() {
       } catch {}
     }
 
-    // Check for deprecated model fallbacks in lib/agy.mjs
+    // Check for deprecated model fallbacks defined inline in lib/agy.mjs
+    // (the 1-line @deprecated RETIRED_35_MAP re-export from ./models.mjs is intentional semver compatibility)
     const agyPath = path.join(libDir, 'agy.mjs');
     if (fs.existsSync(agyPath)) {
       try {
         if (!fs.lstatSync(agyPath).isSymbolicLink()) {
           const agyContent = fs.readFileSync(agyPath, 'utf8');
-          if (agyContent.includes('RETIRED_35_MAP') || agyContent.includes('3.5')) {
+          if (/const\s+RETIRED_35_MAP\s*=/.test(agyContent) || agyContent.includes('gemini-3.5-')) {
             pruningCandidates.push({
               area: 'Model Fallbacks (lib/agy.mjs)',
               finding: 'Legacy Gemini 3.5 retirement maps and aliases remain in code; candidate for dead-code pruning.'
@@ -618,13 +622,19 @@ async function runStage2StaticAudit() {
       } catch {}
     }
 
-    // Check for legacy single-file store paths in lib/adlc-bridge.mjs
+    // Check for legacy single-file fallback or dual-write paths in lib/adlc-bridge.mjs
+    // (the fail-closed LEGACY_TICKET_STORE detector in detectTicketStoreBackend / assertNoLegacyTicketStore is intentional)
     const bridgePath = path.join(libDir, 'adlc-bridge.mjs');
     if (fs.existsSync(bridgePath)) {
       try {
         if (!fs.lstatSync(bridgePath).isSymbolicLink()) {
           const bridgeContent = fs.readFileSync(bridgePath, 'utf8');
-          if (bridgeContent.includes("backend === 'legacy'") || bridgeContent.includes('tickets.json')) {
+          const hasLegacyFallbackOrWrite =
+            bridgeContent.includes("backend === 'legacy'") ||
+            bridgeContent.includes("mode === 'both'") ||
+            /writeFileSync\([^)]*tickets\.json/.test(bridgeContent) ||
+            (bridgeContent.includes('tickets.json') && !bridgeContent.includes('LEGACY_TICKET_STORE'));
+          if (hasLegacyFallbackOrWrite) {
             pruningCandidates.push({
               area: 'Legacy Ticket Backend (lib/adlc-bridge.mjs)',
               finding: 'Single-file tickets.json fallback backend remains active; candidate for removal once migration verified.'
