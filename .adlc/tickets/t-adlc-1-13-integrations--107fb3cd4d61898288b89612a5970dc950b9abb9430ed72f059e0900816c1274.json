@@ -1,0 +1,24 @@
+{
+  "body": "Adopt two non-breaking @adlc 1.13.0 CLI enhancements: (1) in lib/scheduler.mjs (`runConsensusFix`), append `--require-rails` alongside `--rails` whenever `rails.length > 0` so consensus-fix enforces non-empty rail protection at the CLI boundary; (2) in lib/preflight.mjs (`applyMergeForecast`), include `signalsEvaluated: Array.isArray(parsed.signalsEvaluated) ? parsed.signalsEvaluated : []` in the returned summary object from `adlc merge-forecast --json`. Update test/fixtures/fake-adlc to accept `--require-rails` in `consensus-fix` and emit `signalsEvaluated` in `merge-forecast --json`, add unit tests in test/scheduler-consensus-fix.test.mjs and test/plan-merge-forecast.test.mjs, and run `npm run build` to refresh dist/**. Acceptance: `npm run build && npm test` green.",
+  "edges": [
+    {
+      "to": "t-docs-refresh-1-5-9"
+    }
+  ],
+  "id": "t-adlc-1-13-integrations",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/scheduler.mjs",
+    "lib/preflight.mjs",
+    "dist/**",
+    "test/fixtures/fake-adlc",
+    "test/scheduler-consensus-fix.test.mjs",
+    "test/plan-merge-forecast.test.mjs"
+  ],
+  "title": "Adopt @adlc 1.13.0 consensus-fix --require-rails and merge-forecast signalsEvaluated"
+}

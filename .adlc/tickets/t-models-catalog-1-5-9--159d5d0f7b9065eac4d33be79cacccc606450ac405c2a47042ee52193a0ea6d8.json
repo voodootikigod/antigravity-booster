@@ -1,0 +1,31 @@
+{
+  "body": "Update lib/models.mjs to match the 22-slug live agy 1.5.9 catalog: add gemini-4-carbon-{low,medium,high}, gemini-4-hydrogen-{low,medium,high,xhigh}, gemini-pro-orchestrator, and gemini-pro-orchestrator-argon to MODELS['gemini-pro'] and add their exact agy models display-name entries ('Gemini 4 Carbon (Low|Medium|High)', 'Gemini 4 Hydrogen (Low|Medium|High|XHigh)', 'Orchestrator (Carbon)', 'Orchestrator (Argon)') to MODEL_ALIASES. Keep all 13 existing 1.4.7 slugs and keep RETIRED_35_MAP as a deprecated alias to RETIRED_MODEL_MAP. Append gemini-4-carbon-high to TIER_CANDIDATES.frontier and PROSECUTOR_CANDIDATES.{claude,'gpt-oss'} (preserving family independence) and append gemini-4-carbon-medium and gemini-4-hydrogen-medium to TIER_CANDIDATES.mid; do NOT place gemini-pro-orchestrator* in builder TIER_CANDIDATES or PROSECUTORS. Update test/fixtures/fake-agy `models` output and LIVE_CATALOG in test/models-live-catalog.test.mjs to all 22 slugs, update test/models-registry.test.mjs, test/pools.test.mjs, and test/unit.test.mjs, and run `npm run build` so dist/ has zero drift. Acceptance: `npm run build && npm test` green; ALL_MODELS equals the 22 live agy 1.5.9 slugs.",
+  "edges": [
+    {
+      "to": "t-policy-guard-agy-1-5-tools"
+    },
+    {
+      "to": "t-modernize-audit-refresh"
+    },
+    {
+      "to": "t-docs-refresh-1-5-9"
+    }
+  ],
+  "id": "t-models-catalog-1-5-9",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/models.mjs",
+    "dist/**",
+    "test/models-live-catalog.test.mjs",
+    "test/models-registry.test.mjs",
+    "test/pools.test.mjs",
+    "test/unit.test.mjs",
+    "test/fixtures/fake-agy"
+  ],
+  "title": "Refresh model catalog to live agy 1.5.9 (Carbon, Hydrogen, Orchestrator)"
+}
