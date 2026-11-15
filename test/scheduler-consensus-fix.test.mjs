@@ -203,3 +203,33 @@ test('runPlan: consensus-fix passes gate.build as --rails + --require-rails whil
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('runPlan: dispatch propagates blocked status transitively across reverse-ordered DAG tickets', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-blocked-dag-'));
+  try {
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [
+          { id: 'T3', title: 'downstream leaf', body: 'x', scope: ['T3.txt'], edges: [] },
+          { id: 'T2', title: 'middle node', body: 'x', scope: ['T2.txt'], edges: [{ to: 'T3' }] },
+          { id: 'T1', title: 'failing root', body: 'x', scope: ['OUT_OF_SCOPE.txt'], edges: [{ to: 'T2' }] },
+          { id: 'T4', title: 'independent', body: 'x', scope: ['T4.txt'], edges: [] },
+        ],
+      }, quiet)
+    );
+    assert.deepEqual(report.merged, ['T4']);
+    assert.ok(report.failed.T1 && report.failed.T1 !== 'blocked by failed predecessor');
+    assert.equal(report.failed.T2, 'blocked by failed predecessor');
+    assert.equal(report.failed.T3, 'blocked by failed predecessor');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});

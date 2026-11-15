@@ -123,6 +123,19 @@ test('reviewFleet: handles >128 KiB diffs via stdin piping without E2BIG and con
     assert.equal(failoverRes.converged, true);
     assert.deepEqual(seenModels, ['gpt-oss-120b-medium']);
 
+    // Passing models: [] also uses default alternates and triggers quota_depleted fallback
+    seenModels.length = 0;
+    const emptyModelsRes = await reviewFleet({
+      diff: 'diff --git a/x.mjs b/x.mjs\n+1',
+      models: [],
+      lenses: ['correctness'],
+      dryRounds: 1,
+      maxRounds: 1,
+      pools: depletedGeminiPools,
+    });
+    assert.equal(emptyModelsRes.converged, true);
+    assert.deepEqual(seenModels, ['gpt-oss-120b-medium']);
+
     // When first fallback (gpt-oss) is ALSO depleted, advances to second fallback (claude)
     const secondFallbackModels = [];
     const secondFallbackPools = {

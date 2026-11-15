@@ -15968,11 +15968,15 @@ Fix: ${agyCheck.fix}`);
       }
     }, dispatch = function() {
       if (fleetAborted) return;
-      for (const t of tickets) {
-        if (!started.has(t.id) && preds[t.id].some((p) => failed.has(p))) {
-          started.add(t.id);
-          failed.set(t.id, `blocked by failed predecessor`);
-          status.ticket(t.id, { phase: "blocked" });
+      for (let progressed = true; progressed; ) {
+        progressed = false;
+        for (const t of tickets) {
+          if (!started.has(t.id) && preds[t.id].some((p) => failed.has(p))) {
+            started.add(t.id);
+            failed.set(t.id, `blocked by failed predecessor`);
+            status.ticket(t.id, { phase: "blocked" });
+            progressed = true;
+          }
         }
       }
       for (const t of tickets) {
@@ -17170,7 +17174,7 @@ async function reviewFleet({
             release = await pools.acquire(model, { repo });
           } catch (err) {
             let acquiredFallback = false;
-            if (!models && err?.kind === "quota_depleted") {
+            if (!models?.length && err?.kind === "quota_depleted") {
               const fallbacks = PROSECUTOR_CANDIDATES[familyOf(model)] ?? [];
               for (let k = 0; k < fallbacks.length; k++) {
                 const candidate = fallbacks[(i + k) % fallbacks.length];
