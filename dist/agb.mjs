@@ -13113,12 +13113,17 @@ async function applyMergeForecast(plan, ticketsPath, { adlcBin, repo, graphCoupl
     return { ok: false, error: res.error };
   }
   const parsed = res.parsed;
-  plan.concurrencyCap = parsed.recommendedWidth ?? parsed.certifiedWidth ?? null;
+  const firstWaveWidth = parsed.firstWaveWidth ?? parsed.certifiedWidth ?? null;
+  const signalsEvaluated = parsed.signalsEvaluated && typeof parsed.signalsEvaluated === "object" && !Array.isArray(parsed.signalsEvaluated) ? parsed.signalsEvaluated : null;
+  plan.concurrencyCap = parsed.recommendedWidth ?? firstWaveWidth;
   return {
     ok: true,
+    firstWaveWidth,
+    scheduleWidth: parsed.scheduleWidth ?? null,
     certifiedWidth: parsed.certifiedWidth,
     recommendedWidth: parsed.recommendedWidth,
     backpressureWidth: parsed.backpressureWidth,
+    signalsEvaluated,
     gateFailures: Array.isArray(parsed.gateFailures) ? parsed.gateFailures : [],
     warnings: Array.isArray(parsed.warnings) ? parsed.warnings : []
   };
@@ -15496,7 +15501,7 @@ async function runConsensusFix({ worktree, testCmd, files, rails = [], adlcBin }
   }
   const args = ["--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
   if (Array.isArray(rails) && rails.length > 0) {
-    args.push("--rails", rails.join(","));
+    args.push("--rails", testCmd, "--require-rails");
   }
   args.push("--apply", "--json");
   const res = await runAdlcTool({

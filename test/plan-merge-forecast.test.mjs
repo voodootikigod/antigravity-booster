@@ -42,7 +42,16 @@ test('applyMergeForecast: annotates plan.concurrencyCap with the recommended wid
     await withFakes({}, async () => {
       const forecast = await applyMergeForecast(plan, ticketsPath, { repo });
       assert.equal(forecast.ok, true);
+      assert.equal(forecast.firstWaveWidth, 3);
+      assert.equal(forecast.scheduleWidth, 3);
       assert.equal(forecast.recommendedWidth, 3);
+      assert.deepEqual(forecast.signalsEvaluated, {
+        scopeOverlap: true,
+        namespaceCollision: true,
+        importRadius: true,
+        coChange: true,
+        graphCoupling: false,
+      });
       assert.equal(plan.concurrencyCap, 3);
     });
   } finally {

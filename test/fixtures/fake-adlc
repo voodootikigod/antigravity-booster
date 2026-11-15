@@ -74,15 +74,23 @@ if [ "$1" = "consensus-fix" ]; then
   shift
   testcmd=""
   files=""
+  railscmd=""
+  requirerails="false"
   while [ $# -gt 0 ]; do
     case "$1" in
       --test-cmd) testcmd="$2"; shift 2 ;;
       --files) files="$2"; shift 2 ;;
+      --rails) railscmd="$2"; shift 2 ;;
+      --require-rails) requirerails="true"; shift ;;
       *) shift ;;
     esac
   done
   if [ -n "$FAKE_STATE_DIR" ]; then
-    printf 'test-cmd=%s files=%s\n' "$testcmd" "$files" >> "$FAKE_STATE_DIR/consensus-fix-invocations"
+    printf 'test-cmd=%s files=%s rails=%s require-rails=%s\n' "$testcmd" "$files" "$railscmd" "$requirerails" >> "$FAKE_STATE_DIR/consensus-fix-invocations"
+  fi
+  if [ "$requirerails" = "true" ] && [ -z "$railscmd" ]; then
+    echo "consensus-fix: --require-rails requires a non-empty --rails <cmd> regression gate" >&2
+    exit 1
   fi
   firstfile=$(echo "$files" | cut -d, -f1)
   case "${FAKE_CONSENSUS_FIX_MODE:-converge}" in
@@ -165,10 +173,10 @@ if [ "$1" = "merge-forecast" ]; then
   case "${FAKE_MERGE_FORECAST_MODE:-default}" in
     fail) echo "not json"; exit 1 ;;
     veto)
-      echo '{"pairs":[],"waves":[],"mergeOrder":[],"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"warnings":[],"gateFailures":["1 high-risk pair(s) would run concurrently: T1-T2"]}'
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":3,"scheduleWidth":3,"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"signalsEvaluated":{"scopeOverlap":true,"namespaceCollision":true,"importRadius":true,"coChange":true,"graphCoupling":false},"warnings":[],"gateFailures":["1 high-risk pair(s) would run concurrently: T1-T2"]}'
       exit 2 ;;
     *)
-      echo '{"pairs":[],"waves":[],"mergeOrder":[],"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"warnings":[],"gateFailures":[]}'
+      echo '{"pairs":[],"waves":[],"mergeOrder":[],"firstWaveWidth":3,"scheduleWidth":3,"certifiedWidth":3,"backpressureWidth":null,"recommendedWidth":3,"signalsEvaluated":{"scopeOverlap":true,"namespaceCollision":true,"importRadius":true,"coChange":true,"graphCoupling":false},"warnings":[],"gateFailures":[]}'
       exit 0 ;;
   esac
 fi

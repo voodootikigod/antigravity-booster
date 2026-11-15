@@ -56,6 +56,7 @@ test('runPlan: AC1 — a converging consensus-fix candidate is applied and ships
     const invocations = readFileSync(join(state, 'consensus-fix-invocations'), 'utf8');
     assert.match(invocations, /test-cmd=true/, 'invoked with the plan\'s gate test command');
     assert.match(invocations, /files=T1\.txt/, 'invoked with the strike\'s changed files');
+    assert.match(invocations, /rails= require-rails=false/, 'no --rails/--require-rails when ticket declares no rails');
     // FAKE_PROSECUTOR_VERDICT=block-then-ship means the SECOND prosecution
     // pass ships — that second pass is consensus-fix's OWN inline
     // re-verification (not a regeneration strike), proving the applied fix
@@ -162,6 +163,10 @@ test('runPlan: consensus-fix candidate violating rails is discarded and falls ba
     assert.deepEqual(report.merged, ['T1']);
     // Rail must remain untouched after merge
     assert.equal(readFileSync(join(repo, 'RAIL.txt'), 'utf8'), 'frozen rail\n');
+    // When rails are declared, consensus-fix receives the validated regression testCmd + --require-rails (never raw path globs)
+    const invocations = readFileSync(join(state, 'consensus-fix-invocations'), 'utf8');
+    assert.match(invocations, /rails=true require-rails=true/);
+    assert.doesNotMatch(invocations, /rails=RAIL\.txt/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
