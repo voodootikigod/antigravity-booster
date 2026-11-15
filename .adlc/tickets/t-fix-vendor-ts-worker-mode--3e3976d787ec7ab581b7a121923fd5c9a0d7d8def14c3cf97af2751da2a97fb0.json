@@ -1,5 +1,6 @@
 {
   "body": "Ensure `npm run vendor:bundle` sets `0o644` on `vendor/adlc/dist/syntax-check-typescript.mjs` (spawned via `process.execPath`, not direct exec) so `computeDirectoryDigest(vendor/adlc)` matches `KNOWN_VENDORED_ADLC.treeDigest` identically across Linux, macOS, and win32 (`test/digest.test.mjs`). Refresh `KNOWN_VENDORED_ADLC` via `node scripts/update-adlc-digests.mjs --write` and rebuild `dist/`.\nAcceptance: `node --test test/digest.test.mjs` and `npm run coverage:check` exit 0.",
+  "completed": true,
   "edges": [],
   "id": "t-fix-vendor-ts-worker-mode",
   "rails": [
