@@ -9,7 +9,24 @@ import { readFileSync } from 'node:fs';
 import { isBuiltin as nodeIsBuiltin, builtinModules } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
-export const DEFAULT_BUNDLES = ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs', 'vendor/adlc/dist/watchdog.mjs'];
+export const DEFAULT_BUNDLES = [
+  'dist/agb.mjs',
+  'dist/mcp-server.mjs',
+  'dist/hooks/pre-tool-use.bundle.mjs',
+  'vendor/adlc/dist/adlc.bundle.mjs',
+  'vendor/adlc/dist/syntax-check-typescript.mjs',
+  'vendor/adlc/dist/watchdog.mjs',
+];
+
+// @adlc/core >= 1.13.0 (lib/syntax.mjs + syntax-check-typescript.mjs) probes
+// the TARGET repository's own node_modules/typescript (guarded by existsSync +
+// try/catch) when syntax-checking .ts/.tsx mutants; no @adlc or booster bundle
+// depends on typescript at install or runtime. Booster's own bundles still
+// forbid every non-builtin specifier without exception.
+export const BUNDLE_ALLOWED_OPTIONAL_PROBES = Object.freeze({
+  'vendor/adlc/dist/adlc.bundle.mjs': Object.freeze(new Set(['typescript'])),
+  'vendor/adlc/dist/syntax-check-typescript.mjs': Object.freeze(new Set(['typescript', 'resolved.path'])),
+});
 
 const BUILTINS = new Set(builtinModules);
 
@@ -94,7 +111,8 @@ function main(argv) {
       failed = true;
       continue;
     }
-    const externals = findExternalSpecifiers(source);
+    const allowed = BUNDLE_ALLOWED_OPTIONAL_PROBES[file];
+    const externals = findExternalSpecifiers(source).filter((spec) => !allowed?.has(spec));
     if (externals.length > 0) {
       process.stderr.write(`check-bundle-externals: ${file} imports non-builtin modules: ${externals.join(', ')}\n`);
       failed = true;

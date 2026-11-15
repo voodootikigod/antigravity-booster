@@ -470,7 +470,11 @@ function validateTickets(tickets, { archive = false, validateGraph = !archive } 
     };
     for (const id of [...byId.keys()].sort(compareTicketIds)) visit(id, []);
   }
-  if (errors.length) throw invalid("INVALID_TICKET_STORE", `ticket store validation failed (${errors.length} error(s))`, errors);
+  if (errors.length) {
+    const count = errors.length;
+    errors.push("see `adlc ticket schema` and `adlc ticket doctor`");
+    throw invalid("INVALID_TICKET_STORE", `ticket store validation failed (${count} error(s)): ${errors.join("; ")}`, errors);
+  }
   return tickets;
 }
 
@@ -526,7 +530,7 @@ var TICKET_FIELDS = [
     name: "duration",
     type: "number > 0",
     required: false,
-    summary: "Relative build-time estimate used to order the ticket DAG. Defaults to 1.",
+    summary: "Positive number (number > 0) giving the relative build-time estimate used to order the ticket DAG. Defaults to 1.",
     schema: { type: "number", exclusiveMinimum: 0 }
   },
   {
@@ -551,7 +555,7 @@ var TICKET_FIELDS = [
     name: "rails",
     type: "string[]",
     required: false,
-    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Once any ticket declares rails the ticket store itself becomes a frozen trust root, so later ticket writes need ADLC_RAILS_BYPASS=1.",
+    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Narrowing rails, widening scope, or changing `completed` on an existing ticket requires `--authorize` (see `adlc ticket update --help`); `ADLC_RAILS_BYPASS` governs only the `rails-guard` hook/CLI check on direct store-path edits, not `adlc ticket` writes.",
     schema: { type: "array", items: { type: "string" } }
   },
   {
@@ -568,14 +572,14 @@ var TICKET_FIELDS = [
     name: "edges",
     type: 'array of "to" objects',
     required: false,
-    summary: 'Ordering constraints, prerequisite to dependent. An edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here. An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
+    summary: 'Array of edge objects (each with a non-empty string "to" id) giving ordering constraints, prerequisite to dependent: this ticket completes before `to` (an edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here). An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
     schema: {
       type: "array",
       items: {
         type: "object",
         required: ["to"],
         properties: {
-          to: { type: "string", minLength: 1, description: "Id of the dependent ticket, which must not start before this one completes." },
+          to: { type: "string", minLength: 1, description: "Id of the dependent ticket (this ticket completes before `to`, which must not start before this one completes)." },
           // Unconstrained for the same reason as body/category: validateTicket
           // checks only that an edge carries a string `to`.
           contract: { description: "Path to the interface this edge guarantees the dependent ticket can consume." }
@@ -1288,7 +1292,7 @@ function isChainIntact(lines, key) {
     const expectedPrev = prevLine === null ? null : sha256(prevLine);
     if (entry.prev !== expectedPrev || entry.seq !== prevSeq + 1) return false;
     if (key !== null) {
-      const hasSig = typeof entry.sig === "string" && entry.sig.length > 0;
+      const hasSig = Object.hasOwn(entry, "sig");
       if (hasSig) {
         if (!entrySigValid(key, entry)) return false;
         seenSignedEntry = true;
@@ -1396,7 +1400,7 @@ function chainIsIntact(lines, key = null) {
     const expectedPrev = prevLine === null ? null : sha256(prevLine);
     if (entry?.prev !== expectedPrev || entry?.seq !== prevSeq + 1) return false;
     if (key !== null) {
-      const hasSig = typeof entry?.sig === "string" && entry.sig.length > 0;
+      const hasSig = Boolean(entry) && typeof entry === "object" && Object.hasOwn(entry, "sig");
       if (hasSig) {
         if (!entrySigValid(key, entry)) return false;
         seenSignedEntry = true;
@@ -1984,6 +1988,9 @@ var GIT_MAX_BUFFER = 256 * 1024 * 1024;
 
 // node_modules/@adlc/tickets/lib/prompt.mjs
 import { createInterface } from "node:readline/promises";
+
+// node_modules/@adlc/tickets/lib/stores/git-tree.mjs
+var MAX_BUFFER = 64 * 1024 * 1024;
 
 // lib/active-rails.mjs
 import { existsSync as existsSync11, lstatSync as lstatSync6, statSync } from "node:fs";

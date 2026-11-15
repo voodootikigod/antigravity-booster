@@ -607,7 +607,7 @@ test('authenticateAdlcPackage: validates lockfile entry, integrity, and version 
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
       name: '@adlc/cli',
-      version: '1.12.0',
+      version: '1.13.0',
       bin: { adlc: './bin/adlc.js' },
     }));
     writeFileSync(join(pkgDir, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
@@ -632,7 +632,7 @@ test('authenticateAdlcPackage: validates lockfile entry, integrity, and version 
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.12.0',
+          version: '1.13.0',
         },
       },
     }));
@@ -663,14 +663,14 @@ test('authenticateAdlcPackage: validates lockfile entry, integrity, and version 
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.12.0',
+          version: '1.13.0',
           integrity: 'sha512-validintegrity',
         },
       },
     }));
     const valid = authenticateAdlcPackage(pkgDir, join(pkgDir, 'bin', 'adlc.js'), lockPath);
     assert.equal(valid.ok, true);
-    assert.equal(valid.version, '1.12.0');
+    assert.equal(valid.version, '1.13.0');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -683,7 +683,7 @@ test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha2
     mkdirSync(join(pkgDir, 'bin'), { recursive: true });
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({
       name: '@adlc/cli',
-      version: '1.12.0',
+      version: '1.13.0',
       bin: { adlc: './bin/adlc.js' },
     }));
     writeFileSync(join(pkgDir, 'bin', 'adlc.js'), '#!/usr/bin/env node\n');
@@ -695,7 +695,7 @@ test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha2
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.12.0',
+          version: '1.13.0',
           integrity: 'sha512-wrong-integrity',
         },
       },
@@ -710,14 +710,14 @@ test('authenticateAdlcPackage: enforceKnownDigest validates lockfile, binarySha2
     assert.match(badIntegrity.error, /integrity mismatch for @adlc\/cli/);
 
     // Update lockfile to correct known integrity
-    const known = KNOWN_ADLC_DIGESTS['1.12.0'];
+    const known = KNOWN_ADLC_DIGESTS['1.13.0'];
     writeFileSync(lockPath, JSON.stringify({
       name: 'test-project',
       version: '1.0.0',
       lockfileVersion: 3,
       packages: {
         'node_modules/@adlc/cli': {
-          version: '1.12.0',
+          version: '1.13.0',
           integrity: known.integrity,
         },
       },
@@ -814,7 +814,7 @@ test('resolveAdlcBinary: custom override rejects temporary directory on all plat
   try {
     const pkg = join(tmp, 'pkg');
     mkdirSync(pkg);
-    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.12.0', bin: { adlc: './adlc' } }));
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.13.0', bin: { adlc: './adlc' } }));
     const bin = join(pkg, 'adlc');
     writeFileSync(bin, '#!/usr/bin/env node\n');
     chmodSync(bin, 0o755);
@@ -833,7 +833,7 @@ test('resolveAdlcBinary: custom override rejects world-writable path', () => {
   try {
     const pkg = join(safeBase, 'pkg');
     mkdirSync(pkg);
-    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.12.0', bin: { adlc: './adlc' } }));
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.13.0', bin: { adlc: './adlc' } }));
     const bin = join(pkg, 'adlc');
     writeFileSync(bin, '#!/usr/bin/env node\n');
     chmodSync(bin, 0o777); // World-writable!
@@ -854,7 +854,7 @@ test('resolveAdlcBinary: rejects binary if any ancestor directory is world-writa
     mkdirSync(subDir, { recursive: true });
     const pkg = join(subDir, 'pkg');
     mkdirSync(pkg);
-    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.12.0', bin: { adlc: './adlc' } }));
+    writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@adlc/cli', version: '1.13.0', bin: { adlc: './adlc' } }));
     const bin = join(pkg, 'adlc');
     writeFileSync(bin, '#!/usr/bin/env node\n');
     chmodSync(bin, 0o755); // File itself is not world-writable!
@@ -1083,7 +1083,7 @@ test('preventExecutableReplacement: does not mutate persistent permissions and p
 
     // Simulate an ancestor directory left without write bits by an earlier crash
     const pkgDir = join(root, 'node_modules', '@adlc', 'cli');
-    writeFileSync(join(pkgDir, 'package.json'), '{"name":"@adlc/cli","version":"1.12.0"}');
+    writeFileSync(join(pkgDir, 'package.json'), '{"name":"@adlc/cli","version":"1.13.0"}');
     chmodSync(pkgDir, 0o555); // write bit stripped
 
     // preventExecutableReplacement must recover write bits and not strip permissions from sub/root
@@ -1151,12 +1151,12 @@ test('resolveAdlcBinary: custom override resolves shims in .bin to @adlc/cli pac
 
     const pkgJson = {
       name: '@adlc/cli',
-      version: '1.12.0',
+      version: '1.13.0',
       bin: './bin/adlc.js',
     };
     writeFileSync(join(pkgDir, 'package.json'), JSON.stringify(pkgJson));
     const targetScript = join(pkgBinDir, 'adlc.js');
-    writeFileSync(targetScript, '#!/usr/bin/env node\nconsole.log("adlc 1.12.0");\n');
+    writeFileSync(targetScript, '#!/usr/bin/env node\nconsole.log("adlc 1.13.0");\n');
     chmodSync(targetScript, 0o755);
 
     const shimCmd = join(binDir, 'adlc.cmd');
@@ -1173,7 +1173,7 @@ test('resolveAdlcBinary: custom override resolves shims in .bin to @adlc/cli pac
     });
     assert.equal(res.ok, true, `must resolve custom shim: ${res.error}`);
     assert.equal(res.source, 'custom-override');
-    assert.equal(res.version, '1.12.0');
+    assert.equal(res.version, '1.13.0');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1266,12 +1266,12 @@ test('preventExecutableReplacement: copies entire dependency closure without sym
     mkdirSync(join(cliDir, 'bin'), { recursive: true });
     mkdirSync(coreDir, { recursive: true });
 
-    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.12.0"}');
+    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.13.0"}');
     const fakeBin = join(cliDir, 'bin', 'adlc.mjs');
     writeFileSync(fakeBin, '#!/usr/bin/env node\nimport "@adlc/core";\n');
     chmodSync(fakeBin, 0o755);
 
-    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.12.0"}');
+    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.13.0"}');
     writeFileSync(join(coreDir, 'index.js'), 'export const core = true;\n');
 
     const seal = preventExecutableReplacement(fakeBin);
@@ -1327,12 +1327,12 @@ test('preventExecutableReplacement: rejects symlinks in copied dependencies', ()
     mkdirSync(join(cliDir, 'bin'), { recursive: true });
     mkdirSync(coreDir, { recursive: true });
 
-    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.12.0"}');
+    writeFileSync(join(cliDir, 'package.json'), '{"name":"@adlc/cli","version":"1.13.0"}');
     const fakeBin = join(cliDir, 'bin', 'adlc.mjs');
     writeFileSync(fakeBin, '#!/usr/bin/env node\nconsole.log(1);\n');
     chmodSync(fakeBin, 0o755);
 
-    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.12.0"}');
+    writeFileSync(join(coreDir, 'package.json'), '{"name":"@adlc/core","version":"1.13.0"}');
     // Plant an internal symlink inside dependency
     const outsideTarget = join(tmpdir(), `agb-sym-target-${crypto.randomUUID()}`);
     writeFileSync(outsideTarget, 'malicious');

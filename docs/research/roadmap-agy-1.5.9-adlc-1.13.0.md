@@ -204,7 +204,11 @@ Edge convention: `{ "to": X }` on ticket A means A completes before X starts.
         "test/adlc-tool.test.mjs",
         "test/modernize-skill.test.mjs",
         "test/trust-anchor.test.mjs",
-        "test/fixtures/package.json"
+        "test/fixtures/package.json",
+        "docs/research/roadmap-agy-1.5.9-adlc-1.13.0.md",
+        "scripts/check-bundle-externals.mjs",
+        "test/check-bundle-externals.test.mjs",
+        "test/vendor-adlc-smoke.test.mjs"
       ],
       "rails": [
         "lib/lock.mjs",

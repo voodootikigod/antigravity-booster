@@ -27,9 +27,20 @@ test('findExternalSpecifiers: catches static, side-effect, re-export, dynamic an
   assert.deepEqual(findExternalSpecifiers(src), ['@adlc/core', '@adlc/tickets', 'left-pad', 'minimatch', 'side-effect-pkg']);
 });
 
-test('DEFAULT_BUNDLES covers all five shipped bundles (incl. vendored adlc and watchdog)', async () => {
-  const { DEFAULT_BUNDLES } = await import('../scripts/check-bundle-externals.mjs');
-  assert.deepEqual(DEFAULT_BUNDLES, ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs', 'vendor/adlc/dist/watchdog.mjs']);
+test('DEFAULT_BUNDLES covers all six shipped bundles (incl. vendored adlc, syntax-check-typescript, and watchdog)', async () => {
+  const { DEFAULT_BUNDLES, BUNDLE_ALLOWED_OPTIONAL_PROBES } = await import('../scripts/check-bundle-externals.mjs');
+  assert.deepEqual(DEFAULT_BUNDLES, [
+    'dist/agb.mjs',
+    'dist/mcp-server.mjs',
+    'dist/hooks/pre-tool-use.bundle.mjs',
+    'vendor/adlc/dist/adlc.bundle.mjs',
+    'vendor/adlc/dist/syntax-check-typescript.mjs',
+    'vendor/adlc/dist/watchdog.mjs',
+  ]);
+  assert.deepEqual(Object.keys(BUNDLE_ALLOWED_OPTIONAL_PROBES), [
+    'vendor/adlc/dist/adlc.bundle.mjs',
+    'vendor/adlc/dist/syntax-check-typescript.mjs',
+  ]);
 });
 
 test('findExternalSpecifiers: catches template literals and dynamic/computed call expressions', () => {

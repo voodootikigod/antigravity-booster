@@ -86,9 +86,9 @@ const REPO_WITH_NM = (() => {
 
 // Stage 5 only has built-in anchors for ADLC 1.11.1; any later target needs an
 // operator-signed trust store. These tests sign a throwaway store (temp HOME,
-// throwaway key) with the registry digests of the published @adlc/cli@1.12.0
+// throwaway key) with the registry digests of the published @adlc/cli@1.13.0
 // tarball and the sha256 of the pinned changelog fixture, never the real store.
-const AUDIT_ADLC_TARGET = '1.12.0';
+const AUDIT_ADLC_TARGET = '1.13.0';
 const AUDIT_AGY_TARGET = '1.2.8';
 const AUDIT_TEST_KEY = 'agb-test-only-admin-key';
 function auditTrustEnv() {
@@ -97,8 +97,8 @@ function auditTrustEnv() {
     releases: {
       [AUDIT_AGY_TARGET]: { agyChangelogSha256: createHash('sha256').update(readFileSync(AGY_RELEASE_FIXTURE)).digest('hex') },
       [AUDIT_ADLC_TARGET]: {
-        adlcTarballSri: 'sha512-s/KSv0lx0VQhGOEp6Y2WJ3P9KxL8gZvollSJcVcrvbhGUU9HrUZ/tn0PO7zHVCk0UpmJpBBQk39VZNTP1JVxXQ==',
-        packageTreeSha512: '6818baf1923a72d8230761800c6f4ea5f7ac2a9a1d3362eb960317b685d80a6c90f434534ef222fe4a0fbd033cd0d96f48bbe984b636d9927b3bd9d4052bcc45',
+        adlcTarballSri: 'sha512-Cd54ptOQWZvE6NTKbs0SJwSU/UY0wAAXZo2xjqm2cBh9EEmmNl8SE2HDRGx+HlTpkrL/R9JxjZrGsRKfkb1MEA==',
+        packageTreeSha512: 'f956e1a899d180581353846d6ca920436e0d0f766021e870ebacf075f75be632ee9281a7384712de0c3a23c1571f0a1b5a08af2d6ef4b2a39af536c2832e31f0',
         adlcChangelogSha256: '0b036f0b4e50bb8b9d7a5c198d715981fd695521a1a41f3c4eceedba027477e4',
       },
     },
@@ -131,7 +131,7 @@ test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
 });
 
 test('Modernize Skill: audit.mjs refuses to run without explicit release targets', () => {
-  for (const args of [[], ['1.12.0'], ['1.12.0', '', '']]) {
+  for (const args of [[], ['1.13.0'], ['1.13.0', '', '']]) {
     assert.throws(
       () => execFileSync(process.execPath, [AUDIT_SCRIPT, ...args], {
         cwd: join(import.meta.dirname, '..'),

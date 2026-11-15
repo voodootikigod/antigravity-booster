@@ -2092,6 +2092,7 @@ __export(tickets_exports, {
   canonicalJson: () => canonicalJson,
   canonicalValue: () => canonicalValue,
   categoryWarning: () => categoryWarning,
+  classifyLineageToken: () => classifyLineageToken,
   compareTicketIds: () => compareTicketIds,
   conflict: () => conflict2,
   coversManifest: () => coversManifest,
@@ -2508,7 +2509,11 @@ function validateTickets(tickets, { archive = false, validateGraph = !archive } 
     };
     for (const id of [...byId.keys()].sort(compareTicketIds)) visit(id, []);
   }
-  if (errors.length) throw invalid2("INVALID_TICKET_STORE", `ticket store validation failed (${errors.length} error(s))`, errors);
+  if (errors.length) {
+    const count = errors.length;
+    errors.push("see `adlc ticket schema` and `adlc ticket doctor`");
+    throw invalid2("INVALID_TICKET_STORE", `ticket store validation failed (${count} error(s)): ${errors.join("; ")}`, errors);
+  }
   return tickets;
 }
 
@@ -2570,7 +2575,7 @@ var TICKET_FIELDS = [
     name: "duration",
     type: "number > 0",
     required: false,
-    summary: "Relative build-time estimate used to order the ticket DAG. Defaults to 1.",
+    summary: "Positive number (number > 0) giving the relative build-time estimate used to order the ticket DAG. Defaults to 1.",
     schema: { type: "number", exclusiveMinimum: 0 }
   },
   {
@@ -2595,7 +2600,7 @@ var TICKET_FIELDS = [
     name: "rails",
     type: "string[]",
     required: false,
-    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Once any ticket declares rails the ticket store itself becomes a frozen trust root, so later ticket writes need ADLC_RAILS_BYPASS=1.",
+    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Narrowing rails, widening scope, or changing `completed` on an existing ticket requires `--authorize` (see `adlc ticket update --help`); `ADLC_RAILS_BYPASS` governs only the `rails-guard` hook/CLI check on direct store-path edits, not `adlc ticket` writes.",
     schema: { type: "array", items: { type: "string" } }
   },
   {
@@ -2612,14 +2617,14 @@ var TICKET_FIELDS = [
     name: "edges",
     type: 'array of "to" objects',
     required: false,
-    summary: 'Ordering constraints, prerequisite to dependent. An edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here. An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
+    summary: 'Array of edge objects (each with a non-empty string "to" id) giving ordering constraints, prerequisite to dependent: this ticket completes before `to` (an edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here). An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
     schema: {
       type: "array",
       items: {
         type: "object",
         required: ["to"],
         properties: {
-          to: { type: "string", minLength: 1, description: "Id of the dependent ticket, which must not start before this one completes." },
+          to: { type: "string", minLength: 1, description: "Id of the dependent ticket (this ticket completes before `to`, which must not start before this one completes)." },
           // Unconstrained for the same reason as body/category: validateTicket
           // checks only that an edge carries a string `to`.
           contract: { description: "Path to the interface this edge guarantees the dependent ticket can consume." }
@@ -2776,10 +2781,12 @@ var COMMAND_HELP = {
     ...TRUST_ROOT_NOTE
   ],
   complete: () => [
-    "adlc ticket complete <id> [--write --authorize] [--allow-unsigned] [--json]",
+    "adlc ticket complete <id> [--expect <ticket-hash>] [--write --authorize] [--allow-unsigned] [--json]",
     "",
     "Mark a ticket complete. The plan is recorded as a lifecycle change and",
-    "carries evidence either way.",
+    "carries evidence either way. When --expect <ticket-hash> is supplied, the",
+    "command refuses with STALE_TICKET if the stored ticket hash changed since it",
+    "was reviewed.",
     "",
     "--authorize records that a human approved the change. It is ENFORCED only",
     "for a protected id, and this CLI configures no protected ids \u2014 so by",
@@ -2847,10 +2854,10 @@ function renderUsage() {
     "Commands:",
     "  list | show <id>",
     "  create --input <path|-> [--write]",
-    "  update <id> --input <path|-> [--expect <ticket-hash>] [--write]",
+    "  update <id> --input <path|-> --expect <ticket-hash> [--force] [--write]",
     "  edit <id> [--write]",
     "  discard <id> [--write]",
-    "  complete <id> [--write --authorize]",
+    "  complete <id> [--expect <hash>] [--write --authorize]",
     "  archive <id> [--write --authorize] | restore <id> [--write --authorize]",
     "  doctor [--archive] | schema | store status",
     "  store migrate [--write --yes] | store recover (--complete|--rollback)",
@@ -3588,7 +3595,7 @@ function isChainIntact(lines, key2) {
     const expectedPrev = prevLine === null ? null : sha256(prevLine);
     if (entry.prev !== expectedPrev || entry.seq !== prevSeq + 1) return false;
     if (key2 !== null) {
-      const hasSig = typeof entry.sig === "string" && entry.sig.length > 0;
+      const hasSig = Object.hasOwn(entry, "sig");
       if (hasSig) {
         if (!entrySigValid(key2, entry)) return false;
         seenSignedEntry = true;
@@ -3696,7 +3703,7 @@ function chainIsIntact(lines, key2 = null) {
     const expectedPrev = prevLine === null ? null : sha256(prevLine);
     if (entry?.prev !== expectedPrev || entry?.seq !== prevSeq + 1) return false;
     if (key2 !== null) {
-      const hasSig = typeof entry?.sig === "string" && entry.sig.length > 0;
+      const hasSig = Boolean(entry) && typeof entry === "object" && Object.hasOwn(entry, "sig");
       if (hasSig) {
         if (!entrySigValid(key2, entry)) return false;
         seenSignedEntry = true;
@@ -4982,10 +4989,11 @@ var TicketService = class {
       return { ticketId: id, fileOperations: [{ action: "delete", id }] };
     });
   }
-  planComplete(id, { authorized = false } = {}) {
-    return this.#plan("complete", (tickets) => {
+  planComplete(id, { expect, authorized = false } = {}) {
+    return this.#plan("complete", (tickets, snapshot) => {
       const ticket = tickets.find((item) => item.id === id);
       if (!ticket) throw invalid2("TICKET_NOT_FOUND", `ticket not found: ${id}`);
+      if (expect !== void 0 && snapshot.ticketHashes[id] !== expect) throw conflict2("STALE_TICKET", `ticket ${id} hash changed`);
       if (this.protectedIds.has(id) && !authorized) throw policy("AUTHORIZATION_REQUIRED", `protected completion requires authorization for ${id}`);
       const before = deepClone(ticket);
       ticket.completed = true;
@@ -5601,7 +5609,7 @@ function walkChainForStoreHash(lines, key2, chainLabel) {
     }
     let entrySigned = false;
     if (key2 !== null) {
-      const hasSig = typeof entry?.sig === "string" && entry.sig.length > 0;
+      const hasSig = Boolean(entry) && typeof entry === "object" && Object.hasOwn(entry, "sig");
       if (hasSig) {
         if (!entrySigValid(key2, entry)) {
           return { ok: false, code: "MANIFEST_SIGNATURE_INVALID", reason: `${chainLabel} entry at line ${i + 1} has a signature that does not verify; integrity check FAILED` };
@@ -5707,11 +5715,26 @@ function readChain(path3) {
   }
   return { seqs, first };
 }
+function classifyLineageToken(token, branch, validSegments) {
+  if (!token) return { kind: "none" };
+  const { segment, ulid } = token;
+  if (token.branch !== branch) {
+    return { kind: "foreign", segment, ulid, branch: token.branch };
+  }
+  if (!validSegments.includes(segment)) {
+    return { kind: "stale", segment, ulid, reason: `.lineage names segment '${segment}', which no longer exists` };
+  }
+  const actual = ulidOf(segment);
+  if (actual !== ulid) {
+    return { kind: "stale", segment, ulid, reason: `.lineage caches ULID '${ulid}' for segment '${segment}', whose own ULID is '${actual}'` };
+  }
+  return { kind: "ok", segment, ulid };
+}
 function manifestForestCheck(root) {
   const check = { name: "manifest-forest", ok: true };
   const dir = join15(root, ".adlc");
   if (!isSegmentedRepo(dir)) return { ...check, segmented: false };
-  const { valid } = discoverSegments(dir);
+  const { valid, invalid: invalid3 } = discoverSegments(dir);
   const chains = /* @__PURE__ */ new Map([["root", readChain(join15(dir, "manifest.jsonl"))]]);
   for (const name of valid) chains.set(name, readChain(segmentPath(dir, name)));
   const orphanedAnchors = [];
@@ -5726,22 +5749,18 @@ function manifestForestCheck(root) {
       orphanedAnchors.push({ segment: name, anchor: { segment: anchor.segment, seq: anchor.seq }, reason: `anchored to '${anchor.segment}' seq ${anchor.seq}, which no longer exists` });
     }
   }
-  let staleLineage = null;
-  const token = readLineageToken(dir);
-  if (token) {
-    if (!valid.includes(token.segment)) {
-      staleLineage = { segment: token.segment, ulid: token.ulid, reason: `.lineage names segment '${token.segment}', which no longer exists` };
-    } else if (ulidOf(token.segment) !== token.ulid) {
-      staleLineage = { segment: token.segment, ulid: token.ulid, reason: `.lineage caches ULID '${token.ulid}' for segment '${token.segment}', whose own ULID is '${ulidOf(token.segment)}'` };
-    }
-  }
+  const lineage = classifyLineageToken(readLineageToken(dir), currentBranch(root), valid);
+  const staleLineage = lineage.kind === "stale" ? { segment: lineage.segment, ulid: lineage.ulid, reason: lineage.reason } : null;
+  const foreignLineage = lineage.kind === "foreign" ? { segment: lineage.segment, ulid: lineage.ulid, branch: lineage.branch } : null;
   return {
     ...check,
-    ok: orphanedAnchors.length === 0 && staleLineage === null,
+    ok: orphanedAnchors.length === 0 && staleLineage === null && invalid3.length === 0,
     segmented: true,
     segments: valid.length,
+    invalidSegments: invalid3,
     orphanedAnchors,
-    staleLineage
+    staleLineage,
+    foreignLineage
   };
 }
 function doctorTicketStore(store, { root = ".", archive = false, key: keyParam = null } = {}) {
@@ -5857,32 +5876,37 @@ async function offerLegacyMigration(store, root, flags = {}, {
 // node_modules/@adlc/tickets/lib/stores/git-tree.mjs
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { posix } from "node:path";
-function runGit(cwd, args, { allowFailure = false } = {}) {
-  const result = spawnSync2("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+var GIT_TIMEOUT_MS2 = 6e4;
+var MAX_BUFFER = 64 * 1024 * 1024;
+function runGit(cwd, args, opts = {}) {
+  const { allowFailure, spawnFn } = opts;
+  const result = spawnFn("git", args, { cwd, encoding: "utf8", timeout: GIT_TIMEOUT_MS2, maxBuffer: MAX_BUFFER });
   if (result.status === 0) return result.stdout;
-  if (allowFailure) return null;
   if (result.error) throw operational("GIT_READ_FAILED", `git ${args[0]} failed: ${result.error.message}`);
+  if (result.signal) throw operational("GIT_READ_FAILED", `git ${args[0]} timed out or was killed by ${result.signal}`);
+  if (allowFailure) return null;
   throw operational("GIT_READ_FAILED", `git ${args[0]} failed: ${result.stderr?.trim() || `exit ${result.status}`}`);
 }
 var GitTreeTicketStore = class {
-  constructor({ cwd = ".", revision, storePath = ".adlc/tickets" }) {
+  constructor({ cwd = ".", revision, spawnFn = spawnSync2, storePath = ".adlc/tickets" }) {
     if (!revision) throw new TypeError("GitTreeTicketStore requires an exact revision");
     if (revision.startsWith("-") || /[\0\r\n]/.test(revision)) throw invalid2("UNSAFE_GIT_REVISION", "Git revision cannot be option-like or contain control characters");
     this.cwd = cwd;
     this.revision = revision;
     this.exactRevision = null;
+    this.spawnFn = spawnFn;
     this.storePath = storePath.replace(/\\/g, "/").replace(/\/$/, "");
     if (!this.storePath || this.storePath.startsWith("/") || this.storePath.split("/").includes("..")) {
       throw invalid2("UNSAFE_GIT_PATH", `ticket store path must be repository-relative: ${storePath}`);
     }
   }
   #show(path3) {
-    const output = runGit(this.cwd, ["show", `${this.exactRevision}:${path3}`], { allowFailure: true });
+    const output = runGit(this.cwd, ["show", `${this.exactRevision}:${path3}`], { allowFailure: true, spawnFn: this.spawnFn });
     if (output === null) throw operational("GIT_PATH_MISSING", `${path3} is absent at ${this.exactRevision}`);
     return output;
   }
   #entries(path3) {
-    const listing = runGit(this.cwd, ["ls-tree", "-r", "-z", this.exactRevision, "--", path3]);
+    const listing = runGit(this.cwd, ["ls-tree", "-r", "-z", this.exactRevision, "--", path3], { spawnFn: this.spawnFn });
     return listing.split("\0").filter(Boolean).map((record) => {
       const separator = record.indexOf("	");
       if (separator < 0) throw invalid2("INVALID_GIT_TREE", `cannot parse Git tree entry at ${this.revision}`);
@@ -5900,7 +5924,7 @@ var GitTreeTicketStore = class {
     return entry;
   }
   load() {
-    const resolved = runGit(this.cwd, ["rev-parse", "--verify", "--quiet", `${this.revision}^{commit}`], { allowFailure: true });
+    const resolved = runGit(this.cwd, ["rev-parse", "--verify", "--quiet", `${this.revision}^{commit}`], { allowFailure: true, spawnFn: this.spawnFn });
     if (resolved === null) {
       throw operational("GIT_REVISION_MISSING", `Git revision not found: ${this.revision}`);
     }
@@ -6318,18 +6342,18 @@ function semverGte(a, b) {
 }
 var IS_BUNDLED = true;
 var KNOWN_VENDORED_ADLC = Object.freeze({
-  version: "1.12.0",
+  version: "1.13.0",
   binarySha256: "3a4a8883bae7bbe624d021e9b544c32f99a5803b1451ef17b2e57eb81c3413f6",
-  vendoredBundleSha256: "dd13ae2bec4f4aa9bcc7b3896f299074d4f9fc508b48992fb2f1d9a6b0f11dd4",
-  treeDigest: "91e58801f2245b9b614c2044543cdacaf771f2014d4e59f6e3fbfc30d3afe75d"
+  vendoredBundleSha256: "63822430cceed99b20301de770460538cfc614021bdddd90bdaf987e381c85b3",
+  treeDigest: "5c06ba41b28eaa051ac27ca8597cb79a7f94cd60cd16dc129f1203d67ffecb82"
 });
 var STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS = Object.freeze({
   "1.7.0": "c9bad8ac16bf47cdc7001645ed6d4ffb77997e91063fe983084d151e3f840754"
 });
 var KNOWN_ADLC_DIGESTS = {
-  "1.12.0": {
-    integrity: "sha512-s/KSv0lx0VQhGOEp6Y2WJ3P9KxL8gZvollSJcVcrvbhGUU9HrUZ/tn0PO7zHVCk0UpmJpBBQk39VZNTP1JVxXQ==",
-    treeDigest: "471d2b687749742c1b8cac27427c0d6e483aedf71a201d134d1bd13bda51ae48",
+  "1.13.0": {
+    integrity: "sha512-Cd54ptOQWZvE6NTKbs0SJwSU/UY0wAAXZo2xjqm2cBh9EEmmNl8SE2HDRGx+HlTpkrL/R9JxjZrGsRKfkb1MEA==",
+    treeDigest: "5ce8c338f021ccd4a46714d49b4c1503b8db4e72055fee34600949cce62c57f2",
     binarySha256: "b38de003d6fdbfd139229ed0a70a85c719bac6a5d4885fbcfffe15e96fa84d21"
   }
 };
@@ -6338,103 +6362,103 @@ var KNOWN_ADLC_DEPENDENCY_DIGESTS = {
     "1.7.0": "0932ef0035de0a623d16881bd87fcc615ac821f697b38f446e2242bbfac65a4a"
   },
   "@adlc/behavior-diff": {
-    "1.12.0": "240be60ece9bae98322a85fff8aba85decfb3aa5a450015b0c8bcf93e3f65377"
+    "1.13.0": "6ebc309a20c0ff556fb631d99e7b1fe3bf2478f5ff1b3d85714679f9fe2e18b9"
   },
   "@adlc/build-gate": {
-    "1.12.0": "5cb8ff24b425e1f914cdf8a2fd3410804d159b4b615a5344041d87346647bea4"
+    "1.13.0": "d5207967c87bb53f3ca043ce72ccd496d2beff8c1142f31b125b6eab00e75c3f"
   },
   "@adlc/coldstart": {
-    "1.12.0": "42b8ecc308baca1430ebb779d17613ffbe47fcf4953f46fad422abbeea4c21a0"
+    "1.13.0": "b4d1958799268f3b050d839fb9e52c5fd5b00f98e4b3e67d4ac804bf19450e22"
   },
   "@adlc/consensus-fix": {
-    "1.12.0": "9c7e4445b088399d3ababd43d6354e282a068298548c20cab6029a901776f4fc"
+    "1.13.0": "c8e580dc5151c73900d4348d083b3f06ed6f90177fb4710aa32577e654f517f4"
   },
   "@adlc/context-handoff": {
-    "1.12.0": "77035c343d026a6987717c5e6bf308a385b9363c6cde9191e2ca0603b366458e"
+    "1.13.0": "6fd8cd586982aa757f2a70d6f6dcf629607e109d1dc1416689012eca1ba51c59"
   },
   "@adlc/core": {
-    "1.12.0": "59ede93c4467033753926b78d7167c8eaa2592b9170e58209fa85e1281f84f4b"
+    "1.13.0": "4e894bd3160e4213718e747a824f3e10d10685e5e9a625218038e2d2173362e7"
   },
   "@adlc/flail-detector": {
-    "1.12.0": "3e0d29aa2ff9aa2208dbbfedf42bb2191f6ef5b0021996b01b7164b6671fa04c"
+    "1.13.0": "27dd9d7de6018d81f15df5a8ae10406f5ee60be728a7c981c6b2967782f4182e"
   },
   "@adlc/fleet": {
-    "1.12.0": "73bb3715422ec1a87e5e46689a9f44370a6b21bb27021438579835d58c838fe9"
+    "1.13.0": "b677ab09b3815dd9f71640d5ac6e1733f59c743e760a2770153ddf41b648bb4a"
   },
   "@adlc/gate-fuzzing": {
-    "1.12.0": "7368a9f3a7f49e5f42522f60fd8e77cfb4c52e7313328477046f13ae2177a6d5"
+    "1.13.0": "dd40944ef6303459282e3b7857c73d0ddb45a9b902f981e2d9b428205f6cb99a"
   },
   "@adlc/gate-manifest": {
-    "1.12.0": "234cdce2bebd11d1e3b4daa837c39627eaaf9ce3f02a1e6d0f336a9dd2fef280"
+    "1.13.0": "ccda4eb0586824a1f330ce750c35ed6fd47b452150dfbe6e93d7bbe65e7b6670"
   },
   "@adlc/hollow-test": {
-    "1.12.0": "0390358844230466cd12fa392d98c40fdff9d969940219993202f466916e44c3"
+    "1.13.0": "aa768a81724ed0b76815f48430095e9fdf036f451dd415fc56fd722139335eca"
   },
   "@adlc/init": {
-    "1.12.0": "c95da06974668345007f2c5f7dc43198a4508563853c040313a0a9d253775194"
+    "1.13.0": "418f939e408488ee305dbf1c35f434e349dd0b1d6f37b5c22c9000381c075ccc"
   },
   "@adlc/lesson-foundry": {
-    "1.12.0": "d986b42d0e8ae493d23fbb9c5ae454db8d9e78ea3901fe46e7ff4ac020572fbd"
+    "1.13.0": "a96f506f2eac7d2d14d1e4a1d2aac26be48357ef9b6e58140d2050b4ef987e35"
   },
   "@adlc/merge-forecast": {
-    "1.12.0": "b4ecfa663404689888982d7360d741d26a159550f436856b3ffa0dd5b179bf47"
+    "1.13.0": "61f0df4973c7ed9ee45b3d1138b02a6cad5b7fe51744a75e12b73f5fa80e69ff"
   },
   "@adlc/model-ratchet": {
-    "1.12.0": "500dbbeb87fdd98d7babaa0df55a5de4131954ef07b49bfbdff295e5f822a6d0"
+    "1.13.0": "0c61620f7bd09cc925c82b18369bcd3a367d098791d3060bbe9b83328f52fb9e"
   },
   "@adlc/model-router": {
-    "1.12.0": "60686b8859b5388fcef8c7489b9aef128e18b74d42f5c0dab1b91137cf81870a"
+    "1.13.0": "9cddb25a76267551d27f4e5a966a4d9d1257443c7655e6f98a290ddae51a1db3"
   },
   "@adlc/parallax": {
-    "1.12.0": "6edb04fab138e52a90aee2e95a434511828ed9e9f06f6136e3d3f51ca65440a1"
+    "1.13.0": "80babf4b3d47fc0988236c2dcde6ff6092c6acc7bb8af1833ab7605228eb7dce"
   },
   "@adlc/preflight": {
-    "1.12.0": "b0b9850f165ed193ee71968a004097e2c6a08f807ee0641877ee830f29564f99"
+    "1.13.0": "898cbec75e19e58731b6345d2b4ab44dbca105a63482547ee262fbe890da2edb"
   },
   "@adlc/premortem": {
-    "1.12.0": "2f296390bbf0b3bcb5bd20b6c2795f934f64fdb25bdc352e2ecc8a9d13513080"
+    "1.13.0": "20f196f19dbb661a9268e6a314f159bebfdc975a8bde762583712d85f793b87e"
   },
   "@adlc/prosecute": {
-    "1.12.0": "f984d5b4c2ca81cb3fd5d5b6541a10258357e01176896a6ff321677162e3921e"
+    "1.13.0": "19572f753265783adb390f1765a67528d72ce54194dd842d071dc853c715a387"
   },
   "@adlc/quartermaster": {
-    "1.12.0": "fcbd706da2b1fb4a3a427e4db6582b3bf8f73183e6ec920f765ef72100a88f0c"
+    "1.13.0": "406ba7e03b9f02f5c9a260271d0c13f1c940001c38833fef94bc4d9df38196ef"
   },
   "@adlc/rails-guard": {
-    "1.12.0": "fb1b68e098386bb1196026cb0b4ac3d400ad1f0beda9d7adaa617966282a5ed6"
+    "1.13.0": "9b41566344c36af3a59a5fea0807d0d1d0381ec79fce0020776fa0fea8299b9e"
   },
   "@adlc/rejection-mining": {
-    "1.12.0": "f548c5622514b203f9077fa8c40c26dfac01f0e2044d660a0e24e251a4af8e6a"
+    "1.13.0": "1a73cb0ab877159071fa8f1ff96de2eec2643857b0820af39c56df4ce96557da"
   },
   "@adlc/review-calibration": {
-    "1.12.0": "6dc74434f0baf0fdaa148e1c362862a81fb9857581e920c8dcceef1048a324bb"
+    "1.13.0": "7efda19ea61274518040c550b5153dbb329517e04b765eb5f5c55d326da1e7e5"
   },
   "@adlc/runner": {
-    "1.12.0": "61ee881078afade672d92dbaf46816a9b368ae6cfdf3db83c7f0596422f3faeb"
+    "1.13.0": "a283ac41bbb525686fd87e69f13fc3415f4e4cf1cee5baecb4be47e0718a0f81"
   },
   "@adlc/skill-rot": {
-    "1.12.0": "ec844b1b0eab1cc7bcdc4a7d42e7c6b8285cf41af2ff0c23cadd059cb11a50b0"
+    "1.13.0": "60f94b7f7e74268da3c380214b539e7e992a90b55c057c30869d9730d9fb37c6"
   },
   "@adlc/spec-lint": {
-    "1.12.0": "19eb2f10749cebc7c8e0db862cd05d2802a76ddcaec46f166e0b2b3692e75c14"
+    "1.13.0": "bbf5ee7201aea0f50c5b7e8144f48ab72097c72e6ee2e87d0af566417ab5f7a6"
   },
   "@adlc/ticket-prune": {
-    "1.12.0": "753cc3a9d4f0bcb8c622316ad094194c54df7da1ebe6b6961bc7f0230b0aa384"
+    "1.13.0": "2b13847b38c06bc313167bec9b983c6597f19c9413abf9755159a71c2d60e7a1"
   },
   "@adlc/ticket-sync": {
-    "1.12.0": "fb4affc12a2c042a2fc1998a80ce96b33c3c063210e73504dbb560dde8fb14c8"
+    "1.13.0": "b0491a3eb8c766046b6a93e0e811b2ddef5c156477ac379ec5bda2596583bbb5"
   },
   "@adlc/tickets": {
-    "1.12.0": "a54e62550d8ea216e2abef66197cdda5033dd08a4a75370f916d65bfc755ebc5"
+    "1.13.0": "6a42eb10662f6ea7149dacc743e3ff117d6a2b563e5d9586a404faaa35fb0914"
   },
   "@adlc/autopilot": {
-    "1.12.0": "f5a7dadc1a296d354866734df37e0d33a4b202a7eb42148471b466f28d4ab61b"
+    "1.13.0": "b964a7726623acce19f8c31ab781e8205c0cc9fea7b4563dc77b18fe3f82c99f"
   },
   "@adlc/backlog-groom": {
-    "1.12.0": "009cb198c605c76f1e96f899a4b5c429055e10f955b4b25229fd5e4e99e34dee"
+    "1.13.0": "e7b2eefc22b011ef1a27a62700157d8d48acca38632bf8e97f590dd2c028a2fd"
   },
   "@adlc/decision-layer": {
-    "1.12.0": "897dee4c7b6b01cbdd4dea4b71d81d1f3291872a70b3a9117b4f5a53291fb7d3"
+    "1.13.0": "e291f07a9c882822bb4a999ec19f20a2f14bd4372039aecf6739b9b84ae4359a"
   }
 };
 function computePackageTreeDigest(dir) {
@@ -12753,7 +12777,7 @@ function usageFromGemini(raw) {
   if (!raw || typeof raw !== "object") return null;
   return {
     inputTokens: raw.promptTokenCount ?? 0,
-    outputTokens: raw.candidatesTokenCount ?? 0,
+    outputTokens: (raw.candidatesTokenCount ?? 0) + (raw.thoughtsTokenCount ?? 0),
     cachedTokens: raw.cachedContentTokenCount ?? 0
   };
 }
@@ -12829,10 +12853,13 @@ var PROVIDERS = [
       frontier: "gemini-2.5-pro"
     },
     async send({ apiKey, model, system, prompt, maxTokens }) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
       const res = await fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": apiKey
+        },
         body: JSON.stringify({
           ...system ? { systemInstruction: { parts: [{ text: system }] } } : {},
           contents: [{ parts: [{ text: prompt }] }],
@@ -14533,7 +14560,7 @@ import { execFileSync as execFileSync10 } from "node:child_process";
 import { existsSync as existsSync26, statSync as statSync8 } from "node:fs";
 import { homedir as homedir6 } from "node:os";
 import { join as join29, resolve as resolve14 } from "node:path";
-var GIT_TIMEOUT_MS2 = 1e4;
+var GIT_TIMEOUT_MS3 = 1e4;
 var ABSENT2 = "absent";
 function digestOrAbsent(dir) {
   if (!existsSync26(dir) || !statSync8(dir).isDirectory()) return ABSENT2;
@@ -14543,7 +14570,7 @@ function hooksDirFor(cwd) {
   const out = execFileSync10("git", ["rev-parse", "--git-path", "hooks"], {
     cwd,
     encoding: "utf8",
-    timeout: GIT_TIMEOUT_MS2,
+    timeout: GIT_TIMEOUT_MS3,
     stdio: ["ignore", "pipe", "pipe"]
   }).trim();
   return resolve14(cwd, out);
@@ -14578,7 +14605,7 @@ function configuredHooksPath(cwd) {
     return execFileSync10("git", ["config", "--get", "core.hooksPath"], {
       cwd,
       encoding: "utf8",
-      timeout: GIT_TIMEOUT_MS2,
+      timeout: GIT_TIMEOUT_MS3,
       stdio: ["ignore", "pipe", "pipe"]
     }).trim();
   } catch {
