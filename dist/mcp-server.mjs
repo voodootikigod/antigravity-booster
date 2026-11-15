@@ -34,6 +34,21 @@ function logDiagnostic(message) {
 }
 var TOOLS = [
   {
+    name: "agb_shape",
+    description: "Pre-analyze a structured spec or brain plan for DAG validity, scope overlaps, rails, and static import coupling before agb plan",
+    inputSchema: {
+      type: "object",
+      properties: {
+        spec: { type: "string", description: "Path to spec.md or brain conversation ID/prefix" },
+        repo: { type: "string", description: "Optional path to target repository (defaults to cwd)" },
+        syncBrain: { type: "boolean", description: "Sync formatted plan artifact to .booster/agb_plan_artifact.md and active brain session" },
+        maxTicketScope: { type: "number", description: "Maximum recommended file scope per ticket before emitting a scope warning (default 12)" },
+        strict: { type: "boolean", description: "Fail closed on coupling or scope warnings" }
+      },
+      required: ["spec"]
+    }
+  },
+  {
     name: "agb_plan",
     description: "Compile an Antigravity brain plan or spec file into plan.json",
     inputSchema: {
@@ -43,6 +58,9 @@ var TOOLS = [
         repo: { type: "string", description: "Absolute path to the target repository" },
         out: { type: "string", description: "Custom output file path (default plan.json)" },
         force: { type: "boolean", description: "Force overwrite the output file if it exists" },
+        decompose: { type: "boolean", description: "Automatically split wide tickets exceeding maxTicketScope" },
+        maxTicketScope: { type: "number", description: "Maximum files per ticket when decompose is enabled (default 3)" },
+        noFastPath: { type: "boolean", description: "Disable zero-LLM structured Markdown fast-path and force LLM conversion" },
         noColdstart: { type: "boolean", description: "Skip coldstart plan gate" },
         noParallax: { type: "boolean", description: "Skip parallax spec ambiguity check" },
         noPremortem: { type: "boolean", description: "Skip premortem advisory risk gate" }
@@ -90,18 +108,34 @@ var TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        repo: { type: "string", description: "Optional path to target repository" }
+        repo: { type: "string", description: "Optional path to target repository" },
+        fix: { type: "boolean", description: "Automatically repair missing .adlc store, .gitignore, or companion plugin" }
       }
     }
   },
   {
+    name: "agb_init",
+    description: "Initialize a target repository for ADLC and Antigravity Booster (.adlc/config.json, specs/feature-template.md, .gitignore)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "Path to target repository" }
+      },
+      required: ["repo"]
+    }
+  },
+  {
     name: "agb_review",
-    description: "Deploy a read-only fleet of models to audit changes",
+    description: "Deploy a read-only fleet of models to audit changes or a plan specification",
     inputSchema: {
       type: "object",
       properties: {
         repo: { type: "string", description: "Path to target repository" },
-        ref: { type: "string", description: "Optional diff reference range (e.g. main...HEAD)" }
+        ref: { type: "string", description: "Optional diff reference range (e.g. main...HEAD)" },
+        plan: { type: "string", description: "Optional spec.md path to run 5-lens Plan ARL instead of diff review" },
+        loop: { type: "boolean", description: "Run iterative ARL up to 3 rounds" },
+        fiveLens: { type: "boolean", description: "Run 5-lens Code ARL (Correctness, Simplicity, Security, Evidence, Anti-Slop)" },
+        arbiter: { type: "boolean", description: "Enable neutral arbiter triage (default true; pass false for --no-arbiter)" }
       },
       required: ["repo"]
     }
@@ -191,10 +225,53 @@ function validateDirectory(dirPath, paramName, rawVal = dirPath) {
   }
   return { ok: true };
 }
+function resolveSpecPath(rawSpec, targetCwd) {
+  const specInTarget = resolve(targetCwd, rawSpec);
+  const specInAmbient = resolve(rawSpec);
+  if (existsSync(specInTarget)) return specInTarget;
+  if (existsSync(specInAmbient)) return specInAmbient;
+  if (isAbsolute(rawSpec) || rawSpec.includes("/") || rawSpec.includes("\\") || /\.(md|markdown|txt|json)$/i.test(rawSpec)) {
+    return specInTarget;
+  }
+  return rawSpec;
+}
 async function handleToolCall(id, name, args) {
   let cliArgs = [...baseArgs];
   let targetCwd;
-  if (name === "agb_plan") {
+  if (name === "agb_shape") {
+    const specCheck = requireNonFlagString(args, "spec");
+    if (!specCheck.ok) {
+      sendError(id, -32602, specCheck.error);
+      return;
+    }
+    if (args.repo !== void 0) {
+      const repoCheck = requireNonFlagString(args, "repo");
+      if (!repoCheck.ok) {
+        sendError(id, -32602, repoCheck.error);
+        return;
+      }
+      targetCwd = resolve(repoCheck.value);
+      const dirCheck = validateDirectory(targetCwd, "repo", repoCheck.value);
+      if (!dirCheck.ok) {
+        sendError(id, -32602, dirCheck.error);
+        return;
+      }
+    } else {
+      targetCwd = process.cwd();
+    }
+    const resolvedSpec = resolveSpecPath(specCheck.value, targetCwd);
+    cliArgs.push("shape", resolvedSpec, targetCwd, "--json");
+    if (args.syncBrain) cliArgs.push("--sync-brain");
+    if (args.maxTicketScope !== void 0) {
+      const n = Number(args.maxTicketScope);
+      if (!Number.isInteger(n) || n <= 0) {
+        sendError(id, -32602, `Invalid maxTicketScope: expected positive integer`);
+        return;
+      }
+      cliArgs.push("--max-ticket-scope", String(n));
+    }
+    if (args.strict) cliArgs.push("--strict");
+  } else if (name === "agb_plan") {
     const specCheck = requireNonFlagString(args, "spec");
     if (!specCheck.ok) {
       sendError(id, -32602, specCheck.error);
@@ -211,19 +288,7 @@ async function handleToolCall(id, name, args) {
       sendError(id, -32602, dirCheck.error);
       return;
     }
-    const rawSpec = specCheck.value;
-    const specInTarget = resolve(targetCwd, rawSpec);
-    const specInAmbient = resolve(rawSpec);
-    let resolvedSpec;
-    if (existsSync(specInTarget)) {
-      resolvedSpec = specInTarget;
-    } else if (existsSync(specInAmbient)) {
-      resolvedSpec = specInAmbient;
-    } else if (isAbsolute(rawSpec) || rawSpec.includes("/") || rawSpec.includes("\\") || /\.(md|markdown|txt|json)$/i.test(rawSpec)) {
-      resolvedSpec = specInTarget;
-    } else {
-      resolvedSpec = rawSpec;
-    }
+    const resolvedSpec = resolveSpecPath(specCheck.value, targetCwd);
     cliArgs.push("plan", resolvedSpec, targetCwd);
     if (args.out !== void 0) {
       const outCheck = requireNonFlagString(args, "out");
@@ -236,6 +301,16 @@ async function handleToolCall(id, name, args) {
       cliArgs.push("--out", resolve(targetCwd, "plan.json"));
     }
     if (args.force) cliArgs.push("--force");
+    if (args.decompose) cliArgs.push("--decompose");
+    if (args.maxTicketScope !== void 0) {
+      const n = Number(args.maxTicketScope);
+      if (!Number.isInteger(n) || n <= 0) {
+        sendError(id, -32602, `Invalid maxTicketScope: expected positive integer`);
+        return;
+      }
+      cliArgs.push("--max-ticket-scope", String(n));
+    }
+    if (args.noFastPath) cliArgs.push("--no-fast-path");
     if (args.noColdstart) cliArgs.push("--no-coldstart");
     if (args.noParallax) cliArgs.push("--no-parallax");
     if (args.noPremortem) cliArgs.push("--no-premortem");
@@ -306,6 +381,20 @@ async function handleToolCall(id, name, args) {
     } else {
       cliArgs.push("doctor");
     }
+    if (args.fix) cliArgs.push("--fix");
+  } else if (name === "agb_init") {
+    const repoCheck = requireNonFlagString(args, "repo");
+    if (!repoCheck.ok) {
+      sendError(id, -32602, repoCheck.error);
+      return;
+    }
+    targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, "repo", repoCheck.value);
+    if (!dirCheck.ok) {
+      sendError(id, -32602, dirCheck.error);
+      return;
+    }
+    cliArgs.push("init", targetCwd);
   } else if (name === "agb_review") {
     const repoCheck = requireNonFlagString(args, "repo");
     if (!repoCheck.ok) {
@@ -327,6 +416,17 @@ async function handleToolCall(id, name, args) {
       }
       cliArgs.push(refCheck.value);
     }
+    if (args.plan !== void 0) {
+      const planCheck = requireNonFlagString(args, "plan");
+      if (!planCheck.ok) {
+        sendError(id, -32602, planCheck.error);
+        return;
+      }
+      cliArgs.push("--plan", resolveSpecPath(planCheck.value, targetCwd));
+    }
+    if (args.loop) cliArgs.push("--loop");
+    if (args.fiveLens) cliArgs.push("--five-lens");
+    if (args.arbiter === false || args.noArbiter === true) cliArgs.push("--no-arbiter");
   } else {
     sendError(id, -32602, `Unknown tool: ${name}`);
     return;

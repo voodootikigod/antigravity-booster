@@ -7,9 +7,9 @@ claims: [C10]
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
-**You plan in Antigravity and execute with `agb`.** Planning stays where it already works: the desktop app's plan mode or a planning conversation in an `agy` session. Both write a brain artifact (`implementation_plan.md` under `~/.gemini/antigravity-cli/brain/` or `~/.gemini/antigravity/brain/`). `agb` doesn't replace that phase. It compiles the artifact: treat `implementation_plan.md` as source and `plan.json` as its compiled output.
+**You shape and plan in Antigravity and execute with `agb`.** You can shape a raw idea interactively with `/agb-shape` (`agb shape`, which runs deterministic DAG pre-analysis and the 5-lens Plan Adversarial Review Loop before syncing to your brain artifact), or use the desktop app's plan mode / a planning conversation in an `agy` session. Both write a brain artifact (`implementation_plan.md` under `~/.gemini/antigravity-cli/brain/` or `~/.gemini/antigravity/brain/`). `agb plan` compiles that artifact (using the 0-LLM **Structured Spec Fast-Path** when `agb shape` pre-analysis passes): treat `implementation_plan.md` or `specs/<slug>-spec.md` as source and `plan.json` as its compiled output.
 
-This page assumes you have finished [Installation](/docs/getting-started/installation) and `agb doctor` passes. Inside an interactive Antigravity session, you can also invoke any of these steps in natural language with `/agb <description>` (for example, `/agb compile my latest brain plan and run it`) or with the specific `/agb-plan`, `/agb-run`, and `/agb-review` slash commands.
+This page assumes you have finished [Installation](/docs/getting-started/installation) and `agb doctor` passes. Inside an interactive Antigravity session, you can also invoke the full 5-phase Factory in natural language with `/agb <description>` (or `/agb --yolo <description>` for autonomous end-to-end execution) or with the specific `/agb-shape`, `/agb-plan`, `/agb-run`, `/agb-watch`, and `/code-review` slash commands.
 
 <Steps>
 <Step>
@@ -70,9 +70,10 @@ From another terminal:
 ```sh
 agb status /abs/repo             # one-shot snapshot of the current run
 agb status /abs/repo --watch     # refresh in place (--interval <ms>, default 1000)
+agb watch /abs/repo              # interactive full-screen TUI dashboard ([q] quit, [r] refresh, [c] compact, [space] pause)
 ```
 
-For a richer view, start the [sidecar dashboard](/docs/guides/sidecar-dashboard) with `agb sidecar /abs/repo`.
+For a browser/sidecar view, start the [sidecar dashboard](/docs/guides/sidecar-dashboard) with `agb sidecar /abs/repo`.
 
 </Step>
 </Steps>

@@ -2,14 +2,24 @@
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| fix | boolean | no | Automatically repair missing .adlc store, .gitignore, or companion plugin |
 | repo | string | no | Optional path to target repository |
+
+**`agb_init`**: Initialize a target repository for ADLC and Antigravity Booster (.adlc/config.json, specs/feature-template.md, .gitignore)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| repo | string | yes | Path to target repository |
 
 **`agb_plan`**: Compile an Antigravity brain plan or spec file into plan.json
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| decompose | boolean | no | Automatically split wide tickets exceeding maxTicketScope |
 | force | boolean | no | Force overwrite the output file if it exists |
+| maxTicketScope | number | no | Maximum files per ticket when decompose is enabled (default 3) |
 | noColdstart | boolean | no | Skip coldstart plan gate |
+| noFastPath | boolean | no | Disable zero-LLM structured Markdown fast-path and force LLM conversion |
 | noParallax | boolean | no | Skip parallax spec ambiguity check |
 | noPremortem | boolean | no | Skip premortem advisory risk gate |
 | out | string | no | Custom output file path (default plan.json) |
@@ -23,10 +33,14 @@
 | noColdstart | boolean | no | Skip coldstart plan gate |
 | plan | string | yes | Path to plan.json file |
 
-**`agb_review`**: Deploy a read-only fleet of models to audit changes
+**`agb_review`**: Deploy a read-only fleet of models to audit changes or a plan specification
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| arbiter | boolean | no | Enable neutral arbiter triage (default true; pass false for --no-arbiter) |
+| fiveLens | boolean | no | Run 5-lens Code ARL (Correctness, Simplicity, Security, Evidence, Anti-Slop) |
+| loop | boolean | no | Run iterative ARL up to 3 rounds |
+| plan | string | no | Optional spec.md path to run 5-lens Plan ARL instead of diff review |
 | ref | string | no | Optional diff reference range (e.g. main...HEAD) |
 | repo | string | yes | Path to target repository |
 
@@ -35,6 +49,16 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | plan | string | yes | Path to plan.json file |
+
+**`agb_shape`**: Pre-analyze a structured spec or brain plan for DAG validity, scope overlaps, rails, and static import coupling before agb plan
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| maxTicketScope | number | no | Maximum recommended file scope per ticket before emitting a scope warning (default 12) |
+| repo | string | no | Optional path to target repository (defaults to cwd) |
+| spec | string | yes | Path to spec.md or brain conversation ID/prefix |
+| strict | boolean | no | Fail closed on coupling or scope warnings |
+| syncBrain | boolean | no | Sync formatted plan artifact to .booster/agb_plan_artifact.md and active brain session |
 
 **`agb_status`**: Get execution status of a booster run in the target repository
 

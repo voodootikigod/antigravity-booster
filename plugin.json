@@ -5,9 +5,9 @@
   "description": "Parallel multi-agent fleet orchestrator for Google Antigravity: compiles specs into ticket DAGs, dispatches isolated git-worktree builders across Gemini and Claude/GPT quota pools, and enforces ADLC frozen rails and cross-model diff prosecution.",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [
-    "Run /agb to plan, execute, or review a multi-agent build across Gemini and Claude/GPT quota pools.",
-    "Use /agb-plan to compile my specification into a dependency-ordered ticket DAG with frozen rails.",
-    "Run /agb-review on my current branch to prosecute the diff across correctness, security, tests, and contracts."
+    "Run /agb-shape to interview me on a new feature concept, validate the ticket DAG, and run the 5-lens Plan ARL.",
+    "Run /agb --yolo to autonomously shape, compile, execute, and review a feature end-to-end across Gemini and Claude quota pools.",
+    "Run /code-review on my current branch to audit the diff across Correctness, Security, Simplicity, Evidence, and Anti-Slop."
   ],
   "author": "Chris Williams",
   "homepage": "https://www.agybooster.com",

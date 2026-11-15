@@ -11,7 +11,9 @@ function packedFiles() {
   if (!packed) {
     const r = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: ROOT, encoding: 'utf8', timeout: 120000 });
     assert.equal(r.status, 0, r.stderr);
-    packed = new Set(JSON.parse(r.stdout)[0].files.map((f) => f.path));
+    const parsed = JSON.parse(r.stdout);
+    const entry = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
+    packed = new Set(entry.files.map((f) => f.path));
   }
   return packed;
 }

@@ -7,9 +7,12 @@ deterministic orchestration, quota-pool-aware scheduling, cross-model
 prosecution, and gate-shaped validation for accurate ideation to merge.
 
 Control flow is code, judgment is models: a deterministic Node scheduler
-dispatches `agy` workers into isolated git worktrees, routes tiers across
-independent quota pools, prosecutes every diff with a different model, and
-merges only what passes your build and test gates.
+shapes specs via `/agb-shape` (`agb shape`) and the 5-lens Plan Adversarial
+Review Loop, compiles ticket DAGs via the 0-LLM Structured Spec Fast-Path
+(`agb plan`), dispatches `agy` workers into isolated git worktrees (`agb run`),
+routes tiers across independent quota pools, prosecutes every diff with a
+different model (`agb review` / `/code-review`), and merges only what passes
+your build and test gates.
 
 ## Install
 

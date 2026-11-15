@@ -42,13 +42,15 @@
     "build:mcp": "esbuild mcp/server.mjs --bundle --platform=node --format=esm --outfile=dist/mcp-server.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
     "build:hooks": "esbuild hooks/pre-tool-use.mjs --bundle --platform=node --format=esm --outfile=dist/hooks/pre-tool-use.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --define:__AGB_BUNDLED__=true --log-level=warning",
     "build": "npm run build:agb && npm run build:mcp && npm run build:hooks && npm run vendor:bundle && node scripts/check-bundle-externals.mjs",
-    "test": "node --test test/*.test.mjs",
+    "test": "node scripts/run-tests.mjs",
     "plugin:validate": "node scripts/stage-marketplace-plugin.mjs --validate-strict",
     "eval": "node evals/runner.mjs",
     "skills:sync": "node scripts/sync-skills.mjs",
     "skills:check": "node scripts/sync-skills.mjs --check",
-    "coverage": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-exclude='vendor/**' test/*.test.mjs",
-    "coverage:check": "node --test --experimental-test-coverage --test-coverage-exclude='test/**' --test-coverage-exclude='skills/**' --test-coverage-exclude='vendor/**' --test-coverage-lines=84 --test-coverage-branches=75 --test-coverage-functions=86 test/*.test.mjs",
+    "sync:models": "node scripts/sync-models.mjs --write",
+    "sync:models:check": "node scripts/sync-models.mjs --check",
+    "coverage": "node scripts/run-tests.mjs --coverage",
+    "coverage:check": "node scripts/run-tests.mjs --coverage --coverage-check",
     "vendor:bundle": "esbuild vendor/adlc/src/dispatch.mjs --bundle --platform=node --format=esm --outfile=vendor/adlc/dist/adlc.bundle.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --log-level=warning && esbuild node_modules/@adlc/core/lib/syntax-check-typescript.mjs --bundle --platform=node --format=esm --outfile=vendor/adlc/dist/syntax-check-typescript.mjs --banner:js=\"import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);\" --log-level=warning && node -e \"const fs=require('node:fs');fs.chmodSync('vendor/adlc/dist/syntax-check-typescript.mjs',0o644);fs.copyFileSync('node_modules/@adlc/hollow-test/lib/watchdog.mjs','vendor/adlc/dist/watchdog.mjs')\""
   },
   "engines": {

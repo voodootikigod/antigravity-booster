@@ -17,10 +17,18 @@ const EXPECTED_COMMANDS = [
   'agb-doctor.md',
   'agb-migrate.md',
   'agb-plan.md',
+  'agb-preflight.md',
   'agb-review.md',
   'agb-run.md',
+  'agb-shape.md',
   'agb-sidecar.md',
+  'agb-status.md',
+  'agb-sync-models.md',
+  'agb-watch.md',
   'agb.md',
+  'code-review.md',
+  'implement-and-review.md',
+  'plan-review.md',
 ];
 const EXPECTED_AGENTS = ['fleet-scheduler.md', 'prosecutor.md', 'spec-linter.md'];
 
@@ -169,11 +177,29 @@ test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, r
   assert.match(rulesMd, /mcp__agb__agb_plan/);
   assert.match(rulesMd, /\/agb-run/);
 
-  const expectedPluginSkills = ['agb', 'agb-bootstrap', 'agb-doctor', 'agb-migrate', 'agb-plan', 'agb-review', 'agb-run', 'agb-sidecar'];
+  const expectedPluginSkills = [
+    'adversarial-review',
+    'agb',
+    'agb-bootstrap',
+    'agb-doctor',
+    'agb-migrate',
+    'agb-plan',
+    'agb-preflight',
+    'agb-review',
+    'agb-run',
+    'agb-shape',
+    'agb-sidecar',
+    'agb-status',
+    'agb-sync-models',
+    'agb-watch',
+    'code-review',
+    'implement-and-review',
+    'plan-review',
+  ];
   assert.deepEqual(
     readdirSync(join(ROOT, 'skills')).sort(),
     expectedPluginSkills,
-    'root skills/ must hold strictly the 8 user-facing plugin skills (no internal maintainer skills)',
+    'root skills/ must hold strictly the 17 user-facing plugin skills (no internal maintainer skills)',
   );
   for (const skill of expectedPluginSkills) {
     const skillPath = join(ROOT, 'skills', skill, 'SKILL.md');

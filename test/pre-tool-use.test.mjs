@@ -799,4 +799,25 @@ test('swarm & run_workflow: symlink escapes, bare-filename rails, workspace enum
   assert.equal(run('run_workflow', { Script: 'print(1)', WaitMsBeforeAsync: protectedBin }, fx.plain).decision, 'deny');
 });
 
+test('Booster MCP policy guard: agb_shape and agb_init enforced across interactive, readonly, and worker modes', () => {
+  // Interactive mode allows Booster MCP tools
+  assert.equal(run('mcp__agb__agb_shape', { spec: 'specs/foo.md' }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('mcp__agb__agb_init', { repo: fx.active }, fx.active, INTERACTIVE).decision, 'pass');
+
+  // Read-only mode allows pure inspection MCP tools (agb_shape without syncBrain, agb_doctor without fix, agb_status, agb_preflight, agb_review)
+  assert.equal(run('mcp__agb__agb_shape', { spec: 'specs/foo.md' }, fx.active, READONLY).decision, 'pass');
+  assert.equal(run('mcp__agb__agb_doctor', {}, fx.active, READONLY).decision, 'pass');
+  // Read-only mode denies mutating Booster MCP calls
+  assert.equal(run('mcp__agb__agb_shape', { spec: 'specs/foo.md', syncBrain: true }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_doctor', { fix: true }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_init', { repo: fx.active }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_run', { plan: 'plan.json' }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_plan', { spec: 'specs/foo.md', repo: fx.active }, fx.active, READONLY).decision, 'deny');
+
+  // Worker mode denies recursive Booster MCP orchestration
+  assert.equal(run('mcp__agb__agb_shape', { spec: 'specs/foo.md' }, fx.active, WORKER).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_init', { repo: fx.active }, fx.active, WORKER).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_run', { plan: 'plan.json' }, fx.active, WORKER).decision, 'deny');
+});
+
 

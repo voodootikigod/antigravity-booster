@@ -1,0 +1,158 @@
+{
+  "schema_version": "1.0",
+  "catalog": [
+    {
+      "slug": "gemini-4-argon-low",
+      "display_name": "Gemini 4 Argon (Low)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-argon-medium",
+      "display_name": "Gemini 4 Argon (Medium)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-argon-high",
+      "display_name": "Gemini 4 Argon (High)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-3.8-flash-low",
+      "display_name": "Gemini 3.8 Flash (Low)",
+      "pool": "gemini-flash",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-3.8-flash-medium",
+      "display_name": "Gemini 3.8 Flash (Medium)",
+      "pool": "gemini-flash",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-3.8-flash-high",
+      "display_name": "Gemini 3.8 Flash (High)",
+      "pool": "gemini-flash",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-low",
+      "display_name": "Claude Opus 5.5 (Low)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-medium",
+      "display_name": "Claude Opus 5.5 (Medium)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-high",
+      "display_name": "Claude Opus 5.5 (High)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-sonnet-5-5-low",
+      "display_name": "Claude Sonnet 5.5 (Low)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-sonnet-5-5-medium",
+      "display_name": "Claude Sonnet 5.5 (Medium)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-sonnet-5-5-high",
+      "display_name": "Claude Sonnet 5.5 (High)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gpt-oss-120b-medium",
+      "display_name": "GPT-OSS 120B (Medium)",
+      "pool": "gpt-oss",
+      "family": "gpt-oss",
+      "status": "MAPPED"
+    }
+  ],
+  "code_lenses": {
+    "correctness_redteam": {
+      "primary": "claude-opus-5-5-high",
+      "fallback": "gemini-4-argon-high"
+    },
+    "security": {
+      "primary": "gemini-4-argon-high",
+      "fallback": "claude-opus-5-5-high"
+    },
+    "simplicity": {
+      "primary": "claude-sonnet-5-5-medium",
+      "fallback": "gemini-3.8-flash-medium"
+    },
+    "evidence_runner": {
+      "primary": "gemini-3.8-flash-medium",
+      "fallback": "claude-sonnet-5-5-medium"
+    },
+    "anti_slop": {
+      "primary": "claude-sonnet-5-5-high",
+      "fallback": "gemini-3.8-flash-high"
+    }
+  },
+  "plan_lenses": {
+    "devils_advocate": {
+      "primary": "claude-opus-5-5-high",
+      "fallback": "gemini-4-argon-high"
+    },
+    "requirements_fidelity": {
+      "primary": "gemini-4-argon-medium",
+      "fallback": "claude-sonnet-5-5-high"
+    },
+    "simplicity": {
+      "primary": "claude-sonnet-5-5-medium",
+      "fallback": "gemini-3.8-flash-medium"
+    },
+    "evidence_strategy": {
+      "primary": "gemini-3.8-flash-medium",
+      "fallback": "claude-sonnet-5-5-medium"
+    },
+    "dag_topology": {
+      "primary": "gemini-4-argon-high",
+      "fallback": "claude-opus-5-5-high"
+    }
+  },
+  "arbiter": {
+    "primary": "gemini-4-argon-high",
+    "fallback": "claude-opus-5-5-high"
+  },
+  "roles": {
+    "coldstart": "gemini-3.8-flash-low",
+    "premortem": "gemini-4-argon-high",
+    "parallaxReader": "gemini-3.8-flash-medium",
+    "parallaxJudge": "gemini-4-argon-high",
+    "brainConvert": "gemini-4-argon-high",
+    "brainRepair": "gemini-4-argon-high",
+    "arbiter": "gemini-4-argon-high",
+    "probeDefault": "Gemini 3.8 Flash (Low)",
+    "reviewFleetAlternates": [
+      "gemini-3.8-flash-high",
+      "gemini-4-argon-high"
+    ]
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AdversarialReviewFinding",
+  "description": "One finding emitted by a reviewer persona. Reviewers output a JSON array of these.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lens", "severity", "confidence", "location", "claim", "suggested_fix"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable id, e.g. '<lens>-001'. Optional on emit; the arbiter assigns if absent."
+    },
+    "lens": {
+      "type": "string",
+      "description": "The reviewer lens that raised it.",
+      "enum": [
+        "correctness_redteam",
+        "simplicity",
+        "security",
+        "evidence_runner",
+        "anti_slop",
+        "devils_advocate",
+        "requirements_fidelity",
+        "evidence_strategy",
+        "dag_topology",
+        "decomposition"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["blocker", "major", "minor", "nit"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "How sure the reviewer is the finding is real (not the severity)."
+    },
+    "location": {
+      "type": "string",
+      "description": "path/to/file.ext:line, or a range, or 'plan' for plan-gate findings."
+    },
+    "target_ref": {
+      "type": ["string", "null"],
+      "default": null,
+      "description": "Stacked reviews only: which branch or commit in the stack the fix belongs in (may differ from where the finding surfaced). null for single-change reviews."
+    },
+    "claim": {
+      "type": "string",
+      "description": "What is wrong and why, concretely."
+    },
+    "evidence": {
+      "type": ["string", "null"],
+      "description": "Concrete evidence, e.g. 'ran `npm test`, got FAILED: ...'. null if opinion-only; null + low confidence is auto-downweighted by the arbiter."
+    },
+    "suggested_fix": {
+      "type": "string",
+      "description": "The concrete change the reviewer proposes."
+    },
+    "blast_radius": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if this touches data loss, irreversible migration, security/privacy, or auth. Always escalates regardless of severity."
+    },
+    "verdict": {
+      "type": "string",
+      "description": "Set by the arbiter/author during triage, not by the reviewer.",
+      "enum": ["drop", "accept-candidate", "escalate", "upheld", "applied", "disputed"]
+    },
+    "resolution_route": {
+      "type": "string",
+      "description": "Plan ARL only: whether an accepted finding can be resolved directly in the spec ('auto-fix') or requires user clarification via /grill-me ('grill-me').",
+      "enum": ["auto-fix", "grill-me"]
+    }
+  }
+}

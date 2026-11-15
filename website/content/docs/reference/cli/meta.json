@@ -2,6 +2,7 @@
   "title": "CLI",
   "pages": [
     "index",
+    "shape",
     "run",
     "sweep",
     "plan",
@@ -9,7 +10,10 @@
     "preflight",
     "review",
     "status",
+    "watch",
     "doctor",
+    "sync-models",
+    "init",
     "bootstrap",
     "migrate",
     "sidecar",
