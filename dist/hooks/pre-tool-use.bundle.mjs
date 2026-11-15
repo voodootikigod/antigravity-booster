@@ -2100,8 +2100,12 @@ var ORCHESTRATION_TOOLS = /* @__PURE__ */ new Set([
   "manage_subagents",
   "schedule",
   "send_message",
-  "manage_task"
+  "manage_task",
+  "swarm"
 ]);
+var WORKFLOW_TOOLS = /* @__PURE__ */ new Set(["run_workflow"]);
+var SWARM_PROSE_KEYS = /* @__PURE__ */ new Set(["brief", "title", "tasks", "toolAction", "toolSummary"]);
+var WORKFLOW_PROSE_KEYS = /* @__PURE__ */ new Set(["Script", "Description", "WaitMsBeforeAsync", "toolAction", "toolSummary"]);
 var AGY_CONTROL_TOOLS = /* @__PURE__ */ new Set(["finish"]);
 var BOOSTER_MCP_SERVER = "agb";
 var BOOSTER_MCP_SERVERS = /* @__PURE__ */ new Set(["agb", "antigravity-booster_agb"]);
@@ -4488,7 +4492,13 @@ function extractProbedPaths(toolName, args) {
   return { paths };
 }
 var looksLikePath = (s) => isAbsolute5(s) || hasHomePrefix(s) || s.includes("/") || s.includes("\\") || s.startsWith(".") || FILE_URL.test(s);
-function scanPathLike(value, { skipContentKeys = false } = {}) {
+function isAllowedTopLevelProse(key, item, topLevelSkipKeys) {
+  if (!topLevelSkipKeys || !topLevelSkipKeys.has(key)) return false;
+  if (key === "WaitMsBeforeAsync") return typeof item === "number";
+  if (key === "tasks") return Array.isArray(item) && item.every((x) => typeof x === "string");
+  return typeof item === "string";
+}
+function scanPathLike(value, { skipContentKeys = false, topLevelSkipKeys = null } = {}) {
   const paths = [];
   const stack = [{ value, depth: 0 }];
   let nodes = 0;
@@ -4503,6 +4513,7 @@ function scanPathLike(value, { skipContentKeys = false } = {}) {
     } else if (v && typeof v === "object") {
       for (const [k, item] of Object.entries(v)) {
         if (skipContentKeys && EXCLUDED_CONTENT_KEYS.has(k)) continue;
+        if (depth === 0 && isAllowedTopLevelProse(k, item, topLevelSkipKeys)) continue;
         if (looksLikePath(k)) paths.push(toPath(k));
         stack.push({ value: item, depth: depth + 1 });
       }
@@ -4636,7 +4647,8 @@ function stepOne(name, args, ctx) {
     const schemaKeys = [...TOOL_PATH_SCHEMAS[name].required, ...TOOL_PATH_SCHEMAS[name].altRequired ?? []];
     candidates = schemaKeys.map((k) => args?.[k]).filter((v) => typeof v === "string").map(toPath);
   } else {
-    const scan = scanPathLike(args);
+    const topLevelSkipKeys = name === "swarm" ? SWARM_PROSE_KEYS : WORKFLOW_TOOLS.has(name) ? WORKFLOW_PROSE_KEYS : null;
+    const scan = scanPathLike(args, { topLevelSkipKeys });
     if (scan.overflow) return OVERFLOW;
     candidates = scan.paths;
   }
@@ -4757,6 +4769,85 @@ function evaluateMcpTool(name, args, ctx) {
   }
   return PASS;
 }
+function evaluateOrchestrationTool(name, args, ctx) {
+  if (name !== "swarm") return PASS;
+  if (ctx.headless) return deny("Headless agb worker session cannot invoke native swarm orchestration");
+  const scan = scanPathLike(args, { topLevelSkipKeys: SWARM_PROSE_KEYS });
+  if (scan.overflow) return OVERFLOW;
+  for (const token of scan.paths) {
+    for (const r of resolveAll(token, ctx)) {
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision === "deny") return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        if (lexRes.verdict.decision === "deny") return lexRes.verdict;
+      }
+    }
+  }
+  return PASS;
+}
+function evaluateWorkflowTool(args, ctx) {
+  if (ctx.readonly) return deny("Read-only agb worker session cannot execute run_workflow");
+  if (ctx.headless) return deny("Headless agb worker session cannot execute run_workflow");
+  const scannedRepos = [];
+  if (args?.Cwd !== void 0 && args?.Cwd !== null) {
+    const wsAdlc = ctx.workspacePaths.some((w) => ctx.repoAt(w).adlc);
+    if (typeof args.Cwd !== "string" || args.Cwd.trim().length === 0) {
+      if (wsAdlc) return deny("Workflow working directory outside declared workspace paths in an ADLC repository is forbidden");
+    } else {
+      const cwdLex = isAbsolute5(args.Cwd) ? resolve8(args.Cwd) : resolve8(ctx.workspacePaths[0] ?? "/", args.Cwd);
+      const cwdPhys = physicalResolve(cwdLex, "/", ctx.platform) ?? cwdLex;
+      const cwdRepo = ctx.repoAt(cwdPhys);
+      scannedRepos.push(cwdRepo);
+      const adlcContext = cwdRepo.adlc || wsAdlc;
+      const insideWorkspace = ctx.workspaceRealPaths.some((wReal) => isWithin(cwdPhys, wReal, ctx.platform));
+      if (adlcContext && (!isAbsolute5(args.Cwd) || !insideWorkspace)) {
+        return deny("Workflow working directory outside declared workspace paths in an ADLC repository is forbidden");
+      }
+    }
+  }
+  if (args?.ScriptPath !== void 0 && args?.ScriptPath !== null) {
+    if (typeof args.ScriptPath !== "string" || args.ScriptPath.trim().length === 0) {
+      return schemaViolationVerdict("run_workflow", args, "Invalid ScriptPath parameter in run_workflow", ctx);
+    }
+    const resolved = resolveAll(toPath(args.ScriptPath), ctx);
+    if (resolved.length === 0) return deny(`Relative ScriptPath '${args.ScriptPath}' has no workspace to anchor it`);
+    for (const r of resolved) {
+      const { verdict, repo } = gateOnePath(r, ctx, { rootIsTarget: true });
+      scannedRepos.push(repo);
+      if (verdict.decision === "deny") return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: true });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === "deny") return lexRes.verdict;
+      }
+    }
+  }
+  const scan = scanPathLike(args, { topLevelSkipKeys: WORKFLOW_PROSE_KEYS });
+  if (scan.overflow) return OVERFLOW;
+  for (const token of scan.paths) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) return deny(`Relative path '${token}' in run_workflow has no workspace to anchor it`);
+    for (const r of resolved) {
+      const { verdict, repo } = gateOnePath(r, ctx, { rootIsTarget: false });
+      scannedRepos.push(repo);
+      if (verdict.decision === "deny") return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === "deny") return lexRes.verdict;
+      }
+    }
+  }
+  const repos = [...ctx.anchors.map((a) => ctx.repoAt(a)), ...scannedRepos];
+  if (repos.some((r) => r.adlc && !r.store.ok)) {
+    return deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified");
+  }
+  if (repos.some((r) => r.adlc && r.activeRail)) {
+    return ask("run_workflow executes Python outside PreToolUse file hooks in an active-rail ADLC repository; operator confirmation required");
+  }
+  return PASS;
+}
 function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny("Unknown tool in a read-only agb worker session");
   if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; tool call denied");
@@ -4849,7 +4940,9 @@ function evaluatePayload(payload, options = {}) {
   const ctx = buildContext(payload, options);
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;
-  if (READ_ONLY_TOOLS.has(name) || ORCHESTRATION_TOOLS.has(name)) return PASS;
+  if (READ_ONLY_TOOLS.has(name)) return PASS;
+  if (ORCHESTRATION_TOOLS.has(name)) return evaluateOrchestrationTool(name, args, ctx);
+  if (WORKFLOW_TOOLS.has(name)) return evaluateWorkflowTool(args, ctx);
   if (name === "run_command") return classifyRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
   if (name === "call_mcp_tool" || name.startsWith("mcp__") || name.startsWith("mcp_")) return evaluateMcpTool(name, args, ctx);

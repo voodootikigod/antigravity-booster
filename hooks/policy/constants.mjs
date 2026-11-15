@@ -12,8 +12,16 @@ export const READ_ONLY_TOOLS = new Set([
 
 export const ORCHESTRATION_TOOLS = new Set([
   'invoke_subagent', 'define_subagent', 'manage_subagents', 'schedule', 'send_message',
-  'manage_task',
+  'manage_task', 'swarm',
 ]);
+
+// agy 1.5.9+ dynamic Python workflow orchestrator: spawns python3 whose stdlib
+// file/process calls do not fire PreToolUse hooks.
+export const WORKFLOW_TOOLS = new Set(['run_workflow']);
+
+// Top-level prose keys on `swarm` (agy 1.5.5+) and `run_workflow` (agy 1.5.9+).
+export const SWARM_PROSE_KEYS = new Set(['brief', 'title', 'tasks', 'toolAction', 'toolSummary']);
+export const WORKFLOW_PROSE_KEYS = new Set(['Script', 'Description', 'WaitMsBeforeAsync', 'toolAction', 'toolSummary']);
 
 // agy control steps with no filesystem, shell or network effect. `finish`
 // (CORTEX_STEP_TYPE_FINISH) ends the turn and, under --json-schema, carries the
