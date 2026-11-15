@@ -15522,19 +15522,11 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   }
 }
 var CONSENSUS_FIX_TIMEOUT_MS = 3e5;
-var SAFE_NPM_GATE_RE = /^npm (test|run [a-zA-Z0-9_:-]+)$/;
 async function runConsensusFix({ worktree, testCmd, railsCmd, files, rails = [], adlcBin }) {
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
   }
   const effectiveRailsCmd = railsCmd || (Array.isArray(rails) && rails.length > 0 ? testCmd : null);
-  if (process.env.AGB_SANDBOX_GATES !== "0") {
-    for (const cmd2 of [testCmd, effectiveRailsCmd].filter(Boolean)) {
-      if (!SAFE_NPM_GATE_RE.test(cmd2)) {
-        return { ok: false, applied: false, error: `consensus-fix skipped: gate command '${cmd2}' requires sandboxed execution` };
-      }
-    }
-  }
   const args = ["--allow-dirty", "--test-cmd", testCmd, "--files", files.join(",")];
   if (effectiveRailsCmd) {
     args.push("--rails", effectiveRailsCmd, "--require-rails");
@@ -15984,8 +15976,6 @@ Fix: ${agyCheck.fix}`);
         }
       }
       for (const t of tickets) {
-        const activeTickets = started.size - merged.size - failed.size;
-        if (activeTickets >= maxConcurrency) break;
         if (isReady(t)) running.push(runTicket(t));
       }
     };
@@ -16979,7 +16969,6 @@ ${g?.output?.slice(0, 300)}`);
       });
       await turn;
     }
-    const maxConcurrency = typeof plan.concurrencyCap === "number" && Number.isFinite(plan.concurrencyCap) && plan.concurrencyCap >= 1 ? Math.floor(plan.concurrencyCap) : Infinity;
     dispatch();
     let settled = 0;
     while (settled < running.length) {
