@@ -46,7 +46,7 @@ The entry point reads one JSON payload from stdin. Invalid JSON is denied. A val
 
 The closed tool taxonomy, using agy's step-type names in lowercase ([hooks/policy/constants.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/hooks/policy/constants.mjs#L5-L34)):
 
-- **Read-only tools** (`view_file`, `grep_search`, `list_directory`, ...) and **orchestration tools** (`invoke_subagent`, `send_message`, ...).
+- **Read-only tools** (`view_file`, `grep_search`, `list_directory`, ...), **orchestration tools** (`invoke_subagent`, `send_message`, `swarm`, ...), and **workflow tools** (`run_workflow`).
 - **Control steps**: only `finish`, whose arguments are the model's answer and are never scanned for paths.
 - **Path-mutating tools** (`write_to_file`, `replace_file_content`, `delete_file`, `move`, ...), with per-tool schemas listing which argument keys carry paths.
 - The booster's own MCP tools (`agb_plan`, `agb_run`, ...).
@@ -69,10 +69,10 @@ Path handling shared by both classifiers: home expansion (`~`, `~user`, `$HOME`)
 A payload with no tool name is denied. `finish` passes immediately.
 </Step>
 <Step>
-**Step 1** inspects the paths every non-shell tool names, reads included. Reading or changing booster plugin data or credentials is denied; changing a protected root is denied; an unresolvable mutation target (symlink loop, oversized path) is denied ([hooks/policy/evaluate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/hooks/policy/evaluate.mjs#L282-L310)).
+**Step 1** inspects the paths every non-shell tool names, reads included. Top-level prose fields (`Prompt`/`Message` on subagent calls, `brief` on `swarm`, `Script`/`Description` on `run_workflow`) are skipped so code or instructions naming a rail path are not misclassified as path mutations, while structured path fields (`ScriptPath`, `Cwd`, nested `Args`) are still inspected. Reading or changing booster plugin data or credentials is denied; changing a protected root is denied; an unresolvable mutation target (symlink loop, oversized path) is denied ([hooks/policy/evaluate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/hooks/policy/evaluate.mjs#L282-L310)).
 </Step>
 <Step>
-Read-only and orchestration tools then pass.
+Read-only tools pass. Orchestration tools (`invoke_subagent`, `swarm`, ...) pass in interactive sessions, but are denied for headless (`AGB_WORKER_TICKET`) and read-only (`AGB_WORKER_MODE`) workers so leaf builders cannot recursively fan out subagents or swarms. Workflow execution (`run_workflow`) is likewise denied for headless and read-only workers, denies any `ScriptPath`/`Cwd`/`Args` hitting a rail or protected root, and requires operator confirmation (`ask`) in an ADLC repository with active frozen rails.
 </Step>
 <Step>
 `run_command` goes to the shell classifier (below).
