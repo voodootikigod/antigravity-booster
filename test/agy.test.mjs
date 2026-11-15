@@ -351,6 +351,17 @@ test('runAgy: pipes oversized prompts (> MAX_ARGV_PROMPT_BYTES) via --input-form
     assert.match(res.output, /ARGS:--input-format text --print-timeout \S+ --model gemini-4-argon-high/);
     assert.doesNotMatch(res.output, /--print DIFF-HEADER/);
     assert.match(res.output, new RegExp(`BYTES:\\s*${Buffer.byteLength(bigPrompt, 'utf8')}`));
+
+    // Also verify end-to-end against test/fixtures/fake-agy (which validates --input-format text|stream-json)
+    const fakeAgyPath = new URL('./fixtures/fake-agy', import.meta.url).pathname;
+    const fakeRes = await runAgy({
+      bin: fakeAgyPath,
+      model: 'gemini-4-argon-high',
+      prompt: `${bigPrompt}\nPONG-BIGSTDIN99`,
+      sandbox: false,
+    });
+    assert.equal(fakeRes.ok, true, fakeRes.error);
+    assert.match(fakeRes.output, /PONG-BIGSTDIN99/);
   } finally {
     mock.cleanup();
   }
