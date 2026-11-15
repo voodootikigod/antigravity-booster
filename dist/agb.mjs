@@ -6345,7 +6345,7 @@ var KNOWN_VENDORED_ADLC = Object.freeze({
   version: "1.13.0",
   binarySha256: "3a4a8883bae7bbe624d021e9b544c32f99a5803b1451ef17b2e57eb81c3413f6",
   vendoredBundleSha256: "63822430cceed99b20301de770460538cfc614021bdddd90bdaf987e381c85b3",
-  treeDigest: "5c06ba41b28eaa051ac27ca8597cb79a7f94cd60cd16dc129f1203d67ffecb82"
+  treeDigest: "c25d24e9096a17a7239b77a08c2fbc2cecc9a971a4696e237c489e694f598726"
 });
 var STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS = Object.freeze({
   "1.7.0": "c9bad8ac16bf47cdc7001645ed6d4ffb77997e91063fe983084d151e3f840754"
