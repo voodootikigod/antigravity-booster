@@ -11693,7 +11693,7 @@ async function runAgy({
     } catch (spawnErr) {
       syncSpawnErr = spawnErr;
     }
-    if (pipePromptViaStdin && p?.stdin) {
+    if (p?.stdin) {
       p.stdin.on("error", () => {
       });
       p.stdin.end(prompt, "utf8");
