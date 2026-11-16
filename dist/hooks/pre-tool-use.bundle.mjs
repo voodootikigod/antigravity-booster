@@ -5052,10 +5052,14 @@ function evaluateMcpTool(name, args, ctx) {
 }
 var STDIN_SKIP_KEYS = /* @__PURE__ */ new Set(["Input", "input", "toolAction", "toolaction", "toolSummary", "toolsummary"]);
 var STDIN_ALLOWED_KEYS = /* @__PURE__ */ new Set(["commandid", "input", "terminate", "waitms", "waitmsbeforeasync", "toolaction", "toolsummary"]);
-function scanNonInputPaths(rawArgs, ctx) {
+function extractInputPathTokens(inputText) {
+  return inputText.split(/[\s'"`(),;[\]{}=]+/).filter(looksLikePath).map(toPath);
+}
+function scanStdinPaths(rawArgs, ctx, inputText = "") {
   const scan = scanPathLike(rawArgs, { topLevelSkipKeys: STDIN_SKIP_KEYS });
   if (scan.overflow) return OVERFLOW;
-  for (const token of scan.paths) {
+  const extraTokens = extractInputPathTokens(inputText);
+  for (const token of [...scan.paths, ...extraTokens]) {
     const resolved = resolveAll(token, ctx);
     if (resolved.length === 0) return deny(`Relative path '${token}' has no workspace to anchor it`);
     for (const r of resolved) {
@@ -5091,10 +5095,10 @@ function evaluateSendCommandInput(rawArgs, ctx) {
       return deny(`Invalid ${k} parameter in send_command_input`);
     }
   }
-  const nonInputErr = scanNonInputPaths(rawArgs, ctx);
-  if (nonInputErr) return nonInputErr;
   const anchorRepos = ctx.anchors.map((a) => ctx.repoAt(a));
   if (norm.folded.terminate === true && !norm.folded.input) {
+    const nonInputErr = scanStdinPaths(rawArgs, ctx, "");
+    if (nonInputErr) return nonInputErr;
     if (anchorRepos.some((r) => r.adlc && !r.store.ok)) {
       return deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified");
     }
@@ -5103,6 +5107,8 @@ function evaluateSendCommandInput(rawArgs, ctx) {
   if (anchorRepos.some((r) => r.adlc && (r.activeRail || !r.store.ok))) {
     return deny("Interactive stdin write forbidden while ADLC rails are active or store is unreadable");
   }
+  const stdinPathErr = scanStdinPaths(rawArgs, ctx, norm.folded.input ?? "");
+  if (stdinPathErr) return stdinPathErr;
   const shVerdict = classifyRunCommand({ CommandLine: norm.folded.input ?? "", Cwd: ctx.anchor }, ctx);
   return shVerdict.decision === "pass" ? PASS : deny(shVerdict.reason);
 }
@@ -5130,8 +5136,8 @@ function evaluateOrchestrationTool(name, args, ctx) {
       })) {
         return deny("manage_task send_input forbidden in headless worker or active-rail ADLC repository");
       }
-      const nonInputErr = scanNonInputPaths(args, ctx);
-      if (nonInputErr) return nonInputErr;
+      const stdinPathErr = scanStdinPaths(args, ctx, norm.folded.input);
+      if (stdinPathErr) return stdinPathErr;
       const shVerdict = classifyRunCommand({ CommandLine: norm.folded.input, Cwd: ctx.anchor }, ctx);
       return shVerdict.decision === "pass" ? PASS : deny(shVerdict.reason);
     }

@@ -13,6 +13,7 @@ import {
   familyOf,
   poolOf,
   resetOrchestratorRoutingState,
+  runWithOrchestratorRoutingState,
   setOrchestratorRoutingState,
   tierCandidates,
 } from '../lib/models.mjs';
@@ -144,6 +145,25 @@ test('PoolSet.route("frontier", "auto") spreads 4+4 at 4/4 capacity and 2+4 at 2
   assert.equal(tierCandidates('frontier', 'gemini', { disabledModels: ['gemini-pro-orchestrator'] })[0], 'gemini-pro-orchestrator-argon');
   resetOrchestratorRoutingState();
   assert.deepEqual(tierCandidates(), TIER_CANDIDATES.mid);
+});
+
+test('runWithOrchestratorRoutingState isolates concurrent async contexts via AsyncLocalStorage', async () => {
+  const [resA, resB, resDefault] = await Promise.all([
+    runWithOrchestratorRoutingState({ disableOrchestrator: true }, async () => {
+      await new Promise((r) => setTimeout(r, 15));
+      return tierCandidates('frontier', 'gemini');
+    }),
+    runWithOrchestratorRoutingState({ disableOrchestrator: false, disabledModels: ['gemini-pro-orchestrator'] }, async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return tierCandidates('frontier', 'gemini');
+    }),
+    runWithOrchestratorRoutingState({}, async () => tierCandidates('frontier', 'gemini')),
+  ]);
+  assert.deepEqual(resA, ['gemini-4-argon-high', 'gemini-4-carbon-high']);
+  assert.equal(resB[0], 'gemini-pro-orchestrator-argon');
+  assert.equal(resDefault[0], 'gemini-pro-orchestrator');
+  // Outside both async contexts, default state remains untouched
+  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator');
 });
 
 test('RunStatus: initModelStats & updateModelStats scope persistence to (planHash, agyVersion) and sanitize entries', () => {
@@ -325,6 +345,33 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
     } finally {
       rmSync(repoPlanOptOut, { recursive: true, force: true });
       rmSync(statePlanOptOut, { recursive: true, force: true });
+    }
+
+    // model_unavailable disables the model for later tickets in the SAME run (T2 skips gemini-pro-orchestrator)
+    // while remaining strictly run-scoped (never persisted into run.json disabledModels)
+    const repoUnavail = makeRepo();
+    const stateUnavail = mkdtempSync(join(tmpdir(), 'agb-orch-unavail-'));
+    try {
+      await withEnv({ FAKE_BUILDER_MODE: 'model-unavailable-once', FAKE_STATE_DIR: stateUnavail }, () =>
+        runPlan({
+          repo: repoUnavail,
+          gate: { test: 'true' },
+          tickets: [
+            { id: 'T1', title: 'T1', body: 'x', scope: ['T1.txt'], tier: 'frontier', pool_hint: 'gemini', edges: [{ to: 'T2' }] },
+            { id: 'T2', title: 'T2', body: 'x', scope: ['T2.txt'], tier: 'frontier', pool_hint: 'gemini', edges: [] },
+          ],
+        }, { log: () => {} }),
+      );
+      const rjUnavail = JSON.parse(readFileSync(join(repoUnavail, '.booster', 'run.json'), 'utf8'));
+      assert.deepEqual(rjUnavail.disabledModels, []);
+      assert.deepEqual(builderModelsSeen(stateUnavail), [
+        'gemini-pro-orchestrator',
+        'gemini-pro-orchestrator-argon',
+        'gemini-pro-orchestrator-argon',
+      ]);
+    } finally {
+      rmSync(repoUnavail, { recursive: true, force: true });
+      rmSync(stateUnavail, { recursive: true, force: true });
     }
   } finally {
     rmSync(repoBreaker, { recursive: true, force: true });

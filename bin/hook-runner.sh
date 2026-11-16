@@ -142,9 +142,11 @@ write_degraded_marker() {
   if [ -e "$DEGRADED_MARKER" ] && [ ! -O "$DEGRADED_MARKER" ]; then
     return 0
   fi
-  ( set -C; : >"$DEGRADED_MARKER" ) 2>/dev/null || true
-  chmod 0600 "$DEGRADED_MARKER" 2>/dev/null || true
-  printf '%s: %s\n' "$(date)" "$_msg" >"$DEGRADED_MARKER" 2>/dev/null || true
+  _tmp_marker="${DEGRADED_MARKER}.tmp.$$"
+  rm -f "$_tmp_marker" 2>/dev/null || true
+  if ( umask 0077; set -C; printf '%s: %s\n' "$(date)" "$_msg" >"$_tmp_marker" ) 2>/dev/null; then
+    mv -f "$_tmp_marker" "$DEGRADED_MARKER" 2>/dev/null || rm -f "$_tmp_marker" 2>/dev/null || true
+  fi
 }
 
 if [ "$LOG_TAMPERED" -eq 1 ]; then

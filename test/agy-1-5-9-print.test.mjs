@@ -137,13 +137,34 @@ test('classifyAgyOutcome: a model.json file error is not model_unavailable', () 
 });
 
 test('classifyAgyOutcome: unknown-model message and mismatched requested model', () => {
-  const unknown = classifyAgyOutcome({
+  const unknownMismatch = classifyAgyOutcome({
     outputFormat: 'stream-json',
     code: 1,
     err: 'AGY_ERROR: {"message":"unknown model gemini-9"}',
     requestedModel: 'something-else',
   });
-  assert.equal(unknown.kind, 'model_unavailable');
+  assert.equal(unknownMismatch.kind, 'server');
+  const unknownMatch = classifyAgyOutcome({
+    outputFormat: 'stream-json',
+    code: 1,
+    err: 'AGY_ERROR: {"message":"unknown model gemini-9"}',
+    requestedModel: 'gemini-9',
+  });
+  assert.equal(unknownMatch.kind, 'model_unavailable');
+  const generic404 = classifyAgyOutcome({
+    outputFormat: 'stream-json',
+    code: 1,
+    err: 'AGY_ERROR: {"code":404,"message":"project endpoint not found"}',
+    requestedModel: 'wanted-model',
+  });
+  assert.equal(generic404.kind, 'server');
+  const bareCode404 = classifyAgyOutcome({
+    outputFormat: 'stream-json',
+    code: 1,
+    err: 'AGY_ERROR: {"code":404}',
+    requestedModel: 'wanted-model',
+  });
+  assert.equal(bareCode404.kind, 'model_unavailable');
   const mismatch = classifyAgyOutcome({
     outputFormat: 'stream-json',
     code: 1,

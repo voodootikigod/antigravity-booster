@@ -97,6 +97,10 @@ test('send_command_input: 5-column matrix for Terminate vs stdin writes, ask->de
   assert.equal(run('send_command_input', { CommandId: 'cmd-1', Input: 'adlc ticket complete T1 --write --authorize' }, COLS.col4).decision, 'deny');
   assert.equal(run('send_command_input', { CommandId: 'cmd-1', Input: 'git status' }, COLS.col5).decision, 'pass');
   assert.equal(run('send_command_input', { CommandId: 'cmd-1', Input: `rm ${protectedRoots(home)[0]}/x` }, COLS.col5).decision, 'deny');
+  // REPL non-shell syntax inside Input referencing implicit rails, protected roots, or booster data is also denied!
+  assert.equal(run('send_command_input', { CommandId: 'cmd-1', Input: 'open(".adlc/config.json", "w")' }, COLS.col4).decision, 'deny');
+  assert.equal(run('send_command_input', { CommandId: 'cmd-1', Input: `shutil.rmtree("${protectedRoots(home)[0]}/x")` }, COLS.col5).decision, 'deny');
+  assert.equal(run('send_command_input', { CommandId: 'cmd-1', Input: `read("${boosterDataRoots(home)[0]}/hooks.log")` }, COLS.col5).decision, 'deny');
 
   // stepOne skips Input so protected-root strings inside safe echo Input do not fail before shell classification in Col 5,
   // while non-Input path fields (CommandId) ARE scanned against boosterDataRoots, protectedRoots, rails, symlinks, and unanchored paths!

@@ -343,10 +343,12 @@ __export(models_exports, {
   poolOf: () => poolOf,
   resetOrchestratorRoutingState: () => resetOrchestratorRoutingState,
   resolveModelSlug: () => resolveModelSlug,
+  runWithOrchestratorRoutingState: () => runWithOrchestratorRoutingState,
   setOrchestratorRoutingState: () => setOrchestratorRoutingState,
   tierCandidates: () => tierCandidates,
   upstreamPoolOf: () => upstreamPoolOf
 });
+import { AsyncLocalStorage } from "node:async_hooks";
 function modelFor(role) {
   if (ROLE_MODELS[role] === void 0) {
     throw new Error("Unknown model role: " + role);
@@ -401,11 +403,19 @@ function resetOrchestratorRoutingState() {
   runtimeState.disableOrchestrator = false;
   runtimeState.disabledModels = null;
 }
+function runWithOrchestratorRoutingState({ disableOrchestrator = false, disabledModels = null } = {}, fn) {
+  const store = {
+    disableOrchestrator: Boolean(disableOrchestrator),
+    disabledModels: toModelSet(disabledModels)
+  };
+  return routingAls.run(store, () => fn(store));
+}
 function tierCandidates(tier = "mid", poolHint, options) {
+  const activeState = routingAls.getStore() ?? runtimeState;
   const effectiveTier = TIER_CANDIDATES[tier] ? tier : "mid";
-  const disableOrchestrator = Boolean(options?.disableOrchestrator ?? runtimeState.disableOrchestrator) || process.env.AGB_DISABLE_ORCHESTRATOR === "1";
+  const disableOrchestrator = Boolean(options?.disableOrchestrator ?? activeState.disableOrchestrator) || process.env.AGB_DISABLE_ORCHESTRATOR === "1";
   const base = effectiveTier === "frontier" && disableOrchestrator ? FRONTIER_NO_ORCHESTRATOR : TIER_CANDIDATES[effectiveTier];
-  const disabledSet = options?.disabledModels !== void 0 ? toModelSet(options.disabledModels) : runtimeState.disabledModels;
+  const disabledSet = options?.disabledModels !== void 0 ? toModelSet(options.disabledModels) : activeState.disabledModels;
   return base.filter((m) => {
     if (disabledSet && disabledSet.has(m)) return false;
     if (!poolHint || poolHint === "auto") return true;
@@ -414,7 +424,7 @@ function tierCandidates(tier = "mid", poolHint, options) {
     return fam === poolHint;
   });
 }
-var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, RETIRED_35_MAP, ORCHESTRATOR_MODELS, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, ROLE_MODELS, runtimeState;
+var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, RETIRED_35_MAP, ORCHESTRATOR_MODELS, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, ROLE_MODELS, runtimeState, routingAls;
 var init_models = __esm({
   "lib/models.mjs"() {
     MODELS = {
@@ -539,6 +549,7 @@ var init_models = __esm({
       disableOrchestrator: false,
       disabledModels: null
     };
+    routingAls = new AsyncLocalStorage();
   }
 });
 
@@ -11009,7 +11020,9 @@ function classifyAgyOutcome({
   const effFinishedReason = finishedReason ?? terminalResult?.finished_reason ?? envelope?.finished_reason;
   const isPrintTimeout = effFinishedReason === "print_timeout" || !terminalResult && !envelope && code === 3 && errLines.some((l) => /^\[agy\] print timeout after \d+/.test(l)) || outputFormat === "text" && legacyPre150 && isAgyTimeout(String(out ?? ""));
   const modelMsg = lastAgyErr?.message ?? terminalResult?.error ?? envelope?.error;
-  const isModelUnavailable = lastAgyErr?.code === 404 || lastAgyErr?.httpStatus === 404 || lastAgyErr?.status === "NOT_FOUND" || typeof modelMsg === "string" && MODEL_UNAVAILABLE_MSG_RE.test(modelMsg) && !/\.json\b/i.test(modelMsg) && (!requestedModel || modelMsg.toLowerCase().includes(String(requestedModel).toLowerCase()) || /^unknown model\b/i.test(modelMsg));
+  const structuredNotFound = (lastAgyErr?.code === 404 || lastAgyErr?.httpStatus === 404 || lastAgyErr?.status === "NOT_FOUND") && (typeof lastAgyErr?.message !== "string" || !lastAgyErr.message.trim() || MODEL_UNAVAILABLE_MSG_RE.test(lastAgyErr.message) && !/\.json\b/i.test(lastAgyErr.message));
+  const unstructuredModelMissing = typeof modelMsg === "string" && MODEL_UNAVAILABLE_MSG_RE.test(modelMsg) && !/\.json\b/i.test(modelMsg) && (!requestedModel || modelMsg.toLowerCase().includes(String(requestedModel).toLowerCase()));
+  const isModelUnavailable = structuredNotFound || unstructuredModelMissing;
   const detectRateLimit = () => {
     if (lastAgyErr && (lastAgyErr.code !== void 0 || lastAgyErr.httpStatus !== void 0 || lastAgyErr.status !== void 0)) {
       return lastAgyErr.code === 429 || lastAgyErr.httpStatus === 429 || lastAgyErr.status === "RESOURCE_EXHAUSTED";
@@ -16203,11 +16216,8 @@ Fix: ${agyCheck.fix}`);
   const runId = `run-${Date.now().toString(36)}`;
   const finalProject = project2 ?? `agb-${runId}`;
   const status = new RunStatus(repo, runId);
-  const disabledModels = status.initModelStats({ planHash, agyVersion }, priorRunJson);
-  const syncRoutingState = () => {
-    setOrchestratorRoutingState({ disableOrchestrator, disabledModels });
-  };
-  syncRoutingState();
+  const breakerDemotedModels = status.initModelStats({ planHash, agyVersion }, priorRunJson);
+  const activeDisabledModels = new Set(breakerDemotedModels);
   const safeRunId = runId.replace(/[\/\\]/g, "_");
   const logDir = join31(repo, ".booster", "logs", safeRunId);
   const merged = /* @__PURE__ */ new Set();
@@ -16221,16 +16231,16 @@ Fix: ${agyCheck.fix}`);
   const releaseLock = acquireRepoLock(repo, { runId });
   try {
     let checkOrchestratorBreaker = function(modelSlug, stats) {
-      if (ORCHESTRATOR_MODELS.has(modelSlug) && stats && stats.resolvedTickets >= 4 && stats.builderFaultTickets / stats.resolvedTickets >= 0.5 && !disabledModels.has(modelSlug)) {
-        disabledModels.add(modelSlug);
-        syncRoutingState();
-        status.updateModelStats(null, { disabledModels });
+      if (ORCHESTRATOR_MODELS.has(modelSlug) && stats && stats.resolvedTickets >= 4 && stats.builderFaultTickets / stats.resolvedTickets >= 0.5 && !breakerDemotedModels.has(modelSlug)) {
+        breakerDemotedModels.add(modelSlug);
+        activeDisabledModels.add(modelSlug);
+        status.updateModelStats(null, { disabledModels: breakerDemotedModels });
         log2(
           `[agb] warning: demoting ${modelSlug} after ${stats.builderFaultTickets}/${stats.resolvedTickets} builder-fault tickets (>= 50%)`
         );
       }
     }, pickAlternateModel = function(t, current, { crossPool = false } = {}) {
-      return tierCandidates(t.tier ?? "mid", t.pool_hint).find((m) => m !== current && !disabledModels.has(m) && (!crossPool || poolOf(m) !== poolOf(current)) && (pools.caps[poolOf(m)] ?? 0) > 0 && pools.familyCap(upstreamPoolOf(m)) > 0);
+      return tierCandidates(t.tier ?? "mid", t.pool_hint).find((m) => m !== current && (!crossPool || poolOf(m) !== poolOf(current)) && (pools.caps[poolOf(m)] ?? 0) > 0 && pools.familyCap(upstreamPoolOf(m)) > 0);
     }, compromiseRun = function(reason) {
       const message = `run compromised: ${reason}`;
       runCompromised ??= reason;
@@ -16519,14 +16529,6 @@ Fix: ${agyCheck.fix}`);
       const ticketFaultModels = /* @__PURE__ */ new Set();
       try {
         model = pools.route(t.tier ?? "mid", t.pool_hint);
-        if (disabledModels.has(model)) {
-          const routedAlt = pickAlternateModel(t, model);
-          if (routedAlt) {
-            pools.unroute(model);
-            pools.reserved[poolOf(routedAlt)] += 1;
-            model = routedAlt;
-          }
-        }
         const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
         if (!q.ok) {
           throw new Error(`Quota telemetry check failed: ${q.error}`);
@@ -16706,9 +16708,7 @@ Fix: ${agyCheck.fix}`);
                 throw new Error(strikeError);
               }
               if (build.kind === "model_unavailable") {
-                disabledModels.add(model);
-                syncRoutingState();
-                status.updateModelStats(null, { disabledModels });
+                activeDisabledModels.add(model);
                 lastConversationId = null;
                 lastStrikeModel = null;
                 const alt = pickAlternateModel(t, model);
@@ -16727,7 +16727,7 @@ Fix: ${agyCheck.fix}`);
                 throw new Error(strikeError);
               }
               if (build.rateLimited === true) {
-                status.updateModelStats(model, { rateLimited: true, disabledModels });
+                status.updateModelStats(model, { rateLimited: true, disabledModels: breakerDemotedModels });
                 try {
                   await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
                 } catch {
@@ -17055,7 +17055,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             resolved: true,
             builderFault: isFault,
             merged: isMergedModel,
-            disabledModels
+            disabledModels: breakerDemotedModels
           });
           checkOrchestratorBreaker(m, st);
         }
@@ -17347,13 +17347,18 @@ ${g?.output?.slice(0, 300)}`);
       });
       await turn;
     }
-    dispatch();
-    let settled = 0;
-    while (settled < running.length) {
-      const batch = running.slice(settled);
-      settled += batch.length;
-      await Promise.allSettled(batch);
-    }
+    await runWithOrchestratorRoutingState(
+      { disableOrchestrator, disabledModels: activeDisabledModels },
+      async () => {
+        dispatch();
+        let settled = 0;
+        while (settled < running.length) {
+          const batch = running.slice(settled);
+          settled += batch.length;
+          await Promise.allSettled(batch);
+        }
+      }
+    );
     try {
       pruneWorktrees(repo);
     } catch {
@@ -17368,7 +17373,6 @@ ${g?.output?.slice(0, 300)}`);
       }
     }
   } finally {
-    resetOrchestratorRoutingState();
     for (const child of activeChildren) {
       terminateProcessTree(child, "SIGKILL");
     }
