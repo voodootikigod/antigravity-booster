@@ -13,8 +13,8 @@ import { fileURLToPath } from 'node:url';
 import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
-  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
-  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
+  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS,
+  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
   TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS,
 } from './constants.mjs';
 import {
@@ -418,6 +418,12 @@ function stepOne(name, args, ctx) {
     const scanned = scanPathLike(args);
     if (scanned.overflow) return OVERFLOW;
     candidates = [...extra, ...scanned.paths];
+  } else if (name === 'sed_file') {
+    const target = norm.folded.target_file ?? norm.folded.targetfile;
+    candidates = typeof target === 'string' ? [toPath(target)] : [];
+  } else if (NOTEBOOK_EXEC_TOOLS.has(name)) {
+    const np = norm.folded.notebookpath ?? norm.folded.absolutepath ?? norm.folded.path;
+    candidates = typeof np === 'string' ? [toPath(np)] : [];
   } else if (TOOL_PATH_SCHEMAS[name]) {
     const schemaKeys = [...TOOL_PATH_SCHEMAS[name].required, ...(TOOL_PATH_SCHEMAS[name].altRequired ?? [])];
     candidates = schemaKeys.map((k) => norm.folded[goFoldKey(k)]).filter((v) => typeof v === 'string').map(toPath);
@@ -508,6 +514,115 @@ function evaluateOneTargetForm(target, name, args, ctx, workerRepos) {
   return PASS;
 }
 
+const SED_DELETE_RE = /^(?:[1-9]\d*|\$)(?:,(?:[1-9]\d*|\$))?d$/;
+const SED_SUB_HEAD_RE = /^(?:(?:[1-9]\d*|\$)(?:,(?:[1-9]\d*|\$))?)?s([/|])(.*)$/;
+const SED_ODD_TRAILING_BS_RE = /(?:^|[^\\])(?:\\\\)*\\$/;
+const SED_FLAGS_RE = /^(?:g|[1-9]\d*|p|I|i|m|M)*$/;
+
+/**
+ * Validates the 2-production bracket/backref-free sed_file expression subset (§3.4).
+ */
+export function validateSedCall(expressions) {
+  if (!Array.isArray(expressions) || expressions.length === 0 || expressions.length > 128) {
+    return { ok: false, reason: 'sed_file expressions must be a non-empty bounded array' };
+  }
+  for (const expr of expressions) {
+    if (typeof expr !== 'string' || !expr || expr.length > 1024 || /[\0\r\n]/.test(expr)) {
+      return { ok: false, reason: 'Invalid sed_file expression string' };
+    }
+    if (SED_DELETE_RE.test(expr)) continue;
+    const head = SED_SUB_HEAD_RE.exec(expr);
+    if (!head) return { ok: false, reason: 'Disallowed sed_file command' };
+    const delim = head[1];
+    const parts = head[2].split(delim);
+    if (parts.length !== 3) return { ok: false, reason: 'Unbalanced or escaped delimiter in sed_file substitution' };
+    const [pattern, replacement, flags] = parts;
+    if (pattern.length < 1 || pattern.length > 256 || replacement.length > 512) {
+      return { ok: false, reason: 'sed_file pattern or replacement exceeds length bounds' };
+    }
+    if (/[\[\]]/.test(pattern) || /\\[1-9]/.test(pattern)) {
+      return { ok: false, reason: 'Bracket expressions and backreferences are forbidden in sed_file' };
+    }
+    if (SED_ODD_TRAILING_BS_RE.test(pattern) || SED_ODD_TRAILING_BS_RE.test(replacement)) {
+      return { ok: false, reason: 'Trailing odd backslash before delimiter in sed_file' };
+    }
+    if (!SED_FLAGS_RE.test(flags)) {
+      return { ok: false, reason: 'Disallowed sed_file substitution flag' };
+    }
+  }
+  return { ok: true };
+}
+
+export function evaluateSedFile(rawArgs, ctx) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  if (ctx.readonly) return deny('Mutating tool sed_file denied in read-only worker session');
+  for (const k of Object.keys(norm.folded)) {
+    if (!SED_ALLOWED_KEYS.has(k)) return deny(`Unexpected argument in sed_file: ${k}`);
+  }
+  if ('target_file' in norm.folded && 'targetfile' in norm.folded) {
+    return deny('Conflicting target_file parameters in sed_file');
+  }
+  if ('file_content' in norm.folded && 'filecontent' in norm.folded) {
+    return deny('Conflicting file_content parameters in sed_file');
+  }
+  const fc = norm.folded.file_content !== undefined ? norm.folded.file_content : norm.folded.filecontent;
+  if (fc !== undefined && fc !== null && (typeof fc !== 'object' || Array.isArray(fc) || Object.keys(fc).length > 0)) {
+    return deny('Non-empty file_content is forbidden in sed_file');
+  }
+  const target = norm.folded.target_file ?? norm.folded.targetfile;
+  if (!isNonEmptyString(target)) return deny('Missing required target_file parameter in sed_file');
+  const sedCheck = validateSedCall(norm.folded.expressions);
+  if (!sedCheck.ok) return deny(sedCheck.reason);
+  const v = evaluateFileTool('write_to_file', { TargetFile: target }, ctx);
+  return v.decision === 'ask' ? deny(v.reason) : v;
+}
+
+const NOTEBOOK_EXEC_ALLOWED_KEYS = new Set(['notebookpath', 'absolutepath', 'path', 'cellids', 'toolaction', 'toolsummary']);
+const NOTEBOOK_EXEC_PATH_KEYS = ['notebookpath', 'absolutepath', 'path'];
+
+export function evaluateNotebookExecution(rawArgs, ctx) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  if (ctx.readonly) return deny('Read-only agb worker session cannot execute notebooks');
+  if (ctx.workerTicket) return deny('Headless agb worker session cannot execute notebooks');
+  for (const [k, v] of Object.entries(norm.folded)) {
+    if (!NOTEBOOK_EXEC_ALLOWED_KEYS.has(k)) return deny(`Unexpected argument in notebook_execution: ${k}`);
+    if ((k === 'toolaction' || k === 'toolsummary') && v !== undefined && typeof v !== 'string') {
+      return deny(`Invalid ${k} parameter in notebook_execution`);
+    }
+  }
+  const presentPathKeys = NOTEBOOK_EXEC_PATH_KEYS.filter((k) => norm.folded[k] !== undefined);
+  if (presentPathKeys.length > 1) return deny('Conflicting notebook path parameters in notebook_execution');
+  const np = norm.folded.notebookpath ?? norm.folded.absolutepath ?? norm.folded.path;
+  if (!isNonEmptyString(np)) return deny('Missing required NotebookPath parameter in notebook_execution');
+  if (norm.folded.cellids !== undefined && (!Array.isArray(norm.folded.cellids) || !norm.folded.cellids.every((x) => typeof x === 'string'))) {
+    return deny('Invalid CellIds parameter in notebook_execution');
+  }
+  const resolved = resolveAll(toPath(np), ctx);
+  if (resolved.length === 0) return deny('Relative notebook path has no workspace to anchor it');
+  const repos = [...ctx.anchors.map((a) => ctx.repoAt(a))];
+  for (const r of resolved) {
+    const c = containsProtected(r, ctx);
+    if (c) return deny(c.reason);
+    const g = gateOnePath(r, ctx);
+    repos.push(g.repo);
+    if (g.verdict.decision !== 'pass') return deny(g.verdict.reason);
+    if (g.repo.adlc && g.rel && newShardVerdict('notebook_execution', g.rel, {}, ctx.platform)) {
+      return deny('Target path matches standing ADLC implicit rail: .adlc/tickets/');
+    }
+    if (r.lexical !== r.real) {
+      const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx);
+      repos.push(lexRes.repo);
+      if (lexRes.verdict.decision !== 'pass') return deny(lexRes.verdict.reason);
+    }
+  }
+  if (repos.some((r) => r.adlc && (r.activeRail || !r.store.ok))) {
+    return deny('Notebook execution forbidden while ADLC rails are active or store is unreadable');
+  }
+  return PASS;
+}
+
 function evaluateFileTool(name, args, ctx) {
   const extracted = extractProbedPaths(name, args);
   if (!extracted || extracted.error) {
@@ -543,7 +658,8 @@ function evaluateFileTool(name, args, ctx) {
       }
     }
   }
-  return mostRestrictive(verdicts);
+  const finalVerdict = mostRestrictive(verdicts);
+  return name === 'notebook_edit' && finalVerdict.decision === 'ask' ? deny(finalVerdict.reason) : finalVerdict;
 }
 
 function evaluateMcpTool(name, args, ctx) {
@@ -781,6 +897,8 @@ export function evaluatePayload(payload, options = {}) {
   if (step1.decision === 'deny') return step1;
 
   if (READ_ONLY_TOOLS.has(name)) return PASS;
+  if (name === 'sed_file') return evaluateSedFile(args, ctx);
+  if (NOTEBOOK_EXEC_TOOLS.has(name)) return evaluateNotebookExecution(args, ctx);
   if (ORCHESTRATION_TOOLS.has(name)) return evaluateOrchestrationTool(name, args, ctx);
   if (WORKFLOW_TOOLS.has(name)) return evaluateWorkflowTool(args, ctx);
   if (name === 'run_command') return classifyRunCommand(args, ctx);

@@ -43,8 +43,14 @@ export const BOOSTER_MCP_TOOLS = new Set([
 export const PATH_MUTATING_TOOLS = new Set([
   'run_command', 'write_to_file', 'write_file', 'replace_file_content', 'multi_replace_file_content',
   'edit_file', 'create_file', 'save_file', 'delete_file', 'move', 'delete_directory',
-  'edit_notebook', 'write_blob',
+  'edit_notebook', 'notebook_edit', 'write_blob',
 ]);
+
+export const SED_ALLOWED_KEYS = new Set([
+  'target_file', 'targetfile', 'expressions', 'file_content', 'filecontent', 'toolaction', 'toolsummary',
+]);
+
+export const NOTEBOOK_EXEC_TOOLS = new Set(['notebook_execution']);
 
 // Step 1 inspection: which argument keys carry a path for read tools.
 export const READ_TOOL_PATH_SCHEMAS = {
@@ -92,6 +98,7 @@ export const TOOL_PATH_SCHEMAS = {
   move: { required: ['source', 'destination'] },
   delete_directory: { required: ['directoryPath'] },
   edit_notebook: { required: ['notebookPath'] },
+  notebook_edit: { required: ['NotebookPath'] },
   write_blob: { required: ['targetPath'] },
 };
 
@@ -100,6 +107,7 @@ export const EXCLUDED_CONTENT_KEYS = new Set([
   'TargetContent', 'ReplacementContent', 'Target', 'Replacement', 'CodeContent', 'Content',
   'Instruction', 'Description', 'ArtifactMetadata', 'Summary', 'summary', 'prompt', 'code', 'text',
   'explanation', 'message', 'comment',
+  'CellContent', 'NewSource', 'Source', 'Cells', 'CellId', 'CellID', 'EditMode', 'CellType',
   'toolAction', 'toolSummary', 'WaitMsBeforeAsync',
 ]);
 
