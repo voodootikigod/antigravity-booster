@@ -12924,6 +12924,7 @@ var BRAIN_PLAN_SCHEMA = {
     repo: { type: "string" },
     base: { type: "string", pattern: "^[a-zA-Z0-9_.-]+$" },
     concurrencyCap: { type: ["integer", "null"], minimum: 1 },
+    disableOrchestrator: { type: "boolean" },
     gate: {
       type: "object",
       additionalProperties: false,
@@ -15725,6 +15726,9 @@ function validatePlan(plan, { strictGates = true } = {}) {
   if (!plan.repo) errors.push("plan.repo is required (absolute path to target repo)");
   if (plan.adlcBin !== void 0) {
     errors.push("plan.adlcBin is prohibited: ADLC binary must be resolved and authenticated by the runtime");
+  }
+  if (plan.disableOrchestrator !== void 0 && typeof plan.disableOrchestrator !== "boolean") {
+    errors.push("plan.disableOrchestrator must be a boolean when provided");
   }
   const NPM_GATE_RE = /^npm (test|run [a-zA-Z0-9_:-]+)$/;
   if (!plan.gate || typeof plan.gate !== "object" || Array.isArray(plan.gate) || !plan.gate.build && !plan.gate.test) {
