@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T14:39:55.935Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "7631fc5d8cb4ebd0a6ae7ff4d736e799f2fcb2af83133b86788d0ae6e958e647",
+    "ticketHash": "db03dcc78a061e37c57cf750123b5c68367bb8bc90c4bec6e69eb6cebec78a09",
+    "version": 1
+  },
   "body": "Write a source-grounded engineering proposal in orchestrator-handoff.md evaluating Antigravity 1.5.0-1.5.9 built-in features and the Gemini 4 Hydrogen / Orchestrator architecture against antigravity-booster (PR #158). Cover: (1) Orchestrator (Carbon/Argon) builder tier routing vs single-turn judgment roles and Hydrogen pool classification; (2) PreToolUse 59-tool taxonomy parity (list_dir, search_in_file, sed_file GNU sed command/write hazards, notebook_edit, notebook_execution, send_command_input, manage_task send_input, control tools) and cross-surface PLUGIN_DATA / Antigravity 2.0 / IDE roots; (3) headless print-mode hardening (--disable-slash-commands, finished_reason print_timeout + exit 3, empirical rejection of --mode plan/auto); (4) deferred follow-ups and non-goals (/swarm, run_workflow, Stop hooks). Converge the proposal through /adversarial-review-loop until a clean SHIP verdict is achieved and record the SHIP verdict and evidence ledger in orchestrator-handoff.md.",
   "completed": true,
   "edges": [],

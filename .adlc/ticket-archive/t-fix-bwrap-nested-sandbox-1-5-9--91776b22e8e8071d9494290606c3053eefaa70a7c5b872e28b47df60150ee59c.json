@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T14:39:54.143Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "c97d59d31442ca5eed5eda6b19d4bc3b06803df4d4d298e513162f66c20169e4",
+    "ticketHash": "251b6ee05791e64c321ba7ccf92fcad89df635095dc7aeea4bbc892e3285efdf",
+    "version": 1
+  },
   "body": "On agy 1.5.9, passing --sandbox to agy when runAgy() already wraps the builder process inside Linux bwrap (bwrap_pid) or macOS sandbox-exec (seatbelt) causes agy to attempt a nested CLONE_NEWUSER or sandbox_init for every run_command tool call, failing with fork/exec agy: operation not permitted on Linux hosts with kernel.apparmor_restrict_unprivileged_userns=1. In lib/agy.mjs, omit --sandbox from the inner agy argv when containmentCheck.mechanism is bwrap_pid or seatbelt (outer kernel containment remains mandatory and unchanged; non-builder sandbox:true calls continue passing --sandbox). Add regression assertions in test/agy.test.mjs, rebuild dist/** via npm run build, and verify test/agy.test.mjs, test/unit.test.mjs, and test/builder-stream-json.test.mjs pass.",
   "completed": true,
   "edges": [

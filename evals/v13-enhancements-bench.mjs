@@ -37,7 +37,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
@@ -661,7 +661,8 @@ exec "${process.execPath}" "$@"
       toolCall: { name: 'write_file', args: { Path: join(repo, 'src', 'ok.mjs'), Content: 'export default 2;\n' } },
     });
 
-    // Check 1: Staged plugin PASSWD_HOME anchoring (via getent passwd, WITHOUT AGB_TEST_PASSWD_HOME) resists spoofed HOME
+    // Check 1: Staged plugin PASSWD_HOME anchoring (via /usr/bin/getent or /usr/bin/dscl, WITHOUT AGB_TEST_PASSWD_HOME)
+    // resists both spoofed HOME and rogue PATH getent shims.
     const passwdHome1 = join(tmpRoot, 'passwd-home-1');
     const spoofedHome1 = join(tmpRoot, 'spoofed-home-1');
     installTrustedFnmNode(passwdHome1);
@@ -680,37 +681,130 @@ exec "${process.execPath}" "$@"
     copyFileSync(runnerPath, join(stagedPluginBin1, 'hook-runner.sh'));
     copyFileSync(join(realRepoRoot, 'bin', 'node-launcher.sh'), join(stagedPluginBin1, 'node-launcher.sh'));
     copyFileSync(bundlePath, stagedBundle1);
+    // Decoy PATH getent shim pointing at spoofedHome1 — must be ignored by pinned /usr/bin/getent
     const getentShimDir = join(tmpRoot, 'getent-shim');
     mkdirSync(getentShimDir, { recursive: true });
     writeFileSync(
       join(getentShimDir, 'getent'),
       `#!/bin/sh
 if [ "$1" = "passwd" ]; then
-  printf 'agbeval:x:%s:1000::%s:/bin/sh\\n' "$2" "${passwdHome1}"
+  printf 'agbeval:x:%s:1000::%s:/bin/sh\\n' "$2" "${spoofedHome1}"
   exit 0
 fi
 exit 2
 `,
       { mode: 0o755 },
     );
-    const r1 = spawnSync('/bin/sh', [join(stagedPluginBin1, 'hook-runner.sh'), '--timeout', '9', stagedBundle1], {
-      input: benignPayload,
-      cwd: spoofedHome1,
-      encoding: 'utf8',
-      env: {
-        PATH: `${getentShimDir}:/usr/bin:/bin`,
-        NODE_V8_COVERAGE: '',
-        HOME: spoofedHome1,
-        AGB_WORKER_TICKET: 't-hr-sec',
-      },
-    });
     const anchoredLog = join(passwdHome1, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
     const spoofedLog = join(spoofedHome1, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
-    const passwdHomeAnchoringOk =
-      r1.status === 0 &&
-      existsSync(anchoredLog) &&
-      !existsSync(spoofedLog) &&
-      !r1.stdout.includes('"deny"');
+    const hasBwrap = (() => {
+      const p = spawnSync('bwrap', ['--ro-bind', '/', '/', '--', 'true']);
+      return p.status === 0;
+    })();
+    let passwdHomeAnchoringOk = false;
+    if (hasBwrap) {
+      const fakePasswd1 = join(tmpRoot, 'passwd-1');
+      writeFileSync(
+        fakePasswd1,
+        `agbeval:x:${process.getuid?.() ?? 1000}:${process.getgid?.() ?? 1000}::${passwdHome1}:/bin/sh\n`,
+        'utf8',
+      );
+      const r1 = spawnSync(
+        'bwrap',
+        [
+          '--ro-bind', '/', '/',
+          '--dev', '/dev',
+          '--proc', '/proc',
+          '--tmpfs', '/tmp',
+          '--bind', tmpRoot, tmpRoot,
+          '--bind', fallbackWsRoot, fallbackWsRoot,
+          '--ro-bind', fakePasswd1, '/etc/passwd',
+          '--',
+          '/bin/sh',
+          join(stagedPluginBin1, 'hook-runner.sh'),
+          '--timeout', '9',
+          stagedBundle1,
+        ],
+        {
+          input: benignPayload,
+          cwd: spoofedHome1,
+          encoding: 'utf8',
+          env: {
+            PATH: `${getentShimDir}:/usr/bin:/bin`,
+            NODE_V8_COVERAGE: '',
+            HOME: spoofedHome1,
+            AGB_WORKER_TICKET: 't-hr-sec',
+          },
+        },
+      );
+      passwdHomeAnchoringOk =
+        r1.status === 0 &&
+        existsSync(anchoredLog) &&
+        !existsSync(spoofedLog) &&
+        !r1.stdout.includes('"deny"');
+    } else if (process.platform === 'darwin' && existsSync('/usr/bin/sandbox-exec')) {
+      const realOsHome = userInfo().homedir.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const sbpl = `(version 1)\n(allow default)\n(deny file-write* (subpath "${realOsHome}/.gemini"))\n(deny file-write* (subpath "${realOsHome}/.config"))`;
+      const r1 = spawnSync(
+        '/usr/bin/sandbox-exec',
+        ['-p', sbpl, '/bin/sh', join(stagedPluginBin1, 'hook-runner.sh'), '--timeout', '9', stagedBundle1],
+        {
+          input: benignPayload,
+          cwd: spoofedHome1,
+          encoding: 'utf8',
+          env: {
+            PATH: `${getentShimDir}:/usr/bin:/bin`,
+            NODE_V8_COVERAGE: '',
+            HOME: spoofedHome1,
+            AGB_WORKER_TICKET: 't-hr-sec',
+          },
+        },
+      );
+      // Positive proof that EFF_HOME resolved to realOsHome (protected by Seatbelt) rather than writable spoofedHome1:
+      // forcing child fallback emits `[audit-log-degraded]` iff HOOK_LOG_DIR under EFF_HOME was write-denied.
+      const r1Degraded = spawnSync(
+        '/usr/bin/sandbox-exec',
+        ['-p', sbpl, '/bin/sh', join(stagedPluginBin1, 'hook-runner.sh'), '--timeout', '5', join(fallbackWsRoot, 'missing-bundle.mjs')],
+        {
+          input: benignPayload,
+          cwd: spoofedHome1,
+          encoding: 'utf8',
+          env: {
+            PATH: `${getentShimDir}:/usr/bin:/bin`,
+            NODE_V8_COVERAGE: '',
+            HOME: spoofedHome1,
+            AGB_WORKER_TICKET: 't-hr-sec',
+          },
+        },
+      );
+      passwdHomeAnchoringOk =
+        r1.status === 0 &&
+        !existsSync(spoofedLog) &&
+        !r1.stdout.includes('"deny"') &&
+        r1Degraded.status === 0 &&
+        r1Degraded.stdout.includes('[audit-log-degraded]');
+    } else {
+      // Unprivileged fallback when neither bwrap nor sandbox-exec is usable (e.g. restricted userns container):
+      // evaluate the runner's exact SYS_ID..EFF_HOME block directly without writing to realOsHome, verifying EFF_HOME
+      // resolves to userInfo().homedir despite spoofed HOME, AGB_TEST_PASSWD_HOME, and decoy PATH getent.
+      const runnerSrc = readFileSync(runnerPath, 'utf8');
+      const homeBlock = runnerSrc.match(/SYS_ID=""[\s\S]*?done\n(?=\nresolve_no_symlink_root)/);
+      if (homeBlock) {
+        const probe = spawnSync(
+          '/bin/sh',
+          ['-c', `RUNNER_ROOT="$1"\n${homeBlock[0]}\nprintf '%s' "$EFF_HOME"`, 'sh', stagedPluginRoot1],
+          {
+            encoding: 'utf8',
+            env: {
+              PATH: `${getentShimDir}:/usr/bin:/bin`,
+              HOME: spoofedHome1,
+              AGB_TEST_PASSWD_HOME: spoofedHome1,
+            },
+          },
+        );
+        passwdHomeAnchoringOk = probe.status === 0 && probe.stdout === userInfo().homedir;
+      }
+    }
 
     // Check 2: Symlinked HOOK_LOG_DIR triggers LOG_TAMPERED fail-closed deny in headless worker
     const passwdHome2 = join(tmpRoot, 'passwd-home-2');
@@ -874,7 +968,7 @@ exit 2
       fallbackManageTaskAllowlistOk,
       pluginDataAllowlistOk,
     };
-    const passedChecks = Object.values(checks).filter(Boolean).length;
+    const passedChecks = Object.values(checks).filter((v) => v === true).length;
     const totalChecks = Object.keys(checks).length;
 
     return {
@@ -1437,7 +1531,7 @@ export function computeLiveAgy159HazardRates({ policyMatrix, hookSecurity, print
     hc.atomicDegradedMarkerAndDoctorOk,
     hc.pluginDataAllowlistOk,
   ];
-  const hookHomeRate = hookHomeChecks.filter(Boolean).length / hookHomeChecks.length;
+  const hookHomeRate = hookHomeChecks.filter((v) => v === true).length / hookHomeChecks.length;
 
   const classifierRate =
     printAndSandbox.classifierCasesTotal > 0
