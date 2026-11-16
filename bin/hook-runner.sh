@@ -233,6 +233,10 @@ elif [ "$CAN_VERIFY_UID" -eq 0 ]; then
   LOG_DEGRADED=1
   HOOK_LOG_FILE="/dev/null"
   printf 'agb hook runner: [warn] hook audit log uid verifier unavailable; logging degraded.\n' >&2
+  if [ -n "$AGB_WORKER_TICKET" ] || [ -n "$AGB_WORKER_MODE" ]; then
+    printf '{"decision":"deny","reason":"agb hook audit log uid verifier unavailable in headless worker"}\n'
+    exit 0
+  fi
 else
   mkdir -p "$HOOK_LOG_DIR" 2>/dev/null || true
   ( set -C; : >"$HOOK_LOG_FILE" ) 2>/dev/null || true
