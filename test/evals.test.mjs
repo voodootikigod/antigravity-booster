@@ -46,6 +46,7 @@ import {
   runLiveAgy159PrintAndSandboxBenchmark,
   runLiveOrchestratorSchedulerBenchmark,
   computeLiveAgy159HazardRates,
+  verifyStagedPasswdHomeAnchoring,
 } from '../evals/v13-enhancements-bench.mjs';
 import {
   runAllEvals,
@@ -357,4 +358,141 @@ test('runner: runAllEvals verifies all invariants, checks baseline ratchet, and 
   await assert.rejects(() => runAllEvals({ trials: 0 }), /positive integer/);
   await assert.rejects(() => runAllEvals({ trials: -5 }), /positive integer/);
   await assert.rejects(() => runAllEvals({ trials: 10, seed: Number.NaN }), /finite integer/);
+});
+
+test('verifyStagedPasswdHomeAnchoring: covers bwrap, Darwin Seatbelt, unprivileged fallback, and every failure clause', () => {
+  const realRunnerPath = fileURLToPath(new URL('../bin/hook-runner.sh', import.meta.url));
+  const realRunnerText = readFileSync(realRunnerPath, 'utf8');
+  const baseCfg = {
+    runnerPath: realRunnerPath,
+    stagedPluginRoot: '/t/pw/.gemini/config/plugins/antigravity-booster',
+    stagedPluginBin: '/t/pw/.gemini/config/plugins/antigravity-booster/bin',
+    stagedBundle: '/t/pw/.gemini/config/plugins/antigravity-booster/dist/hooks/pre-tool-use.bundle.mjs',
+    passwdHome: '/t/pw',
+    spoofedHome: '/t/spoof',
+    anchoredLog: '/t/pw/.gemini/antigravity-cli/plugin_data/antigravity-booster/logs/hooks.log',
+    spoofedLog: '/t/spoof/.gemini/antigravity-cli/plugin_data/antigravity-booster/logs/hooks.log',
+    getentShimDir: '/t/shim',
+    tmpRoot: '/t',
+    fallbackWsRoot: '/t/fb',
+    benignPayload: '{"ok":true}',
+    uid: 4242,
+    gid: 4343,
+    osHome: '/Users/alice',
+  };
+
+  // 1. bwrap branch: exact probe args, fake /etc/passwd, decoy getent, and all 4 return clauses
+  const runBwrapCase = ({ status = 0, anchored = true, spoofed = false, stdout = '' } = {}) => {
+    const writes = [];
+    const ok = verifyStagedPasswdHomeAnchoring({
+      ...baseCfg,
+      platform: 'linux',
+      writeFile: (p, content, opts) => writes.push({ p, content, opts }),
+      readFile: () => '',
+      fileExists: (p) => (p === baseCfg.anchoredLog ? anchored : p === baseCfg.spoofedLog ? spoofed : false),
+      spawn: (bin, args, opts) => {
+        if (bin === 'bwrap' && JSON.stringify(args) === JSON.stringify(['--ro-bind', '/', '/', '--', 'true'])) {
+          return { status: 0, stdout: '' };
+        }
+        if (bin === 'bwrap' && args.includes('/etc/passwd')) {
+          assert.ok(args.includes(join(baseCfg.tmpRoot, 'etc-passwd')));
+          assert.ok(args.includes(join(baseCfg.stagedPluginBin, 'hook-runner.sh')));
+          assert.ok(args.includes(baseCfg.stagedBundle));
+          assert.equal(opts.cwd, baseCfg.spoofedHome);
+          assert.equal(opts.env.HOME, baseCfg.spoofedHome);
+          assert.equal(opts.env.PATH, `${baseCfg.getentShimDir}:/usr/bin:/bin`);
+          return { status, stdout };
+        }
+        return { status: 1, stdout: '' };
+      },
+    });
+    assert.equal(writes[0].p, join(baseCfg.getentShimDir, 'getent'));
+    assert.equal(writes[0].opts.mode, 0o755);
+    assert.equal(
+      writes[0].content,
+      `#!/bin/sh\nif [ "$1" = "passwd" ]; then\n  printf 'agbeval:x:%s:%s::%s:/bin/sh\\n' "$2" "$2" "${baseCfg.spoofedHome}"\n  exit 0\nfi\nexit 2\n`,
+    );
+    if (writes[1]) {
+      assert.equal(writes[1].p, join(baseCfg.tmpRoot, 'etc-passwd'));
+      assert.equal(writes[1].content, `agbeval:x:4242:4343::${baseCfg.passwdHome}:/bin/sh\n`);
+    }
+    return ok;
+  };
+  assert.equal(runBwrapCase(), true);
+  assert.equal(runBwrapCase({ status: 1 }), false);
+  assert.equal(runBwrapCase({ anchored: false }), false);
+  assert.equal(runBwrapCase({ spoofed: true }), false);
+  assert.equal(runBwrapCase({ stdout: '{"decision":"deny"}' }), false);
+
+  // 2. Darwin Seatbelt branch: platform guard, SBPL escaping, and all 5 return clauses
+  const runDarwinCase = ({
+    platform = 'darwin',
+    hasSeatbelt = true,
+    rStatus = 0,
+    spoofed = false,
+    rStdout = '',
+    degStatus = 0,
+    degStdout = '{"decision":"deny","reason":"fail [audit-log-degraded]"}',
+  } = {}) =>
+    verifyStagedPasswdHomeAnchoring({
+      ...baseCfg,
+      platform,
+      osHome: '/Users/al"ice\\dev',
+      writeFile: () => {},
+      readFile: () => '',
+      fileExists: (p) => {
+        if (p === '/usr/bin/sandbox-exec') return hasSeatbelt;
+        if (p === baseCfg.spoofedLog) return spoofed;
+        return false;
+      },
+      spawn: (bin, args) => {
+        if (bin === 'bwrap') return { status: 1, stdout: '' };
+        if (bin === '/usr/bin/sandbox-exec') {
+          assert.equal(platform, 'darwin');
+          assert.equal(hasSeatbelt, true);
+          assert.match(args[1], /^\(version 1\)\n\(allow default\)\n/);
+          assert.ok(args[1].includes('/Users/al\\"ice\\\\dev/.gemini'));
+          assert.ok(args[1].includes('/Users/al\\"ice\\\\dev/.config'));
+          if (args.includes(baseCfg.stagedBundle)) return { status: rStatus, stdout: rStdout };
+          if (args.includes(join(baseCfg.fallbackWsRoot, 'missing-bundle.mjs'))) {
+            return { status: degStatus, stdout: degStdout };
+          }
+        }
+        return { status: 1, stdout: '' };
+      },
+    });
+  assert.equal(runDarwinCase(), true);
+  assert.equal(runDarwinCase({ platform: 'linux', hasSeatbelt: true }), false);
+  assert.equal(runDarwinCase({ platform: 'darwin', hasSeatbelt: false }), false);
+  assert.equal(runDarwinCase({ rStatus: 1 }), false);
+  assert.equal(runDarwinCase({ spoofed: true }), false);
+  assert.equal(runDarwinCase({ rStdout: '{"decision":"deny"}' }), false);
+  assert.equal(runDarwinCase({ degStatus: 1 }), false);
+  assert.equal(runDarwinCase({ degStdout: '{"decision":"deny","reason":"plain"}' }), false);
+
+  // 3. Unprivileged fallback branch: regex miss, probe status failure, wrong stdout, and exact osHome match
+  const runFallbackCase = ({ runnerContent = realRunnerText, probeStatus = 0, probeStdout = '/Users/alice' } = {}) =>
+    verifyStagedPasswdHomeAnchoring({
+      ...baseCfg,
+      platform: 'linux',
+      writeFile: () => {},
+      readFile: () => runnerContent,
+      fileExists: () => false,
+      spawn: (bin, args, opts) => {
+        if (bin === 'bwrap') return { status: 1, stdout: '' };
+        if (bin === '/bin/sh') {
+          assert.equal(args[0], '-c');
+          assert.equal(args[2], 'sh');
+          assert.equal(args[3], baseCfg.stagedPluginRoot);
+          assert.equal(opts.env.HOME, baseCfg.spoofedHome);
+          assert.equal(opts.env.AGB_TEST_PASSWD_HOME, baseCfg.spoofedHome);
+          return { status: probeStatus, stdout: probeStdout };
+        }
+        return { status: 1, stdout: '' };
+      },
+    });
+  assert.equal(runFallbackCase(), true);
+  assert.equal(runFallbackCase({ runnerContent: '#!/bin/sh\necho none\n' }), false);
+  assert.equal(runFallbackCase({ probeStatus: 1 }), false);
+  assert.equal(runFallbackCase({ probeStdout: '/t/spoof' }), false);
 });
