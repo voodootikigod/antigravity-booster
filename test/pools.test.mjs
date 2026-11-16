@@ -793,7 +793,7 @@ test('PoolSet: releasing a slot in one subpool wakes waiters in another subpool 
 
 test('PoolSet: route() prefers models with positive capacity when some candidate pools are depleted', () => {
   const pools = new PoolSet({ 'gemini-pro': 0, claude: 4 });
-  // frontier tier has gemini-4-argon-high and claude-sonnet-5-5-high
+  // frontier tier interleaves gemini-pro-orchestrator and claude-sonnet-5-5-high
   const picked = pools.route('frontier');
   assert.equal(picked, 'claude-sonnet-5-5-high', 'route should avoid 0-capacity gemini-pro and pick claude-sonnet-5-5-high');
   pools.unroute(picked);

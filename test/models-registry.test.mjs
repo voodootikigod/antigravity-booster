@@ -132,6 +132,7 @@ describe('models-registry: single source of truth', () => {
     // Fallback prefixes
     assert.equal(poolOf('custom-flash-experimental'), 'gemini-flash');
     assert.equal(poolOf('custom-gemini-ultra'), 'gemini-pro');
+    assert.equal(poolOf('hydrogen-custom'), 'gemini-pro');
     assert.equal(poolOf('claude-next-gen'), 'claude');
     assert.equal(poolOf('sonnet-future'), 'claude');
     assert.equal(poolOf('opus-future'), 'claude');
