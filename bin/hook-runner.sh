@@ -68,16 +68,22 @@ SYS_CUT="/usr/bin/cut"
 [ -x "$SYS_CUT" ] || SYS_CUT="cut"
 
 PASSWD_HOME=""
-if [ -n "$CUR_UID" ] && [ -n "$SYS_GETENT" ]; then
-  PASSWD_HOME="$("$SYS_GETENT" passwd "$CUR_UID" 2>/dev/null | "$SYS_CUT" -d: -f6)"
-fi
-if [ -z "$PASSWD_HOME" ] && [ -n "$SYS_ID" ] && [ -x /usr/bin/dscl ]; then
-  PASSWD_HOME="$(/usr/bin/dscl . -read "/Users/$("$SYS_ID" -un 2>/dev/null)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
-fi
+PASSWD_HOME_RESOLVED=0
+resolve_passwd_home() {
+  [ "$PASSWD_HOME_RESOLVED" -eq 0 ] || return 0
+  if [ -n "$CUR_UID" ] && [ -n "$SYS_GETENT" ]; then
+    PASSWD_HOME="$("$SYS_GETENT" passwd "$CUR_UID" 2>/dev/null | "$SYS_CUT" -d: -f6)"
+  fi
+  if [ -z "$PASSWD_HOME" ] && [ -n "$SYS_ID" ] && [ -x /usr/bin/dscl ]; then
+    PASSWD_HOME="$(/usr/bin/dscl . -read "/Users/$("$SYS_ID" -un 2>/dev/null)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+  fi
+  PASSWD_HOME_RESOLVED=1
+}
 
 EFF_HOME=""
 case "$RUNNER_ROOT" in
   */.gemini/config/plugins/*)
+    resolve_passwd_home
     EFF_HOME="$PASSWD_HOME"
     if [ -z "$EFF_HOME" ]; then
       _cand_home="${RUNNER_ROOT%%/.gemini/*}"
@@ -92,6 +98,7 @@ case "$RUNNER_ROOT" in
     elif [ -n "$HOME" ]; then
       EFF_HOME="$HOME"
     else
+      resolve_passwd_home
       EFF_HOME="$PASSWD_HOME"
     fi
     ;;
@@ -186,13 +193,38 @@ if [ -n "$SYS_FIND" ]; then
   esac
 fi
 
+all_log_paths_owned_by_euid() {
+  set --
+  for _chk_p in "$DATA_ROOT" "$HOOK_LOG_DIR" "$HOOK_LOG_FILE"; do
+    case "$_chk_p" in
+      /*) ;;
+      *) return 1 ;;
+    esac
+    if [ -e "$_chk_p" ]; then
+      set -- "$@" "$_chk_p"
+    fi
+  done
+  [ "$#" -gt 0 ] || return 0
+  _owned_out="$("$SYS_FIND" -H "$@" -prune -user "$CUR_UID" 2>/dev/null || true)"
+  _nl='
+'
+  for _chk_p in "$@"; do
+    case "${_nl}${_owned_out}${_nl}" in
+      *"${_nl}${_chk_p}${_nl}"*) ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
 # Spec §3.6: audit log lives under OS account home of id -u (PASSWD_HOME); check symlink (-L) and
-# foreign UID (! owned_by_euid) strictly on DATA_ROOT, HOOK_LOG_DIR, and HOOK_LOG_FILE so legitimate
-# dotfile symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never false-trip worker tamper denial.
+# foreign UID (! all_log_paths_owned_by_euid, single batched find fork) strictly on DATA_ROOT, HOOK_LOG_DIR,
+# and HOOK_LOG_FILE so legitimate dotfile symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never
+# false-trip worker tamper denial.
 if [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ]; then
   LOG_TAMPERED=1
 elif [ "$CAN_VERIFY_UID" -eq 1 ]; then
-  if { [ -e "$DATA_ROOT" ] && ! owned_by_euid "$DATA_ROOT"; } || { [ -e "$HOOK_LOG_DIR" ] && ! owned_by_euid "$HOOK_LOG_DIR"; } || { [ -e "$HOOK_LOG_FILE" ] && ! owned_by_euid "$HOOK_LOG_FILE"; }; then
+  if ! all_log_paths_owned_by_euid; then
     LOG_TAMPERED=1
   fi
 fi
