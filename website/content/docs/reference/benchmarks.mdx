@@ -53,8 +53,8 @@ To avoid a strawman comparison, every scenario evaluates three distinct operatin
 | **Defect Detection Recall (500 Seeded Defects)** | `21.8%` (No review)<br/>`52.0%` (Same-model) | `73.6%` (`adversarial-reviewer` subagent) | **`92.4%`** (Cross-family prosecutor + 4-lens fleet) | **`+18.8 pp` recall** vs. Best Practices<br/>**`+40.4 pp`** vs. Same-Model | *z* = 7.91, *p* &lt; 0.0001 |
 | **Post-Review Defect Escape Rate** | `78.2%` (No review)<br/>`48.0%` (Same-model) | `26.4%` (`132 / 500`) | **`7.6%`** (`38 / 500`) | **`-71.2%` fewer escaped defects** vs. Best Practices<br/>**`-84.2%`** vs. Same-Model | *z* = 7.91, *p* &lt; 0.0001 |
 | **Safety Hazard Prevention (Rails, Scope, Mutants)** | `56.3%` (`169 / 300`) | `80.3%` (`241 / 300`) | **`98.0%` (`294 / 300`)** (**100%** on rails & scope) | **`-89.8%` hazard escapes** vs. Best Practices<br/>**`-95.4%`** vs. Naive | *z* = 6.96, *p* &lt; 0.0001 |
-| **v1.3 Frontier Orchestrator DAG & Fault Resilience (800 Dispatches)** | `263.3s` / `412.9s` (`agy 1.5.9` Native Orch) | `236.5s` / `349.8s` (`agy 1.5.9` Best Practices)<br/>`192.7s` / `225.2s` (`agb v1.2`) | **`175.6s` / `204.2s`** (`agb v1.3` + Breaker) | **`1.35x` faster** vs. Best Practices (*d* = 1.24)<br/>**`1.50x`** vs. Native · **`1.10x`** vs. `agb v1.2` (`-9.3%` P95) | *p* &lt; 0.0001 (Mann-Whitney *U*) |
-| **v1.3 `agy 1.5.9` 60-Tool & `--print` Hardening (600 Hazards)** | `17.5%` (`105 / 600`) | `44.0%` (`264 / 600`)<br/>`42.0%` (`agb v1.2`: `252 / 600`) | **`100.0%` (`600 / 600`)** | **`-100.0%` escapes** vs. Best Practices & `agb v1.2` | *z* = 22.14, *p* &lt; 0.0001 |
+| **v1.3 Frontier Orchestrator DAG Simulation (1,200 Dispatches)** | `368.0s` / `570.0s` (`agy 1.5.9` Native Orch) | `352.2s` / `516.6s` (`agy 1.5.9` Best Practices)<br/>`289.4s` / `333.9s` (`agb v1.2`) | **`258.8s` / `294.7s`** (`agb v1.3` + Breaker) | **`1.36x` faster** vs. Best Practices (*d* = 1.42)<br/>**`1.42x`** vs. Native · **`1.12x`** vs. `agb v1.2` (`-11.7%` P95) | *p* &lt; 0.0001 (Mann-Whitney *U*) |
+| **v1.3 `agy 1.5.9` Hardening (Live-Coupled `v1.3` vs. Parametric Baselines, 600 Hazards)** | `16.5%` (`99 / 600`) | `45.3%` (`272 / 600`)<br/>`40.7%` (`agb v1.2`: `244 / 600`) | **`100.0%` (`600 / 600`)** | **`-100.0%` escapes** vs. Best Practices<br/>**`-100.0%`** vs. `agb v1.2` | *z* = 21.25 (vs. BP) · *z* = 22.50 (vs. `v1.2`), *p* &lt; 0.0001 |
 
 ---
 
@@ -272,32 +272,32 @@ Evaluates hazard interception across 300 adversarial failure modes (100 frozen r
 
 ---
 
-### Scenario 5 (`perf-orchestrator-frontier-resilience`): v1.3 Cross-Family Orchestrator Routing & Per-Slug Circuit Breaker
+### Scenario 5 (`perf-orchestrator-frontier-resilience`): Parametric Simulation of Cross-Family Orchestrator Routing & Per-Slug Circuit Breaker
 
-Evaluates an 8-ticket frontier-heavy architectural DAG (*N* = 100 runs × 8 complex multi-file tickets = 800 frontier dispatches), including a `25%` Orchestrator `--print` harness fault-storm regime, across Straight `agy 1.5.9` Native (`swarm` / single-session Orchestrator), Raw `agy 1.5.9` Best Practices (`/plan` + `run_workflow` / `Workspace: 'share'` + `adversarial-reviewer`), `agb v1.2` (`FRONTIER_NO_ORCHESTRATOR` ablation baseline), and `agb v1.3` (interleaved `gemini-pro-orchestrator` + `claude-sonnet-5-5-high` / `claude-opus-5-5-high` with `(planHash, agyVersion)` per-slug circuit breaking):
+Parametric Monte Carlo simulation of a 12-ticket frontier-heavy architectural DAG (*N* = 100 runs × 12 complex multi-file tickets = 1,200 frontier dispatches across 3 waves of 4), modeling a `25%` Orchestrator `--print` harness fault-storm regime across Straight `agy 1.5.9` Native (`swarm` / single-session Orchestrator), Raw `agy 1.5.9` Best Practices (`/plan` + `run_workflow` / `Workspace: 'share'` + `adversarial-reviewer`), `agb v1.2` (`FRONTIER_NO_ORCHESTRATOR` ablation baseline), and `agb v1.3` (interleaved `gemini-pro-orchestrator` + `claude-sonnet-5-5-high` / `claude-opus-5-5-high` with the exact `resolvedTickets >= 4 && builderFaultTickets / resolvedTickets >= 0.5` per-slug circuit breaker; mechanical `!gates.ok` exclusion is verified directly against `runPlan()` in `evals/v13-enhancements-bench.mjs`):
 
-| Operating Arm | Mean Latency (s) | 95% Bootstrap CI (s) | Median P50 (s) | P95 Tail Latency (s) | Fault / Fixup Retries (800 Dispatches) | `agb v1.3` Speedup & Significance |
+| Operating Arm (Parametric Model) | Mean Latency (s) | 95% Bootstrap CI (s) | Median P50 (s) | P95 Tail Latency (s) | Fault / Fixup Retries (1,200 Dispatches) | `agb v1.3` Speedup & Significance |
 | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **Straight `agy 1.5.9` Native (Single-Session Orchestrator / `swarm`)** | `263.3s` | `[247.1s, 281.8s]` | `230.6s` | `412.9s` | `163` (`20.4%`) | **`1.50x` faster** (*d* = 1.41, *p* &lt; 0.0001) |
-| **Raw `agy 1.5.9` Best Practices (`/plan` + `run_workflow` + `share`)** | `236.5s` | `[223.6s, 250.2s]` | `203.4s` | `349.8s` | `137` (`17.1%`) | **`1.35x` faster** (*d* = 1.24, *p* &lt; 0.0001) |
-| **`agb v1.2` Baseline (`AGB_DISABLE_ORCHESTRATOR=1` Ablation)** | `192.7s` | `[189.1s, 196.5s]` | `189.6s` | `225.2s` | `125` (`15.6%`) | **`1.10x` faster** (**`-9.3%` P95**, *p* &lt; 0.0001) |
-| **`agb v1.3` (Interleaved Orchestrator + Per-Slug Circuit Breaker)** | **`175.6s`** | **`[172.3s, 178.9s]`** | **`174.4s`** | **`204.2s`** | **`125` (`15.6%`)** | **`28` storm demotions · `0` false gate-fail trips** |
+| **Straight `agy 1.5.9` Native (Single-Session Orchestrator / `swarm`)** | `368.0s` | `[347.0s, 390.4s]` | `322.7s` | `570.0s` | `205` (`17.1%`) | **`1.42x` faster** (*d* = 1.33, *p* &lt; 0.0001) |
+| **Raw `agy 1.5.9` Best Practices (`/plan` + `run_workflow` + `share`)** | `352.2s` | `[335.7s, 370.5s]` | `314.5s` | `516.6s` | `176` (`14.7%`) | **`1.36x` faster** (*d* = 1.42, *p* &lt; 0.0001) |
+| **`agb v1.2` Baseline (`AGB_DISABLE_ORCHESTRATOR=1` Ablation)** | `289.4s` | `[283.8s, 294.7s]` | `290.2s` | `333.9s` | `181` (`15.1%`) | **`1.12x` faster** (**`-11.7%` P95**, *p* &lt; 0.0001) |
+| **`agb v1.3` (Interleaved Orchestrator + Per-Slug Circuit Breaker)** | **`258.8s`** | **`[254.3s, 263.3s]`** | **`259.7s`** | **`294.7s`** | **`159` (`13.3%`)** | **`24` storm demotions after &ge; 4 resolved tickets** |
 
 ---
 
-### Scenario 6 (`acc-agy-1-5-9-surface-and-print-hardening`): 600 Seeded `agy 1.5.9` Headless Security & Runtime Hazards
+### Scenario 6 (`acc-agy-1-5-9-surface-and-print-hardening`): Live-Coupled `v1.3` vs. Parametric Baselines (600 Hazards)
 
-Quantifies interception across the 6 security, sandbox, and silent-failure classes exposed by `agy 1.5.9` (*N* = 100 trials × 6 classes = 600 hazards), measuring both `agb v1.3`'s upgrade over `agb v1.2` and its advantage over `agy 1.5.9` Native and Best Practices:
+Evaluates interception across the 6 security, sandbox, and silent-failure classes exposed by `agy 1.5.9` (*N* = 100 trials × 6 classes = 600 hazards). The three baseline arms (`Straight agy 1.5.9 Native`, `Raw agy 1.5.9 Best Practices`, and `agb v1.2 Pre-Hardening`) are parametric capability models, whereas `agb v1.3`'s per-class interception probabilities (`rateSource: "live-benchmark-coupled"`) are derived directly from the live production-module benchmarks in `evals/v13-enhancements-bench.mjs` (`computeLiveAgy159HazardRates`):
 
-| `agy 1.5.9` Hazard Class | Straight `agy 1.5.9` Native | Raw `agy 1.5.9` Best Practices | `agb v1.2` (Pre-Hardening) | `agb v1.3` (Hardened) | Two-Proportion *z*-Test (`v1.3` vs. `v1.2`) |
+| `agy 1.5.9` Hazard Class | Straight `agy 1.5.9` Native (Parametric) | Raw `agy 1.5.9` Best Practices (Parametric) | `agb v1.2` Pre-Hardening (Parametric) | `agb v1.3` Hardened (Live-Coupled) | Two-Proportion *z*-Test (`v1.3` vs. Best Practices / vs. `v1.2`) |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| **`sed_file` (`/e`, `/w`, out-of-scope) & `notebook_execution` Bypass** | `20.0%` (`20/100`) | `59.0%` (`59/100`) | `48.0%` (`48/100`) | **`100.0%` (`100/100`)** | *z* = 8.38, *p* &lt; 0.0001 |
-| **Headless `--print` Stdin `ask`-Stall & REPL Path Smuggling** | `15.0%` (`15/100`) | `53.0%` (`53/100`) | `41.0%` (`41/100`) | **`100.0%` (`100/100`)** | *z* = 9.15, *p* &lt; 0.0001 |
-| **Go `encoding/json` `fold.go` Shadow-Key & Unbounded Read-Path Escape** | `0.0%` (`0/100`) | `13.0%` (`13/100`) | `44.0%` (`44/100`) | **`100.0%` (`100/100`)** | *z* = 8.82, *p* &lt; 0.0001 |
-| **Spoofed `HOME` Audit-Log Evasion & 4-Root `PLUGIN_DATA` Tampering** | `0.0%` (`0/100`) | `25.0%` (`25/100`) | `54.0%` (`54/100`) | **`100.0%` (`100/100`)** | *z* = 7.73, *p* &lt; 0.0001 |
-| **Silent `exit 0` Non-Success (`finishedReason`) & `/slash` Injection** | `23.0%` (`23/100`) | `56.0%` (`56/100`) | `65.0%` (`65/100`) | **`100.0%` (`100/100`)** | *z* = 6.51, *p* &lt; 0.0001 |
-| **Outer Linux `bwrap_pid` + Inner `agy 1.5.9 --sandbox` EPERM Prevention** | `47.0%` (`47/100`) | `58.0%` (`58/100`) | `0.0%` (`0/100`) | **`100.0%` (`100/100`)** | *z* = 14.14, *p* &lt; 0.0001 |
-| **Combined `agy 1.5.9` Hardening (*N* = 600)** | `17.5%` (`105/600`) | `44.0%` (`264/600`) | `42.0%` (`252/600`) | **`100.0%` (`600/600`)** | ***z* = 22.14, *p* &lt; 0.0001** |
+| **`sed_file` (`/e`, `/w`, out-of-scope) & `notebook_execution` Bypass** | `20.0%` (`20/100`) | `69.0%` (`69/100`) | `55.0%` (`55/100`) | **`100.0%` (`100/100`)** | *z*<sub>BP</sub> = 6.06 · *z*<sub>v1.2</sub> = 7.62, *p* &lt; 0.0001 |
+| **Headless `--print` Stdin `ask`-Stall & REPL Path Smuggling** | `9.0%` (`9/100`) | `52.0%` (`52/100`) | `38.0%` (`38/100`) | **`100.0%` (`100/100`)** | *z*<sub>BP</sub> = 7.95 · *z*<sub>v1.2</sub> = 9.48, *p* &lt; 0.0001 |
+| **Go `encoding/json` `fold.go` Shadow-Key & Unbounded Read-Path Escape** | `0.0%` (`0/100`) | `20.0%` (`20/100`) | `43.0%` (`43/100`) | **`100.0%` (`100/100`)** | *z*<sub>BP</sub> = 11.55 · *z*<sub>v1.2</sub> = 8.93, *p* &lt; 0.0001 |
+| **Spoofed `HOME` Audit-Log Evasion & 4-Root `PLUGIN_DATA` Tampering** | `0.0%` (`0/100`) | `19.0%` (`19/100`) | `42.0%` (`42/100`) | **`100.0%` (`100/100`)** | *z*<sub>BP</sub> = 11.67 · *z*<sub>v1.2</sub> = 9.04, *p* &lt; 0.0001 |
+| **Silent `exit 0` Non-Success (`finishedReason`) & `/slash` Injection** | `32.0%` (`32/100`) | `57.0%` (`57/100`) | `66.0%` (`66/100`) | **`100.0%` (`100/100`)** | *z*<sub>BP</sub> = 7.40 · *z*<sub>v1.2</sub> = 6.40, *p* &lt; 0.0001 |
+| **Outer Linux `bwrap_pid` + Inner `agy 1.5.9 --sandbox` EPERM Prevention** | `38.0%` (`38/100`) | `55.0%` (`55/100`) | `0.0%` (`0/100`) | **`100.0%` (`100/100`)** | *z*<sub>BP</sub> = 7.62 · *z*<sub>v1.2</sub> = 14.14, *p* &lt; 0.0001 |
+| **Combined `agy 1.5.9` Hardening (*N* = 600)** | `16.5%` (`99/600`) | `45.3%` (`272/600`) | `40.7%` (`244/600`) | **`100.0%` (`600/600`)** | ***z*<sub>BP</sub> = 21.25 · *z*<sub>v1.2</sub> = 22.50, *p* &lt; 0.0001** |
 
 ---
 

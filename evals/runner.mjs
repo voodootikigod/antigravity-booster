@@ -37,6 +37,7 @@ import {
   runLiveHookRunnerSecurityBenchmark,
   runLiveAgy159PrintAndSandboxBenchmark,
   runLiveOrchestratorSchedulerBenchmark,
+  computeLiveAgy159HazardRates,
 } from './v13-enhancements-bench.mjs';
 import { evaluatePayload } from '../hooks/policy/evaluate.mjs';
 import { writeAdlcTickets } from '../lib/adlc-bridge.mjs';
@@ -330,7 +331,6 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
   const accProsecution = runAccCrossModelProsecutionScenario({ trials, seed: seed + 2 });
   const accSafetyGates = runAccMechanicalSafetyGatesScenario({ trials, seed: seed + 3 });
   const perfOrchestrator = runPerfOrchestratorFrontierScenario({ trials, seed: seed + 4 });
-  const accAgy159Hardening = runAccAgy159HardeningScenario({ trials, seed: seed + 5 });
   const liveProbes = runLiveMechanicalProbes({ repoRoot });
   const policyCorpus = runLivePolicyCorpusBenchmark();
   const hookLatency = runLiveHookLatencyBenchmark({ repoRoot });
@@ -343,6 +343,16 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
   const v13HookSecurity = runLiveHookRunnerSecurityBenchmark({ repoRoot });
   const v13PrintAndSandbox = await runLiveAgy159PrintAndSandboxBenchmark();
   const v13OrchestratorScheduler = await runLiveOrchestratorSchedulerBenchmark();
+  const liveV13Rates = computeLiveAgy159HazardRates({
+    policyMatrix: v13PolicyMatrix,
+    hookSecurity: v13HookSecurity,
+    printAndSandbox: v13PrintAndSandbox,
+  });
+  const accAgy159Hardening = runAccAgy159HardeningScenario({
+    trials,
+    seed: seed + 5,
+    liveV13Rates,
+  });
 
   const liveBenchmarks = {
     policyCorpus,
@@ -566,8 +576,8 @@ export function renderMarkdownReport(results) {
 | **Defect Detection Recall (500 Seeded Defects)** | ${pct(a1Builder.recall.p)} (No review)<br>${pct(a1Same.recall.p)} (Same-model) | ${pct(a1Bp.recall.p)} (\`adversarial-reviewer\` subagent) | **${pct(a1Agb.recall.p)}** (Cross-family prosecutor + 4-lens fleet) | **+${fmt((a1Agb.recall.p - a1Bp.recall.p) * 100, 1)} pp recall** vs. Best Practices<br>**+${fmt((a1Agb.recall.p - a1Same.recall.p) * 100, 1)} pp** vs. Same-Model | $z = ${fmt(accProsecution.comparisons.recallAgbVsBestPractices.z, 2)}, p ${formatPValue(accProsecution.comparisons.recallAgbVsBestPractices.pValue)}$ |
 | **Post-Review Defect Escape Rate** | ${pct(a1Builder.escapeRate.p)} (No review)<br>${pct(a1Same.escapeRate.p)} (Same-model) | ${pct(a1Bp.escapeRate.p)} | **${pct(a1Agb.escapeRate.p)}** | **-${pct(accProsecution.comparisons.escapeRateAgbVsBestPractices.relativeReduction)} fewer escaped defects** vs. Best Practices<br>**-${pct(accProsecution.comparisons.escapeRateAgbVsSameModel.relativeReduction)}** vs. Same-Model | $z = ${fmt(accProsecution.comparisons.escapeRateAgbVsBestPractices.z, 2)}, p ${formatPValue(accProsecution.comparisons.escapeRateAgbVsBestPractices.pValue)}$ |
 | **Safety Hazard Prevention (Rails, Scope, Mutants)** | ${pct(a2.overall.promptOnlyBlockRate.p)} blocked (Prompt-only) | ${pct(a2.overall.bestPracticesBlockRate.p)} blocked (\`AGENTS.md\` + review) | **${pct(a2.overall.agbBlockRate.p)} blocked** (**100%** on rails & scope) | **-${pct(a2.overall.escapeReductionVsBestPracticesTest.relativeReduction)} hazard escapes** vs. Best Practices<br>**-${pct(a2.overall.escapeReductionTest.relativeReduction)}** vs. Naive | $z = ${fmt(a2.overall.escapeReductionVsBestPracticesTest.z, 2)}, p ${formatPValue(a2.overall.escapeReductionVsBestPracticesTest.pValue)}$ |
-| **v1.3 Frontier Orchestrator DAG & Fault Resilience (800 Dispatches)** | ${fmt(sOrchNat.mean)}s / ${fmt(sOrchNat.p95)}s (\`agy 1.5.9\` Native Orch) | ${fmt(sOrchBp.mean)}s / ${fmt(sOrchBp.p95)}s (\`agy 1.5.9\` Best Practices)<br>${fmt(sOrchV12.mean)}s / ${fmt(sOrchV12.p95)}s (\`agb v1.2\`) | **${fmt(sOrchV13.mean)}s / ${fmt(sOrchV13.p95)}s** (\`agb v1.3\` + Breaker) | **${fmt(perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans, 2)}x faster** vs. Best Practices<br>**${fmt(perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans, 2)}x** vs. Native · **${fmt(perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans, 2)}x** vs. \`v1.2\` | $p ${formatPValue(perfOrchestrator.comparisons.v13VsBestPractices.mannWhitney.pValue)}$ (Mann-Whitney $U$) |
-| **v1.3 \`agy 1.5.9\` 60-Tool & \`--print\` Hardening (600 Hazards)** | ${pct(a159.overall.nativeBlockRate.p)} (${a159.overall.nativeBlocked}/600) | ${pct(a159.overall.bestPracticesBlockRate.p)} (${a159.overall.bestPracticesBlocked}/600)<br>${pct(a159.overall.agbV12BlockRate.p)} (\`agb v1.2\`: ${a159.overall.agbV12Blocked}/600) | **${pct(a159.overall.agbV13BlockRate.p)} (${a159.overall.agbV13Blocked}/600)** | **-${pct(a159.overall.escapeReductionVsBestPractices.relativeReduction)} escapes** vs. Best Practices<br>**-${pct(a159.overall.escapeReductionVsV12.relativeReduction)}** vs. \`agb v1.2\` | $z = ${fmt(a159.overall.escapeReductionVsBestPractices.z, 2)}, p ${formatPValue(a159.overall.escapeReductionVsBestPractices.pValue)}$ |
+| **v1.3 Frontier Orchestrator DAG Simulation (${perfOrchestrator.totalFrontierDispatches.toLocaleString('en-US')} Dispatches)** | ${fmt(sOrchNat.mean)}s / ${fmt(sOrchNat.p95)}s (\`agy 1.5.9\` Native Orch) | ${fmt(sOrchBp.mean)}s / ${fmt(sOrchBp.p95)}s (\`agy 1.5.9\` Best Practices)<br>${fmt(sOrchV12.mean)}s / ${fmt(sOrchV12.p95)}s (\`agb v1.2\`) | **${fmt(sOrchV13.mean)}s / ${fmt(sOrchV13.p95)}s** (\`agb v1.3\` + Breaker) | **${fmt(perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans, 2)}x faster** vs. Best Practices<br>**${fmt(perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans, 2)}x** vs. Native · **${fmt(perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans, 2)}x** vs. \`v1.2\` | $p ${formatPValue(perfOrchestrator.comparisons.v13VsBestPractices.mannWhitney.pValue)}$ (Mann-Whitney $U$) |
+| **v1.3 \`agy 1.5.9\` Hardening (Live-Coupled \`v1.3\` vs. Parametric Baselines, 600 Hazards)** | ${pct(a159.overall.nativeBlockRate.p)} (${a159.overall.nativeBlocked}/600) | ${pct(a159.overall.bestPracticesBlockRate.p)} (${a159.overall.bestPracticesBlocked}/600)<br>${pct(a159.overall.agbV12BlockRate.p)} (\`agb v1.2\`: ${a159.overall.agbV12Blocked}/600) | **${pct(a159.overall.agbV13BlockRate.p)} (${a159.overall.agbV13Blocked}/600)** | **-${pct(a159.overall.escapeReductionVsBestPractices.relativeReduction)} escapes** vs. Best Practices<br>**-${pct(a159.overall.escapeReductionVsV12.relativeReduction)}** vs. \`agb v1.2\` | $z = ${fmt(a159.overall.escapeReductionVsBestPractices.z, 2)}$ (vs. BP) · $z = ${fmt(a159.overall.escapeReductionVsV12.z, 2)}$ (vs. \`v1.2\`), $p ${formatPValue(a159.overall.escapeReductionVsBestPractices.pValue)}$ |
 
 ---
 
@@ -768,32 +778,32 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 
 ---
 
-## 4b. v1.3 Performance & Ablation Benchmark (\`perf-orchestrator-frontier-resilience\`): Cross-Family Orchestrator Routing & Per-Slug Circuit Breaker
+## 4b. v1.3 Performance & Ablation Benchmark (\`perf-orchestrator-frontier-resilience\`): Parametric Simulation of Cross-Family Orchestrator Routing & Per-Slug Circuit Breaker
 
-Evaluates an 8-ticket frontier-heavy architectural DAG ($N = 100$ runs $\\times 8$ complex multi-file tickets $= 800$ frontier dispatches), including a \`25%\` Orchestrator \`--print\` harness fault-storm regime, across Straight \`agy 1.5.9\` Native (\`swarm\` / single-session Orchestrator), Raw \`agy 1.5.9\` Best Practices (\`/plan\` + \`run_workflow\` / \`Workspace: 'share'\` + \`adversarial-reviewer\`), \`agb v1.2\` (\`FRONTIER_NO_ORCHESTRATOR\` ablation baseline), and \`agb v1.3\` (interleaved \`gemini-pro-orchestrator\` + \`claude-sonnet-5-5-high\` / \`claude-opus-5-5-high\` with \`(planHash, agyVersion)\` per-slug circuit breaking):
+Parametric Monte Carlo simulation of a 12-ticket frontier-heavy architectural DAG ($N = 100$ runs $\\times 12$ complex multi-file tickets $= 1{,}200$ frontier dispatches across 3 waves of 4), modeling a \`25%\` Orchestrator \`--print\` harness fault-storm regime across Straight \`agy 1.5.9\` Native (\`swarm\` / single-session Orchestrator), Raw \`agy 1.5.9\` Best Practices (\`/plan\` + \`run_workflow\` / \`Workspace: 'share'\` + \`adversarial-reviewer\`), \`agb v1.2\` (\`FRONTIER_NO_ORCHESTRATOR\` ablation baseline), and \`agb v1.3\` (interleaved \`gemini-pro-orchestrator\` + \`claude-sonnet-5-5-high\` / \`claude-opus-5-5-high\` with the exact \`resolvedTickets >= 4 && builderFaultTickets / resolvedTickets >= 0.5\` per-slug circuit breaker; mechanical \`!gates.ok\` exclusion is verified directly against \`runPlan()\` in Section 6k):
 
-| Operating Arm | Mean Latency (s) | 95% Bootstrap CI (s) | Median P50 (s) | P95 Tail Latency (s) | Fault / Fixup Retries (800 Dispatches) | \`agb v1.3\` Speedup & Significance |
+| Operating Arm (Parametric Model) | Mean Latency (s) | 95% Bootstrap CI (s) | Median P50 (s) | P95 Tail Latency (s) | Fault / Fixup Retries (1,200 Dispatches) | \`agb v1.3\` Speedup & Significance |
 | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
 | **Straight \`agy 1.5.9\` Native (Single-Session Orchestrator / \`swarm\`)** | ${fmt(sOrchNat.mean)}s | [${fmt(sOrchNat.meanCi95[0])}s, ${fmt(sOrchNat.meanCi95[1])}s] | ${fmt(sOrchNat.median)}s | ${fmt(sOrchNat.p95)}s | ${perfOrchestrator.arms.straightAgy159NativeOrch.faultRetryCount} (${pct(perfOrchestrator.arms.straightAgy159NativeOrch.faultRetryRate.p)}) | **${fmt(perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans, 2)}x faster** ($d = ${fmt(perfOrchestrator.comparisons.v13VsNative.cohensD, 2)}, p ${formatPValue(perfOrchestrator.comparisons.v13VsNative.mannWhitney.pValue)}$) |
 | **Raw \`agy 1.5.9\` Best Practices (\`/plan\` + \`run_workflow\` + \`share\`)** | ${fmt(sOrchBp.mean)}s | [${fmt(sOrchBp.meanCi95[0])}s, ${fmt(sOrchBp.meanCi95[1])}s] | ${fmt(sOrchBp.median)}s | ${fmt(sOrchBp.p95)}s | ${perfOrchestrator.arms.rawAgy159BestPractices.faultRetryCount} (${pct(perfOrchestrator.arms.rawAgy159BestPractices.faultRetryRate.p)}) | **${fmt(perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans, 2)}x faster** ($d = ${fmt(perfOrchestrator.comparisons.v13VsBestPractices.cohensD, 2)}, p ${formatPValue(perfOrchestrator.comparisons.v13VsBestPractices.mannWhitney.pValue)}$) |
 | **\`agb v1.2\` Baseline (\`AGB_DISABLE_ORCHESTRATOR=1\` Ablation)** | ${fmt(sOrchV12.mean)}s | [${fmt(sOrchV12.meanCi95[0])}s, ${fmt(sOrchV12.meanCi95[1])}s] | ${fmt(sOrchV12.median)}s | ${fmt(sOrchV12.p95)}s | ${perfOrchestrator.arms.agbV12NoOrchestrator.reworkRetryCount} (${pct(perfOrchestrator.arms.agbV12NoOrchestrator.reworkRetryRate.p)}) | **${fmt(perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans, 2)}x faster** (**-${fmt(perfOrchestrator.comparisons.v13VsV12Ablation.p95ReductionPct, 1)}% P95**, $p ${formatPValue(perfOrchestrator.comparisons.v13VsV12Ablation.mannWhitney.pValue)}$) |
-| **\`agb v1.3\` (Interleaved Orchestrator + Per-Slug Circuit Breaker)** | **${fmt(sOrchV13.mean)}s** | **[${fmt(sOrchV13.meanCi95[0])}s, ${fmt(sOrchV13.meanCi95[1])}s]** | **${fmt(sOrchV13.median)}s** | **${fmt(sOrchV13.p95)}s** | **${perfOrchestrator.arms.agbV13OrchestratorWithBreaker.retryCount} (${pct(perfOrchestrator.arms.agbV13OrchestratorWithBreaker.retryRate.p)})** | **${perfOrchestrator.arms.agbV13OrchestratorWithBreaker.breakerTrips} storm demotions · 0 false gate-fail trips** |
+| **\`agb v1.3\` (Interleaved Orchestrator + Per-Slug Circuit Breaker)** | **${fmt(sOrchV13.mean)}s** | **[${fmt(sOrchV13.meanCi95[0])}s, ${fmt(sOrchV13.meanCi95[1])}s]** | **${fmt(sOrchV13.median)}s** | **${fmt(sOrchV13.p95)}s** | **${perfOrchestrator.arms.agbV13OrchestratorWithBreaker.retryCount} (${pct(perfOrchestrator.arms.agbV13OrchestratorWithBreaker.retryRate.p)})** | **${perfOrchestrator.arms.agbV13OrchestratorWithBreaker.breakerTrips} storm demotions after $\\ge 4$ resolved tickets** |
 
 ---
 
-## 4c. v1.3 Security & Runtime Hardening Benchmark (\`acc-agy-1-5-9-surface-and-print-hardening\`): 600 Seeded \`agy 1.5.9\` Headless Hazards
+## 4c. v1.3 Security & Runtime Hardening Benchmark (\`acc-agy-1-5-9-surface-and-print-hardening\`): Live-Coupled \`v1.3\` vs. Parametric Baselines (600 Hazards)
 
-Quantifies interception across the 6 exact security, sandbox, and silent-failure classes exposed by \`agy 1.5.9\` ($N = 100$ trials $\\times 6$ classes $= 600$ hazards), measuring both \`agb v1.3\`'s improvement over \`agb v1.2\` and its advantage over \`agy 1.5.9\` Native and Best Practices:
+Evaluates interception across the 6 security, sandbox, and silent-failure classes exposed by \`agy 1.5.9\` ($N = 100$ trials $\\times 6$ classes $= 600$ hazards). The three baseline arms (\`Straight agy 1.5.9 Native\`, \`Raw agy 1.5.9 Best Practices\`, and \`agb v1.2 Pre-Hardening\`) are parametric capability models, whereas \`agb v1.3\`'s per-class interception probabilities (\`rateSource: "${a159.v13RateSource}"\`) are derived directly from the live production-module benchmarks in Sections 6h–6j (\`computeLiveAgy159HazardRates\`):
 
-| \`agy 1.5.9\` Hazard Class | Straight \`agy 1.5.9\` Native | Raw \`agy 1.5.9\` Best Practices | \`agb v1.2\` (Pre-Hardening) | \`agb v1.3\` (Hardened) | $z$-Test (\`v1.3\` vs. \`v1.2\`) |
+| \`agy 1.5.9\` Hazard Class | Straight \`agy 1.5.9\` Native (Parametric) | Raw \`agy 1.5.9\` Best Practices (Parametric) | \`agb v1.2\` Pre-Hardening (Parametric) | \`agb v1.3\` Hardened (Live-Coupled) | $z$-Test (\`v1.3\` vs. Best Practices / vs. \`v1.2\`) |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 ${Object.values(a159.perClass)
   .map(
     (c) =>
-      `| **${c.label}** | ${pct(c.nativeRate.p)} (${c.nativeBlocked}/100) | ${pct(c.bestPracticesRate.p)} (${c.bestPracticesBlocked}/100) | ${pct(c.agbV12Rate.p)} (${c.agbV12Blocked}/100) | **${pct(c.agbV13Rate.p)} (${c.agbV13Blocked}/100)** | $z = ${fmt(c.v13VsV12Test.z, 2)}, p ${formatPValue(c.v13VsV12Test.pValue)}$ |`,
+      `| **${c.label}** | ${pct(c.nativeRate.p)} (${c.nativeBlocked}/100) | ${pct(c.bestPracticesRate.p)} (${c.bestPracticesBlocked}/100) | ${pct(c.agbV12Rate.p)} (${c.agbV12Blocked}/100) | **${pct(c.agbV13Rate.p)} (${c.agbV13Blocked}/100)** | $z_{\\text{BP}} = ${fmt(c.v13VsBestPracticesTest.z, 2)}$ · $z_{\\text{v1.2}} = ${fmt(c.v13VsV12Test.z, 2)}, p ${formatPValue(c.v13VsBestPracticesTest.pValue)}$ |`,
   )
   .join('\n')}
-| **Combined \`agy 1.5.9\` Hardening ($N = 600$)** | ${pct(a159.overall.nativeBlockRate.p)} (${a159.overall.nativeBlocked}/600) | ${pct(a159.overall.bestPracticesBlockRate.p)} (${a159.overall.bestPracticesBlocked}/600) | ${pct(a159.overall.agbV12BlockRate.p)} (${a159.overall.agbV12Blocked}/600) | **${pct(a159.overall.agbV13BlockRate.p)} (${a159.overall.agbV13Blocked}/600)** | **$z = ${fmt(a159.overall.escapeReductionVsV12.z, 2)}, p ${formatPValue(a159.overall.escapeReductionVsV12.pValue)}$** |
+| **Combined \`agy 1.5.9\` Hardening ($N = 600$)** | ${pct(a159.overall.nativeBlockRate.p)} (${a159.overall.nativeBlocked}/600) | ${pct(a159.overall.bestPracticesBlockRate.p)} (${a159.overall.bestPracticesBlocked}/600) | ${pct(a159.overall.agbV12BlockRate.p)} (${a159.overall.agbV12Blocked}/600) | **${pct(a159.overall.agbV13BlockRate.p)} (${a159.overall.agbV13Blocked}/600)** | **$z_{\\text{BP}} = ${fmt(a159.overall.escapeReductionVsBestPractices.z, 2)}$ · $z_{\\text{v1.2}} = ${fmt(a159.overall.escapeReductionVsV12.z, 2)}, p ${formatPValue(a159.overall.escapeReductionVsBestPractices.pValue)}$** |
 
 ---
 

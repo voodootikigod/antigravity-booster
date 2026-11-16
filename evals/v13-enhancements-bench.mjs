@@ -23,7 +23,6 @@
  *    `runWithOrchestratorRoutingState()` isolation.
  */
 import {
-  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -525,14 +524,34 @@ export function runLiveAgy159PolicyMatrixBenchmark() {
     const latenciesMs = [];
     let adversarialBlocked = 0;
     const failedAdversarial = [];
-    for (const v of adversarialVectors) {
+    const classCounts = {
+      sedAndNotebook: { blocked: 0, total: 0 },
+      stdinAndSubagent: { blocked: 0, total: 0 },
+      goFoldAndReadPath: { blocked: 0, total: 0 },
+      boosterDataRoots: { blocked: 0, total: 0 },
+    };
+    for (let idx = 0; idx < adversarialVectors.length; idx += 1) {
+      const v = adversarialVectors[idx];
+      const bucket =
+        idx < 14
+          ? 'sedAndNotebook'
+          : idx < 27
+            ? 'stdinAndSubagent'
+            : idx < 32
+              ? 'goFoldAndReadPath'
+              : 'boosterDataRoots';
+      classCounts[bucket].total += 1;
       const ws = v.workspace ?? repo;
       const s = performance.now();
       const res = evaluatePayload({ workspacePaths: [ws], toolCall: v.toolCall }, { home, env: v.env, platform: 'linux' });
       latenciesMs.push(performance.now() - s);
       if (res.decision === 'ask') headlessAskCount += 1;
-      if (res.decision === 'deny') adversarialBlocked += 1;
-      else failedAdversarial.push({ id: v.id, decision: res.decision, reason: res.reason });
+      if (res.decision === 'deny') {
+        adversarialBlocked += 1;
+        classCounts[bucket].blocked += 1;
+      } else {
+        failedAdversarial.push({ id: v.id, decision: res.decision, reason: res.reason });
+      }
     }
 
     let benignPassed = 0;
@@ -551,6 +570,9 @@ export function runLiveAgy159PolicyMatrixBenchmark() {
     const p50Ms = Number(median(latenciesMs).toFixed(3));
     const p95Ms = Number(p95(latenciesMs).toFixed(3));
     const meanMs = Number(mean(latenciesMs).toFixed(3));
+    const classRecalls = Object.fromEntries(
+      Object.entries(classCounts).map(([k, v]) => [k, v.total > 0 ? v.blocked / v.total : 0]),
+    );
 
     return {
       ok:
@@ -565,6 +587,7 @@ export function runLiveAgy159PolicyMatrixBenchmark() {
       adversarialTotal: adversarialVectors.length,
       adversarialBlocked,
       adversarialRecall,
+      classRecalls,
       benignTotal: benignVectors.length,
       benignPassed,
       benignFalsePositiveRate,
@@ -586,6 +609,11 @@ export function runLiveHookRunnerSecurityBenchmark({ repoRoot = ROOT } = {}) {
   const realRepoRoot = realpathSync(repoRoot);
   const runnerPath = join(realRepoRoot, 'bin', 'hook-runner.sh');
   const bundlePath = join(realRepoRoot, 'dist', 'hooks', 'pre-tool-use.bundle.mjs');
+  if (!existsSync(bundlePath)) {
+    throw new Error(
+      `runLiveHookRunnerSecurityBenchmark: missing ${bundlePath} — run "npm run build:hooks" before running evals`,
+    );
+  }
   const underTmp = /(^|\/)tmp(\/|$)/.test(realRepoRoot);
   const tmpRoot = realpathSync(
     mkdtempSync(join(underTmp ? tmpdir() : realRepoRoot, '.hr-sec-bench-')),
@@ -705,14 +733,14 @@ exec "${process.execPath}" "$@"
       !r3.stdout.includes('"deny"') &&
       checkHookLogDir({ home: passwdHome3 }).level === 'pass';
 
-    // Check 4: Unwritable log directory writes atomic 0600 .agb-hook-log-degraded marker & doctor warns
+    // Check 4: Unwritable log destination (hooks.log is a directory -> EISDIR even under uid 0 root!)
+    // writes atomic 0600 .agb-hook-log-degraded marker & doctor warns
     const passwdHome4 = join(tmpRoot, 'passwd-home-4');
     installTrustedFnmNode(passwdHome4);
     const logDir4 = join(passwdHome4, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs');
-    mkdirSync(logDir4, { recursive: true });
-    chmodSync(logDir4, 0o500);
+    mkdirSync(join(logDir4, 'hooks.log'), { recursive: true });
     let atomicDegradedMarkerAndDoctorOk = false;
-    try {
+    {
       const r4 = spawnSync('/bin/sh', [runnerPath, '--timeout', '9', bundlePath], {
         input: benignPayload,
         cwd: passwdHome4,
@@ -736,8 +764,6 @@ exec "${process.execPath}" "$@"
         mode4 === 0o600 &&
         docWarn.level === 'warn' &&
         docHealthy.level === 'pass';
-    } finally {
-      chmodSync(logDir4, 0o700);
     }
 
     // Check 5: No-Node / degraded child fallback allows manage_task(list|status) and denies manage_task(send_input)
@@ -1363,5 +1389,45 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
     passRate: passedChecks / totalChecks,
     checks,
     elapsedMs: Number((performance.now() - t0).toFixed(2)),
+  };
+}
+
+/**
+ * Derive empirical per-hazard-class interception rates `[0, 1]` for `agb v1.3` directly from the
+ * live execution results of `v13PolicyMatrix`, `v13HookSecurity`, and `v13PrintAndSandbox`.
+ * Ensures Scenario 6 (`runAccAgy159HardeningScenario`) and its baseline ratchet reflect live
+ * production code behavior rather than static constants.
+ */
+export function computeLiveAgy159HazardRates({ policyMatrix, hookSecurity, printAndSandbox }) {
+  const cr = policyMatrix.classRecalls ?? {};
+  const hc = hookSecurity.checks ?? {};
+  const pc = printAndSandbox.checks ?? {};
+
+  const hookHomeChecks = [
+    hc.passwdHomeAnchoringOk,
+    hc.symlinkTamperBlockedOk,
+    hc.stowDotfilesSymlinkCompatibleOk,
+    hc.atomicDegradedMarkerAndDoctorOk,
+    hc.pluginDataAllowlistOk,
+  ];
+  const hookHomeRate = hookHomeChecks.filter(Boolean).length / hookHomeChecks.length;
+
+  const classifierRate =
+    printAndSandbox.classifierCasesTotal > 0
+      ? printAndSandbox.classifierExactMatches / printAndSandbox.classifierCasesTotal
+      : 0;
+
+  return {
+    sedAndNotebookBypass: cr.sedAndNotebook ?? 0,
+    stdinAskHangAndReplSmuggling:
+      (cr.stdinAndSubagent ?? 0) *
+      (policyMatrix.headlessAskCount === 0 && policyMatrix.tools60Covered === 60 ? 1 : 0) *
+      (hc.fallbackManageTaskAllowlistOk ? 1 : 0),
+    goFoldShadowKeyAndMissingReadPath: cr.goFoldAndReadPath ?? 0,
+    passwdHomeSpoofAndPluginDataTamper: ((cr.boosterDataRoots ?? 0) + hookHomeRate) / 2,
+    silentPrintExitZeroAndSlashExpansion:
+      classifierRate * (pc.disableSlashCommandsPresent ? 1 : 0),
+    nestedBwrapSandboxCollision:
+      pc.outerBwrapOmitsNestedSandbox && pc.directReadonlyKeepsSandbox ? 1 : 0,
   };
 }
