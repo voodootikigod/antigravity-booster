@@ -1,0 +1,27 @@
+{
+  "body": "On agy 1.5.9, passing --sandbox to agy when runAgy() already wraps the builder process inside Linux bwrap (bwrap_pid) or macOS sandbox-exec (seatbelt) causes agy to attempt a nested CLONE_NEWUSER or sandbox_init for every run_command tool call, failing with fork/exec agy: operation not permitted on Linux hosts with kernel.apparmor_restrict_unprivileged_userns=1. In lib/agy.mjs, omit --sandbox from the inner agy argv when containmentCheck.mechanism is bwrap_pid or seatbelt (outer kernel containment remains mandatory and unchanged; non-builder sandbox:true calls continue passing --sandbox). Add regression assertions in test/agy.test.mjs, rebuild dist/** via npm run build, and verify test/agy.test.mjs, test/unit.test.mjs, and test/builder-stream-json.test.mjs pass.",
+  "completed": true,
+  "edges": [
+    {
+      "to": "t-agy-print-hardening-1-5-9"
+    }
+  ],
+  "id": "t-fix-bwrap-nested-sandbox-1-5-9",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/pools.mjs",
+    "lib/worktrees.mjs",
+    "bin/node-launcher.sh",
+    "scripts/rails-guard-ci.mjs",
+    "vendor/cache/**",
+    ".github/workflows/**",
+    "test/fixtures/agy-1.5.9-init-tools.json"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "dist/**",
+    "test/agy.test.mjs"
+  ],
+  "title": "Omit nested agy --sandbox inside outer bwrap_pid and seatbelt builder containment"
+}

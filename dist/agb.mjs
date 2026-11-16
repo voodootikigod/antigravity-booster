@@ -11408,7 +11408,8 @@ async function runAgy({
             stageBuilderGeminiHome(cwd, userHome, platform3);
           }
         }
-        launchArgs.push("--", bwrapAgyBin, ...args);
+        const innerBwrapArgs = args.filter((a) => a !== "--sandbox");
+        launchArgs.push("--", bwrapAgyBin, ...innerBwrapArgs);
       } else if (containmentCheck.mechanism === "job_object") {
         let bypass = verifiedBypass;
         if (!bypass?.valid) {
@@ -11604,8 +11605,9 @@ async function runAgy({
 (deny file-read* (subpath "${escapedRealAllowedDir}/.ssh"))
 (deny file-read* (subpath "${escapedRealAllowedDir}/.aws"))
 (deny file-read* (subpath "${escapedRealAllowedDir}/.gnupg"))`;
+        const innerSeatbeltArgs = args.filter((a) => a !== "--sandbox");
         launchBin = "sandbox-exec";
-        launchArgs = ["-p", seatbeltProfile, resolvedAgyCandidate, ...args];
+        launchArgs = ["-p", seatbeltProfile, resolvedAgyCandidate, ...innerSeatbeltArgs];
       } else {
         return Promise.resolve({
           ok: false,
