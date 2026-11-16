@@ -1,5 +1,6 @@
 {
   "body": "Address P5 cross-model adversarial review findings: (1) isolate per-run Orchestrator routing state via AsyncLocalStorage (`runWithOrchestratorRoutingState`) so concurrent in-process `runPlan()` calls never clobber or reset each other's state; (2) keep `model_unavailable` demotions strictly run-scoped (persisting only Orchestrator circuit-breaker demotions in `.booster/run.json`) and tighten `isModelUnavailable` so `requestedModel` is enforced whenever unstructured error prose is matched; (3) path-scan `Input` in `send_command_input` and `manage_task` `send_input` against `boosterDataRoots`, `protectedRoots`, and `gateOnePath` in addition to `classifyRunCommand`; and (4) write `.agb-hook-log-degraded` via atomic `set -C` temp file + `mv -f` in `bin/hook-runner.sh` so destination symlinks are never followed.",
+  "completed": true,
   "edges": [],
   "id": "t-p5-prosecution-remediation",
   "rails": [
