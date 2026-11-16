@@ -138,6 +138,12 @@ test('scenarios: all 4 statistical scenarios are deterministic and satisfy signi
   assert.ok(s4.overall.escapeReductionTest.pValue < 0.0001);
   assert.ok(s4.overall.escapeReductionVsBestPracticesTest.pValue < 0.0001);
 
+  const s5Def = runPerfOrchestratorFrontierScenario();
+  const s5Exp = runPerfOrchestratorFrontierScenario({ trials: 100, seed: 20261103 });
+  assert.equal(s5Def.trials, 100);
+  assert.equal(s5Def.totalFrontierDispatches, 800);
+  assert.deepEqual(s5Def, s5Exp, 'Perf-Orchestrator default parameters must match (100, 20261103)');
+
   const s5a = runPerfOrchestratorFrontierScenario({ trials: 100, seed: 20261034 });
   const s5b = runPerfOrchestratorFrontierScenario({ trials: 100, seed: 20261034 });
   assert.deepEqual(s5a, s5b, 'Perf-Orchestrator scenario must be 100% deterministic for fixed seed');
@@ -147,6 +153,12 @@ test('scenarios: all 4 statistical scenarios are deterministic and satisfy signi
   assert.ok(s5a.comparisons.v13VsBestPractices.mannWhitney.pValue < 0.0001);
   assert.ok(s5a.comparisons.v13VsV12Ablation.mannWhitney.pValue < 0.0001);
   assert.equal(s5a.arms.agbV13OrchestratorWithBreaker.falseBreakerTripsOnGateFail, 0);
+
+  const s6Def = runAccAgy159HardeningScenario();
+  const s6Exp = runAccAgy159HardeningScenario({ trials: 100, seed: 20261104 });
+  assert.equal(s6Def.trials, 100);
+  assert.equal(s6Def.totalHazards, 600);
+  assert.deepEqual(s6Def, s6Exp, 'Acc-1.5.9 default parameters must match (100, 20261104)');
 
   const s6a = runAccAgy159HardeningScenario({ trials: 100, seed: 20261035 });
   const s6b = runAccAgy159HardeningScenario({ trials: 100, seed: 20261035 });

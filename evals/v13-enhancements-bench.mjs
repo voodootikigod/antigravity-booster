@@ -1227,7 +1227,17 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
           {
             repo: repoOld,
             gate: { test: 'true' },
-            tickets: [{ id: 'T1', title: 'T1', body: 'write T1.txt', scope: ['T1.txt'], tier: 'frontier', pool_hint: 'gemini' }],
+            tickets: [
+              {
+                id: 'T1',
+                title: 'T1',
+                body: 'write T1.txt',
+                scope: ['T1.txt'],
+                rails: ['README.md'],
+                tier: 'frontier',
+                pool_hint: 'gemini',
+              },
+            ],
           },
           { log: (m) => logsOld.push(m) },
         ),
