@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION, checkHookLogDir } from '../lib/doctor.mjs';
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { spawnSync } from 'child_process';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync } from 'fs';
+import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync, symlinkSync } from 'fs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
@@ -37,6 +37,65 @@ test('checkAgyBinary: passes when fake-agy is provided', async () => {
   const res = await checkAgyBinary({ env: { AGB_AGY_BIN: FAKE_AGY } });
   assert.equal(res.level, 'pass');
   assert.match(res.detail, /^vagy version/);
+  assert.equal(res.version, RECOMMENDED_AGY_VERSION);
+});
+
+test('checkAgyBinary: version bands (< 1.2.6 fail, 1.2.6..<1.5.9 warn, >= 1.5.9 pass)', async () => {
+  assert.equal(MIN_AGY_VERSION, '1.2.6');
+  assert.equal(RECOMMENDED_AGY_VERSION, '1.5.9');
+  const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
+  const at = (v) => checkAgyBinary({ env: { AGB_AGY_BIN: FAKE_AGY, FAKE_AGY_VERSION: v } });
+
+  const old = await at('1.2.5');
+  assert.equal(old.level, 'fail');
+  assert.equal(old.version, '1.2.5');
+
+  for (const v of ['1.2.6', '1.5.8']) {
+    const warn = await at(v);
+    assert.equal(warn.level, 'warn', v);
+    assert.equal(warn.version, v);
+    assert.match(warn.detail, /recommended >= v1\.5\.9; Orchestrator slugs auto-disabled/);
+    assert.match(warn.fix, /Upgrade agy to >= 1\.5\.9 for Orchestrator \(Carbon\/Argon\) support\./);
+  }
+
+  for (const v of ['1.5.9', '1.6.0']) {
+    const pass = await at(v);
+    assert.equal(pass.level, 'pass', v);
+    assert.equal(pass.version, v);
+    assert.equal(pass.fix, null);
+  }
+});
+
+test('checkHookLogDir: pass when healthy, warn on marker or symlinked log dir/file', () => {
+  const home = mkdtempSync(join(tmpdir(), 'agb-hooklog-'));
+  try {
+    const cli = join(home, '.gemini', 'antigravity-cli');
+    const logDir = join(cli, 'plugin_data', 'antigravity-booster', 'logs');
+    mkdirSync(logDir, { recursive: true });
+    assert.deepEqual(checkHookLogDir({ env: {}, home }), { name: 'Hook audit log', level: 'pass', detail: 'healthy', fix: null });
+
+    const marker = join(cli, '.agb-hook-log-degraded');
+    writeFileSync(marker, '');
+    const degraded = checkHookLogDir({ env: {}, home });
+    assert.equal(degraded.level, 'warn');
+    assert.equal(degraded.detail, 'audit log degraded or symlinked');
+    assert.match(degraded.fix, /remove .*\.agb-hook-log-degraded/);
+    rmSync(marker);
+
+    const target = join(home, 'elsewhere.log');
+    writeFileSync(target, '');
+    symlinkSync(target, join(logDir, 'hooks.log'));
+    assert.equal(checkHookLogDir({ env: {}, home }).level, 'warn');
+    rmSync(join(logDir, 'hooks.log'));
+
+    const realLogs = join(home, 'real-logs');
+    mkdirSync(realLogs);
+    rmSync(logDir, { recursive: true });
+    symlinkSync(realLogs, logDir);
+    assert.equal(checkHookLogDir({ env: {}, home }).level, 'warn');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('checkAgyBinary: fails when not found', async () => {

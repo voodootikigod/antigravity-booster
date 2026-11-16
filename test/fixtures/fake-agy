@@ -172,6 +172,8 @@ EOF
 fi
 
 prompt=""
+unknown_flag=""
+is_print_mode=""
 input_format=""
 output_format=""
 json_schema=""
@@ -189,8 +191,23 @@ for arg in "$@"; do
   elif [ "$prev" = "--conversation" ] || [ "$prev" = "-c" ]; then
     conversation_arg="$arg"
   fi
+  case "$prev" in
+    --print|--print-timeout|--model|--conversation|-c|--output-format|--input-format|--json-schema|--project|--add-dir|--effort) ;;
+    *)
+      case "$arg" in
+        --print|--print-timeout|--model|--conversation|--output-format|--input-format|--json-schema|--project|--add-dir|--effort|--sandbox|--disable-slash-commands|--version|--help) ;;
+        --*) unknown_flag="$arg" ;;
+      esac ;;
+  esac
+  case "$arg" in
+    --print|--input-format) is_print_mode=1 ;;
+  esac
   prev="$arg"
 done
+if [ -n "$is_print_mode" ] && [ -n "$unknown_flag" ]; then
+  echo "Error: unknown flag: $unknown_flag" >&2
+  exit 2
+fi
 if [ -n "$input_format" ] && [ "$input_format" != "text" ] && [ "$input_format" != "stream-json" ]; then
   echo "Error: invalid --input-format '$input_format' (expected text or stream-json)" >&2
   exit 2
@@ -639,6 +656,61 @@ EOF
         else
           echo "TICKET-DONE"
         fi
+        exit 0 ;;
+      # signal-always: the agy process kills itself with SIGKILL on every build.
+      signal-always)
+        kill -KILL $$ ;;
+      # model-unavailable-once: first build hits structured 404, second behaves.
+      model-unavailable-once)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        if [ "$n" -lt 1 ]; then
+          echo "AGY_ERROR: {\"code\":404,\"status\":\"NOT_FOUND\",\"message\":\"unknown model: fake\"}" >&2
+          exit 1
+        fi
+        echo "did the work" > "${tid:-out}.txt"
+        echo '{"type":"tool_call","name":"edit_file","parameters":{"Target":"echo TICKET-BLOCKED: stuck"}}'
+        echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
+        exit 0 ;;
+      # model-unavailable-twice: the first two builds hit a structured 404
+      # (unknown model) on stderr and exit 1; the third behaves.
+      model-unavailable-twice)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        if [ "$n" -lt 2 ]; then
+          echo "AGY_ERROR: {\"code\":404,\"status\":\"NOT_FOUND\",\"message\":\"unknown model: fake\"}" >&2
+          exit 1
+        fi
+        echo "did the work" > "${tid:-out}.txt"
+        if [ "$output_format" = "stream-json" ]; then
+          echo '{"type":"step_update","step":1,"action":"model-good"}'
+          echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
+        else
+          echo "TICKET-DONE"
+        fi
+        exit 0 ;;
+      # blocked-ratelimit-good: strike 1 blocks (records a conversation id),
+      # the next build is rate limited (structured 429 on stderr, exit 1), and
+      # the one after behaves.
+      blocked-ratelimit-good)
+        count_file="$FAKE_STATE_DIR/builds"
+        n=$(cat "$count_file" 2>/dev/null || echo 0)
+        echo $((n + 1)) > "$count_file"
+        if [ "$n" -eq 0 ]; then
+          echo '{"type":"step_update","step":1,"action":"blocked"}'
+          echo '{"type":"result","status":"ERROR","exit_code":1'$conv_field'}'
+          exit 0
+        fi
+        if [ "$n" -eq 1 ]; then
+          echo "AGY_ERROR: {\"code\":429,\"status\":\"RESOURCE_EXHAUSTED\"}" >&2
+          echo "exiting after agy shutdown" >&2
+          exit 1
+        fi
+        echo "did the work" > "${tid:-out}.txt"
+        echo '{"type":"step_update","step":1,"action":"ratelimit-good"}'
+        echo '{"type":"result","status":"SUCCESS","exit_code":0'$conv_field'}'
         exit 0 ;;
       # rail-then-good: strike 1 violates the rail, strike 2 behaves —
       # proves the strike-2 worktree was reset (needs FAKE_STATE_DIR).
