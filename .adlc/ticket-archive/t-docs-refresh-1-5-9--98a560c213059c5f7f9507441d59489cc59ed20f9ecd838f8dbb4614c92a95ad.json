@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T03:51:08.875Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "dd23eea65a6aa86278038e90b9422b7967266bfb83f44cadcb5b94bb1728b283",
+    "ticketHash": "57a0b3366fc59cad5da8f88933b064c0c8b6f59e86b3c941ac9aa5f712e1b914",
+    "version": 1
+  },
   "body": "Update website/content/docs/ for the agy 1.5.9 and ADLC 1.13.0 modernization wave: (1) website/content/docs/concepts/pools-and-tiers.mdx and website/content/docs/concepts/prosecution.mdx to reflect the 22-slug catalog (Gemini 4 Carbon, Hydrogen, and Orchestrator entries alongside Argon, 3.8 Flash, Claude 5.5, and GPT-OSS 120B); (2) website/content/docs/internals/policy-guard.mdx to document PreToolUse handling of `swarm` (agy 1.5.5) and `run_workflow` (agy 1.5.9) across interactive and headless worker sessions; (3) website/content/docs/concepts/gate-evidence.mdx to document `adlc gate-manifest verify --require-entries` (@adlc/gate-manifest 1.13.0). Run `cd website && npm run gen` so website/generated/** stays in sync with any module export or doc-comment updates. Do not modify historical roadmap pages. Acceptance: `cd website && npm run gen && git diff --exit-code website/generated/` and `npm test` green.",
   "completed": true,
   "edges": [],

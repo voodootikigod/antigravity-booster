@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T03:51:07.383Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "03e8ba9a2ddf015b3ce8d99036455d37f057ab871d9894344805fcb172abf4d2",
+    "ticketHash": "1a14541715876eb89c3586606696aca48ea1cfdde1e6fbd3b27c49adc86fd823",
+    "version": 1
+  },
   "body": "In maintainer-skills/modernize/scripts/audit.mjs: (1) update Stage 1 `candidateModels` to include the 9 new agy 1.5.9 slugs (`gemini-4-carbon-low`, `gemini-4-carbon-medium`, `gemini-4-carbon-high`, `gemini-4-hydrogen-low`, `gemini-4-hydrogen-medium`, `gemini-4-hydrogen-high`, `gemini-4-hydrogen-xhigh`, `gemini-pro-orchestrator`, `gemini-pro-orchestrator-argon`); (2) update Stage 2 `pruningCandidates` so `lib/adlc-bridge.mjs`'s intentional fail-closed `LEGACY_TICKET_STORE` detector (`detectTicketStoreBackend` / `assertNoLegacyTicketStore`) and the intentional 1-line `@deprecated` `RETIRED_35_MAP` re-export alias are not misreported as unpruned legacy implementations, while still flagging if legacy dual-write backend code were reintroduced. Run `npm run skills:sync` so `.claude/skills/modernize/` and `.agents/skills/modernize/` match byte-for-byte (`npm run skills:check`). Add regression coverage in test/modernize-skill.test.mjs. Acceptance: `npm run skills:check && npm test` green.",
   "completed": true,
   "edges": [

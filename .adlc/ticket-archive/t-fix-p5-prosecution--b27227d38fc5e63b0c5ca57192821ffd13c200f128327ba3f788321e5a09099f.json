@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T03:51:09.276Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "035c23dff71496516bdb3fa62e7c56fbd1d7a7928a3351c8fe2e95d7b885feea",
+    "ticketHash": "0ac45037a7d75125d94db77ba25532a24530cf5800ab14bc538ce22365d7c19e",
+    "version": 1
+  },
   "body": "Resolve P5 adversarial review findings F2-F9, live agb review dogfooding bugs, and adlc hollow-test mutation survivors: (1) lib/agy.mjs pipes prompts > 24 KiB via --input-format text on stdin and catches synchronous spawn() errors cleanly; (2) lib/pools.mjs withLock only awaits Thenable callbacks so synchronous lock callbacks do not hold agb_pools_shared.lock across microtasks and self-deadlock withLockSync; (3) lib/review.mjs scopes quota-admission catch strictly to pools.acquire() and fails over across PROSECUTOR_CANDIDATES when default alternates hit quota_depleted (including models: []); (4) hooks/policy/evaluate.mjs + constants.mjs close bare-filename ScriptPath/Cwd stepOne checks, physicalResolve Cwd symlink/.. and empty-workspace fail-closed checks, swarm workspace enum validation, unanchored swarm relative-path denial, and bare root-rail checks in swarm/run_workflow; (5) lib/adlc-bridge.mjs adds vendor/adlc/dist/syntax-check-typescript.mjs to unsafeVendoredPath; (6) lib/preflight.mjs computes advisory plan.concurrencyCap from scheduleWidth bounded by backpressureWidth (leaving runtime concurrency governed by plan.caps per run.mdx) and lib/scheduler.mjs dispatch() propagates blocked status transitively to a fixed point across reverse-ordered DAG edges; (7) lib/scheduler.mjs runConsensusFix wraps --test-cmd and --rails (gate.build || testCmd) + --require-rails in the platform OS gate sandbox (bwrap / sandbox-exec) via wrapConsensusGateCommand unless AGB_SANDBOX_GATES=0, failing closed when unavailable; (8) test/fixtures/fake-agy defaults --version to 1.5.9 and test/modernize-skill.test.mjs runs against 1.5.9 + temp repo without polluting live modernize_provenance.jsonl; (9) scripts/check-bundle-externals.mjs normalizes CLI paths relative to ROOT; (10) sync policy-guard.mdx, audit.mjs mirrors, roadmap DAG, dist bundles, and mutation-killing tests. Acceptance: npm run build && npm run coverage:check && npx adlc hollow-test --base main green.",
   "completed": true,
   "edges": [],
