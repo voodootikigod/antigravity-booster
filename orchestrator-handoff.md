@@ -204,7 +204,7 @@ Live on `agy 1.5.9`: `--mode plan` + `--disable-slash-commands` warns `--mode pl
 ## 6. 5-Ticket ADLC Pipeline, Golden Cross-Column Matrix & Scope Table
 
 Execute sequentially (`T1 -> T2 -> T3 -> T4 -> T5`) on `feat/orchestrator-and-agy-1-5-9-hardening` **after PR #158 merges**:
-1. **Wave-Wide Frozen `rails` (`(⋃ rails) ∩ (⋃ scope) = ∅`):** Every ticket declares **`W_RAILS = ["lib/lock.mjs", "lib/gates.mjs", "lib/pools.mjs", "lib/merge.mjs", "bin/node-launcher.sh", ".github/workflows/**"]`**.
+1. **Wave-Wide Frozen `rails` (`(⋃ rails) ∩ (⋃ scope) = ∅`):** Every ticket declares **`W_RAILS = ["lib/lock.mjs", "lib/gates.mjs", "lib/pools.mjs", "lib/worktrees.mjs", "bin/node-launcher.sh", ".github/workflows/**"]`**.
 2. **End-to-End Cross-Column Golden Regression Suite Across Shared Source Edits:**
    - Every dedicated test file exercises full public entrypoints (`evaluate()` across all 5 context columns in `T1`–`T3`, and `runPlan()` / `scheduler.mjs` in `T4`–`T5`), is omitted from all subsequent tickets' `scope` (`PreToolUse` + `verifyScopeAndAntiNoOp` forbid edits), and runs mandatorily via full `npm test` + `adlc hollow-test --test-cmd "npm test" --base main` (`0` survivors) on every ticket.
 
