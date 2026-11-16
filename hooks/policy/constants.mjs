@@ -8,6 +8,7 @@ export const READ_ONLY_TOOLS = new Set([
   'list_resources', 'read_resource', 'ask_question',
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',
   'find_by_name',
+  'list_dir', 'list_permissions', 'search_in_file', 'wait', 'wait_5_seconds',
 ]);
 
 export const ORCHESTRATION_TOOLS = new Set([
@@ -24,6 +25,14 @@ export const SWARM_PROSE_KEYS = new Set(['brief', 'title', 'tasks', 'toolAction'
 export const SWARM_META_KEYS = new Set(['action', 'workspace', 'model', 'name', 'fork']);
 export const SWARM_WORKSPACE_MODES = new Set(['inherit', 'share', 'branch']);
 export const WORKFLOW_PROSE_KEYS = new Set(['Script', 'Description', 'toolAction', 'toolSummary']);
+
+export const STDIN_TOOLS = new Set(['send_command_input']);
+export const SUBAGENT_TOOLS = new Set(['invoke_subagent', 'define_subagent', 'manage_subagents']);
+export const SUBAGENT_PROSE_KEYS = new Set([
+  'Prompt', 'prompt', 'SystemPrompt', 'systemprompt',
+  'Description', 'description', 'Role', 'role',
+  'toolAction', 'toolaction', 'toolSummary', 'toolsummary',
+]);
 
 // agy control steps with no filesystem, shell or network effect. `finish`
 // (CORTEX_STEP_TYPE_FINISH) ends the turn and, under --json-schema, carries the
@@ -42,8 +51,14 @@ export const BOOSTER_MCP_TOOLS = new Set([
 export const PATH_MUTATING_TOOLS = new Set([
   'run_command', 'write_to_file', 'write_file', 'replace_file_content', 'multi_replace_file_content',
   'edit_file', 'create_file', 'save_file', 'delete_file', 'move', 'delete_directory',
-  'edit_notebook', 'write_blob',
+  'edit_notebook', 'notebook_edit', 'write_blob',
 ]);
+
+export const SED_ALLOWED_KEYS = new Set([
+  'target_file', 'targetfile', 'expressions', 'file_content', 'filecontent', 'toolaction', 'toolsummary',
+]);
+
+export const NOTEBOOK_EXEC_TOOLS = new Set(['notebook_execution']);
 
 // Step 1 inspection: which argument keys carry a path for read tools.
 export const READ_TOOL_PATH_SCHEMAS = {
@@ -59,6 +74,23 @@ export const READ_TOOL_PATH_SCHEMAS = {
   code_search: ['SearchPath', 'DirectoryPath', 'path'],
   file_search: ['SearchPath', 'DirectoryPath', 'path'],
   find_by_name: ['SearchPath', 'DirectoryPath', 'path', 'dir'],
+  list_dir: ['DirectoryPath', 'DirAbsolutePath', 'AbsolutePath', 'path', 'dir'],
+  list_permissions: ['paths', 'path'],
+  search_in_file: ['paths', 'path', 'DirectoryPath', 'SearchPath'],
+};
+
+// Folded (lowercase) path keys of the read tools that REQUIRE a path argument.
+export const REQUIRED_READ_PATH_KEYS = {
+  view_file: ['absolutepath', 'filepath', 'path'],
+  view_file_outline: ['absolutepath', 'filepath', 'path'],
+  read_file: ['path', 'absolutepath', 'filepath'],
+  read_notebook: ['notebookpath', 'absolutepath', 'path'],
+  read_browser_page: ['url'],
+  read_url_content: ['url'],
+  list_dir: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
+  list_directory: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
+  list_permissions: ['paths', 'path'],
+  search_in_file: ['paths', 'path', 'directorypath', 'searchpath'],
 };
 
 // Gate 1: required path keys for file-mutating tools (probed agy 1.2.16).
@@ -74,6 +106,7 @@ export const TOOL_PATH_SCHEMAS = {
   move: { required: ['source', 'destination'] },
   delete_directory: { required: ['directoryPath'] },
   edit_notebook: { required: ['notebookPath'] },
+  notebook_edit: { required: ['NotebookPath'] },
   write_blob: { required: ['targetPath'] },
 };
 
@@ -82,6 +115,7 @@ export const EXCLUDED_CONTENT_KEYS = new Set([
   'TargetContent', 'ReplacementContent', 'Target', 'Replacement', 'CodeContent', 'Content',
   'Instruction', 'Description', 'ArtifactMetadata', 'Summary', 'summary', 'prompt', 'code', 'text',
   'explanation', 'message', 'comment',
+  'CellContent', 'NewSource', 'Source', 'Cells', 'CellId', 'CellID', 'EditMode', 'CellType',
   'toolAction', 'toolSummary', 'WaitMsBeforeAsync',
 ]);
 

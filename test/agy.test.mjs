@@ -380,4 +380,47 @@ test('runAgy: synchronous spawn() failure resolves { ok: false, kind: "spawn" } 
   assert.match(res.error, /^spawn:/);
 });
 
+test('runAgy builder: omits nested --sandbox inside outer bwrap_pid containment so agy 1.5.9 run_command does not hit nested userns EPERM', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bwrap-nosandbox-'));
+  const fakeBinDir = mkdtempSync(join(tmpdir(), 'agb-bwrap-bin-'));
+  const argvLog = join(dir, 'bwrap-argv.json');
+  const prevMech = process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+  const prevPath = process.env.PATH;
+  try {
+    const fakeAgy = join(fakeBinDir, 'agy');
+    writeFileSync(fakeAgy, '#!/bin/sh\nprintf \'{"event":"result","result":{"status":"SUCCESS","exit_code":0,"response":"ok"}}\\n\'\n', { mode: 0o755 });
+    const fakeBwrap = join(fakeBinDir, 'bwrap');
+    writeFileSync(
+      fakeBwrap,
+      `#!/usr/bin/env node\nconst fs = require('node:fs');\nfs.writeFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2)));\nconsole.log('{"event":"result","result":{"status":"SUCCESS","exit_code":0,"response":"ok"}}');\n`,
+      { mode: 0o755 },
+    );
+    process.env.AGB_MOCK_CONTAINMENT_MECHANISM = 'bwrap_pid';
+    process.env.PATH = `${fakeBinDir}:${prevPath || ''}`;
+    const res = await runAgy({
+      bin: fakeAgy,
+      model: 'gemini-4-argon-high',
+      prompt: 'build check',
+      cwd: dir,
+      repo: dir,
+      role: 'builder',
+      sandbox: true,
+      outputFormat: 'stream-json',
+    });
+    assert.equal(res.ok, true, res.error);
+    const bwrapArgs = JSON.parse(readFileSync(argvLog, 'utf8'));
+    const sepIdx = bwrapArgs.indexOf('--');
+    assert.ok(sepIdx !== -1, 'bwrap argv must include -- separator');
+    const innerArgv = bwrapArgs.slice(sepIdx + 1);
+    assert.equal(innerArgv.includes('--sandbox'), false, `inner agy argv inside bwrap must omit --sandbox, got: ${JSON.stringify(innerArgv)}`);
+  } finally {
+    if (prevMech === undefined) delete process.env.AGB_MOCK_CONTAINMENT_MECHANISM;
+    else process.env.AGB_MOCK_CONTAINMENT_MECHANISM = prevMech;
+    if (prevPath === undefined) delete process.env.PATH;
+    else process.env.PATH = prevPath;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(fakeBinDir, { recursive: true, force: true });
+  }
+});
+
 

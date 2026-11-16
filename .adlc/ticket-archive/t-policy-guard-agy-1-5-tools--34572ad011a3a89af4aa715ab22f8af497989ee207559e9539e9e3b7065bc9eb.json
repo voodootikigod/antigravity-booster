@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T03:51:07.755Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "2d1f9ef34d3c75986eb03df1ff6e9f5e84ad5bee186139387c94e28fb05bc621",
+    "ticketHash": "c88c9d42ea17b2495e575a013066f9ee59e65a8e8c41f4155547f9f351f8301d",
+    "version": 1
+  },
   "body": "Update hooks/policy/constants.mjs and hooks/policy/evaluate.mjs to handle the two new agy 1.5.x native tools cleanly: (1) `swarm` (agy 1.5.5): add 'swarm' to ORCHESTRATION_TOOLS; in headless agb worker sessions (`ctx.headless`, i.e. workerTicket or readonly), ALWAYS deny `swarm` so workers cannot spawn unmanaged multi-agent swarms outside PoolSet quota leases; in interactive sessions (`!ctx.headless`), exclude free-text prose parameters (`brief`, `title`, `tasks`) from `stepOne` path extraction (matching `invoke_subagent.Prompt` / `send_message.Message`) so prose mentioning railed files does not false-deny, while still denying protected-root or rail-path violations in any path-bearing parameters. (2) `run_workflow` (agy 1.5.9): add explicit `evaluateWorkflowTool` handling before `evaluateUnknownTool`; always deny in `ctx.headless`; inspect `ScriptPath`, `Cwd`, and `Args` through `stepOne` and active-rail checks (denying any protected root or frozen rail target); in interactive sessions with `ctx.activeRails`, return `ask` (aligning `run_workflow` with `python -c` in hooks/policy/shell.mjs rather than hard-denying), and `pass` in plain non-ADLC repos. Run `npm run build` to regenerate dist/hooks/pre-tool-use.bundle.mjs and dist/*.mjs. Add comprehensive tests in test/pre-tool-use.test.mjs covering interactive active-rail, plain-repo, headless builder worker, readonly reviewer worker, and rail/protected-root path injection cases for both `swarm` and `run_workflow`. Acceptance: `npm run build && npm test` green.",
   "completed": true,
   "edges": [

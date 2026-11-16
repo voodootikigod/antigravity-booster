@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   ALL_MODELS,
+  FRONTIER_NO_ORCHESTRATOR,
   MODELS,
   MODEL_ALIASES,
   RETIRED_MODEL_MAP,
@@ -71,15 +72,38 @@ describe('models-live-catalog: MODELS matches agy 1.5.9', () => {
     assert.equal(poolOf('gemini-3.8-flash-high'), 'gemini-flash');
   });
 
-  it('excludes orchestrator coordinator personas from leaf builder tiers and prosecutors', () => {
-    for (const [tier, list] of Object.entries(TIER_CANDIDATES)) {
-      for (const m of list) assert.ok(!m.includes('orchestrator'), `${tier} must not schedule orchestrator ${m}`);
+  it('places Orchestrator slugs on frontier builder tier while excluding them from cheap/mid, prosecutors, and roles', () => {
+    assert.deepEqual(TIER_CANDIDATES.frontier, [
+      'gemini-pro-orchestrator',
+      'claude-sonnet-5-5-high',
+      'gemini-pro-orchestrator-argon',
+      'gemini-4-argon-high',
+      'gemini-4-carbon-high',
+      'claude-opus-5-5-high',
+    ]);
+    assert.deepEqual(FRONTIER_NO_ORCHESTRATOR, [
+      'gemini-4-argon-high',
+      'claude-sonnet-5-5-high',
+      'gemini-4-carbon-high',
+      'claude-opus-5-5-high',
+    ]);
+    assert.equal(tierCandidates('frontier', 'gemini').length, 4);
+    for (const tier of ['cheap', 'mid']) {
+      for (const m of TIER_CANDIDATES[tier]) assert.ok(!m.includes('orchestrator'), `${tier} must not schedule orchestrator ${m}`);
+    }
+    for (const m of FRONTIER_NO_ORCHESTRATOR) {
+      assert.ok(!m.includes('orchestrator'), `FRONTIER_NO_ORCHESTRATOR must not schedule orchestrator ${m}`);
     }
     for (const m of Object.values(PROSECUTORS)) {
       assert.ok(!m.includes('orchestrator'), `PROSECUTORS must not schedule orchestrator ${m}`);
     }
     for (const list of Object.values(PROSECUTOR_CANDIDATES)) {
       for (const m of list) assert.ok(!m.includes('orchestrator'), `PROSECUTOR_CANDIDATES must not schedule orchestrator ${m}`);
+    }
+    for (const value of Object.values(ROLE_MODELS)) {
+      for (const m of [value].flat()) {
+        assert.ok(!resolveModelSlug(m).includes('orchestrator'), `ROLE_MODELS must not schedule orchestrator ${m}`);
+      }
     }
   });
 });
@@ -263,7 +287,7 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     assert.deepEqual(counts, {
       'cheap+gemini': 2, 'cheap+claude': 0, 'cheap+claude-gpt': 0, 'cheap+gpt-oss': 0,
       'mid+gemini': 4, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
-      'frontier+gemini': 2, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
+      'frontier+gemini': 4, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
     });
   });
 

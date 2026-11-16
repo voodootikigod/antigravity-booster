@@ -18,6 +18,8 @@ import {
   runPerf16TicketScaleScenario,
   runAccCrossModelProsecutionScenario,
   runAccMechanicalSafetyGatesScenario,
+  runPerfOrchestratorFrontierScenario,
+  runAccAgy159HardeningScenario,
 } from './scenarios.mjs';
 import {
   runLivePolicyCorpusBenchmark,
@@ -30,6 +32,13 @@ import {
   runLiveSchedulerDagBenchmark,
   runLivePolicyFuzzerBenchmark,
 } from './subsystem-bench.mjs';
+import {
+  runLiveAgy159PolicyMatrixBenchmark,
+  runLiveHookRunnerSecurityBenchmark,
+  runLiveAgy159PrintAndSandboxBenchmark,
+  runLiveOrchestratorSchedulerBenchmark,
+  computeLiveAgy159HazardRates,
+} from './v13-enhancements-bench.mjs';
 import { evaluatePayload } from '../hooks/policy/evaluate.mjs';
 import { writeAdlcTickets } from '../lib/adlc-bridge.mjs';
 import { parseValidateOutput } from '../lib/migrate.mjs';
@@ -188,7 +197,14 @@ export function loadBaseline(baselinePath = join(ROOT, 'evals', 'baseline.json')
 export function compareAgainstBaseline(results, baseline = loadBaseline()) {
   const r = baseline.ratchets;
   const ref = baseline.referenceMetrics;
-  const { perf8, perf16, accProsecution, accSafetyGates } = results.scenarios;
+  const {
+    perf8,
+    perf16,
+    accProsecution,
+    accSafetyGates,
+    perfOrchestrator,
+    accAgy159Hardening,
+  } = results.scenarios;
   const {
     policyCorpus,
     hookLatency,
@@ -197,6 +213,10 @@ export function compareAgainstBaseline(results, baseline = loadBaseline()) {
     prosecutorAndReview,
     schedulerDag,
     policyFuzzer,
+    v13PolicyMatrix,
+    v13HookSecurity,
+    v13PrintAndSandbox,
+    v13OrchestratorScheduler,
   } = results.liveBenchmarks;
 
   const launcherOverheadP50Ms =
@@ -231,6 +251,22 @@ export function compareAgainstBaseline(results, baseline = loadBaseline()) {
       hookLatency.tiers.hookRunnerEndToEndMs.p50 <= r.maxHookRunnerE2eP50Ms,
     orchestratorOverheadLatency:
       orchestratorOverhead.totalOverheadMs <= r.maxOrchestratorOverheadMs,
+    v13Policy60ToolsCovered:
+      v13PolicyMatrix.tools60Covered >= r.minV13Policy60ToolsCovered,
+    v13PolicyZeroAsk:
+      v13PolicyMatrix.headlessAskCount <= r.maxV13PolicyAskCount,
+    v13PolicyAdvRecall:
+      v13PolicyMatrix.adversarialRecall >= r.minV13PolicyAdvRecall,
+    v13PolicyFalsePositives:
+      v13PolicyMatrix.benignFalsePositiveRate <= r.maxV13PolicyFalsePositiveRate,
+    v13PolicyLatency:
+      v13PolicyMatrix.latencyMs.p95 <= r.maxV13PolicyP95Ms,
+    v13HookSecurityPassRate:
+      v13HookSecurity.passRate >= r.minV13HookSecurityPassRate,
+    v13PrintAndSandboxPassRate:
+      v13PrintAndSandbox.passRate >= r.minV13PrintAndSandboxPassRate,
+    v13OrchestratorSchedulerPassRate:
+      v13OrchestratorScheduler.passRate >= r.minV13OrchestratorSchedulerPassRate,
   };
 
   const deltas = {
@@ -249,6 +285,14 @@ export function compareAgainstBaseline(results, baseline = loadBaseline()) {
       hookLatency.tiers.hookRunnerEndToEndMs.p50 - ref.hookRunnerE2eP50Ms,
     orchestratorOverheadDeltaMs:
       orchestratorOverhead.totalOverheadMs - ref.orchestratorOverheadMs,
+    perfOrchSpeedupVsNativeDelta:
+      perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans - ref.perfOrchSpeedupVsNative,
+    perfOrchSpeedupVsBestPracticesDelta:
+      perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans - ref.perfOrchSpeedupVsBestPractices,
+    perfOrchSpeedupVsV12Delta:
+      perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans - ref.perfOrchSpeedupVsV12,
+    v13PolicyInProcessP50DeltaMs:
+      v13PolicyMatrix.latencyMs.p50 - ref.v13PolicyInProcessP50Ms,
   };
 
   const failedChecks = Object.entries(checks)
@@ -278,6 +322,7 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
   const perf16 = runPerf16TicketScaleScenario({ trials, seed: seed + 1 });
   const accProsecution = runAccCrossModelProsecutionScenario({ trials, seed: seed + 2 });
   const accSafetyGates = runAccMechanicalSafetyGatesScenario({ trials, seed: seed + 3 });
+  const perfOrchestrator = runPerfOrchestratorFrontierScenario({ trials, seed: seed + 4 });
   const liveProbes = runLiveMechanicalProbes({ repoRoot });
   const policyCorpus = runLivePolicyCorpusBenchmark();
   const hookLatency = runLiveHookLatencyBenchmark({ repoRoot });
@@ -286,6 +331,20 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
   const prosecutorAndReview = await runLiveProsecutorAndReviewBenchmark();
   const schedulerDag = await runLiveSchedulerDagBenchmark();
   const policyFuzzer = runLivePolicyFuzzerBenchmark({ seed });
+  const v13PolicyMatrix = runLiveAgy159PolicyMatrixBenchmark();
+  const v13HookSecurity = runLiveHookRunnerSecurityBenchmark({ repoRoot });
+  const v13PrintAndSandbox = await runLiveAgy159PrintAndSandboxBenchmark();
+  const v13OrchestratorScheduler = await runLiveOrchestratorSchedulerBenchmark();
+  const liveV13Rates = computeLiveAgy159HazardRates({
+    policyMatrix: v13PolicyMatrix,
+    hookSecurity: v13HookSecurity,
+    printAndSandbox: v13PrintAndSandbox,
+  });
+  const accAgy159Hardening = runAccAgy159HardeningScenario({
+    trials,
+    seed: seed + 5,
+    liveV13Rates,
+  });
 
   const liveBenchmarks = {
     policyCorpus,
@@ -295,10 +354,21 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
     prosecutorAndReview,
     schedulerDag,
     policyFuzzer,
+    v13PolicyMatrix,
+    v13HookSecurity,
+    v13PrintAndSandbox,
+    v13OrchestratorScheduler,
   };
 
   const baselineRatchet = compareAgainstBaseline({
-    scenarios: { perf8, perf16, accProsecution, accSafetyGates },
+    scenarios: {
+      perf8,
+      perf16,
+      accProsecution,
+      accSafetyGates,
+      perfOrchestrator,
+      accAgy159Hardening,
+    },
     liveBenchmarks,
   });
 
@@ -323,6 +393,22 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
     accSafetyEscapeReductionStatSig: accSafetyGates.overall.escapeReductionTest.pValue < 0.0001,
     accSafetyEscapeReductionVsBestPracticesStatSig:
       accSafetyGates.overall.escapeReductionVsBestPracticesTest.pValue < 0.0001,
+    perfOrchSpeedupVsNativeGt1_35x:
+      perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans >= 1.35,
+    perfOrchSpeedupVsBestPracticesGt1_25x:
+      perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans >= 1.25,
+    perfOrchSpeedupVsV12Gt1_05x:
+      perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans >= 1.05,
+    perfOrchStatSigVsBestPractices:
+      perfOrchestrator.comparisons.v13VsBestPractices.mannWhitney.pValue < 0.0001,
+    perfOrchStatSigVsV12:
+      perfOrchestrator.comparisons.v13VsV12Ablation.mannWhitney.pValue < 0.0001,
+    accAgy159BlockRate100Pct:
+      accAgy159Hardening.overall.agbV13BlockRate.p === 1.0,
+    accAgy159StatSigVsBestPractices:
+      accAgy159Hardening.overall.escapeReductionVsBestPractices.pValue < 0.0001,
+    accAgy159StatSigVsV12:
+      accAgy159Hardening.overall.escapeReductionVsV12.pValue < 0.0001,
     liveMechanicalProbesPass: liveProbes.ok,
     livePolicyCorpusRecall100Pct: policyCorpus.adversarialRecall === 1.0,
     livePolicyCorpusZeroFalsePositives: policyCorpus.benignFalsePositiveRate === 0.0,
@@ -332,6 +418,10 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
     liveProsecutorAndReviewPass: prosecutorAndReview.ok,
     liveSchedulerDagPass: schedulerDag.ok,
     livePolicyFuzzerPass: policyFuzzer.ok,
+    liveV13PolicyMatrixPass: v13PolicyMatrix.ok,
+    liveV13HookSecurityPass: v13HookSecurity.ok,
+    liveV13PrintAndSandboxPass: v13PrintAndSandbox.ok,
+    liveV13OrchestratorSchedulerPass: v13OrchestratorScheduler.ok,
     baselineRegressionRatchetPass: baselineRatchet.ok,
   };
 
@@ -350,6 +440,8 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
       perf16,
       accProsecution,
       accSafetyGates,
+      perfOrchestrator,
+      accAgy159Hardening,
     },
     liveProbes,
     liveBenchmarks,
@@ -364,7 +456,14 @@ const pct = (n, d = 1) => `${Number(n * 100).toFixed(d)}%`;
  * Format the evaluation results as a publication-ready Markdown benchmark report.
  */
 export function renderMarkdownReport(results) {
-  const { perf8, perf16, accProsecution, accSafetyGates } = results.scenarios;
+  const {
+    perf8,
+    perf16,
+    accProsecution,
+    accSafetyGates,
+    perfOrchestrator,
+    accAgy159Hardening,
+  } = results.scenarios;
   const s8Serial = perf8.arms.straightAgySerial.latencySec;
   const s8Single = perf8.arms.straightAgySinglePool.latencySec;
   const s8Bp = perf8.arms.rawAgyBestPractices.latencySec;
@@ -380,6 +479,11 @@ export function renderMarkdownReport(results) {
   const a1Agb = accProsecution.arms.agbCrossModelProsecutorFleet;
 
   const a2 = accSafetyGates;
+  const sOrchNat = perfOrchestrator.arms.straightAgy159NativeOrch.latencySec;
+  const sOrchBp = perfOrchestrator.arms.rawAgy159BestPractices.latencySec;
+  const sOrchV12 = perfOrchestrator.arms.agbV12NoOrchestrator.latencySec;
+  const sOrchV13 = perfOrchestrator.arms.agbV13OrchestratorWithBreaker.latencySec;
+  const a159 = accAgy159Hardening;
 
   // Compute Pareto series for Escaped Defects (Acc-1) sorted descending by Raw agy Best Practices escapes
   const defectParetoRows = Object.values(accProsecution.perClass)
@@ -464,6 +568,8 @@ export function renderMarkdownReport(results) {
 | **Defect Detection Recall (500 Seeded Defects)** | ${pct(a1Builder.recall.p)} (No review)<br>${pct(a1Same.recall.p)} (Same-model) | ${pct(a1Bp.recall.p)} (\`adversarial-reviewer\` subagent) | **${pct(a1Agb.recall.p)}** (Cross-family prosecutor + 4-lens fleet) | **+${fmt((a1Agb.recall.p - a1Bp.recall.p) * 100, 1)} pp recall** vs. Best Practices<br>**+${fmt((a1Agb.recall.p - a1Same.recall.p) * 100, 1)} pp** vs. Same-Model | $z = ${fmt(accProsecution.comparisons.recallAgbVsBestPractices.z, 2)}, p ${formatPValue(accProsecution.comparisons.recallAgbVsBestPractices.pValue)}$ |
 | **Post-Review Defect Escape Rate** | ${pct(a1Builder.escapeRate.p)} (No review)<br>${pct(a1Same.escapeRate.p)} (Same-model) | ${pct(a1Bp.escapeRate.p)} | **${pct(a1Agb.escapeRate.p)}** | **-${pct(accProsecution.comparisons.escapeRateAgbVsBestPractices.relativeReduction)} fewer escaped defects** vs. Best Practices<br>**-${pct(accProsecution.comparisons.escapeRateAgbVsSameModel.relativeReduction)}** vs. Same-Model | $z = ${fmt(accProsecution.comparisons.escapeRateAgbVsBestPractices.z, 2)}, p ${formatPValue(accProsecution.comparisons.escapeRateAgbVsBestPractices.pValue)}$ |
 | **Safety Hazard Prevention (Rails, Scope, Mutants)** | ${pct(a2.overall.promptOnlyBlockRate.p)} blocked (Prompt-only) | ${pct(a2.overall.bestPracticesBlockRate.p)} blocked (\`AGENTS.md\` + review) | **${pct(a2.overall.agbBlockRate.p)} blocked** (**100%** on rails & scope) | **-${pct(a2.overall.escapeReductionVsBestPracticesTest.relativeReduction)} hazard escapes** vs. Best Practices<br>**-${pct(a2.overall.escapeReductionTest.relativeReduction)}** vs. Naive | $z = ${fmt(a2.overall.escapeReductionVsBestPracticesTest.z, 2)}, p ${formatPValue(a2.overall.escapeReductionVsBestPracticesTest.pValue)}$ |
+| **v1.3 Frontier Orchestrator DAG Simulation (${perfOrchestrator.totalFrontierDispatches.toLocaleString('en-US')} Dispatches)** | ${fmt(sOrchNat.mean)}s / ${fmt(sOrchNat.p95)}s (\`agy 1.5.9\` Native Orch) | ${fmt(sOrchBp.mean)}s / ${fmt(sOrchBp.p95)}s (\`agy 1.5.9\` Best Practices)<br>${fmt(sOrchV12.mean)}s / ${fmt(sOrchV12.p95)}s (\`agb v1.2\`) | **${fmt(sOrchV13.mean)}s / ${fmt(sOrchV13.p95)}s** (\`agb v1.3\` + Breaker) | **${fmt(perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans, 2)}x faster** vs. Best Practices<br>**${fmt(perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans, 2)}x** vs. Native · **${fmt(perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans, 2)}x** vs. \`v1.2\` | $p ${formatPValue(perfOrchestrator.comparisons.v13VsBestPractices.mannWhitney.pValue)}$ (Mann-Whitney $U$) |
+| **v1.3 \`agy 1.5.9\` Hardening (Live-Coupled \`v1.3\` vs. Parametric Baselines, 600 Hazards)** | ${pct(a159.overall.nativeBlockRate.p)} (${a159.overall.nativeBlocked}/600) | ${pct(a159.overall.bestPracticesBlockRate.p)} (${a159.overall.bestPracticesBlocked}/600)<br>${pct(a159.overall.agbV12BlockRate.p)} (\`agb v1.2\`: ${a159.overall.agbV12Blocked}/600) | **${pct(a159.overall.agbV13BlockRate.p)} (${a159.overall.agbV13Blocked}/600)** | **-${pct(a159.overall.escapeReductionVsBestPractices.relativeReduction)} escapes** vs. Best Practices<br>**-${pct(a159.overall.escapeReductionVsV12.relativeReduction)}** vs. \`agb v1.2\` | $z = ${fmt(a159.overall.escapeReductionVsBestPractices.z, 2)}$ (vs. BP) · $z = ${fmt(a159.overall.escapeReductionVsV12.z, 2)}$ (vs. \`v1.2\`), $p ${formatPValue(a159.overall.escapeReductionVsBestPractices.pValue)}$ |
 
 ---
 
@@ -664,6 +770,35 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 
 ---
 
+## 4b. v1.3 Performance & Ablation Benchmark (\`perf-orchestrator-frontier-resilience\`): Parametric Simulation of Cross-Family Orchestrator Routing & Per-Slug Circuit Breaker
+
+Parametric Monte Carlo simulation of a 12-ticket frontier-heavy architectural DAG ($N = 100$ runs $\\times 12$ complex multi-file tickets $= 1{,}200$ frontier dispatches across 3 waves of 4), modeling a \`25%\` Orchestrator \`--print\` harness fault-storm regime across Straight \`agy 1.5.9\` Native (\`swarm\` / single-session Orchestrator), Raw \`agy 1.5.9\` Best Practices (\`/plan\` + \`run_workflow\` / \`Workspace: 'share'\` + \`adversarial-reviewer\`), \`agb v1.2\` (\`FRONTIER_NO_ORCHESTRATOR\` ablation baseline), and \`agb v1.3\` (interleaved \`gemini-pro-orchestrator\` + \`claude-sonnet-5-5-high\` / \`claude-opus-5-5-high\` with the exact \`resolvedTickets >= 4 && builderFaultTickets / resolvedTickets >= 0.5\` per-slug circuit breaker; mechanical \`!gates.ok\` exclusion is verified directly against \`runPlan()\` in Section 6k):
+
+| Operating Arm (Parametric Model) | Mean Latency (s) | 95% Bootstrap CI (s) | Median P50 (s) | P95 Tail Latency (s) | Fault / Fixup Retries (1,200 Dispatches) | \`agb v1.3\` Speedup & Significance |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Straight \`agy 1.5.9\` Native (Single-Session Orchestrator / \`swarm\`)** | ${fmt(sOrchNat.mean)}s | [${fmt(sOrchNat.meanCi95[0])}s, ${fmt(sOrchNat.meanCi95[1])}s] | ${fmt(sOrchNat.median)}s | ${fmt(sOrchNat.p95)}s | ${perfOrchestrator.arms.straightAgy159NativeOrch.faultRetryCount} (${pct(perfOrchestrator.arms.straightAgy159NativeOrch.faultRetryRate.p)}) | **${fmt(perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans, 2)}x faster** ($d = ${fmt(perfOrchestrator.comparisons.v13VsNative.cohensD, 2)}, p ${formatPValue(perfOrchestrator.comparisons.v13VsNative.mannWhitney.pValue)}$) |
+| **Raw \`agy 1.5.9\` Best Practices (\`/plan\` + \`run_workflow\` + \`share\`)** | ${fmt(sOrchBp.mean)}s | [${fmt(sOrchBp.meanCi95[0])}s, ${fmt(sOrchBp.meanCi95[1])}s] | ${fmt(sOrchBp.median)}s | ${fmt(sOrchBp.p95)}s | ${perfOrchestrator.arms.rawAgy159BestPractices.faultRetryCount} (${pct(perfOrchestrator.arms.rawAgy159BestPractices.faultRetryRate.p)}) | **${fmt(perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans, 2)}x faster** ($d = ${fmt(perfOrchestrator.comparisons.v13VsBestPractices.cohensD, 2)}, p ${formatPValue(perfOrchestrator.comparisons.v13VsBestPractices.mannWhitney.pValue)}$) |
+| **\`agb v1.2\` Baseline (\`AGB_DISABLE_ORCHESTRATOR=1\` Ablation)** | ${fmt(sOrchV12.mean)}s | [${fmt(sOrchV12.meanCi95[0])}s, ${fmt(sOrchV12.meanCi95[1])}s] | ${fmt(sOrchV12.median)}s | ${fmt(sOrchV12.p95)}s | ${perfOrchestrator.arms.agbV12NoOrchestrator.reworkRetryCount} (${pct(perfOrchestrator.arms.agbV12NoOrchestrator.reworkRetryRate.p)}) | **${fmt(perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans, 2)}x faster** (**-${fmt(perfOrchestrator.comparisons.v13VsV12Ablation.p95ReductionPct, 1)}% P95**, $p ${formatPValue(perfOrchestrator.comparisons.v13VsV12Ablation.mannWhitney.pValue)}$) |
+| **\`agb v1.3\` (Interleaved Orchestrator + Per-Slug Circuit Breaker)** | **${fmt(sOrchV13.mean)}s** | **[${fmt(sOrchV13.meanCi95[0])}s, ${fmt(sOrchV13.meanCi95[1])}s]** | **${fmt(sOrchV13.median)}s** | **${fmt(sOrchV13.p95)}s** | **${perfOrchestrator.arms.agbV13OrchestratorWithBreaker.retryCount} (${pct(perfOrchestrator.arms.agbV13OrchestratorWithBreaker.retryRate.p)})** | **${perfOrchestrator.arms.agbV13OrchestratorWithBreaker.breakerTrips} storm demotions after $\\ge 4$ resolved tickets** |
+
+---
+
+## 4c. v1.3 Security & Runtime Hardening Benchmark (\`acc-agy-1-5-9-surface-and-print-hardening\`): Live-Coupled \`v1.3\` vs. Parametric Baselines (600 Hazards)
+
+Evaluates interception across the 6 security, sandbox, and silent-failure classes exposed by \`agy 1.5.9\` ($N = 100$ trials $\\times 6$ classes $= 600$ hazards). The three baseline arms (\`Straight agy 1.5.9 Native\`, \`Raw agy 1.5.9 Best Practices\`, and \`agb v1.2 Pre-Hardening\`) are parametric capability models, whereas \`agb v1.3\`'s per-class interception probabilities (\`rateSource: "${a159.v13RateSource}"\`) are derived directly from the live production-module benchmarks in Sections 6h–6j (\`computeLiveAgy159HazardRates\`):
+
+| \`agy 1.5.9\` Hazard Class | Straight \`agy 1.5.9\` Native (Parametric) | Raw \`agy 1.5.9\` Best Practices (Parametric) | \`agb v1.2\` Pre-Hardening (Parametric) | \`agb v1.3\` Hardened (Live-Coupled) | $z$-Test (\`v1.3\` vs. Best Practices / vs. \`v1.2\`) |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+${Object.values(a159.perClass)
+  .map(
+    (c) =>
+      `| **${c.label}** | ${pct(c.nativeRate.p)} (${c.nativeBlocked}/100) | ${pct(c.bestPracticesRate.p)} (${c.bestPracticesBlocked}/100) | ${pct(c.agbV12Rate.p)} (${c.agbV12Blocked}/100) | **${pct(c.agbV13Rate.p)} (${c.agbV13Blocked}/100)** | $z_{\\text{BP}} = ${fmt(c.v13VsBestPracticesTest.z, 2)}$ · $z_{\\text{v1.2}} = ${fmt(c.v13VsV12Test.z, 2)}, p ${formatPValue(c.v13VsBestPracticesTest.pValue)}$ |`,
+  )
+  .join('\n')}
+| **Combined \`agy 1.5.9\` Hardening ($N = 600$)** | ${pct(a159.overall.nativeBlockRate.p)} (${a159.overall.nativeBlocked}/600) | ${pct(a159.overall.bestPracticesBlockRate.p)} (${a159.overall.bestPracticesBlocked}/600) | ${pct(a159.overall.agbV12BlockRate.p)} (${a159.overall.agbV12Blocked}/600) | **${pct(a159.overall.agbV13BlockRate.p)} (${a159.overall.agbV13Blocked}/600)** | **$z_{\\text{BP}} = ${fmt(a159.overall.escapeReductionVsBestPractices.z, 2)}$ · $z_{\\text{v1.2}} = ${fmt(a159.overall.escapeReductionVsV12.z, 2)}, p ${formatPValue(a159.overall.escapeReductionVsBestPractices.pValue)}$** |
+
+---
+
 ## 5. Live Mechanical Runtime Probes (Executed Against Repository Code)
 
 | Probe | Status | Observed Verdict / Detail |
@@ -738,9 +873,47 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 | **Adversarial Evasion Families (1–5)** (path traversal, \`/proc/self/root\`, shell prefix wrappers, nested \`sh -c\`, depth > 64 overflow) | ${results.liveBenchmarks.policyFuzzer.adversarialTotal} | **${results.liveBenchmarks.policyFuzzer.adversarialBlocked} / ${results.liveBenchmarks.policyFuzzer.adversarialTotal} blocked** | **${pct(results.liveBenchmarks.policyFuzzer.adversarialBlockRate)}** | ${fmt(results.liveBenchmarks.policyFuzzer.p50EvaluateMs, 2)} ms / ${fmt(results.liveBenchmarks.policyFuzzer.p95EvaluateMs, 2)} ms | **${results.liveBenchmarks.policyFuzzer.adversarialBlockRate === 1.0 ? 'PASS' : 'FAIL'}** |
 | **Benign Worker & Developer Ops (Family 6)** (in-scope writes, Stage-1 git readers, worker \`npm test\` / \`node --test\`) | ${results.liveBenchmarks.policyFuzzer.benignTotal} | **${results.liveBenchmarks.policyFuzzer.benignPassed} / ${results.liveBenchmarks.policyFuzzer.benignTotal} passed** | **${pct(results.liveBenchmarks.policyFuzzer.benignPassRate)}** | ${fmt(results.liveBenchmarks.policyFuzzer.p50EvaluateMs, 2)} ms / ${fmt(results.liveBenchmarks.policyFuzzer.p95EvaluateMs, 2)} ms | **${results.liveBenchmarks.policyFuzzer.benignPassRate === 1.0 ? 'PASS' : 'FAIL'}** |
 
-### 6h. Committed Baseline Regression Ratchet (\`evals/baseline.json\`, Recorded \`${results.baselineRatchet.recordedAt}\`)
+### 6h. v1.3 \`agy 1.5.9\` 60-Tool Zero-\`ask\` Matrix & 64-Vector Policy Corpus (\`evals/v13-enhancements-bench.mjs\`)
 
-- **Overall Ratchet Status:** **${results.baselineRatchet.ok ? 'PASS (0 Regressions across 18 Ratchet Gates)' : `FAIL (${results.baselineRatchet.failedChecks.join(', ')})`}**
+| Policy Dimension | Target / Vectors | Observed Result | P50 / P95 Latency | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **\`agy 1.5.9\` Complete Tool Inventory (\`agy-1.5.9-init-tools.json\`)** | ${results.liveBenchmarks.v13PolicyMatrix.tools60Total} tools $\\times$ 2 headless modes | **${results.liveBenchmarks.v13PolicyMatrix.tools60Covered} / ${results.liveBenchmarks.v13PolicyMatrix.tools60Total} classified · ${results.liveBenchmarks.v13PolicyMatrix.headlessAskCount} \`ask\`** | ${fmt(results.liveBenchmarks.v13PolicyMatrix.latencyMs.p50, 2)} ms / ${fmt(results.liveBenchmarks.v13PolicyMatrix.latencyMs.p95, 2)} ms | **${results.liveBenchmarks.v13PolicyMatrix.tools60Covered === 60 && results.liveBenchmarks.v13PolicyMatrix.headlessAskCount === 0 ? 'PASS' : 'FAIL'}** |
+| **v1.3 Adversarial Vectors (\`sed_file\`, \`notebook_execution\`, REPL stdin, \`fold.go\`, 4-root \`boosterDataRoots\`)** | ${results.liveBenchmarks.v13PolicyMatrix.adversarialTotal} | **${results.liveBenchmarks.v13PolicyMatrix.adversarialBlocked} / ${results.liveBenchmarks.v13PolicyMatrix.adversarialTotal} blocked (${pct(results.liveBenchmarks.v13PolicyMatrix.adversarialRecall)})** | ${fmt(results.liveBenchmarks.v13PolicyMatrix.latencyMs.p50, 2)} ms / ${fmt(results.liveBenchmarks.v13PolicyMatrix.latencyMs.p95, 2)} ms | **${results.liveBenchmarks.v13PolicyMatrix.adversarialRecall === 1.0 ? 'PASS' : 'FAIL'}** |
+| **v1.3 Benign Workflows (in-scope \`sed_file\`, \`notebook_edit\`, \`list_dir\`, \`manage_task\`, interactive subagents)** | ${results.liveBenchmarks.v13PolicyMatrix.benignTotal} | **${results.liveBenchmarks.v13PolicyMatrix.benignPassed} / ${results.liveBenchmarks.v13PolicyMatrix.benignTotal} passed (${pct(results.liveBenchmarks.v13PolicyMatrix.benignFalsePositiveRate)} FP)** | ${fmt(results.liveBenchmarks.v13PolicyMatrix.latencyMs.p50, 2)} ms / ${fmt(results.liveBenchmarks.v13PolicyMatrix.latencyMs.p95, 2)} ms | **${results.liveBenchmarks.v13PolicyMatrix.benignFalsePositiveRate === 0.0 ? 'PASS' : 'FAIL'}** |
+
+### 6i. v1.3 \`hook-runner.sh\` \`PASSWD_HOME\`, Tamper & Dotfiles Subprocess Security (\`bin/hook-runner.sh\`, \`lib/doctor.mjs\`)
+
+| Subprocess Security / Compatibility Check | Status |
+| :--- | :---: |
+| **\`PASSWD_HOME\` audit-log anchoring resists spoofed \`HOME\`** | **${results.liveBenchmarks.v13HookSecurity.checks.passwdHomeAnchoringOk ? 'PASS' : 'FAIL'}** |
+| **Symlinked \`HOOK_LOG_DIR\` fails closed (\`LOG_TAMPERED\`) in headless worker** | **${results.liveBenchmarks.v13HookSecurity.checks.symlinkTamperBlockedOk ? 'PASS' : 'FAIL'}** |
+| **GNU Stow / chezmoi symlinked \`~/.config\` dotfiles pass without false \`LOG_TAMPERED\`** | **${results.liveBenchmarks.v13HookSecurity.checks.stowDotfilesSymlinkCompatibleOk ? 'PASS' : 'FAIL'}** |
+| **Unwritable log dir writes atomic \`0600\` \`.agb-hook-log-degraded\` & \`checkHookLogDir()\` warns** | **${results.liveBenchmarks.v13HookSecurity.checks.atomicDegradedMarkerAndDoctorOk ? 'PASS' : 'FAIL'}** |
+| **No-Node fallback allows \`manage_task(list\\|status)\` and denies \`manage_task(send_input)\`** | **${results.liveBenchmarks.v13HookSecurity.checks.fallbackManageTaskAllowlistOk ? 'PASS' : 'FAIL'}** |
+| **Out-of-allowlist \`PLUGIN_DATA\` rejected in favor of canonical 4-root \`DATA_ROOT\`** | **${results.liveBenchmarks.v13HookSecurity.checks.pluginDataAllowlistOk ? 'PASS' : 'FAIL'}** |
+
+### 6j. v1.3 \`classifyAgyOutcome()\`, \`--disable-slash-commands\` & Nested \`bwrap\` Sandbox Matrix (\`lib/agy.mjs\`)
+
+| Runtime Hardening Invariant | Observed Detail | Status |
+| :--- | :--- | :---: |
+| **18-State \`classifyAgyOutcome()\` Golden Matrix** | **${results.liveBenchmarks.v13PrintAndSandbox.classifierExactMatches} / ${results.liveBenchmarks.v13PrintAndSandbox.classifierCasesTotal} exact** (prevents ${results.liveBenchmarks.v13PrintAndSandbox.naiveExitZeroSilentFalsePositives} silent \`exit 0\` false positives) | **${results.liveBenchmarks.v13PrintAndSandbox.checks.classifierAll18Exact ? 'PASS' : 'FAIL'}** |
+| **Unconditional \`--disable-slash-commands\` & Readonly \`--sandbox\`** | Present on direct \`runAgy()\` print invocations | **${results.liveBenchmarks.v13PrintAndSandbox.checks.disableSlashCommandsPresent && results.liveBenchmarks.v13PrintAndSandbox.checks.directReadonlyKeepsSandbox ? 'PASS' : 'FAIL'}** |
+| **Outer \`bwrap_pid\` Builder Omits Nested \`--sandbox\`** | Prevents nested \`CLONE_NEWUSER\` \`EPERM\` on \`agy 1.5.9\` | **${results.liveBenchmarks.v13PrintAndSandbox.checks.outerBwrapOmitsNestedSandbox ? 'PASS' : 'FAIL'}** |
+| **\`plan.disableOrchestrator\` & \`RECOMMENDED_AGY_VERSION = '1.5.9'\`** | Schema + version constants verified | **${results.liveBenchmarks.v13PrintAndSandbox.checks.planSchemaAndVersionConstantsOk ? 'PASS' : 'FAIL'}** |
+
+### 6k. v1.3 Live Hermetic Orchestrator Routing, Per-Slug Circuit Breaker & \`AsyncLocalStorage\` Isolation (\`lib/models.mjs\`, \`lib/scheduler.mjs\`)
+
+| Orchestrator Scheduler Invariant | Status |
+| :--- | :---: |
+| **Interleaved Cross-Family \`TIER_CANDIDATES.frontier\` (4 Gemini + 4 Claude) & \`hydrogen-*\` Pool Mapping** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.interleavedRoutingOk ? 'PASS' : 'FAIL'}** |
+| **Concurrent In-Process \`runWithOrchestratorRoutingState()\` \`AsyncLocalStorage\` Isolation** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.asyncLocalStorageIsolationOk ? 'PASS' : 'FAIL'}** |
+| **\`agy < 1.5.9\` Auto-Disables Orchestrator Slugs With Notice & Routes to \`FRONTIER_NO_ORCHESTRATOR\`** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.versionAutoDisableOk ? 'PASS' : 'FAIL'}** |
+| **Per-Slug Circuit Breaker Trips at $\\ge 50\\%$ Over $\\ge 4$ Builder-Fault Tickets & Reroutes Next Slug** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.perSlugCircuitBreakerOk ? 'PASS' : 'FAIL'}** |
+| **\`!gates.ok\` Excluded From \`builderFaultTickets\` & \`model_unavailable\` Kept Strictly Run-Scoped** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.gateExclusionAndRunScopedUnavailOk ? 'PASS' : 'FAIL'}** |
+
+### 6l. Committed Baseline Regression Ratchet (\`evals/baseline.json\`, Recorded \`${results.baselineRatchet.recordedAt}\`)
+
+- **Overall Ratchet Status:** **${results.baselineRatchet.ok ? `PASS (0 Regressions across ${Object.keys(results.baselineRatchet.checks).length} Ratchet Gates)` : `FAIL (${results.baselineRatchet.failedChecks.join(', ')})`}**
 `;
 }
 

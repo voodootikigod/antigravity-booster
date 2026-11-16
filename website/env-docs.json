@@ -260,6 +260,13 @@
       "description": "Plan compilation uses strict gates unless set to 0. At run time, 1 forces gate commands to match the npm pattern even without a package.json."
     },
     {
+      "name": "AGB_DISABLE_ORCHESTRATOR",
+      "group": "pools-and-quota",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to disable routing frontier tickets to gemini-pro-orchestrator and gemini-pro-orchestrator-argon, falling back to FRONTIER_NO_ORCHESTRATOR."
+    },
+    {
       "name": "AGB_POOLS_DIR",
       "group": "pools-and-quota",
       "default": "unset",
@@ -371,6 +378,13 @@
       "default": "unset",
       "bundledIgnored": false,
       "description": "Test double for the Windows sandbox canary path."
+    },
+    {
+      "name": "AGB_TEST_PASSWD_HOME",
+      "group": "internal/test-only",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Test-only override for PASSWD_HOME in bin/hook-runner.sh when running from an unbundled source checkout containing test/hook-runner.test.mjs; unconditionally ignored when staged under .gemini/config/plugins/."
     }
   ],
   "ignore": [

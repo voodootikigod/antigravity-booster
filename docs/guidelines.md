@@ -23,7 +23,7 @@ Now covered by <https://www.agybooster.com/docs/concepts/gates-and-sandboxing>.
 Now covered by <https://www.agybooster.com/docs/concepts/prosecution>.
 
 ## Self-Orchestration Guidelines
-Now covered by <https://www.agybooster.com/docs/guides/writing-plans>.
+Now covered by <https://www.agybooster.com/docs/guides/writing-plans> (frontier tickets route to `gemini-pro-orchestrator*` + `claude-sonnet-5-5-high` on `agy >= 1.5.9` with per-slug builder-fault circuit-breaker demotion; leaf `cheap`/`mid` builders and cross-model prosecutors remain strictly non-orchestrator).
 
 ## Design Tradeoffs
 Now covered by <https://www.agybooster.com/docs/concepts/overview>.

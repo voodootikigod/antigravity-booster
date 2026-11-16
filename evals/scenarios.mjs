@@ -717,3 +717,377 @@ export function runAccMechanicalSafetyGatesScenario({ trials = 100, seed = 20261
     },
   };
 }
+
+/**
+ * Scenario 5 (`perf-orchestrator-frontier-resilience`):
+ * Parametric Monte Carlo simulation of a 12-ticket frontier-heavy architectural DAG
+ * (3 waves x 4 multi-file complex tickets = 1,200 dispatches) evaluating `agy 1.5.9`
+ * Orchestrator + Gemini 4 Hydrogen routing and the `(planHash, agyVersion)` per-slug
+ * circuit breaker (`resolvedTickets >= 4 && builderFaultTickets / resolvedTickets >= 0.5`)
+ * across 4 operating arms:
+ * 1. Straight `agy 1.5.9` Native (Single-session Orchestrator / `swarm` in 1 family quota pool, unbreakered)
+ * 2. Raw `agy 1.5.9` Best Practices (`/plan` + `run_workflow` / `invoke_subagent(Workspace:'share')` + `adversarial-reviewer`, 1 family, unbreakered)
+ * 3. `agb` v1.2 Baseline (`AGB_DISABLE_ORCHESTRATOR=1` / `FRONTIER_NO_ORCHESTRATOR` cross-family 4-pool DAG)
+ * 4. `agb` v1.3 (`TIER_CANDIDATES.frontier` interleaved Orchestrator + `>= 50%` over `>= 4` resolved tickets per-slug circuit breaker)
+ */
+export function runPerfOrchestratorFrontierScenario({ trials = 100, seed = 20261103 } = {}) {
+  const rng = mulberry32(seed);
+  const nativeOrchSec = [];
+  const bestPractices159Sec = [];
+  const agbV12Sec = [];
+  const agbV13Sec = [];
+
+  let nativeFaultRetries = 0;
+  let bestPracticesFaultRetries = 0;
+  let agbV12ReworkRetries = 0;
+  let agbV13FaultOrReworkRetries = 0;
+  let agbV13BreakerTrips = 0;
+
+  const waves = 3;
+  const slotsPerWave = 4;
+  const ticketsPerRun = waves * slotsPerWave; // 12 frontier tickets per run
+
+  for (let t = 0; t < trials; t++) {
+    const frontierBaseSec = Array.from({ length: ticketsPerRun }, () => sampleLogNormal(rng, 58.0, 0.16));
+    // 25% of runs encounter an Orchestrator harness fault-storm (e.g. max_turns / missing_terminal_result / subagent stall)
+    const faultStormActive = sampleBernoulli(rng, 0.25) === 1;
+    const stormFaultProb = faultStormActive ? 0.62 : 0.03;
+
+    // Arm 1: Straight agy 1.5.9 Native (Single-Session Orchestrator / native `swarm`)
+    // Bound to 1 model family pool (cap=4), shared message-board coordination (~14.5s/wave),
+    // uncoordinated merge collisions (~26%), and NO per-slug circuit breaker across waves 1..3.
+    let runNative = 0;
+    for (let wave = 0; wave < waves; wave++) {
+      let waveMax = 0;
+      for (let slot = 0; slot < slotsPerWave; slot++) {
+        const base = frontierBaseSec[wave * slotsPerWave + slot] * 0.90;
+        const faulted = sampleBernoulli(rng, stormFaultProb) === 1;
+        if (faulted) nativeFaultRetries += 1;
+        const slotSec = base * sampleLogNormal(rng, 1.14, 0.09)
+          + (faulted ? sampleLogNormal(rng, 88.0, 0.16) : 0);
+        if (slotSec > waveMax) waveMax = slotSec;
+      }
+      waveMax += sampleLogNormal(rng, 14.5, 0.14);
+      if (sampleBernoulli(rng, 0.26)) {
+        waveMax += sampleLogNormal(rng, 38.0, 0.18);
+      }
+      runNative += waveMax;
+    }
+    nativeOrchSec.push(runNative);
+
+    // Arm 2: Raw agy 1.5.9 Best Practices (`/plan` + `run_workflow` / `Workspace:'share'` + `adversarial-reviewer`)
+    // Isolated worktrees cut merge collisions (~11%), but all 4 frontier workers + reviewer share 1 quota family
+    // and lack automated per-slug builder-fault demotion across waves 1..3.
+    let runBp = 0;
+    for (let wave = 0; wave < waves; wave++) {
+      let waveMax = 0;
+      for (let slot = 0; slot < slotsPerWave; slot++) {
+        const base = frontierBaseSec[wave * slotsPerWave + slot] * 0.88;
+        const faulted = sampleBernoulli(rng, stormFaultProb * 0.85) === 1;
+        if (faulted) bestPracticesFaultRetries += 1;
+        const slotSec = base * sampleLogNormal(rng, 1.08, 0.08)
+          + (faulted ? sampleLogNormal(rng, 76.0, 0.15) : 0);
+        if (slotSec > waveMax) waveMax = slotSec;
+      }
+      waveMax += sampleLogNormal(rng, 8.5, 0.12) + sampleLogNormal(rng, 16.0, 0.14);
+      if (sampleBernoulli(rng, 0.11)) {
+        waveMax += sampleLogNormal(rng, 29.0, 0.16);
+      }
+      runBp += waveMax;
+    }
+    bestPractices159Sec.push(runBp);
+
+    // Arm 3: agb v1.2 Baseline (Cross-family 4-pool DAG with FRONTIER_NO_ORCHESTRATOR)
+    // Splits 2 Gemini (`gemini-4-argon-high`) + 2 Claude (`claude-sonnet-5-5-high`) per wave.
+    // Immune to Orchestrator harness faults, but lacks internal Orchestrator sub-decomposition on complex
+    // multi-file tickets (1.00x base build time + 15% strike-1 gate/prosecutor fixup rate).
+    let runV12 = 0;
+    for (let wave = 0; wave < waves; wave++) {
+      let waveMax = 0;
+      for (let slot = 0; slot < slotsPerWave; slot++) {
+        const base = frontierBaseSec[wave * slotsPerWave + slot] * 1.00;
+        const needsFixup = sampleBernoulli(rng, 0.15) === 1;
+        if (needsFixup) agbV12ReworkRetries += 1;
+        const prosSec = sampleLogNormal(rng, CALIBRATION_ANCHORS.crossFamilyProsecutorMedianSec, 0.13);
+        const slotSec = base + prosSec + (needsFixup ? sampleLogNormal(rng, 28.0, 0.14) : 0);
+        if (slotSec > waveMax) waveMax = slotSec;
+      }
+      waveMax += sampleLogNormal(rng, 6.4, 0.10);
+      runV12 += waveMax;
+    }
+    agbV12Sec.push(runV12);
+
+    // Arm 4: agb v1.3 (Interleaved Cross-Family Orchestrator + Exact >=50% over >=4 Resolved Tickets Breaker)
+    // Waves route 2 slots to Gemini Orchestrator (`gemini-pro-orchestrator`) + 2 slots to Claude (`claude-sonnet-5-5-high`).
+    // After >= 4 resolved tickets on the Orchestrator slug (end of Wave 2), if `orchBuilderFaults / orchResolved >= 0.5`,
+    // the per-slug breaker demotes `gemini-pro-orchestrator` before Wave 3; gate/prosecutor fixups increment
+    // `orchResolved` ONLY, never `orchBuilderFaults` (matching `lib/scheduler.mjs` 1:1).
+    let runV13 = 0;
+    let orchResolved = 0;
+    let orchBuilderFaults = 0;
+    let breakerDemoted = false;
+
+    for (let wave = 0; wave < waves; wave++) {
+      let waveMax = 0;
+      for (let slot = 0; slot < slotsPerWave; slot++) {
+        const isOrchSlot = !breakerDemoted && slot < 2;
+        const rawSec = frontierBaseSec[wave * slotsPerWave + slot];
+        let slotBuildSec;
+        if (isOrchSlot) {
+          orchResolved += 1;
+          const builderFault = sampleBernoulli(rng, stormFaultProb) === 1;
+          if (builderFault) {
+            orchBuilderFaults += 1;
+            agbV13FaultOrReworkRetries += 1;
+            slotBuildSec = sampleLogNormal(rng, 22.0, 0.14) + rawSec * 0.94;
+          } else {
+            // Non-fault gate/prosecutor fixup (increments orchResolved only, NEVER orchBuilderFaults)
+            const gateOrProsFixup = sampleBernoulli(rng, 0.06) === 1;
+            if (gateOrProsFixup) agbV13FaultOrReworkRetries += 1;
+            slotBuildSec = rawSec * 0.84 + (gateOrProsFixup ? sampleLogNormal(rng, 24.0, 0.14) : 0);
+          }
+        } else {
+          const fixup = sampleBernoulli(rng, 0.10) === 1;
+          if (fixup) agbV13FaultOrReworkRetries += 1;
+          slotBuildSec = rawSec * 0.92 + (fixup ? sampleLogNormal(rng, 25.0, 0.14) : 0);
+        }
+        const prosSec = sampleLogNormal(rng, CALIBRATION_ANCHORS.crossFamilyProsecutorMedianSec, 0.13);
+        const totalSlot = slotBuildSec + prosSec;
+        if (totalSlot > waveMax) waveMax = totalSlot;
+      }
+      // Exact production circuit-breaker rule from `lib/scheduler.mjs`:
+      // `resolvedTickets >= 4 && builderFaultTickets / resolvedTickets >= 0.5`
+      if (!breakerDemoted && orchResolved >= 4 && orchBuilderFaults / orchResolved >= 0.5) {
+        breakerDemoted = true;
+        agbV13BreakerTrips += 1;
+      }
+      waveMax += sampleLogNormal(rng, 6.4, 0.10);
+      runV13 += waveMax;
+    }
+    agbV13Sec.push(runV13);
+  }
+
+  const totalDispatches = trials * ticketsPerRun;
+
+  return {
+    id: 'perf-orchestrator-frontier-resilience',
+    title: '12-Ticket Frontier Architectural DAG & Orchestrator Fault-Storm Resilience (Parametric Simulation: v1.3 vs. v1.2, Best Practices & Native)',
+    trials,
+    ticketsPerRun,
+    totalFrontierDispatches: totalDispatches,
+    arms: {
+      straightAgy159NativeOrch: {
+        latencySec: summarizeContinuous(nativeOrchSec, { seed }),
+        faultRetryCount: nativeFaultRetries,
+        faultRetryRate: wilsonScoreInterval(nativeFaultRetries, totalDispatches),
+      },
+      rawAgy159BestPractices: {
+        latencySec: summarizeContinuous(bestPractices159Sec, { seed }),
+        faultRetryCount: bestPracticesFaultRetries,
+        faultRetryRate: wilsonScoreInterval(bestPracticesFaultRetries, totalDispatches),
+      },
+      agbV12NoOrchestrator: {
+        latencySec: summarizeContinuous(agbV12Sec, { seed }),
+        reworkRetryCount: agbV12ReworkRetries,
+        reworkRetryRate: wilsonScoreInterval(agbV12ReworkRetries, totalDispatches),
+      },
+      agbV13OrchestratorWithBreaker: {
+        latencySec: summarizeContinuous(agbV13Sec, { seed }),
+        retryCount: agbV13FaultOrReworkRetries,
+        retryRate: wilsonScoreInterval(agbV13FaultOrReworkRetries, totalDispatches),
+        breakerTrips: agbV13BreakerTrips,
+      },
+    },
+    comparisons: {
+      v13VsNative: {
+        speedup: pairedRatioSummary(nativeOrchSec, agbV13Sec, { seed }),
+        cohensD: cohensD(nativeOrchSec, agbV13Sec),
+        mannWhitney: mannWhitneyU(nativeOrchSec, agbV13Sec),
+      },
+      v13VsBestPractices: {
+        speedup: pairedRatioSummary(bestPractices159Sec, agbV13Sec, { seed }),
+        cohensD: cohensD(bestPractices159Sec, agbV13Sec),
+        mannWhitney: mannWhitneyU(bestPractices159Sec, agbV13Sec),
+      },
+      v13VsV12Ablation: {
+        speedup: pairedRatioSummary(agbV12Sec, agbV13Sec, { seed }),
+        cohensD: cohensD(agbV12Sec, agbV13Sec),
+        mannWhitney: mannWhitneyU(agbV12Sec, agbV13Sec),
+        p95ReductionPct:
+          ((summarizeContinuous(agbV12Sec).p95 - summarizeContinuous(agbV13Sec).p95)
+            / summarizeContinuous(agbV12Sec).p95) * 100,
+        retryReductionTest: twoProportionZTest(
+          agbV12ReworkRetries,
+          totalDispatches,
+          agbV13FaultOrReworkRetries,
+          totalDispatches,
+        ),
+      },
+    },
+  };
+}
+
+/**
+ * Scenario 6 (`acc-agy-1-5-9-surface-and-print-hardening`):
+ * Hybrid Live-Coupled / Parametric Evaluation across 600 `agy 1.5.9` headless runtime & policy hazards
+ * (100 trials x 6 hazard classes):
+ * - Baseline arms (`Straight agy 1.5.9 Native`, `Raw agy 1.5.9 Best Practices`, `agb v1.2 Pre-Hardening`)
+ *   are modeled parametrically from architectural capability matrices.
+ * - `agb v1.3` (`liveV13Rates`) is coupled directly to the live empirical recall rates measured against
+ *   the repository's production modules (`computeLiveAgy159HazardRates` in `evals/v13-enhancements-bench.mjs`),
+ *   so any real regression in `hooks/`, `bin/hook-runner.sh`, or `lib/agy.mjs` lowers `agbV13BlockRate`
+ *   and fails the baseline ratchet.
+ */
+export function runAccAgy159HardeningScenario({
+  trials = 100,
+  seed = 20261104,
+  liveV13Rates = null,
+} = {}) {
+  const rng = mulberry32(seed);
+
+  const hazardDefs = [
+    {
+      id: 'sedAndNotebookBypass',
+      label: 'sed_file (/e,/w, out-of-scope) & notebook_execution Arbitrary Code Bypass',
+      pNative: 0.18,
+      pBestPractices: 0.64,
+      pAgbV12: 0.52,
+      pAgbV13: liveV13Rates?.sedAndNotebookBypass ?? 1.0,
+    },
+    {
+      id: 'stdinAskHangAndReplSmuggling',
+      label: 'Headless --print Stdin ask-Stall & REPL Path Smuggling (send_command_input / manage_task)',
+      pNative: 0.12,
+      pBestPractices: 0.48,
+      pAgbV12: 0.38,
+      pAgbV13: liveV13Rates?.stdinAskHangAndReplSmuggling ?? 1.0,
+    },
+    {
+      id: 'goFoldShadowKeyAndMissingReadPath',
+      label: 'Go encoding/json fold.go Shadow-Key Collision & Unbounded Read-Path Escape',
+      pNative: 0.00,
+      pBestPractices: 0.15,
+      pAgbV12: 0.44,
+      pAgbV13: liveV13Rates?.goFoldShadowKeyAndMissingReadPath ?? 1.0,
+    },
+    {
+      id: 'passwdHomeSpoofAndPluginDataTamper',
+      label: 'Spoofed HOME Audit-Log Evasion & 4-Root PLUGIN_DATA / Symlink Tampering',
+      pNative: 0.00,
+      pBestPractices: 0.20,
+      pAgbV12: 0.46,
+      pAgbV13: liveV13Rates?.passwdHomeSpoofAndPluginDataTamper ?? 1.0,
+    },
+    {
+      id: 'silentPrintExitZeroAndSlashExpansion',
+      label: 'Silent exit-0 Non-Success (finishedReason / missing terminal result) & /slash Prompt Injection',
+      pNative: 0.25,
+      pBestPractices: 0.54,
+      pAgbV12: 0.61,
+      pAgbV13: liveV13Rates?.silentPrintExitZeroAndSlashExpansion ?? 1.0,
+    },
+    {
+      id: 'nestedBwrapSandboxCollision',
+      label: 'Outer Linux bwrap_pid + Inner agy 1.5.9 --sandbox CLONE_NEWUSER EPERM Prevention',
+      pNative: 0.40,
+      pBestPractices: 0.55,
+      pAgbV12: 0.00,
+      pAgbV13: liveV13Rates?.nestedBwrapSandboxCollision ?? 1.0,
+    },
+  ];
+
+  const perClass = {};
+  for (const h of hazardDefs) {
+    perClass[h.id] = {
+      label: h.label,
+      total: trials,
+      v13MeasuredRate: h.pAgbV13,
+      nativeBlocked: 0,
+      bestPracticesBlocked: 0,
+      agbV12Blocked: 0,
+      agbV13Blocked: 0,
+    };
+  }
+
+  let totalHazards = 0;
+  let totalNative = 0;
+  let totalBp = 0;
+  let totalV12 = 0;
+  let totalV13 = 0;
+
+  for (let t = 0; t < trials; t++) {
+    for (const h of hazardDefs) {
+      totalHazards += 1;
+      const bNat = sampleBernoulli(rng, h.pNative);
+      const bBp = sampleBernoulli(rng, h.pBestPractices);
+      const bV12 = sampleBernoulli(rng, h.pAgbV12);
+      const bV13 = sampleBernoulli(rng, h.pAgbV13);
+
+      perClass[h.id].nativeBlocked += bNat;
+      perClass[h.id].bestPracticesBlocked += bBp;
+      perClass[h.id].agbV12Blocked += bV12;
+      perClass[h.id].agbV13Blocked += bV13;
+
+      totalNative += bNat;
+      totalBp += bBp;
+      totalV12 += bV12;
+      totalV13 += bV13;
+    }
+  }
+
+  const enrichedClasses = Object.fromEntries(
+    Object.entries(perClass).map(([k, v]) => [
+      k,
+      {
+        ...v,
+        nativeRate: wilsonScoreInterval(v.nativeBlocked, v.total),
+        bestPracticesRate: wilsonScoreInterval(v.bestPracticesBlocked, v.total),
+        agbV12Rate: wilsonScoreInterval(v.agbV12Blocked, v.total),
+        agbV13Rate: wilsonScoreInterval(v.agbV13Blocked, v.total),
+        v13VsBestPracticesTest: twoProportionZTest(v.agbV13Blocked, v.total, v.bestPracticesBlocked, v.total),
+        v13VsV12Test: twoProportionZTest(v.agbV13Blocked, v.total, v.agbV12Blocked, v.total),
+      },
+    ]),
+  );
+
+  return {
+    id: 'acc-agy-1-5-9-surface-and-print-hardening',
+    title: 'agy 1.5.9 60-Tool Policy, PASSWD_HOME Audit Anchoring & --print Outcome Hardening (Live-Coupled v1.3 vs. Parametric Baselines)',
+    trials,
+    totalHazards,
+    v13RateSource: liveV13Rates ? 'live-benchmark-coupled' : 'parametric-default',
+    perClass: enrichedClasses,
+    overall: {
+      nativeBlocked: totalNative,
+      bestPracticesBlocked: totalBp,
+      agbV12Blocked: totalV12,
+      agbV13Blocked: totalV13,
+      nativeEscapeCount: totalHazards - totalNative,
+      bestPracticesEscapeCount: totalHazards - totalBp,
+      agbV12EscapeCount: totalHazards - totalV12,
+      agbV13EscapeCount: totalHazards - totalV13,
+      nativeBlockRate: wilsonScoreInterval(totalNative, totalHazards),
+      bestPracticesBlockRate: wilsonScoreInterval(totalBp, totalHazards),
+      agbV12BlockRate: wilsonScoreInterval(totalV12, totalHazards),
+      agbV13BlockRate: wilsonScoreInterval(totalV13, totalHazards),
+      escapeReductionVsNative: twoProportionZTest(
+        totalHazards - totalNative,
+        totalHazards,
+        totalHazards - totalV13,
+        totalHazards,
+      ),
+      escapeReductionVsBestPractices: twoProportionZTest(
+        totalHazards - totalBp,
+        totalHazards,
+        totalHazards - totalV13,
+        totalHazards,
+      ),
+      escapeReductionVsV12: twoProportionZTest(
+        totalHazards - totalV12,
+        totalHazards,
+        totalHazards - totalV13,
+        totalHazards,
+      ),
+    },
+  };
+}

@@ -1,0 +1,33 @@
+{
+  "body": "Expand evals/ (scenarios.mjs, v13-enhancements-bench.mjs, runner.mjs, baseline.json), test/evals.test.mjs, docs/benchmarks/marketplace-eval-report.md, and website/content/docs/reference/benchmarks.mdx: (1) Add Scenario 5 (perf-orchestrator-frontier-resilience) and Scenario 6 (acc-agy-1-5-9-surface-and-print-hardening) comparing Straight agy 1.5.9 Native, Raw agy 1.5.9 Best Practices, agb v1.2, and agb v1.3. (2) Add 4 live v1.3 benchmarks: 60-tool zero-ask + 64-vector 1.5.9 policy matrix, PASSWD_HOME/dotfiles/degraded hook-runner subprocess security, 18-state classifyAgyOutcome + nested bwrap sandbox, and hermetic Orchestrator circuit-breaker + AsyncLocalStorage isolation. Acceptance: npm test && npm run eval && npm run coverage:check exit 0.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-p5-round2-dotfiles-symlink"
+    }
+  ],
+  "id": "t-v1-3-orchestrator-and-1-5-9-evals",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/pools.mjs",
+    "lib/worktrees.mjs",
+    "lib/models.mjs",
+    "lib/scheduler.mjs",
+    "lib/agy.mjs",
+    "hooks/**",
+    "bin/**",
+    "scripts/rails-guard-ci.mjs",
+    "vendor/cache/**",
+    ".github/workflows/**",
+    "test/fixtures/agy-1.5.9-init-tools.json"
+  ],
+  "scope": [
+    "evals/**",
+    "test/evals.test.mjs",
+    "docs/benchmarks/marketplace-eval-report.md",
+    "website/content/docs/reference/benchmarks.mdx"
+  ],
+  "title": "Expand statistical scenarios and live subsystem benchmarks for v1.3.0 Orchestrator routing, Hydrogen, and agy 1.5.9 hardening"
+}

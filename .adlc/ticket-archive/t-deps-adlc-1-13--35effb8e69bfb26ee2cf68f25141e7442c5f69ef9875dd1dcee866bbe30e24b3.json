@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T03:51:08.133Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "252cda26d23aca104a8b0e1770b3dc44b3415ff87ae5ef2f269a4c7df8bc8e7f",
+    "ticketHash": "e3e6ea0bb8f01d3d9e4f440509da846e4175f90d38004167dbaea7387a55c805",
+    "version": 1
+  },
   "body": "Owner-approved (Open Question 1). Bump @adlc/{cli,core,consensus-fix,flail-detector,gate-manifest,hollow-test,merge-forecast,model-router,rails-guard,tickets} from 1.12.0 to 1.13.0 in package.json, regenerate package-lock.json, and bump vendor/adlc/package.json to 1.13.0 (leave @adlc/antigravity at 1.7.0 and do NOT touch vendor/cache/** or scripts/rails-guard-ci.mjs). Run `npm run build` to rebuild vendor/adlc/dist/**, run `node scripts/update-adlc-digests.mjs --write` to record the 1.13.0 registry tarball/tree/vendored SHA-512 digests in lib/adlc-bridge.mjs, and re-run `npm run build` so dist/ embeds the updated digest tables. Update `@adlc/cli@1.12.0` to `@adlc/cli@1.13.0` in .github/workflows/{adlc-rails-guard,ci,publish}.yml. Update pinned 1.12.0 version assertions and fixtures in test/rails-guard-ci.test.mjs, test/adlc-bridge-bundled.test.mjs, test/adlc-bridge.test.mjs, test/doctor.test.mjs, test/adlc-tool.test.mjs, test/modernize-skill.test.mjs, test/trust-anchor.test.mjs, and test/fixtures/package.json. Acceptance: `npm run build && npm test` green; authenticated local `adlc --version` reports 1.13.0. Also bundle @adlc/core 1.13.0 syntax-check-typescript.mjs worker into vendor/adlc/dist/syntax-check-typescript.mjs and update scripts/check-bundle-externals.mjs + smoke/externals tests for @adlc/core 1.13.0 optional target-repo typescript parser probe.",
   "completed": true,
   "edges": [

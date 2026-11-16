@@ -343,7 +343,7 @@ try {
       const t0 = Date.now();
       const results = await Promise.all(
         Array.from({ length: n }, (_, i) =>
-          runAgy({ model, prompt: `Reply with exactly: PONG-${i}`, timeout: '120s' }).then((r) => ({
+          runAgy({ model, prompt: `Reply with exactly: PONG-${i}`, timeout: '120s', worker: { mode: 'readonly' } }).then((r) => ({
             ...r, ok: r.ok && r.output.includes(`PONG-${i}`),
           }))
         )

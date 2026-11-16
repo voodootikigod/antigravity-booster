@@ -22,6 +22,8 @@ import {
   runPerf16TicketScaleScenario,
   runAccCrossModelProsecutionScenario,
   runAccMechanicalSafetyGatesScenario,
+  runPerfOrchestratorFrontierScenario,
+  runAccAgy159HardeningScenario,
 } from '../evals/scenarios.mjs';
 import {
   runLivePolicyCorpusBenchmark,
@@ -34,6 +36,17 @@ import {
   runLiveSchedulerDagBenchmark,
   runLivePolicyFuzzerBenchmark,
 } from '../evals/subsystem-bench.mjs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  runLiveAgy159PolicyMatrixBenchmark,
+  runLiveHookRunnerSecurityBenchmark,
+  runLiveAgy159PrintAndSandboxBenchmark,
+  runLiveOrchestratorSchedulerBenchmark,
+  computeLiveAgy159HazardRates,
+} from '../evals/v13-enhancements-bench.mjs';
 import {
   runAllEvals,
   renderMarkdownReport,
@@ -129,6 +142,48 @@ test('scenarios: all 4 statistical scenarios are deterministic and satisfy signi
   assert.equal(s4.hazards.outOfScopeDrift.agbRate.p, 1.0, 'Worktree scope gate blocks 100% of scope violations');
   assert.ok(s4.overall.escapeReductionTest.pValue < 0.0001);
   assert.ok(s4.overall.escapeReductionVsBestPracticesTest.pValue < 0.0001);
+
+  const s5Def = runPerfOrchestratorFrontierScenario();
+  const s5Exp = runPerfOrchestratorFrontierScenario({ trials: 100, seed: 20261103 });
+  assert.equal(s5Def.trials, 100);
+  assert.equal(s5Def.totalFrontierDispatches, 1200);
+  assert.deepEqual(s5Def, s5Exp, 'Perf-Orchestrator default parameters must match (100, 20261103)');
+
+  const s5a = runPerfOrchestratorFrontierScenario({ trials: 100, seed: 20261034 });
+  const s5b = runPerfOrchestratorFrontierScenario({ trials: 100, seed: 20261034 });
+  assert.deepEqual(s5a, s5b, 'Perf-Orchestrator scenario must be 100% deterministic for fixed seed');
+  assert.ok(s5a.comparisons.v13VsNative.speedup.ratioOfMeans >= 1.35);
+  assert.ok(s5a.comparisons.v13VsBestPractices.speedup.ratioOfMeans >= 1.25);
+  assert.ok(s5a.comparisons.v13VsV12Ablation.speedup.ratioOfMeans >= 1.05);
+  assert.ok(s5a.comparisons.v13VsBestPractices.mannWhitney.pValue < 0.0001);
+  assert.ok(s5a.comparisons.v13VsV12Ablation.mannWhitney.pValue < 0.0001);
+  assert.ok(s5a.arms.agbV13OrchestratorWithBreaker.breakerTrips > 0);
+
+  const s6Def = runAccAgy159HardeningScenario();
+  const s6Exp = runAccAgy159HardeningScenario({ trials: 100, seed: 20261104 });
+  assert.equal(s6Def.trials, 100);
+  assert.equal(s6Def.totalHazards, 600);
+  assert.equal(s6Def.v13RateSource, 'parametric-default');
+  assert.deepEqual(s6Def, s6Exp, 'Acc-1.5.9 default parameters must match (100, 20261104)');
+
+  const s6a = runAccAgy159HardeningScenario({ trials: 100, seed: 20261035 });
+  const s6b = runAccAgy159HardeningScenario({ trials: 100, seed: 20261035 });
+  assert.deepEqual(s6a, s6b, 'Acc-1.5.9 scenario must be 100% deterministic for fixed seed');
+  assert.equal(s6a.overall.agbV13BlockRate.p, 1.0);
+  assert.equal(s6a.overall.agbV13EscapeCount, 0);
+  assert.ok(s6a.overall.escapeReductionVsNative.pValue < 0.0001);
+  assert.ok(s6a.overall.escapeReductionVsBestPractices.pValue < 0.0001);
+  assert.ok(s6a.overall.escapeReductionVsV12.pValue < 0.0001);
+
+  // Verify Scenario 6 reflects real regressions when liveV13Rates drops below 1.0
+  const s6Degraded = runAccAgy159HardeningScenario({
+    trials: 100,
+    seed: 20261035,
+    liveV13Rates: { nestedBwrapSandboxCollision: 0.0 },
+  });
+  assert.equal(s6Degraded.v13RateSource, 'live-benchmark-coupled');
+  assert.ok(s6Degraded.overall.agbV13BlockRate.p < 0.9);
+  assert.equal(s6Degraded.perClass.nestedBwrapSandboxCollision.agbV13Blocked, 0);
 });
 
 test('live-bench: 40-vector policy corpus, hook latency breakdown, and orchestrator overhead satisfy all invariants', () => {
@@ -180,6 +235,60 @@ test('subsystem-bench: plan compiler, prosecutor/review fleet, scheduler DAG rep
   assert.ok(fuzzBench.p95EvaluateMs < 100.0);
 });
 
+test('v13-enhancements-bench: 60-tool matrix, hook-runner PASSWD_HOME security, 1.5.9 print/sandbox, and Orchestrator circuit breaker satisfy all invariants', async () => {
+  const pol = runLiveAgy159PolicyMatrixBenchmark();
+  assert.equal(pol.ok, true, JSON.stringify(pol));
+  assert.equal(pol.tools60Total, 60);
+  assert.equal(pol.tools60Covered, 60);
+  assert.equal(pol.headlessAskCount, 0);
+  assert.equal(pol.adversarialRecall, 1.0);
+  assert.equal(pol.benignFalsePositiveRate, 0.0);
+  assert.ok(pol.latencyMs.p95 < 50.0);
+
+  const hr = runLiveHookRunnerSecurityBenchmark();
+  assert.equal(hr.ok, true, JSON.stringify(hr));
+  assert.equal(hr.passedChecks, 6);
+  assert.equal(hr.passRate, 1.0);
+
+  const missingBundleDir = mkdtempSync(join(tmpdir(), 'agb-missing-bundle-'));
+  try {
+    assert.throws(
+      () => runLiveHookRunnerSecurityBenchmark({ repoRoot: missingBundleDir }),
+      /build:hooks/,
+    );
+  } finally {
+    rmSync(missingBundleDir, { recursive: true, force: true });
+  }
+
+  const pr = await runLiveAgy159PrintAndSandboxBenchmark();
+  assert.equal(pr.ok, true, JSON.stringify(pr));
+  assert.equal(pr.classifierExactMatches, 18);
+  assert.equal(pr.naiveExitZeroSilentFalsePositives, 8);
+  assert.equal(pr.passRate, 1.0);
+
+  const liveRates = computeLiveAgy159HazardRates({
+    policyMatrix: pol,
+    hookSecurity: hr,
+    printAndSandbox: pr,
+  });
+  for (const rate of Object.values(liveRates)) {
+    assert.equal(rate, 1);
+  }
+
+  // Degrading a live benchmark check lowers the derived Scenario 6 rate below 1.0
+  const degradedRates = computeLiveAgy159HazardRates({
+    policyMatrix: pol,
+    hookSecurity: hr,
+    printAndSandbox: { ...pr, checks: { ...pr.checks, outerBwrapOmitsNestedSandbox: false } },
+  });
+  assert.equal(degradedRates.nestedBwrapSandboxCollision, 0);
+
+  const orch = await runLiveOrchestratorSchedulerBenchmark();
+  assert.equal(orch.ok, true, JSON.stringify(orch));
+  assert.equal(orch.passedChecks, 5);
+  assert.equal(orch.passRate, 1.0);
+});
+
 test('runner: runAllEvals verifies all invariants, checks baseline ratchet, and renders markdown report', async () => {
   const results = await runAllEvals({ trials: 100, seed: 20261030 });
   assert.equal(results.ok, true, JSON.stringify(results.invariants));
@@ -192,27 +301,59 @@ test('runner: runAllEvals verifies all invariants, checks baseline ratchet, and 
   assert.equal(results.liveBenchmarks.prosecutorAndReview.ok, true);
   assert.equal(results.liveBenchmarks.schedulerDag.ok, true);
   assert.equal(results.liveBenchmarks.policyFuzzer.ok, true);
+  assert.equal(results.liveBenchmarks.v13PolicyMatrix.ok, true);
+  assert.equal(results.liveBenchmarks.v13HookSecurity.ok, true);
+  assert.equal(results.liveBenchmarks.v13PrintAndSandbox.ok, true);
+  assert.equal(results.liveBenchmarks.v13OrchestratorScheduler.ok, true);
   assert.equal(results.baselineRatchet.ok, true, JSON.stringify(results.baselineRatchet));
+  assert.equal(Object.keys(results.baselineRatchet.checks).length, 26);
 
-  // Verify synthetic regression detection in compareAgainstBaseline
+  // Verify synthetic regression detection in compareAgainstBaseline (both v1.2 and live v1.3 ratchets)
   const baseline = loadBaseline();
   const regressed = structuredClone(results);
   regressed.liveBenchmarks.policyFuzzer.adversarialBlockRate = 0.99;
   regressed.liveBenchmarks.planCompiler.serialFalsePositiveRate = 0.1;
+  regressed.liveBenchmarks.v13PolicyMatrix.headlessAskCount = 1;
+  regressed.liveBenchmarks.v13HookSecurity.passRate = 0.83;
+  regressed.liveBenchmarks.v13OrchestratorScheduler.passRate = 0.8;
   const regCheck = compareAgainstBaseline(regressed, baseline);
   assert.equal(regCheck.ok, false);
   assert.ok(regCheck.failedChecks.includes('policyFuzzerBlockRate'));
   assert.ok(regCheck.failedChecks.includes('planCompilerSerialFalsePositives'));
+  assert.ok(regCheck.failedChecks.includes('v13PolicyZeroAsk'));
+  assert.ok(regCheck.failedChecks.includes('v13HookSecurityPassRate'));
+  assert.ok(regCheck.failedChecks.includes('v13OrchestratorSchedulerPassRate'));
 
   const md = renderMarkdownReport(results);
   assert.match(md, /## Executive Summary: Headline Statistical Gains/);
   assert.match(md, /xychart-beta/);
+  assert.match(md, /4b\. v1\.3 Performance & Ablation Benchmark/);
+  assert.match(md, /4c\. v1\.3 Security & Runtime Hardening Benchmark/);
   assert.match(md, /Live Mechanical Runtime Probes/);
   assert.match(md, /6d\. Plan Compiler, Scope-Overlap & Gate-Integrity Golden Corpus/);
   assert.match(md, /6e\. Prosecutor & Review Fleet Mechanical Contract Benchmark/);
   assert.match(md, /6f\. Live Hermetic Scheduler DAG & Strike-Recovery Replay/);
   assert.match(md, /6g\. Seeded Metamorphic Policy Fuzzer/);
-  assert.match(md, /6h\. Committed Baseline Regression Ratchet/);
+  assert.match(md, /6h\. v1\.3 `agy 1\.5\.9` 60-Tool Zero-`ask` Matrix/);
+  assert.match(md, /6i\. v1\.3 `hook-runner\.sh` `PASSWD_HOME`/);
+  assert.match(md, /6j\. v1\.3 `classifyAgyOutcome\(\)`/);
+  assert.match(md, /6k\. v1\.3 Live Hermetic Orchestrator Routing/);
+  assert.match(md, /6l\. Committed Baseline Regression Ratchet/);
+  assert.match(md, /0 Regressions across 26 Ratchet Gates/);
+
+  // Mechanical CI freshness check: all deterministic statistical & corpus sections
+  // (everything prior to live wall-clock latency in 6b) must match the committed report byte-for-byte.
+  const committedReport = readFileSync(
+    fileURLToPath(new URL('../docs/benchmarks/marketplace-eval-report.md', import.meta.url)),
+    'utf8',
+  );
+  const splitMarker = '### 6b. `PreToolUse` Hook Execution Latency Breakdown';
+  assert.equal(
+    committedReport.split(splitMarker)[0],
+    md.split(splitMarker)[0],
+    'docs/benchmarks/marketplace-eval-report.md statistical sections are out of sync with evals/runner.mjs',
+  );
+
   await assert.rejects(() => runAllEvals({ trials: 0 }), /positive integer/);
   await assert.rejects(() => runAllEvals({ trials: -5 }), /positive integer/);
   await assert.rejects(() => runAllEvals({ trials: 10, seed: Number.NaN }), /finite integer/);

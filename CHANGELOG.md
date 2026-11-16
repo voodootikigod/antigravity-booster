@@ -9,6 +9,11 @@ rather than enumerate.
 
 ## [Unreleased]
 
+### Added
+- **Orchestrator (`gemini-pro-orchestrator`, `gemini-pro-orchestrator-argon`) frontier builder routing & per-slug circuit breaker** (`t-orchestrator-builder-routing`): interleaved `TIER_CANDIDATES.frontier` routing across `gemini-pro` and `claude` pools (`4+4` at `4/4` capacity, `2+4` at `2/4`), automatic `agy < 1.5.9` version gate (`FRONTIER_NO_ORCHESTRATOR`), operator opt-outs via `AGB_DISABLE_ORCHESTRATOR=1` and `plan.disableOrchestrator: true`, and `(planHash, agyVersion)`-scoped `RunStatus.state.modelStats` with per-slug builder-fault-only circuit breaking (`>= 50%` over `>= 4` resolved tickets; `!gates.ok` and prosecutor rejections excluded from builder faults).
+- **Zero-ask `agy 1.5.9` 60-tool `PreToolUse` policy coverage & `PASSWD_HOME` audit-log anchoring** (`t-hook-runner-passwd-home`, `t-policy-1-5-9-readonly-and-plugin-data`, `t-policy-1-5-9-sed-and-notebook`, `t-policy-1-5-9-stdin-and-subagents`): Go `encoding/json` ASCII/case-fold parity (`goFoldKey`, `normalizeArgsCaseInsensitive`), strict required-path read schemas (`REQUIRED_READ_PATH_KEYS`), 4-root `boosterDataRoots` + `PLUGIN_DATA` allowlist, staged `PASSWD_HOME` audit-log anchoring with symlink/UID tamper fail-closed headless denial, 348-case differential-tested `sed_file` subset (`validateSedCall`), `notebook_edit` / `notebook_execution` gating, and zero-`ask` 5-column policy enforcement for `send_command_input`, `manage_task`, and subagent tools.
+- **Headless `agy 1.5.9` print-mode hardening & 1,440-state `classifyAgyOutcome()`** (`t-fix-bwrap-nested-sandbox-1-5-9`, `t-agy-print-hardening-1-5-9`): `--disable-slash-commands` on headless `runAgy()` invocations, `RECOMMENDED_AGY_VERSION = '1.5.9'` and `checkHookLogDir()` in `agb doctor`, total 14-row `classifyAgyOutcome()` classifier (`ALL_AGY_ERROR_KINDS`, `FAILURE_FINISHED_REASONS`, `model_unavailable` 0-strike demotion, cross-pool `rateLimited` reroute), and omission of nested inner `--sandbox` when outer `bwrap` / `seatbelt` kernel containment is active.
+
 ## [1.2.0] — 2026-11-05
 
 **Antigravity Plugin Marketplace packaging, `/agb` umbrella router, 5-pillar benchmark & evaluation suite, model catalog refresh for `agy 1.4.7`, and retirement of the legacy `.adlc/tickets.json` backend.**

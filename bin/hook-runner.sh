@@ -11,12 +11,179 @@ STDIN_PID=""
 FALLBACK_DECISION="deny"
 WAIT_TIMEOUT=9
 
-# Prepare log destination under user plugin data directory
-HOOK_LOG_DIR="${HOME}/.gemini/antigravity-cli/plugin_data/antigravity-booster/logs"
-mkdir -p "$HOOK_LOG_DIR" 2>/dev/null || true
+# Prepare log destination under user plugin data directory (anchored to PASSWD_HOME)
+RUNNER_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
+RUNNER_ROOT="$(dirname -- "$RUNNER_DIR")"
+
+CUR_UID="$(id -u 2>/dev/null || true)"
+owned_by_euid() {
+  _own_path="$1"
+  case "$CUR_UID" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  case "$_own_path" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  [ -e "$_own_path" ] || return 1
+  _found_own="$(find -H "$_own_path" -prune -user "$CUR_UID" 2>/dev/null || true)"
+  [ -n "$_found_own" ]
+}
+
+PASSWD_HOME=""
+if [ -n "$CUR_UID" ]; then
+  PASSWD_HOME="$(getent passwd "$CUR_UID" 2>/dev/null | cut -d: -f6)"
+fi
+if [ -z "$PASSWD_HOME" ] && command -v dscl >/dev/null 2>&1; then
+  PASSWD_HOME="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+fi
+
+EFF_HOME=""
+case "$RUNNER_ROOT" in
+  */.gemini/config/plugins/*)
+    EFF_HOME="$PASSWD_HOME"
+    if [ -z "$EFF_HOME" ]; then
+      _cand_home="${RUNNER_ROOT%%/.gemini/*}"
+      if [ -n "$_cand_home" ] && owned_by_euid "$_cand_home"; then
+        EFF_HOME="$_cand_home"
+      fi
+    fi
+    ;;
+  *)
+    if [ -n "$AGB_TEST_PASSWD_HOME" ] && [ -f "$RUNNER_ROOT/test/hook-runner.test.mjs" ]; then
+      EFF_HOME="$AGB_TEST_PASSWD_HOME"
+    elif [ -n "$HOME" ]; then
+      EFF_HOME="$HOME"
+    else
+      EFF_HOME="$PASSWD_HOME"
+    fi
+    ;;
+esac
+while [ "${EFF_HOME%/}" != "$EFF_HOME" ] && [ "$EFF_HOME" != "/" ]; do
+  EFF_HOME="${EFF_HOME%/}"
+done
+
+resolve_no_symlink_root() {
+  _target="$1"
+  case "$_target" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  case "/$_target/" in
+    */./*|*/../*) return 1 ;;
+  esac
+  while [ "${_target%/}" != "$_target" ] && [ "$_target" != "/" ]; do
+    _target="${_target%/}"
+  done
+  _rem="${_target#/}"
+  _prefix=""
+  _existing="/"
+  _trailing=""
+  _in_existing=1
+  while [ -n "$_rem" ]; do
+    case "$_rem" in
+      */*)
+        _seg="${_rem%%/*}"
+        _rem="${_rem#*/}"
+        ;;
+      *)
+        _seg="$_rem"
+        _rem=""
+        ;;
+    esac
+    [ -n "$_seg" ] || continue
+    _prefix="$_prefix/$_seg"
+    if [ -e "$_prefix" ] || [ -L "$_prefix" ]; then
+      [ ! -L "$_prefix" ] || return 1
+    fi
+    if [ "$_in_existing" -eq 1 ]; then
+      if [ -d "$_prefix" ]; then
+        _existing="$_prefix"
+      elif [ -e "$_prefix" ]; then
+        return 1
+      else
+        _in_existing=0
+        _trailing="$_seg"
+      fi
+    else
+      _trailing="$_trailing/$_seg"
+    fi
+  done
+  _resolved_existing="$(CDPATH='' cd -- "$_existing" 2>/dev/null && pwd -P)" || return 1
+  if [ -n "$_trailing" ]; then
+    if [ "$_resolved_existing" = "/" ]; then
+      printf '/%s\n' "$_trailing"
+    else
+      printf '%s/%s\n' "$_resolved_existing" "$_trailing"
+    fi
+  else
+    printf '%s\n' "$_resolved_existing"
+  fi
+}
+
+DATA_ROOT="${EFF_HOME}/.gemini/antigravity-cli/plugin_data/antigravity-booster"
+if [ -n "$PLUGIN_DATA" ]; then
+  _resolved_pd="$(resolve_no_symlink_root "$PLUGIN_DATA" 2>/dev/null || true)"
+  case "$_resolved_pd" in
+    "${EFF_HOME}/.gemini/antigravity-cli/plugin_data/antigravity-booster" | \
+    "${EFF_HOME}/.gemini/antigravity/plugin_data/antigravity-booster" | \
+    "${EFF_HOME}/.gemini/antigravity-ide/plugin_data/antigravity-booster" | \
+    "${EFF_HOME}/.config/antigravity-booster")
+      DATA_ROOT="$_resolved_pd"
+      ;;
+  esac
+fi
+
+umask 0077
+HOOK_LOG_DIR="$DATA_ROOT/logs"
 HOOK_LOG_FILE="$HOOK_LOG_DIR/hooks.log"
-if ! ( : >>"$HOOK_LOG_FILE" ) 2>/dev/null; then
+LOG_TAMPERED=0
+LOG_DEGRADED=0
+DEGRADED_MARKER="${EFF_HOME}/.gemini/antigravity-cli/.agb-hook-log-degraded"
+
+# Spec §3.6: audit log lives under OS account home of id -u (PASSWD_HOME); check symlink (-L) and
+# foreign UID (! owned_by_euid) strictly on DATA_ROOT, HOOK_LOG_DIR, and HOOK_LOG_FILE so legitimate
+# dotfile symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never false-trip worker tamper denial.
+if [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ] || { [ -e "$DATA_ROOT" ] && ! owned_by_euid "$DATA_ROOT"; } || { [ -e "$HOOK_LOG_DIR" ] && ! owned_by_euid "$HOOK_LOG_DIR"; } || { [ -e "$HOOK_LOG_FILE" ] && ! owned_by_euid "$HOOK_LOG_FILE"; }; then
+  LOG_TAMPERED=1
+fi
+
+write_degraded_marker() {
+  _msg="$1"
+  if [ -L "${EFF_HOME}/.gemini" ] || [ -L "${EFF_HOME}/.gemini/antigravity-cli" ] || [ -L "$DEGRADED_MARKER" ]; then
+    return 0
+  fi
+  mkdir -p "${EFF_HOME}/.gemini/antigravity-cli" 2>/dev/null || true
+  if [ -L "${EFF_HOME}/.gemini" ] || [ -L "${EFF_HOME}/.gemini/antigravity-cli" ] || [ -L "$DEGRADED_MARKER" ]; then
+    return 0
+  fi
+  if [ -e "$DEGRADED_MARKER" ] && ! owned_by_euid "$DEGRADED_MARKER"; then
+    return 0
+  fi
+  _tmp_marker="${DEGRADED_MARKER}.tmp.$$"
+  rm -f "$_tmp_marker" 2>/dev/null || true
+  if ( umask 0077; set -C; printf '%s: %s\n' "$(date)" "$_msg" >"$_tmp_marker" ) 2>/dev/null; then
+    mv -f "$_tmp_marker" "$DEGRADED_MARKER" 2>/dev/null || rm -f "$_tmp_marker" 2>/dev/null || true
+  fi
+}
+
+if [ "$LOG_TAMPERED" -eq 1 ]; then
+  LOG_DEGRADED=1
   HOOK_LOG_FILE="/dev/null"
+  write_degraded_marker "hook audit log tampered"
+  printf 'agb hook runner: [warn] hook audit log tampered; logging degraded.\n' >&2
+  if [ -n "$AGB_WORKER_TICKET" ] || [ -n "$AGB_WORKER_MODE" ]; then
+    printf '{"decision":"deny","reason":"agb hook audit log tampered in headless worker"}\n'
+    exit 0
+  fi
+else
+  mkdir -p "$HOOK_LOG_DIR" 2>/dev/null || true
+  ( set -C; : >"$HOOK_LOG_FILE" ) 2>/dev/null || true
+  if ! ( : >>"$HOOK_LOG_FILE" ) 2>/dev/null; then
+    LOG_DEGRADED=1
+    HOOK_LOG_FILE="/dev/null"
+    write_degraded_marker "hook audit log degraded (unwritable)"
+  fi
 fi
 
 # Emergency killswitch: Parent process launch environment variable
@@ -184,6 +351,11 @@ emit_fallback() {
     UNPARSEABLE=1
   fi
 
+  DEGRADED_SUFFIX=""
+  if [ "$LOG_DEGRADED" -eq 1 ]; then
+    DEGRADED_SUFFIX=" [audit-log-degraded]"
+  fi
+
   if [ "$HAS_ADLC_TICKETS" -eq 1 ] || [ "$HAS_ADLC_DIR" -eq 1 ]; then
     # Extract tool name from payload to allow read-only diagnostic tools during fallback
     TOOL_NAME="$(sed -n 's/.*"toolCall"[^{]*{[^}]*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP_FLAT" 2>/dev/null | head -n 1)"
@@ -201,8 +373,14 @@ emit_fallback() {
 
     IS_READ_ONLY=0
     case "$TOOL_NAME" in
-      view_file|read_file|grep_search|code_search|file_search|list_directory|read_url_content|read_browser_page|search_web|list_resources|read_resource|ask_question|view_file_outline|read_terminal|read_notebook|command_status|find_by_name|manage_task)
+      view_file|read_file|grep_search|code_search|file_search|list_directory|list_dir|list_permissions|search_in_file|wait|wait_5_seconds|read_url_content|read_browser_page|search_web|list_resources|read_resource|ask_question|view_file_outline|read_terminal|read_notebook|command_status|find_by_name)
         IS_READ_ONLY=1
+        ;;
+      manage_task)
+        ACTION_COUNT="$(grep -io '"action"[[:space:]]*:' "$TMP_FLAT" 2>/dev/null | wc -l | tr -d ' ')"
+        if [ "$ACTION_COUNT" = "1" ] && grep -Eq '"[Aa]ction"[[:space:]]*:[[:space:]]*"(list|status)"' "$TMP_FLAT" 2>/dev/null && ! grep -Eq '\\u' "$TMP_IN" 2>/dev/null; then
+          IS_READ_ONLY=1
+        fi
         ;;
     esac
 
@@ -219,14 +397,14 @@ emit_fallback() {
 
     # In headless fleet worker mode (AGB_WORKER_TICKET or AGB_WORKER_MODE set), never prompt 'ask' (fails closed to deny)
     if [ -n "$AGB_WORKER_TICKET" ] || [ -n "$AGB_WORKER_MODE" ]; then
-      printf '{"decision":"deny","reason":"Hook runner fail-safe in headless worker mode — failing closed"}\n'
+      printf '{"decision":"deny","reason":"Hook runner fail-safe in headless worker mode — failing closed%s"}\n' "$DEGRADED_SUFFIX"
       cleanup_tmp
       exit 0
     fi
 
     # Unparseable payload: fail closed for every non-read tool, including run_command (Fallback table)
     if [ "$UNPARSEABLE" -eq 1 ]; then
-      printf '{"decision":"deny","reason":"Hook runner fail-safe — unparseable payload; failing closed"}\n'
+      printf '{"decision":"deny","reason":"Hook runner fail-safe — unparseable payload; failing closed%s"}\n' "$DEGRADED_SUFFIX"
       cleanup_tmp
       exit 0
     fi
@@ -234,13 +412,13 @@ emit_fallback() {
     # For shell commands (run_command): fall back to interactive operator prompt (ask)
     # rather than hard-denying all shell commands when the hook is degraded
     if [ "$TOOL_NAME" = "run_command" ]; then
-      printf '{"decision":"ask","reason":"Hook runner fail-safe in ADLC repository — shell command requires operator confirmation while hook is degraded"}\n'
+      printf '{"decision":"ask","reason":"Hook runner fail-safe in ADLC repository — shell command requires operator confirmation while hook is degraded%s"}\n' "$DEGRADED_SUFFIX"
       cleanup_tmp
       exit 0
     fi
 
     # In an ADLC repository with tickets or .adlc directory, rail protection takes absolute precedence on file mutations: fail closed
-    printf '{"decision":"deny","reason":"Hook runner fail-safe in ADLC repository — frozen rails require denial (run agb doctor to verify runtime health)"}\n'
+    printf '{"decision":"deny","reason":"Hook runner fail-safe in ADLC repository — frozen rails require denial (run agb doctor to verify runtime health)%s"}\n' "$DEGRADED_SUFFIX"
   else
     # In non-ADLC repositories or workspaces without active tickets:
     # If node-launcher exited with 86 (Node >= 22.19 not found), yield to neutral pass-through ("" with exit 0)
@@ -253,13 +431,13 @@ emit_fallback() {
 
     # If in headless worker mode, never prompt 'ask':
     if [ -n "$AGB_WORKER_TICKET" ] || [ -n "$AGB_WORKER_MODE" ]; then
-      printf '{"decision":"deny","reason":"Hook runner fail-safe in headless worker mode — failing closed"}\n'
+      printf '{"decision":"deny","reason":"Hook runner fail-safe in headless worker mode — failing closed%s"}\n' "$DEGRADED_SUFFIX"
       cleanup_tmp
       exit 0
     fi
     case "$FALLBACK_DECISION" in
-      deny) printf '{"decision":"ask","reason":"Hook runner fail-safe — falling back to user confirmation"}\n' ;;
-      *)    printf '{"decision":"%s","reason":"Hook runner fail-safe — falling back to default policy"}\n' "$FALLBACK_DECISION" ;;
+      deny) printf '{"decision":"ask","reason":"Hook runner fail-safe — falling back to user confirmation%s"}\n' "$DEGRADED_SUFFIX" ;;
+      *)    printf '{"decision":"%s","reason":"Hook runner fail-safe — falling back to default policy%s"}\n' "$FALLBACK_DECISION" "$DEGRADED_SUFFIX" ;;
     esac
   fi
 
@@ -269,8 +447,7 @@ emit_fallback() {
 
 trap emit_fallback EXIT HUP INT TERM
 
-LAUNCHER_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
-PLUGIN_ROOT="$(dirname -- "$LAUNCHER_DIR")"
+PLUGIN_ROOT="$RUNNER_ROOT"
 [ -n "$PLUGIN_ROOT" ] || emit_fallback
 
 MAIN_PID=$$

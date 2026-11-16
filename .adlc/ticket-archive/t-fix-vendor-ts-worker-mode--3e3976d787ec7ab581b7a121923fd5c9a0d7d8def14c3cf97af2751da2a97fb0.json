@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T03:51:09.638Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "3014936f5e99d684fa040ab5d4e8356be64c6dac5d1bd68e07ea50aa51313615",
+    "ticketHash": "5b12159e5ba416e3e9f33c1d7a4eb89a1db0ae2d04fd4722564f76b142e87166",
+    "version": 1
+  },
   "body": "Ensure `npm run vendor:bundle` sets `0o644` on `vendor/adlc/dist/syntax-check-typescript.mjs` (spawned via `process.execPath`, not direct exec) so `computeDirectoryDigest(vendor/adlc)` matches `KNOWN_VENDORED_ADLC.treeDigest` identically across Linux, macOS, and win32 (`test/digest.test.mjs`). Refresh `KNOWN_VENDORED_ADLC` via `node scripts/update-adlc-digests.mjs --write` and rebuild `dist/`.\nAcceptance: `node --test test/digest.test.mjs` and `npm run coverage:check` exit 0.",
   "completed": true,
   "edges": [],

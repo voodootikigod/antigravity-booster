@@ -495,3 +495,27 @@ Report exactly what happened.`,
     if (installed.has(BOOSTER)) uninstallPlugin(BOOSTER);
   }
 });
+
+test('agy 1.5.9+ live canary: init.tools matches committed 60-tool fixture and gemini-pro-orchestrator completes a smoke turn', { skip }, async () => {
+  const fixturePath = join(REPO, 'test', 'fixtures', 'agy-1.5.9-init-tools.json');
+  const expectedTools = JSON.parse(readFileSync(fixturePath, 'utf8')).tools;
+  const ws = mkdirP(join(WORK, 'orch-smoke'));
+
+  const r = sh(
+    'agy',
+    ['-p', 'Reply with exactly: ORCH-SMOKE-OK', '--model', 'gemini-pro-orchestrator', '--output-format', 'stream-json', '--disable-slash-commands', '--print-timeout', '90s'],
+    { cwd: ws, env: cleanEnv() },
+  );
+  assert.equal(r.code, 0, `gemini-pro-orchestrator smoke turn failed:\n${r.out}`);
+
+  const lines = r.out.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{'));
+  const events = lines.map((l) => {
+    try { return JSON.parse(l); } catch { return null; }
+  }).filter(Boolean);
+  const initEvt = events.find((e) => e.type === 'init' && Array.isArray(e.tools));
+  assert.ok(initEvt, `missing init.tools event in stream-json output:\n${r.out}`);
+  assert.deepEqual([...initEvt.tools].sort(), [...expectedTools].sort(), 'live init.tools drifted from test/fixtures/agy-1.5.9-init-tools.json');
+
+  const resEvt = events.find((e) => e.type === 'result');
+  assert.ok(resEvt && resEvt.status === 'SUCCESS', `expected terminal SUCCESS result:\n${r.out}`);
+});

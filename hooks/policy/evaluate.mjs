@@ -13,8 +13,9 @@ import { fileURLToPath } from 'node:url';
 import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
-  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
-  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
+  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS,
+  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, STDIN_TOOLS,
+  SUBAGENT_PROSE_KEYS, SUBAGENT_TOOLS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
   TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS,
 } from './constants.mjs';
 import {
@@ -101,26 +102,60 @@ function boosterMcpToolName(name, args) {
 }
 
 /** Probed-schema path extraction for file-mutating tools (§4.5.1). */
+const FOLDED_EXCLUDED_CONTENT_KEYS = new Set([...EXCLUDED_CONTENT_KEYS].map((k) => String(k).toLowerCase()));
+
+/** Mirrors Go's strings.EqualFold simple folding for the runes that fold into ASCII. */
+export function goFoldKey(k) {
+  return String(k).replace(/\u017f/g, 's').replace(/\u212a/g, 'k').toLowerCase();
+}
+
+/**
+ * Case-insensitive argument view matching the host's Go decoder: only plain
+ * objects with printable-ASCII keys that stay unique under folding are accepted.
+ */
+export function normalizeArgsCaseInsensitive(args) {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+    return { ok: false, reason: 'Tool arguments must be a plain JSON object' };
+  }
+  const keys = Object.keys(args);
+  for (const k of keys) {
+    if (!/^[\x20-\x7E]+$/.test(k)) return { ok: false, reason: 'Non-ASCII or control character in tool argument key' };
+  }
+  const folded = Object.create(null);
+  for (const k of keys) {
+    const fk = goFoldKey(k);
+    if (fk in folded) return { ok: false, reason: 'Duplicate case-folded argument key' };
+    folded[fk] = args[k];
+  }
+  return { ok: true, folded, raw: args };
+}
+
 export function extractProbedPaths(toolName, args) {
   const schema = TOOL_PATH_SCHEMAS[toolName];
   if (!schema) return null;
-  const hasReq = schema.required.some((k) => args?.[k] !== undefined && args?.[k] !== null && String(args[k]).trim().length > 0);
-  const hasAlt = Array.isArray(schema.altRequired) && schema.altRequired.some((k) => args?.[k] !== undefined && args?.[k] !== null && String(args[k]).trim().length > 0);
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return { error: norm.reason };
+  const folded = norm.folded;
+  const get = (k) => folded[goFoldKey(k)];
+  const isPresent = (k) => get(k) !== undefined && get(k) !== null && String(get(k)).trim().length > 0;
+  const hasReq = schema.required.some(isPresent);
+  const hasAlt = Array.isArray(schema.altRequired) && schema.altRequired.some(isPresent);
   if (hasReq && hasAlt) {
     return { error: `Conflicting path parameters in mutating tool call: ${schema.required.join(', ')} and ${schema.altRequired.join(', ')}` };
   }
   const activeKeys = (!hasReq && hasAlt) ? schema.altRequired : schema.required;
-  const inactiveSchemaKeys = new Set([...schema.required, ...(schema.altRequired ?? [])].filter((k) => !activeKeys.includes(k)));
+  const activeFolded = new Set(activeKeys.map(goFoldKey));
+  const inactiveFolded = new Set([...schema.required, ...(schema.altRequired ?? [])].map(goFoldKey).filter((k) => !activeFolded.has(k)));
   const paths = [];
   for (const key of activeKeys) {
-    const val = args?.[key];
+    const val = get(key);
     if (typeof val !== 'string' || val.trim().length === 0) return { error: `Missing required path parameter: ${key}` };
     paths.push(val);
   }
-  for (const [key, val] of Object.entries(args ?? {})) {
-    if (activeKeys.includes(key) || EXCLUDED_CONTENT_KEYS.has(key)) continue;
-    if (inactiveSchemaKeys.has(key) && val !== undefined && val !== null) return { error: `Unexpected path parameter in mutating tool call: ${key}` };
-    if (typeof val === 'string' && UNEXPECTED_PATH.test(val)) return { error: `Unexpected path parameter in mutating tool call: ${key}` };
+  for (const [fk, val] of Object.entries(folded)) {
+    if (activeFolded.has(fk) || FOLDED_EXCLUDED_CONTENT_KEYS.has(fk)) continue;
+    if (inactiveFolded.has(fk) && val !== undefined && val !== null) return { error: `Unexpected path parameter in mutating tool call: ${fk}` };
+    if (typeof val === 'string' && UNEXPECTED_PATH.test(val)) return { error: `Unexpected path parameter in mutating tool call: ${fk}` };
   }
   return { paths };
 }
@@ -177,9 +212,49 @@ function scanPathLike(value, {
 
 const OVERFLOW = deny('Tool arguments are nested too deeply or are too large to verify');
 
-function readToolPaths(name, args) {
+function readToolPaths(name, norm) {
   const keys = READ_TOOL_PATH_SCHEMAS[name] ?? [];
-  return keys.map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
+  return keys.map((k) => norm.folded[goFoldKey(k)]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
+}
+
+const READ_STRING_KEYS = ['toolaction', 'toolsummary'];
+const READ_EXTRA_STRING_KEYS = { search_in_file: ['pattern', 'query'], read_browser_page: ['pageid'] };
+const READ_PATH_PARAM_ERROR = 'Invalid read-tool path parameter';
+
+const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+
+/** Path extraction and argument-shape validation for read tools that require a path. */
+export function extractReadToolPaths(name, rawArgs) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return { ok: false, reason: norm.reason };
+  const pathKeys = REQUIRED_READ_PATH_KEYS[name];
+  const extractedPaths = [];
+  for (const k of pathKeys) {
+    const val = norm.folded[k];
+    if (val === undefined) continue;
+    if (k === 'paths') {
+      if (isNonEmptyString(val)) extractedPaths.push(val);
+      else if (Array.isArray(val) && val.length > 0 && val.every(isNonEmptyString)) extractedPaths.push(...val);
+      else return { ok: false, reason: READ_PATH_PARAM_ERROR };
+    } else if (isNonEmptyString(val)) {
+      extractedPaths.push(val);
+    } else {
+      return { ok: false, reason: READ_PATH_PARAM_ERROR };
+    }
+  }
+  if (extractedPaths.length < 1) return { ok: false, reason: 'Missing required read-tool path parameter' };
+  const stringKeys = new Set([...READ_STRING_KEYS, ...(READ_EXTRA_STRING_KEYS[name] ?? [])]);
+  for (const [k, val] of Object.entries(norm.folded)) {
+    if (pathKeys.includes(k)) continue;
+    if (stringKeys.has(k)) {
+      if (typeof val !== 'string' && val !== undefined) return { ok: false, reason: 'Unexpected non-scalar or unapproved string argument on read tool' };
+      continue;
+    }
+    if (val === undefined) continue;
+    if (typeof val === 'boolean' || (typeof val === 'number' && Number.isFinite(val))) continue;
+    return { ok: false, reason: 'Unexpected non-scalar or unapproved string argument on read tool' };
+  }
+  return { ok: true, paths: extractedPaths.map(toPath) };
 }
 
 /**
@@ -326,18 +401,49 @@ function workerScopeVerdict(repo, rel, ctx) {
   return PASS;
 }
 
+const SEND_MESSAGE_PROSE_KEYS = new Set(['Message', 'message', 'toolAction', 'toolaction', 'toolSummary', 'toolsummary']);
+
 function stepOne(name, args, ctx) {
-  if (name === 'run_command') return PASS; // shell tokens are checked by the classifier
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  if (name === 'run_command' || STDIN_TOOLS.has(name) || (name === 'manage_task' && norm.folded.action === 'send_input')) {
+    return PASS; // shell/stdin tokens are checked by their dedicated classifiers
+  }
   const isRead = READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]);
   let candidates;
-  if (isRead) candidates = readToolPaths(name, args);
-  else if (TOOL_PATH_SCHEMAS[name]) {
+  if (isRead) {
+    let extra = [];
+    if (Object.hasOwn(REQUIRED_READ_PATH_KEYS, name)) {
+      const readRes = extractReadToolPaths(name, args);
+      if (!readRes.ok) return deny(readRes.reason);
+      extra = readRes.paths;
+    } else {
+      extra = readToolPaths(name, norm);
+    }
+    const scanned = scanPathLike(args);
+    if (scanned.overflow) return OVERFLOW;
+    candidates = [...extra, ...scanned.paths];
+  } else if (name === 'sed_file') {
+    const target = norm.folded.target_file ?? norm.folded.targetfile;
+    candidates = typeof target === 'string' ? [toPath(target)] : [];
+  } else if (NOTEBOOK_EXEC_TOOLS.has(name)) {
+    const np = norm.folded.notebookpath ?? norm.folded.absolutepath ?? norm.folded.path;
+    candidates = typeof np === 'string' ? [toPath(np)] : [];
+  } else if (TOOL_PATH_SCHEMAS[name]) {
     const schemaKeys = [...TOOL_PATH_SCHEMAS[name].required, ...(TOOL_PATH_SCHEMAS[name].altRequired ?? [])];
-    candidates = schemaKeys.map((k) => args?.[k]).filter((v) => typeof v === 'string').map(toPath);
+    candidates = schemaKeys.map((k) => norm.folded[goFoldKey(k)]).filter((v) => typeof v === 'string').map(toPath);
   } else {
     const isSwarm = name === 'swarm';
     const isWorkflow = WORKFLOW_TOOLS.has(name);
-    const topLevelSkipKeys = isSwarm ? SWARM_PROSE_KEYS : (isWorkflow ? WORKFLOW_PROSE_KEYS : null);
+    const topLevelSkipKeys = isSwarm
+      ? SWARM_PROSE_KEYS
+      : isWorkflow
+        ? WORKFLOW_PROSE_KEYS
+        : SUBAGENT_TOOLS.has(name)
+          ? SUBAGENT_PROSE_KEYS
+          : name === 'send_message'
+            ? SEND_MESSAGE_PROSE_KEYS
+            : null;
     const scan = scanPathLike(args, {
       topLevelSkipKeys,
       topLevelBareSkipKeys: isSwarm ? SWARM_META_KEYS : null,
@@ -421,6 +527,115 @@ function evaluateOneTargetForm(target, name, args, ctx, workerRepos) {
   return PASS;
 }
 
+const SED_DELETE_RE = /^(?:[1-9]\d*|\$)(?:,(?:[1-9]\d*|\$))?d$/;
+const SED_SUB_HEAD_RE = /^(?:(?:[1-9]\d*|\$)(?:,(?:[1-9]\d*|\$))?)?s([/|])(.*)$/;
+const SED_ODD_TRAILING_BS_RE = /(?:^|[^\\])(?:\\\\)*\\$/;
+const SED_FLAGS_RE = /^(?:g|[1-9]\d*|p|I|i|m|M)*$/;
+
+/**
+ * Validates the 2-production bracket/backref-free sed_file expression subset (§3.4).
+ */
+export function validateSedCall(expressions) {
+  if (!Array.isArray(expressions) || expressions.length === 0 || expressions.length > 128) {
+    return { ok: false, reason: 'sed_file expressions must be a non-empty bounded array' };
+  }
+  for (const expr of expressions) {
+    if (typeof expr !== 'string' || !expr || expr.length > 1024 || /[\0\r\n]/.test(expr)) {
+      return { ok: false, reason: 'Invalid sed_file expression string' };
+    }
+    if (SED_DELETE_RE.test(expr)) continue;
+    const head = SED_SUB_HEAD_RE.exec(expr);
+    if (!head) return { ok: false, reason: 'Disallowed sed_file command' };
+    const delim = head[1];
+    const parts = head[2].split(delim);
+    if (parts.length !== 3) return { ok: false, reason: 'Unbalanced or escaped delimiter in sed_file substitution' };
+    const [pattern, replacement, flags] = parts;
+    if (pattern.length < 1 || pattern.length > 256 || replacement.length > 512) {
+      return { ok: false, reason: 'sed_file pattern or replacement exceeds length bounds' };
+    }
+    if (/[\[\]]/.test(pattern) || /\\[1-9]/.test(pattern)) {
+      return { ok: false, reason: 'Bracket expressions and backreferences are forbidden in sed_file' };
+    }
+    if (SED_ODD_TRAILING_BS_RE.test(pattern) || SED_ODD_TRAILING_BS_RE.test(replacement)) {
+      return { ok: false, reason: 'Trailing odd backslash before delimiter in sed_file' };
+    }
+    if (!SED_FLAGS_RE.test(flags)) {
+      return { ok: false, reason: 'Disallowed sed_file substitution flag' };
+    }
+  }
+  return { ok: true };
+}
+
+export function evaluateSedFile(rawArgs, ctx) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  if (ctx.readonly) return deny('Mutating tool sed_file denied in read-only worker session');
+  for (const k of Object.keys(norm.folded)) {
+    if (!SED_ALLOWED_KEYS.has(k)) return deny(`Unexpected argument in sed_file: ${k}`);
+  }
+  if ('target_file' in norm.folded && 'targetfile' in norm.folded) {
+    return deny('Conflicting target_file parameters in sed_file');
+  }
+  if ('file_content' in norm.folded && 'filecontent' in norm.folded) {
+    return deny('Conflicting file_content parameters in sed_file');
+  }
+  const fc = norm.folded.file_content !== undefined ? norm.folded.file_content : norm.folded.filecontent;
+  if (fc !== undefined && fc !== null && (typeof fc !== 'object' || Array.isArray(fc) || Object.keys(fc).length > 0)) {
+    return deny('Non-empty file_content is forbidden in sed_file');
+  }
+  const target = norm.folded.target_file ?? norm.folded.targetfile;
+  if (!isNonEmptyString(target)) return deny('Missing required target_file parameter in sed_file');
+  const sedCheck = validateSedCall(norm.folded.expressions);
+  if (!sedCheck.ok) return deny(sedCheck.reason);
+  const v = evaluateFileTool('write_to_file', { TargetFile: target }, ctx);
+  return v.decision === 'ask' ? deny(v.reason) : v;
+}
+
+const NOTEBOOK_EXEC_ALLOWED_KEYS = new Set(['notebookpath', 'absolutepath', 'path', 'cellids', 'toolaction', 'toolsummary']);
+const NOTEBOOK_EXEC_PATH_KEYS = ['notebookpath', 'absolutepath', 'path'];
+
+export function evaluateNotebookExecution(rawArgs, ctx) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  if (ctx.readonly) return deny('Read-only agb worker session cannot execute notebooks');
+  if (ctx.workerTicket) return deny('Headless agb worker session cannot execute notebooks');
+  for (const [k, v] of Object.entries(norm.folded)) {
+    if (!NOTEBOOK_EXEC_ALLOWED_KEYS.has(k)) return deny(`Unexpected argument in notebook_execution: ${k}`);
+    if ((k === 'toolaction' || k === 'toolsummary') && v !== undefined && typeof v !== 'string') {
+      return deny(`Invalid ${k} parameter in notebook_execution`);
+    }
+  }
+  const presentPathKeys = NOTEBOOK_EXEC_PATH_KEYS.filter((k) => norm.folded[k] !== undefined);
+  if (presentPathKeys.length > 1) return deny('Conflicting notebook path parameters in notebook_execution');
+  const np = norm.folded.notebookpath ?? norm.folded.absolutepath ?? norm.folded.path;
+  if (!isNonEmptyString(np)) return deny('Missing required NotebookPath parameter in notebook_execution');
+  if (norm.folded.cellids !== undefined && (!Array.isArray(norm.folded.cellids) || !norm.folded.cellids.every((x) => typeof x === 'string'))) {
+    return deny('Invalid CellIds parameter in notebook_execution');
+  }
+  const resolved = resolveAll(toPath(np), ctx);
+  if (resolved.length === 0) return deny('Relative notebook path has no workspace to anchor it');
+  const repos = [...ctx.anchors.map((a) => ctx.repoAt(a))];
+  for (const r of resolved) {
+    const c = containsProtected(r, ctx);
+    if (c) return deny(c.reason);
+    const g = gateOnePath(r, ctx);
+    repos.push(g.repo);
+    if (g.verdict.decision !== 'pass') return deny(g.verdict.reason);
+    if (g.repo.adlc && g.rel && newShardVerdict('notebook_execution', g.rel, {}, ctx.platform)) {
+      return deny('Target path matches standing ADLC implicit rail: .adlc/tickets/');
+    }
+    if (r.lexical !== r.real) {
+      const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx);
+      repos.push(lexRes.repo);
+      if (lexRes.verdict.decision !== 'pass') return deny(lexRes.verdict.reason);
+    }
+  }
+  if (repos.some((r) => r.adlc && (r.activeRail || !r.store.ok))) {
+    return deny('Notebook execution forbidden while ADLC rails are active or store is unreadable');
+  }
+  return PASS;
+}
+
 function evaluateFileTool(name, args, ctx) {
   const extracted = extractProbedPaths(name, args);
   if (!extracted || extracted.error) {
@@ -456,7 +671,8 @@ function evaluateFileTool(name, args, ctx) {
       }
     }
   }
-  return mostRestrictive(verdicts);
+  const finalVerdict = mostRestrictive(verdicts);
+  return name === 'notebook_edit' && finalVerdict.decision === 'ask' ? deny(finalVerdict.reason) : finalVerdict;
 }
 
 function evaluateMcpTool(name, args, ctx) {
@@ -494,7 +710,123 @@ function evaluateMcpTool(name, args, ctx) {
   return PASS;
 }
 
+const STDIN_SKIP_KEYS = new Set(['Input', 'input', 'toolAction', 'toolaction', 'toolSummary', 'toolsummary']);
+const STDIN_ALLOWED_KEYS = new Set(['commandid', 'input', 'terminate', 'waitms', 'waitmsbeforeasync', 'toolaction', 'toolsummary']);
+
+function extractInputPathTokens(inputText) {
+  return inputText
+    .split(/[\s'"`(),;[\]{}=]+/)
+    .filter(looksLikePath)
+    .map(toPath);
+}
+
+function scanStdinPaths(rawArgs, ctx, inputText = '') {
+  const scan = scanPathLike(rawArgs, { topLevelSkipKeys: STDIN_SKIP_KEYS });
+  if (scan.overflow) return OVERFLOW;
+  const extraTokens = extractInputPathTokens(inputText);
+  for (const token of [...scan.paths, ...extraTokens]) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) return deny(`Relative path '${token}' has no workspace to anchor it`);
+    for (const r of resolved) {
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (matchRoot(r, ctx.protectedRoots, ctx.platform)) {
+        return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
+      }
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision !== 'pass') return deny(verdict.reason);
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        if (lexRes.verdict.decision !== 'pass') return deny(lexRes.verdict.reason);
+      }
+    }
+  }
+  return null;
+}
+
+export function evaluateSendCommandInput(rawArgs, ctx) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  if (ctx.headless) return deny('Headless agb worker session cannot use send_command_input');
+  for (const [k, v] of Object.entries(norm.folded)) {
+    if (!STDIN_ALLOWED_KEYS.has(k)) return deny(`Unexpected argument in send_command_input: ${k}`);
+    if (v === undefined) continue;
+    if (k === 'commandid' && !isNonEmptyString(v)) return deny('Invalid CommandId in send_command_input');
+    if (k === 'terminate' && typeof v !== 'boolean') return deny('Invalid Terminate flag in send_command_input');
+    if ((k === 'input' || k === 'toolaction' || k === 'toolsummary') && typeof v !== 'string') {
+      return deny(`Invalid ${k} parameter in send_command_input`);
+    }
+    if ((k === 'waitms' || k === 'waitmsbeforeasync') && (typeof v !== 'number' || !Number.isFinite(v))) {
+      return deny(`Invalid ${k} parameter in send_command_input`);
+    }
+  }
+  const anchorRepos = ctx.anchors.map((a) => ctx.repoAt(a));
+  if (norm.folded.terminate === true && !norm.folded.input) {
+    const nonInputErr = scanStdinPaths(rawArgs, ctx, '');
+    if (nonInputErr) return nonInputErr;
+    if (anchorRepos.some((r) => r.adlc && !r.store.ok)) {
+      return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
+    }
+    return PASS;
+  }
+  if (anchorRepos.some((r) => r.adlc && (r.activeRail || !r.store.ok))) {
+    return deny('Interactive stdin write forbidden while ADLC rails are active or store is unreadable');
+  }
+  const stdinPathErr = scanStdinPaths(rawArgs, ctx, norm.folded.input ?? '');
+  if (stdinPathErr) return stdinPathErr;
+  const shVerdict = classifyRunCommand({ CommandLine: norm.folded.input ?? '', Cwd: ctx.anchor }, ctx);
+  return shVerdict.decision === 'pass' ? PASS : deny(shVerdict.reason);
+}
+
 function evaluateOrchestrationTool(name, args, ctx) {
+  if (name === 'manage_task') {
+    const norm = normalizeArgsCaseInsensitive(args);
+    if (!norm.ok) return deny(norm.reason);
+    const action = norm.folded.action;
+    if (action === 'list' || action === 'status') return PASS;
+    if (action === 'kill') {
+      if (ctx.headless) return deny('Headless agb worker session cannot kill tasks');
+      if (ctx.anchors.some((a) => { const r = ctx.repoAt(a); return r.adlc && !r.store.ok; })) {
+        return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
+      }
+      return PASS;
+    }
+    if (action === 'send_input') {
+      if (typeof norm.folded.input !== 'string') return deny('manage_task send_input requires a string Input parameter');
+      if (ctx.headless || ctx.anchors.some((a) => { const r = ctx.repoAt(a); return r.adlc && (r.activeRail || !r.store.ok); })) {
+        return deny('manage_task send_input forbidden in headless worker or active-rail ADLC repository');
+      }
+      const stdinPathErr = scanStdinPaths(args, ctx, norm.folded.input);
+      if (stdinPathErr) return stdinPathErr;
+      const shVerdict = classifyRunCommand({ CommandLine: norm.folded.input, Cwd: ctx.anchor }, ctx);
+      return shVerdict.decision === 'pass' ? PASS : deny(shVerdict.reason);
+    }
+    return deny('Unsupported or missing manage_task Action');
+  }
+
+  if (SUBAGENT_TOOLS.has(name)) {
+    if (ctx.headless) return deny('Headless agb worker session cannot spawn or manage subagents');
+    if (ctx.anchors.some((a) => { const r = ctx.repoAt(a); return r.adlc && !r.store.ok; })) {
+      return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
+    }
+    const scan = scanPathLike(args, { topLevelSkipKeys: SUBAGENT_PROSE_KEYS });
+    if (scan.overflow) return OVERFLOW;
+    for (const token of scan.paths) {
+      const resolved = resolveAll(token, ctx);
+      if (resolved.length === 0) return deny(`Relative path '${token}' in ${name} has no workspace to anchor it`);
+      for (const r of resolved) {
+        const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+        if (verdict.decision !== 'pass') return deny(verdict.reason);
+        if (r.lexical !== r.real) {
+          const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+          if (lexRes.verdict.decision !== 'pass') return deny(lexRes.verdict.reason);
+        }
+      }
+    }
+    return PASS;
+  }
+
   if (name !== 'swarm') return PASS;
   if (ctx.headless) return deny('Headless agb worker session cannot invoke native swarm orchestration');
   if (args?.workspace !== undefined && args?.workspace !== null) {
@@ -684,7 +1016,7 @@ export function buildContext(payload, options = {}) {
 export function evaluatePayload(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== 'string' || name.length === 0) return deny('Malformed PreToolUse payload: missing tool name');
-  const args = payload.toolCall.args ?? {};
+  const args = payload.toolCall.args === undefined ? {} : payload.toolCall.args;
   // Before Step 1: a control step's args are the model's answer, not paths.
   if (AGY_CONTROL_TOOLS.has(name)) return PASS;
   beginEvaluation();
@@ -694,6 +1026,9 @@ export function evaluatePayload(payload, options = {}) {
   if (step1.decision === 'deny') return step1;
 
   if (READ_ONLY_TOOLS.has(name)) return PASS;
+  if (name === 'sed_file') return evaluateSedFile(args, ctx);
+  if (NOTEBOOK_EXEC_TOOLS.has(name)) return evaluateNotebookExecution(args, ctx);
+  if (STDIN_TOOLS.has(name)) return evaluateSendCommandInput(args, ctx);
   if (ORCHESTRATION_TOOLS.has(name)) return evaluateOrchestrationTool(name, args, ctx);
   if (WORKFLOW_TOOLS.has(name)) return evaluateWorkflowTool(args, ctx);
   if (name === 'run_command') return classifyRunCommand(args, ctx);

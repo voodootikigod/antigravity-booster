@@ -328,8 +328,10 @@ var init_digest = __esm({
 var models_exports = {};
 __export(models_exports, {
   ALL_MODELS: () => ALL_MODELS,
+  FRONTIER_NO_ORCHESTRATOR: () => FRONTIER_NO_ORCHESTRATOR,
   MODELS: () => MODELS,
   MODEL_ALIASES: () => MODEL_ALIASES,
+  ORCHESTRATOR_MODELS: () => ORCHESTRATOR_MODELS,
   PROSECUTORS: () => PROSECUTORS,
   PROSECUTOR_CANDIDATES: () => PROSECUTOR_CANDIDATES,
   RETIRED_35_MAP: () => RETIRED_35_MAP,
@@ -339,10 +341,14 @@ __export(models_exports, {
   familyOf: () => familyOf,
   modelFor: () => modelFor,
   poolOf: () => poolOf,
+  resetOrchestratorRoutingState: () => resetOrchestratorRoutingState,
   resolveModelSlug: () => resolveModelSlug,
+  runWithOrchestratorRoutingState: () => runWithOrchestratorRoutingState,
+  setOrchestratorRoutingState: () => setOrchestratorRoutingState,
   tierCandidates: () => tierCandidates,
   upstreamPoolOf: () => upstreamPoolOf
 });
+import { AsyncLocalStorage } from "node:async_hooks";
 function modelFor(role) {
   if (ROLE_MODELS[role] === void 0) {
     throw new Error("Unknown model role: " + role);
@@ -373,7 +379,7 @@ function poolOf(model) {
   if (typeof slug !== "string") throw new Error(`unknown model: ${slug}`);
   const normalized = slug.toLowerCase();
   if (normalized.includes("flash")) return "gemini-flash";
-  if (normalized.includes("gemini")) return "gemini-pro";
+  if (normalized.includes("gemini") || normalized.includes("hydrogen")) return "gemini-pro";
   if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus")) return "claude";
   if (normalized.includes("gpt")) return "gpt-oss";
   throw new Error(`unknown model: ${slug}`);
@@ -386,15 +392,39 @@ function upstreamPoolOf(model) {
   const pool = poolOf(model);
   return pool.startsWith("gemini") ? "gemini" : "claude_gpt";
 }
-function tierCandidates(tier, poolHint) {
-  return (TIER_CANDIDATES[tier] ?? TIER_CANDIDATES.mid).filter((m) => {
+function toModelSet(v) {
+  return v instanceof Set ? v : Array.isArray(v) ? new Set(v) : null;
+}
+function setOrchestratorRoutingState({ disableOrchestrator = false, disabledModels = null } = {}) {
+  runtimeState.disableOrchestrator = Boolean(disableOrchestrator);
+  runtimeState.disabledModels = toModelSet(disabledModels);
+}
+function resetOrchestratorRoutingState() {
+  runtimeState.disableOrchestrator = false;
+  runtimeState.disabledModels = null;
+}
+function runWithOrchestratorRoutingState({ disableOrchestrator = false, disabledModels = null } = {}, fn) {
+  const store = {
+    disableOrchestrator: Boolean(disableOrchestrator),
+    disabledModels: toModelSet(disabledModels)
+  };
+  return routingAls.run(store, () => fn(store));
+}
+function tierCandidates(tier = "mid", poolHint, options) {
+  const activeState = routingAls.getStore() ?? runtimeState;
+  const effectiveTier = TIER_CANDIDATES[tier] ? tier : "mid";
+  const disableOrchestrator = Boolean(options?.disableOrchestrator ?? activeState.disableOrchestrator) || process.env.AGB_DISABLE_ORCHESTRATOR === "1";
+  const base = effectiveTier === "frontier" && disableOrchestrator ? FRONTIER_NO_ORCHESTRATOR : TIER_CANDIDATES[effectiveTier];
+  const disabledSet = options?.disabledModels !== void 0 ? toModelSet(options.disabledModels) : activeState.disabledModels;
+  return base.filter((m) => {
+    if (disabledSet && disabledSet.has(m)) return false;
     if (!poolHint || poolHint === "auto") return true;
     const fam = familyOf(m);
     if (poolHint === "claude-gpt") return fam === "claude" || fam === "gpt-oss";
     return fam === poolHint;
   });
 }
-var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, RETIRED_35_MAP, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, ROLE_MODELS;
+var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, RETIRED_35_MAP, ORCHESTRATOR_MODELS, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, ROLE_MODELS, runtimeState, routingAls;
 var init_models = __esm({
   "lib/models.mjs"() {
     MODELS = {
@@ -468,6 +498,16 @@ var init_models = __esm({
     ];
     RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
     RETIRED_35_MAP = RETIRED_MODEL_MAP;
+    ORCHESTRATOR_MODELS = /* @__PURE__ */ new Set([
+      "gemini-pro-orchestrator",
+      "gemini-pro-orchestrator-argon"
+    ]);
+    FRONTIER_NO_ORCHESTRATOR = Object.freeze([
+      "gemini-4-argon-high",
+      "claude-sonnet-5-5-high",
+      "gemini-4-carbon-high",
+      "claude-opus-5-5-high"
+    ]);
     TIER_CANDIDATES = {
       cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
       mid: [
@@ -477,12 +517,14 @@ var init_models = __esm({
         "gemini-4-hydrogen-medium",
         "claude-sonnet-5-5-medium"
       ],
-      frontier: [
+      frontier: Object.freeze([
+        "gemini-pro-orchestrator",
+        "claude-sonnet-5-5-high",
+        "gemini-pro-orchestrator-argon",
         "gemini-4-argon-high",
         "gemini-4-carbon-high",
-        "claude-sonnet-5-5-high",
         "claude-opus-5-5-high"
-      ]
+      ])
     };
     PROSECUTORS = {
       gemini: "gpt-oss-120b-medium",
@@ -503,6 +545,11 @@ var init_models = __esm({
       probeDefault: "Gemini 3.8 Flash (Low)",
       reviewFleetAlternates: ["gemini-3.8-flash-high", "gemini-4-argon-high"]
     };
+    runtimeState = {
+      disableOrchestrator: false,
+      disabledModels: null
+    };
+    routingAls = new AsyncLocalStorage();
   }
 });
 
@@ -762,7 +809,7 @@ watching (updated ${(/* @__PURE__ */ new Date()).toISOString()})`);
     }, intervalMs);
   });
 }
-var writeOwnerOnly, warned, ownerOnlyDir, RunStatus, PHASE_ICONS;
+var writeOwnerOnly, warned, ownerOnlyDir, FORBIDDEN_SLUGS, toFiniteCount, RunStatus, PHASE_ICONS;
 var init_status = __esm({
   "lib/status.mjs"() {
     writeOwnerOnly = (file, data) => {
@@ -784,6 +831,8 @@ var init_status = __esm({
         );
       }
     };
+    FORBIDDEN_SLUGS = /* @__PURE__ */ new Set(["__proto__", "constructor"]);
+    toFiniteCount = (n) => Number.isFinite(n) && n > 0 ? n : 0;
     RunStatus = class {
       constructor(repo, runId) {
         this.path = join27(repo, ".booster", "run.json");
@@ -796,8 +845,62 @@ var init_status = __esm({
           updatedAt: null,
           done: false,
           tickets: {},
-          pools: {}
+          pools: {},
+          statsContext: null,
+          modelStats: {},
+          disabledModels: []
         };
+      }
+      initModelStats(statsContext, priorState) {
+        const normalizedCtx = {
+          planHash: statsContext?.planHash ?? null,
+          agyVersion: statsContext?.agyVersion ?? null
+        };
+        this.state.statsContext = normalizedCtx;
+        const matchesPrior = Boolean(normalizedCtx.planHash) && priorState?.statsContext?.planHash === normalizedCtx.planHash && priorState?.statsContext?.agyVersion === normalizedCtx.agyVersion;
+        if (matchesPrior && priorState?.modelStats && typeof priorState.modelStats === "object" && !Array.isArray(priorState.modelStats)) {
+          const cloned = {};
+          for (const [slug, entry] of Object.entries(priorState.modelStats)) {
+            if (FORBIDDEN_SLUGS.has(slug) || !entry || typeof entry !== "object") continue;
+            cloned[slug] = {
+              resolvedTickets: toFiniteCount(entry.resolvedTickets),
+              builderFaultTickets: toFiniteCount(entry.builderFaultTickets),
+              mergedTickets: toFiniteCount(entry.mergedTickets),
+              rateLimits: toFiniteCount(entry.rateLimits)
+            };
+          }
+          this.state.modelStats = cloned;
+          const restoredDisabled = Array.isArray(priorState.disabledModels) ? priorState.disabledModels.filter((m) => typeof m === "string") : [];
+          this.state.disabledModels = [...new Set(restoredDisabled)];
+          this.flush();
+          return new Set(this.state.disabledModels);
+        }
+        this.state.modelStats = {};
+        this.state.disabledModels = [];
+        this.flush();
+        return /* @__PURE__ */ new Set();
+      }
+      updateModelStats(modelSlug, { resolved = false, builderFault = false, merged = false, rateLimited = false, disabledModels } = {}) {
+        if (typeof modelSlug === "string" && Boolean(modelSlug) && !FORBIDDEN_SLUGS.has(modelSlug)) {
+          const cur = this.state.modelStats[modelSlug] ?? {
+            resolvedTickets: 0,
+            builderFaultTickets: 0,
+            mergedTickets: 0,
+            rateLimits: 0
+          };
+          if (resolved) cur.resolvedTickets += 1;
+          if (builderFault) cur.builderFaultTickets += 1;
+          if (merged) cur.mergedTickets += 1;
+          if (rateLimited) cur.rateLimits += 1;
+          this.state.modelStats[modelSlug] = cur;
+        }
+        if (disabledModels !== void 0) {
+          this.state.disabledModels = [
+            ...disabledModels instanceof Set ? disabledModels : Array.isArray(disabledModels) ? new Set(disabledModels) : []
+          ];
+        }
+        this.flush();
+        return modelSlug ? this.state.modelStats[modelSlug] : null;
       }
       ticket(id, patch) {
         if (id === "__proto__" || id === "constructor") return;
@@ -7824,6 +7927,7 @@ async function checkNodeVersion({ version = process.version } = {}) {
   return { name: "Node.js", level: "fail", detail: version, fix: `Upgrade Node.js to v${MIN_NODE_VERSION} or newer.` };
 }
 var MIN_AGY_VERSION = "1.2.6";
+var RECOMMENDED_AGY_VERSION = "1.5.9";
 async function checkAgyBinary({ env = process.env, home = env.HOME || homedir3() } = {}) {
   try {
     const agyCmd = env.AGB_AGY_BIN || resolveAgyBinary(home);
@@ -7843,16 +7947,47 @@ async function checkAgyBinary({ env = process.env, home = env.HOME || homedir3()
       return {
         name: "agy CLI",
         level: "fail",
+        version: versionStr,
         detail: `${rawOut} (required >= v${MIN_AGY_VERSION})`,
         fix: `Upgrade agy to >= ${MIN_AGY_VERSION} to support --output-format stream-json.`
       };
     }
     let v = rawOut;
     if (!v.startsWith("v")) v = "v" + v;
-    return { name: "agy CLI", level: "pass", detail: v, fix: null };
+    if (lt(versionStr, RECOMMENDED_AGY_VERSION)) {
+      return {
+        name: "agy CLI",
+        level: "warn",
+        version: versionStr,
+        detail: `${v} (recommended >= v${RECOMMENDED_AGY_VERSION}; Orchestrator slugs auto-disabled)`,
+        fix: `Upgrade agy to >= ${RECOMMENDED_AGY_VERSION} for Orchestrator (Carbon/Argon) support.`
+      };
+    }
+    return { name: "agy CLI", level: "pass", version: versionStr, detail: v, fix: null };
   } catch (err) {
     return { name: "agy CLI", level: "fail", detail: "not found or error", fix: "Install Google Antigravity CLI and ensure it is on PATH." };
   }
+}
+function lstatOrNull(p) {
+  try {
+    return lstatSync8(p);
+  } catch {
+    return null;
+  }
+}
+function checkHookLogDir({ env = process.env, home = env.HOME || homedir3() } = {}) {
+  const markerPath2 = join19(home, ".gemini", "antigravity-cli", ".agb-hook-log-degraded");
+  const logDir = join19(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster", "logs");
+  const logFile = join19(logDir, "hooks.log");
+  if (existsSync18(markerPath2) || lstatOrNull(logDir)?.isSymbolicLink() || lstatOrNull(logFile)?.isSymbolicLink()) {
+    return {
+      name: "Hook audit log",
+      level: "warn",
+      detail: "audit log degraded or symlinked",
+      fix: `Inspect ${logDir} permissions/symlinks and remove ${markerPath2}.`
+    };
+  }
+  return { name: "Hook audit log", level: "pass", detail: "healthy", fix: null };
 }
 async function agyModelsStdout({ env, home }) {
   let cmd2 = env.AGB_AGY_BIN || resolveAgyBinary(home);
@@ -9115,7 +9250,8 @@ async function runDoctor(opts = {}) {
     checkPolicyGuard(opts),
     checkSecondaryInstall(opts),
     checkKillswitchUsage(opts),
-    checkProbePlugins(opts)
+    checkProbePlugins(opts),
+    checkHookLogDir(opts)
   ];
   const results = await Promise.allSettled(checks);
   let failed = false;
@@ -10825,6 +10961,119 @@ function isAgyTimeout(out) {
   const last = lines.at(-1) ?? "";
   return /^Error: (?:timed out waiting for response|MCP (?:tool call|server connection|connection) timed out|timed out waiting for MCP response)\.?$/i.test(last) && out.length < 300;
 }
+var FAILURE_FINISHED_REASONS = /* @__PURE__ */ new Set(["error", "failed", "aborted", "cancelled", "canceled", "max_tokens", "length", "safety", "recitation"]);
+var ALL_AGY_ERROR_KINDS = Object.freeze([
+  "containment_unavailable",
+  "stream_overflow",
+  "stream_corruption",
+  "timeout",
+  "spawn",
+  "signal",
+  "interrupted",
+  "model_unavailable",
+  "envelope_error",
+  "server",
+  "server_shutdown_error",
+  "cli",
+  "missing_terminal_result",
+  "missing_structured_output",
+  "schema_violation",
+  "empty",
+  "unclassified"
+]);
+var AGY_ERROR_LINE_RE = /^AGY_ERROR:\s*(\{[^\r\n]*\})$/;
+var MODEL_UNAVAILABLE_MSG_RE = /^unknown model\b|model\s+['"]?[a-z0-9._-]+['"]?\s+not (?:found|available)/i;
+var RATE_LIMIT_MSG_RE = /\b429\b|RESOURCE_EXHAUSTED|rate[ _-]?limit(?:ed)?|quota exceeded/i;
+function classifyAgyOutcome({
+  outputFormat,
+  killReason = null,
+  spawnError = null,
+  code,
+  signal = null,
+  terminalResult = null,
+  envelope = null,
+  jsonValid = true,
+  schemaErrorKind = null,
+  schemaErrorMsg = null,
+  finishedReason,
+  out = "",
+  err = "",
+  lastErrLine,
+  legacyPre150 = false,
+  requestedModel = null
+} = {}) {
+  const errLines = typeof code === "number" && code !== 0 ? lastErrLine !== void 0 ? [String(lastErrLine).trim()].filter(Boolean) : String(err ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(-16).reverse() : [];
+  let lastAgyErr = null;
+  for (const line of errLines) {
+    if (line.length > 4096) continue;
+    const m = AGY_ERROR_LINE_RE.exec(line);
+    if (!m) continue;
+    try {
+      const parsed = JSON.parse(m[1]);
+      if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+        lastAgyErr = parsed;
+        break;
+      }
+    } catch {
+    }
+  }
+  const effFinishedReason = finishedReason ?? terminalResult?.finished_reason ?? envelope?.finished_reason;
+  const isPrintTimeout = effFinishedReason === "print_timeout" || !terminalResult && !envelope && code === 3 && errLines.some((l) => /^\[agy\] print timeout after \d+/.test(l)) || outputFormat === "text" && legacyPre150 && isAgyTimeout(String(out ?? ""));
+  const modelMsg = lastAgyErr?.message ?? terminalResult?.error ?? envelope?.error;
+  const structuredNotFound = (lastAgyErr?.code === 404 || lastAgyErr?.httpStatus === 404 || lastAgyErr?.status === "NOT_FOUND") && (typeof lastAgyErr?.message !== "string" || !lastAgyErr.message.trim() || MODEL_UNAVAILABLE_MSG_RE.test(lastAgyErr.message) && !/\.json\b/i.test(lastAgyErr.message));
+  const unstructuredModelMissing = typeof modelMsg === "string" && MODEL_UNAVAILABLE_MSG_RE.test(modelMsg) && !/\.json\b/i.test(modelMsg) && (!requestedModel || modelMsg.toLowerCase().includes(String(requestedModel).toLowerCase()));
+  const isModelUnavailable = structuredNotFound || unstructuredModelMissing;
+  const detectRateLimit = () => {
+    if (lastAgyErr && (lastAgyErr.code !== void 0 || lastAgyErr.httpStatus !== void 0 || lastAgyErr.status !== void 0)) {
+      return lastAgyErr.code === 429 || lastAgyErr.httpStatus === 429 || lastAgyErr.status === "RESOURCE_EXHAUSTED";
+    }
+    const text = terminalResult?.error ?? envelope?.error ?? (code !== 0 ? errLines.join("\n") : "");
+    return RATE_LIMIT_MSG_RE.test(String(text ?? ""));
+  };
+  if (killReason != null) {
+    return { ok: false, kind: killReason.kind, rateLimited: false, error: killReason.error };
+  } else if (spawnError != null || code === null && signal === null) {
+    return { ok: false, kind: "spawn", rateLimited: false, error: spawnError ? `spawn: ${spawnError.message}` : "spawn: failed to start" };
+  } else if (code === null) {
+    return { ok: false, kind: "signal", rateLimited: false, error: `killed by signal ${signal}` };
+  } else if (isPrintTimeout) {
+    return { ok: false, kind: "timeout", rateLimited: false, error: "print-timeout" };
+  } else if (effFinishedReason === "interrupted") {
+    return { ok: false, kind: "interrupted", rateLimited: false, error: "interrupted" };
+  } else if (FAILURE_FINISHED_REASONS.has(String(effFinishedReason ?? "").toLowerCase()) || outputFormat === "stream-json" && terminalResult != null && (terminalResult.status !== "SUCCESS" || terminalResult.exit_code !== 0 && terminalResult.exit_code !== void 0 && terminalResult.exit_code !== null) || outputFormat === "json" && envelope != null && ["error", "failed"].includes(String(envelope.status ?? "").toLowerCase())) {
+    return {
+      ok: false,
+      kind: isModelUnavailable ? "model_unavailable" : outputFormat === "json" ? "envelope_error" : "server",
+      rateLimited: detectRateLimit(),
+      error: outputFormat === "json" && envelope != null ? `agy returned error status in JSON envelope: ${envelope.status}${envelope.error || envelope.response ? ` (${envelope.error || envelope.response})` : ""}` : terminalResult ? `terminal result status ${terminalResult.status}: exit_code ${terminalResult.exit_code}` : `finished_reason ${effFinishedReason}`
+    };
+  } else if (outputFormat === "stream-json" && terminalResult != null && code !== 0) {
+    return { ok: false, kind: "server_shutdown_error", rateLimited: false, error: `process exited with code ${code} despite terminal result SUCCESS` };
+  } else if (outputFormat === "stream-json" && terminalResult == null && code !== 0) {
+    return {
+      ok: false,
+      kind: lastAgyErr ? isModelUnavailable ? "model_unavailable" : "server" : "cli",
+      rateLimited: detectRateLimit(),
+      error: `exit ${code}: ${(err || out).slice(-300)}`
+    };
+  } else if (outputFormat === "stream-json" && terminalResult == null) {
+    return { ok: false, kind: "missing_terminal_result", rateLimited: false, error: "process exited with 0 without emitting terminal result" };
+  } else if (outputFormat !== "stream-json" && code !== 0) {
+    return {
+      ok: false,
+      kind: isModelUnavailable ? "model_unavailable" : "server",
+      rateLimited: detectRateLimit(),
+      error: `exit ${code}: ${(err || out).slice(-300)}`
+    };
+  } else if (outputFormat === "json" && (!jsonValid || schemaErrorKind != null)) {
+    return { ok: false, kind: schemaErrorKind ?? "schema_violation", rateLimited: false, error: schemaErrorMsg ?? "Invalid JSON structured output" };
+  } else if (outputFormat === "text" && String(out ?? "").trim().length === 0) {
+    return { ok: false, kind: "empty", rateLimited: false, error: "exit 0: empty output" };
+  } else if (outputFormat === "stream-json" || outputFormat === "json" || outputFormat === "text") {
+    return { ok: true, kind: null, rateLimited: false, error: null };
+  }
+  return { ok: false, kind: "unclassified", rateLimited: false, error: `unclassified agy outcome for outputFormat=${String(outputFormat)}` };
+}
 function parseTimeoutMs(timeout) {
   if (typeof timeout === "number") return timeout;
   if (!timeout || typeof timeout !== "string") return 10 * 60 * 1e3;
@@ -10961,6 +11210,7 @@ async function runAgy({
   sanitizeEnv = false,
   onSpawn,
   worker,
+  disableSlashCommands,
   platform: platform3 = process.platform
 }) {
   if (!model || !prompt) throw new Error("runAgy: model and prompt are required");
@@ -10970,6 +11220,9 @@ async function runAgy({
   const effectiveTimeout = outputFormat === "stream-json" && (!timeout || timeout === "0") ? "0" : timeout;
   const pipePromptViaStdin = Buffer.byteLength(prompt, "utf8") > MAX_ARGV_PROMPT_BYTES;
   const args = pipePromptViaStdin ? ["--input-format", "text", "--print-timeout", effectiveTimeout, "--model", resolvedModel] : ["--print", prompt, "--print-timeout", effectiveTimeout, "--model", resolvedModel];
+  if (disableSlashCommands !== false) {
+    args.push("--disable-slash-commands");
+  }
   if (typeof conversation === "string" && conversation.trim()) {
     args.push("--conversation", conversation.trim());
   }
@@ -11408,7 +11661,8 @@ async function runAgy({
             stageBuilderGeminiHome(cwd, userHome, platform3);
           }
         }
-        launchArgs.push("--", bwrapAgyBin, ...args);
+        const innerBwrapArgs = args.filter((a) => a !== "--sandbox");
+        launchArgs.push("--", bwrapAgyBin, ...innerBwrapArgs);
       } else if (containmentCheck.mechanism === "job_object") {
         let bypass = verifiedBypass;
         if (!bypass?.valid) {
@@ -11604,8 +11858,9 @@ async function runAgy({
 (deny file-read* (subpath "${escapedRealAllowedDir}/.ssh"))
 (deny file-read* (subpath "${escapedRealAllowedDir}/.aws"))
 (deny file-read* (subpath "${escapedRealAllowedDir}/.gnupg"))`;
+        const innerSeatbeltArgs = args.filter((a) => a !== "--sandbox");
         launchBin = "sandbox-exec";
-        launchArgs = ["-p", seatbeltProfile, resolvedAgyCandidate, ...args];
+        launchArgs = ["-p", seatbeltProfile, resolvedAgyCandidate, ...innerSeatbeltArgs];
       } else {
         return Promise.resolve({
           ok: false,
@@ -11980,66 +12235,42 @@ async function runAgy({
         }
       }
       const ms = Date.now() - t0;
-      let kind = null;
-      let errorMsg = null;
-      if (killReason) {
-        kind = killReason.kind;
-        errorMsg = killReason.error;
-      } else if (outputFormat === "stream-json") {
-        if (spawnError) {
-          kind = "spawn";
-          errorMsg = `spawn: ${spawnError.message}`;
-        } else if (code === null && signal === null) {
-          kind = "spawn";
-          errorMsg = `spawn: failed to start`;
-        } else if (terminalResult) {
-          if (terminalResult.status === "ERROR") {
-            kind = "server";
-            errorMsg = `terminal result status ERROR: exit_code ${terminalResult.exit_code}`;
-          } else if (terminalResult.status === "SUCCESS") {
-            if (terminalResult.exit_code !== 0 && terminalResult.exit_code !== void 0 && terminalResult.exit_code !== null) {
-              kind = "server";
-              errorMsg = `terminal result SUCCESS carries non-zero exit_code: ${terminalResult.exit_code}`;
-            } else if (code !== 0) {
-              kind = "server_shutdown_error";
-              errorMsg = `process exited with code ${code} despite terminal result SUCCESS`;
-            } else {
-              kind = null;
-            }
-          } else {
-            kind = "server";
-            errorMsg = `terminal result unexpected status '${terminalResult.status}': exit_code ${terminalResult.exit_code}`;
-          }
-        } else {
-          if (code !== 0) {
-            kind = "cli";
-            errorMsg = `exit ${code}: ${(err || out).slice(-300)}`;
-          } else {
-            kind = "missing_terminal_result";
-            errorMsg = "process exited with 0 without emitting terminal result";
-          }
-        }
-      } else {
-        const timedOut = isAgyTimeout(out);
-        if (spawnError) {
-          kind = "spawn";
-          errorMsg = `spawn: ${spawnError.message}`;
-        } else if (code === null && signal === null) {
-          kind = "spawn";
-          errorMsg = `spawn: failed to start`;
-        } else if (timedOut) {
-          kind = "timeout";
-          errorMsg = "print-timeout";
-        } else if (code !== 0) {
-          kind = "server";
-          errorMsg = `exit ${code}: ${(err || out).slice(-300)}`;
-        } else if (out.trim().length === 0) {
-          kind = "empty";
-          errorMsg = `exit 0: empty output`;
+      let envelope = null;
+      let jsonValid = true;
+      let jsonParseMsg = null;
+      if (outputFormat === "json") {
+        try {
+          const parsedEnvelope = JSON.parse(out);
+          if (parsedEnvelope && typeof parsedEnvelope === "object") envelope = parsedEnvelope;
+        } catch (e) {
+          jsonValid = false;
+          jsonParseMsg = `Invalid JSON structured output: ${e.message}`;
         }
       }
+      const legacyJsonTimeout = outputFormat === "json" && isAgyTimeout(out);
+      const classified = classifyAgyOutcome({
+        outputFormat: outputFormat ?? "text",
+        killReason,
+        spawnError,
+        code,
+        signal,
+        terminalResult,
+        envelope,
+        jsonValid,
+        schemaErrorMsg: jsonParseMsg,
+        finishedReason: legacyJsonTimeout ? "print_timeout" : void 0,
+        out,
+        err,
+        legacyPre150: true,
+        requestedModel: resolvedModel
+      });
+      let kind = classified.kind;
+      let errorMsg = classified.error;
       let ok2 = kind === null;
-      let result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
+      let result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId, rateLimited: Boolean(classified.rateLimited) };
+      if (envelope && (ok2 || kind === "envelope_error")) {
+        result.envelope = envelope;
+      }
       if (outputFormat === "stream-json") {
         result.events = events;
         result.terminalResult = terminalResult;
@@ -12128,6 +12359,7 @@ async function runAgy({
         }
       }
       result.conversationId = extractedConversationId;
+      result.rateLimited = Boolean(classified.rateLimited);
       if (logFile) {
         mkdirSync10(dirname16(logFile), { recursive: true, mode: 448 });
         const record = {
@@ -12389,6 +12621,7 @@ var BRAIN_PLAN_SCHEMA = {
     repo: { type: "string" },
     base: { type: "string", pattern: "^[a-zA-Z0-9_.-]+$" },
     concurrencyCap: { type: ["integer", "null"], minimum: 1 },
+    disableOrchestrator: { type: "boolean" },
     gate: {
       type: "object",
       additionalProperties: false,
@@ -12447,6 +12680,7 @@ var BRAIN_PLAN_SCHEMA = {
 };
 
 // lib/scheduler.mjs
+init_models();
 init_plugin_paths();
 
 // lib/charters.mjs
@@ -14100,6 +14334,9 @@ function validatePlan(plan, { strictGates = true } = {}) {
   if (!plan.repo) errors.push("plan.repo is required (absolute path to target repo)");
   if (plan.adlcBin !== void 0) {
     errors.push("plan.adlcBin is prohibited: ADLC binary must be resolved and authenticated by the runtime");
+  }
+  if (plan.disableOrchestrator !== void 0 && typeof plan.disableOrchestrator !== "boolean") {
+    errors.push("plan.disableOrchestrator must be a boolean when provided");
   }
   const NPM_GATE_RE = /^npm (test|run [a-zA-Z0-9_:-]+)$/;
   if (!plan.gate || !plan.gate.build && !plan.gate.test) {
@@ -15888,7 +16125,7 @@ async function runPlan(plan, { log: log2 = console.error, project: project2 } = 
   if (cycle) throw new Error(`cycle in ticket DAG: ${cycle.join(", ")}`);
   const agyBin = process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy";
   const agyCheck = await checkAgyBinary({ env: process.env });
-  if (agyCheck.level !== "pass") {
+  if (agyCheck.level === "fail") {
     throw new Error(`agy binary '${agyBin}' is not spawnable: ${agyCheck.detail}
 Fix: ${agyCheck.fix}`);
   }
@@ -15952,10 +16189,35 @@ Fix: ${agyCheck.fix}`);
     }
     log2(`WARNING: repo ${repo} has uncommitted changes and AGB_ALLOW_DIRTY=1 is enabled. They are left untouched (merges and rollbacks run in agb's worktrees and ${base} advances by ref update), but they are not part of the run's base: builders and gates see only the committed ${base} HEAD.`);
   }
+  let priorRunJson = null;
+  const runJsonPath = join31(repo, ".booster", "run.json");
+  if (existsSync28(runJsonPath)) {
+    try {
+      priorRunJson = JSON.parse(readFileSync23(runJsonPath, "utf8"));
+    } catch {
+    }
+  }
+  const agyVersion = agyCheck.version ?? null;
+  const planHash = crypto5.createHash("sha256").update(
+    JSON.stringify(
+      [...tickets].sort((a, b) => a.id.localeCompare(b.id)).map((t) => ({
+        id: t.id,
+        scope: [...t.scope ?? []].sort(),
+        edges: [...t.edges ?? []].map((e) => e.to).sort()
+      }))
+    )
+  ).digest("hex");
+  const agyBelowOrchestratorFloor = Boolean(agyVersion && parse(agyVersion) && lt(agyVersion, "1.5.9"));
+  if (agyBelowOrchestratorFloor) {
+    log2(`[agb] notice: agy ${agyVersion} < 1.5.9; Orchestrator slugs auto-disabled`);
+  }
+  const disableOrchestrator = Boolean(plan.disableOrchestrator) || agyBelowOrchestratorFloor;
   const pools = plan.pools ?? new PoolSet(plan.caps, { repo });
   const runId = `run-${Date.now().toString(36)}`;
   const finalProject = project2 ?? `agb-${runId}`;
   const status = new RunStatus(repo, runId);
+  const breakerDemotedModels = status.initModelStats({ planHash, agyVersion }, priorRunJson);
+  const activeDisabledModels = new Set(breakerDemotedModels);
   const safeRunId = runId.replace(/[\/\\]/g, "_");
   const logDir = join31(repo, ".booster", "logs", safeRunId);
   const merged = /* @__PURE__ */ new Set();
@@ -15968,7 +16230,18 @@ Fix: ${agyCheck.fix}`);
   let fleetAbortReason = null;
   const releaseLock = acquireRepoLock(repo, { runId });
   try {
-    let compromiseRun = function(reason) {
+    let checkOrchestratorBreaker = function(modelSlug, stats) {
+      if (ORCHESTRATOR_MODELS.has(modelSlug) && stats && stats.resolvedTickets >= 4 && stats.builderFaultTickets / stats.resolvedTickets >= 0.5 && !breakerDemotedModels.has(modelSlug)) {
+        breakerDemotedModels.add(modelSlug);
+        activeDisabledModels.add(modelSlug);
+        status.updateModelStats(null, { disabledModels: breakerDemotedModels });
+        log2(
+          `[agb] warning: demoting ${modelSlug} after ${stats.builderFaultTickets}/${stats.resolvedTickets} builder-fault tickets (>= 50%)`
+        );
+      }
+    }, pickAlternateModel = function(t, current, { crossPool = false } = {}) {
+      return tierCandidates(t.tier ?? "mid", t.pool_hint).find((m) => m !== current && (!crossPool || poolOf(m) !== poolOf(current)) && (pools.caps[poolOf(m)] ?? 0) > 0 && pools.familyCap(upstreamPoolOf(m)) > 0);
+    }, compromiseRun = function(reason) {
       const message = `run compromised: ${reason}`;
       runCompromised ??= reason;
       abortFleet(message);
@@ -16252,6 +16525,8 @@ Fix: ${agyCheck.fix}`);
       }
       let model;
       let worktree;
+      const ticketModelsUsed = /* @__PURE__ */ new Set();
+      const ticketFaultModels = /* @__PURE__ */ new Set();
       try {
         model = pools.route(t.tier ?? "mid", t.pool_hint);
         const q = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
@@ -16265,6 +16540,7 @@ Fix: ${agyCheck.fix}`);
         let lastFailure = "";
         let lastConversationId = null;
         let lastStrikeModel = null;
+        let rateLimitRerouteStrike = -1;
         const safeId = t.id.replace(/[\/\\]/g, "_");
         const buildLogFile = join31(logDir, `${safeId}.jsonl`);
         while (strikes < 2) {
@@ -16409,19 +16685,67 @@ Fix: ${agyCheck.fix}`);
               status.strike(t.id, { model, error: strikeError, strikes });
               throw new Error(strikeError);
             }
-            const isBlocked = /TICKET-BLOCKED/.test(build.output) || build.events?.some((e) => e.action === "blocked" || /blocked/i.test(e.action));
+            const responseText = Array.isArray(build.events) ? [
+              build.terminalResult?.response,
+              ...build.events.filter((e) => e?.type === "assistant" || e?.type === "message" || e?.type === "text").map((e) => e.response ?? e.content ?? e.text ?? "")
+            ].filter((s) => typeof s === "string" && s.length > 0).join("\n") : String(build.output ?? "");
+            const isBlocked = /TICKET-BLOCKED/.test(responseText) || build.events?.some((e) => e.action === "blocked" || e.type === "step_update" && /blocked/i.test(String(e.action ?? "")));
             if (isBlocked) {
+              ticketModelsUsed.add(model);
+              ticketFaultModels.add(model);
               strikes += 1;
-              const match = build.output.match(/TICKET-BLOCKED:?\s*(.*)/)?.[1];
+              const match = responseText.match(/TICKET-BLOCKED:?\s*(.*)/)?.[1];
               strikeError = `agent blocked: ${match || "cannot proceed"}`;
               safeResetToBase();
             } else if (!build.ok) {
               if (["stream_overflow", "stream_corruption", "containment_unavailable"].includes(build.kind)) {
+                ticketModelsUsed.add(model);
+                ticketFaultModels.add(model);
                 strikes = 2;
                 strikeError = `non-recoverable violation (${build.kind}): ${build.error}`;
                 lastFailure = strikeError;
                 status.strike(t.id, { model, error: strikeError, strikes });
                 throw new Error(strikeError);
+              }
+              if (build.kind === "model_unavailable") {
+                activeDisabledModels.add(model);
+                lastConversationId = null;
+                lastStrikeModel = null;
+                const alt = pickAlternateModel(t, model);
+                if (alt) {
+                  log2(`${t.id}: model ${model} unavailable; demoting to ${alt} (no strike consumed)`);
+                  pools.unroute(model);
+                  pools.reserved[poolOf(alt)] += 1;
+                  model = alt;
+                  safeResetToBase();
+                  continue;
+                }
+                strikes += 1;
+                strikeError = `model unavailable (${model}) and no alternate candidates remain: ${build.error}`;
+                lastFailure = strikeError;
+                status.strike(t.id, { model, error: strikeError, strikes });
+                throw new Error(strikeError);
+              }
+              if (build.rateLimited === true) {
+                status.updateModelStats(model, { rateLimited: true, disabledModels: breakerDemotedModels });
+                try {
+                  await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy");
+                } catch {
+                }
+                if (strikes < 2 && rateLimitRerouteStrike !== strikes) {
+                  const alt = pickAlternateModel(t, model, { crossPool: true });
+                  if (alt) {
+                    rateLimitRerouteStrike = strikes;
+                    lastConversationId = null;
+                    lastStrikeModel = null;
+                    log2(`${t.id}: ${model} rate limited; rerouting cross-pool to ${alt} (no strike consumed)`);
+                    pools.unroute(model);
+                    pools.reserved[poolOf(alt)] += 1;
+                    model = alt;
+                    safeResetToBase();
+                    continue;
+                  }
+                }
               }
               if (pools) {
                 try {
@@ -16440,6 +16764,10 @@ Fix: ${agyCheck.fix}`);
                   continue;
                 }
               }
+              if (!build.rateLimited) {
+                ticketModelsUsed.add(model);
+                ticketFaultModels.add(model);
+              }
               if (build.kind === "cli") {
                 fleetCliFailures += 1;
                 strikes += 1;
@@ -16453,17 +16781,27 @@ Fix: ${agyCheck.fix}`);
                   throw new Error(lastFailure);
                 }
                 continue;
+              } else if (["signal", "timeout", "interrupted", "spawn"].includes(build.kind)) {
+                strikes += 1;
+                strikeError = `agent ${build.kind}: ${build.error}`;
+                recordStrikeSession = () => {
+                };
+                safeResetToBase();
               } else {
                 strikes += 1;
                 strikeError = `agent error: ${build.error}`;
                 safeResetToBase();
               }
             } else if (strikeError) {
+              ticketModelsUsed.add(model);
+              ticketFaultModels.add(model);
               strikes += 1;
               safeResetToBase();
             } else {
+              ticketModelsUsed.add(model);
               const scopeCheck = verifyScopeAndAntiNoOp(repo, worktree, baseRefSha, t);
               if (!scopeCheck.ok) {
+                ticketFaultModels.add(model);
                 if (scopeCheck.kind === "empty_diff") {
                   strikes += 1;
                   strikeError = `anti-no-op gate failed: ${scopeCheck.error}`;
@@ -16503,6 +16841,7 @@ Fix: ${agyCheck.fix}`);
                   throw new Error(strikeError);
                 }
                 if (railCheck.violations.length) {
+                  ticketFaultModels.add(model);
                   strikes += 1;
                   strikeError = `rail violation (read-only paths edited, per adlc rails-guard): ${railCheck.violations.join(", ")}`;
                   safeResetToBase();
@@ -16525,6 +16864,7 @@ Fix: ${agyCheck.fix}`);
                     gateIntegrityError = err;
                   }
                   if (gateIntegrityError) {
+                    ticketFaultModels.add(model);
                     strikes += 1;
                     strikeError = `gate script tampering: ${gateIntegrityError.message}`;
                     lastFailure = strikeError;
@@ -16708,6 +17048,17 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
         status.ticket(t.id, { phase: "failed", detail: reason.slice(0, 200) });
         log2(`\u2717 ${t.id}: ${reason}`);
       } finally {
+        for (const m of ticketModelsUsed) {
+          const isMergedModel = merged.has(t.id) && m === model;
+          const isFault = !isMergedModel && ticketFaultModels.has(m);
+          const st = status.updateModelStats(m, {
+            resolved: true,
+            builderFault: isFault,
+            merged: isMergedModel,
+            disabledModels: breakerDemotedModels
+          });
+          checkOrchestratorBreaker(m, st);
+        }
         if (model) pools.unroute(model);
         if (worktree && !merged.has(t.id)) {
           try {
@@ -16996,13 +17347,18 @@ ${g?.output?.slice(0, 300)}`);
       });
       await turn;
     }
-    dispatch();
-    let settled = 0;
-    while (settled < running.length) {
-      const batch = running.slice(settled);
-      settled += batch.length;
-      await Promise.allSettled(batch);
-    }
+    await runWithOrchestratorRoutingState(
+      { disableOrchestrator, disabledModels: activeDisabledModels },
+      async () => {
+        dispatch();
+        let settled = 0;
+        while (settled < running.length) {
+          const batch = running.slice(settled);
+          settled += batch.length;
+          await Promise.allSettled(batch);
+        }
+      }
+    );
     try {
       pruneWorktrees(repo);
     } catch {
@@ -17885,7 +18241,7 @@ try {
       const results = await Promise.all(
         Array.from(
           { length: n },
-          (_, i) => runAgy({ model, prompt: `Reply with exactly: PONG-${i}`, timeout: "120s" }).then((r) => ({
+          (_, i) => runAgy({ model, prompt: `Reply with exactly: PONG-${i}`, timeout: "120s", worker: { mode: "readonly" } }).then((r) => ({
             ...r,
             ok: r.ok && r.output.includes(`PONG-${i}`)
           }))

@@ -17,7 +17,7 @@ Now covered by <https://www.agybooster.com/docs/reference/cli>.
 Now covered by <https://www.agybooster.com/docs/reference/plan-schema>.
 
 ## 5. Environment Variables Reference
-Now covered by <https://www.agybooster.com/docs/reference/environment>.
+Now covered by <https://www.agybooster.com/docs/reference/environment> (including `AGB_DISABLE_ORCHESTRATOR=1` to opt out of `gemini-pro-orchestrator*` frontier builder routing; per-plan opt-out is also available via `"disableOrchestrator": true` in `plan.json`).
 
 ## 6. Antigravity Booster (`agb`) vs. Built-in `/boost`
 Now covered by <https://www.agybooster.com/docs/concepts/agb-vs-boost>.
