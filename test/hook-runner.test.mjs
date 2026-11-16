@@ -833,6 +833,16 @@ for (const [label, shell] of SHELLS) {
     assertInvariant(rFile);
     assert.equal(decisionOf(rFile), 'deny');
     assert.equal(JSON.parse(rFile.stdout.trim()).reason, 'agb hook audit log tampered in headless worker');
+    // Symlinked ~/.config (e.g. GNU Stow / chezmoi dotfiles) must NOT trigger LOG_TAMPERED
+    const homeDotfiles = fs.mkdtempSync(path.join(ROOT, 'dotfiles-home-'));
+    const realDotConfig = fs.mkdtempSync(path.join(ROOT, 'dotfiles-cfg-'));
+    fs.symlinkSync(realDotConfig, path.join(homeDotfiles, '.config'));
+    const rDot = await run(shell, {
+      payload: payloadFor('view_file'),
+      env: { HOME: homeDotfiles, AGB_WORKER_TICKET: 'T-1', STUB_MODE: 'empty' },
+    });
+    assertInvariant(rDot);
+    assert.equal(decisionOf(rDot), '', 'symlinked ~/.config must not false-deny headless workers');
   });
 
   test(`[${label}] fallback passes through list_dir and read-only manage_task while denying manage_task kill/send_input`, async () => {

@@ -123,10 +123,10 @@ LOG_TAMPERED=0
 LOG_DEGRADED=0
 DEGRADED_MARKER="${EFF_HOME}/.gemini/antigravity-cli/.agb-hook-log-degraded"
 
-# Spec §3.6: audit log lives under OS account home of id -u (PASSWD_HOME), so any symlink (-L)
-# or foreign UID (! -O) on log components is tampering. Read-only bwrap mounts remain owned by
-# id -u (-O true) and take the non-tampered LOG_DEGRADED path below instead.
-if [ -L "${EFF_HOME}/.gemini" ] || [ -L "${EFF_HOME}/.gemini/antigravity-cli" ] || [ -L "${EFF_HOME}/.gemini/antigravity" ] || [ -L "${EFF_HOME}/.gemini/antigravity-ide" ] || [ -L "${EFF_HOME}/.config" ] || [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ] || { [ -e "$DATA_ROOT" ] && [ ! -O "$DATA_ROOT" ]; } || { [ -e "$HOOK_LOG_DIR" ] && [ ! -O "$HOOK_LOG_DIR" ]; } || { [ -e "$HOOK_LOG_FILE" ] && [ ! -O "$HOOK_LOG_FILE" ]; }; then
+# Spec §3.6: audit log lives under OS account home of id -u (PASSWD_HOME); check symlink (-L) and
+# foreign UID (! -O) strictly on DATA_ROOT, HOOK_LOG_DIR, and HOOK_LOG_FILE so legitimate dotfile
+# symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never false-trip worker tamper denial.
+if [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ] || { [ -e "$DATA_ROOT" ] && [ ! -O "$DATA_ROOT" ]; } || { [ -e "$HOOK_LOG_DIR" ] && [ ! -O "$HOOK_LOG_DIR" ]; } || { [ -e "$HOOK_LOG_FILE" ] && [ ! -O "$HOOK_LOG_FILE" ]; }; then
   LOG_TAMPERED=1
 fi
 
