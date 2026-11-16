@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import esbuild from 'esbuild';
 import { stageMarketplacePlugin, validateStagedPluginStrict } from '../scripts/stage-marketplace-plugin.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -216,5 +217,31 @@ test('layout: stageMarketplacePlugin produces clean bundle + marketplace.json an
     assert.equal(existsSync(join(s2.pluginDir, 'stale.txt')), false, 'previous pluginDir contents cleared on re-stage');
   } finally {
     rmSync(baseTmp, { recursive: true, force: true });
+  }
+});
+
+test('layout: committed dist/hooks/pre-tool-use.bundle.mjs matches fresh non-mutating esbuild output from hooks/pre-tool-use.mjs', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'agb-hook-bundle-check-'));
+  try {
+    const outFile = join(tmpDir, 'pre-tool-use.bundle.mjs');
+    esbuild.buildSync({
+      entryPoints: [join(ROOT, 'hooks', 'pre-tool-use.mjs')],
+      bundle: true,
+      platform: 'node',
+      format: 'esm',
+      outfile: outFile,
+      banner: {
+        js: "import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);",
+      },
+      define: {
+        __AGB_BUNDLED__: 'true',
+      },
+      logLevel: 'silent',
+    });
+    const freshBytes = readFileSync(outFile);
+    const committedBytes = readFileSync(join(ROOT, 'dist', 'hooks', 'pre-tool-use.bundle.mjs'));
+    assert.equal(freshBytes.equals(committedBytes), true, 'dist/hooks/pre-tool-use.bundle.mjs is stale; run npm run build');
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 });
