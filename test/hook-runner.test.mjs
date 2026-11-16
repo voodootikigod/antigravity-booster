@@ -27,6 +27,17 @@ case "$STUB_MODE" in
   garbage)   printf 'not json at all\\n' ;;
   allow)     printf '{"decision":"allow","reason":"nope"}\\n' ;;
   allow_spaced) printf '{"decision": "allow","reason":"nope"}\\n' ;;
+  fifo_hold)
+    for _d in "$TMPDIR"/hook-runner.*; do
+      if [ -d "$_d" ]; then
+        rm -f "$_d/out"
+        mkfifo "$_d/out"
+        printf '%s\\n' "$_d" > "$FIFO_READY_FILE"
+        exit 0
+      fi
+    done
+    exit 1
+    ;;
   *)         exit 1 ;;
 esac
 exit 0
@@ -36,6 +47,13 @@ function which(cmd) {
   const r = spawnSync('/bin/sh', ['-c', `command -v ${cmd}`], { encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : null;
 }
+
+const BWRAP_BIN = (() => {
+  const p = which('bwrap');
+  if (!p) return null;
+  const probe = spawnSync(p, ['--ro-bind', '/', '/', '--', 'true']);
+  return probe.status === 0 ? p : null;
+})();
 
 const SHELLS = [['/bin/sh', '/bin/sh']];
 for (const name of ['dash', 'bash']) {
@@ -688,30 +706,44 @@ for (const [label, shell] of SHELLS) {
 }
 
 // The guard above relies on main removing the child pidfile as soon as wait
-// reaps the child. A PATH shim around rm records every invocation, so we can
-// assert that removal happens on its own, before the final rm -rf cleanup.
+// reaps the child. Replacing TMP_OUT with a FIFO pauses the runner right after
+// child reap + pidfile removal (at `cat "$TMP_OUT"`), before `cleanup_tmp`.
 for (const [label, shell] of SHELLS) {
   test(`[${label}] runner removes the child pidfile right after reaping the child`, { timeout: 20000 }, async () => {
     const tmp = fs.mkdtempSync(path.join(ROOT, 'rmlog-'));
-    const bin = path.join(tmp, 'bin');
-    fs.mkdirSync(bin);
-    const log = path.join(tmp, 'rm.log');
-    const realRm = which('rm');
-    assert.ok(realRm, 'rm must be on PATH');
-    fs.writeFileSync(path.join(bin, 'rm'), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\nexec "${realRm}" "$@"\n`, { mode: 0o755 });
-    const r = spawnSync(shell, ['bin/hook-runner.sh'], {
+    const fifoReady = path.join(tmp, 'fifo-ready');
+    const runner = spawn(shell, ['bin/hook-runner.sh'], {
       cwd: PLUGIN,
-      input: payloadFor(MUTATION),
-      env: { PATH: `${bin}:${process.env.PATH}`, HOME: HOME_DIR, TMPDIR: tmp, STUB_MODE: 'emit', STUB_LINE: '{"decision":"deny","reason":"x"}' },
-      encoding: 'utf8',
-      timeout: 15000,
+      env: { PATH: process.env.PATH, HOME: HOME_DIR, TMPDIR: tmp, STUB_MODE: 'fifo_hold', FIFO_READY_FILE: fifoReady },
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
-    assert.equal(r.status, 0);
-    const lines = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
-    const pidRm = lines.findIndex((l) => /^-f \S*\/hook-runner\.[^/ ]+\/pid$/.test(l));
-    const dirRm = lines.findIndex((l) => /^-rf \S*\/hook-runner\.[^/ ]+$/.test(l));
-    assert.ok(pidRm !== -1, `child pidfile was never removed on its own: ${JSON.stringify(lines)}`);
-    assert.ok(dirRm === -1 || pidRm < dirRm, `child pidfile removal must precede cleanup: ${JSON.stringify(lines)}`);
+    let stdout = '';
+    runner.stdout.on('data', (d) => { stdout += d; });
+    runner.stdin.on('error', () => {});
+    runner.stdin.end(payloadFor(MUTATION));
+    let writer = null;
+    try {
+      const runnerDir = await waitFor(() => {
+        if (!fs.existsSync(fifoReady)) return null;
+        const raw = fs.readFileSync(fifoReady, 'utf8');
+        return raw.includes('\n') ? raw.trim() : null;
+      });
+      await waitFor(() => !fs.existsSync(path.join(runnerDir, 'pid')));
+      assert.equal(fs.existsSync(runnerDir), true, 'TMP_DIR must still exist while paused at TMP_OUT before cleanup_tmp');
+      assert.equal(fs.existsSync(path.join(runnerDir, 'pid')), false, 'child pidfile must be removed right after reaping');
+
+      writer = spawn('/bin/sh', ['-c', 'printf \'{"decision":"deny","reason":"x"}\\n\' > "$1"', 'sh', path.join(runnerDir, 'out')], {
+        stdio: 'ignore',
+      });
+      const exitCode = await new Promise((resolve) => runner.on('close', resolve));
+      assert.equal(exitCode, 0);
+      assert.equal(stdout, '{"decision":"deny","reason":"x"}\n');
+      assert.equal(fs.existsSync(runnerDir), false, 'cleanup_tmp must remove TMP_DIR on exit');
+    } finally {
+      if (writer) writer.kill('SIGKILL');
+      runner.stdin.destroy();
+      runner.kill('SIGKILL');
+    }
   });
 }
 
@@ -785,7 +817,7 @@ for (const [label, shell] of SHELLS) {
     assert.ok(fs.existsSync(defaultLog), 'symlinked PLUGIN_DATA must fall back to default canonical root');
   });
 
-  test(`[${label}] staged hook-runner under .gemini/config/plugins ignores AGB_TEST_PASSWD_HOME and HOME, anchoring to getent PASSWD_HOME`, async () => {
+  test(`[${label}] staged hook-runner under .gemini/config/plugins ignores AGB_TEST_PASSWD_HOME, HOME, and PATH getent shims`, async () => {
     const tmp = fs.mkdtempSync(path.join(ROOT, 'staged-'));
     const stagedPlugin = path.join(tmp, '.gemini', 'config', 'plugins', 'antigravity-booster');
     fs.mkdirSync(path.join(stagedPlugin, 'bin'), { recursive: true });
@@ -797,35 +829,106 @@ for (const [label, shell] of SHELLS) {
     const passwdHome = path.join(tmp, 'passwd-home');
     const fakeTestHome = path.join(tmp, 'fake-test-home');
     const fakeEnvHome = path.join(tmp, 'fake-env-home');
+    const fakeShimHome = path.join(tmp, 'fake-shim-home');
     fs.mkdirSync(passwdHome, { recursive: true });
     fs.mkdirSync(fakeTestHome, { recursive: true });
     fs.mkdirSync(fakeEnvHome, { recursive: true });
+    fs.mkdirSync(fakeShimHome, { recursive: true });
 
+    // Decoy PATH getent shim pointing at fakeShimHome — must be ignored by pinned /usr/bin/getent
     const shimBin = path.join(tmp, 'shim-bin');
     fs.mkdirSync(shimBin, { recursive: true });
     fs.writeFileSync(
       path.join(shimBin, 'getent'),
-      `#!/bin/sh\nprintf 'user:x:1000:1000::%s:/bin/sh\\n' "${passwdHome}"\n`,
+      `#!/bin/sh\nprintf 'user:x:%s:%s::%s:/bin/sh\\n' "${process.getuid?.() ?? 1000}" "${process.getgid?.() ?? 1000}" "${fakeShimHome}"\n`,
       { mode: 0o755 },
     );
 
-    const r = await run(shell, {
-      cwd: stagedPlugin,
-      payload: payloadFor(MUTATION),
-      env: {
-        PATH: `${shimBin}:${process.env.PATH}`,
-        HOME: fakeEnvHome,
-        AGB_TEST_PASSWD_HOME: fakeTestHome,
-        AGB_HOOK_DISABLE: '1',
-      },
-    });
-    assert.equal(r.code, 0);
-    const expectedLog = path.join(passwdHome, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
     const unexpectedTestLog = path.join(fakeTestHome, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
     const unexpectedEnvLog = path.join(fakeEnvHome, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
-    assert.ok(fs.existsSync(expectedLog), 'staged runner must write to getent PASSWD_HOME');
+    const unexpectedShimLog = path.join(fakeShimHome, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
+
+    if (BWRAP_BIN) {
+      const fakePasswd = path.join(tmp, 'passwd');
+      fs.writeFileSync(
+        fakePasswd,
+        `user:x:${process.getuid()}:${process.getgid()}::${passwdHome}:/bin/sh\n`,
+      );
+      const r = spawnSync(
+        BWRAP_BIN,
+        [
+          '--ro-bind', '/', '/',
+          '--dev', '/dev',
+          '--proc', '/proc',
+          '--bind', ROOT, ROOT,
+          '--ro-bind', fakePasswd, '/etc/passwd',
+          '--',
+          shell,
+          'bin/hook-runner.sh',
+        ],
+        {
+          cwd: stagedPlugin,
+          input: payloadFor(MUTATION),
+          env: {
+            PATH: `${shimBin}:${process.env.PATH}`,
+            HOME: fakeEnvHome,
+            TMPDIR: ROOT,
+            AGB_TEST_PASSWD_HOME: fakeTestHome,
+            AGB_HOOK_DISABLE: '1',
+          },
+          encoding: 'utf8',
+          timeout: 15000,
+        },
+      );
+      assert.equal(r.status, 0, r.stderr);
+      const expectedLog = path.join(passwdHome, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs', 'hooks.log');
+      assert.ok(fs.existsSync(expectedLog), 'staged runner must write to /etc/passwd PASSWD_HOME');
+    } else if (process.platform === 'darwin' && fs.existsSync('/usr/bin/sandbox-exec')) {
+      const realOsHome = os.userInfo().homedir.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      const sbpl = `(version 1)\n(allow default)\n(deny file-write* (subpath "${realOsHome}/.gemini"))\n(deny file-write* (subpath "${realOsHome}/.config"))`;
+      const r = spawnSync(
+        '/usr/bin/sandbox-exec',
+        ['-p', sbpl, shell, 'bin/hook-runner.sh'],
+        {
+          cwd: stagedPlugin,
+          input: payloadFor(MUTATION),
+          env: {
+            PATH: `${shimBin}:${process.env.PATH}`,
+            HOME: fakeEnvHome,
+            TMPDIR: ROOT,
+            AGB_TEST_PASSWD_HOME: fakeTestHome,
+            AGB_WORKER_TICKET: 'T-1',
+            STUB_MODE: 'crash',
+          },
+          encoding: 'utf8',
+          timeout: 15000,
+        },
+      );
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(JSON.parse(r.stdout.trim()).reason, /\[audit-log-degraded\]/, 'dscl resolved real OS home (blocked by Seatbelt), not decoy homes');
+    } else {
+      const runnerSrc = fs.readFileSync(RUNNER_SRC, 'utf8');
+      const homeBlock = runnerSrc.match(/SYS_ID=""[\s\S]*?done\n(?=\nresolve_no_symlink_root)/);
+      assert.ok(homeBlock, 'expected SYS_ID..EFF_HOME block in hook-runner.sh');
+      const probe = spawnSync(
+        shell,
+        ['-c', `RUNNER_ROOT="$1"\n${homeBlock[0]}\nprintf '%s' "$EFF_HOME"`, 'sh', stagedPlugin],
+        {
+          encoding: 'utf8',
+          env: {
+            PATH: `${shimBin}:${process.env.PATH}`,
+            HOME: fakeEnvHome,
+            AGB_TEST_PASSWD_HOME: fakeTestHome,
+          },
+        },
+      );
+      assert.equal(probe.status, 0, probe.stderr);
+      assert.equal(probe.stdout, os.userInfo().homedir, 'EFF_HOME must resolve to real OS home despite decoy HOME/PATH');
+    }
+
     assert.equal(fs.existsSync(unexpectedTestLog), false, 'staged runner must ignore AGB_TEST_PASSWD_HOME');
     assert.equal(fs.existsSync(unexpectedEnvLog), false, 'staged runner must ignore HOME');
+    assert.equal(fs.existsSync(unexpectedShimLog), false, 'staged runner must ignore PATH getent shims');
   });
 
   test(`[${label}] symlinked HOOK_LOG_DIR or HOOK_LOG_FILE denies headless workers immediately`, async () => {
@@ -871,31 +974,122 @@ for (const [label, shell] of SHELLS) {
     assertInvariant(rDot);
     assert.equal(decisionOf(rDot), '', 'symlinked ~/.config must not false-deny headless workers');
 
-    // Foreign-UID DATA_ROOT (simulated via POSIX find -user reporting non-match) triggers LOG_TAMPERED
-    const homeForeign = fs.mkdtempSync(path.join(ROOT, 'foreign-uid-home-'));
-    const foreignRoot = path.join(homeForeign, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster');
-    fs.mkdirSync(foreignRoot, { recursive: true });
-    const shimFindDir = fs.mkdtempSync(path.join(ROOT, 'shim-find-'));
-    const realFind = which('find');
-    assert.ok(realFind, 'find must be on PATH');
-    fs.writeFileSync(
-      path.join(shimFindDir, 'find'),
-      `#!/bin/sh\ncase "$*" in\n  *"${foreignRoot}"*) exit 0 ;;\nesac\nexec "${realFind}" "$@"\n`,
-      { mode: 0o755 },
-    );
-    const rForeign = await run(shell, {
+    // Poisoned PATH with rogue find, id, and getent binaries cannot spoof owned_by_euid() or PASSWD_HOME
+    const homeSafe = fs.mkdtempSync(path.join(ROOT, 'path-poison-home-'));
+    const safeDataRoot = path.join(homeSafe, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster');
+    fs.mkdirSync(safeDataRoot, { recursive: true });
+    const rogueBinDir = fs.mkdtempSync(path.join(ROOT, 'rogue-bin-'));
+    const pwnMarker = path.join(rogueBinDir, 'pwned');
+    for (const util of ['find', 'id', 'getent']) {
+      fs.writeFileSync(
+        path.join(rogueBinDir, util),
+        `#!/bin/sh\necho "${util}" >> "${pwnMarker}"\nexit 1\n`,
+        { mode: 0o755 },
+      );
+    }
+    const rPoison = await run(shell, {
       payload: payloadFor('view_file'),
       env: {
-        PATH: `${shimFindDir}:${process.env.PATH}`,
-        HOME: homeForeign,
+        PATH: `${rogueBinDir}:${process.env.PATH}`,
+        HOME: homeSafe,
         AGB_WORKER_TICKET: 'T-1',
         STUB_MODE: 'empty',
       },
     });
-    assertInvariant(rForeign);
-    assert.equal(decisionOf(rForeign), 'deny');
-    assert.equal(JSON.parse(rForeign.stdout.trim()).reason, 'agb hook audit log tampered in headless worker');
-    assert.ok(fs.existsSync(path.join(homeForeign, '.gemini', 'antigravity-cli', '.agb-hook-log-degraded')));
+    assertInvariant(rPoison);
+    assert.equal(decisionOf(rPoison), '', 'rogue find/id/getent on PATH must not trigger false LOG_TAMPERED');
+    assert.equal(fs.existsSync(pwnMarker), false, 'hook-runner must pin system id/find/getent rather than executing PATH shims');
+
+    // End-to-end foreign-UID DATA_ROOT tamper denial via kernel bind-mount of root-owned /etc
+    if (BWRAP_BIN && typeof process.getuid === 'function' && process.getuid() !== 0) {
+      const homeForeign = fs.mkdtempSync(path.join(ROOT, 'foreign-uid-home-'));
+      const foreignRoot = path.join(homeForeign, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster');
+      fs.mkdirSync(foreignRoot, { recursive: true });
+      // Also plant a rogue find that echoes its path to prove PATH cannot suppress foreign-UID tamper
+      fs.writeFileSync(path.join(rogueBinDir, 'find'), '#!/bin/sh\nprintf "%s\\n" "$2"\n', { mode: 0o755 });
+      const rForeign = spawnSync(
+        BWRAP_BIN,
+        [
+          '--ro-bind', '/', '/',
+          '--dev', '/dev',
+          '--proc', '/proc',
+          '--bind', ROOT, ROOT,
+          '--ro-bind', '/etc', foreignRoot,
+          '--',
+          shell,
+          'bin/hook-runner.sh',
+        ],
+        {
+          cwd: PLUGIN,
+          input: payloadFor('view_file'),
+          env: {
+            PATH: `${rogueBinDir}:${process.env.PATH}`,
+            HOME: homeForeign,
+            TMPDIR: ROOT,
+            AGB_WORKER_TICKET: 'T-1',
+            STUB_MODE: 'empty',
+          },
+          encoding: 'utf8',
+          timeout: 15000,
+        },
+      );
+      assert.equal(rForeign.status, 0, rForeign.stderr);
+      const parsedForeign = JSON.parse(rForeign.stdout.trim());
+      assert.equal(parsedForeign.decision, 'deny');
+      assert.equal(parsedForeign.reason, 'agb hook audit log tampered in headless worker');
+      assert.ok(fs.existsSync(path.join(homeForeign, '.gemini', 'antigravity-cli', '.agb-hook-log-degraded')));
+    }
+
+    // Direct kernel UID verification of owned_by_euid() across all platforms (including macOS)
+    const runnerText = fs.readFileSync(RUNNER_SRC, 'utf8');
+    const fnMatch = runnerText.match(/SYS_ID=""[\s\S]*?^}/m);
+    assert.ok(fnMatch, 'expected SYS_ID..owned_by_euid block in hook-runner.sh');
+    fs.writeFileSync(path.join(rogueBinDir, 'find'), '#!/bin/sh\nprintf "%s\\n" "$2"\n', { mode: 0o755 });
+    const evalOwned = (targetPath) =>
+      spawnSync(
+        shell,
+        ['-c', `${fnMatch[0]}\nowned_by_euid "$1"`, 'sh', targetPath],
+        { env: { PATH: `${rogueBinDir}:${process.env.PATH}` }, encoding: 'utf8' },
+      ).status;
+    assert.equal(evalOwned(homeSafe), 0, 'current-user directory must pass owned_by_euid');
+    assert.notEqual(evalOwned('relative/path'), 0, 'relative path must fail owned_by_euid');
+    assert.notEqual(evalOwned(path.join(homeSafe, 'missing')), 0, 'missing path must fail owned_by_euid');
+    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+      assert.notEqual(evalOwned('/etc'), 0, 'root-owned /etc must fail owned_by_euid even with rogue find on PATH');
+    }
+
+    // Behavioral verification of anchored top-level `"completed": true` vs body/nested spoofing in shard loop
+    const shardBlockMatch = runnerText.match(/if \[ -d "\$_curr\/\.adlc\/tickets" \]; then[\s\S]*?done\n\s*fi/);
+    assert.ok(shardBlockMatch, 'expected .adlc/tickets shard scan block in hook-runner.sh');
+    const shardEvalScript = `
+      TMP_DIR="$1"
+      _curr="$2"
+      while :; do
+        ${shardBlockMatch[0]}
+        break
+      done
+    `;
+    const checkShardActive = (shardObj) => {
+      const probeDir = fs.mkdtempSync(path.join(ROOT, 'shard-probe-'));
+      const repoDir = path.join(probeDir, 'repo');
+      fs.mkdirSync(path.join(repoDir, '.adlc', 'tickets'), { recursive: true });
+      fs.writeFileSync(path.join(repoDir, '.adlc', 'tickets', 't1.json'), `${JSON.stringify(shardObj, null, 2)}\n`);
+      const res = spawnSync(shell, ['-c', shardEvalScript, 'sh', probeDir, repoDir], { encoding: 'utf8' });
+      assert.equal(res.status, 0, res.stderr);
+      return fs.existsSync(path.join(probeDir, 'has_active_tickets'));
+    };
+    assert.equal(checkShardActive({ id: 't1', completed: true, body: 'done' }), false, 'top-level completed:true shard must be inactive');
+    assert.equal(checkShardActive({ id: 't2', status: 'archived', body: 'done' }), false, 'top-level status:archived shard must be inactive');
+    assert.equal(
+      checkShardActive({ id: 't3', body: 'spec mentions "completed": true and "status": "completed"' }),
+      true,
+      'active shard quoting "completed": true in body must remain active (fail closed)',
+    );
+    assert.equal(
+      checkShardActive({ id: 't4', meta: { completed: true, status: 'completed' } }),
+      true,
+      'active shard with nested completed:true object must remain active (fail closed)',
+    );
   });
 
   test(`[${label}] fallback passes through list_dir and read-only manage_task while denying manage_task kill/send_input`, async () => {

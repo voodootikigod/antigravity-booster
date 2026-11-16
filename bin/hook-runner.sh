@@ -2,6 +2,10 @@
 # hook-runner.sh — Dedicated fail-safe wrapper for agy PreToolUse hooks.
 # agy fails open on non-zero exits. This wrapper guarantees exit 0 under all conditions!
 
+# Prepend system binary directories unconditionally so repo-local PATH entries cannot shadow core utilities
+PATH="/usr/bin:/bin${PATH:+:$PATH}"
+export PATH
+
 # Initialize status variables early
 CHILD_STATUS=0
 EMITTED=0
@@ -15,9 +19,30 @@ WAIT_TIMEOUT=9
 RUNNER_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
 RUNNER_ROOT="$(dirname -- "$RUNNER_DIR")"
 
-CUR_UID="$(id -u 2>/dev/null || true)"
+SYS_ID=""
+for _sys_cand in /usr/bin/id /bin/id /run/current-system/sw/bin/id; do
+  if [ -x "$_sys_cand" ]; then
+    SYS_ID="$_sys_cand"
+    break
+  fi
+done
+
+SYS_FIND=""
+for _sys_cand in /usr/bin/find /bin/find /run/current-system/sw/bin/find; do
+  if [ -x "$_sys_cand" ]; then
+    SYS_FIND="$_sys_cand"
+    break
+  fi
+done
+
+CUR_UID=""
+if [ -n "$SYS_ID" ]; then
+  CUR_UID="$("$SYS_ID" -u 2>/dev/null || true)"
+fi
+
 owned_by_euid() {
   _own_path="$1"
+  [ -n "$SYS_FIND" ] || return 1
   case "$CUR_UID" in
     ''|*[!0-9]*) return 1 ;;
   esac
@@ -26,21 +51,39 @@ owned_by_euid() {
     *) return 1 ;;
   esac
   [ -e "$_own_path" ] || return 1
-  _found_own="$(find -H "$_own_path" -prune -user "$CUR_UID" 2>/dev/null || true)"
+  _found_own="$("$SYS_FIND" -H "$_own_path" -prune -user "$CUR_UID" 2>/dev/null || true)"
   [ -n "$_found_own" ]
 }
 
+SYS_GETENT=""
+for _sys_cand in /usr/bin/getent /bin/getent /run/current-system/sw/bin/getent; do
+  if [ -x "$_sys_cand" ]; then
+    SYS_GETENT="$_sys_cand"
+    break
+  fi
+done
+
+SYS_CUT="/usr/bin/cut"
+[ -x "$SYS_CUT" ] || SYS_CUT="/bin/cut"
+[ -x "$SYS_CUT" ] || SYS_CUT="cut"
+
 PASSWD_HOME=""
-if [ -n "$CUR_UID" ]; then
-  PASSWD_HOME="$(getent passwd "$CUR_UID" 2>/dev/null | cut -d: -f6)"
-fi
-if [ -z "$PASSWD_HOME" ] && command -v dscl >/dev/null 2>&1; then
-  PASSWD_HOME="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
-fi
+PASSWD_HOME_RESOLVED=0
+resolve_passwd_home() {
+  [ "$PASSWD_HOME_RESOLVED" -eq 0 ] || return 0
+  if [ -n "$CUR_UID" ] && [ -n "$SYS_GETENT" ]; then
+    PASSWD_HOME="$("$SYS_GETENT" passwd "$CUR_UID" 2>/dev/null | "$SYS_CUT" -d: -f6)"
+  fi
+  if [ -z "$PASSWD_HOME" ] && [ -n "$SYS_ID" ] && [ -x /usr/bin/dscl ]; then
+    PASSWD_HOME="$(/usr/bin/dscl . -read "/Users/$("$SYS_ID" -un 2>/dev/null)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
+  fi
+  PASSWD_HOME_RESOLVED=1
+}
 
 EFF_HOME=""
 case "$RUNNER_ROOT" in
   */.gemini/config/plugins/*)
+    resolve_passwd_home
     EFF_HOME="$PASSWD_HOME"
     if [ -z "$EFF_HOME" ]; then
       _cand_home="${RUNNER_ROOT%%/.gemini/*}"
@@ -55,6 +98,7 @@ case "$RUNNER_ROOT" in
     elif [ -n "$HOME" ]; then
       EFF_HOME="$HOME"
     else
+      resolve_passwd_home
       EFF_HOME="$PASSWD_HOME"
     fi
     ;;
@@ -141,11 +185,48 @@ LOG_TAMPERED=0
 LOG_DEGRADED=0
 DEGRADED_MARKER="${EFF_HOME}/.gemini/antigravity-cli/.agb-hook-log-degraded"
 
+CAN_VERIFY_UID=0
+if [ -n "$SYS_FIND" ]; then
+  case "$CUR_UID" in
+    ''|*[!0-9]*) ;;
+    *) CAN_VERIFY_UID=1 ;;
+  esac
+fi
+
+all_log_paths_owned_by_euid() {
+  set --
+  for _chk_p in "$DATA_ROOT" "$HOOK_LOG_DIR" "$HOOK_LOG_FILE"; do
+    case "$_chk_p" in
+      /*) ;;
+      *) return 1 ;;
+    esac
+    if [ -e "$_chk_p" ]; then
+      set -- "$@" "$_chk_p"
+    fi
+  done
+  [ "$#" -gt 0 ] || return 0
+  _owned_out="$("$SYS_FIND" -H "$@" -prune -user "$CUR_UID" 2>/dev/null || true)"
+  _nl='
+'
+  for _chk_p in "$@"; do
+    case "${_nl}${_owned_out}${_nl}" in
+      *"${_nl}${_chk_p}${_nl}"*) ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
 # Spec §3.6: audit log lives under OS account home of id -u (PASSWD_HOME); check symlink (-L) and
-# foreign UID (! owned_by_euid) strictly on DATA_ROOT, HOOK_LOG_DIR, and HOOK_LOG_FILE so legitimate
-# dotfile symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never false-trip worker tamper denial.
-if [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ] || { [ -e "$DATA_ROOT" ] && ! owned_by_euid "$DATA_ROOT"; } || { [ -e "$HOOK_LOG_DIR" ] && ! owned_by_euid "$HOOK_LOG_DIR"; } || { [ -e "$HOOK_LOG_FILE" ] && ! owned_by_euid "$HOOK_LOG_FILE"; }; then
+# foreign UID (! all_log_paths_owned_by_euid, single batched find fork) strictly on DATA_ROOT, HOOK_LOG_DIR,
+# and HOOK_LOG_FILE so legitimate dotfile symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never
+# false-trip worker tamper denial.
+if [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ]; then
   LOG_TAMPERED=1
+elif [ "$CAN_VERIFY_UID" -eq 1 ]; then
+  if ! all_log_paths_owned_by_euid; then
+    LOG_TAMPERED=1
+  fi
 fi
 
 write_degraded_marker() {
@@ -157,7 +238,7 @@ write_degraded_marker() {
   if [ -L "${EFF_HOME}/.gemini" ] || [ -L "${EFF_HOME}/.gemini/antigravity-cli" ] || [ -L "$DEGRADED_MARKER" ]; then
     return 0
   fi
-  if [ -e "$DEGRADED_MARKER" ] && ! owned_by_euid "$DEGRADED_MARKER"; then
+  if [ -e "$DEGRADED_MARKER" ] && { [ "$CAN_VERIFY_UID" -eq 0 ] || ! owned_by_euid "$DEGRADED_MARKER"; }; then
     return 0
   fi
   _tmp_marker="${DEGRADED_MARKER}.tmp.$$"
@@ -174,6 +255,14 @@ if [ "$LOG_TAMPERED" -eq 1 ]; then
   printf 'agb hook runner: [warn] hook audit log tampered; logging degraded.\n' >&2
   if [ -n "$AGB_WORKER_TICKET" ] || [ -n "$AGB_WORKER_MODE" ]; then
     printf '{"decision":"deny","reason":"agb hook audit log tampered in headless worker"}\n'
+    exit 0
+  fi
+elif [ "$CAN_VERIFY_UID" -eq 0 ]; then
+  LOG_DEGRADED=1
+  HOOK_LOG_FILE="/dev/null"
+  printf 'agb hook runner: [warn] hook audit log uid verifier unavailable; logging degraded.\n' >&2
+  if [ -n "$AGB_WORKER_TICKET" ] || [ -n "$AGB_WORKER_MODE" ]; then
+    printf '{"decision":"deny","reason":"agb hook audit log uid verifier unavailable in headless worker"}\n'
     exit 0
   fi
 else
@@ -311,8 +400,8 @@ emit_fallback() {
             if [ -d "$_curr/.adlc/tickets" ]; then
               for _shard in "$_curr/.adlc/tickets"/*.json; do
                 if [ -f "$_shard" ]; then
-                  # Active ticket: status NOT in completed, closed, or archived (fail closed)
-                  if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"(completed|closed|archived)"' "$_shard" 2>/dev/null; then
+                  # Active ticket: top-level key is neither "completed": true nor status in completed|closed|archived (fail closed)
+                  if ! grep -Eq '^  ("status"[[:space:]]*:[[:space:]]*"(completed|closed|archived)"|"completed"[[:space:]]*:[[:space:]]*true),?$' "$_shard" 2>/dev/null; then
                     # Signal active in-flight ticket to outer scope
                     touch "$TMP_DIR/has_active_tickets"
                     break 2

@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-16T14:39:52.349Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "8d913605a56eedb75ea44d4d7e846ce4b15fe2c73033778b9780d098f7a23a23",
+    "ticketHash": "bd92882d565fd2d0a039ea2f5b03c4187831403ef22c02dd8b580128f40fb70d",
+    "version": 1
+  },
   "body": "Rebuild committed esbuild bundles (`npm run build`), document `AGB_DISABLE_ORCHESTRATOR` and `AGB_TEST_PASSWD_HOME` in `website/env-docs.json`, regenerate `website/generated/*.mdx` (`node website/scripts/gen-reference.mjs`), and add a non-mutating `mkdtempSync` `esbuild` bundle-freshness test for `dist/hooks/pre-tool-use.bundle.mjs` in `test/plugin-layout.test.mjs`.",
   "completed": true,
   "edges": [],
