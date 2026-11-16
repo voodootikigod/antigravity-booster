@@ -26,6 +26,14 @@ export const SWARM_META_KEYS = new Set(['action', 'workspace', 'model', 'name', 
 export const SWARM_WORKSPACE_MODES = new Set(['inherit', 'share', 'branch']);
 export const WORKFLOW_PROSE_KEYS = new Set(['Script', 'Description', 'toolAction', 'toolSummary']);
 
+export const STDIN_TOOLS = new Set(['send_command_input']);
+export const SUBAGENT_TOOLS = new Set(['invoke_subagent', 'define_subagent', 'manage_subagents']);
+export const SUBAGENT_PROSE_KEYS = new Set([
+  'Prompt', 'prompt', 'SystemPrompt', 'systemprompt',
+  'Description', 'description', 'Role', 'role',
+  'toolAction', 'toolaction', 'toolSummary', 'toolsummary',
+]);
+
 // agy control steps with no filesystem, shell or network effect. `finish`
 // (CORTEX_STEP_TYPE_FINISH) ends the turn and, under --json-schema, carries the
 // model's structured answer; its args are answer text, never paths, so they are

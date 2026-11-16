@@ -14,7 +14,8 @@ import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
   AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS,
-  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
+  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, STDIN_TOOLS,
+  SUBAGENT_PROSE_KEYS, SUBAGENT_TOOLS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
   TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS,
 } from './constants.mjs';
 import {
@@ -400,10 +401,14 @@ function workerScopeVerdict(repo, rel, ctx) {
   return PASS;
 }
 
+const SEND_MESSAGE_PROSE_KEYS = new Set(['Message', 'message', 'toolAction', 'toolaction', 'toolSummary', 'toolsummary']);
+
 function stepOne(name, args, ctx) {
   const norm = normalizeArgsCaseInsensitive(args);
   if (!norm.ok) return deny(norm.reason);
-  if (name === 'run_command') return PASS; // shell tokens are checked by the classifier
+  if (name === 'run_command' || STDIN_TOOLS.has(name) || (name === 'manage_task' && norm.folded.action === 'send_input')) {
+    return PASS; // shell/stdin tokens are checked by their dedicated classifiers
+  }
   const isRead = READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]);
   let candidates;
   if (isRead) {
@@ -430,7 +435,15 @@ function stepOne(name, args, ctx) {
   } else {
     const isSwarm = name === 'swarm';
     const isWorkflow = WORKFLOW_TOOLS.has(name);
-    const topLevelSkipKeys = isSwarm ? SWARM_PROSE_KEYS : (isWorkflow ? WORKFLOW_PROSE_KEYS : null);
+    const topLevelSkipKeys = isSwarm
+      ? SWARM_PROSE_KEYS
+      : isWorkflow
+        ? WORKFLOW_PROSE_KEYS
+        : SUBAGENT_TOOLS.has(name)
+          ? SUBAGENT_PROSE_KEYS
+          : name === 'send_message'
+            ? SEND_MESSAGE_PROSE_KEYS
+            : null;
     const scan = scanPathLike(args, {
       topLevelSkipKeys,
       topLevelBareSkipKeys: isSwarm ? SWARM_META_KEYS : null,
@@ -697,7 +710,113 @@ function evaluateMcpTool(name, args, ctx) {
   return PASS;
 }
 
+const STDIN_SKIP_KEYS = new Set(['Input', 'input', 'toolAction', 'toolaction', 'toolSummary', 'toolsummary']);
+const STDIN_ALLOWED_KEYS = new Set(['commandid', 'input', 'terminate', 'waitms', 'waitmsbeforeasync', 'toolaction', 'toolsummary']);
+
+function scanNonInputPaths(rawArgs, ctx) {
+  const scan = scanPathLike(rawArgs, { topLevelSkipKeys: STDIN_SKIP_KEYS });
+  if (scan.overflow) return OVERFLOW;
+  for (const token of scan.paths) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) return deny(`Relative path '${token}' has no workspace to anchor it`);
+    for (const r of resolved) {
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (matchRoot(r, ctx.protectedRoots, ctx.platform)) {
+        return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
+      }
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision !== 'pass') return deny(verdict.reason);
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        if (lexRes.verdict.decision !== 'pass') return deny(lexRes.verdict.reason);
+      }
+    }
+  }
+  return null;
+}
+
+export function evaluateSendCommandInput(rawArgs, ctx) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  if (ctx.headless) return deny('Headless agb worker session cannot use send_command_input');
+  for (const [k, v] of Object.entries(norm.folded)) {
+    if (!STDIN_ALLOWED_KEYS.has(k)) return deny(`Unexpected argument in send_command_input: ${k}`);
+    if (v === undefined) continue;
+    if (k === 'commandid' && !isNonEmptyString(v)) return deny('Invalid CommandId in send_command_input');
+    if (k === 'terminate' && typeof v !== 'boolean') return deny('Invalid Terminate flag in send_command_input');
+    if ((k === 'input' || k === 'toolaction' || k === 'toolsummary') && typeof v !== 'string') {
+      return deny(`Invalid ${k} parameter in send_command_input`);
+    }
+    if ((k === 'waitms' || k === 'waitmsbeforeasync') && (typeof v !== 'number' || !Number.isFinite(v))) {
+      return deny(`Invalid ${k} parameter in send_command_input`);
+    }
+  }
+  const nonInputErr = scanNonInputPaths(rawArgs, ctx);
+  if (nonInputErr) return nonInputErr;
+  const anchorRepos = ctx.anchors.map((a) => ctx.repoAt(a));
+  if (norm.folded.terminate === true && !norm.folded.input) {
+    if (anchorRepos.some((r) => r.adlc && !r.store.ok)) {
+      return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
+    }
+    return PASS;
+  }
+  if (anchorRepos.some((r) => r.adlc && (r.activeRail || !r.store.ok))) {
+    return deny('Interactive stdin write forbidden while ADLC rails are active or store is unreadable');
+  }
+  const shVerdict = classifyRunCommand({ CommandLine: norm.folded.input ?? '', Cwd: ctx.anchor }, ctx);
+  return shVerdict.decision === 'pass' ? PASS : deny(shVerdict.reason);
+}
+
 function evaluateOrchestrationTool(name, args, ctx) {
+  if (name === 'manage_task') {
+    const norm = normalizeArgsCaseInsensitive(args);
+    if (!norm.ok) return deny(norm.reason);
+    const action = norm.folded.action;
+    if (action === 'list' || action === 'status') return PASS;
+    if (action === 'kill') {
+      if (ctx.headless) return deny('Headless agb worker session cannot kill tasks');
+      if (ctx.anchors.some((a) => { const r = ctx.repoAt(a); return r.adlc && !r.store.ok; })) {
+        return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
+      }
+      return PASS;
+    }
+    if (action === 'send_input') {
+      if (typeof norm.folded.input !== 'string') return deny('manage_task send_input requires a string Input parameter');
+      if (ctx.headless || ctx.anchors.some((a) => { const r = ctx.repoAt(a); return r.adlc && (r.activeRail || !r.store.ok); })) {
+        return deny('manage_task send_input forbidden in headless worker or active-rail ADLC repository');
+      }
+      const nonInputErr = scanNonInputPaths(args, ctx);
+      if (nonInputErr) return nonInputErr;
+      const shVerdict = classifyRunCommand({ CommandLine: norm.folded.input, Cwd: ctx.anchor }, ctx);
+      return shVerdict.decision === 'pass' ? PASS : deny(shVerdict.reason);
+    }
+    return deny('Unsupported or missing manage_task Action');
+  }
+
+  if (SUBAGENT_TOOLS.has(name)) {
+    if (ctx.headless) return deny('Headless agb worker session cannot spawn or manage subagents');
+    if (ctx.anchors.some((a) => { const r = ctx.repoAt(a); return r.adlc && !r.store.ok; })) {
+      return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
+    }
+    const scan = scanPathLike(args, { topLevelSkipKeys: SUBAGENT_PROSE_KEYS });
+    if (scan.overflow) return OVERFLOW;
+    for (const token of scan.paths) {
+      const resolved = resolveAll(token, ctx);
+      if (resolved.length === 0) return deny(`Relative path '${token}' in ${name} has no workspace to anchor it`);
+      for (const r of resolved) {
+        const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+        if (verdict.decision !== 'pass') return deny(verdict.reason);
+        if (r.lexical !== r.real) {
+          const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+          if (lexRes.verdict.decision !== 'pass') return deny(lexRes.verdict.reason);
+        }
+      }
+    }
+    return PASS;
+  }
+
   if (name !== 'swarm') return PASS;
   if (ctx.headless) return deny('Headless agb worker session cannot invoke native swarm orchestration');
   if (args?.workspace !== undefined && args?.workspace !== null) {
@@ -899,6 +1018,7 @@ export function evaluatePayload(payload, options = {}) {
   if (READ_ONLY_TOOLS.has(name)) return PASS;
   if (name === 'sed_file') return evaluateSedFile(args, ctx);
   if (NOTEBOOK_EXEC_TOOLS.has(name)) return evaluateNotebookExecution(args, ctx);
+  if (STDIN_TOOLS.has(name)) return evaluateSendCommandInput(args, ctx);
   if (ORCHESTRATION_TOOLS.has(name)) return evaluateOrchestrationTool(name, args, ctx);
   if (WORKFLOW_TOOLS.has(name)) return evaluateWorkflowTool(args, ctx);
   if (name === 'run_command') return classifyRunCommand(args, ctx);
