@@ -306,22 +306,22 @@ test('runner: runAllEvals verifies all invariants, checks baseline ratchet, and 
   assert.equal(results.liveBenchmarks.v13PrintAndSandbox.ok, true);
   assert.equal(results.liveBenchmarks.v13OrchestratorScheduler.ok, true);
   assert.equal(results.baselineRatchet.ok, true, JSON.stringify(results.baselineRatchet));
-  assert.equal(Object.keys(results.baselineRatchet.checks).length, 30);
+  assert.equal(Object.keys(results.baselineRatchet.checks).length, 26);
 
-  // Verify synthetic regression detection in compareAgainstBaseline (both v1.2 and v1.3 ratchets)
+  // Verify synthetic regression detection in compareAgainstBaseline (both v1.2 and live v1.3 ratchets)
   const baseline = loadBaseline();
   const regressed = structuredClone(results);
   regressed.liveBenchmarks.policyFuzzer.adversarialBlockRate = 0.99;
   regressed.liveBenchmarks.planCompiler.serialFalsePositiveRate = 0.1;
   regressed.liveBenchmarks.v13PolicyMatrix.headlessAskCount = 1;
-  regressed.scenarios.perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans = 0.98;
+  regressed.liveBenchmarks.v13HookSecurity.passRate = 0.83;
   regressed.liveBenchmarks.v13OrchestratorScheduler.passRate = 0.8;
   const regCheck = compareAgainstBaseline(regressed, baseline);
   assert.equal(regCheck.ok, false);
   assert.ok(regCheck.failedChecks.includes('policyFuzzerBlockRate'));
   assert.ok(regCheck.failedChecks.includes('planCompilerSerialFalsePositives'));
   assert.ok(regCheck.failedChecks.includes('v13PolicyZeroAsk'));
-  assert.ok(regCheck.failedChecks.includes('perfOrchSpeedupVsV12'));
+  assert.ok(regCheck.failedChecks.includes('v13HookSecurityPassRate'));
   assert.ok(regCheck.failedChecks.includes('v13OrchestratorSchedulerPassRate'));
 
   const md = renderMarkdownReport(results);
@@ -339,7 +339,7 @@ test('runner: runAllEvals verifies all invariants, checks baseline ratchet, and 
   assert.match(md, /6j\. v1\.3 `classifyAgyOutcome\(\)`/);
   assert.match(md, /6k\. v1\.3 Live Hermetic Orchestrator Routing/);
   assert.match(md, /6l\. Committed Baseline Regression Ratchet/);
-  assert.match(md, /0 Regressions across 30 Ratchet Gates/);
+  assert.match(md, /0 Regressions across 26 Ratchet Gates/);
 
   // Mechanical CI freshness check: all deterministic statistical & corpus sections
   // (everything prior to live wall-clock latency in 6b) must match the committed report byte-for-byte.

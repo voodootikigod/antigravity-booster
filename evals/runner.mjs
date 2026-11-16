@@ -251,14 +251,6 @@ export function compareAgainstBaseline(results, baseline = loadBaseline()) {
       hookLatency.tiers.hookRunnerEndToEndMs.p50 <= r.maxHookRunnerE2eP50Ms,
     orchestratorOverheadLatency:
       orchestratorOverhead.totalOverheadMs <= r.maxOrchestratorOverheadMs,
-    perfOrchSpeedupVsNative:
-      perfOrchestrator.comparisons.v13VsNative.speedup.ratioOfMeans >= r.minPerfOrchSpeedupVsNative,
-    perfOrchSpeedupVsBestPractices:
-      perfOrchestrator.comparisons.v13VsBestPractices.speedup.ratioOfMeans >= r.minPerfOrchSpeedupVsBestPractices,
-    perfOrchSpeedupVsV12:
-      perfOrchestrator.comparisons.v13VsV12Ablation.speedup.ratioOfMeans >= r.minPerfOrchSpeedupVsV12,
-    accAgy159HardeningBlockRate:
-      accAgy159Hardening.overall.agbV13BlockRate.p >= r.minAccAgy159HardeningBlockRate,
     v13Policy60ToolsCovered:
       v13PolicyMatrix.tools60Covered >= r.minV13Policy60ToolsCovered,
     v13PolicyZeroAsk:

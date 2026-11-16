@@ -23,6 +23,7 @@
  *    `runWithOrchestratorRoutingState()` isolation.
  */
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -660,20 +661,46 @@ exec "${process.execPath}" "$@"
       toolCall: { name: 'write_file', args: { Path: join(repo, 'src', 'ok.mjs'), Content: 'export default 2;\n' } },
     });
 
-    // Check 1: PASSWD_HOME anchoring resists spoofed HOME
+    // Check 1: Staged plugin PASSWD_HOME anchoring (via getent passwd, WITHOUT AGB_TEST_PASSWD_HOME) resists spoofed HOME
     const passwdHome1 = join(tmpRoot, 'passwd-home-1');
     const spoofedHome1 = join(tmpRoot, 'spoofed-home-1');
     installTrustedFnmNode(passwdHome1);
     installTrustedFnmNode(spoofedHome1);
-    const r1 = spawnSync('/bin/sh', [runnerPath, '--timeout', '9', bundlePath], {
+    const stagedPluginRoot1 = join(
+      passwdHome1,
+      '.gemini',
+      'config',
+      'plugins',
+      'antigravity-booster',
+    );
+    const stagedPluginBin1 = join(stagedPluginRoot1, 'bin');
+    const stagedBundle1 = join(stagedPluginRoot1, 'dist', 'hooks', 'pre-tool-use.bundle.mjs');
+    mkdirSync(stagedPluginBin1, { recursive: true });
+    mkdirSync(dirname(stagedBundle1), { recursive: true });
+    copyFileSync(runnerPath, join(stagedPluginBin1, 'hook-runner.sh'));
+    copyFileSync(join(realRepoRoot, 'bin', 'node-launcher.sh'), join(stagedPluginBin1, 'node-launcher.sh'));
+    copyFileSync(bundlePath, stagedBundle1);
+    const getentShimDir = join(tmpRoot, 'getent-shim');
+    mkdirSync(getentShimDir, { recursive: true });
+    writeFileSync(
+      join(getentShimDir, 'getent'),
+      `#!/bin/sh
+if [ "$1" = "passwd" ]; then
+  printf 'agbeval:x:%s:1000::%s:/bin/sh\\n' "$2" "${passwdHome1}"
+  exit 0
+fi
+exit 2
+`,
+      { mode: 0o755 },
+    );
+    const r1 = spawnSync('/bin/sh', [join(stagedPluginBin1, 'hook-runner.sh'), '--timeout', '9', stagedBundle1], {
       input: benignPayload,
       cwd: spoofedHome1,
       encoding: 'utf8',
       env: {
-        PATH: '/usr/bin:/bin',
+        PATH: `${getentShimDir}:/usr/bin:/bin`,
         NODE_V8_COVERAGE: '',
         HOME: spoofedHome1,
-        AGB_TEST_PASSWD_HOME: passwdHome1,
         AGB_WORKER_TICKET: 't-hr-sec',
       },
     });

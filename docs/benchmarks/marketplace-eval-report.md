@@ -273,19 +273,19 @@ Evaluates interception across the 6 security, sandbox, and silent-failure classe
 
 | Execution Layer | Min (ms) | Median P50 (ms) | P95 (ms) | Mean (ms) |
 | :--- | :---: | :---: | :---: | :---: |
-| **In-Process `evaluatePayload()`** | 0.35 ms | **0.39 ms** | 0.47 ms | 0.41 ms |
-| **Direct `node dist/hooks/pre-tool-use.bundle.mjs`** | 45.9 ms | **48.9 ms** | 50.5 ms | 48.5 ms |
-| **`/bin/sh bin/node-launcher.sh` + Bundle (`node -v` fast-path)** | 54.9 ms | **59.5 ms** | 60.2 ms | 58.6 ms |
-| **End-to-End `/bin/sh bin/hook-runner.sh` + Watchdog + Launcher + Bundle** | 78.0 ms | **82.6 ms** | 83.8 ms | 81.2 ms |
+| **In-Process `evaluatePayload()`** | 0.34 ms | **0.37 ms** | 0.41 ms | 0.37 ms |
+| **Direct `node dist/hooks/pre-tool-use.bundle.mjs`** | 46.1 ms | **49.5 ms** | 50.2 ms | 48.9 ms |
+| **`/bin/sh bin/node-launcher.sh` + Bundle (`node -v` fast-path)** | 54.5 ms | **58.4 ms** | 63.9 ms | 58.7 ms |
+| **End-to-End `/bin/sh bin/hook-runner.sh` + Watchdog + Launcher + Bundle** | 80.0 ms | **84.0 ms** | 85.4 ms | 83.4 ms |
 
 ### 6c. Pure-Node Orchestrator Overhead vs. 8-Ticket Build Wall-Clock Time
 
 | Orchestrator Subsystem | Measured Wall-Clock Overhead (ms) | Share of 149.2s 8-Ticket DAG Build |
 | :--- | :---: | :---: |
-| **8-Ticket ADLC Store Projection + Active Rail Union (`lib/adlc-bridge.mjs`, `lib/active-rails.mjs`)** | 1.89 ms | 0.0013% |
-| **16 Quota-Pool State Lock Cycles (`lib/pools.mjs` `withLockSync`)** | 1.42 ms | 0.0010% |
-| **16 Atomic Repository Merge-Lock Cycles (`lib/lock.mjs` `acquireRepoLock`)** | 2.31 ms | 0.0015% |
-| **Total Pure-Node Orchestration Overhead** | **5.62 ms** | **0.0038%** |
+| **8-Ticket ADLC Store Projection + Active Rail Union (`lib/adlc-bridge.mjs`, `lib/active-rails.mjs`)** | 1.95 ms | 0.0013% |
+| **16 Quota-Pool State Lock Cycles (`lib/pools.mjs` `withLockSync`)** | 1.41 ms | 0.0009% |
+| **16 Atomic Repository Merge-Lock Cycles (`lib/lock.mjs` `acquireRepoLock`)** | 2.36 ms | 0.0016% |
+| **Total Pure-Node Orchestration Overhead** | **5.72 ms** | **0.0038%** |
 
 ### 6d. Plan Compiler, Scope-Overlap & Gate-Integrity Golden Corpus (`lib/plan.mjs`, `lib/preflight.mjs`)
 
@@ -318,16 +318,16 @@ Evaluates interception across the 6 security, sandbox, and silent-failure classe
 
 | Fuzz Partition | Cases | Blocked / Passed | Rate | P50 / P95 Latency | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Adversarial Evasion Families (1–5)** (path traversal, `/proc/self/root`, shell prefix wrappers, nested `sh -c`, depth > 64 overflow) | 100 | **100 / 100 blocked** | **100.0%** | 0.36 ms / 0.68 ms | **PASS** |
-| **Benign Worker & Developer Ops (Family 6)** (in-scope writes, Stage-1 git readers, worker `npm test` / `node --test`) | 20 | **20 / 20 passed** | **100.0%** | 0.36 ms / 0.68 ms | **PASS** |
+| **Adversarial Evasion Families (1–5)** (path traversal, `/proc/self/root`, shell prefix wrappers, nested `sh -c`, depth > 64 overflow) | 100 | **100 / 100 blocked** | **100.0%** | 0.35 ms / 0.62 ms | **PASS** |
+| **Benign Worker & Developer Ops (Family 6)** (in-scope writes, Stage-1 git readers, worker `npm test` / `node --test`) | 20 | **20 / 20 passed** | **100.0%** | 0.35 ms / 0.62 ms | **PASS** |
 
 ### 6h. v1.3 `agy 1.5.9` 60-Tool Zero-`ask` Matrix & 64-Vector Policy Corpus (`evals/v13-enhancements-bench.mjs`)
 
 | Policy Dimension | Target / Vectors | Observed Result | P50 / P95 Latency | Status |
 | :--- | :---: | :---: | :---: | :---: |
-| **`agy 1.5.9` Complete Tool Inventory (`agy-1.5.9-init-tools.json`)** | 60 tools $\times$ 2 headless modes | **60 / 60 classified · 0 `ask`** | 0.08 ms / 0.52 ms | **PASS** |
-| **v1.3 Adversarial Vectors (`sed_file`, `notebook_execution`, REPL stdin, `fold.go`, 4-root `boosterDataRoots`)** | 36 | **36 / 36 blocked (100.0%)** | 0.08 ms / 0.52 ms | **PASS** |
-| **v1.3 Benign Workflows (in-scope `sed_file`, `notebook_edit`, `list_dir`, `manage_task`, interactive subagents)** | 28 | **28 / 28 passed (0.0% FP)** | 0.08 ms / 0.52 ms | **PASS** |
+| **`agy 1.5.9` Complete Tool Inventory (`agy-1.5.9-init-tools.json`)** | 60 tools $\times$ 2 headless modes | **60 / 60 classified · 0 `ask`** | 0.08 ms / 0.50 ms | **PASS** |
+| **v1.3 Adversarial Vectors (`sed_file`, `notebook_execution`, REPL stdin, `fold.go`, 4-root `boosterDataRoots`)** | 36 | **36 / 36 blocked (100.0%)** | 0.08 ms / 0.50 ms | **PASS** |
+| **v1.3 Benign Workflows (in-scope `sed_file`, `notebook_edit`, `list_dir`, `manage_task`, interactive subagents)** | 28 | **28 / 28 passed (0.0% FP)** | 0.08 ms / 0.50 ms | **PASS** |
 
 ### 6i. v1.3 `hook-runner.sh` `PASSWD_HOME`, Tamper & Dotfiles Subprocess Security (`bin/hook-runner.sh`, `lib/doctor.mjs`)
 
@@ -361,4 +361,4 @@ Evaluates interception across the 6 security, sandbox, and silent-failure classe
 
 ### 6l. Committed Baseline Regression Ratchet (`evals/baseline.json`, Recorded `2026-11-02`)
 
-- **Overall Ratchet Status:** **PASS (0 Regressions across 30 Ratchet Gates)**
+- **Overall Ratchet Status:** **PASS (0 Regressions across 26 Ratchet Gates)**
