@@ -1,31 +1,44 @@
 #!/usr/bin/env node
 // agb — Antigravity Booster orchestrator.
-// agb — Antigravity Booster orchestrator.
 
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { runPlan } from '../lib/scheduler.mjs';
 import { renderStatus } from '../lib/status.mjs';
 import { runAgy } from '../lib/agy.mjs';
 import { sweepToPlan } from '../lib/sweep.mjs';
-import { reviewFleet, reviewDiff } from '../lib/review.mjs';
+import { reviewFleet, reviewDiff, reviewPlan } from '../lib/review.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { validatePlan, compilePlan } from '../lib/plan.mjs';
 import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
-import { runDoctor } from '../lib/doctor.mjs';
+import { runDoctor, runInit } from '../lib/doctor.mjs';
 import { resolveAgyBinary } from '../lib/plugin-paths.mjs';
 import { ROLE_MODELS } from '../lib/models.mjs';
 import { IS_BUNDLED } from '../lib/adlc-bridge.mjs';
+import { runShapeCli } from '../lib/shape.mjs';
+import { extractPositionalArgs, sanitizeRemoteUrl } from '../lib/plan-integrity.mjs';
 
 const rawArgs = process.argv.slice(2);
 let project;
 const filteredArgs = [];
 for (let i = 0; i < rawArgs.length; i++) {
   if (rawArgs[i] === '--project') {
+    if (i + 1 >= rawArgs.length || rawArgs[i + 1].startsWith('--')) {
+      console.error('agb: missing value for --project');
+      process.exit(1);
+    }
     project = rawArgs[++i];
+  } else if (rawArgs[i].startsWith('--project=')) {
+    const val = rawArgs[i].slice('--project='.length);
+    if (!val) {
+      console.error('agb: missing value for --project');
+      process.exit(1);
+    }
+    project = val;
   } else {
     filteredArgs.push(rawArgs[i]);
   }
@@ -33,20 +46,51 @@ for (let i = 0; i < rawArgs.length; i++) {
 const [cmd, ...rest] = filteredArgs;
 
 const COMMANDS = {
-  run: { args: '<plan.json>', desc: 'execute a ticket DAG (build → gate → prosecute → merge)' },
+  run: {
+    args: '<plan.json>',
+    desc: 'execute a ticket DAG (build → gate → prosecute → merge)',
+    flags: '[-c <n> (cap concurrent workers)]'
+  },
   sweep: { args: '<sweep.json>', desc: 'same operation × many targets, then run' },
-  review: { args: '[repo] [ref]', desc: 'read-only lens fleet over a diff, loop-until-dry' },
+  review: {
+    args: '[repo] [ref]',
+    desc: 'read-only lens fleet over a diff or plan spec, loop-until-dry',
+    flags: '[--plan <spec.md> (run 5-lens Plan ARL)] [--loop (iterative ARL up to 3 rounds)] [--five-lens (use 5-lens Code ARL)] [--no-arbiter (skip neutral arbiter)]'
+  },
+  shape: {
+    args: '<spec.md | id> [repo]',
+    desc: 'deterministically pre-analyze a structured spec or brain plan for DAG validity, scope overlaps, and import coupling before agb plan',
+    flags: '[--analyze (pre-analyze spec)] [--json (emit JSON)] [--sync-brain (sync to brain and .booster)] [--max-ticket-scope <n> (warn above n files)] [--strict (fail on warnings)]'
+  },
   plan: {
-    args: '<id | spec.md> <repo>',
+    args: '<id | spec.md> [repo]',
     desc: 'compile an Antigravity brain plan or spec file into plan.json',
     extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
-    flags: '--out <file> --force --no-coldstart --no-parallax --no-premortem'
+    flags: '[--out <file> (output plan path)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
   },
   preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart', flags: '--no-coldstart' },
-  doctor: { args: '[repo]', desc: 'verify your environment and tools' },
+  doctor: { args: '[repo]', desc: 'verify your environment and tools', flags: '[--fix (auto-repair setup)]' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
-  status: { args: '[repo]', desc: "render the live dashboard for a repo's current run", flags: '--watch [--interval <ms>]' },
+  status: {
+    args: '[repo]',
+    desc: "render the live dashboard for a repo's current run",
+    flags: '[--watch (watch mode)] [-w (watch mode)] [--interval <ms> (poll interval)] [--tui (render TUI snapshot)] [--follow (follow logs)] [--compact (compact rows)]'
+  },
+  watch: {
+    args: '[repo]',
+    desc: 'launch the interactive live terminal TUI dashboard',
+    flags: '[--interval <ms> (refresh interval)] [--follow (follow logs)] [--compact (compact rows)]'
+  },
+  init: {
+    args: '[repo]',
+    desc: 'initialize a target repository for ADLC and agb (.adlc/config.json, specs/feature-template.md, .gitignore)'
+  },
+  'sync-models': {
+    args: '',
+    desc: 'audit live agy models output against lib/models.mjs',
+    flags: '[--check (exit 1 on drift)] [--offline (skip live CLI probe)] [--json (emit JSON)] [--write (update references/models.json)]'
+  },
   sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
   probe: { args: '[widths] [model]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
@@ -57,7 +101,7 @@ const COMMANDS = {
     flags: '--force (re-run after MIGRATED) --rollback --force-rollback --break-lock [--force]'
   },
   pool: { args: 'drain [repo]', desc: 'safely drain active leases and reset coordinator' },
-  tui: { args: '', desc: 'Removed. Use agb sidecar instead.' }
+  tui: { args: '', desc: 'Removed. Use agb sidecar or agb watch instead.' }
 };
 
 function printUsage() {
@@ -82,8 +126,27 @@ function printCmdUsage(name) {
 // Read from the manifest rather than a second hardcoded copy that can drift
 // out of step with the published version.
 if (cmd === '--version' || cmd === '-v' || cmd === 'version') {
-  const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
-  console.log(pkg.version);
+  const repoCwd = fileURLToPath(new URL('..', import.meta.url));
+  const pkg = JSON.parse(readFileSync(join(repoCwd, 'package.json'), 'utf8'));
+  if (rest.includes('--verbose') || rest.includes('-v') || rest.includes('--provenance')) {
+    let commit = null;
+    let date = null;
+    let remote = null;
+    try {
+      commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: repoCwd, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+      date = execFileSync('git', ['log', '-1', '--format=%cd', '--date=short'], { cwd: repoCwd, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+      remote = sanitizeRemoteUrl(
+        execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: repoCwd, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim()
+      );
+    } catch {}
+    if (commit && date) {
+      console.log(`antigravity-booster v${pkg.version} (${commit} ${date})${remote ? ` [remote: ${remote}]` : ''}`);
+    } else {
+      console.log(`antigravity-booster v${pkg.version}`);
+    }
+  } else {
+    console.log(pkg.version);
+  }
   process.exit(0);
 }
 
@@ -124,12 +187,32 @@ function loadPlan(path) {
 
 try {
   if (cmd === 'run') {
-    const { plan, errors } = loadPlan(rest[0] ?? 'plan.json');
+    let concurrency;
+    let planPath = 'plan.json';
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '-c') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for -c');
+          process.exit(1);
+        }
+        concurrency = parseInt(rest[++i], 10);
+        if (!Number.isInteger(concurrency) || concurrency <= 0) {
+          console.error(`agb: invalid concurrency '${rest[i]}'`);
+          process.exit(1);
+        }
+      } else if (rest[i].startsWith('-')) {
+        console.error(`agb: unknown flag '${rest[i]}' for run`);
+        process.exit(1);
+      } else if (planPath === 'plan.json') {
+        planPath = rest[i];
+      }
+    }
+    const { plan, errors } = loadPlan(planPath);
     if (errors.length) {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const report = await runPlan(plan, { project });
+    const report = await runPlan(plan, { project, concurrency });
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'sweep') {
@@ -146,24 +229,68 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'review') {
-    const repo = resolve(rest[0] ?? '.');
-    const ref = rest[1]; // e.g. main...HEAD, a SHA range; default: uncommitted vs HEAD
-    const diff = reviewDiff(repo, ref);
-    if (!diff.trim()) {
-      console.error('review: empty diff — nothing to prosecute');
-      process.exit(0);
+    let planSpec = null;
+    const pIdx = rest.indexOf('--plan');
+    if (pIdx !== -1) {
+      if (pIdx + 1 >= rest.length || rest[pIdx + 1].startsWith('-')) {
+        console.error('agb: missing value for --plan');
+        process.exit(1);
+      }
+      planSpec = rest[pIdx + 1];
     }
+    const isLoop = rest.includes('--loop');
+    const isFiveLens = rest.includes('--five-lens') || rest.includes('--5-lens');
+    const noArbiter = rest.includes('--no-arbiter');
+    const positional = extractPositionalArgs(rest, new Set(['--plan']));
+    const repo = resolve(positional[0] ?? '.');
+
     const pools = new PoolSet(undefined, { repo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
     if (!quotaRes.ok) {
       console.error(`review: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
     }
-    const result = await reviewFleet({ diff, repo, pools, log: (m) => console.error(m), project });
+
+    if (planSpec) {
+      const result = await reviewPlan({
+        specPath: resolve(repo, planSpec),
+        repo,
+        pools,
+        loop: isLoop,
+        maxRounds: isLoop ? 3 : 1,
+        arbiter: !noArbiter,
+        log: (m) => console.error(m),
+        project,
+      });
+      console.log(JSON.stringify(result, null, 2));
+      process.exit(result.ok ? 0 : 2);
+    }
+
+    const ref = positional[1]; // e.g. main...HEAD, a SHA range; default: uncommitted vs HEAD
+    const diff = reviewDiff(repo, ref);
+    if (!diff.trim()) {
+      console.error('review: empty diff — nothing to prosecute');
+      process.exit(0);
+    }
+    const result = await reviewFleet({
+      diff,
+      repo,
+      pools,
+      fiveLens: isFiveLens,
+      arbiter: !noArbiter,
+      maxRounds: isLoop ? 3 : undefined,
+      log: (m) => console.error(m),
+      project,
+    });
     console.log(JSON.stringify(result, null, 2));
     if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
-    const blocking = result.findings.filter((f) => f.severity === 'critical' || f.severity === 'high');
-    process.exit(blocking.length || !result.converged ? 2 : 0);
+    const blocking = result.findings.filter(
+      (f) => f.severity === 'critical' || f.severity === 'high' || Boolean(f.blast_radius) || f.verdict === 'escalate'
+    );
+    process.exit(result.gateVerdict !== 'SHIP' || blocking.length || !result.converged ? 2 : 0);
+  } else if (cmd === 'shape') {
+    const code = runShapeCli(rest, { repo: process.cwd() });
+    process.exit(code);
   } else if (cmd === 'preflight') {
     const planPath = rest.find((arg) => !arg.startsWith('--')) ?? 'plan.json';
     const { plan, errors } = loadPlan(planPath);
@@ -187,15 +314,35 @@ try {
   } else if (cmd === 'plan') {
     // The plan itself is authored in Antigravity (GUI plan mode or an agy
     // planning session) — this command only compiles that artifact.
-    const positional = [];
     let out = 'plan.json';
+    let maxTicketScope;
+    const decompose = rest.includes('--decompose');
+    const noFastPath = rest.includes('--no-fast-path');
     for (let i = 0; i < rest.length; i++) {
-      if (rest[i] === '--out') out = rest[++i];
-      else if (!rest[i].startsWith('--')) positional.push(rest[i]);
+      if (rest[i] === '--out') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --out');
+          process.exit(1);
+        }
+        out = rest[++i];
+      } else if (rest[i] === '--max-ticket-scope') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --max-ticket-scope');
+          process.exit(1);
+        }
+        const parsedScope = Number(rest[++i]);
+        if (!Number.isInteger(parsedScope) || parsedScope <= 0) {
+          console.error(`agb: invalid --max-ticket-scope '${rest[i]}'`);
+          process.exit(1);
+        }
+        maxTicketScope = parsedScope;
+      }
     }
-    const [id, repo] = positional;
-    if (!id || !repo || !out) {
-      console.error('usage: agb plan <brain-id-or-prefix | spec.md> <repo-path> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]');
+    const positional = extractPositionalArgs(rest, new Set(['--out', '--max-ticket-scope']));
+    const id = positional[0];
+    const repo = positional[1] ?? '.';
+    if (!id || !out) {
+      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--out plan.json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
       process.exit(1);
     }
     if (existsSync(out) && !rest.includes('--force')) {
@@ -214,6 +361,9 @@ try {
       repo: targetRepo,
       pools,
       log: (m) => console.error(m),
+      fastPath: !noFastPath,
+      decompose,
+      maxTicketScope,
       coldstart: !rest.includes('--no-coldstart'),
       parallax: !rest.includes('--no-parallax'),
       premortem: !rest.includes('--no-premortem'),
@@ -262,30 +412,81 @@ try {
     console.log(JSON.stringify(plan, null, 2));
     console.error(`${plan.tickets.length} tickets — review, then: agb preflight && agb run`);
   } else if (cmd === 'status') {
-    const isWatch = rest.includes('--watch');
-    let intervalMs = 1000;
-    const iIdx = rest.indexOf('--interval');
-    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
-    const positional = rest.filter((r, i) => !r.startsWith('--') && rest[i - 1] !== '--interval');
-    
     if (rest.includes('--ui')) {
-      console.error('The --ui TUI flag has been removed. Use the native sidecar dashboard instead (`agb sidecar`).');
+      console.error('The --ui TUI flag has been removed. Use agb sidecar or agb watch instead.');
       process.exit(1);
     }
-    
+    const isWatch = rest.includes('--watch') || rest.includes('-w');
+    const wantsTui = rest.includes('--tui');
+    const follow = rest.includes('--follow');
+    const compact = rest.includes('--compact');
+    let intervalMs = isWatch ? 200 : 1000;
+    const iIdx = rest.indexOf('--interval');
+    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
+    const positional = extractPositionalArgs(rest, new Set(['--interval']));
+    const targetRepo = resolve(positional[0] ?? '.');
+
     if (isWatch) {
       const { watchStatus } = await import('../lib/status.mjs');
-      const code = await watchStatus(resolve(positional[0] ?? '.'), intervalMs);
+      const code = await watchStatus(targetRepo, {
+        intervalMs,
+        interactive: Boolean(process.stdout.isTTY && !process.env.CI),
+        follow,
+        compact,
+      });
       process.exitCode = code;
     } else {
-      console.log(renderStatus(resolve(positional[0] ?? '.')));
+      console.log(renderStatus(targetRepo, { tui: wantsTui, compact }));
     }
+  } else if (cmd === 'watch') {
+    const follow = rest.includes('--follow');
+    const compact = rest.includes('--compact');
+    let intervalMs = 200;
+    const iIdx = rest.indexOf('--interval');
+    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
+    const positional = extractPositionalArgs(rest, new Set(['--interval']));
+    const targetRepo = resolve(positional[0] ?? '.');
+    const { watchStatus } = await import('../lib/status.mjs');
+    const code = await watchStatus(targetRepo, {
+      intervalMs,
+      interactive: Boolean(process.stdout.isTTY && !process.env.CI),
+      follow,
+      compact,
+    });
+    process.exitCode = code;
+  } else if (cmd === 'init') {
+    const positional = extractPositionalArgs(rest);
+    const targetRepo = resolve(positional[0] ?? '.');
+    const res = runInit({ repo: targetRepo });
+    console.log(JSON.stringify(res, null, 2));
+  } else if (cmd === 'sync-models') {
+    const { syncModels } = await import('../scripts/sync-models.mjs');
+    const isJson = rest.includes('--json');
+    const res = syncModels({
+      check: rest.includes('--check'),
+      offline: rest.includes('--offline'),
+      json: isJson,
+      write: rest.includes('--write'),
+      rootDir: process.cwd(),
+    });
+    if (isJson) {
+      console.log(JSON.stringify(res, null, 2));
+    } else if (res.error) {
+      console.error(`ERROR: ${res.error}`);
+    } else {
+      console.log(`Total live models: ${res.totalLive} | Missing: ${res.unmappedCount}`);
+    }
+    process.exit(res.exitCode);
   } else if (cmd === 'tui') {
-    console.error('The TUI has been removed. Use the native sidecar dashboard instead (`agb sidecar`).');
+    console.error('The TUI has been removed. Use agb sidecar or agb watch instead.');
     process.exit(1);
   } else if (cmd === 'doctor') {
-    const repoArg = rest.find((a) => !a.startsWith('-'));
-    process.exitCode = await runDoctor(repoArg ? { cwd: resolve(repoArg) } : {});
+    const repoArg = extractPositionalArgs(rest)[0];
+    const fix = rest.includes('--fix');
+    process.exitCode = await runDoctor({
+      ...(repoArg ? { cwd: resolve(repoArg) } : {}),
+      fix,
+    });
   } else if (cmd === 'validate') {
     const { errors } = loadPlan(rest[0] ?? 'plan.json');
     if (errors.length) {
@@ -356,13 +557,6 @@ try {
       rows.push(row);
       console.log(JSON.stringify(row));
     }
-    // SPEC A2: probe WRITES the calibration artifact (previously stdout-only
-    // and the docs were hand-transcribed — adversarial-review LOW). The write
-    // is best-effort: a read-only install prefix or full-garbage run must not
-    // turn a successful measurement into exit 1. The directory is
-    // AGB_CALIBRATION_DIR if set, else docs/calibration/ under the current
-    // working directory (never the install prefix, which may be read-only
-    // or a staged plugin copy).
     if (rows.some((r) => r.ok > 0)) {
       try {
         const day = new Date().toISOString().slice(0, 10);
@@ -402,13 +596,9 @@ try {
         positional.push(rest[i]);
       }
     }
-    const repoDir = String(positional[0] || '.');
-    const repo = resolve(process.cwd(), repoDir);
     const { serveSidecar } = await import('../sidecars/server.mjs');
     const { randomBytes } = await import('node:crypto');
-    const { writeFileSync, mkdirSync, rmSync } = await import('node:fs');
-    const { execFileSync } = await import('node:child_process');
-    const { join } = await import('node:path');
+    const { rmSync } = await import('node:fs');
     const { homedir } = await import('node:os');
     const port = portStr ? Number(portStr) : 3333;
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -417,9 +607,9 @@ try {
     }
     const token = randomBytes(16).toString('hex');
     const server = await serveSidecar(resolve(positional[0] ?? '.'), port, token);
-    
+
     const actualPort = server.address().port;
-    
+
     const pluginId = `agb-sidecar-plugin-${process.pid}-${actualPort}`;
     let pluginDir;
     let createdDir = false;
@@ -435,7 +625,7 @@ try {
       if (!existsSync(join(pluginDir, 'sidecars'))) {
         mkdirSync(join(pluginDir, 'sidecars'), { recursive: true, mode: 0o700 });
       }
-      
+
       const manifest = {
         id: 'agb-dashboard',
         name: 'AGB Dashboard',
@@ -443,7 +633,7 @@ try {
         icon: 'activity',
         description: 'Visualizes parallel build-outs orchestrated by Antigravity Booster.'
       };
-      
+
       writeFileSync(join(pluginDir, 'sidecars', 'agb.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
       writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({
         id: pluginId,
@@ -452,7 +642,7 @@ try {
         sidecars: ['sidecars/agb.json']
       }, null, 2) + '\n', { mode: 0o600 });
       wroteManifests = true;
-      
+
       const agyBin = process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy';
 
       let cleaned = false;
@@ -461,10 +651,10 @@ try {
         cleaned = true;
         try {
           server.close();
-          try { execFileSync(agyBin, ['plugin', 'uninstall', pluginId], { stdio: 'ignore' }); } catch(e) {}
+          try { execFileSync(agyBin, ['plugin', 'uninstall', pluginId], { stdio: 'ignore' }); } catch {}
           const dirBase = pluginDir ? basename(pluginDir) : '';
           if (dirBase && dirBase !== pluginId) {
-            try { execFileSync(agyBin, ['plugin', 'uninstall', dirBase], { stdio: 'ignore' }); } catch(e) {}
+            try { execFileSync(agyBin, ['plugin', 'uninstall', dirBase], { stdio: 'ignore' }); } catch {}
           }
           if (pluginDir) {
             if (createdDir) {
@@ -474,7 +664,7 @@ try {
               rmSync(join(pluginDir, 'plugin.json'), { force: true });
             }
           }
-        } catch (e) {}
+        } catch {}
       };
 
       const cleanup = (code) => {

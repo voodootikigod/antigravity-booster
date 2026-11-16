@@ -1,10 +1,18 @@
 | Command | Usage | Description |
 | --- | --- | --- |
 | /agb-bootstrap | /agb-bootstrap [--force] [--force-reinstall] | Install or refresh antigravity-booster's ADLC doctrine plugin, skills and the ~/.local/bin/agb terminal shim |
-| /agb-doctor | /agb-doctor | Verify your environment and tools |
+| /agb-doctor | /agb-doctor [repo-path] [--fix] [--project &lt;name&gt;] | Verify your environment and tools, with optional self-healing (--fix) |
 | /agb-migrate | /agb-migrate [--rollback] [--force-rollback] [--force] [--break-lock] | Migrate from the npm-global/legacy install to the native agy plugin, or roll back |
-| /agb-plan | /agb-plan &lt;id &#124; spec.md&gt; &lt;repo-path&gt; [--out &lt;file&gt;] [--force] [--no-coldstart] [--no-parallax] [--no-premortem] [--project &lt;name&gt;] | Compile an Antigravity brain plan or spec file into plan.json |
-| /agb-review | /agb-review [repo-path] [ref] [--project &lt;name&gt;] | Read-only lens fleet over a diff, loop-until-dry |
+| /agb-plan | /agb-plan &lt;id &#124; spec.md&gt; [repo-path] [--out &lt;file&gt;] [--force] [--decompose] [--max-ticket-scope &lt;n&gt;] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project &lt;name&gt;] | Compile an Antigravity brain plan or spec file into plan.json (with 0-LLM Structured Spec Fast-Path) |
+| /agb-preflight | /agb-preflight [plan.json] [--no-coldstart] [--project &lt;name&gt;] | Run plan-time coldstart probes and forecast scope overlaps between parallel tickets in a plan.json DAG |
+| /agb-review | /agb-review [repo-path] [ref] [--plan &lt;spec.md&gt;] [--loop] [--five-lens] [--no-arbiter] [--project &lt;name&gt;] | Read-only lens fleet or 5-lens Adversarial Review Loop over a diff or plan |
 | /agb-run | /agb-run &lt;plan.json&gt; [--project &lt;name&gt;] | Execute a ticket DAG (build, gate, prosecute, merge) |
+| /agb-shape | /agb-shape &lt;idea &#124; spec.md&gt; [--yolo] [--out specs/&lt;slug&gt;-spec.md] | Shape a raw feature idea or spec file via reconnaissance, /grill-me, DAG pre-analysis, and 5-lens Plan ARL |
 | /agb-sidecar | /agb-sidecar [repo-path] [--port &lt;port&gt;] | Launch the HTTP server for the Antigravity Sidecar UI |
-| /agb | /agb &lt;description&gt; | Route any natural-language task description or subcommand (/agb &lt;description&gt;) to the right agb workflow (plan, run, review, doctor, bootstrap, migrate, sidecar) |
+| /agb-status | /agb-status [repo-path] [--watch] [-w] [--tui] [--interval &lt;ms&gt;] [--follow] [--compact] | View real-time build progress, quota pool meters, and ticket state for an Antigravity Booster run |
+| /agb-sync-models | /agb-sync-models [--check] [--write] [--offline] [--json] | Audit live Antigravity models (agy models) and synchronize model mappings and cross-model routing tables |
+| /agb-watch | /agb-watch [repo-path] [--interval &lt;ms&gt;] [--follow] [--compact] | Launch the interactive live terminal TUI dashboard for real-time build progress and ticket state |
+| /agb | /agb &lt;description&gt; [--yolo] | End-to-end 5-phase Factory orchestrator and umbrella router (/agb &lt;description&gt; [--yolo]) |
+| /code-review | /code-review [repo-path] [ref] [--loop] | Adversarially review a code change or branch across 5 isolated lenses with neutral arbiter triage |
+| /implement-and-review | /implement-and-review &lt;task-description&gt; | Implement a requested feature or ticket and immediately execute the 5-lens Code Adversarial Review Loop |
+| /plan-review | /plan-review &lt;spec.md&gt; [--loop] | Interrogate a plan or spec across 5 lenses (Devils Advocate, Simplicity, Fidelity, Evidence, DAG Topology) |

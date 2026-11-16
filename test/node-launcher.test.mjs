@@ -36,6 +36,7 @@ function neutralise(src) {
   return src
     .replace(/^check_candidate "\/(opt\/homebrew|usr\/local|usr|)\/?bin\/node"$/gm, ':')
     .replace(/^check_candidate "\/bin\/node"$/gm, ':')
+    .replace('/opt/homebrew/*|/usr/local/*|/usr/*|/bin/*|/System/*', '/opt/homebrew/*|/System/*')
     .replace('command -v node', 'command -v agb-no-such-node-binary');
 }
 

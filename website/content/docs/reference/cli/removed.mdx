@@ -11,11 +11,11 @@ These commands and flags still exist in the code only to print a pointer to thei
 
 <include>../../../../generated/cli-tui.mdx</include>
 
-Running it prints that the TUI was removed and exits 1 ([tui handler](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L281-L283)). Use [`agb sidecar`](/docs/reference/cli/sidecar).
+`agb tui` remains removed and exits `1` with a pointer to [`agb sidecar`](/docs/reference/cli/sidecar) (web sidecar) and [`agb watch`](/docs/reference/cli/watch) (interactive terminal TUI dashboard; see the v1.0.0 [tui handler](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L281-L283)).
 
 ## The status UI flag
 
-The terminal UI flag of `agb status` exits 1 with the same pointer ([flag removal](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L269-L272)).
+Passing `--ui` to `agb status` exits `1` with a pointer to `agb sidecar` and `agb watch` (use `agb status --tui` for a one-shot TUI snapshot or `agb watch` for the live dashboard; see [flag removal](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L269-L272)).
 
 ## agb import-brain
 

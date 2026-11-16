@@ -1,0 +1,17 @@
+---
+title: "agb watch"
+description: "Launch the interactive live terminal TUI dashboard for real-time build progress, quota pool meters, ticket state, and event activity."
+---
+
+`agb watch` (or `agb status --watch`) launches the interactive Terminal User Interface (TUI) dashboard displaying real-time run status, quota pool gauges, per-ticket phase badges, and recent `events.jsonl` activity. Passing `agb status --tui` renders a single non-interactive TUI snapshot.
+
+## Synopsis
+
+<include>../../../../generated/cli-watch.mdx</include>
+
+## Interactive hotkeys
+
+- `[q]` or `Ctrl+C` — quit the dashboard and restore the terminal cursor.
+- `[r]` — trigger an immediate refresh.
+- `[c]` — toggle compact mode (hides the recent activity panel).
+- `[space]` — pause or resume live polling.

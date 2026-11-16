@@ -277,3 +277,150 @@ if (/agb\\.mjs$/.test(process.argv[1] ?? '')) writeFileSync(${JSON.stringify(log
   assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')), ['preflight', plan, '--no-coldstart']);
 });
 
+test('extractPositionalArgs and sanitizeRemoteUrl: imported directly from lib/plan-integrity.mjs', async () => {
+  const { extractPositionalArgs, sanitizeRemoteUrl } = await import('../lib/plan-integrity.mjs');
+  assert.deepEqual(
+    extractPositionalArgs(['--plan', 'specs/foo.md', '--loop', './my-repo'], new Set(['--plan'])),
+    ['./my-repo']
+  );
+  assert.deepEqual(
+    extractPositionalArgs(['specs/foo.md', '--max-ticket-scope', '5', '--decompose', './my-repo'], new Set(['--out', '--max-ticket-scope'])),
+    ['specs/foo.md', './my-repo']
+  );
+  assert.equal(sanitizeRemoteUrl('https://user:secret-pat@github.com/org/repo.git?token=abc#frag'), 'https://github.com/org/repo.git');
+  assert.equal(sanitizeRemoteUrl('git@github.com:org/repo.git'), 'git@github.com:org/repo.git');
+});
+
+test('agb --version --provenance prints version with git metadata or graceful fallback', () => {
+  const r = spawnSync(process.execPath, [AGB_BIN, '--version', '--provenance'], { encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout.trim(), new RegExp(`^antigravity-booster v${ROOT_PKG.version}`));
+});
+
+test('agb shape, watch, init, sync-models, and tui commands work as expected', () => {
+  const shapeRes = spawnSync(process.execPath, [AGB_BIN, 'shape', 'templates/specs/feature-template.md', '--json'], { encoding: 'utf8' });
+  assert.equal(shapeRes.status, 0, shapeRes.stderr);
+  const parsedShape = JSON.parse(shapeRes.stdout);
+  assert.equal(parsedShape.ok, true);
+  assert.equal(parsedShape.structured, true);
+
+  const initRepo = makeRepo('init-cli-repo');
+  const initRes = spawnSync(process.execPath, [AGB_BIN, 'init', initRepo], { encoding: 'utf8' });
+  assert.equal(initRes.status, 0, initRes.stderr);
+  const parsedInit = JSON.parse(initRes.stdout);
+  assert.equal(parsedInit.ok, true);
+  assert.ok(existsSync(join(initRepo, 'specs', 'feature-template.md')));
+
+  const syncRes = spawnSync(process.execPath, [AGB_BIN, 'sync-models', '--offline', '--json'], { encoding: 'utf8' });
+  assert.equal(syncRes.status, 0, syncRes.stderr);
+  const parsedSync = JSON.parse(syncRes.stdout);
+  assert.equal(parsedSync.ok, true);
+
+  const tuiHelp = spawnSync(process.execPath, [AGB_BIN, 'help', 'tui'], { encoding: 'utf8' });
+  assert.equal(tuiHelp.status, 0);
+  assert.match(tuiHelp.stdout, /Removed\. Use agb sidecar or agb watch instead\./);
+});
+
+test('MCP server exposes agb_shape, agb_init, and extended agb_plan/agb_review/agb_doctor flags', async () => {
+  const resList = await mcpExchange([{ id: 201, method: 'tools/list' }]);
+  const tools = resList.get(201).result.tools;
+  const names = tools.map((t) => t.name);
+  assert.ok(names.includes('agb_shape'));
+  assert.ok(names.includes('agb_init'));
+
+  const planTool = tools.find((t) => t.name === 'agb_plan');
+  assert.equal(planTool.inputSchema.properties.decompose?.type, 'boolean');
+  assert.equal(planTool.inputSchema.properties.maxTicketScope?.type, 'number');
+  assert.equal(planTool.inputSchema.properties.noFastPath?.type, 'boolean');
+
+  const reviewTool = tools.find((t) => t.name === 'agb_review');
+  assert.equal(reviewTool.inputSchema.properties.plan?.type, 'string');
+  assert.equal(reviewTool.inputSchema.properties.loop?.type, 'boolean');
+  assert.equal(reviewTool.inputSchema.properties.fiveLens?.type, 'boolean');
+  assert.equal(reviewTool.inputSchema.properties.arbiter?.type, 'boolean');
+
+  const doctorTool = tools.find((t) => t.name === 'agb_doctor');
+  assert.equal(doctorTool.inputSchema.properties.fix?.type, 'boolean');
+
+  // Verify MCP tools/call argv forwarding for agb_shape, agb_init, agb_plan, agb_review, agb_doctor
+  const log = join(TMP, 'agb-mcp-dispatch.jsonl');
+  const preload = join(TMP, 'argv-mcp-dispatch.mjs');
+  writeFileSync(preload, `import { appendFileSync } from 'node:fs';
+if (/agb\\.mjs$/.test(process.argv[1] ?? '')) appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+`);
+  const dispatchRepo = makeRepo('mcp-dispatch-repo');
+  const specFile = join(dispatchRepo, 'spec.md');
+  writeFileSync(specFile, '# Spec\n');
+  const env = {
+    ...process.env,
+    AGB_AGY_BIN: FAKE_AGY,
+    AGB_QUOTA_STATE: join(TMP, 'pools-mcp-dispatch.json'),
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${pathToFileURL(preload).href}`.trim(),
+  };
+  await mcpExchange([
+    { id: 301, method: 'tools/call', params: { name: 'agb_shape', arguments: { spec: 'spec.md', repo: dispatchRepo, strict: true, maxTicketScope: 6 } } },
+    { id: 302, method: 'tools/call', params: { name: 'agb_init', arguments: { repo: dispatchRepo } } },
+    { id: 303, method: 'tools/call', params: { name: 'agb_review', arguments: { repo: dispatchRepo, plan: 'spec.md', loop: true, arbiter: false } } },
+  ], { env });
+  const recorded = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(recorded.some((a) => a[0] === 'shape' && a.includes('--strict') && a.includes('--max-ticket-scope') && a.includes('6')));
+  assert.ok(recorded.some((a) => a[0] === 'init' && a[1] === dispatchRepo));
+  assert.ok(recorded.some((a) => a[0] === 'review' && a.includes('--plan') && a.includes('--loop') && a.includes('--no-arbiter')));
+});
+
+test('CLI subprocess: agb run -c validation, agb watch, agb review --plan, agb plan --decompose, and run-tests --coverage', () => {
+  const badC = spawnSync(process.execPath, [AGB_BIN, 'run', '-c', '0'], { encoding: 'utf8' });
+  assert.equal(badC.status, 1);
+  assert.match(badC.stderr, /invalid concurrency/);
+
+  const watchRepo = makeRepo('watch-cli-repo');
+  mkdirSync(join(watchRepo, '.booster'), { recursive: true });
+  writeFileSync(join(watchRepo, '.booster', 'run.json'), JSON.stringify({ runId: 'r1', startedAt: new Date().toISOString() }));
+  writeFileSync(join(watchRepo, '.booster', 'report.json'), JSON.stringify({ merged: ['T1'], failed: {} }));
+  const watchRes = spawnSync(process.execPath, [AGB_BIN, 'watch', watchRepo, '--interval', '20', '--compact'], {
+    encoding: 'utf8',
+    env: { ...process.env, CI: '1' },
+  });
+  assert.equal(watchRes.status, 0, watchRes.stderr);
+  assert.match(watchRes.stdout, /\[AGB Watch\] run r1/);
+
+  const planRepo = makeRepo('plan-cli-repo');
+  mkdirSync(join(planRepo, 'lib'), { recursive: true });
+  writeFileSync(join(planRepo, 'lib', 'a.mjs'), 'export const a = 1;\n');
+  writeFileSync(join(planRepo, 'lib', 'b.mjs'), 'export const b = 2;\n');
+  writeFileSync(join(planRepo, 'lib', 'c.mjs'), 'export const c = 3;\n');
+  const specPath = join(planRepo, 'spec.md');
+  writeFileSync(specPath, [
+    '# Decompose Spec',
+    '### Ticket 1: `T-WIDE` — Wide Ticket',
+    '- **Scope**: `lib/a.mjs`, `lib/b.mjs`, `lib/c.mjs`',
+    '- **Acceptance Criteria**:',
+    '  - Exports a, b, c.',
+    '',
+  ].join('\n'));
+  const outPlan = join(planRepo, 'out-plan.json');
+  const env = { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGB_QUOTA_STATE: join(TMP, 'pools-cli-plan.json') };
+  const planRes = spawnSync(process.execPath, [
+    AGB_BIN, 'plan', specPath, planRepo,
+    '--out', outPlan, '--force', '--decompose', '--max-ticket-scope', '2',
+    '--no-coldstart', '--no-parallax', '--no-premortem',
+  ], { encoding: 'utf8', env });
+  assert.equal(planRes.status, 0, planRes.stderr);
+  const compiled = JSON.parse(readFileSync(outPlan, 'utf8'));
+  assert.equal(compiled.tickets.length, 2);
+  assert.equal(compiled.tickets[0].id, 'T-WIDE-p1');
+  assert.equal(compiled.tickets[1].id, 'T-WIDE-p2');
+
+  const revRes = spawnSync(process.execPath, [AGB_BIN, 'review', planRepo, '--plan', 'spec.md', '--no-arbiter'], { encoding: 'utf8', env });
+  assert.equal(revRes.status, 0, revRes.stderr);
+  assert.equal(JSON.parse(revRes.stdout).gateVerdict, 'SHIP');
+
+  const runnerScript = fileURLToPath(new URL('../scripts/run-tests.mjs', import.meta.url));
+  const covRes = spawnSync(process.execPath, [runnerScript, '--coverage', 'test/semver.test.mjs'], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    encoding: 'utf8',
+  });
+  assert.equal(covRes.status, 0, covRes.stderr);
+});
+
+

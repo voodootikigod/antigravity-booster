@@ -10,7 +10,7 @@ Now covered by <https://www.agybooster.com/docs/getting-started/quickstart>.
 ## 2. Installation & Environment Integration
 Now covered by <https://www.agybooster.com/docs/getting-started/installation>.
 
-## 3. Command Reference
+## 3. Command Reference (`agb shape`, `agb plan`, `agb run`, `agb watch`, `agb review`, `agb sync-models`, `agb init`)
 Now covered by <https://www.agybooster.com/docs/reference/cli>.
 
 ## 4. Schemas & Configuration Formats

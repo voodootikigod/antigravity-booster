@@ -1,0 +1,14 @@
+---
+title: "agb init"
+description: "Initialize a target repository for ADLC and agb (.adlc/config.json, .adlc/tickets/, specs/feature-template.md, .gitignore)."
+---
+
+`agb init [repo]` bootstraps a target repository for ADLC and `agb`: it creates `.adlc/tickets/` and `.adlc/config.json` (in `unsigned-fallback` mode without setting human-only attestation flags), scaffolds `specs/feature-template.md` when absent, and appends `.booster/` and `.worktrees/` to `.gitignore`.
+
+## Synopsis
+
+<include>../../../../generated/cli-init.mdx</include>
+
+## Arguments
+
+- `repo` is optional and defaults to the current directory (`.`). Outputs `{ ok, repo, created, skipped }` as JSON.

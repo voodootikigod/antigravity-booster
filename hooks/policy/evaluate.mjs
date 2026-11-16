@@ -695,7 +695,21 @@ function evaluateMcpTool(name, args, ctx) {
   }
   if (verdicts.length) return mostRestrictive(verdicts);
   if (isBoosterMcpTool(name, args)) {
-    if (ctx.readonly && boosterMcpToolName(name, args) === 'agb_run') return deny('Read-only agb worker session cannot start an agb run');
+    if (ctx.workerTicket) return deny('Headless agb worker cannot invoke Booster MCP tools');
+    const tool = boosterMcpToolName(name, args);
+    const mcpArgs = name === 'call_mcp_tool' ? (args?.Arguments ?? args?.ToolArgs ?? {}) : (args ?? {});
+    if (
+      ctx.readonly &&
+      (
+        tool === 'agb_run' ||
+        tool === 'agb_plan' ||
+        tool === 'agb_init' ||
+        (tool === 'agb_doctor' && Boolean(mcpArgs?.fix)) ||
+        (tool === 'agb_shape' && Boolean(mcpArgs?.syncBrain))
+      )
+    ) {
+      return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
+    }
     return PASS;
   }
   if (ctx.readonly) return deny('Third-party MCP tool call cannot prompt operator in a read-only agb worker session');

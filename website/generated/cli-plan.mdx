@@ -1,5 +1,5 @@
 ```text
-agb plan <id | spec.md> <repo>
+agb plan <id | spec.md> [repo]
 ```
 
 Compile an Antigravity brain plan or spec file into plan.json.
@@ -8,8 +8,11 @@ Pipeline: convert → validate → overlap/coldstart/parallax gates with feedbac
 
 | Flag | Argument | Description |
 | --- | --- | --- |
-| --force | — | — |
-| --no-coldstart | — | — |
-| --no-parallax | — | — |
-| --no-premortem | — | — |
-| --out | &lt;file&gt; | — |
+| --decompose | — | split wide tickets |
+| --force | — | overwrite existing |
+| --max-ticket-scope | &lt;n&gt; | max files per ticket |
+| --no-coldstart | — | skip coldstart |
+| --no-fast-path | — | force LLM conversion |
+| --no-parallax | — | skip parallax |
+| --no-premortem | — | skip premortem |
+| --out | &lt;file&gt; | output plan path |

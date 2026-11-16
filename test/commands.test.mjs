@@ -20,16 +20,21 @@ function fencedBlocks(text) {
 
 test('commands: every root command instructs running ~/.local/bin/agb <its subcommand>', () => {
   const files = commandFiles();
-  assert.equal(files.length, 8);
+  assert.equal(files.length, 16);
+  const specialSubcommand = {
+    'plan-review.md': 'review',
+    'code-review.md': 'review',
+    'implement-and-review.md': 'review',
+  };
   for (const file of files) {
     if (file === 'agb.md') {
       const text = read(file);
-      for (const sub of ['plan', 'run', 'review', 'doctor', 'bootstrap', 'migrate', 'sidecar']) {
+      for (const sub of ['shape', 'plan', 'run', 'review', 'doctor', 'bootstrap', 'migrate', 'sidecar', 'status', 'watch', 'preflight', 'sync-models', 'init']) {
         assert.ok(text.includes(`~/.local/bin/agb ${sub}`), `agb.md must route to ~/.local/bin/agb ${sub}`);
       }
       continue;
     }
-    const sub = subcommandOf(file);
+    const sub = specialSubcommand[file] ?? subcommandOf(file);
     assert.ok(read(file).includes(`~/.local/bin/agb ${sub}`), `${file} must reference ~/.local/bin/agb ${sub}`);
   }
 });
@@ -71,10 +76,15 @@ test('commands: agb-migrate documents --rollback', () => {
 
 test('commands: commands with an MCP equivalent mention the mcp__agb__ tool', () => {
   for (const [file, tool] of [
+    ['agb-shape.md', 'agb_shape'],
     ['agb-plan.md', 'agb_plan'],
     ['agb-run.md', 'agb_run'],
     ['agb-review.md', 'agb_review'],
     ['agb-doctor.md', 'agb_doctor'],
+    ['agb-preflight.md', 'agb_preflight'],
+    ['agb-status.md', 'agb_status'],
+    ['plan-review.md', 'agb_review'],
+    ['code-review.md', 'agb_review'],
   ]) {
     assert.ok(read(file).includes(`mcp__agb__${tool}`), `${file} must mention mcp__agb__${tool}`);
   }
@@ -126,7 +136,9 @@ test('mcp: moved server answers initialize + tools/list with clean JSON-RPC on s
   assert.equal(init.result.serverInfo.name, 'antigravity-booster-mcp');
   assert.equal(list.id, 2);
   const names = list.result.tools.map((tool) => tool.name);
-  for (const name of ['agb_plan', 'agb_run', 'agb_review', 'agb_doctor']) assert.ok(names.includes(name), name);
+  for (const name of ['agb_shape', 'agb_plan', 'agb_run', 'agb_review', 'agb_doctor', 'agb_preflight', 'agb_status', 'agb_init']) {
+    assert.ok(names.includes(name), name);
+  }
 });
 
 test('mcp: malformed input yields a JSON-RPC parse error on stdout, diagnostics only on stderr', async () => {

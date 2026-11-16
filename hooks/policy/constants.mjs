@@ -45,7 +45,7 @@ export const AGY_CONTROL_TOOLS = new Set(['finish']);
 export const BOOSTER_MCP_SERVER = 'agb';
 export const BOOSTER_MCP_SERVERS = new Set(['agb', 'antigravity-booster_agb']);
 export const BOOSTER_MCP_TOOLS = new Set([
-  'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_review',
+  'agb_shape', 'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_init', 'agb_review',
 ]);
 
 export const PATH_MUTATING_TOOLS = new Set([

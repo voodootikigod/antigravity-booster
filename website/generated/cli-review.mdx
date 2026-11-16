@@ -2,6 +2,11 @@
 agb review [repo] [ref]
 ```
 
-Read-only lens fleet over a diff, loop-until-dry.
+Read-only lens fleet over a diff or plan spec, loop-until-dry.
 
-This command takes no flags.
+| Flag | Argument | Description |
+| --- | --- | --- |
+| --five-lens | — | use 5-lens Code ARL |
+| --loop | — | iterative ARL up to 3 rounds |
+| --no-arbiter | — | skip neutral arbiter |
+| --plan | &lt;spec.md&gt; | run 5-lens Plan ARL |

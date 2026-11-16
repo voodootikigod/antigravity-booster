@@ -172,7 +172,7 @@ export function validateStagedPluginStrict(pluginDir, options = {}) {
     && errors === 0
     && warnings === 0
     && notes === 0
-    && (components.skills ?? 0) >= 8
+    && (components.skills ?? 0) >= 17
     && (components.agents ?? 0) >= 3
     && (components.rules ?? 0) >= 1
     && (components.hooks ?? 0) >= 1

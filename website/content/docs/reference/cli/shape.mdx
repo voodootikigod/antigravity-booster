@@ -1,0 +1,28 @@
+---
+title: "agb shape"
+description: "Parse a structured Markdown specification, run deterministic DAG pre-analysis, and optionally sync the hardened spec to the Antigravity Brain artifact."
+---
+
+`agb shape` parses a structured Markdown specification (`### Ticket N: <id> -- Title` sections with `Scope`, `Rails`, `Edges`, `Tier`, `Pool Hint`, `Objectives`, and `Acceptance Criteria`), runs deterministic DAG pre-analysis (`forecastOverlaps`, `verifyDeclaredPaths`, `scanStaticImportCoupling`), and computes a 0–100 readiness score before `agb plan`.
+
+## Synopsis
+
+<include>../../../../generated/cli-shape.mdx</include>
+
+## Arguments and flags
+
+- `<spec.md | id>` is the path to a Markdown specification file or an Antigravity brain ID/prefix.
+- `[repo]` is optional and sets the target repository root for literal rail verification and static import coupling analysis (default `.`).
+- `--analyze` runs deterministic DAG pre-analysis (default behavior).
+- `--strict` treats non-empty warnings as exit code `2`.
+- `--sync-brain` writes the formatted plan artifact to `.booster/agb_plan_artifact.md` and `agb_plan_artifact.md` inside the active Antigravity brain session directory.
+- `--max-ticket-scope <n>` sets the per-ticket scope warning threshold (default `12`).
+- `--json` emits the structured JSON report to stdout.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Pre-analysis passed (`ok: true`, zero structural or scope-overlap errors). |
+| 1 | Usage error or unreadable specification file. |
+| 2 | Structural errors, concurrent scope overlaps, missing literal rails, or `--strict` warnings. |

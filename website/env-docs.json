@@ -385,6 +385,76 @@
       "default": "unset",
       "bundledIgnored": true,
       "description": "Test-only override for PASSWD_HOME in bin/hook-runner.sh when running from an unbundled source checkout containing test/hook-runner.test.mjs; unconditionally ignored when staged under .gemini/config/plugins/."
+    },
+    {
+      "name": "AGB_ARBITER_MODEL",
+      "group": "pools-and-quota",
+      "default": "gemini-4-argon-high",
+      "bundledIgnored": false,
+      "description": "Override the model slug used by the neutral arbiter during 5-lens Adversarial Review Loop triage."
+    },
+    {
+      "name": "AGB_BRAIN_MODEL",
+      "group": "pools-and-quota",
+      "default": "gemini-4-argon-high",
+      "bundledIgnored": false,
+      "description": "Override the frontier model slug used for Stage A brain-to-plan conversion."
+    },
+    {
+      "name": "AGB_BRAIN_REPAIR_MODEL",
+      "group": "pools-and-quota",
+      "default": "gemini-4-argon-high",
+      "bundledIgnored": false,
+      "description": "Override the fallback model slug used when repairing invalid Stage A plan JSON."
+    },
+    {
+      "name": "AGB_COLDSTART_MODEL",
+      "group": "pools-and-quota",
+      "default": "gemini-3.8-flash-low",
+      "bundledIgnored": false,
+      "description": "Override the model slug used by the coldstart self-sufficiency gate."
+    },
+    {
+      "name": "AGB_GRAPH_COUPLING_FILE",
+      "group": "paths",
+      "default": ".adlc/graph-coupling.json",
+      "bundledIgnored": false,
+      "description": "Path to an optional static import-graph coupling JSON file consulted by applyMergeForecast and scanStaticImportCoupling."
+    },
+    {
+      "name": "AGB_HUD",
+      "group": "core",
+      "default": "auto on TTY",
+      "bundledIgnored": false,
+      "description": "Set to 0 to disable the inline ANSI status bar during agb run, or 1 to force-enable it."
+    },
+    {
+      "name": "AGB_PARALLAX_JUDGE_MODEL",
+      "group": "pools-and-quota",
+      "default": "gemini-4-argon-high",
+      "bundledIgnored": false,
+      "description": "Override the model slug used by the parallax contract judge."
+    },
+    {
+      "name": "AGB_PARALLAX_READER_MODEL",
+      "group": "pools-and-quota",
+      "default": "gemini-3.8-flash-medium",
+      "bundledIgnored": false,
+      "description": "Override the model slug used by the parallax edge reader."
+    },
+    {
+      "name": "AGB_PREMORTEM_MODEL",
+      "group": "pools-and-quota",
+      "default": "gemini-4-argon-high",
+      "bundledIgnored": false,
+      "description": "Override the model slug used by the advisory premortem gate."
+    },
+    {
+      "name": "AGB_SYNC_MODELS_OFFLINE",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to use the built-in static model catalog instead of invoking agy models during doctor or sync-models."
     }
   ],
   "ignore": [

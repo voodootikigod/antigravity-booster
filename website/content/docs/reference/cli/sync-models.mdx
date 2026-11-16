@@ -1,0 +1,17 @@
+---
+title: "agb sync-models"
+description: "Audit live Antigravity models (agy models) and synchronize quota pool catalogs and cross-model adversarial review routing tables."
+---
+
+`agb sync-models` queries `agy models` (or uses the built-in catalog with `--offline`), audits every model slug against `lib/models.mjs` and `skills/adversarial-review/references/models.json`, and optionally updates `skills/adversarial-review/references/models.json`.
+
+## Synopsis
+
+<include>../../../../generated/cli-sync-models.mdx</include>
+
+## Flags
+
+- `--check` exits `1` if any live model is unmapped in `lib/models.mjs` or `skills/adversarial-review/references/models.json`.
+- `--write` writes updated model catalog entries into `skills/adversarial-review/references/models.json`.
+- `--offline` uses the static known model catalog without invoking `agy models`.
+- `--json` emits the audit report as JSON.
