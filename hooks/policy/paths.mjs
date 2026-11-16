@@ -207,6 +207,8 @@ export function protectedRoots(home) {
 export function boosterDataRoots(home) {
   return [
     join(home, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster'),
+    join(home, '.gemini', 'antigravity', 'plugin_data', 'antigravity-booster'),
+    join(home, '.gemini', 'antigravity-ide', 'plugin_data', 'antigravity-booster'),
     join(home, '.config', 'antigravity-booster'),
   ];
 }

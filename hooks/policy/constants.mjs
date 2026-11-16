@@ -8,6 +8,7 @@ export const READ_ONLY_TOOLS = new Set([
   'list_resources', 'read_resource', 'ask_question',
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',
   'find_by_name',
+  'list_dir', 'list_permissions', 'search_in_file', 'wait', 'wait_5_seconds',
 ]);
 
 export const ORCHESTRATION_TOOLS = new Set([
@@ -59,6 +60,23 @@ export const READ_TOOL_PATH_SCHEMAS = {
   code_search: ['SearchPath', 'DirectoryPath', 'path'],
   file_search: ['SearchPath', 'DirectoryPath', 'path'],
   find_by_name: ['SearchPath', 'DirectoryPath', 'path', 'dir'],
+  list_dir: ['DirectoryPath', 'DirAbsolutePath', 'AbsolutePath', 'path', 'dir'],
+  list_permissions: ['paths', 'path'],
+  search_in_file: ['paths', 'path', 'DirectoryPath', 'SearchPath'],
+};
+
+// Folded (lowercase) path keys of the read tools that REQUIRE a path argument.
+export const REQUIRED_READ_PATH_KEYS = {
+  view_file: ['absolutepath', 'filepath', 'path'],
+  view_file_outline: ['absolutepath', 'filepath', 'path'],
+  read_file: ['path', 'absolutepath', 'filepath'],
+  read_notebook: ['notebookpath', 'absolutepath', 'path'],
+  read_browser_page: ['url'],
+  read_url_content: ['url'],
+  list_dir: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
+  list_directory: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
+  list_permissions: ['paths', 'path'],
+  search_in_file: ['paths', 'path', 'directorypath', 'searchpath'],
 };
 
 // Gate 1: required path keys for file-mutating tools (probed agy 1.2.16).

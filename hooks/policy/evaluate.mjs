@@ -14,7 +14,7 @@ import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
   AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, ORCHESTRATION_TOOLS,
-  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
+  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
   TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS,
 } from './constants.mjs';
 import {
@@ -101,26 +101,60 @@ function boosterMcpToolName(name, args) {
 }
 
 /** Probed-schema path extraction for file-mutating tools (§4.5.1). */
+const FOLDED_EXCLUDED_CONTENT_KEYS = new Set([...EXCLUDED_CONTENT_KEYS].map((k) => String(k).toLowerCase()));
+
+/** Mirrors Go's strings.EqualFold simple folding for the runes that fold into ASCII. */
+export function goFoldKey(k) {
+  return String(k).replace(/\u017f/g, 's').replace(/\u212a/g, 'k').toLowerCase();
+}
+
+/**
+ * Case-insensitive argument view matching the host's Go decoder: only plain
+ * objects with printable-ASCII keys that stay unique under folding are accepted.
+ */
+export function normalizeArgsCaseInsensitive(args) {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+    return { ok: false, reason: 'Tool arguments must be a plain JSON object' };
+  }
+  const keys = Object.keys(args);
+  for (const k of keys) {
+    if (!/^[\x20-\x7E]+$/.test(k)) return { ok: false, reason: 'Non-ASCII or control character in tool argument key' };
+  }
+  const folded = Object.create(null);
+  for (const k of keys) {
+    const fk = goFoldKey(k);
+    if (fk in folded) return { ok: false, reason: 'Duplicate case-folded argument key' };
+    folded[fk] = args[k];
+  }
+  return { ok: true, folded, raw: args };
+}
+
 export function extractProbedPaths(toolName, args) {
   const schema = TOOL_PATH_SCHEMAS[toolName];
   if (!schema) return null;
-  const hasReq = schema.required.some((k) => args?.[k] !== undefined && args?.[k] !== null && String(args[k]).trim().length > 0);
-  const hasAlt = Array.isArray(schema.altRequired) && schema.altRequired.some((k) => args?.[k] !== undefined && args?.[k] !== null && String(args[k]).trim().length > 0);
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return { error: norm.reason };
+  const folded = norm.folded;
+  const get = (k) => folded[goFoldKey(k)];
+  const isPresent = (k) => get(k) !== undefined && get(k) !== null && String(get(k)).trim().length > 0;
+  const hasReq = schema.required.some(isPresent);
+  const hasAlt = Array.isArray(schema.altRequired) && schema.altRequired.some(isPresent);
   if (hasReq && hasAlt) {
     return { error: `Conflicting path parameters in mutating tool call: ${schema.required.join(', ')} and ${schema.altRequired.join(', ')}` };
   }
   const activeKeys = (!hasReq && hasAlt) ? schema.altRequired : schema.required;
-  const inactiveSchemaKeys = new Set([...schema.required, ...(schema.altRequired ?? [])].filter((k) => !activeKeys.includes(k)));
+  const activeFolded = new Set(activeKeys.map(goFoldKey));
+  const inactiveFolded = new Set([...schema.required, ...(schema.altRequired ?? [])].map(goFoldKey).filter((k) => !activeFolded.has(k)));
   const paths = [];
   for (const key of activeKeys) {
-    const val = args?.[key];
+    const val = get(key);
     if (typeof val !== 'string' || val.trim().length === 0) return { error: `Missing required path parameter: ${key}` };
     paths.push(val);
   }
-  for (const [key, val] of Object.entries(args ?? {})) {
-    if (activeKeys.includes(key) || EXCLUDED_CONTENT_KEYS.has(key)) continue;
-    if (inactiveSchemaKeys.has(key) && val !== undefined && val !== null) return { error: `Unexpected path parameter in mutating tool call: ${key}` };
-    if (typeof val === 'string' && UNEXPECTED_PATH.test(val)) return { error: `Unexpected path parameter in mutating tool call: ${key}` };
+  for (const [fk, val] of Object.entries(folded)) {
+    if (activeFolded.has(fk) || FOLDED_EXCLUDED_CONTENT_KEYS.has(fk)) continue;
+    if (inactiveFolded.has(fk) && val !== undefined && val !== null) return { error: `Unexpected path parameter in mutating tool call: ${fk}` };
+    if (typeof val === 'string' && UNEXPECTED_PATH.test(val)) return { error: `Unexpected path parameter in mutating tool call: ${fk}` };
   }
   return { paths };
 }
@@ -177,9 +211,49 @@ function scanPathLike(value, {
 
 const OVERFLOW = deny('Tool arguments are nested too deeply or are too large to verify');
 
-function readToolPaths(name, args) {
+function readToolPaths(name, norm) {
   const keys = READ_TOOL_PATH_SCHEMAS[name] ?? [];
-  return keys.map((k) => args?.[k]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
+  return keys.map((k) => norm.folded[goFoldKey(k)]).filter((v) => typeof v === 'string' && v.length > 0).map(toPath);
+}
+
+const READ_STRING_KEYS = ['toolaction', 'toolsummary'];
+const READ_EXTRA_STRING_KEYS = { search_in_file: ['pattern', 'query'], read_browser_page: ['pageid'] };
+const READ_PATH_PARAM_ERROR = 'Invalid read-tool path parameter';
+
+const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
+
+/** Path extraction and argument-shape validation for read tools that require a path. */
+export function extractReadToolPaths(name, rawArgs) {
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return { ok: false, reason: norm.reason };
+  const pathKeys = REQUIRED_READ_PATH_KEYS[name];
+  const extractedPaths = [];
+  for (const k of pathKeys) {
+    const val = norm.folded[k];
+    if (val === undefined) continue;
+    if (k === 'paths') {
+      if (isNonEmptyString(val)) extractedPaths.push(val);
+      else if (Array.isArray(val) && val.length > 0 && val.every(isNonEmptyString)) extractedPaths.push(...val);
+      else return { ok: false, reason: READ_PATH_PARAM_ERROR };
+    } else if (isNonEmptyString(val)) {
+      extractedPaths.push(val);
+    } else {
+      return { ok: false, reason: READ_PATH_PARAM_ERROR };
+    }
+  }
+  if (extractedPaths.length < 1) return { ok: false, reason: 'Missing required read-tool path parameter' };
+  const stringKeys = new Set([...READ_STRING_KEYS, ...(READ_EXTRA_STRING_KEYS[name] ?? [])]);
+  for (const [k, val] of Object.entries(norm.folded)) {
+    if (pathKeys.includes(k)) continue;
+    if (stringKeys.has(k)) {
+      if (typeof val !== 'string' && val !== undefined) return { ok: false, reason: 'Unexpected non-scalar or unapproved string argument on read tool' };
+      continue;
+    }
+    if (val === undefined) continue;
+    if (typeof val === 'boolean' || (typeof val === 'number' && Number.isFinite(val))) continue;
+    return { ok: false, reason: 'Unexpected non-scalar or unapproved string argument on read tool' };
+  }
+  return { ok: true, paths: extractedPaths.map(toPath) };
 }
 
 /**
@@ -327,13 +401,26 @@ function workerScopeVerdict(repo, rel, ctx) {
 }
 
 function stepOne(name, args, ctx) {
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
   if (name === 'run_command') return PASS; // shell tokens are checked by the classifier
   const isRead = READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]);
   let candidates;
-  if (isRead) candidates = readToolPaths(name, args);
-  else if (TOOL_PATH_SCHEMAS[name]) {
+  if (isRead) {
+    let extra = [];
+    if (Object.hasOwn(REQUIRED_READ_PATH_KEYS, name)) {
+      const readRes = extractReadToolPaths(name, args);
+      if (!readRes.ok) return deny(readRes.reason);
+      extra = readRes.paths;
+    } else {
+      extra = readToolPaths(name, norm);
+    }
+    const scanned = scanPathLike(args);
+    if (scanned.overflow) return OVERFLOW;
+    candidates = [...extra, ...scanned.paths];
+  } else if (TOOL_PATH_SCHEMAS[name]) {
     const schemaKeys = [...TOOL_PATH_SCHEMAS[name].required, ...(TOOL_PATH_SCHEMAS[name].altRequired ?? [])];
-    candidates = schemaKeys.map((k) => args?.[k]).filter((v) => typeof v === 'string').map(toPath);
+    candidates = schemaKeys.map((k) => norm.folded[goFoldKey(k)]).filter((v) => typeof v === 'string').map(toPath);
   } else {
     const isSwarm = name === 'swarm';
     const isWorkflow = WORKFLOW_TOOLS.has(name);
@@ -684,7 +771,7 @@ export function buildContext(payload, options = {}) {
 export function evaluatePayload(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== 'string' || name.length === 0) return deny('Malformed PreToolUse payload: missing tool name');
-  const args = payload.toolCall.args ?? {};
+  const args = payload.toolCall.args === undefined ? {} : payload.toolCall.args;
   // Before Step 1: a control step's args are the model's answer, not paths.
   if (AGY_CONTROL_TOOLS.has(name)) return PASS;
   beginEvaluation();
