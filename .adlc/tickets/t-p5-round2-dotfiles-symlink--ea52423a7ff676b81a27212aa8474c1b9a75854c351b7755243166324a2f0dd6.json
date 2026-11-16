@@ -1,5 +1,6 @@
 {
   "body": "Scope `LOG_TAMPERED` symlink/UID checks in `bin/hook-runner.sh` strictly to `$DATA_ROOT`, `$HOOK_LOG_DIR`, and `$HOOK_LOG_FILE` so legitimate dotfile symlinks (e.g. `~/.config` managed by GNU Stow or chezmoi) do not false-trigger headless worker denial when `DATA_ROOT` is under `~/.gemini/antigravity-cli/plugin_data/antigravity-booster`, and add a regression test in `test/hook-runner.test.mjs`.",
+  "completed": true,
   "edges": [],
   "id": "t-p5-round2-dotfiles-symlink",
   "rails": [
