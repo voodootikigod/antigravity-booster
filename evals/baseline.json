@@ -14,7 +14,12 @@
     "inProcessEvaluateP50Ms": 0.32,
     "launcherOverheadP50Ms": 10.0,
     "hookRunnerE2eP50Ms": 79.5,
-    "orchestratorOverheadMs": 5.94
+    "orchestratorOverheadMs": 5.94,
+    "perfOrchSpeedupVsNative": 1.50,
+    "perfOrchSpeedupVsBestPractices": 1.35,
+    "perfOrchSpeedupVsV12": 1.10,
+    "accAgy159HardeningBlockRate": 1.0,
+    "v13PolicyInProcessP50Ms": 0.11
   },
   "ratchets": {
     "minPerf8SpeedupVsSerial": 2.5,
@@ -34,6 +39,18 @@
     "minSchedulerDagPass": true,
     "maxInProcessEvaluateP50Ms": 25.0,
     "maxHookRunnerE2eP50Ms": 500.0,
-    "maxOrchestratorOverheadMs": 500.0
+    "maxOrchestratorOverheadMs": 500.0,
+    "minPerfOrchSpeedupVsNative": 1.35,
+    "minPerfOrchSpeedupVsBestPractices": 1.25,
+    "minPerfOrchSpeedupVsV12": 1.05,
+    "minAccAgy159HardeningBlockRate": 1.0,
+    "minV13Policy60ToolsCovered": 60,
+    "maxV13PolicyAskCount": 0,
+    "minV13PolicyAdvRecall": 1.0,
+    "maxV13PolicyFalsePositiveRate": 0.0,
+    "maxV13PolicyP95Ms": 50.0,
+    "minV13HookSecurityPassRate": 1.0,
+    "minV13PrintAndSandboxPassRate": 1.0,
+    "minV13OrchestratorSchedulerPassRate": 1.0
   }
 }

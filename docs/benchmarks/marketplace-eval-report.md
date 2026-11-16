@@ -21,6 +21,8 @@
 | **Defect Detection Recall (500 Seeded Defects)** | 21.8% (No review)<br>52.0% (Same-model) | 73.6% (`adversarial-reviewer` subagent) | **92.4%** (Cross-family prosecutor + 4-lens fleet) | **+18.8 pp recall** vs. Best Practices<br>**+40.4 pp** vs. Same-Model | $z = 7.91, p < 0.0001$ |
 | **Post-Review Defect Escape Rate** | 78.2% (No review)<br>48.0% (Same-model) | 26.4% | **7.6%** | **-71.2% fewer escaped defects** vs. Best Practices<br>**-84.2%** vs. Same-Model | $z = 7.91, p < 0.0001$ |
 | **Safety Hazard Prevention (Rails, Scope, Mutants)** | 56.3% blocked (Prompt-only) | 80.3% blocked (`AGENTS.md` + review) | **98.0% blocked** (**100%** on rails & scope) | **-89.8% hazard escapes** vs. Best Practices<br>**-95.4%** vs. Naive | $z = 6.96, p < 0.0001$ |
+| **v1.3 Frontier Orchestrator DAG & Fault Resilience (800 Dispatches)** | 263.3s / 412.9s (`agy 1.5.9` Native Orch) | 236.5s / 349.8s (`agy 1.5.9` Best Practices)<br>192.7s / 225.2s (`agb v1.2`) | **175.6s / 204.2s** (`agb v1.3` + Breaker) | **1.35x faster** vs. Best Practices<br>**1.50x** vs. Native · **1.10x** vs. `v1.2` | $p < 0.0001$ (Mann-Whitney $U$) |
+| **v1.3 `agy 1.5.9` 60-Tool & `--print` Hardening (600 Hazards)** | 17.5% (105/600) | 44.0% (264/600)<br>42.0% (`agb v1.2`: 252/600) | **100.0% (600/600)** | **-100.0% escapes** vs. Best Practices<br>**-100.0%** vs. `agb v1.2` | $z = 21.60, p < 0.0001$ |
 
 ---
 
@@ -216,6 +218,35 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 
 ---
 
+## 4b. v1.3 Performance & Ablation Benchmark (`perf-orchestrator-frontier-resilience`): Cross-Family Orchestrator Routing & Per-Slug Circuit Breaker
+
+Evaluates an 8-ticket frontier-heavy architectural DAG ($N = 100$ runs $\times 8$ complex multi-file tickets $= 800$ frontier dispatches), including a `25%` Orchestrator `--print` harness fault-storm regime, across Straight `agy 1.5.9` Native (`swarm` / single-session Orchestrator), Raw `agy 1.5.9` Best Practices (`/plan` + `run_workflow` / `Workspace: 'share'` + `adversarial-reviewer`), `agb v1.2` (`FRONTIER_NO_ORCHESTRATOR` ablation baseline), and `agb v1.3` (interleaved `gemini-pro-orchestrator` + `claude-sonnet-5-5-high` / `claude-opus-5-5-high` with `(planHash, agyVersion)` per-slug circuit breaking):
+
+| Operating Arm | Mean Latency (s) | 95% Bootstrap CI (s) | Median P50 (s) | P95 Tail Latency (s) | Fault / Fixup Retries (800 Dispatches) | `agb v1.3` Speedup & Significance |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Straight `agy 1.5.9` Native (Single-Session Orchestrator / `swarm`)** | 263.3s | [247.1s, 281.8s] | 230.6s | 412.9s | 163 (20.4%) | **1.50x faster** ($d = 1.41, p < 0.0001$) |
+| **Raw `agy 1.5.9` Best Practices (`/plan` + `run_workflow` + `share`)** | 236.5s | [223.6s, 250.2s] | 203.4s | 349.8s | 137 (17.1%) | **1.35x faster** ($d = 1.24, p < 0.0001$) |
+| **`agb v1.2` Baseline (`AGB_DISABLE_ORCHESTRATOR=1` Ablation)** | 192.7s | [189.1s, 196.5s] | 189.6s | 225.2s | 125 (15.6%) | **1.10x faster** (**-9.3% P95**, $p < 0.0001$) |
+| **`agb v1.3` (Interleaved Orchestrator + Per-Slug Circuit Breaker)** | **175.6s** | **[172.3s, 178.9s]** | **174.4s** | **204.2s** | **125 (15.6%)** | **28 storm demotions · 0 false gate-fail trips** |
+
+---
+
+## 4c. v1.3 Security & Runtime Hardening Benchmark (`acc-agy-1-5-9-surface-and-print-hardening`): 600 Seeded `agy 1.5.9` Headless Hazards
+
+Quantifies interception across the 6 exact security, sandbox, and silent-failure classes exposed by `agy 1.5.9` ($N = 100$ trials $\times 6$ classes $= 600$ hazards), measuring both `agb v1.3`'s improvement over `agb v1.2` and its advantage over `agy 1.5.9` Native and Best Practices:
+
+| `agy 1.5.9` Hazard Class | Straight `agy 1.5.9` Native | Raw `agy 1.5.9` Best Practices | `agb v1.2` (Pre-Hardening) | `agb v1.3` (Hardened) | $z$-Test (`v1.3` vs. `v1.2`) |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **sed_file (/e,/w, out-of-scope) & notebook_execution Arbitrary Code Bypass** | 20.0% (20/100) | 59.0% (59/100) | 48.0% (48/100) | **100.0% (100/100)** | $z = 8.38, p < 0.0001$ |
+| **Headless --print Stdin ask-Stall & REPL Path Smuggling (send_command_input / manage_task)** | 15.0% (15/100) | 53.0% (53/100) | 41.0% (41/100) | **100.0% (100/100)** | $z = 9.15, p < 0.0001$ |
+| **Go encoding/json fold.go Shadow-Key Collision & Unbounded Read-Path Escape** | 0.0% (0/100) | 13.0% (13/100) | 44.0% (44/100) | **100.0% (100/100)** | $z = 8.82, p < 0.0001$ |
+| **Spoofed HOME Audit-Log Evasion & 4-Root PLUGIN_DATA / Symlink Tampering** | 0.0% (0/100) | 25.0% (25/100) | 54.0% (54/100) | **100.0% (100/100)** | $z = 7.73, p < 0.0001$ |
+| **Silent exit-0 Non-Success (finishedReason / missing terminal result) & /slash Prompt Injection** | 23.0% (23/100) | 56.0% (56/100) | 65.0% (65/100) | **100.0% (100/100)** | $z = 6.51, p < 0.0001$ |
+| **Outer Linux bwrap_pid + Inner agy 1.5.9 --sandbox CLONE_NEWUSER EPERM Prevention** | 47.0% (47/100) | 58.0% (58/100) | 0.0% (0/100) | **100.0% (100/100)** | $z = 14.14, p < 0.0001$ |
+| **Combined `agy 1.5.9` Hardening ($N = 600$)** | 17.5% (105/600) | 44.0% (264/600) | 42.0% (252/600) | **100.0% (600/600)** | **$z = 22.14, p < 0.0001$** |
+
+---
+
 ## 5. Live Mechanical Runtime Probes (Executed Against Repository Code)
 
 | Probe | Status | Observed Verdict / Detail |
@@ -242,19 +273,19 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 
 | Execution Layer | Min (ms) | Median P50 (ms) | P95 (ms) | Mean (ms) |
 | :--- | :---: | :---: | :---: | :---: |
-| **In-Process `evaluatePayload()`** | 0.30 ms | **0.32 ms** | 0.37 ms | 0.33 ms |
-| **Direct `node dist/hooks/pre-tool-use.bundle.mjs`** | 43.1 ms | **48.4 ms** | 49.4 ms | 46.9 ms |
-| **`/bin/sh bin/node-launcher.sh` + Bundle (`node -v` fast-path)** | 52.3 ms | **58.4 ms** | 59.1 ms | 56.3 ms |
-| **End-to-End `/bin/sh bin/hook-runner.sh` + Watchdog + Launcher + Bundle** | 75.7 ms | **79.5 ms** | 81.7 ms | 79.3 ms |
+| **In-Process `evaluatePayload()`** | 0.34 ms | **0.37 ms** | 0.46 ms | 0.41 ms |
+| **Direct `node dist/hooks/pre-tool-use.bundle.mjs`** | 42.7 ms | **44.7 ms** | 46.6 ms | 44.8 ms |
+| **`/bin/sh bin/node-launcher.sh` + Bundle (`node -v` fast-path)** | 54.8 ms | **57.2 ms** | 58.9 ms | 56.9 ms |
+| **End-to-End `/bin/sh bin/hook-runner.sh` + Watchdog + Launcher + Bundle** | 76.7 ms | **78.8 ms** | 80.4 ms | 78.7 ms |
 
 ### 6c. Pure-Node Orchestrator Overhead vs. 8-Ticket Build Wall-Clock Time
 
 | Orchestrator Subsystem | Measured Wall-Clock Overhead (ms) | Share of 149.2s 8-Ticket DAG Build |
 | :--- | :---: | :---: |
-| **8-Ticket ADLC Store Projection + Active Rail Union (`lib/adlc-bridge.mjs`, `lib/active-rails.mjs`)** | 2.35 ms | 0.0016% |
+| **8-Ticket ADLC Store Projection + Active Rail Union (`lib/adlc-bridge.mjs`, `lib/active-rails.mjs`)** | 1.93 ms | 0.0013% |
 | **16 Quota-Pool State Lock Cycles (`lib/pools.mjs` `withLockSync`)** | 1.34 ms | 0.0009% |
 | **16 Atomic Repository Merge-Lock Cycles (`lib/lock.mjs` `acquireRepoLock`)** | 2.25 ms | 0.0015% |
-| **Total Pure-Node Orchestration Overhead** | **5.94 ms** | **0.0040%** |
+| **Total Pure-Node Orchestration Overhead** | **5.52 ms** | **0.0037%** |
 
 ### 6d. Plan Compiler, Scope-Overlap & Gate-Integrity Golden Corpus (`lib/plan.mjs`, `lib/preflight.mjs`)
 
@@ -287,9 +318,47 @@ Evaluates hazard interception across $300$ adversarial failure modes ($100$ froz
 
 | Fuzz Partition | Cases | Blocked / Passed | Rate | P50 / P95 Latency | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Adversarial Evasion Families (1–5)** (path traversal, `/proc/self/root`, shell prefix wrappers, nested `sh -c`, depth > 64 overflow) | 100 | **100 / 100 blocked** | **100.0%** | 0.25 ms / 0.58 ms | **PASS** |
-| **Benign Worker & Developer Ops (Family 6)** (in-scope writes, Stage-1 git readers, worker `npm test` / `node --test`) | 20 | **20 / 20 passed** | **100.0%** | 0.25 ms / 0.58 ms | **PASS** |
+| **Adversarial Evasion Families (1–5)** (path traversal, `/proc/self/root`, shell prefix wrappers, nested `sh -c`, depth > 64 overflow) | 100 | **100 / 100 blocked** | **100.0%** | 0.36 ms / 0.65 ms | **PASS** |
+| **Benign Worker & Developer Ops (Family 6)** (in-scope writes, Stage-1 git readers, worker `npm test` / `node --test`) | 20 | **20 / 20 passed** | **100.0%** | 0.36 ms / 0.65 ms | **PASS** |
 
-### 6h. Committed Baseline Regression Ratchet (`evals/baseline.json`, Recorded `2026-11-02`)
+### 6h. v1.3 `agy 1.5.9` 60-Tool Zero-`ask` Matrix & 64-Vector Policy Corpus (`evals/v13-enhancements-bench.mjs`)
 
-- **Overall Ratchet Status:** **PASS (0 Regressions across 18 Ratchet Gates)**
+| Policy Dimension | Target / Vectors | Observed Result | P50 / P95 Latency | Status |
+| :--- | :---: | :---: | :---: | :---: |
+| **`agy 1.5.9` Complete Tool Inventory (`agy-1.5.9-init-tools.json`)** | 60 tools $\times$ 2 headless modes | **60 / 60 classified · 0 `ask`** | 0.08 ms / 0.50 ms | **PASS** |
+| **v1.3 Adversarial Vectors (`sed_file`, `notebook_execution`, REPL stdin, `fold.go`, 4-root `boosterDataRoots`)** | 36 | **36 / 36 blocked (100.0%)** | 0.08 ms / 0.50 ms | **PASS** |
+| **v1.3 Benign Workflows (in-scope `sed_file`, `notebook_edit`, `list_dir`, `manage_task`, interactive subagents)** | 28 | **28 / 28 passed (0.0% FP)** | 0.08 ms / 0.50 ms | **PASS** |
+
+### 6i. v1.3 `hook-runner.sh` `PASSWD_HOME`, Tamper & Dotfiles Subprocess Security (`bin/hook-runner.sh`, `lib/doctor.mjs`)
+
+| Subprocess Security / Compatibility Check | Status |
+| :--- | :---: |
+| **`PASSWD_HOME` audit-log anchoring resists spoofed `HOME`** | **PASS** |
+| **Symlinked `HOOK_LOG_DIR` fails closed (`LOG_TAMPERED`) in headless worker** | **PASS** |
+| **GNU Stow / chezmoi symlinked `~/.config` dotfiles pass without false `LOG_TAMPERED`** | **PASS** |
+| **Unwritable log dir writes atomic `0600` `.agb-hook-log-degraded` & `checkHookLogDir()` warns** | **PASS** |
+| **No-Node fallback allows `manage_task(list\|status)` and denies `manage_task(send_input)`** | **PASS** |
+| **Out-of-allowlist `PLUGIN_DATA` rejected in favor of canonical 4-root `DATA_ROOT`** | **PASS** |
+
+### 6j. v1.3 `classifyAgyOutcome()`, `--disable-slash-commands` & Nested `bwrap` Sandbox Matrix (`lib/agy.mjs`)
+
+| Runtime Hardening Invariant | Observed Detail | Status |
+| :--- | :--- | :---: |
+| **18-State `classifyAgyOutcome()` Golden Matrix** | **18 / 18 exact** (prevents 8 silent `exit 0` false positives) | **PASS** |
+| **Unconditional `--disable-slash-commands` & Readonly `--sandbox`** | Present on direct `runAgy()` print invocations | **PASS** |
+| **Outer `bwrap_pid` Builder Omits Nested `--sandbox`** | Prevents nested `CLONE_NEWUSER` `EPERM` on `agy 1.5.9` | **PASS** |
+| **`plan.disableOrchestrator` & `RECOMMENDED_AGY_VERSION = '1.5.9'`** | Schema + version constants verified | **PASS** |
+
+### 6k. v1.3 Live Hermetic Orchestrator Routing, Per-Slug Circuit Breaker & `AsyncLocalStorage` Isolation (`lib/models.mjs`, `lib/scheduler.mjs`)
+
+| Orchestrator Scheduler Invariant | Status |
+| :--- | :---: |
+| **Interleaved Cross-Family `TIER_CANDIDATES.frontier` (4 Gemini + 4 Claude) & `hydrogen-*` Pool Mapping** | **PASS** |
+| **Concurrent In-Process `runWithOrchestratorRoutingState()` `AsyncLocalStorage` Isolation** | **PASS** |
+| **`agy < 1.5.9` Auto-Disables Orchestrator Slugs With Notice & Routes to `FRONTIER_NO_ORCHESTRATOR`** | **PASS** |
+| **Per-Slug Circuit Breaker Trips at $\ge 50\%$ Over $\ge 4$ Builder-Fault Tickets & Reroutes Next Slug** | **PASS** |
+| **`!gates.ok` Excluded From `builderFaultTickets` & `model_unavailable` Kept Strictly Run-Scoped** | **PASS** |
+
+### 6l. Committed Baseline Regression Ratchet (`evals/baseline.json`, Recorded `2026-11-02`)
+
+- **Overall Ratchet Status:** **PASS (0 Regressions across 30 Ratchet Gates)**
