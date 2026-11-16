@@ -67,16 +67,12 @@ SYS_CUT="/usr/bin/cut"
 [ -x "$SYS_CUT" ] || SYS_CUT="/bin/cut"
 [ -x "$SYS_CUT" ] || SYS_CUT="cut"
 
-SYS_AWK="/usr/bin/awk"
-[ -x "$SYS_AWK" ] || SYS_AWK="/bin/awk"
-[ -x "$SYS_AWK" ] || SYS_AWK="awk"
-
 PASSWD_HOME=""
 if [ -n "$CUR_UID" ] && [ -n "$SYS_GETENT" ]; then
   PASSWD_HOME="$("$SYS_GETENT" passwd "$CUR_UID" 2>/dev/null | "$SYS_CUT" -d: -f6)"
 fi
 if [ -z "$PASSWD_HOME" ] && [ -n "$SYS_ID" ] && [ -x /usr/bin/dscl ]; then
-  PASSWD_HOME="$(/usr/bin/dscl . -read "/Users/$("$SYS_ID" -un 2>/dev/null)" NFSHomeDirectory 2>/dev/null | "$SYS_AWK" '{print $2}')"
+  PASSWD_HOME="$(/usr/bin/dscl . -read "/Users/$("$SYS_ID" -un 2>/dev/null)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
 fi
 
 EFF_HOME=""
