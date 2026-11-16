@@ -455,7 +455,6 @@
       "default": "unset",
       "bundledIgnored": false,
       "description": "Set to 1 to use the built-in static model catalog instead of invoking agy models during doctor or sync-models."
->>>>>>> 4d53e38 (feat(factory): add end-to-end autonomous factory parity (shape, fast-path plan, 5-lens ARL, TUI/HUD, init))
     }
   ],
   "ignore": [
