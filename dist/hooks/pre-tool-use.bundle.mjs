@@ -470,7 +470,11 @@ function validateTickets(tickets, { archive = false, validateGraph = !archive } 
     };
     for (const id of [...byId.keys()].sort(compareTicketIds)) visit(id, []);
   }
-  if (errors.length) throw invalid("INVALID_TICKET_STORE", `ticket store validation failed (${errors.length} error(s))`, errors);
+  if (errors.length) {
+    const count = errors.length;
+    errors.push("see `adlc ticket schema` and `adlc ticket doctor`");
+    throw invalid("INVALID_TICKET_STORE", `ticket store validation failed (${count} error(s)): ${errors.join("; ")}`, errors);
+  }
   return tickets;
 }
 
@@ -526,7 +530,7 @@ var TICKET_FIELDS = [
     name: "duration",
     type: "number > 0",
     required: false,
-    summary: "Relative build-time estimate used to order the ticket DAG. Defaults to 1.",
+    summary: "Positive number (number > 0) giving the relative build-time estimate used to order the ticket DAG. Defaults to 1.",
     schema: { type: "number", exclusiveMinimum: 0 }
   },
   {
@@ -551,7 +555,7 @@ var TICKET_FIELDS = [
     name: "rails",
     type: "string[]",
     required: false,
-    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Once any ticket declares rails the ticket store itself becomes a frozen trust root, so later ticket writes need ADLC_RAILS_BYPASS=1.",
+    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Narrowing rails, widening scope, or changing `completed` on an existing ticket requires `--authorize` (see `adlc ticket update --help`); `ADLC_RAILS_BYPASS` governs only the `rails-guard` hook/CLI check on direct store-path edits, not `adlc ticket` writes.",
     schema: { type: "array", items: { type: "string" } }
   },
   {
@@ -568,14 +572,14 @@ var TICKET_FIELDS = [
     name: "edges",
     type: 'array of "to" objects',
     required: false,
-    summary: 'Ordering constraints, prerequisite to dependent. An edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here. An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
+    summary: 'Array of edge objects (each with a non-empty string "to" id) giving ordering constraints, prerequisite to dependent: this ticket completes before `to` (an edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here). An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
     schema: {
       type: "array",
       items: {
         type: "object",
         required: ["to"],
         properties: {
-          to: { type: "string", minLength: 1, description: "Id of the dependent ticket, which must not start before this one completes." },
+          to: { type: "string", minLength: 1, description: "Id of the dependent ticket (this ticket completes before `to`, which must not start before this one completes)." },
           // Unconstrained for the same reason as body/category: validateTicket
           // checks only that an edge carries a string `to`.
           contract: { description: "Path to the interface this edge guarantees the dependent ticket can consume." }
@@ -1288,7 +1292,7 @@ function isChainIntact(lines, key) {
     const expectedPrev = prevLine === null ? null : sha256(prevLine);
     if (entry.prev !== expectedPrev || entry.seq !== prevSeq + 1) return false;
     if (key !== null) {
-      const hasSig = typeof entry.sig === "string" && entry.sig.length > 0;
+      const hasSig = Object.hasOwn(entry, "sig");
       if (hasSig) {
         if (!entrySigValid(key, entry)) return false;
         seenSignedEntry = true;
@@ -1396,7 +1400,7 @@ function chainIsIntact(lines, key = null) {
     const expectedPrev = prevLine === null ? null : sha256(prevLine);
     if (entry?.prev !== expectedPrev || entry?.seq !== prevSeq + 1) return false;
     if (key !== null) {
-      const hasSig = typeof entry?.sig === "string" && entry.sig.length > 0;
+      const hasSig = Boolean(entry) && typeof entry === "object" && Object.hasOwn(entry, "sig");
       if (hasSig) {
         if (!entrySigValid(key, entry)) return false;
         seenSignedEntry = true;
@@ -1985,6 +1989,9 @@ var GIT_MAX_BUFFER = 256 * 1024 * 1024;
 // node_modules/@adlc/tickets/lib/prompt.mjs
 import { createInterface } from "node:readline/promises";
 
+// node_modules/@adlc/tickets/lib/stores/git-tree.mjs
+var MAX_BUFFER = 64 * 1024 * 1024;
+
 // lib/active-rails.mjs
 import { existsSync as existsSync11, lstatSync as lstatSync6, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -2100,8 +2107,14 @@ var ORCHESTRATION_TOOLS = /* @__PURE__ */ new Set([
   "manage_subagents",
   "schedule",
   "send_message",
-  "manage_task"
+  "manage_task",
+  "swarm"
 ]);
+var WORKFLOW_TOOLS = /* @__PURE__ */ new Set(["run_workflow"]);
+var SWARM_PROSE_KEYS = /* @__PURE__ */ new Set(["brief", "title", "tasks", "toolAction", "toolSummary"]);
+var SWARM_META_KEYS = /* @__PURE__ */ new Set(["action", "workspace", "model", "name", "fork"]);
+var SWARM_WORKSPACE_MODES = /* @__PURE__ */ new Set(["inherit", "share", "branch"]);
+var WORKFLOW_PROSE_KEYS = /* @__PURE__ */ new Set(["Script", "Description", "toolAction", "toolSummary"]);
 var AGY_CONTROL_TOOLS = /* @__PURE__ */ new Set(["finish"]);
 var BOOSTER_MCP_SERVER = "agb";
 var BOOSTER_MCP_SERVERS = /* @__PURE__ */ new Set(["agb", "antigravity-booster_agb"]);
@@ -4488,27 +4501,43 @@ function extractProbedPaths(toolName, args) {
   return { paths };
 }
 var looksLikePath = (s) => isAbsolute5(s) || hasHomePrefix(s) || s.includes("/") || s.includes("\\") || s.startsWith(".") || FILE_URL.test(s);
-function scanPathLike(value, { skipContentKeys = false } = {}) {
+function isAllowedTopLevelProse(key, item, topLevelSkipKeys) {
+  if (!topLevelSkipKeys || !topLevelSkipKeys.has(key)) return false;
+  if (key === "tasks") return Array.isArray(item) && item.every((x) => typeof x === "string");
+  return typeof item === "string";
+}
+function scanPathLike(value, {
+  skipContentKeys = false,
+  topLevelSkipKeys = null,
+  topLevelBareSkipKeys = null,
+  includeBareTokens = false
+} = {}) {
   const paths = [];
+  const bareTokens = [];
   const stack = [{ value, depth: 0 }];
   let nodes = 0;
   while (stack.length > 0) {
-    const { value: v, depth } = stack.pop();
+    const { value: v, depth, skipBare } = stack.pop();
     nodes += 1;
-    if (depth > MAX_SCAN_DEPTH || nodes > MAX_SCAN_NODES) return { paths, overflow: true };
+    if (depth > MAX_SCAN_DEPTH || nodes > MAX_SCAN_NODES) return { paths, bareTokens, overflow: true };
     if (typeof v === "string") {
       if (looksLikePath(v)) paths.push(toPath(v));
+      else if (includeBareTokens && !skipBare && v.trim().length > 0 && v.length <= 255) {
+        bareTokens.push(v.trim());
+      }
     } else if (Array.isArray(v)) {
-      for (const item of v) stack.push({ value: item, depth: depth + 1 });
+      for (const item of v) stack.push({ value: item, depth: depth + 1, skipBare: false });
     } else if (v && typeof v === "object") {
       for (const [k, item] of Object.entries(v)) {
         if (skipContentKeys && EXCLUDED_CONTENT_KEYS.has(k)) continue;
+        if (depth === 0 && isAllowedTopLevelProse(k, item, topLevelSkipKeys)) continue;
         if (looksLikePath(k)) paths.push(toPath(k));
-        stack.push({ value: item, depth: depth + 1 });
+        const nextSkipBare = depth === 0 && Boolean(topLevelBareSkipKeys?.has(k));
+        stack.push({ value: item, depth: depth + 1, skipBare: nextSkipBare });
       }
     }
   }
-  return { paths, overflow: false };
+  return { paths, bareTokens, overflow: false };
 }
 var OVERFLOW = deny("Tool arguments are nested too deeply or are too large to verify");
 function readToolPaths(name, args) {
@@ -4636,12 +4665,32 @@ function stepOne(name, args, ctx) {
     const schemaKeys = [...TOOL_PATH_SCHEMAS[name].required, ...TOOL_PATH_SCHEMAS[name].altRequired ?? []];
     candidates = schemaKeys.map((k) => args?.[k]).filter((v) => typeof v === "string").map(toPath);
   } else {
-    const scan = scanPathLike(args);
+    const isSwarm = name === "swarm";
+    const isWorkflow = WORKFLOW_TOOLS.has(name);
+    const topLevelSkipKeys = isSwarm ? SWARM_PROSE_KEYS : isWorkflow ? WORKFLOW_PROSE_KEYS : null;
+    const scan = scanPathLike(args, {
+      topLevelSkipKeys,
+      topLevelBareSkipKeys: isSwarm ? SWARM_META_KEYS : null,
+      includeBareTokens: isSwarm || isWorkflow
+    });
     if (scan.overflow) return OVERFLOW;
-    candidates = scan.paths;
+    candidates = [...scan.paths, ...scan.bareTokens];
+    if (isWorkflow) {
+      if (typeof args?.ScriptPath === "string" && args.ScriptPath.trim().length > 0) {
+        candidates.push(toPath(args.ScriptPath.trim()));
+      }
+      if (typeof args?.Cwd === "string" && args.Cwd.trim().length > 0) {
+        candidates.push(toPath(args.Cwd.trim()));
+      }
+    }
+  }
+  let stepCtx = ctx;
+  if (WORKFLOW_TOOLS.has(name) && typeof args?.Cwd === "string" && args.Cwd.trim().length > 0) {
+    const wfCwdPhys = physicalResolve(args.Cwd, ctx.workspacePaths[0] || "/", ctx.platform);
+    if (wfCwdPhys) stepCtx = { ...ctx, anchors: unique([wfCwdPhys, ...ctx.anchors]) };
   }
   for (const token of candidates) {
-    for (const r of resolveAll(token, ctx)) {
+    for (const r of resolveAll(token, stepCtx)) {
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
         return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
       }
@@ -4757,6 +4806,101 @@ function evaluateMcpTool(name, args, ctx) {
   }
   return PASS;
 }
+function evaluateOrchestrationTool(name, args, ctx) {
+  if (name !== "swarm") return PASS;
+  if (ctx.headless) return deny("Headless agb worker session cannot invoke native swarm orchestration");
+  if (args?.workspace !== void 0 && args?.workspace !== null) {
+    if (typeof args.workspace !== "string" || !SWARM_WORKSPACE_MODES.has(args.workspace)) {
+      return deny("Invalid swarm workspace mode; expected inherit, share, or branch");
+    }
+  }
+  const scan = scanPathLike(args, {
+    topLevelSkipKeys: SWARM_PROSE_KEYS,
+    topLevelBareSkipKeys: SWARM_META_KEYS,
+    includeBareTokens: true
+  });
+  if (scan.overflow) return OVERFLOW;
+  for (const token of [...scan.paths, ...scan.bareTokens]) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) return deny(`Relative path '${token}' in swarm has no workspace to anchor it`);
+    for (const r of resolved) {
+      const { verdict } = gateOnePath(r, ctx, { rootIsTarget: false });
+      if (verdict.decision === "deny") return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, ctx, { rootIsTarget: false });
+        if (lexRes.verdict.decision === "deny") return lexRes.verdict;
+      }
+    }
+  }
+  return PASS;
+}
+function evaluateWorkflowTool(args, ctx) {
+  if (ctx.readonly) return deny("Read-only agb worker session cannot execute run_workflow");
+  if (ctx.headless) return deny("Headless agb worker session cannot execute run_workflow");
+  const scannedRepos = [];
+  const hasExplicitCwd = args?.Cwd !== void 0 && args?.Cwd !== null;
+  if (hasExplicitCwd && (typeof args.Cwd !== "string" || args.Cwd.trim().length === 0)) {
+    return deny("Workflow working directory must be a non-empty path string");
+  }
+  const rawCwd = hasExplicitCwd ? args.Cwd : ctx.workspacePaths[0];
+  if (!rawCwd) {
+    return deny("Cannot determine workflow working directory");
+  }
+  const cwdPhys = physicalResolve(rawCwd, ctx.workspacePaths[0] || "/", ctx.platform);
+  if (!cwdPhys) {
+    return deny("Workflow working directory cannot be resolved (symlink loop or oversized path)");
+  }
+  const cwdRepo = ctx.repoAt(cwdPhys);
+  scannedRepos.push(cwdRepo);
+  const wsAdlc = ctx.workspacePaths.some((w) => ctx.repoAt(w).adlc);
+  const adlcContext = cwdRepo.adlc || wsAdlc;
+  const insideWorkspace = ctx.workspaceRealPaths.some((wReal) => isWithin(cwdPhys, wReal, ctx.platform));
+  if (adlcContext && (hasExplicitCwd && !isAbsolute5(args.Cwd) || !insideWorkspace)) {
+    return deny("Workflow working directory outside declared workspace paths in an ADLC repository is forbidden");
+  }
+  const wfCtx = { ...ctx, anchors: unique([cwdPhys, ...ctx.anchors]) };
+  if (args?.ScriptPath !== void 0 && args?.ScriptPath !== null) {
+    if (typeof args.ScriptPath !== "string" || args.ScriptPath.trim().length === 0) {
+      return schemaViolationVerdict("run_workflow", args, "Invalid ScriptPath parameter in run_workflow", wfCtx);
+    }
+    const resolved = resolveAll(toPath(args.ScriptPath), wfCtx);
+    if (resolved.length === 0) return deny(`Relative ScriptPath '${args.ScriptPath}' has no workspace to anchor it`);
+    for (const r of resolved) {
+      const { verdict, repo } = gateOnePath(r, wfCtx, { rootIsTarget: true });
+      scannedRepos.push(repo);
+      if (verdict.decision === "deny") return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, wfCtx, { rootIsTarget: true });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === "deny") return lexRes.verdict;
+      }
+    }
+  }
+  const scan = scanPathLike(args, { topLevelSkipKeys: WORKFLOW_PROSE_KEYS, includeBareTokens: true });
+  if (scan.overflow) return OVERFLOW;
+  for (const token of [...scan.paths, ...scan.bareTokens]) {
+    const resolved = resolveAll(token, wfCtx);
+    if (resolved.length === 0) return deny(`Relative path '${token}' in run_workflow has no workspace to anchor it`);
+    for (const r of resolved) {
+      const { verdict, repo } = gateOnePath(r, wfCtx, { rootIsTarget: false });
+      scannedRepos.push(repo);
+      if (verdict.decision === "deny") return verdict;
+      if (r.lexical !== r.real) {
+        const lexRes = gateOnePath({ ...r, real: r.lexical }, wfCtx, { rootIsTarget: false });
+        scannedRepos.push(lexRes.repo);
+        if (lexRes.verdict.decision === "deny") return lexRes.verdict;
+      }
+    }
+  }
+  const repos = [...wfCtx.anchors.map((a) => wfCtx.repoAt(a)), ...scannedRepos];
+  if (repos.some((r) => r.adlc && !r.store.ok)) {
+    return deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified");
+  }
+  if (repos.some((r) => r.adlc && r.activeRail)) {
+    return ask("run_workflow executes Python outside PreToolUse file hooks in an active-rail ADLC repository; operator confirmation required");
+  }
+  return PASS;
+}
 function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny("Unknown tool in a read-only agb worker session");
   if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; tool call denied");
@@ -4849,7 +4993,9 @@ function evaluatePayload(payload, options = {}) {
   const ctx = buildContext(payload, options);
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;
-  if (READ_ONLY_TOOLS.has(name) || ORCHESTRATION_TOOLS.has(name)) return PASS;
+  if (READ_ONLY_TOOLS.has(name)) return PASS;
+  if (ORCHESTRATION_TOOLS.has(name)) return evaluateOrchestrationTool(name, args, ctx);
+  if (WORKFLOW_TOOLS.has(name)) return evaluateWorkflowTool(args, ctx);
   if (name === "run_command") return classifyRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
   if (name === "call_mcp_tool" || name.startsWith("mcp__") || name.startsWith("mcp_")) return evaluateMcpTool(name, args, ctx);

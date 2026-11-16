@@ -37,7 +37,7 @@ function makeFixture() {
   return {
     base,
     home,
-    active: mk('active', { tickets: [{ id: 'T1', rails: ['lib/lock.mjs', 'lib/gates.mjs'], scope: ['lib/feature.mjs', 'test/**'] }] }),
+    active: mk('active', { tickets: [{ id: 'T1', rails: ['lib/lock.mjs', 'lib/gates.mjs', 'CODEOWNERS'], scope: ['lib/feature.mjs', 'test/**'] }] }),
     inactive: mk('inactive', { tickets: [{ id: 'T9', rails: [], scope: ['lib/**'] }] }),
     plain: mk('plain'),
     cleanup: () => rmSync(base, { recursive: true, force: true }),
@@ -608,4 +608,195 @@ test('Wave 2 hardening: npm test -- flag validation, empty-argv redirects/wrappe
   // Compound cd into workspace with redirection onto a rail must be denied
   assert.equal(shell('cd lib > lib/lock.mjs && git status', fx.active, INTERACTIVE).decision, 'deny');
 });
+
+// ---------- agy 1.5.5 swarm & agy 1.5.9 run_workflow (t-policy-guard-agy-1-5-tools) ----------
+
+test('swarm: passes interactively (ignoring prose paths in brief/title/tasks) and denies in headless workers', () => {
+  const swarmArgs = {
+    action: 'add',
+    name: 'helper',
+    workspace: 'share',
+    model: 'gemini-4-carbon-high',
+    title: 'Audit lib/lock.mjs and ~/.local/bin/agb',
+    brief: `Inspect ${join(fx.active, 'lib/lock.mjs')}, ${join(fx.active, '.adlc/config.json')}, and ${join(fx.home, '.gemini/antigravity-cli/plugin_data/antigravity-booster/hooks.log')}`,
+    tasks: ['Check lib/lock.mjs', 'Check ~/.local/bin/agb'],
+    toolSummary: 'Spawn swarm helper for lib/lock.mjs',
+  };
+  for (const ws of [fx.active, fx.inactive, fx.plain]) {
+    assert.equal(run('swarm', swarmArgs, ws, INTERACTIVE).decision, 'pass', `interactive ${ws}`);
+    for (const env of [WORKER, READONLY]) {
+      const v = run('swarm', swarmArgs, ws, env);
+      assert.equal(v.decision, 'deny', `headless ${ws}`);
+      assert.match(v.reason, /Headless agb worker session cannot invoke native swarm/);
+    }
+  }
+});
+
+test('swarm: non-prose path parameters and non-string task payloads are still scanned against rails and protected roots', () => {
+  assert.equal(run('swarm', { action: 'add', sneaky: join(fx.active, 'lib/lock.mjs') }, fx.active).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', sneaky: join(fx.active, '.adlc/config.json') }, fx.inactive).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', sneaky: join(fx.home, '.local/bin/agb') }, fx.plain).decision, 'deny');
+  // Non-string items in tasks are NOT treated as prose
+  assert.equal(run('swarm', { action: 'add', tasks: [{ target: join(fx.active, 'lib/lock.mjs') }] }, fx.active).decision, 'deny');
+  // Non-string brief is NOT treated as prose
+  assert.equal(run('swarm', { action: 'add', brief: { target: join(fx.active, 'lib/lock.mjs') } }, fx.active).decision, 'deny');
+});
+
+test('run_workflow: asks in active-rail interactive sessions, passes in inactive/plain repos, denies in headless workers', () => {
+  const longScript = `#!/usr/bin/env python3\n# Mentions lib/lock.mjs and ~/.local/bin/agb\nx = 10 / 2\n${'# padding / comment\n'.repeat(300)}`;
+  const wfArgs = {
+    Script: longScript,
+    Description: 'Orchestrate review touching lib/lock.mjs prose',
+    Cwd: fx.active,
+    Args: { repo: fx.active, target: join(fx.active, 'lib/feature.mjs') },
+    WaitMsBeforeAsync: 5000,
+    toolSummary: 'Run workflow on lib/lock.mjs prose',
+  };
+
+  const activeVerdict = run('run_workflow', wfArgs, fx.active, INTERACTIVE);
+  assert.equal(activeVerdict.decision, 'ask');
+  assert.match(activeVerdict.reason, /run_workflow executes Python outside PreToolUse/);
+
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: fx.inactive, Args: { repo: fx.inactive } }, fx.inactive, INTERACTIVE).decision, 'pass');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: fx.plain }, fx.plain, INTERACTIVE).decision, 'pass');
+
+  for (const ws of [fx.active, fx.inactive, fx.plain]) {
+    const wv = run('run_workflow', { Script: 'print(1)' }, ws, WORKER);
+    assert.equal(wv.decision, 'deny');
+    assert.match(wv.reason, /Headless agb worker session cannot execute run_workflow/);
+
+    const rv = run('run_workflow', { Script: 'print(1)' }, ws, READONLY);
+    assert.equal(rv.decision, 'deny');
+    assert.match(rv.reason, /Read-only agb worker session cannot execute run_workflow/);
+  }
+});
+
+test('run_workflow: enforces ScriptPath, Cwd, and nested Args against rails, trust roots, and protected roots', () => {
+  // ScriptPath hitting rail, implicit rail, repo root, protected root, or booster data root -> deny
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.active, 'lib/lock.mjs') }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.active, 'alias/gates.mjs') }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.inactive, '.adlc/config.json') }, fx.inactive).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: fx.active }, fx.active).decision, 'deny', 'repo root is not a valid ScriptPath');
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.home, '.local/bin/agb') }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.home, '.config/antigravity-booster/w.py') }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: '' }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: 123 }, fx.active).decision, 'deny');
+
+  // Valid non-rail ScriptPath in active repo -> ask; in plain repo -> pass
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.active, 'lib/feature.mjs') }, fx.active).decision, 'ask');
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.plain, 'lib/feature.mjs') }, fx.plain).decision, 'pass');
+
+  // Nested Args keys named `Script` or `Description` (depth >= 1) are NOT skipped as top-level prose!
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { Script: join(fx.active, 'lib/lock.mjs') } }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { Description: join(fx.inactive, '.adlc/config.json') } }, fx.inactive).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { bin: join(fx.home, '.local/bin/agb') } }, fx.plain).decision, 'deny');
+
+  // Cwd validation in ADLC repos matches run_command
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp' }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: 'lib' }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '' }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '' }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: 123 }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp' }, fx.plain).decision, 'pass');
+
+  // Missing workspacePaths with omitted Cwd fails closed instead of falling back to '/'
+  assert.equal(
+    evaluatePayload({ toolCall: { name: 'run_workflow', args: { Script: 'print(1)' } }, workspacePaths: [] }, { env: INTERACTIVE, home: fx.home, platform: 'linux' }).decision,
+    'deny',
+  );
+
+  // Plain workspace referencing an active-rail ADLC repo via Args -> deny on rail, ask on non-rail
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp', Args: { f: join(fx.active, 'lib/lock.mjs') } }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp', Args: { repo: fx.active } }, fx.plain).decision, 'ask');
+});
+
+test('swarm & run_workflow: symlink escapes, bare-filename rails, workspace enum, and prose-key exemptions', () => {
+  const protectedBin = join(fx.home, '.local/bin/agb');
+  const boosterSecret = join(fx.home, '.gemini/antigravity-cli/plugin_data/antigravity-booster/secret.json');
+
+  // Every SWARM_PROSE_KEYS string/array field carrying an exact protected path passes Step 1
+  for (const ws of ['inherit', 'share', 'branch']) {
+    assert.equal(
+      run('swarm', {
+        action: 'CODEOWNERS',
+        workspace: ws,
+        model: 'CODEOWNERS',
+        name: 'CODEOWNERS',
+        fork: 'CODEOWNERS',
+        brief: protectedBin,
+        title: protectedBin,
+        tasks: [protectedBin],
+        toolAction: protectedBin,
+        toolSummary: protectedBin,
+      }, fx.active).decision,
+      'pass',
+    );
+  }
+  // Also verify SWARM_META_KEYS 'workspace' exemption when a rail shares a valid mode name ('share')
+  const wsRailRepo = join(fx.base, 'ws-rail-repo');
+  mkdirSync(join(wsRailRepo, '.adlc'), { recursive: true });
+  writeFileSync(join(wsRailRepo, '.adlc', 'config.json'), '{}\n');
+  initializeDirectoryStore(join(wsRailRepo, '.adlc', 'tickets'));
+  writeFileSync(
+    join(wsRailRepo, '.adlc', 'tickets', ticketFilename('TW')),
+    JSON.stringify({ id: 'TW', title: 't', body: 'b', scope: [], rails: ['share'], edges: [] }, null, 2) + '\n',
+  );
+  assert.equal(run('swarm', { action: 'add', workspace: 'share' }, wsRailRepo).decision, 'pass');
+
+  // Invalid swarm workspace mode (arbitrary path or non-enum) fails closed
+  assert.equal(run('swarm', { action: 'add', workspace: '/tmp/outside' }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', workspace: 'custom' }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', workspace: 42 }, fx.plain).decision, 'deny');
+
+  // Relative path in swarm with no workspacePaths fails closed
+  assert.equal(
+    evaluatePayload({ toolCall: { name: 'swarm', args: { action: 'add', target: 'lib/feature.mjs' } }, workspacePaths: [] }, { env: INTERACTIVE, home: fx.home, platform: 'linux' }).decision,
+    'deny',
+  );
+
+  // Bare root-level rail token ('CODEOWNERS') is caught in non-meta swarm args and run_workflow Args
+  assert.equal(run('swarm', { action: 'add', target: 'CODEOWNERS' }, fx.active).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { file: 'CODEOWNERS' } }, fx.active).decision, 'deny');
+
+  // Bare-filename symlinks in plain/inactive workspaces pointing to protected roots or booster data are denied in Step 1
+  const wfBinLink = join(fx.plain, 'wf-bin.py');
+  const wfDataLink = join(fx.plain, 'wf-data.py');
+  const inactCfgLink = join(fx.inactive, 'cfg-link');
+  symlinkSync(protectedBin, wfBinLink);
+  symlinkSync(boosterSecret, wfDataLink);
+  symlinkSync(join(fx.inactive, '.adlc', 'config.json'), inactCfgLink);
+
+  assert.equal(run('run_workflow', { ScriptPath: 'wf-bin.py' }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { ScriptPath: 'wf-data.py' }, fx.plain).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { ref: 'wf-bin.py' } }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', target: 'wf-bin.py' }, fx.plain).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', target: 'cfg-link' }, fx.inactive).decision, 'deny');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Args: { ref: 'cfg-link' } }, fx.inactive).decision, 'deny');
+
+  // Cwd symlink/.. traversal escaping an ADLC workspace and Cwd symlink loop both fail closed
+  const outsideDir = join(fx.base, 'outside-target');
+  mkdirSync(join(outsideDir, 'sub'), { recursive: true });
+  const escapeLink = join(fx.active, 'escape-sub');
+  symlinkSync(join(outsideDir, 'sub'), escapeLink);
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: `${escapeLink}/..` }, fx.active).decision, 'deny');
+
+  const loopLink = join(fx.plain, 'cwd-loop');
+  symlinkSync(loopLink, loopLink);
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: loopLink }, fx.plain).decision, 'deny');
+
+  // Every WORKFLOW_PROSE_KEYS string field carrying an exact protected path passes Step 1
+  assert.equal(
+    run('run_workflow', {
+      Script: protectedBin,
+      Description: protectedBin,
+      toolAction: protectedBin,
+      toolSummary: protectedBin,
+      WaitMsBeforeAsync: 5000,
+    }, fx.plain).decision,
+    'pass',
+  );
+  // Hostile path string in WaitMsBeforeAsync is NOT treated as prose -> denied in Step 1
+  assert.equal(run('run_workflow', { Script: 'print(1)', WaitMsBeforeAsync: protectedBin }, fx.plain).decision, 'deny');
+});
+
 

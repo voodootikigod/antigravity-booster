@@ -27,9 +27,20 @@ test('findExternalSpecifiers: catches static, side-effect, re-export, dynamic an
   assert.deepEqual(findExternalSpecifiers(src), ['@adlc/core', '@adlc/tickets', 'left-pad', 'minimatch', 'side-effect-pkg']);
 });
 
-test('DEFAULT_BUNDLES covers all five shipped bundles (incl. vendored adlc and watchdog)', async () => {
-  const { DEFAULT_BUNDLES } = await import('../scripts/check-bundle-externals.mjs');
-  assert.deepEqual(DEFAULT_BUNDLES, ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs', 'vendor/adlc/dist/watchdog.mjs']);
+test('DEFAULT_BUNDLES covers all six shipped bundles (incl. vendored adlc, syntax-check-typescript, and watchdog)', async () => {
+  const { DEFAULT_BUNDLES, BUNDLE_ALLOWED_OPTIONAL_PROBES } = await import('../scripts/check-bundle-externals.mjs');
+  assert.deepEqual(DEFAULT_BUNDLES, [
+    'dist/agb.mjs',
+    'dist/mcp-server.mjs',
+    'dist/hooks/pre-tool-use.bundle.mjs',
+    'vendor/adlc/dist/adlc.bundle.mjs',
+    'vendor/adlc/dist/syntax-check-typescript.mjs',
+    'vendor/adlc/dist/watchdog.mjs',
+  ]);
+  assert.deepEqual(Object.keys(BUNDLE_ALLOWED_OPTIONAL_PROBES), [
+    'vendor/adlc/dist/adlc.bundle.mjs',
+    'vendor/adlc/dist/syntax-check-typescript.mjs',
+  ]);
 });
 
 test('findExternalSpecifiers: catches template literals and dynamic/computed call expressions', () => {
@@ -99,6 +110,31 @@ test('findExternalSpecifiers: catches process.binding, process._linkedBinding, a
     'process.binding:spawn_sync',
     'process.binding:uv',
   ]);
+});
+
+test('main: verifies default bundles, normalizes ./ and absolute bundle paths, and fails on disallowed externals or missing files', async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { execFileSync } = await import('node:child_process');
+  const { tmpdir } = await import('node:os');
+  const { join, resolve } = await import('node:path');
+  const { main } = await import('../scripts/check-bundle-externals.mjs');
+
+  assert.equal(main([]), 0, 'all six committed bundles pass with optional probe allowlist');
+  assert.equal(main(['./vendor/adlc/dist/adlc.bundle.mjs', resolve('vendor/adlc/dist/syntax-check-typescript.mjs')]), 0);
+  assert.equal(main(['./dist/nonexistent-bundle.mjs']), 1);
+
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-cbe-'));
+  try {
+    const badBundle = join(tmp, 'bad.mjs');
+    writeFileSync(badBundle, 'import "typescript";\n');
+    assert.equal(main([badBundle]), 1, 'non-allowlisted bundle importing typescript fails');
+    assert.throws(
+      () => execFileSync(process.execPath, ['scripts/check-bundle-externals.mjs', badBundle], { stdio: 'pipe' }),
+      (err) => err.status === 1,
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 

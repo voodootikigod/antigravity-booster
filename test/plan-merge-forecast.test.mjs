@@ -42,7 +42,16 @@ test('applyMergeForecast: annotates plan.concurrencyCap with the recommended wid
     await withFakes({}, async () => {
       const forecast = await applyMergeForecast(plan, ticketsPath, { repo });
       assert.equal(forecast.ok, true);
+      assert.equal(forecast.firstWaveWidth, 3);
+      assert.equal(forecast.scheduleWidth, 3);
       assert.equal(forecast.recommendedWidth, 3);
+      assert.deepEqual(forecast.signalsEvaluated, {
+        scopeOverlap: true,
+        namespaceCollision: true,
+        importRadius: true,
+        coChange: true,
+        graphCoupling: false,
+      });
       assert.equal(plan.concurrencyCap, 3);
     });
   } finally {
@@ -136,6 +145,43 @@ test('compilePlan: merge-forecast being unavailable does not fail an otherwise-s
     });
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('applyMergeForecast: foundation-first DAG uses scheduleWidth (not firstWaveWidth=1) and respects backpressureWidth', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-mf-ff-'));
+  try {
+    const ticketsPath = join(repo, 'tickets.json');
+    writeFileSync(ticketsPath, JSON.stringify({ tickets: [{ id: 'T1' }] }));
+
+    const ffPlan = { tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a'] }] };
+    await withFakes({ FAKE_MERGE_FORECAST_MODE: 'foundation-first' }, async () => {
+      const forecast = await applyMergeForecast(ffPlan, ticketsPath, { repo });
+      assert.equal(forecast.ok, true);
+      assert.equal(forecast.firstWaveWidth, 1);
+      assert.equal(forecast.scheduleWidth, 4);
+      assert.equal(forecast.recommendedWidth, 1);
+      assert.equal(ffPlan.concurrencyCap, 4, 'cap uses scheduleWidth so wave-2 fan-out is not throttled to 1');
+    });
+
+    const bpPlan = { tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a'] }] };
+    await withFakes({ FAKE_MERGE_FORECAST_MODE: 'backpressure' }, async () => {
+      const forecast = await applyMergeForecast(bpPlan, ticketsPath, { repo });
+      assert.equal(forecast.ok, true);
+      assert.equal(forecast.scheduleWidth, 4);
+      assert.equal(bpPlan.concurrencyCap, 2, 'backpressureWidth caps scheduleWidth when smaller');
+    });
+
+    for (const mode of ['null-signals', 'array-signals']) {
+      const sigPlan = { tickets: [{ id: 'T1', title: 'a', body: 'x', scope: ['a'] }] };
+      await withFakes({ FAKE_MERGE_FORECAST_MODE: mode }, async () => {
+        const forecast = await applyMergeForecast(sigPlan, ticketsPath, { repo });
+        assert.equal(forecast.ok, true);
+        assert.equal(forecast.signalsEvaluated, null, `${mode} normalizes non-plain-object signalsEvaluated to null`);
+      });
+    }
+  } finally {
     rmSync(repo, { recursive: true, force: true });
   }
 });

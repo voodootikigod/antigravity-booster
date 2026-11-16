@@ -17,7 +17,7 @@ import {
 import { Repo, ROOT, GUARD, baseTicket, archivedShard, sh } from './fixtures/rails-guard-ci/repo.mjs';
 
 // @adlc/tickets does not export lib/canonical.mjs or lib/filename.mjs; load them
-// by file path from the installed (pinned 1.12.0) devDependency.
+// by file path from the installed (pinned 1.13.0) devDependency.
 const ticketsDir = join(createRequire(import.meta.url).resolve('@adlc/tickets/package.json'), '..');
 const lib = await import(pathToFileURL(join(ticketsDir, 'lib', 'canonical.mjs')).href);
 const libName = await import(pathToFileURL(join(ticketsDir, 'lib', 'filename.mjs')).href);
@@ -33,7 +33,7 @@ const expect = (r, code, re) => {
 const T = (id, extra) => baseTicket(id, extra);
 
 // ---------------------------------------------------------------- parity
-test('parity: mirror is pinned to @adlc/tickets 1.12.0', () => assert.equal(TICKETS_VERSION, '1.12.0'));
+test('parity: mirror is pinned to @adlc/tickets 1.13.0', () => assert.equal(TICKETS_VERSION, '1.13.0'));
 
 test('parity: ticketFilename matches @adlc/tickets and the real shard name', () => {
   assert.equal(ticketFilename('T-LOCKEXEC-SEAL-COVERAGE'),

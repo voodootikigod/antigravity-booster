@@ -5,11 +5,31 @@
 //
 // Usage: node scripts/check-bundle-externals.mjs [bundle ...]
 // Exit 0 = clean, 1 = an external specifier or a missing bundle was found.
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { isBuiltin as nodeIsBuiltin, builtinModules } from 'node:module';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const DEFAULT_BUNDLES = ['dist/agb.mjs', 'dist/mcp-server.mjs', 'dist/hooks/pre-tool-use.bundle.mjs', 'vendor/adlc/dist/adlc.bundle.mjs', 'vendor/adlc/dist/watchdog.mjs'];
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+export const DEFAULT_BUNDLES = [
+  'dist/agb.mjs',
+  'dist/mcp-server.mjs',
+  'dist/hooks/pre-tool-use.bundle.mjs',
+  'vendor/adlc/dist/adlc.bundle.mjs',
+  'vendor/adlc/dist/syntax-check-typescript.mjs',
+  'vendor/adlc/dist/watchdog.mjs',
+];
+
+// @adlc/core >= 1.13.0 (lib/syntax.mjs + syntax-check-typescript.mjs) probes
+// the TARGET repository's own node_modules/typescript (guarded by existsSync +
+// try/catch) when syntax-checking .ts/.tsx mutants; no @adlc or booster bundle
+// depends on typescript at install or runtime. Booster's own bundles still
+// forbid every non-builtin specifier without exception.
+export const BUNDLE_ALLOWED_OPTIONAL_PROBES = Object.freeze({
+  'vendor/adlc/dist/adlc.bundle.mjs': Object.freeze(new Set(['typescript'])),
+  'vendor/adlc/dist/syntax-check-typescript.mjs': Object.freeze(new Set(['typescript', 'resolved.path'])),
+});
 
 const BUILTINS = new Set(builtinModules);
 
@@ -82,7 +102,11 @@ export function findExternalSpecifiers(source) {
   return [...found].sort();
 }
 
-function main(argv) {
+function normalizeBundleKey(file) {
+  return relative(ROOT, resolve(file)).replaceAll('\\', '/');
+}
+
+export function main(argv) {
   const bundles = argv.length > 0 ? argv : DEFAULT_BUNDLES;
   let failed = false;
   for (const file of bundles) {
@@ -94,7 +118,8 @@ function main(argv) {
       failed = true;
       continue;
     }
-    const externals = findExternalSpecifiers(source);
+    const allowed = BUNDLE_ALLOWED_OPTIONAL_PROBES[normalizeBundleKey(file)];
+    const externals = findExternalSpecifiers(source).filter((spec) => !allowed?.has(spec));
     if (externals.length > 0) {
       process.stderr.write(`check-bundle-externals: ${file} imports non-builtin modules: ${externals.join(', ')}\n`);
       failed = true;
@@ -105,6 +130,9 @@ function main(argv) {
   return failed ? 1 : 0;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+const isEntry = () => {
+  try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+};
+if (process.argv[1] && isEntry()) {
   process.exitCode = main(process.argv.slice(2));
 }

@@ -1,0 +1,26 @@
+{
+  "body": "Adopt two non-breaking @adlc 1.13.0 CLI enhancements and fix the consensus-fix --rails contract: (1) in lib/scheduler.mjs (`runConsensusFix`), pass the regression gate command (`railsCmd || testCmd`, never raw rail path globs which consensus-fix executes via sh -c) alongside `--require-rails` whenever `railsCmd` is supplied or `rails.length > 0` (path-glob rail immutability continues to be enforced by `checkRailsGuard`); (2) in lib/preflight.mjs (`applyMergeForecast`), surface `firstWaveWidth`, `scheduleWidth`, and `signalsEvaluated` (the plain boolean-map object `{ scopeOverlap, namespaceCollision, importRadius, coChange, graphCoupling }`, or `null` when absent) from `adlc merge-forecast --json`. Update test/fixtures/fake-adlc to record `--rails` and `--require-rails` in `consensus-fix` and emit `firstWaveWidth`, `scheduleWidth`, and `signalsEvaluated` in `merge-forecast --json`, add unit tests in test/scheduler-consensus-fix.test.mjs and test/plan-merge-forecast.test.mjs, sync docs/research/roadmap-agy-1.5.9-adlc-1.13.0.md, and run `npm run build` to refresh dist/**. Acceptance: `npm run build && npm test` green.",
+  "completed": true,
+  "edges": [
+    {
+      "to": "t-docs-refresh-1-5-9"
+    }
+  ],
+  "id": "t-adlc-1-13-integrations",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/scheduler.mjs",
+    "lib/preflight.mjs",
+    "dist/**",
+    "test/fixtures/fake-adlc",
+    "test/scheduler-consensus-fix.test.mjs",
+    "test/plan-merge-forecast.test.mjs",
+    "docs/research/roadmap-agy-1.5.9-adlc-1.13.0.md"
+  ],
+  "title": "Adopt @adlc 1.13.0 consensus-fix --require-rails and merge-forecast signalsEvaluated"
+}

@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-15T14:59:38.266Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "049b73e3e371c69164dd879e4b67034c584215f2bf57b81af15155cbed87336f",
+    "ticketHash": "b42c78cda01fe73262fe4dce25a4feb09f784edea9c15ef929d9adfd6ca82247",
+    "version": 1
+  },
   "body": "1. In lib/worktrees.mjs createIntegrationWorktree(), resolve base to its commit SHA in repo via git rev-parse before running git checkout --detach in the shared clone so non-HEAD branch names and tags succeed, and call rmSync on path in the catch block before falling back to git worktree add.\n2. In scripts/update-adlc-digests.mjs normalizeManifestField(), remove the duplicate ternary inside the object-key loop by delegating recursively to normalizeManifestField(field, val[k]).\n3. Move the createIntegrationWorktree commit-SHA test out of test/update-adlc-digests.test.mjs into test/integration-journal.test.mjs, add regression tests covering non-HEAD branch and tag base refs in createIntegrationWorktree, and rebuild dist/agb.mjs.",
   "completed": true,
   "edges": [],

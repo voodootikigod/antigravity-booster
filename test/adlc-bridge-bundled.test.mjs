@@ -26,7 +26,7 @@ test('importing the bridge unbundled does not throw (no ReferenceError on __AGB_
 });
 
 test('KNOWN_VENDORED_ADLC pins the committed vendor/adlc exactly', () => {
-  assert.equal(KNOWN_VENDORED_ADLC.version, '1.12.0');
+  assert.equal(KNOWN_VENDORED_ADLC.version, '1.13.0');
   assert.equal(computeDirectoryDigest(join(ROOT, 'vendor', 'adlc')), KNOWN_VENDORED_ADLC.treeDigest);
 });
 
@@ -35,7 +35,7 @@ test('Tier 1: a pristine vendored adlc resolves with source "vendored"', () => {
   const r = resolveAdlcBinary({ repo: base, env: {}, pluginRoot: root });
   assert.equal(r.ok, true, r.error);
   assert.equal(r.source, 'vendored');
-  assert.equal(r.version, '1.12.0');
+  assert.equal(r.version, '1.13.0');
   assert.equal(r.binary, join(root, 'vendor', 'adlc', 'bin', 'adlc.mjs'));
 });
 
@@ -165,4 +165,10 @@ test('spawn: a world-writable vendored path is refused (no pin copy protects it)
   const v = revalidateAdlcBinary(null, { bundled: true, pluginRoot, env: {} });
   assert.equal(v.ok, false);
   assert.match(v.error, /dist is world-writable/);
+
+  const pluginRootTs = fakePluginRoot('spawn-writable-ts-worker');
+  chmodSync(join(pluginRootTs, 'vendor', 'adlc', 'dist', 'syntax-check-typescript.mjs'), 0o666);
+  const vTs = revalidateAdlcBinary(null, { bundled: true, pluginRoot: pluginRootTs, env: {} });
+  assert.equal(vTs.ok, false);
+  assert.match(vTs.error, /syntax-check-typescript\.mjs is world-writable/);
 });

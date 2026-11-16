@@ -172,6 +172,7 @@ EOF
 fi
 
 prompt=""
+input_format=""
 output_format=""
 json_schema=""
 conversation_arg=""
@@ -179,6 +180,8 @@ prev=""
 for arg in "$@"; do
   if [ "$prev" = "--print" ]; then
     prompt="$arg"
+  elif [ "$prev" = "--input-format" ]; then
+    input_format="$arg"
   elif [ "$prev" = "--output-format" ]; then
     output_format="$arg"
   elif [ "$prev" = "--json-schema" ]; then
@@ -188,6 +191,10 @@ for arg in "$@"; do
   fi
   prev="$arg"
 done
+if [ -n "$input_format" ] && [ "$input_format" != "text" ] && [ "$input_format" != "stream-json" ]; then
+  echo "Error: invalid --input-format '$input_format' (expected text or stream-json)" >&2
+  exit 2
+fi
 if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "--help" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
   prompt=$(cat)
 fi
@@ -250,14 +257,15 @@ case "${FAKE_AGY_MODE:-}" in
 esac
 
 if [ "$1" = "--version" ]; then
-  echo "agy version 1.2.8"
+  echo "agy version ${FAKE_AGY_VERSION:-1.5.9}"
   exit 0
 fi
 
 if [ "$1" = "--help" ]; then
   cat <<EOF
 Usage of agy:
-  --effort                        Reasoning effort for the current CLI session (low|medium|high|max)
+  --effort                        Reasoning effort for the current CLI session (low|medium|high|xhigh|max)
+  --input-format                  Input format for print mode (text, stream-json) (default text)
   --json-schema                   Optional JSON schema string or path to a schema file
   --output-format                 Output format for print mode (text, json, stream-json)
   --print                         Run a single prompt non-interactively
@@ -273,12 +281,21 @@ EOF
 fi
 
 if [ "$1" = "models" ]; then
-  # Mirrors `agy models` (agy 1.4.7): a status line, then "slug<TAB>Display Name".
+  # Mirrors `agy models` (agy 1.5.9): a status line, then "slug<TAB>Display Name".
   echo "Fetching available models..."
   printf '%s\t%s\n' \
+    gemini-4-carbon-medium "Gemini 4 Carbon (Medium)" \
+    gemini-4-carbon-high "Gemini 4 Carbon (High)" \
+    gemini-4-carbon-low "Gemini 4 Carbon (Low)" \
     gemini-4-argon-medium "Gemini 4 Argon (Medium)" \
     gemini-4-argon-high "Gemini 4 Argon (High)" \
     gemini-4-argon-low "Gemini 4 Argon (Low)" \
+    gemini-4-hydrogen-high "Gemini 4 Hydrogen (High)" \
+    gemini-4-hydrogen-xhigh "Gemini 4 Hydrogen (XHigh)" \
+    gemini-4-hydrogen-medium "Gemini 4 Hydrogen (Medium)" \
+    gemini-4-hydrogen-low "Gemini 4 Hydrogen (Low)" \
+    gemini-pro-orchestrator "Orchestrator (Carbon)" \
+    gemini-pro-orchestrator-argon "Orchestrator (Argon)" \
     gemini-3.8-flash-high "Gemini 3.8 Flash (High)" \
     gemini-3.8-flash-medium "Gemini 3.8 Flash (Medium)" \
     gemini-3.8-flash-low "Gemini 3.8 Flash (Low)" \

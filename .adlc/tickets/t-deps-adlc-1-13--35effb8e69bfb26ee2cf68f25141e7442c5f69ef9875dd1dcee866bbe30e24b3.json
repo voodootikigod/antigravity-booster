@@ -1,0 +1,39 @@
+{
+  "body": "Owner-approved (Open Question 1). Bump @adlc/{cli,core,consensus-fix,flail-detector,gate-manifest,hollow-test,merge-forecast,model-router,rails-guard,tickets} from 1.12.0 to 1.13.0 in package.json, regenerate package-lock.json, and bump vendor/adlc/package.json to 1.13.0 (leave @adlc/antigravity at 1.7.0 and do NOT touch vendor/cache/** or scripts/rails-guard-ci.mjs). Run `npm run build` to rebuild vendor/adlc/dist/**, run `node scripts/update-adlc-digests.mjs --write` to record the 1.13.0 registry tarball/tree/vendored SHA-512 digests in lib/adlc-bridge.mjs, and re-run `npm run build` so dist/ embeds the updated digest tables. Update `@adlc/cli@1.12.0` to `@adlc/cli@1.13.0` in .github/workflows/{adlc-rails-guard,ci,publish}.yml. Update pinned 1.12.0 version assertions and fixtures in test/rails-guard-ci.test.mjs, test/adlc-bridge-bundled.test.mjs, test/adlc-bridge.test.mjs, test/doctor.test.mjs, test/adlc-tool.test.mjs, test/modernize-skill.test.mjs, test/trust-anchor.test.mjs, and test/fixtures/package.json. Acceptance: `npm run build && npm test` green; authenticated local `adlc --version` reports 1.13.0. Also bundle @adlc/core 1.13.0 syntax-check-typescript.mjs worker into vendor/adlc/dist/syntax-check-typescript.mjs and update scripts/check-bundle-externals.mjs + smoke/externals tests for @adlc/core 1.13.0 optional target-repo typescript parser probe.",
+  "completed": true,
+  "edges": [
+    {
+      "to": "t-adlc-1-13-integrations"
+    }
+  ],
+  "id": "t-deps-adlc-1-13",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "package.json",
+    "package-lock.json",
+    "vendor/adlc/**",
+    "lib/adlc-bridge.mjs",
+    "dist/**",
+    ".github/workflows/adlc-rails-guard.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/publish.yml",
+    "test/rails-guard-ci.test.mjs",
+    "test/adlc-bridge-bundled.test.mjs",
+    "test/adlc-bridge.test.mjs",
+    "test/doctor.test.mjs",
+    "test/adlc-tool.test.mjs",
+    "test/modernize-skill.test.mjs",
+    "test/trust-anchor.test.mjs",
+    "test/fixtures/package.json",
+    "docs/research/roadmap-agy-1.5.9-adlc-1.13.0.md",
+    "scripts/check-bundle-externals.mjs",
+    "test/check-bundle-externals.test.mjs",
+    "test/vendor-adlc-smoke.test.mjs"
+  ],
+  "title": "Bump @adlc/* suite from 1.12.0 to 1.13.0 across devDeps, vendored bundle, digests, and CI"
+}

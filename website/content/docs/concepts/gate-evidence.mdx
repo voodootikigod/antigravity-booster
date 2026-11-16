@@ -32,6 +32,12 @@ Recording is best effort. If `adlc` is missing or `.adlc/` is not writable, `rec
 npx adlc gate-manifest verify
 ```
 
+In CI or pre-release checks where at least one recorded gate entry is expected, pass `--require-entries` (`@adlc/gate-manifest` 1.13.0+) so a missing or empty manifest exits 2 instead of vacuously passing with zero entries:
+
+```bash
+npx adlc gate-manifest verify --require-entries
+```
+
 You can also add your own entries for gates you run by hand, such as a test run before opening a pull request:
 
 ```bash

@@ -13,7 +13,7 @@ Every model belongs to one **model pool**, and every model pool belongs to one *
 | Model pool | Models | Upstream family | Default cap |
 | --- | --- | --- | --- |
 | `gemini-flash` | `gemini-3.8-flash-{low,medium,high}` | `gemini` | 8 |
-| `gemini-pro` | `gemini-4-argon-{low,medium,high}` | `gemini` | 4 |
+| `gemini-pro` | `gemini-4-argon-{low,medium,high}`, `gemini-4-carbon-{low,medium,high}`, `gemini-4-hydrogen-{low,medium,high,xhigh}`, `gemini-pro-orchestrator`, `gemini-pro-orchestrator-argon` | `gemini` | 4 |
 | `claude` | `claude-sonnet-5-5-{low,medium,high}`, `claude-opus-5-5-{low,medium,high}` | `claude_gpt` | 4 |
 | `gpt-oss` | `gpt-oss-120b-medium` | `claude_gpt` | 2 |
 
@@ -46,10 +46,10 @@ A ticket's `tier` (default `mid`) picks a candidate list. Candidates are listed 
 | Tier | Candidates (`TIER_CANDIDATES`) |
 | --- | --- |
 | `cheap` | `gemini-3.8-flash-low`, `gemini-3.8-flash-medium` |
-| `mid` | `gemini-3.8-flash-high`, `gemini-4-argon-low`, `claude-sonnet-5-5-medium` |
-| `frontier` | `gemini-4-argon-high`, `claude-sonnet-5-5-high`, `claude-opus-5-5-high` |
+| `mid` | `gemini-3.8-flash-high`, `gemini-4-argon-low`, `gemini-4-carbon-medium`, `gemini-4-hydrogen-medium`, `claude-sonnet-5-5-medium` |
+| `frontier` | `gemini-4-argon-high`, `gemini-4-carbon-high`, `claude-sonnet-5-5-high`, `claude-opus-5-5-high` |
 
-`route()` prefers candidates whose pool and family both have capacity, then picks the one with the lowest reserved-to-cap ratio ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1770-L1790)).
+`gemini-pro-orchestrator` and `gemini-pro-orchestrator-argon` are registered in the `gemini-pro` pool for explicit quota tracking and display-alias resolution, but are excluded from leaf builder and prosecutor tiers because `agb` itself performs ticket DAG orchestration. `route()` prefers candidates whose pool and family both have capacity, then picks the one with the lowest reserved-to-cap ratio ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1770-L1790)).
 
 ## `pool_hint`
 
@@ -72,8 +72,8 @@ The prosecutor always comes from a different family than the builder ([lib/pools
 | Builder family | Preferred prosecutor | Fallbacks, in order |
 | --- | --- | --- |
 | `gemini` | `gpt-oss-120b-medium` | `claude-sonnet-5-5-medium` |
-| `claude` | `gemini-4-argon-high` | `gemini-3.8-flash-high`, `gpt-oss-120b-medium` |
-| `gpt-oss` | `gemini-4-argon-high` | `gemini-3.8-flash-high`, `claude-sonnet-5-5-medium` |
+| `claude` | `gemini-4-argon-high` | `gemini-4-carbon-high`, `gemini-3.8-flash-high`, `gpt-oss-120b-medium` |
+| `gpt-oss` | `gemini-4-argon-high` | `gemini-4-carbon-high`, `gemini-3.8-flash-high`, `claude-sonnet-5-5-medium` |
 
 [C20](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L104-L107) Gemini builders are prosecuted by `gpt-oss-120b-medium`; Claude and gpt-oss builders by `gemini-4-argon-high`. `prosecutorFor` takes the first candidate whose pool and family have capacity ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1800-L1825)). See [Prosecution](/docs/concepts/prosecution).
 

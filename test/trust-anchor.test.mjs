@@ -113,19 +113,19 @@ describe('trust-anchor: tarball identity', () => {
   const tgzOf = (name, version) => makeTgz({ 'package/package.json': JSON.stringify({ name, version }) });
 
   it('digestTarball refuses a tarball of another version or package when a version is requested', () => {
-    assert.throws(() => digestTarball(tgzOf('@adlc/cli', '1.11.1'), '1.12.0'), /not @adlc\/cli@1\.12\.0/);
-    assert.throws(() => digestTarball(tgzOf('@adlc/core', '1.12.0'), '1.12.0'), /not @adlc\/cli@1\.12\.0/);
-    assert.ok(digestTarball(tgzOf('@adlc/cli', '1.12.0'), '1.12.0').adlcTarballSri);
+    assert.throws(() => digestTarball(tgzOf('@adlc/cli', '1.11.1'), '1.13.0'), /not @adlc\/cli@1\.13\.0/);
+    assert.throws(() => digestTarball(tgzOf('@adlc/core', '1.13.0'), '1.13.0'), /not @adlc\/cli@1\.13\.0/);
+    assert.ok(digestTarball(tgzOf('@adlc/cli', '1.13.0'), '1.13.0').adlcTarballSri);
   });
 
   it('audit.mjs enforces the same identity check on the unpacked archive', () => {
     const check = auditFn('assertCliTarballIdentity');
     const dir = tmpDir();
     fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"@adlc/cli","version":"1.11.1"}');
-    assert.throws(() => check(dir, '1.12.0'), /not @adlc\/cli@1\.12\.0/);
+    assert.throws(() => check(dir, '1.13.0'), /not @adlc\/cli@1\.13\.0/);
     assert.doesNotThrow(() => check(dir, '1.11.1'));
     fs.rmSync(path.join(dir, 'package.json'));
-    assert.throws(() => check(dir, '1.12.0'), /no readable package\.json/);
+    assert.throws(() => check(dir, '1.13.0'), /no readable package\.json/);
   });
 });
 
@@ -176,8 +176,8 @@ describe('trust-anchor: CLI', () => {
     const tgz = path.join(work, 'cli.tgz');
     fs.writeFileSync(agy, '## 1.4.7\nnotes\n\n## 1.4.6\nold\n');
     fs.writeFileSync(adlc, '# adlc changelog\n');
-    fs.writeFileSync(tgz, makeTgz({ 'package/package.json': '{"name":"@adlc/cli","version":"1.12.0"}' }));
-    const args = ['--agy-version', '1.4.7', '--adlc-version', '1.12.0', '--agy-notes', agy, '--adlc-changelog', adlc, '--tarball', tgz];
+    fs.writeFileSync(tgz, makeTgz({ 'package/package.json': '{"name":"@adlc/cli","version":"1.13.0"}' }));
+    const args = ['--agy-version', '1.4.7', '--adlc-version', '1.13.0', '--agy-notes', agy, '--adlc-changelog', adlc, '--tarball', tgz];
     const run = (extra, env = {}) =>
       execFileSync(process.execPath, [HELPER, ...args, ...extra], {
         env: { PATH: process.env.PATH, HOME: home, ...env },
@@ -198,7 +198,7 @@ describe('trust-anchor: CLI', () => {
   it('refuses to attest a tarball that is not the requested ADLC version, and writes nothing', () => {
     const { run, store, tgz } = setup();
     fs.writeFileSync(tgz, makeTgz({ 'package/package.json': '{"name":"@adlc/cli","version":"1.11.1"}' }));
-    assert.throws(() => run(['--write', '--yes'], { ADLC_ADMIN_KEY: KEY }), /not @adlc\/cli@1\.12\.0/);
+    assert.throws(() => run(['--write', '--yes'], { ADLC_ADMIN_KEY: KEY }), /not @adlc\/cli@1\.13\.0/);
     assert.equal(fs.existsSync(store), false);
   });
 
@@ -209,7 +209,7 @@ describe('trust-anchor: CLI', () => {
     const payload = readExistingPayload(store, KEY);
     assert.equal(payload.releases['1.11.1'].adlcTarballSri, 'keep');
     assert.match(payload.releases['1.4.7'].agyChangelogSha256, /^[0-9a-f]{64}$/);
-    assert.match(payload.releases['1.12.0'].adlcTarballSri, /^sha512-/);
+    assert.match(payload.releases['1.13.0'].adlcTarballSri, /^sha512-/);
     assert.equal(fs.statSync(store).mode & 0o777, 0o600);
   });
 
@@ -222,7 +222,7 @@ describe('trust-anchor: CLI', () => {
 
   it('requires --adlc-changelog', () => {
     assert.throws(
-      () => execFileSync(process.execPath, [HELPER, '--agy-version', '1.4.7', '--adlc-version', '1.12.0'], { encoding: 'utf8', stdio: 'pipe' }),
+      () => execFileSync(process.execPath, [HELPER, '--agy-version', '1.4.7', '--adlc-version', '1.13.0'], { encoding: 'utf8', stdio: 'pipe' }),
       /adlc-changelog/,
     );
   });

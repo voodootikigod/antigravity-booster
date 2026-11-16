@@ -1895,3 +1895,20 @@ test('probeQuota and refreshQuota default to defaultAgyBin() via resolveAgyBinar
   assert.match(src, /refreshQuota\(agyBin = defaultAgyBin\(\)\)/);
 });
 
+test('withLock + withLockSync: synchronous withLock callback releases lock in the same tick without self-deadlocking concurrent withLockSync', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-lock-same-tick-'));
+  const lockFile = join(dir, 'shared.lock');
+  try {
+    const t0 = Date.now();
+    const results = await Promise.all([
+      withLock(lockFile, () => 'lease-1', { timeoutMs: 250 }),
+      Promise.resolve().then(() => withLockSync(lockFile, () => 'sync-state', { timeoutMs: 250 })),
+      withLock(lockFile, () => 'lease-2', { timeoutMs: 250 }),
+    ]);
+    assert.deepEqual(results, ['lease-1', 'sync-state', 'lease-2']);
+    assert.ok(Date.now() - t0 < 200, 'must not block event loop in Atomics.wait');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+

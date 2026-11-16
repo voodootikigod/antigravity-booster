@@ -1,0 +1,23 @@
+{
+  "body": "Update hooks/policy/constants.mjs and hooks/policy/evaluate.mjs to handle the two new agy 1.5.x native tools cleanly: (1) `swarm` (agy 1.5.5): add 'swarm' to ORCHESTRATION_TOOLS; in headless agb worker sessions (`ctx.headless`, i.e. workerTicket or readonly), ALWAYS deny `swarm` so workers cannot spawn unmanaged multi-agent swarms outside PoolSet quota leases; in interactive sessions (`!ctx.headless`), exclude free-text prose parameters (`brief`, `title`, `tasks`) from `stepOne` path extraction (matching `invoke_subagent.Prompt` / `send_message.Message`) so prose mentioning railed files does not false-deny, while still denying protected-root or rail-path violations in any path-bearing parameters. (2) `run_workflow` (agy 1.5.9): add explicit `evaluateWorkflowTool` handling before `evaluateUnknownTool`; always deny in `ctx.headless`; inspect `ScriptPath`, `Cwd`, and `Args` through `stepOne` and active-rail checks (denying any protected root or frozen rail target); in interactive sessions with `ctx.activeRails`, return `ask` (aligning `run_workflow` with `python -c` in hooks/policy/shell.mjs rather than hard-denying), and `pass` in plain non-ADLC repos. Run `npm run build` to regenerate dist/hooks/pre-tool-use.bundle.mjs and dist/*.mjs. Add comprehensive tests in test/pre-tool-use.test.mjs covering interactive active-rail, plain-repo, headless builder worker, readonly reviewer worker, and rail/protected-root path injection cases for both `swarm` and `run_workflow`. Acceptance: `npm run build && npm test` green.",
+  "completed": true,
+  "edges": [
+    {
+      "to": "t-deps-adlc-1-13"
+    }
+  ],
+  "id": "t-policy-guard-agy-1-5-tools",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "hooks/policy/constants.mjs",
+    "hooks/policy/evaluate.mjs",
+    "dist/**",
+    "test/pre-tool-use.test.mjs"
+  ],
+  "title": "Classify agy 1.5.5 swarm and agy 1.5.9 run_workflow in PreToolUse policy guard"
+}

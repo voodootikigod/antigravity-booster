@@ -79,3 +79,14 @@ test('--version prints the pinned version', () => {
   assert.equal(r.status, 0);
   assert.equal(r.stdout.trim(), PINNED);
 });
+
+test('bundled syntax-check-typescript worker exits 3 cleanly without node_modules when typescript is absent', () => {
+  const r = spawnSync(process.execPath, ['vendor/adlc/dist/syntax-check-typescript.mjs', 'sample.ts'], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { ...process.env, NODE_PATH: '' },
+    timeout: 15_000,
+  });
+  assert.equal(r.status, 3, `exit ${r.status}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+  assert.match(r.stderr, /typescript could not be resolved/);
+});
