@@ -1,0 +1,23 @@
+{
+  "body": "Rebuild committed esbuild bundles (`npm run build`), document `AGB_DISABLE_ORCHESTRATOR` and `AGB_TEST_PASSWD_HOME` in `website/env-docs.json`, regenerate `website/generated/*.mdx` (`node website/scripts/gen-reference.mjs`), and add a non-mutating `mkdtempSync` `esbuild` bundle-freshness test for `dist/hooks/pre-tool-use.bundle.mjs` in `test/plugin-layout.test.mjs`.",
+  "edges": [],
+  "id": "t-v1-3-bundle-and-docs-sync",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/pools.mjs",
+    "lib/worktrees.mjs",
+    "bin/node-launcher.sh",
+    "scripts/rails-guard-ci.mjs",
+    "vendor/cache/**",
+    ".github/workflows/**",
+    "test/fixtures/agy-1.5.9-init-tools.json"
+  ],
+  "scope": [
+    "dist/**",
+    "website/env-docs.json",
+    "website/generated/**",
+    "test/plugin-layout.test.mjs"
+  ],
+  "title": "Rebuild dist bundles, sync website generated reference docs, and add hook bundle freshness check"
+}
