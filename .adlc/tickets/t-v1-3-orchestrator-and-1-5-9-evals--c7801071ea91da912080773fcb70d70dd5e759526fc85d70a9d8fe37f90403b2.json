@@ -1,5 +1,6 @@
 {
   "body": "Expand evals/ (scenarios.mjs, v13-enhancements-bench.mjs, runner.mjs, baseline.json), test/evals.test.mjs, docs/benchmarks/marketplace-eval-report.md, and website/content/docs/reference/benchmarks.mdx: (1) Add Scenario 5 (perf-orchestrator-frontier-resilience) and Scenario 6 (acc-agy-1-5-9-surface-and-print-hardening) comparing Straight agy 1.5.9 Native, Raw agy 1.5.9 Best Practices, agb v1.2, and agb v1.3. (2) Add 4 live v1.3 benchmarks: 60-tool zero-ask + 64-vector 1.5.9 policy matrix, PASSWD_HOME/dotfiles/degraded hook-runner subprocess security, 18-state classifyAgyOutcome + nested bwrap sandbox, and hermetic Orchestrator circuit-breaker + AsyncLocalStorage isolation. Acceptance: npm test && npm run eval && npm run coverage:check exit 0.",
+  "completed": true,
   "edges": [
     {
       "kind": "depends_on",
