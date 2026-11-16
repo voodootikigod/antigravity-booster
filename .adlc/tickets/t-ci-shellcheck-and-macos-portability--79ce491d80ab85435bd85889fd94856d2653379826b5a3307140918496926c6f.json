@@ -1,0 +1,31 @@
+{
+  "body": "1. bin/hook-runner.sh: replace non-POSIX test -O (SC3067) at lines 29, 129, 142 with POSIX owned_by_euid() via find -H -prune -user, and remove unused LAUNCHER_DIR (SC2034) at line 432.\n2. test/hook-runner.test.mjs: add static check rejecting non-POSIX test -O/-G/-N primaries, and fix dash stdin_pid/child pid test race via victim ready marker, newline-terminated pidfile read before overwrite, and --timeout 2.\n3. test/policy-1-5-9-sed-notebook.test.mjs: probe GNU sed (required on Linux) with (-i, -e, expr, tmpFile) across all 22 accepted expressions, and run BSD sed (-i, empty, -e, expr, tmpFile) on macOS across the 21 POSIX expressions.",
+  "completed": true,
+  "edges": [
+    {
+      "kind": "depends_on",
+      "to": "t-hook-runner-passwd-home"
+    },
+    {
+      "kind": "depends_on",
+      "to": "t-p5-round2-dotfiles-symlink"
+    },
+    {
+      "kind": "depends_on",
+      "to": "t-policy-1-5-9-sed-and-notebook"
+    }
+  ],
+  "id": "t-ci-shellcheck-and-macos-portability",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "hooks/policy/evaluate.mjs",
+    "bin/node-launcher.sh"
+  ],
+  "scope": [
+    "bin/hook-runner.sh",
+    "test/hook-runner.test.mjs",
+    "test/policy-1-5-9-sed-notebook.test.mjs"
+  ],
+  "title": "Fix POSIX sh shellcheck warnings, BSD sed macOS portability, and dash stdin_pid test race"
+}

@@ -189,26 +189,35 @@ test('validateSedCall: 24 verbatim fixed vectors (6 ACCEPT / 18 DENY) + live GNU
   const allAccepted = [...cartesianAccepted, ...fixedAccept];
   assert.equal(allAccepted.length, 22);
 
+  const gnuSedBin = ['gsed', 'sed'].find((bin) => {
+    const probe = spawnSync(bin, ['--version'], { encoding: 'utf8', timeout: 2000 });
+    return probe.status === 0 && typeof probe.stdout === 'string' && probe.stdout.includes('GNU sed');
+  });
+  if (process.platform === 'linux') {
+    assert.ok(gnuSedBin, 'GNU sed must be available on Linux');
+  }
+  const sedBin = gnuSedBin ?? 'sed';
+  // 's/foo/bar/2pIm' exercises GNU-specific 'I' and 'm' s/// flags; BSD sed on macOS runs all 21 POSIX expressions.
+  const oracleExpressions = gnuSedBin
+    ? allAccepted
+    : allAccepted.filter((e) => e !== 's/foo/bar/2pIm');
+
   const SEED = 'L1 foo foo a\\b a|b foo/bar\nL2 FOO foo\nL3 mid\nL4 last\n';
-  for (const expr of allAccepted) {
+  for (const expr of oracleExpressions) {
     const dir = mkdtempSync(join(base, 'sed-exec-'));
     const tmpFile = join(dir, 'sample.txt');
     writeFileSync(tmpFile, SEED, 'utf8');
 
-    const inPlace = spawnSync('sed', ['-i', expr, tmpFile], { encoding: 'utf8', timeout: 2000 });
+    const inPlaceArgs = gnuSedBin ? ['-i', '-e', expr, tmpFile] : ['-i', '', '-e', expr, tmpFile];
+    const inPlace = spawnSync(sedBin, inPlaceArgs, { encoding: 'utf8', timeout: 2000 });
     assert.equal(inPlace.status, 0, `sed -i failed for ${expr}: ${inPlace.stderr}`);
     assert.equal(inPlace.signal, null);
     assert.deepEqual(readdirSync(dir), [basename(tmpFile)], `sed -i created unexpected file for ${expr}`);
 
-    const stream = spawnSync('sed', [expr], { input: SEED, encoding: 'utf8', timeout: 2000 });
+    const stream = spawnSync(sedBin, ['-e', expr], { input: SEED, encoding: 'utf8', timeout: 2000 });
     assert.equal(stream.status, 0);
     assert.equal(stream.signal, null);
-    if (!expr.includes('p')) {
-      assert.equal(readFileSync(tmpFile, 'utf8'), stream.stdout, `in-place vs stdout mismatch for ${expr}`);
-    } else {
-      // With 'p' flag without -n, sed -i writes both printed + pattern space into tmpFile identically to stdout!
-      assert.equal(readFileSync(tmpFile, 'utf8'), stream.stdout, `in-place vs stdout mismatch for ${expr}`);
-    }
+    assert.equal(readFileSync(tmpFile, 'utf8'), stream.stdout, `in-place vs stdout mismatch for ${expr}`);
   }
 });
 

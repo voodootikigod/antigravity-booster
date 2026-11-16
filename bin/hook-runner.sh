@@ -15,7 +15,25 @@ WAIT_TIMEOUT=9
 RUNNER_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)"
 RUNNER_ROOT="$(dirname -- "$RUNNER_DIR")"
 
-PASSWD_HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
+CUR_UID="$(id -u 2>/dev/null || true)"
+owned_by_euid() {
+  _own_path="$1"
+  case "$CUR_UID" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  case "$_own_path" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  [ -e "$_own_path" ] || return 1
+  _found_own="$(find -H "$_own_path" -prune -user "$CUR_UID" 2>/dev/null || true)"
+  [ -n "$_found_own" ]
+}
+
+PASSWD_HOME=""
+if [ -n "$CUR_UID" ]; then
+  PASSWD_HOME="$(getent passwd "$CUR_UID" 2>/dev/null | cut -d: -f6)"
+fi
 if [ -z "$PASSWD_HOME" ] && command -v dscl >/dev/null 2>&1; then
   PASSWD_HOME="$(dscl . -read "/Users/$(id -un)" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
 fi
@@ -26,7 +44,7 @@ case "$RUNNER_ROOT" in
     EFF_HOME="$PASSWD_HOME"
     if [ -z "$EFF_HOME" ]; then
       _cand_home="${RUNNER_ROOT%%/.gemini/*}"
-      if [ -n "$_cand_home" ] && [ -O "$_cand_home" ]; then
+      if [ -n "$_cand_home" ] && owned_by_euid "$_cand_home"; then
         EFF_HOME="$_cand_home"
       fi
     fi
@@ -124,9 +142,9 @@ LOG_DEGRADED=0
 DEGRADED_MARKER="${EFF_HOME}/.gemini/antigravity-cli/.agb-hook-log-degraded"
 
 # Spec §3.6: audit log lives under OS account home of id -u (PASSWD_HOME); check symlink (-L) and
-# foreign UID (! -O) strictly on DATA_ROOT, HOOK_LOG_DIR, and HOOK_LOG_FILE so legitimate dotfile
-# symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never false-trip worker tamper denial.
-if [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ] || { [ -e "$DATA_ROOT" ] && [ ! -O "$DATA_ROOT" ]; } || { [ -e "$HOOK_LOG_DIR" ] && [ ! -O "$HOOK_LOG_DIR" ]; } || { [ -e "$HOOK_LOG_FILE" ] && [ ! -O "$HOOK_LOG_FILE" ]; }; then
+# foreign UID (! owned_by_euid) strictly on DATA_ROOT, HOOK_LOG_DIR, and HOOK_LOG_FILE so legitimate
+# dotfile symlinks (e.g. ~/.config managed by GNU Stow or chezmoi) never false-trip worker tamper denial.
+if [ -L "$DATA_ROOT" ] || [ -L "$HOOK_LOG_DIR" ] || [ -L "$HOOK_LOG_FILE" ] || { [ -e "$DATA_ROOT" ] && ! owned_by_euid "$DATA_ROOT"; } || { [ -e "$HOOK_LOG_DIR" ] && ! owned_by_euid "$HOOK_LOG_DIR"; } || { [ -e "$HOOK_LOG_FILE" ] && ! owned_by_euid "$HOOK_LOG_FILE"; }; then
   LOG_TAMPERED=1
 fi
 
@@ -139,7 +157,7 @@ write_degraded_marker() {
   if [ -L "${EFF_HOME}/.gemini" ] || [ -L "${EFF_HOME}/.gemini/antigravity-cli" ] || [ -L "$DEGRADED_MARKER" ]; then
     return 0
   fi
-  if [ -e "$DEGRADED_MARKER" ] && [ ! -O "$DEGRADED_MARKER" ]; then
+  if [ -e "$DEGRADED_MARKER" ] && ! owned_by_euid "$DEGRADED_MARKER"; then
     return 0
   fi
   _tmp_marker="${DEGRADED_MARKER}.tmp.$$"
@@ -429,7 +447,6 @@ emit_fallback() {
 
 trap emit_fallback EXIT HUP INT TERM
 
-LAUNCHER_DIR="$RUNNER_DIR"
 PLUGIN_ROOT="$RUNNER_ROOT"
 [ -n "$PLUGIN_ROOT" ] || emit_fallback
 

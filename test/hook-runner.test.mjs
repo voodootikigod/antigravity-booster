@@ -521,11 +521,18 @@ test('real --timeout 9 watchdog emits fallback in <= 10.5s wall clock', { timeou
   assert.ok(r.ms <= 10500, `took ${r.ms}ms`);
 });
 
-test('runner source is POSIX sh: no bashisms, command -v not which', () => {
+test('runner source is POSIX sh: no bashisms, command -v not which, no test -O or unused LAUNCHER_DIR', () => {
   const src = fs.readFileSync(RUNNER_SRC, 'utf8');
+  const launcherSrc = fs.readFileSync(path.join(HERE, '..', 'bin', 'node-launcher.sh'), 'utf8');
   assert.match(src, /^#!\/bin\/sh\n/);
-  assert.ok(!/\bwhich\b/.test(src.replace(/#.*$/gm, '')), 'uses which');
-  assert.ok(!/\[\[(?!:)|\bfunction\s+\w+/.test(src), 'bashism');
+  for (const [name, content] of [['hook-runner.sh', src], ['node-launcher.sh', launcherSrc]]) {
+    const code = content.replace(/^\s*#.*$/gm, '');
+    assert.ok(!/\bwhich\b/.test(code), `${name}: uses which`);
+    assert.ok(!/\[\[(?!:)|\bfunction\s+\w+/.test(code), `${name}: bashism`);
+    assert.ok(!/\[\s+(?:!\s+)?-[OGN]\s/.test(code), `${name}: non-POSIX test -O/-G/-N primary (SC3067)`);
+    assert.ok(!/\blocal\s+[A-Za-z_]/.test(code), `${name}: non-POSIX local keyword (SC3043)`);
+  }
+  assert.ok(!/^LAUNCHER_DIR=/m.test(src), 'hook-runner.sh: unused LAUNCHER_DIR (SC2034)');
   assert.ok(src.includes('AGB_WORKER_MODE'), 'tests AGB_WORKER_MODE');
 });
 
@@ -589,23 +596,31 @@ async function waitFor(pred, ms = 15000) {
 }
 
 for (const [label, shell] of SHELLS) {
-  test(`[${label}] watchdog does not SIGKILL a cached pid whose pidfile was removed`, { timeout: 20000 }, async () => {
+  test(`[${label}] watchdog does not SIGKILL a cached pid whose pidfile was removed`, { timeout: 25000 }, async () => {
     const tmp = fs.mkdtempSync(path.join(ROOT, 'stale-'));
+    const ready = path.join(tmp, 'victim-ready');
     const marker = path.join(tmp, 'victim-got-term');
-    const victim = spawn('/bin/sh', ['-c', `trap 'echo t > "${marker}"' TERM; while :; do sleep 0.05; done`], { stdio: 'ignore' });
-    const runner = spawn(shell, ['bin/hook-runner.sh', '--timeout', '1'], {
-      cwd: PLUGIN,
-      env: { PATH: process.env.PATH, HOME: HOME_DIR, TMPDIR: tmp, STUB_MODE: 'hang' },
-      stdio: ['pipe', 'ignore', 'ignore'],
-    });
-    runner.stdin.on('error', () => {});
-    runner.stdin.write(payloadFor(MUTATION)); // stdin held open: runner blocks reading it
-    const closed = new Promise((r) => runner.on('close', r));
+    const victim = spawn(
+      '/bin/sh',
+      ['-c', `trap 'echo t > "${marker}"' TERM; echo r > "${ready}"; while :; do sleep 0.05; done`],
+      { stdio: 'ignore' },
+    );
+    let runner = null;
     try {
+      await waitFor(() => fs.existsSync(ready));
+      runner = spawn(shell, ['bin/hook-runner.sh', '--timeout', '2'], {
+        cwd: PLUGIN,
+        env: { PATH: process.env.PATH, HOME: HOME_DIR, TMPDIR: tmp, STUB_MODE: 'hang' },
+        stdio: ['pipe', 'ignore', 'ignore'],
+      });
+      runner.stdin.on('error', () => {});
+      runner.stdin.write(payloadFor(MUTATION)); // stdin held open: runner blocks reading it
+      const closed = new Promise((r) => runner.on('close', r));
       const pidfile = await waitFor(() => {
         const d = fs.readdirSync(tmp).find((n) => n.startsWith('hook-runner.'));
         const f = d && path.join(tmp, d, 'stdin_pid');
-        return f && fs.existsSync(f) ? f : null;
+        if (!f || !fs.existsSync(f)) return null;
+        return /^\d+\n$/.test(fs.readFileSync(f, 'utf8')) ? f : null;
       });
       fs.writeFileSync(pidfile, `${victim.pid}\n`); // stand-in for a recycled pid
       await waitFor(() => fs.existsSync(marker)); // watchdog cached + TERMed it
@@ -616,32 +631,42 @@ for (const [label, shell] of SHELLS) {
       process.kill(victim.pid, 0);
     } finally {
       victim.kill('SIGKILL');
-      runner.stdin.destroy();
-      runner.kill('SIGKILL');
+      if (runner) {
+        runner.stdin.destroy();
+        runner.kill('SIGKILL');
+      }
     }
   });
 }
 
 // T-HOOK-RUNNER-PID-TESTS: the same stale-pid guard for the child pidfile.
 for (const [label, shell] of SHELLS) {
-  test(`[${label}] watchdog does not SIGKILL a cached child pid whose pidfile was removed`, { timeout: 20000 }, async () => {
+  test(`[${label}] watchdog does not SIGKILL a cached child pid whose pidfile was removed`, { timeout: 25000 }, async () => {
     const tmp = fs.mkdtempSync(path.join(ROOT, 'stale-child-'));
+    const ready = path.join(tmp, 'victim-ready');
     const marker = path.join(tmp, 'victim-got-term');
-    const victim = spawn('/bin/sh', ['-c', `trap 'echo t > "${marker}"' TERM; while :; do sleep 0.05; done`], { stdio: 'ignore' });
-    const runner = spawn(shell, ['bin/hook-runner.sh', '--timeout', '1'], {
-      cwd: PLUGIN,
-      env: { PATH: process.env.PATH, HOME: HOME_DIR, TMPDIR: tmp, STUB_MODE: 'hang' },
-      stdio: ['pipe', 'ignore', 'ignore'],
-    });
-    runner.stdin.on('error', () => {});
-    runner.stdin.end(payloadFor(MUTATION)); // stdin closed: runner proceeds to the hanging child
-    const closed = new Promise((r) => runner.on('close', r));
+    const victim = spawn(
+      '/bin/sh',
+      ['-c', `trap 'echo t > "${marker}"' TERM; echo r > "${ready}"; while :; do sleep 0.05; done`],
+      { stdio: 'ignore' },
+    );
+    let runner = null;
     let realChild = null;
     try {
+      await waitFor(() => fs.existsSync(ready));
+      runner = spawn(shell, ['bin/hook-runner.sh', '--timeout', '2'], {
+        cwd: PLUGIN,
+        env: { PATH: process.env.PATH, HOME: HOME_DIR, TMPDIR: tmp, STUB_MODE: 'hang' },
+        stdio: ['pipe', 'ignore', 'ignore'],
+      });
+      runner.stdin.on('error', () => {});
+      runner.stdin.end(payloadFor(MUTATION)); // stdin closed: runner proceeds to the hanging child
+      const closed = new Promise((r) => runner.on('close', r));
       const pidfile = await waitFor(() => {
         const d = fs.readdirSync(tmp).find((n) => n.startsWith('hook-runner.'));
         const f = d && path.join(tmp, d, 'pid');
-        return f && fs.existsSync(f) && fs.readFileSync(f, 'utf8').trim() ? f : null;
+        if (!f || !fs.existsSync(f)) return null;
+        return /^\d+\n$/.test(fs.readFileSync(f, 'utf8')) ? f : null;
       });
       realChild = Number(fs.readFileSync(pidfile, 'utf8').trim());
       fs.writeFileSync(pidfile, `${victim.pid}\n`); // stand-in for a recycled pid
@@ -654,8 +679,10 @@ for (const [label, shell] of SHELLS) {
     } finally {
       victim.kill('SIGKILL');
       if (realChild) { try { process.kill(realChild, 'SIGKILL'); } catch {} }
-      runner.stdin.destroy();
-      runner.kill('SIGKILL');
+      if (runner) {
+        runner.stdin.destroy();
+        runner.kill('SIGKILL');
+      }
     }
   });
 }
@@ -843,6 +870,32 @@ for (const [label, shell] of SHELLS) {
     });
     assertInvariant(rDot);
     assert.equal(decisionOf(rDot), '', 'symlinked ~/.config must not false-deny headless workers');
+
+    // Foreign-UID DATA_ROOT (simulated via POSIX find -user reporting non-match) triggers LOG_TAMPERED
+    const homeForeign = fs.mkdtempSync(path.join(ROOT, 'foreign-uid-home-'));
+    const foreignRoot = path.join(homeForeign, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster');
+    fs.mkdirSync(foreignRoot, { recursive: true });
+    const shimFindDir = fs.mkdtempSync(path.join(ROOT, 'shim-find-'));
+    const realFind = which('find');
+    assert.ok(realFind, 'find must be on PATH');
+    fs.writeFileSync(
+      path.join(shimFindDir, 'find'),
+      `#!/bin/sh\ncase "$*" in\n  *"${foreignRoot}"*) exit 0 ;;\nesac\nexec "${realFind}" "$@"\n`,
+      { mode: 0o755 },
+    );
+    const rForeign = await run(shell, {
+      payload: payloadFor('view_file'),
+      env: {
+        PATH: `${shimFindDir}:${process.env.PATH}`,
+        HOME: homeForeign,
+        AGB_WORKER_TICKET: 'T-1',
+        STUB_MODE: 'empty',
+      },
+    });
+    assertInvariant(rForeign);
+    assert.equal(decisionOf(rForeign), 'deny');
+    assert.equal(JSON.parse(rForeign.stdout.trim()).reason, 'agb hook audit log tampered in headless worker');
+    assert.ok(fs.existsSync(path.join(homeForeign, '.gemini', 'antigravity-cli', '.agb-hook-log-degraded')));
   });
 
   test(`[${label}] fallback passes through list_dir and read-only manage_task while denying manage_task kill/send_input`, async () => {
