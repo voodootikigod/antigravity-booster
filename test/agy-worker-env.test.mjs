@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,7 @@ const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const libSrc = (f) => readFileSync(fileURLToPath(new URL(`../lib/${f}`, import.meta.url)), 'utf8');
 
 const SAVED = {};
-const KEYS = ['AGB_WORKER_TICKET', 'AGB_WORKER_MODE', 'FAKE_STATE_DIR', 'FAKE_RECORD_ENV', 'AGB_AGY_BIN'];
+const KEYS = ['AGB_WORKER_TICKET', 'AGB_WORKER_MODE', 'FAKE_STATE_DIR', 'FAKE_RECORD_ENV', 'AGB_AGY_BIN', 'INIT_CWD', 'PWD', 'AGY_WORKSPACE', 'ANTIGRAVITY_WORKSPACE'];
 function setup() {
   for (const k of KEYS) SAVED[k] = process.env[k];
   const dir = mkdtempSync(join(tmpdir(), 'agb-worker-env-'));
@@ -25,12 +25,16 @@ function teardown(dir) {
   for (const k of KEYS) { if (SAVED[k] === undefined) delete process.env[k]; else process.env[k] = SAVED[k]; }
   rmSync(dir, { recursive: true, force: true });
 }
-function seenEnv(dir) {
+function fullEnvMap(dir) {
   const out = {};
   for (const line of readFileSync(join(dir, 'full-env'), 'utf8').split('\n')) {
     const i = line.indexOf('=');
     if (i > 0) out[line.slice(0, i)] = line.slice(i + 1);
   }
+  return out;
+}
+function seenEnv(dir) {
+  const out = fullEnvMap(dir);
   return { ticket: out.AGB_WORKER_TICKET, mode: out.AGB_WORKER_MODE };
 }
 async function run(extra, inherited = {}) {
@@ -136,4 +140,84 @@ test('static: scheduler builder runAgy call passes worker ticket', () => {
 
 test('static: sweep spawns no agy session directly (compiles to a plan only)', () => {
   assert.doesNotMatch(libSrc('sweep.mjs'), /runAgy|spawn\(/);
+});
+
+test('runAgy scrubs INIT_CWD, pins PWD to cwd, and sets AGY_WORKSPACE + ANTIGRAVITY_WORKSPACE on builders', async () => {
+  const wtDir = mkdtempSync(join(tmpdir(), 'agb-wt-cwd-'));
+  const dir = setup();
+  try {
+    process.env.INIT_CWD = '/stale/outer/init_cwd';
+    process.env.PWD = '/stale/outer/pwd';
+
+    // Non-builder with explicit cwd: scrubs INIT_CWD, pins PWD, does not set builder workspace vars
+    const roRes = await runAgy({
+      model: 'gemini-3-pro',
+      prompt: 'hello',
+      cwd: wtDir,
+      worker: { mode: 'readonly' },
+    });
+    assert.ok(roRes.ok, roRes.error);
+    const roEnv = fullEnvMap(dir);
+    assert.equal(roEnv.INIT_CWD, undefined, 'INIT_CWD must be scrubbed on unsanitized spawn');
+    assert.equal(roEnv.PWD, wtDir, 'PWD must match spawned cwd');
+    assert.equal(roEnv.AGY_WORKSPACE, undefined);
+    assert.equal(roEnv.ANTIGRAVITY_WORKSPACE, undefined);
+
+    // Direct Node stub (unlike /bin/sh, Node does not auto-rewrite process.env.PWD) verifies exact PWD assignment on symlinked cwd and whitespace-only cwd
+    const nodeStub = join(dir, 'node-env-stub');
+    writeFileSync(
+      nodeStub,
+      `#!${process.execPath}\nconst fs = require('node:fs');\nfs.writeFileSync(${JSON.stringify(join(dir, 'node-pwd.json'))}, JSON.stringify({ PWD: process.env.PWD ?? null, INIT_CWD: process.env.INIT_CWD ?? null }));\nconsole.log('ok');\n`,
+      { mode: 0o755 },
+    );
+    const symWtDir = join(dir, 'sym-wt');
+    symlinkSync(wtDir, symWtDir);
+    const symRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', bin: nodeStub, cwd: symWtDir, worker: { mode: 'readonly' } });
+    assert.ok(symRes.ok, symRes.error);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'node-pwd.json'), 'utf8')), { PWD: symWtDir, INIT_CWD: null });
+
+    const wsCwdRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', bin: nodeStub, cwd: '   ', worker: { mode: 'readonly' } });
+    assert.ok(wsCwdRes.ok, wsCwdRes.error);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, 'node-pwd.json'), 'utf8')), { PWD: '/stale/outer/pwd', INIT_CWD: null });
+
+    // Builder spawn (sandbox: true with FAKE_STATE_DIR inside wtDir so bwrap can write full-env):
+    process.env.FAKE_STATE_DIR = wtDir;
+    const bRes = await runAgy({
+      model: 'gemini-3-pro',
+      prompt: 'hello',
+      cwd: wtDir,
+      repo: wtDir,
+      role: 'builder',
+      sandbox: true,
+      worker: { ticket: 'T1' },
+      env: { INIT_CWD: '/smuggled/init_cwd' },
+    });
+    assert.ok(bRes.ok, bRes.error);
+    const bEnv = fullEnvMap(wtDir);
+    assert.equal(bEnv.INIT_CWD, undefined, 'INIT_CWD must be scrubbed on builder spawn');
+    assert.equal(bEnv.PWD, wtDir);
+    assert.equal(bEnv.AGY_WORKSPACE, wtDir);
+    assert.equal(bEnv.ANTIGRAVITY_WORKSPACE, wtDir);
+
+    // Builder spawn with blank, missing, non-existent, or file cwd fails closed with containment_unavailable
+    const regularFile = join(dir, 'not-a-dir.txt');
+    writeFileSync(regularFile, 'x');
+    for (const badCwd of ['   ', '', undefined, join(dir, 'missing-wt'), regularFile]) {
+      const badRes = await runAgy({
+        model: 'gemini-3-pro',
+        prompt: 'hello',
+        cwd: badCwd,
+        repo: wtDir,
+        role: 'builder',
+        sandbox: true,
+        worker: { ticket: 'T1' },
+      });
+      assert.equal(badRes.ok, false, `badCwd=${JSON.stringify(badCwd)} must fail closed`);
+      assert.equal(badRes.kind, 'containment_unavailable');
+      assert.match(badRes.error, /Builder containment requires an existing directory worktree cwd/);
+    }
+  } finally {
+    teardown(dir);
+    rmSync(wtDir, { recursive: true, force: true });
+  }
 });

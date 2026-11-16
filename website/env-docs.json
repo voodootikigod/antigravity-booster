@@ -64,6 +64,13 @@
       "description": "Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes."
     },
     {
+      "name": "ANTIGRAVITY_WORKSPACE",
+      "group": "core",
+      "default": "set by agb on builders",
+      "bundledIgnored": false,
+      "description": "Set by agb on builder agy processes (alongside AGY_WORKSPACE and PWD) to the isolated ticket worktree path so headless companion hooks always resolve the worktree root."
+    },
+    {
       "name": "AGB_TARGET_REPO",
       "group": "core",
       "default": "unset",
@@ -111,6 +118,13 @@
       "default": "adlc-antigravity",
       "bundledIgnored": false,
       "description": "Not read from the environment: a source constant in lib/plugin-paths.mjs naming the companion plugin's directory under the agy plugins folder."
+    },
+    {
+      "name": "ADLC_GEMINI_PLUGIN_NAME",
+      "group": "plugin-resolution",
+      "default": "adlc-gemini",
+      "bundledIgnored": false,
+      "description": "Not read from the environment: a source constant in lib/plugin-paths.mjs naming the adlc-gemini companion plugin directory snapshotted for run integrity and checked when adlc-antigravity is absent."
     },
     {
       "name": "ADLC_ANTIGRAVITY_PLUGIN_PATH",

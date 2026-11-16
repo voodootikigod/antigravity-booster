@@ -4467,7 +4467,7 @@ function installTerminalShim({ home = homedir(), force = false } = {}) {
     return { ok: false, error: `could not install terminal shim at ${shimPath}: ${err.message}` };
   }
 }
-var BUNDLED_ADLC_ANTIGRAVITY_VERSION, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, VENDORED_ADLC_ANTIGRAVITY_TARBALL, BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, INSTALL_COPY_EXCLUSIONS, STAGE_COPY_EXCLUSIONS, AGY_INSTALL_TIMEOUT_MS, TAR_LIST_TIMEOUT_MS, TAR_EXTRACT_TIMEOUT_MS, TERMINAL_SHIM_CONTENT, log, isVanished;
+var BUNDLED_ADLC_ANTIGRAVITY_VERSION, PINNED_ADLC_ANTIGRAVITY_INTEGRITY, VENDORED_ADLC_ANTIGRAVITY_TARBALL, BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, ADLC_GEMINI_PLUGIN_NAME, INSTALL_COPY_EXCLUSIONS, STAGE_COPY_EXCLUSIONS, AGY_INSTALL_TIMEOUT_MS, TAR_LIST_TIMEOUT_MS, TAR_EXTRACT_TIMEOUT_MS, TERMINAL_SHIM_CONTENT, log, isVanished;
 var init_plugin_paths = __esm({
   "lib/plugin-paths.mjs"() {
     BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
@@ -4475,6 +4475,7 @@ var init_plugin_paths = __esm({
     VENDORED_ADLC_ANTIGRAVITY_TARBALL = `vendor/cache/adlc-antigravity-${BUNDLED_ADLC_ANTIGRAVITY_VERSION}.tgz`;
     BOOSTER_PLUGIN_NAME = "antigravity-booster";
     ADLC_ANTIGRAVITY_PLUGIN_NAME = "adlc-antigravity";
+    ADLC_GEMINI_PLUGIN_NAME = "adlc-gemini";
     INSTALL_COPY_EXCLUSIONS = Object.freeze(["node_modules", ".worktrees", ".git"]);
     STAGE_COPY_EXCLUSIONS = Object.freeze([...INSTALL_COPY_EXCLUSIONS, "maintainer-skills", ".claude", ".agents"]);
     AGY_INSTALL_TIMEOUT_MS = 6e4;
@@ -4602,9 +4603,9 @@ import crypto from "node:crypto";
 function ticketsLib() {
   return tickets_exports;
 }
-function pluginManifestDir({ env = process.env, bundled = IS_BUNDLED } = {}) {
+function pluginManifestDir({ env = process.env, bundled = IS_BUNDLED, home = env.AGB_HOME_DIR || homedir2() } = {}) {
   const override = bundled ? void 0 : env.AGB_PLUGIN_DIR;
-  return override ?? join18(homedir2(), ".gemini", "config", "plugins", "adlc-antigravity");
+  return override ?? join18(home, ".gemini", "config", "plugins", "adlc-antigravity");
 }
 function readPluginContract({ dir } = {}) {
   const path4 = join18(dir ?? pluginManifestDir(), "plugin.json");
@@ -7759,16 +7760,16 @@ import {
   existsSync as existsSync34
 } from "node:fs";
 import { join as join36, basename as basename12 } from "node:path";
-import { homedir as homedir9 } from "node:os";
+import { homedir as homedir10 } from "node:os";
 import { execFileSync as execFileSync17 } from "node:child_process";
 import { randomBytes as randomBytes3 } from "node:crypto";
-function boosterDataDir2(home = homedir9()) {
+function boosterDataDir2(home = homedir10()) {
   return join36(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster");
 }
-function migrationLockDir(home = homedir9()) {
+function migrationLockDir(home = homedir10()) {
   return join36(boosterDataDir2(home), MIGRATION_LOCK_DIRNAME);
 }
-function migrationStatePath(home = homedir9()) {
+function migrationStatePath(home = homedir10()) {
   return join36(boosterDataDir2(home), MIGRATION_STATE_FILENAME);
 }
 function parseProcStatStartTime(content) {
@@ -7842,7 +7843,7 @@ function reclaimDeadLock(lockDir, holder, deps) {
   }
   throw new MigrationLockError(holderMessage(grabbed ?? holder), "LOCK_HELD");
 }
-function acquireMigrationLock({ home = homedir9(), deps = defaultDeps(), maxAttempts = 3 } = {}) {
+function acquireMigrationLock({ home = homedir10(), deps = defaultDeps(), maxAttempts = 3 } = {}) {
   const lockDir = migrationLockDir(home);
   mkdirSync20(boosterDataDir2(home), { recursive: true });
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -7883,7 +7884,7 @@ function releaseMigrationLock(handle) {
   }
   return false;
 }
-function adoptMigrationLock({ home = homedir9(), token, deps = defaultDeps() } = {}) {
+function adoptMigrationLock({ home = homedir10(), token, deps = defaultDeps() } = {}) {
   const lockDir = migrationLockDir(home);
   const meta = readLockMeta(lockDir);
   if (!meta || !token || meta.token !== token) {
@@ -7898,7 +7899,7 @@ function invalidateMigrationLockToken(handle) {
   writeMetaAtomic(handle.lockDir, { ...meta, token: `invalidated:${meta.token}` });
   return true;
 }
-function breakMigrationLock({ home = homedir9(), confirmed = false, expectToken, deps = defaultDeps() } = {}) {
+function breakMigrationLock({ home = homedir10(), confirmed = false, expectToken, deps = defaultDeps() } = {}) {
   const lockDir = migrationLockDir(home);
   if (!existsSync34(lockDir)) return { present: false, removed: false, holder: null, alive: false };
   const holder = readLockMeta(lockDir);
@@ -7908,7 +7909,7 @@ function breakMigrationLock({ home = homedir9(), confirmed = false, expectToken,
   rmSync15(lockDir, { recursive: true, force: true });
   return { present: true, removed: true, holder, alive };
 }
-function readMigrationState(home = homedir9()) {
+function readMigrationState(home = homedir10()) {
   const p = migrationStatePath(home);
   if (!existsSync34(p)) return null;
   const parsed = JSON.parse(readFileSync29(p, "utf8"));
@@ -7947,7 +7948,7 @@ function removeUninstallerDir(dir) {
     }
   }
 }
-function finishUninstall({ home = homedir9(), token, uninstallerDir, agyBin, baseline, deps = defaultDeps(), uninstall } = {}) {
+function finishUninstall({ home = homedir10(), token, uninstallerDir, agyBin, baseline, deps = defaultDeps(), uninstall } = {}) {
   let handle;
   try {
     const state = readMigrationState(home);
@@ -8043,7 +8044,7 @@ import {
   mkdtempSync as mkdtempSync9
 } from "node:fs";
 import { join as join37, dirname as dirname23, resolve as resolve21, sep as sep5, isAbsolute as isAbsolute11, delimiter as delimiter2 } from "node:path";
-import { homedir as homedir10, tmpdir as tmpdir10 } from "node:os";
+import { homedir as homedir11, tmpdir as tmpdir10 } from "node:os";
 import { execFileSync as execFileSync18, spawn as spawn4 } from "node:child_process";
 import { randomBytes as randomBytes4 } from "node:crypto";
 function paths(home) {
@@ -8598,7 +8599,7 @@ async function migrateLocked(ctx) {
   return 0;
 }
 function buildContext(opts) {
-  const home = opts.home ?? homedir10();
+  const home = opts.home ?? homedir11();
   const out = opts.log ?? ((m) => process.stdout.write(`${m}
 `));
   const errOut = opts.err ?? ((m) => process.stderr.write(`${m}
@@ -8642,7 +8643,7 @@ async function migrate(opts = {}) {
     if (!ctx.keepLock) releaseMigrationLock(ctx.lock);
   }
 }
-async function breakLock({ home = homedir10(), force = false, confirm, log: log2, err, deps } = {}) {
+async function breakLock({ home = homedir11(), force = false, confirm, log: log2, err, deps } = {}) {
   const out = log2 ?? ((m) => process.stdout.write(`${m}
 `));
   const errOut = err ?? ((m) => process.stderr.write(`${m}
@@ -8675,7 +8676,7 @@ async function breakLock({ home = homedir10(), force = false, confirm, log: log2
     return 1;
   }
 }
-function finishUninstallCommand({ home = homedir10(), token, uninstallerDir, agyBin, baseline, err } = {}) {
+function finishUninstallCommand({ home = homedir11(), token, uninstallerDir, agyBin, baseline, err } = {}) {
   if (!baseline) {
     (err ?? ((m) => process.stderr.write(`${m}
 `)))("error: --finish-uninstall requires --baseline <pre-migration.baseline.json>");
@@ -13392,6 +13393,7 @@ async function runAgy({
   platform: platform3 = process.platform
 }) {
   if (!model || !prompt) throw new Error("runAgy: model and prompt are required");
+  cwd = typeof cwd === "string" && Boolean(cwd.trim()) ? cwd : void 0;
   const resolvedModel = resolveModelSlug(model);
   const userHome = process.env.AGB_HOME_DIR || homedir5();
   const agyBin = bin ?? process.env.AGB_AGY_BIN ?? (resolveAgyBinary(userHome) || "agy");
@@ -13473,7 +13475,25 @@ async function runAgy({
           kind: "containment_unavailable"
         });
       }
-    } else {
+    }
+    let validBuilderCwd = false;
+    if (cwd) {
+      try {
+        validBuilderCwd = statSync5(cwd).isDirectory();
+      } catch {
+        validBuilderCwd = false;
+      }
+    }
+    if (!validBuilderCwd) {
+      return Promise.resolve({
+        ok: false,
+        output: "",
+        ms: 0,
+        error: "Builder containment requires an existing directory worktree cwd",
+        kind: "containment_unavailable"
+      });
+    }
+    if (containment) {
       const containmentCheck = checkKernelContainment(platform3, { env: effectiveEnv });
       if (!containmentCheck.supported) {
         if (platform3 !== "win32") {
@@ -14076,8 +14096,12 @@ async function runAgy({
     } else {
       spawnEnv = { ...process.env, ...env || {} };
     }
-    delete spawnEnv.AGB_WORKER_TICKET;
-    delete spawnEnv.AGB_WORKER_MODE;
+    for (const k of Object.keys(spawnEnv)) {
+      if (/^(?:agb_worker_ticket|agb_worker_mode|init_cwd)$/i.test(k)) delete spawnEnv[k];
+    }
+    if (cwd) {
+      spawnEnv.PWD = cwd;
+    }
     const workerTicket = typeof worker?.ticket === "string" ? worker.ticket.trim() : "";
     if (workerTicket) spawnEnv.AGB_WORKER_TICKET = workerTicket;
     else spawnEnv.AGB_WORKER_MODE = "readonly";
@@ -14089,15 +14113,14 @@ async function runAgy({
     if (isBuilder) {
       delete spawnEnv.XDG_RUNTIME_DIR;
       delete spawnEnv.DBUS_SESSION_BUS_ADDRESS;
-      delete spawnEnv.GIT_DIR;
-      delete spawnEnv.GIT_WORK_TREE;
-      if (cwd) {
-        const agbHome = stageBuilderGeminiHome(cwd, userHome, platform3);
-        spawnEnv.HOME = agbHome;
-        spawnEnv.XDG_CONFIG_HOME = agbHome;
-      } else if (!spawnEnv.HOME && process.env.HOME) {
-        spawnEnv.HOME = process.env.HOME;
+      for (const k of Object.keys(spawnEnv)) {
+        if (/^(?:git_|agy_workspace$|antigravity_workspace$)/i.test(k)) delete spawnEnv[k];
       }
+      const agbHome = stageBuilderGeminiHome(cwd, userHome, platform3);
+      spawnEnv.HOME = agbHome;
+      spawnEnv.XDG_CONFIG_HOME = agbHome;
+      spawnEnv.AGY_WORKSPACE = cwd;
+      spawnEnv.ANTIGRAVITY_WORKSPACE = cwd;
       if (repo || cwd) {
         const rootDir = repo ?? dirname16(cwd);
         spawnEnv.GIT_CEILING_DIRECTORIES = join22(rootDir, ".worktrees");
@@ -17451,6 +17474,13 @@ import { homedir as homedir7 } from "node:os";
 import { join as join30, resolve as resolve17 } from "node:path";
 var GIT_TIMEOUT_MS3 = 1e4;
 var ABSENT2 = "absent";
+function sanitizedGitEnv(baseEnv = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(baseEnv)) {
+    if (!/^git_/i.test(k)) out[k] = v;
+  }
+  return out;
+}
 function digestOrAbsent(dir) {
   if (!existsSync28(dir) || !statSync9(dir).isDirectory()) return ABSENT2;
   return computeDirectoryDigest(dir, { exclude: [".adlc", ".booster"] });
@@ -17460,15 +17490,16 @@ function hooksDirFor(cwd) {
     cwd,
     encoding: "utf8",
     timeout: GIT_TIMEOUT_MS3,
-    stdio: ["ignore", "pipe", "pipe"]
+    stdio: ["ignore", "pipe", "pipe"],
+    env: sanitizedGitEnv()
   }).trim();
   return resolve17(cwd, out);
 }
-function snapshotRunIntegrity({ cwd, home = homedir7() } = {}) {
+function snapshotRunIntegrity({ cwd, env = process.env, home = env.AGB_HOME_DIR || homedir7() } = {}) {
   try {
     const pluginsDir = pluginsDirFor(home);
     const plugins = {};
-    for (const name of [BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME]) {
+    for (const name of [BOOSTER_PLUGIN_NAME, ADLC_ANTIGRAVITY_PLUGIN_NAME, ADLC_GEMINI_PLUGIN_NAME]) {
       plugins[name] = digestOrAbsent(join30(pluginsDir, name));
     }
     const hooksPath = hooksDirFor(cwd);
@@ -17495,14 +17526,15 @@ function configuredHooksPath(cwd) {
       cwd,
       encoding: "utf8",
       timeout: GIT_TIMEOUT_MS3,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: sanitizedGitEnv()
     }).trim();
   } catch {
     return null;
   }
 }
-function verifyRunIntegrity(baseline, { cwd, worktree, worktreeHooksPath, home = homedir7() } = {}) {
-  const now = snapshotRunIntegrity({ cwd, home });
+function verifyRunIntegrity(baseline, { cwd, worktree, worktreeHooksPath, env = process.env, home = env.AGB_HOME_DIR || homedir7() } = {}) {
+  const now = snapshotRunIntegrity({ cwd, env, home });
   if (!now.ok) return { ok: false, reasons: [now.error] };
   const reasons = diffRunIntegrity(baseline, now.snapshot);
   if (worktree) {
@@ -17724,9 +17756,10 @@ var TerminalHUD = class {
 // lib/scheduler-verify.mjs
 import { existsSync as existsSync30, lstatSync as lstatSync15, mkdirSync as mkdirSync16, mkdtempSync as mkdtempSync7, readlinkSync as readlinkSync2, realpathSync as realpathSync12, rmSync as rmSync12, writeFileSync as writeFileSync17 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
-import { platform as platform2, tmpdir as tmpdir8 } from "node:os";
+import { homedir as homedir8, platform as platform2, tmpdir as tmpdir8 } from "node:os";
 import path2, { join as join32 } from "node:path";
 init_adlc_bridge();
+init_plugin_paths();
 var RAILS_GUARD_TIMEOUT_MS = 3e4;
 var FLAIL_DETECTOR_TIMEOUT_MS = 15e3;
 var CONSENSUS_FIX_TIMEOUT_MS = 3e5;
@@ -17984,11 +18017,30 @@ async function checkRailsGuard({ worktree, base, rails, adlcBin }) {
   }
   return { violations };
 }
-function checkEnforcementAvailable(repo) {
+function checkEnforcementAvailable(repo, { env = process.env, home = env.AGB_HOME_DIR || homedir8(), bundled = IS_BUNDLED } = {}) {
   if (!existsSync30(join32(repo, ".adlc"))) {
     return { available: false, reason: "target repo is not ADLC-initialized (no .adlc/ directory) \u2014 live rail enforcement disabled, post-hoc adlc rails-guard still runs" };
   }
-  const contract = readPluginContract();
+  const primaryDir = pluginManifestDir({ env, bundled, home });
+  let pluginName = ADLC_ANTIGRAVITY_PLUGIN_NAME;
+  let contract = readPluginContract({ dir: primaryDir });
+  if (contract.status === "unreadable" && !bundled && !env.AGB_PLUGIN_DIR) {
+    let primaryAbsent = false;
+    try {
+      lstatSync15(join32(primaryDir, "plugin.json"));
+    } catch (err) {
+      primaryAbsent = err?.code === "ENOENT";
+    }
+    if (primaryAbsent) {
+      const geminiDir = join32(pluginsDirFor(home), ADLC_GEMINI_PLUGIN_NAME);
+      try {
+        lstatSync15(join32(geminiDir, "plugin.json"));
+        pluginName = ADLC_GEMINI_PLUGIN_NAME;
+        contract = readPluginContract({ dir: geminiDir });
+      } catch {
+      }
+    }
+  }
   switch (contract.status) {
     case "compatible":
       return { available: true, reason: null };
@@ -17996,14 +18048,14 @@ function checkEnforcementAvailable(repo) {
       return {
         available: false,
         abort: true,
-        reason: `installed adlc-antigravity plugin declares adlcContract ${contract.contract}, but this antigravity-booster projects contract ${SUPPORTED_PLUGIN_CONTRACT} \u2014 refusing to run: a version-skewed plugin would enforce a different tickets/hook contract than the booster generates. ` + (contract.contract > SUPPORTED_PLUGIN_CONTRACT ? "Upgrade antigravity-booster so it speaks the newer plugin contract." : "Upgrade the adlc-antigravity plugin (agb bootstrap) so it speaks the contract this booster projects.")
+        reason: `installed ${pluginName} plugin declares adlcContract ${contract.contract}, but this antigravity-booster projects contract ${SUPPORTED_PLUGIN_CONTRACT} \u2014 refusing to run: a version-skewed plugin would enforce a different tickets/hook contract than the booster generates. ` + (contract.contract > SUPPORTED_PLUGIN_CONTRACT ? "Upgrade antigravity-booster so it speaks the newer plugin contract." : `Upgrade the ${pluginName} plugin (agb bootstrap) so it speaks the contract this booster projects.`)
       };
     case "tolerant":
-      return { available: false, reason: `installed adlc-antigravity plugin manifest declares no adlcContract field (older plugin) \u2014 cannot confirm it speaks booster contract ${SUPPORTED_PLUGIN_CONTRACT}; live rail enforcement disabled, post-hoc adlc rails-guard still runs` };
+      return { available: false, reason: `installed ${pluginName} plugin manifest declares no adlcContract field (older plugin) \u2014 cannot confirm it speaks booster contract ${SUPPORTED_PLUGIN_CONTRACT}; live rail enforcement disabled, post-hoc adlc rails-guard still runs` };
     case "unreadable":
     case "corrupt":
     default:
-      return { available: false, reason: `adlc-antigravity plugin manifest unreadable (${contract.error}) \u2014 treating as not installed; live rail enforcement disabled, post-hoc adlc rails-guard still runs` };
+      return { available: false, reason: `${pluginName} plugin manifest unreadable (${contract.error}) \u2014 treating as not installed; live rail enforcement disabled, post-hoc adlc rails-guard still runs` };
   }
 }
 
@@ -18090,28 +18142,58 @@ function listObjects(objectsDir) {
   walk(objectsDir);
   return set;
 }
+var GIT_MAX_BUFFER2 = 256 * 1024 * 1024;
 function getGitCommonDir(repo) {
   try {
-    const raw = execFileSync13("git", ["rev-parse", "--git-common-dir"], { cwd: repo, encoding: "utf8" }).trim();
+    const raw = execFileSync13("git", ["rev-parse", "--git-common-dir"], {
+      cwd: repo,
+      encoding: "utf8",
+      maxBuffer: GIT_MAX_BUFFER2,
+      env: sanitizedGitEnv()
+    }).trim();
     return resolve18(repo, raw);
   } catch {
     return join33(repo, ".git");
   }
 }
+function getGitIndexPath(repo, fallbackGitDir) {
+  try {
+    const raw = execFileSync13("git", ["rev-parse", "--git-path", "index"], {
+      cwd: repo,
+      encoding: "utf8",
+      maxBuffer: GIT_MAX_BUFFER2,
+      env: sanitizedGitEnv()
+    }).trim();
+    if (raw) return resolve18(repo, raw);
+  } catch {
+  }
+  return join33(fallbackGitDir ?? getGitCommonDir(repo), "index");
+}
 function snapshotRootGit(repo) {
-  const g = (...args) => execFileSync13("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  const gitEnv = sanitizedGitEnv();
+  const g = (...args) => execFileSync13("git", args, { cwd: repo, encoding: "utf8", maxBuffer: GIT_MAX_BUFFER2, env: gitEnv }).trim();
   const gitDir = getGitCommonDir(repo);
   const headSha = g("rev-parse", "HEAD");
-  const status = execFileSync13("git", ["status", "--porcelain=v1", "-z"], { cwd: repo });
+  const status = execFileSync13("git", ["status", "--porcelain=v1", "-z"], {
+    cwd: repo,
+    maxBuffer: GIT_MAX_BUFFER2,
+    env: gitEnv
+  });
   let refs = "";
   try {
-    refs = execFileSync13("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
-  } catch {
+    refs = execFileSync13("git", ["show-ref"], {
+      cwd: repo,
+      encoding: "utf8",
+      maxBuffer: GIT_MAX_BUFFER2,
+      env: gitEnv
+    });
+  } catch (err) {
+    if (err.code === "ENOBUFS") throw err;
   }
   const configPath = join33(gitDir, "config");
   const configHash = existsSync31(configPath) ? crypto5.createHash("sha256").update(readFileSync25(configPath)).digest("hex") : null;
   const hooksHash = hashDir(join33(gitDir, "hooks"));
-  const indexPath = join33(gitDir, "index");
+  const indexPath = getGitIndexPath(repo, gitDir);
   const indexHash = existsSync31(indexPath) ? crypto5.createHash("sha256").update(readFileSync25(indexPath)).digest("hex") : null;
   const packedRefsPath = join33(gitDir, "packed-refs");
   const packedRefsHash = existsSync31(packedRefsPath) ? crypto5.createHash("sha256").update(readFileSync25(packedRefsPath)).digest("hex") : null;
@@ -18143,7 +18225,8 @@ function verifyRootGitIntegrity(repo, pre, {
   mergedShas = /* @__PURE__ */ new Set(),
   mergedTickets = /* @__PURE__ */ new Set(),
   base = "main",
-  knownTickets = /* @__PURE__ */ new Set()
+  knownTickets = /* @__PURE__ */ new Set(),
+  gitMaxBuffer = GIT_MAX_BUFFER2
 } = {}) {
   const mergedTicketIds = /* @__PURE__ */ new Set();
   if (mergedTickets) {
@@ -18173,7 +18256,8 @@ function verifyRootGitIntegrity(repo, pre, {
       knownTicketIds.add(parts[1]);
     }
   }
-  const g = (...args) => execFileSync13("git", args, { cwd: repo, encoding: "utf8" }).trim();
+  const gitEnv = sanitizedGitEnv();
+  const g = (...args) => execFileSync13("git", args, { cwd: repo, encoding: "utf8", maxBuffer: gitMaxBuffer, env: gitEnv }).trim();
   const gitDir = getGitCommonDir(repo);
   const postHeadSha = g("rev-parse", "HEAD");
   let headMovedByMerge = false;
@@ -18184,7 +18268,11 @@ function verifyRootGitIntegrity(repo, pre, {
       return { ok: false, error: `Root HEAD moved from ${pre.headSha} to unproven commit ${postHeadSha}` };
     }
   }
-  const postStatus = execFileSync13("git", ["status", "--porcelain=v1", "-z"], { cwd: repo });
+  const postStatus = execFileSync13("git", ["status", "--porcelain=v1", "-z"], {
+    cwd: repo,
+    maxBuffer: gitMaxBuffer,
+    env: gitEnv
+  });
   if (headMovedByMerge) {
     if (pre.status.length === 0 && postStatus.length !== 0) {
       return { ok: false, error: "Porcelain status altered in root repository" };
@@ -18202,7 +18290,7 @@ function verifyRootGitIntegrity(repo, pre, {
     return { ok: false, error: "Root Git hooks altered" };
   }
   if (!headMovedByMerge) {
-    const indexPath = join33(gitDir, "index");
+    const indexPath = getGitIndexPath(repo, gitDir);
     const postIndexHash = existsSync31(indexPath) ? crypto5.createHash("sha256").update(readFileSync25(indexPath)).digest("hex") : null;
     if (postIndexHash !== pre.indexHash) {
       return { ok: false, error: "Root Git index altered" };
@@ -18226,8 +18314,16 @@ function verifyRootGitIntegrity(repo, pre, {
   }
   let postRefsRaw = "";
   try {
-    postRefsRaw = execFileSync13("git", ["show-ref"], { cwd: repo, encoding: "utf8" });
-  } catch {
+    postRefsRaw = execFileSync13("git", ["show-ref"], {
+      cwd: repo,
+      encoding: "utf8",
+      maxBuffer: gitMaxBuffer,
+      env: gitEnv
+    });
+  } catch (err) {
+    if (err.code === "ENOBUFS") {
+      return { ok: false, error: `Failed to enumerate Git refs: ${err.message}` };
+    }
   }
   const parseRefs = (raw) => {
     const map = /* @__PURE__ */ new Map();
@@ -18283,7 +18379,7 @@ function verifyRootGitIntegrity(repo, pre, {
           if (!isLegitimateOldSha) {
             for (const mSha of mergedShas) {
               try {
-                execFileSync13("git", ["merge-base", "--is-ancestor", sha, mSha], { cwd: repo });
+                g("merge-base", "--is-ancestor", sha, mSha);
                 isLegitimateOldSha = true;
                 break;
               } catch {
@@ -18309,7 +18405,7 @@ function verifyRootGitIntegrity(repo, pre, {
       if (candidateSha) {
         let isReachable = false;
         try {
-          execFileSync13("git", ["merge-base", "--is-ancestor", postSha, candidateSha], { cwd: repo });
+          g("merge-base", "--is-ancestor", postSha, candidateSha);
           isReachable = true;
         } catch {
         }
@@ -18363,7 +18459,7 @@ function verifyRootGitIntegrity(repo, pre, {
         if (candidateSha && sha !== candidateSha) {
           let isReachable = false;
           try {
-            execFileSync13("git", ["merge-base", "--is-ancestor", sha, candidateSha], { cwd: repo });
+            g("merge-base", "--is-ancestor", sha, candidateSha);
             isReachable = true;
           } catch {
           }
@@ -18375,14 +18471,14 @@ function verifyRootGitIntegrity(repo, pre, {
         if (sha !== pre.headSha && !mergedShas.has(sha)) {
           let isLegitimate = false;
           try {
-            execFileSync13("git", ["merge-base", "--is-ancestor", pre.headSha, sha], { cwd: repo });
+            g("merge-base", "--is-ancestor", pre.headSha, sha);
             isLegitimate = true;
           } catch {
           }
           if (!isLegitimate) {
             for (const mSha of mergedShas) {
               try {
-                execFileSync13("git", ["merge-base", "--is-ancestor", mSha, sha], { cwd: repo });
+                g("merge-base", "--is-ancestor", mSha, sha);
                 isLegitimate = true;
                 break;
               } catch {
@@ -18408,23 +18504,42 @@ function verifyRootGitIntegrity(repo, pre, {
   if (newObjects.length > 0) {
     const reachable = /* @__PURE__ */ new Set();
     try {
-      const revListArgs = ["rev-list", "--objects"];
+      const revListArgs = ["rev-list", "--objects", "--no-object-names"];
       if (candidateSha) revListArgs.push(candidateSha);
+      if (pre.headSha) revListArgs.push(pre.headSha);
+      if (postHeadSha && postHeadSha !== pre.headSha) revListArgs.push(postHeadSha);
       revListArgs.push(
         "--glob=refs/namespaces/attempts",
         "--glob=refs/heads/agb",
         "--glob=refs/transactions",
-        "--glob=refs/quarantine",
-        `refs/heads/${base}`
+        "--glob=refs/quarantine"
       );
-      const out = execFileSync13("git", revListArgs, { cwd: repo, encoding: "utf8" });
+      if (typeof base === "string" && base.trim()) {
+        const baseRef = base.startsWith("refs/") ? base : `refs/heads/${base}`;
+        try {
+          execFileSync13("git", ["show-ref", "--verify", "--quiet", baseRef], {
+            cwd: repo,
+            maxBuffer: gitMaxBuffer,
+            env: gitEnv
+          });
+          revListArgs.push(baseRef);
+        } catch {
+        }
+      }
+      const out = execFileSync13("git", revListArgs, {
+        cwd: repo,
+        encoding: "utf8",
+        maxBuffer: gitMaxBuffer,
+        env: gitEnv
+      });
       for (const line of out.split("\n").filter(Boolean)) {
         const sha = line.trim().split(/\s+/)[0];
         if (sha && sha.length >= 4) {
           reachable.add(`${sha.slice(0, 2)}/${sha.slice(2)}`);
         }
       }
-    } catch {
+    } catch (err) {
+      return { ok: false, error: `Failed to enumerate reachable Git objects: ${err.message}` };
     }
     for (const newObj of newObjects) {
       if (newObj.startsWith("pack/")) {
@@ -18433,7 +18548,12 @@ function verifyRootGitIntegrity(repo, pre, {
           const packFullPath = join33(gitDir, "objects", newObj);
           let verifyOut = "";
           try {
-            verifyOut = execFileSync13("git", ["verify-pack", "-v", packFullPath], { cwd: repo, encoding: "utf8" });
+            verifyOut = execFileSync13("git", ["verify-pack", "-v", packFullPath], {
+              cwd: repo,
+              encoding: "utf8",
+              maxBuffer: gitMaxBuffer,
+              env: gitEnv
+            });
           } catch (err) {
             return { ok: false, error: `Unauthorized or invalid pack file detected: ${newObj} (${err.message})` };
           }
@@ -18556,7 +18676,11 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
     }
   }
   try {
-    const hp = execFileSync13("git", ["config", "--get", "core.hooksPath"], { cwd: worktreePath, encoding: "utf8" }).trim();
+    const hp = execFileSync13("git", ["config", "--get", "core.hooksPath"], {
+      cwd: worktreePath,
+      encoding: "utf8",
+      env: sanitizedGitEnv()
+    }).trim();
     if (hp && hp !== "/dev/null" && hp !== "NUL") {
       throw new Error(`Security violation: core.hooksPath tampered with: ${hp}`);
     }
@@ -18569,6 +18693,7 @@ function hostMediatedFetch(repo, worktreePath, attemptNamespace, expectedGitDir 
   if (expectedGitDir) {
     verifyWorktreeGitPointer(worktreePath, expectedGitDir);
   }
+  const gitEnv = sanitizedGitEnv();
   const destRef = `refs/namespaces/${attemptNamespace}/refs/heads/candidate`;
   const gitUrl = pathToFileURL(join33(worktreePath, ".git")).href;
   execFileSync13(
@@ -18582,9 +18707,13 @@ function hostMediatedFetch(repo, worktreePath, attemptNamespace, expectedGitDir 
       gitUrl,
       `refs/heads/candidate:${destRef}`
     ],
-    { cwd: repo }
+    { cwd: repo, env: gitEnv }
   );
-  return execFileSync13("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH3}`, "rev-parse", destRef], { cwd: repo, encoding: "utf8" }).trim();
+  return execFileSync13("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH3}`, "rev-parse", destRef], {
+    cwd: repo,
+    encoding: "utf8",
+    env: gitEnv
+  }).trim();
 }
 var BUILD_TIMEOUT = process.env.AGB_BUILD_TIMEOUT ?? "5m";
 async function reconcileIntegrationJournal(repo, base = "main") {
@@ -19395,8 +19524,13 @@ Fix: ${agyCheck.fix}`);
             if (gitPointerOk) {
               restoreWorktreeBaseRef();
             }
+            const responseText = Array.isArray(build.events) ? [
+              build.terminalResult?.response,
+              ...build.events.filter((e) => e?.type === "assistant" || e?.type === "message" || e?.type === "text").map((e) => e.response ?? e.content ?? e.text ?? "")
+            ].filter((s) => typeof s === "string" && s.length > 0).join("\n") : String(build.output ?? "");
+            const isBlocked = /TICKET-BLOCKED/.test(responseText) || build.events?.some((e) => e.action === "blocked" || e.type === "step_update" && /blocked/i.test(String(e.action ?? "")));
             let candidateSha = null;
-            if (build.ok && gitPointerOk) {
+            if (build.ok && !isBlocked && gitPointerOk) {
               commitAll(worktree, `${t.id}: ${t.title} (strike ${strikeNum})`);
               try {
                 candidateSha = hostMediatedFetch(repo, worktree, attemptSlug, expectedGitDir);
@@ -19434,11 +19568,6 @@ Fix: ${agyCheck.fix}`);
               status.strike(t.id, { model, error: strikeError, strikes });
               throw new Error(strikeError);
             }
-            const responseText = Array.isArray(build.events) ? [
-              build.terminalResult?.response,
-              ...build.events.filter((e) => e?.type === "assistant" || e?.type === "message" || e?.type === "text").map((e) => e.response ?? e.content ?? e.text ?? "")
-            ].filter((s) => typeof s === "string" && s.length > 0).join("\n") : String(build.output ?? "");
-            const isBlocked = /TICKET-BLOCKED/.test(responseText) || build.events?.some((e) => e.action === "blocked" || e.type === "step_update" && /blocked/i.test(String(e.action ?? "")));
             if (isBlocked) {
               ticketModelsUsed.add(model);
               ticketFaultModels.add(model);
@@ -20903,7 +21032,7 @@ init_adlc_bridge();
 import { existsSync as existsSync33, mkdirSync as mkdirSync18, readdirSync as readdirSync15, lstatSync as lstatSync17, readlinkSync as readlinkSync3, symlinkSync as symlinkSync5, copyFileSync as copyFileSync6, rmSync as rmSync14, readFileSync as readFileSync27, appendFileSync as appendFileSync2 } from "node:fs";
 import { join as join34, resolve as resolve20, dirname as dirname21, basename as basename10 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
-import { homedir as homedir8 } from "node:os";
+import { homedir as homedir9 } from "node:os";
 import { execSync as execSync2, execFileSync as execFileSync16 } from "node:child_process";
 import { createRequire } from "node:module";
 init_plugin_paths();
@@ -21082,7 +21211,7 @@ function resolveBoosterPluginPath() {
 function bootstrap({
   force = false,
   forceReinstall = false,
-  home = homedir8(),
+  home = homedir9(),
   destination = join34(home, ".gemini", "skills"),
   pluginPath,
   agyBin
@@ -21786,7 +21915,7 @@ try {
     const { serveSidecar: serveSidecar2 } = await Promise.resolve().then(() => (init_server(), server_exports));
     const { randomBytes: randomBytes5 } = await import("node:crypto");
     const { rmSync: rmSync17 } = await import("node:fs");
-    const { homedir: homedir11 } = await import("node:os");
+    const { homedir: homedir12 } = await import("node:os");
     const port = portStr ? Number(portStr) : 3333;
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       console.error(`agb: invalid port '${portStr}'`);
@@ -21800,7 +21929,7 @@ try {
     let createdDir = false;
     let wroteManifests = false;
     try {
-      pluginDir = !IS_BUNDLED && process.env.AGB_PLUGIN_DIR || join39(homedir11(), ".gemini", pluginId);
+      pluginDir = !IS_BUNDLED && process.env.AGB_PLUGIN_DIR || join39(homedir12(), ".gemini", pluginId);
       if (!existsSync37(pluginDir)) {
         mkdirSync23(pluginDir, { recursive: true, mode: 448 });
         createdDir = true;

@@ -330,7 +330,7 @@ var require_brace_expansion = __commonJS({
 });
 
 // hooks/policy/evaluate.mjs
-import { lstatSync as lstatSync8, readdirSync as readdirSync6, realpathSync as realpathSync2 } from "node:fs";
+import { lstatSync as lstatSync9, readdirSync as readdirSync6, realpathSync as realpathSync2 } from "node:fs";
 import { homedir as homedir2, userInfo } from "node:os";
 import { basename as basename5, isAbsolute as isAbsolute5, join as join12, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3845,7 +3845,7 @@ function isRailAncestorOnly(rel, rail, platform) {
 }
 
 // hooks/policy/shell.mjs
-import { readdirSync as readdirSync5 } from "node:fs";
+import { lstatSync as lstatSync8, readdirSync as readdirSync5 } from "node:fs";
 import { basename as basename4, dirname as dirname11, isAbsolute as isAbsolute4, join as join11, relative as relative4, resolve as resolve7, sep as sep4 } from "node:path";
 
 // hooks/policy/shell-lexer.mjs
@@ -4056,7 +4056,8 @@ var GIT_READ_FLAGS = {
   diff: [/^--staged$/, /^--cached$/, /^--stat$/, /^--name-only$/, /^--name-status$/, /^--color$/, /^--no-color$/, /^-p$/, /^-u$/, /^--$/],
   log: [/^--follow$/, /^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
   show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/],
-  blame: [/^-L.+$/, /^-w$/, /^-M$/, /^-C$/, /^-e$/, /^--porcelain$/, /^--$/]
+  blame: [/^-L.+$/, /^-w$/, /^-M$/, /^-C$/, /^-e$/, /^--porcelain$/, /^--$/],
+  "rev-parse": [/^--abbrev-ref(=.*)?$/, /^--verify$/, /^--short(=\d+)?$/, /^--show-toplevel$/, /^--git-dir$/, /^--git-common-dir$/, /^--git-path$/, /^--is-inside-work-tree$/, /^-q$/, /^--quiet$/, /^--$/]
 };
 var TEST_FLAG_OK = /^(--test-(name-pattern|skip-pattern|concurrency|timeout)=.+|--test-only|--test-force-exit|--experimental-test-coverage)$/;
 var GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o.*)$/;
@@ -4096,8 +4097,17 @@ function gitSubcommand(argv) {
   }
   return { verb: argv[i], args: argv.slice(i + 1) };
 }
-function hasWriteRedirect(sub) {
-  return sub.redirects.some((r) => r.op.includes(">"));
+function isNullDeviceSink(r, platform) {
+  if (platform === "win32" || r.dynamic || r.target !== "/dev/null") return false;
+  if (!/^(?:[12]?>>?|&>>?)$/.test(r.op)) return false;
+  try {
+    if (lstatSync8("/dev/null").isSymbolicLink()) return false;
+  } catch {
+  }
+  return true;
+}
+function hasWriteRedirect(sub, platform) {
+  return sub.redirects.some((r) => r.op.includes(">") && !isNullDeviceSink(r, platform));
 }
 function candidateTokens(sub) {
   const out = [];
@@ -4131,12 +4141,12 @@ function verbClass(argv) {
   if (["cp", "tar", "install", "ln", "unzip", "truncate", "dd", "tee", "chmod", "chown", "touch", "mkdir"].includes(cmd)) return { writes: true };
   return {};
 }
-function isStage1(sub) {
-  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
+function isStage1(sub, platform) {
+  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub, platform)) return false;
   if (sub.argv.some(hasHomePrefix)) return false;
   const [cmd, verb, ...rest] = sub.argv;
   if (PURE_READERS.has(cmd)) return true;
-  if (cmd !== "git" || !GIT_READ_FLAGS[verb]) return false;
+  if (cmd !== "git" || !Object.hasOwn(GIT_READ_FLAGS, verb)) return false;
   const allowed = GIT_READ_FLAGS[verb];
   return rest.every((t) => !t.startsWith("-") || allowed.some((re) => re.test(t)));
 }
@@ -4160,7 +4170,7 @@ function isLiteralShardPath(token, cwd, ctx) {
   return rel !== null && rel.startsWith(`${TICKET_STORE_DIR}/`) && rel.endsWith(".json") && !rel.slice(TICKET_STORE_DIR.length + 1).includes("/");
 }
 function isStage2(sub, cwd, ctx) {
-  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
+  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub, ctx.platform)) return false;
   const [cmd, a1, a2, ...rest] = sub.argv;
   if (cmd === "adlc" && a1 === "ticket" && a2 === "create") return true;
   if (cmd === "git" && a1 === "add") {
@@ -4169,8 +4179,8 @@ function isStage2(sub, cwd, ctx) {
   }
   return false;
 }
-function isTestCommand(sub) {
-  if (sub.dynamic || sub.assignments.length > 0 || sub.redirects.length > 0) return false;
+function isTestCommand(sub, platform) {
+  if (sub.dynamic || sub.assignments.length > 0 || !sub.redirects.every((r) => isNullDeviceSink(r, platform))) return false;
   const [cmd, a1, a2] = sub.argv;
   if (cmd === "npm" && a1 === "test") {
     if (sub.argv.length === 2) return true;
@@ -4215,7 +4225,7 @@ function isRoutineCommit(args, cwd, ctx) {
   return true;
 }
 function isRoutine(sub, cwd, ctx) {
-  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
+  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub, ctx.platform)) return false;
   const [cmd, a1, ...rest] = sub.argv;
   if (cmd !== "git") return false;
   if (a1 === "add") {
@@ -4283,7 +4293,9 @@ function writesIntoProtectedParent(r, ctx) {
   return ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform));
 }
 function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd = false }) {
-  const writeTargets = new Set(sub.redirects.filter((r) => r.op.includes(">")).map((r) => r.target));
+  const writeTargets = new Set(
+    sub.redirects.filter((r) => r.op.includes(">") && !isNullDeviceSink(r, ctx.platform)).map((r) => r.target)
+  );
   const verdicts = [];
   const repos = [];
   const destructive = Boolean(verbs.deletes || verbs.writes);
@@ -4302,7 +4314,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd =
       if ((destructive || writeTargets.has(token)) && writesIntoProtectedParent(r, ctx)) {
         return { verdict: deny("Command writes into a directory containing platform configuration, plugins, or Node runtimes"), repos };
       }
-      const pureRead = PURE_READERS.has(sub.argv[0]) && !hasWriteRedirect(sub);
+      const pureRead = PURE_READERS.has(sub.argv[0]) && !hasWriteRedirect(sub, ctx.platform);
       if (!stage1 && (!pureRead || writeTargets.has(token))) {
         const glob = globTargetVerdict(token, cwd, ctx);
         if (glob) return { verdict: glob, repos };
@@ -4389,8 +4401,8 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   }
   const verbs = verbClass(argv);
   const shim = isShimInvocation(argv, ctx);
-  const stage1 = !shim && isStage1(sub);
-  const testCmd = !shim && isTestCommand(sub);
+  const stage1 = !shim && isStage1(sub, ctx.platform);
+  const testCmd = !shim && isTestCommand(sub, ctx.platform);
   const dirChange = DIR_CHANGE.has(argv[0]);
   const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd });
   if (targetVerdict.decision === "deny") return targetVerdict;
@@ -4699,7 +4711,7 @@ function subtreeHoldsAdlc(dir, limit) {
 }
 function isExistingDirectory(p) {
   try {
-    return lstatSync8(p).isDirectory();
+    return lstatSync9(p).isDirectory();
   } catch {
     return false;
   }

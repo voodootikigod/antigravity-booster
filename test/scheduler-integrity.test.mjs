@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runPlan } from '../lib/scheduler.mjs';
-import { snapshotRunIntegrity, diffRunIntegrity, verifyRunIntegrity, ABSENT } from '../lib/run-integrity.mjs';
+import { sanitizedGitEnv, snapshotRunIntegrity, diffRunIntegrity, verifyRunIntegrity, ABSENT } from '../lib/run-integrity.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_integrity_test_${process.pid}.json`);
 
@@ -135,9 +135,55 @@ test('verifyRunIntegrity: a staged plugin that appears mid-run is detected', () 
   try {
     const base = snapshotRunIntegrity({ cwd: repo, home }).snapshot;
     assert.equal(base.plugins['adlc-antigravity'], ABSENT);
+    assert.equal(base.plugins['adlc-gemini'], ABSENT);
     mkdirSync(join(home, '.gemini', 'config', 'plugins', 'adlc-antigravity'), { recursive: true });
     writeFileSync(join(home, '.gemini', 'config', 'plugins', 'adlc-antigravity', 'plugin.json'), '{}');
     assert.deepEqual(verifyRunIntegrity(base, { cwd: repo, home }).reasons, ['staged plugin adlc-antigravity changed']);
+
+    rmSync(join(home, '.gemini', 'config', 'plugins', 'adlc-antigravity'), { recursive: true, force: true });
+    mkdirSync(join(home, '.gemini', 'config', 'plugins', 'adlc-gemini'), { recursive: true });
+    writeFileSync(join(home, '.gemini', 'config', 'plugins', 'adlc-gemini', 'plugin.json'), '{}');
+    assert.deepEqual(verifyRunIntegrity(base, { cwd: repo, home }).reasons, ['staged plugin adlc-gemini changed']);
+
+    // sanitizedGitEnv strips uppercase and Windows mixed/lowercase git_* keys while preserving unrelated keys
+    assert.deepEqual(
+      sanitizedGitEnv({
+        PATH: '/usr/bin',
+        GIT_DIR: '/x',
+        git_index_file: 'C:\\spoof',
+        Git_Config_Count: '1',
+        GITHUB_STEP_SUMMARY: '/keep',
+      }),
+      { PATH: '/usr/bin', GITHUB_STEP_SUMMARY: '/keep' },
+    );
+    // and ambient GIT_* variables (GIT_DIR, GIT_CONFIG_COUNT/KEY/VALUE/PARAMETERS) cannot redirect hooksDirFor or configuredHooksPath
+    const otherGitRepo = makeRepo();
+    const savedGitEnv = {
+      GIT_DIR: process.env.GIT_DIR,
+      GIT_CONFIG_COUNT: process.env.GIT_CONFIG_COUNT,
+      GIT_CONFIG_KEY_0: process.env.GIT_CONFIG_KEY_0,
+      GIT_CONFIG_VALUE_0: process.env.GIT_CONFIG_VALUE_0,
+    };
+    try {
+      process.env.GIT_DIR = join(otherGitRepo, '.git');
+      process.env.GIT_CONFIG_COUNT = '1';
+      process.env.GIT_CONFIG_KEY_0 = 'core.hooksPath';
+      process.env.GIT_CONFIG_VALUE_0 = '/tmp/evil-hooks';
+      const viaEnvBase = snapshotRunIntegrity({ cwd: repo, env: { AGB_HOME_DIR: home } }).snapshot;
+      assert.notEqual(viaEnvBase.plugins['adlc-gemini'], ABSENT);
+      assert.equal(viaEnvBase.hooks.path, join(repo, '.git', 'hooks'));
+      writeFileSync(join(home, '.gemini', 'config', 'plugins', 'adlc-gemini', 'tamper.txt'), 'x');
+      assert.deepEqual(
+        verifyRunIntegrity(viaEnvBase, { cwd: repo, env: { AGB_HOME_DIR: home } }).reasons,
+        ['staged plugin adlc-gemini changed'],
+      );
+    } finally {
+      for (const [k, v] of Object.entries(savedGitEnv)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      rmSync(otherGitRepo, { recursive: true, force: true });
+    }
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });

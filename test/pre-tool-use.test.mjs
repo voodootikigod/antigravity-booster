@@ -820,4 +820,40 @@ test('Booster MCP policy guard: agb_shape and agb_init enforced across interacti
   assert.equal(run('mcp__agb__agb_run', { plan: 'plan.json' }, fx.active, WORKER).decision, 'deny');
 });
 
+test('Shell: POSIX /dev/null output redirections and pure git rev-parse flags pass without weakening file redirect guards', () => {
+  // Stage 1 pure readers and git inspection with /dev/null redirections pass across interactive, worker, and readonly
+  for (const cmd of [
+    'cat lib/lock.mjs 2>/dev/null',
+    'ls -la lib >/dev/null 2>&1',
+    'git status --porcelain=v1 2>/dev/null',
+    'git rev-parse --abbrev-ref HEAD',
+    'git rev-parse --verify --quiet HEAD 2>/dev/null',
+    'git rev-parse --git-path index',
+    'git rev-parse --show-toplevel',
+  ]) {
+    assert.equal(shell(cmd, fx.active, INTERACTIVE).decision, 'pass', `interactive: ${cmd}`);
+    assert.equal(shell(cmd, fx.active, WORKER).decision, 'pass', `worker: ${cmd}`);
+    assert.equal(shell(cmd, fx.active, READONLY).decision, 'pass', `readonly: ${cmd}`);
+  }
 
+  // Headless worker test commands allow /dev/null stderr/stdout redirections, while interactive active-rail still asks
+  assert.equal(shell('node --test test/a.test.mjs 2>/dev/null', fx.active, WORKER).decision, 'pass');
+  assert.equal(shell('npm test >/dev/null 2>&1', fx.active, WORKER).decision, 'pass');
+  assert.equal(shell('node --test test/a.test.mjs 2>/dev/null', fx.active, INTERACTIVE).decision, 'ask');
+
+  // Non-/dev/null redirects, input redirects on testCmd, dynamic /dev/null targets, win32 platform, and prototype/unlisted git verbs stay guarded
+  assert.equal(shell('node --test test/a.test.mjs > out.txt', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('node --test test/a.test.mjs < in.txt', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('cat lib/feature.mjs > /dev/null$FOO', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('cat lib/feature.mjs <> /dev/null', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('git toString', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('git rev-parse --sq-quote foo', fx.active, WORKER).decision, 'deny');
+  assert.equal(
+    evaluatePayload(payload('run_command', { CommandLine: 'cat lib/feature.mjs 2>/dev/null', Cwd: fx.active }, fx.active), {
+      env: WORKER,
+      home: fx.home,
+      platform: 'win32',
+    }).decision,
+    'deny',
+  );
+});
