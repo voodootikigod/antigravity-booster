@@ -342,3 +342,90 @@ test('bootstrap: compatible installed plugin contract completes (links booster s
     rmSync(homeDir, { recursive: true, force: true });
   }
 });
+
+test('checkEnforcementAvailable: recognizes adlc-gemini when adlc-antigravity is absent and AGB_PLUGIN_DIR is unset', () => {
+  const repo = makeMinimalAdlcRepo();
+  const home = mkdtempSync(join(tmpdir(), 'agb-gemini-handshake-'));
+  try {
+    const geminiDir = join(home, '.gemini', 'config', 'plugins', 'adlc-gemini');
+    mkdirSync(geminiDir, { recursive: true });
+
+    // 1. Compatible adlc-gemini (contract 1) -> available: true in unbundled mode;
+    //    bundled mode strictly requires the pinned/bundled adlc-antigravity companion and does NOT fall back to unverified adlc-gemini
+    writeFileSync(join(geminiDir, 'plugin.json'), JSON.stringify({ name: 'adlc-gemini', version: '1.13.0', adlcContract: 1 }));
+    assert.deepEqual(checkEnforcementAvailable(repo, { home, env: {}, bundled: false }), { available: true, reason: null });
+    const bundledOnlyGemini = checkEnforcementAvailable(repo, { home, env: { AGB_PLUGIN_DIR: '/ignored' }, bundled: true });
+    assert.equal(bundledOnlyGemini.available, false, 'bundled mode must not trust unverified adlc-gemini');
+    assert.match(bundledOnlyGemini.reason, /adlc-antigravity plugin manifest unreadable/);
+
+    // 2. Explicit AGB_PLUGIN_DIR in unbundled mode does NOT fall back to adlc-gemini
+    const explicitMissing = checkEnforcementAvailable(repo, { home, env: { AGB_PLUGIN_DIR: join(home, 'missing') }, bundled: false });
+    assert.equal(explicitMissing.available, false);
+    assert.match(explicitMissing.reason, /adlc-antigravity plugin manifest unreadable/);
+
+    // 3. Incompatible adlc-gemini (< supported and > supported) -> loud abort naming adlc-gemini
+    writeFileSync(join(geminiDir, 'plugin.json'), JSON.stringify({ name: 'adlc-gemini', version: '1.13.0', adlcContract: 0 }));
+    const older = checkEnforcementAvailable(repo, { home, env: {}, bundled: false });
+    assert.equal(older.available, false);
+    assert.equal(older.abort, true);
+    assert.match(older.reason, /Upgrade the adlc-gemini plugin/);
+
+    writeFileSync(join(geminiDir, 'plugin.json'), JSON.stringify({ name: 'adlc-gemini', version: '2.0.0', adlcContract: 2 }));
+    const newer = checkEnforcementAvailable(repo, { home, env: {}, bundled: false });
+    assert.equal(newer.available, false);
+    assert.equal(newer.abort, true);
+    assert.match(newer.reason, /Upgrade antigravity-booster/);
+
+    // 4. Tolerant and corrupt adlc-gemini degrade cleanly
+    writeFileSync(join(geminiDir, 'plugin.json'), JSON.stringify({ name: 'adlc-gemini', version: '1.13.0' }));
+    const tolerant = checkEnforcementAvailable(repo, { home, env: {}, bundled: false });
+    assert.equal(tolerant.available, false);
+    assert.notEqual(tolerant.abort, true);
+    assert.match(tolerant.reason, /installed adlc-gemini plugin manifest declares no adlcContract/);
+
+    writeFileSync(join(geminiDir, 'plugin.json'), '{bad-json');
+    const corrupt = checkEnforcementAvailable(repo, { home, env: {}, bundled: false });
+    assert.equal(corrupt.available, false);
+    assert.match(corrupt.reason, /adlc-gemini plugin manifest unreadable/);
+
+    // 5. When adlc-antigravity IS installed alongside adlc-gemini, adlc-antigravity takes precedence;
+    //    if adlc-antigravity/plugin.json is present but unreadable (e.g. EISDIR directory), do NOT mask it by falling back to adlc-gemini!
+    writeFileSync(join(geminiDir, 'plugin.json'), JSON.stringify({ name: 'adlc-gemini', version: '1.13.0', adlcContract: 1 }));
+    const antigravityDir = join(home, '.gemini', 'config', 'plugins', 'adlc-antigravity');
+    mkdirSync(join(antigravityDir, 'plugin.json'), { recursive: true });
+    const brokenPrimary = checkEnforcementAvailable(repo, { home, env: {}, bundled: false });
+    assert.equal(brokenPrimary.available, false, 'present-but-unreadable primary plugin must not silently fall back to adlc-gemini');
+    assert.match(brokenPrimary.reason, /adlc-antigravity plugin manifest unreadable/);
+
+    rmSync(join(antigravityDir, 'plugin.json'), { recursive: true, force: true });
+    writeFileSync(join(antigravityDir, 'plugin.json'), JSON.stringify({ name: 'adlc-antigravity', version: '1.7.0', adlcContract: 1 }));
+    assert.deepEqual(checkEnforcementAvailable(repo, { home, env: {}, bundled: false }), { available: true, reason: null });
+
+    // 6. Malformed plugins path (regular file causing ENOTDIR) degrades cleanly instead of throwing
+    const badHome = mkdtempSync(join(tmpdir(), 'agb-bad-plugins-file-'));
+    try {
+      mkdirSync(join(badHome, '.gemini', 'config'), { recursive: true });
+      writeFileSync(join(badHome, '.gemini', 'config', 'plugins'), 'not-a-directory');
+      const degraded = checkEnforcementAvailable(repo, { home: badHome, env: {}, bundled: false });
+      assert.equal(degraded.available, false);
+      assert.notEqual(degraded.abort, true);
+      assert.match(degraded.reason, /adlc-antigravity plugin manifest unreadable/);
+    } finally {
+      rmSync(badHome, { recursive: true, force: true });
+    }
+
+    // 7. AGB_HOME_DIR overrides os.homedir() so handshake matches stageBuilderGeminiHome
+    const emptyCustomHome = mkdtempSync(join(tmpdir(), 'agb-empty-custom-home-'));
+    try {
+      const viaAgbHomeEmpty = checkEnforcementAvailable(repo, { env: { AGB_HOME_DIR: emptyCustomHome }, bundled: false });
+      assert.equal(viaAgbHomeEmpty.available, false, 'empty AGB_HOME_DIR must not falsely report enforcement from real HOME');
+      const viaAgbHomePresent = checkEnforcementAvailable(repo, { env: { AGB_HOME_DIR: home }, bundled: true });
+      assert.deepEqual(viaAgbHomePresent, { available: true, reason: null });
+    } finally {
+      rmSync(emptyCustomHome, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

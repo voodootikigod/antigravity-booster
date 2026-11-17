@@ -1,0 +1,32 @@
+{
+  "body": "Resolve upstream Antigravity Booster fleet execution and CWD/hook isolation defects:\n1. lib/scheduler.mjs: raise GIT_MAX_BUFFER (256 MiB) across snapshotRootGit and verifyRootGitIntegrity Git subprocesses, pass --no-object-names to git rev-list --objects, fail closed with an explicit enumeration error instead of silently swallowing ENOBUFS, resolve linked-worktree index paths via git rev-parse --git-path index (getGitIndexPath), and detect TICKET-BLOCKED before commitAll/hostMediatedFetch while still running post-reap root/run integrity checks.\n2. lib/agy.mjs + website/env-docs.json: scrub inherited INIT_CWD, pin spawnEnv.PWD = cwd whenever cwd is supplied, and export AGY_WORKSPACE and ANTIGRAVITY_WORKSPACE = cwd on builder spawns so headless ADLC hooks always resolve the worktree root.\n3. lib/plugin-paths.mjs + lib/adlc-bridge.mjs + lib/scheduler-verify.mjs + lib/run-integrity.mjs: keep vendored adlc-antigravity@1.7.0 untouched, snapshot adlc-gemini alongside antigravity-booster and adlc-antigravity in snapshotRunIntegrity, and recognize an installed adlc-gemini companion manifest in checkEnforcementAvailable when adlc-antigravity is absent and AGB_PLUGIN_DIR is not set.\n4. hooks/policy/shell.mjs: permit non-dynamic POSIX /dev/null output redirections on Stage 1 pure-read and headless test commands without treating /dev/null as a file write target, and allow pure read-only git rev-parse inspection flags in Stage 1.\n5. Rebuild dist/ bundles and website/generated/ reference docs, and add regression tests across git-sandbox-candidate-isolation, agy-worker-env, pre-tool-use, handshake, and scheduler-integrity.",
+  "completed": true,
+  "edges": [],
+  "id": "t-scheduler-cwd-and-shell-policy",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "lib/pools.mjs",
+    "hooks/policy/evaluate.mjs",
+    "bin/node-launcher.sh",
+    "vendor/cache/**"
+  ],
+  "scope": [
+    "lib/scheduler.mjs",
+    "lib/scheduler-verify.mjs",
+    "lib/agy.mjs",
+    "lib/adlc-bridge.mjs",
+    "lib/plugin-paths.mjs",
+    "lib/run-integrity.mjs",
+    "hooks/policy/shell.mjs",
+    "dist/**",
+    "website/env-docs.json",
+    "website/generated/**",
+    "test/git-sandbox-candidate-isolation.test.mjs",
+    "test/agy-worker-env.test.mjs",
+    "test/pre-tool-use.test.mjs",
+    "test/handshake.test.mjs",
+    "test/scheduler-integrity.test.mjs"
+  ],
+  "title": "Harden scheduler Git buffer/linked-worktree integrity, CWD/workspace env isolation, adlc-gemini companion handshake, and POSIX /dev/null + git rev-parse policy classification"
+}

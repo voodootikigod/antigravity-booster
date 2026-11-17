@@ -11,6 +11,9 @@ import {
   hostMediatedFetch,
   verifyScopeAndAntiNoOp,
   getGitCommonDir,
+  getGitIndexPath,
+  GIT_MAX_BUFFER,
+  runPlan,
   verifyWorktreeGitPointer,
 } from '../lib/scheduler.mjs';
 import { createWorktree, commitAll } from '../lib/worktrees.mjs';
@@ -643,4 +646,189 @@ test('hooks isolation: host git commands and verifyWorktreeGitPointer neutralize
   }
 });
 
+test('linked worktree: getGitIndexPath, snapshotRootGit, and verifyRootGitIntegrity isolate per-worktree index from primary checkout', () => {
+  assert.equal(GIT_MAX_BUFFER, 256 * 1024 * 1024);
+  const primary = makeTestRepo();
+  const linkedParent = mkdtempSync(join(tmpdir(), 'agb-linked-wt-'));
+  const linkedWt = join(linkedParent, 'feature-wt');
+  try {
+    execFileSync('git', ['worktree', 'add', '-b', 'feature/plan', linkedWt, 'main'], { cwd: primary });
+    const primaryIndex = getGitIndexPath(primary);
+    const linkedIndex = getGitIndexPath(linkedWt);
+    assert.notEqual(realpathSync(linkedIndex), realpathSync(primaryIndex), 'linked worktree has its own git index');
+    assert.match(linkedIndex, /worktrees[\\/]feature-wt[\\/]index$/);
 
+    // Fallback when repo path is not a git repo
+    const nonGit = mkdtempSync(join(tmpdir(), 'agb-nongit-idx-'));
+    try {
+      assert.equal(getGitIndexPath(nonGit, join(nonGit, '.git')), join(nonGit, '.git', 'index'));
+    } finally {
+      rmSync(nonGit, { recursive: true, force: true });
+    }
+
+    const pre = snapshotRootGit(linkedWt);
+
+    // Staging a change in the PRIMARY checkout alters primary/.git/index, NOT linkedWt's index!
+    writeFileSync(join(primary, 'README.md'), 'primary staged edit\n');
+    execFileSync('git', ['add', 'README.md'], { cwd: primary });
+    // Restore objectsManifest baseline for primary's blob or verify index isolation before object diff:
+    const preAfterBlob = { ...pre, objectsManifest: snapshotRootGit(linkedWt).objectsManifest };
+    const afterPrimaryStage = verifyRootGitIntegrity(linkedWt, preAfterBlob, { base: 'feature/plan' });
+    assert.equal(afterPrimaryStage.ok, true, `primary index mutation must not trip linked worktree index check: ${afterPrimaryStage.error}`);
+
+    // Mutating linkedWt's index metadata without altering porcelain status DOES trip Root Git index altered
+    execFileSync('git', ['update-index', '--assume-unchanged', 'README.md'], { cwd: linkedWt });
+    const afterLinkedTamper = verifyRootGitIntegrity(linkedWt, preAfterBlob, { base: 'feature/plan' });
+    assert.equal(afterLinkedTamper.ok, false);
+    assert.equal(afterLinkedTamper.error, 'Root Git index altered');
+
+    // Inherited GIT_INDEX_FILE or GIT_DIR cannot redirect getGitIndexPath, snapshotRootGit, or verifyRootGitIntegrity (including merge-base provenance)
+    const fakeIndex = join(linkedParent, 'spoofed-index');
+    execFileSync('git', ['read-tree', 'HEAD'], { cwd: primary, env: { ...process.env, GIT_INDEX_FILE: fakeIndex } });
+    // Create an orphan commit in linkedWt's object store that is NOT descended from pre.headSha, and verify GIT_DIR cannot spoof merge-base
+    const orphanTree = execFileSync('git', ['write-tree'], { cwd: linkedWt, encoding: 'utf8' }).trim();
+    const orphanSha = execFileSync('git', ['commit-tree', orphanTree, '-m', 'orphan'], { cwd: linkedWt, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/heads/agb/t2', orphanSha], { cwd: linkedWt });
+    const preCleanIdx = snapshotRootGit(primary);
+    const savedGitIdx = process.env.GIT_INDEX_FILE;
+    const savedGitDir = process.env.GIT_DIR;
+    try {
+      process.env.GIT_INDEX_FILE = fakeIndex;
+      process.env.GIT_DIR = join(primary, '.git');
+      assert.equal(realpathSync(getGitIndexPath(linkedWt)), realpathSync(linkedIndex));
+      const spoofAttempt = verifyRootGitIntegrity(linkedWt, preAfterBlob, { base: 'feature/plan' });
+      assert.equal(spoofAttempt.ok, false);
+      assert.equal(spoofAttempt.error, 'Root Git index altered');
+
+      // Also verify provenance check on concurrent ticket ref uses sanitized gitEnv
+      const provenanceRes = verifyRootGitIntegrity(primary, { ...preCleanIdx, refs: pre.refs }, {
+        ticketId: 'T1',
+        knownTickets: new Set(['T1', 'T2']),
+        base: 'main',
+      });
+      assert.equal(provenanceRes.ok, false);
+      assert.match(provenanceRes.error, /Unauthorized ref commit provenance/);
+    } finally {
+      execFileSync('git', ['update-ref', '-d', 'refs/heads/agb/t2'], { cwd: linkedWt });
+      if (savedGitIdx === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = savedGitIdx;
+      if (savedGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = savedGitDir;
+    }
+  } finally {
+    rmSync(primary, { recursive: true, force: true });
+    rmSync(linkedParent, { recursive: true, force: true });
+  }
+});
+
+test('verifyRootGitIntegrity: fails closed with explicit enumeration error on ENOBUFS and supports detached HEAD / non-main branches', () => {
+  const repo = makeTestRepo();
+  try {
+    // Rename main -> trunk and detach HEAD so refs/heads/main does NOT exist
+    execFileSync('git', ['branch', '-m', 'main', 'trunk'], { cwd: repo });
+    execFileSync('git', ['checkout', '--detach', 'HEAD'], { cwd: repo, stdio: 'ignore' });
+
+    const wt = createWorktree(repo, 'T1', 'HEAD');
+    setupAttemptGitDatabase(repo, wt, 'HEAD');
+    const pre = snapshotRootGit(repo);
+    const slug = 'attempts/T1/1/tok';
+
+    for (let i = 0; i < 8; i++) {
+      writeFileSync(join(wt, `T1-${i}.txt`), `detached base candidate ${i}\n`);
+    }
+    execFileSync('git', ['add', '-A'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'candidate'], { cwd: wt });
+    const candidateSha = hostMediatedFetch(repo, wt, slug);
+
+    // Detached HEAD with default base='main' (absent) still verifies reachable candidate objects via pre.headSha + candidateSha
+    const detachedOk = verifyRootGitIntegrity(repo, pre, {
+      attemptNamespace: slug,
+      activeAttemptNamespaces: new Set([slug]),
+      candidateSha,
+    });
+    assert.equal(detachedOk.ok, true, detachedOk.error);
+
+    // Full refs/heads/trunk spelling also works
+    const fullRefOk = verifyRootGitIntegrity(repo, pre, {
+      attemptNamespace: slug,
+      activeAttemptNamespaces: new Set([slug]),
+      candidateSha,
+      base: 'refs/heads/trunk',
+    });
+    assert.equal(fullRefOk.ok, true, fullRefOk.error);
+
+    // Simulate ENOBUFS during git rev-list --objects --no-object-names (300 bytes fits show-ref ~220B, overflows 12+ 41-byte object lines)
+    const revListOverflow = verifyRootGitIntegrity(repo, pre, {
+      attemptNamespace: slug,
+      activeAttemptNamespaces: new Set([slug]),
+      candidateSha,
+      gitMaxBuffer: 300,
+    });
+    assert.equal(revListOverflow.ok, false);
+    assert.match(revListOverflow.error, /Failed to enumerate reachable Git objects/);
+
+    // Simulate ENOBUFS during git show-ref (buffer smaller than a single ref line, >= 42 bytes so rev-parse HEAD succeeds)
+    const showRefOverflow = verifyRootGitIntegrity(repo, pre, {
+      attemptNamespace: slug,
+      activeAttemptNamespaces: new Set([slug]),
+      candidateSha,
+      gitMaxBuffer: 45,
+    });
+    assert.equal(showRefOverflow.ok, false);
+    assert.match(showRefOverflow.error, /Failed to enumerate Git refs/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: builder emitting TICKET-BLOCKED after dirtying worktree skips commitAll and hostMediatedFetch', async () => {
+  const { fileURLToPath } = await import('node:url');
+  const realFakeAgy = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
+  const repo = makeTestRepo();
+  const fakeBinDir = mkdtempSync(join(tmpdir(), 'agb-blocked-dirty-bin-'));
+  const home = mkdtempSync(join(tmpdir(), 'agb-blocked-dirty-home-'));
+  const fakeAgy = join(fakeBinDir, 'fake-agy-blocked');
+  writeFileSync(
+    fakeAgy,
+    [
+      '#!/bin/sh',
+      'for arg in "$@"; do',
+      '  if [ "$arg" = "/quota" ] || [ "$arg" = "--version" ] || [ "$arg" = "models" ]; then',
+      `    exec "${realFakeAgy}" "$@"`,
+      '  fi',
+      'done',
+      'cat >/dev/null',
+      'echo "partial broken edit" > T1.txt',
+      'printf \'{"type":"assistant","response":"TICKET-BLOCKED: missing upstream contract"}\\n\'',
+      'printf \'{"type":"result","status":"SUCCESS","exit_code":0,"response":"TICKET-BLOCKED: missing upstream contract"}\\n\'',
+      'exit 0',
+    ].join('\n') + '\n',
+    { mode: 0o755 },
+  );
+  const saved = { HOME: process.env.HOME, AGB_AGY_BIN: process.env.AGB_AGY_BIN, AGB_SANDBOX_GATES: process.env.AGB_SANDBOX_GATES };
+  try {
+    process.env.HOME = home;
+    process.env.AGB_AGY_BIN = fakeAgy;
+    process.env.AGB_SANDBOX_GATES = '0';
+    const report = await runPlan(
+      {
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'blocked ticket', body: 'try T1', scope: ['T1.txt'] }],
+      },
+      { log: () => {} },
+    );
+    assert.equal(report.merged.length, 0);
+    assert.match(report.failed.T1, /agent blocked: missing upstream contract/);
+    const refs = execFileSync('git', ['for-each-ref', 'refs/namespaces/attempts'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.equal(refs, '', 'no candidate commit may be fetched into refs/namespaces/attempts for a TICKET-BLOCKED strike');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeBinDir, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});

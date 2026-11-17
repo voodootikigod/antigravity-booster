@@ -8,7 +8,7 @@
 // plus the CI trust-root check. File and MCP tools (evaluate.mjs) are exact.
 //
 // Pure function of (args, ctx); ctx supplies repo lookups.
-import { readdirSync } from 'node:fs';
+import { lstatSync, readdirSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { minimatch } from 'minimatch';
 import { lexCommandLine } from './shell-lexer.mjs';
@@ -25,6 +25,7 @@ const GIT_READ_FLAGS = {
   log: [/^--follow$/, /^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
   show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/],
   blame: [/^-L.+$/, /^-w$/, /^-M$/, /^-C$/, /^-e$/, /^--porcelain$/, /^--$/],
+  'rev-parse': [/^--abbrev-ref(=.*)?$/, /^--verify$/, /^--short(=\d+)?$/, /^--show-toplevel$/, /^--git-dir$/, /^--git-common-dir$/, /^--git-path$/, /^--is-inside-work-tree$/, /^-q$/, /^--quiet$/, /^--$/],
 };
 const TEST_FLAG_OK = /^(--test-(name-pattern|skip-pattern|concurrency|timeout)=.+|--test-only|--test-force-exit|--experimental-test-coverage)$/;
 const GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o.*)$/;
@@ -78,8 +79,19 @@ function gitSubcommand(argv) {
   return { verb: argv[i], args: argv.slice(i + 1) };
 }
 
-function hasWriteRedirect(sub) {
-  return sub.redirects.some((r) => r.op.includes('>'));
+function isNullDeviceSink(r, platform) {
+  if (platform === 'win32' || r.dynamic || r.target !== '/dev/null') return false;
+  if (!/^(?:[12]?>>?|&>>?)$/.test(r.op)) return false;
+  try {
+    if (lstatSync('/dev/null').isSymbolicLink()) return false;
+  } catch {
+    // Synthetic test fs without /dev/null: lexical /dev/null still cannot alias workspace paths
+  }
+  return true;
+}
+
+function hasWriteRedirect(sub, platform) {
+  return sub.redirects.some((r) => r.op.includes('>') && !isNullDeviceSink(r, platform));
 }
 
 /**
@@ -132,12 +144,12 @@ function verbClass(argv) {
 
 // ---------- Stage predicates ----------
 
-function isStage1(sub) {
-  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
+function isStage1(sub, platform) {
+  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub, platform)) return false;
   if (sub.argv.some(hasHomePrefix)) return false; // A.6 item 6
   const [cmd, verb, ...rest] = sub.argv;
   if (PURE_READERS.has(cmd)) return true;
-  if (cmd !== 'git' || !GIT_READ_FLAGS[verb]) return false;
+  if (cmd !== 'git' || !Object.hasOwn(GIT_READ_FLAGS, verb)) return false;
   const allowed = GIT_READ_FLAGS[verb];
   return rest.every((t) => !t.startsWith('-') || allowed.some((re) => re.test(t)));
 }
@@ -166,7 +178,7 @@ function isLiteralShardPath(token, cwd, ctx) {
 }
 
 function isStage2(sub, cwd, ctx) {
-  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
+  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub, ctx.platform)) return false;
   const [cmd, a1, a2, ...rest] = sub.argv;
   if (cmd === 'adlc' && a1 === 'ticket' && a2 === 'create') return true;
   if (cmd === 'git' && a1 === 'add') {
@@ -177,8 +189,8 @@ function isStage2(sub, cwd, ctx) {
 }
 
 /** Appendix A.4 item 8: headless worker test allowlist. */
-function isTestCommand(sub) {
-  if (sub.dynamic || sub.assignments.length > 0 || sub.redirects.length > 0) return false;
+function isTestCommand(sub, platform) {
+  if (sub.dynamic || sub.assignments.length > 0 || !sub.redirects.every((r) => isNullDeviceSink(r, platform))) return false;
   const [cmd, a1, a2] = sub.argv;
   if (cmd === 'npm' && a1 === 'test') {
     if (sub.argv.length === 2) return true;
@@ -233,7 +245,7 @@ function isRoutineCommit(args, cwd, ctx) {
 
 /** Appendix A D15 as amended 2026-10-05: git add / git commit only (npm run build asks again). */
 function isRoutine(sub, cwd, ctx) {
-  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub)) return false;
+  if (sub.dynamic || sub.assignments.length > 0 || hasWriteRedirect(sub, ctx.platform)) return false;
   const [cmd, a1, ...rest] = sub.argv;
   if (cmd !== 'git') return false;
   if (a1 === 'add') {
@@ -320,7 +332,11 @@ function writesIntoProtectedParent(r, ctx) {
 }
 
 function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd = false }) {
-  const writeTargets = new Set(sub.redirects.filter((r) => r.op.includes('>')).map((r) => r.target));
+  const writeTargets = new Set(
+    sub.redirects
+      .filter((r) => r.op.includes('>') && !isNullDeviceSink(r, ctx.platform))
+      .map((r) => r.target),
+  );
   const verdicts = [];
   const repos = [];
   const destructive = Boolean(verbs.deletes || verbs.writes);
@@ -342,7 +358,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd =
     }
     // Globs only threaten when the command can write: a pure reader with a glob
     // (`cat lib/*.mjs`) is dynamic and falls to Stage 5 instead.
-    const pureRead = PURE_READERS.has(sub.argv[0]) && !hasWriteRedirect(sub);
+    const pureRead = PURE_READERS.has(sub.argv[0]) && !hasWriteRedirect(sub, ctx.platform);
     if (!stage1 && (!pureRead || writeTargets.has(token))) {
       const glob = globTargetVerdict(token, cwd, ctx);
       if (glob) return { verdict: glob, repos };
@@ -444,8 +460,8 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
 
   const verbs = verbClass(argv);
   const shim = isShimInvocation(argv, ctx);
-  const stage1 = !shim && isStage1(sub);
-  const testCmd = !shim && isTestCommand(sub);
+  const stage1 = !shim && isStage1(sub, ctx.platform);
+  const testCmd = !shim && isTestCommand(sub, ctx.platform);
   const dirChange = DIR_CHANGE.has(argv[0]);
   const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd });
   if (targetVerdict.decision === 'deny') return targetVerdict;
