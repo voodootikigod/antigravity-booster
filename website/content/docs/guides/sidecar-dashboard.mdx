@@ -58,8 +58,10 @@ Press Ctrl+C or send SIGTERM. On exit the server closes, runs `agy plugin uninst
 
 ## Jetski mode and ANTIGRAVITY_SIDECAR_WEB_PORT
 
-`ANTIGRAVITY_SIDECAR_WEB_PORT` is a real variable. When it is set, the bundled `sidecars/jetski-launcher.mjs` runs in jetski mode and listens on that port (default `3333`) (jetski mode: [C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/jetski-launcher.mjs#L8-L9)).
+`ANTIGRAVITY_SIDECAR_WEB_PORT` is a real variable. When it is set, the bundled `sidecars/jetski-launcher.mjs` runs in unauthenticated Jetski mode (`token = null`) and listens on that port (default `3333`) (jetski mode: [C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/jetski-launcher.mjs#L8-L9)).
 
-<Callout type="warn" title="Setting ANTIGRAVITY_SIDECAR_WEB_PORT disables the token check">When `ANTIGRAVITY_SIDECAR_WEB_PORT` is present in the server's environment, a missing or wrong token is accepted on both `/` and `/events` (token bypass: [C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L32), [/events bypass](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L43)). Any local process that can reach the port can then read your run's events. Do not export it in a shell where you run `agb sidecar`. The threat model is in [Security](/docs/reference/security).</Callout>
+<Callout type="warn" title="ANTIGRAVITY_SIDECAR_WEB_PORT and token authentication">
+`sidecars/server.mjs` and `agb sidecar` **always enforce explicit tokens** regardless of whether `ANTIGRAVITY_SIDECAR_WEB_PORT` is set (historically in v1.0.0, setting it bypassed the server token check directly: [C3](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L32), [/events bypass](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L43)). Today, `ANTIGRAVITY_SIDECAR_WEB_PORT` only causes `sidecars/jetski-launcher.mjs` to launch in unauthenticated Jetski mode (`token = null`), where any local process that can reach the port can read your run's events. Do not export it in a shell where you launch Jetski. The threat model is in [Security](/docs/reference/security).
+</Callout>
 
 See also the [sidecar CLI reference](/docs/reference/cli/sidecar) and [Environment](/docs/reference/environment).

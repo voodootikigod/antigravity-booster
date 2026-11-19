@@ -68,7 +68,7 @@
 | Name | Default | Description | Bundled |
 | --- | --- | --- | --- |
 | AGB_SIDECAR_PORT | 3333 | Default port for agb sidecar; --port overrides it. | honoured |
-| ANTIGRAVITY_SIDECAR_WEB_PORT | unset (launcher port 3333) | Selects jetski mode in the sidecar launcher and sets its port. Security: Setting it disables token auth on the sidecar dashboard and event stream: any local client can read run data. | honoured |
+| ANTIGRAVITY_SIDECAR_WEB_PORT | unset (launcher port 3333) | Selects unauthenticated Jetski mode (token = null) and sets the listen port in sidecars/jetski-launcher.mjs only. sidecars/server.mjs and agb sidecar always enforce explicit tokens regardless of this variable. Security: Causes sidecars/jetski-launcher.mjs to launch without a token (token = null); do not export it in shells where you run the Jetski launcher. | honoured |
 
 **Paths**
 
@@ -80,7 +80,7 @@
 | AGB_EXEC_CACHE_DIR | under AGB_HOME_DIR | Cache directory for authenticated executables. | honoured |
 | AGB_EXEC_LOCKS_DIR | under AGB_HOME_DIR | Directory for executable lock records; stale locks with a dead PID are recovered. | honoured |
 | AGB_GRAPH_COUPLING_FILE | .adlc/graph-coupling.json | Path to an optional static import-graph coupling JSON file consulted by applyMergeForecast and scanStaticImportCoupling. | honoured |
-| AGB_HOME_DIR | the OS home directory | Home directory override for agb's per-user state. | honoured |
+| AGB_HOME_DIR | the OS home directory | Home directory override for agb's per-user state. Ignored in bundled plugin builds (IS_BUNDLED === true). | ignored |
 
 **ADLC toolkit**
 

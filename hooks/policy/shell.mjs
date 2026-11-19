@@ -18,6 +18,7 @@ import {
   matchDeclaredRail, matchImplicitRail, matchRoot, physicalResolve, protectedRoots, railStaticPrefix, repoRelative, resolveCandidate,
 } from './paths.mjs';
 import { ask, deny, PASS, mostRestrictive } from './verdict.mjs';
+import { normalizeArgsCaseInsensitive } from './evaluate.mjs';
 
 const GIT_READ_FLAGS = {
   status: [/^-s$/, /^--short$/, /^-b$/, /^--branch$/, /^--porcelain(=v[12])?$/, /^--ignored$/, /^-u(normal|all|no)?$/, /^--untracked-files(=.*)?$/],
@@ -570,9 +571,12 @@ function classifyLine(line, cwd, ctx, depth) {
 }
 
 export function classifyRunCommand(args, ctx) {
-  const line = args?.CommandLine;
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const line = norm.folded.commandline;
   if (typeof line !== 'string') return deny('run_command without a CommandLine string cannot be verified');
-  const cwdRaw = typeof args?.Cwd === 'string' && args.Cwd.length > 0 ? args.Cwd : ctx.workspacePaths[0];
+  const cwdArg = norm.folded.cwd;
+  const cwdRaw = typeof cwdArg === 'string' && cwdArg.length > 0 ? cwdArg : ctx.workspacePaths[0];
   if (!cwdRaw) return deny('Cannot determine the shell working directory');
   const cwdLexical = isAbsolute(cwdRaw) ? resolve(cwdRaw) : resolve(ctx.workspacePaths[0] ?? '/', cwdRaw);
   const cwd = physicalResolve(cwdLexical, '/', ctx.platform) ?? cwdLexical;

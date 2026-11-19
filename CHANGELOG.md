@@ -19,18 +19,20 @@ rather than enumerate.
 - **Headless `agy 1.5.9` print-mode hardening & 1,440-state `classifyAgyOutcome()`** (#159, `t-fix-bwrap-nested-sandbox-1-5-9`, `t-agy-print-hardening-1-5-9`): `--disable-slash-commands` on headless `runAgy()` invocations, `RECOMMENDED_AGY_VERSION = '1.5.9'` and `checkHookLogDir()` in `agb doctor`, total 14-row `classifyAgyOutcome()` classifier (`ALL_AGY_ERROR_KINDS`, `FAILURE_FINISHED_REASONS`, `model_unavailable` 0-strike demotion, cross-pool `rateLimited` reroute), and omission of nested inner `--sandbox` when outer `bwrap` / `seatbelt` kernel containment is active.
 
 ### Changed
-- **Adapted for `agy 1.5.9` and `@adlc/* 1.13.0`** (#158): upgraded vendored `@adlc/core` and `@adlc/antigravity` to `1.13.0`, and refreshed the model catalog with `gemini-4-carbon-*`, `gemini-4-hydrogen-*` (`low`, `medium`, `high`, `xhigh`), `gemini-pro-orchestrator`, and `gemini-pro-orchestrator-argon` (22 live models total).
+- **Adapted for `agy 1.5.9` and `@adlc/* 1.13.0`** (#158): upgraded vendored `@adlc/core` and the vendored `@adlc/*` CLI packages to `1.13.0` while `@adlc/antigravity` remains pinned at `1.7.0`, and refreshed the model catalog with `gemini-4-carbon-*`, `gemini-4-hydrogen-*` (`low`, `medium`, `high`, `xhigh`), `gemini-pro-orchestrator`, and `gemini-pro-orchestrator-argon` (22 live models total).
 
 ### Fixed
 - **Worktree integration base refs & binary normalization** (#154): resolved PR #153 review findings on integration base refs and binary path normalization in worktree management and CI.
 - **macOS CI policy fuzzer latency ceiling** (#156): raised the policy fuzzer p95 latency ceiling to 100 ms to prevent macOS CI contention flakes.
 - **Post-PR-159 cross-model adversarial review hardening** (#160): hardened `PreToolUse` policy hooks and evaluation harnesses following cross-model adversarial review.
 - **Git buffer/worktree integrity, CWD env isolation, `adlc-gemini` handshake, and `/dev/null` redirects** (#161): increased Git `maxBuffer` and hardened worktree integrity checks, isolated CWD environment propagation in `runAgy`, aligned the `adlc-gemini` plugin handshake, and permitted safe `/dev/null` redirects in the shell policy classifier.
-- **Release-audit 1.3.0 SHOULD-FIX hardening** (`T-AUDIT-1`..`T-AUDIT-5`):
+- **Live fleet & Linux bwrap/Node v24 hardening** (#163): added Linux `bwrap` npm/workspace mounts, fixed Node v24 test globs, wired `AGB_WORKER_BUILD_CMD` worker build gate allowlisting, raised default gate timeout to 30m with `AGB_GATE_TIMEOUT_MS`, cleaned up `AGENTS.md` and ticket projection artifacts before worktree gates, and fixed `Created-At` flail-detector false positives.
+- **Release-audit 1.3.0 SHOULD-FIX hardening** (`T-AUDIT-1`..`T-AUDIT-5`, Round 2 `T-AUDIT2-1`..`T-AUDIT2-4`):
   - Fail-closed `compilePlan` ticket projection when `.adlc/tickets/` writes fail, `arbiterDegraded` warning/metadata propagation in `triageFindings`, and npm flag handling in `extractDelegatedScripts`.
   - Strict `--interval` validation and unknown `--*` flag rejection across CLI subcommands, plus git/ADLC repository guard in `agb doctor --fix`.
   - Sandboxed post-merge `hollow-test` execution in the scheduler, and strict constant-time token authentication in the sidecar server and launcher.
   - Case-insensitive `.github/workflows` policy normalization, hardened `scripts/check-bundle-externals.mjs`, OIDC-only npm publish workflow (`.github/workflows/publish.yml`), synced `skills/adversarial-review/references/models.json` (all 22 models), and updated `agb-run` MCP documentation and website reference docs.
+  - Round 2 hardening: `watchStatus()` `runId`-checked `.booster/report.json` fallback, Windows `PATH` resolution fix, `AGB_HOME_DIR` bundled-build gate, `PreToolUse` policy-guard case-folding parity, `agb sync-models --write` repository checkout guard, and comprehensive CLI/skill/website documentation alignment.
 
 ## [1.2.0] — 2026-11-05
 
@@ -328,7 +330,8 @@ than a sibling checkout.
 First public release: ticket-DAG scheduler, quota-pool-aware dispatch, worktree
 fleets, cross-model prosecution, and deterministic gates.
 
-[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/voodootikigod/antigravity-booster/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/voodootikigod/antigravity-booster/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/voodootikigod/antigravity-booster/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/voodootikigod/antigravity-booster/releases/tag/v1.0.0
 [0.4.3]: https://github.com/voodootikigod/antigravity-booster/compare/v0.4.2...v0.4.3

@@ -413,7 +413,7 @@ function genDocsMd(repo) {
     return [
       d.name,
       d.description,
-      d['user-invocable'] === true ? 'yes' : 'no',
+      d['user-invocable'] === false ? 'no' : 'yes',
       internal ? 'yes' : 'no',
       scripts.join(', '),
     ];

@@ -521,14 +521,25 @@ try {
     console.log(JSON.stringify(res, null, 2));
   } else if (cmd === 'sync-models') {
     rejectUnknownFlags('sync-models', rest, new Set(['--check', '--offline', '--json', '--write']));
-    const { syncModels } = await import('../scripts/sync-models.mjs');
+    const { syncModels, isBoosterRepoCheckout } = await import('../scripts/sync-models.mjs');
     const isJson = rest.includes('--json');
+    const isWrite = rest.includes('--write');
+    if (isWrite && !isBoosterRepoCheckout(process.cwd())) {
+      const error = '--write only updates skills/adversarial-review/references/models.json inside an antigravity-booster repository checkout.';
+      if (isJson) {
+        console.log(JSON.stringify({ ok: false, exitCode: 1, error }, null, 2));
+      } else {
+        console.error(`ERROR: ${error}`);
+      }
+      process.exit(1);
+    }
     const res = syncModels({
       check: rest.includes('--check'),
       offline: rest.includes('--offline'),
       json: isJson,
-      write: rest.includes('--write'),
+      write: isWrite,
       rootDir: process.cwd(),
+      requireBoosterCheckout: true,
     });
     if (isJson) {
       console.log(JSON.stringify(res, null, 2));

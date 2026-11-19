@@ -73,8 +73,9 @@ function withEnv(env, fn) {
   });
 }
 
-function makeFakeBwrap(binDir, { removeAfterGateCalls = 0, countFile = '' } = {}) {
+function makeFakeBwrap(binDir, { removeAfterGateCalls = 0, countFile = '', logFile = '' } = {}) {
   const bwrapPath = join(binDir, 'bwrap');
+  const logLine = logFile ? `printf '%s\\n' "$*" >> "${logFile}"\n` : '';
   const selfRemove = removeAfterGateCalls > 0
     ? `
 if [ "$1" = "/bin/sh" ]; then
@@ -91,7 +92,7 @@ fi
     bwrapPath,
     `#!/bin/sh
 bwrap_self="$0"
-while [ $# -gt 0 ]; do
+${logLine}while [ $# -gt 0 ]; do
   if [ "$1" = "--" ]; then
     shift
     break
@@ -250,9 +251,10 @@ test('scheduler: Pass 2 hollow-test runs sandboxed when AGB_SANDBOX_GATES !== "0
   const state = mkdtempSync(join(tmpdir(), 'agb-audit-ht-state-'));
   const binDir = mkdtempSync(join(tmpdir(), 'agb-audit-ht-bin-'));
   const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-')));
+  const bwrapLog = join(state, 'bwrap-invocations.log');
   try {
     if (process.platform === 'linux') {
-      makeFakeBwrap(binDir);
+      makeFakeBwrap(binDir, { logFile: bwrapLog });
     }
 
     const report = await withEnv(
@@ -274,12 +276,12 @@ test('scheduler: Pass 2 hollow-test runs sandboxed when AGB_SANDBOX_GATES !== "0
 
     assert.deepEqual(report.merged, ['T1']);
 
-    // Verify fake-adlc hollow-test actually received a sandbox-wrapped --test-cmd referencing agb-ht-sbx-*
+    // Verify outer adlc hollow-test itself ran inside the OS sandbox (with raw --test-cmd to avoid nested sandboxing)
     const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
-    if (process.platform === 'darwin') {
-      assert.match(htLog, /test-cmd='sandbox-exec' '-f' '[^']*agb-ht-sbx-[^']*\/gate\.sb' '\/bin\/sh' '-c' 'node test\/sample\.test\.js'/);
-    } else {
-      assert.match(htLog, /test-cmd='bwrap' '--unshare-net'.*agb-ht-sbx-.*'--' '\/bin\/sh' '-c' 'node test\/sample\.test\.js'/);
+    assert.match(htLog, /test-cmd=node test\/sample\.test\.js\b/);
+    if (process.platform === 'linux') {
+      const bwrapLines = readFileSync(bwrapLog, 'utf8');
+      assert.match(bwrapLines, /--unshare-net.*agb-ht-sbx-.*hollow-test --test-cmd node test\/sample\.test\.js/);
     }
 
     // Verify no agb-ht-sbx-* temp directories were leaked

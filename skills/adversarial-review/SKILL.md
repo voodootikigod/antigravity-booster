@@ -143,14 +143,13 @@ pass plus a reduced, stack-aware per-branch pass.
 
 ### Keeping the Model Catalog Up to Date
 
-Whenever Antigravity releases or retires models in `agy models`, synchronize
-`references/models.json` by running:
+Whenever Antigravity releases or retires models in `agy models`, audit drift against the bundled `lib/models.mjs` catalog or regenerate `references/models.json` from inside an `antigravity-booster` repository checkout:
 
 ```bash
-# Audit live models and check for drift (exits 1 on drift)
+# Audit live models against lib/models.mjs and check for drift (exits 1 on drift)
 ~/.local/bin/agb sync-models --check
 
-# Update skills/adversarial-review/references/models.json
+# Regenerate skills/adversarial-review/references/models.json (antigravity-booster repo checkout only; does not mutate lib/models.mjs or lib/pools.mjs)
 ~/.local/bin/agb sync-models --write
 ```
 

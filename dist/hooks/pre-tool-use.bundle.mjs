@@ -4508,9 +4508,12 @@ function classifyLine(line, cwd, ctx, depth) {
   return mostRestrictive(verdicts);
 }
 function classifyRunCommand(args, ctx) {
-  const line = args?.CommandLine;
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const line = norm.folded.commandline;
   if (typeof line !== "string") return deny("run_command without a CommandLine string cannot be verified");
-  const cwdRaw = typeof args?.Cwd === "string" && args.Cwd.length > 0 ? args.Cwd : ctx.workspacePaths[0];
+  const cwdArg = norm.folded.cwd;
+  const cwdRaw = typeof cwdArg === "string" && cwdArg.length > 0 ? cwdArg : ctx.workspacePaths[0];
   if (!cwdRaw) return deny("Cannot determine the shell working directory");
   const cwdLexical = isAbsolute4(cwdRaw) ? resolve7(cwdRaw) : resolve7(ctx.workspacePaths[0] ?? "/", cwdRaw);
   const cwd = physicalResolve(cwdLexical, "/", ctx.platform) ?? cwdLexical;
@@ -4577,11 +4580,19 @@ function matchDirectBoosterMcpPrefix(name) {
   return null;
 }
 function isBoosterMcpTool(name, args) {
-  if (name === "call_mcp_tool") return BOOSTER_MCP_SERVERS.has(args?.ServerName) && BOOSTER_MCP_TOOLS.has(args?.ToolName);
+  if (name === "call_mcp_tool") {
+    const norm = normalizeArgsCaseInsensitive(args);
+    if (!norm.ok) return false;
+    return BOOSTER_MCP_SERVERS.has(norm.folded.servername) && BOOSTER_MCP_TOOLS.has(norm.folded.toolname);
+  }
   return matchDirectBoosterMcpPrefix(name) !== null;
 }
 function boosterMcpToolName(name, args) {
-  return name === "call_mcp_tool" ? args?.ToolName : matchDirectBoosterMcpPrefix(name) ?? name.slice(`mcp__${BOOSTER_MCP_SERVER}__`.length);
+  if (name === "call_mcp_tool") {
+    const norm = normalizeArgsCaseInsensitive(args);
+    return norm.ok ? norm.folded.toolname : void 0;
+  }
+  return matchDirectBoosterMcpPrefix(name) ?? name.slice(`mcp__${BOOSTER_MCP_SERVER}__`.length);
 }
 var FOLDED_EXCLUDED_CONTENT_KEYS = new Set([...EXCLUDED_CONTENT_KEYS].map((k) => String(k).toLowerCase()));
 function goFoldKey(k) {
@@ -4866,17 +4877,20 @@ function stepOne(name, args, ctx) {
     if (scan.overflow) return OVERFLOW;
     candidates = [...scan.paths, ...scan.bareTokens];
     if (isWorkflow) {
-      if (typeof args?.ScriptPath === "string" && args.ScriptPath.trim().length > 0) {
-        candidates.push(toPath(args.ScriptPath.trim()));
+      const wfScriptPath = norm.folded.scriptpath;
+      if (typeof wfScriptPath === "string" && wfScriptPath.trim().length > 0) {
+        candidates.push(toPath(wfScriptPath.trim()));
       }
-      if (typeof args?.Cwd === "string" && args.Cwd.trim().length > 0) {
-        candidates.push(toPath(args.Cwd.trim()));
+      const wfCwd = norm.folded.cwd;
+      if (typeof wfCwd === "string" && wfCwd.trim().length > 0) {
+        candidates.push(toPath(wfCwd.trim()));
       }
     }
   }
   let stepCtx = ctx;
-  if (WORKFLOW_TOOLS.has(name) && typeof args?.Cwd === "string" && args.Cwd.trim().length > 0) {
-    const wfCwdPhys = physicalResolve(args.Cwd, ctx.workspacePaths[0] || "/", ctx.platform);
+  const wfCwdArg = norm.folded.cwd;
+  if (WORKFLOW_TOOLS.has(name) && typeof wfCwdArg === "string" && wfCwdArg.trim().length > 0) {
+    const wfCwdPhys = physicalResolve(wfCwdArg, ctx.workspacePaths[0] || "/", ctx.platform);
     if (wfCwdPhys) stepCtx = { ...ctx, anchors: unique([wfCwdPhys, ...ctx.anchors]) };
   }
   for (const token of candidates) {
@@ -5068,6 +5082,8 @@ function evaluateFileTool(name, args, ctx) {
   return name === "notebook_edit" && finalVerdict.decision === "ask" ? deny(finalVerdict.reason) : finalVerdict;
 }
 function evaluateMcpTool(name, args, ctx) {
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
   const scan = scanPathLike(args);
   if (scan.overflow) return OVERFLOW;
   const verdicts = [];
@@ -5088,8 +5104,15 @@ function evaluateMcpTool(name, args, ctx) {
   if (isBoosterMcpTool(name, args)) {
     if (ctx.workerTicket) return deny("Headless agb worker cannot invoke Booster MCP tools");
     const tool = boosterMcpToolName(name, args);
-    const mcpArgs = name === "call_mcp_tool" ? args?.Arguments ?? args?.ToolArgs ?? {} : args ?? {};
-    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_doctor" && Boolean(mcpArgs?.fix) || tool === "agb_shape" && Boolean(mcpArgs?.syncBrain))) {
+    const hasArguments = norm.folded.arguments !== void 0;
+    const hasToolArgs = norm.folded.toolargs !== void 0;
+    if (name === "call_mcp_tool" && hasArguments && hasToolArgs) {
+      return deny("Conflicting arguments/toolArgs parameters in call_mcp_tool");
+    }
+    const rawMcpArgs = name === "call_mcp_tool" ? norm.folded.arguments ?? norm.folded.toolargs ?? {} : args ?? {};
+    const mcpNorm = normalizeArgsCaseInsensitive(rawMcpArgs);
+    if (!mcpNorm.ok) return deny(mcpNorm.reason);
+    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
     }
     return PASS;
@@ -5355,7 +5378,9 @@ function buildContext(payload, options = {}) {
   const workerBuildCmd = /^npm run [a-zA-Z0-9_.:-]+$/.test(rawWorkerBuildCmd) ? rawWorkerBuildCmd : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;
-  const cwd = typeof args?.Cwd === "string" && isAbsolute5(args.Cwd) ? resolve8(args.Cwd) : null;
+  const normArgs = args !== void 0 && args !== null ? normalizeArgsCaseInsensitive(args) : null;
+  const cwdArg = normArgs?.ok ? normArgs.folded.cwd : void 0;
+  const cwd = typeof cwdArg === "string" && isAbsolute5(cwdArg) ? resolve8(cwdArg) : null;
   const extraHomes = [];
   const homeMarker = /(^|[\/\\])\.agb_home$/;
   if (typeof env.AGB_USER_HOME === "string" && isAbsolute5(env.AGB_USER_HOME)) {

@@ -1,11 +1,11 @@
 ---
 name: agb-sync-models
-description: Audit live Antigravity models (agy models) and synchronize model mappings and cross-model routing tables
+description: Audit live Antigravity models (agy models) against lib/models.mjs and regenerate references/models.json (--write) in an antigravity-booster checkout
 ---
 
 # /agb-sync-models [--check] [--write] [--offline] [--json]
 
-Inspects live models reported by Google Antigravity (`agy models`), audits current mappings in `lib/models.mjs`, `lib/pools.mjs`, and `skills/adversarial-review/references/models.json`, and updates definitions to support new model releases.
+Audits live models reported by Google Antigravity (`agy models`) against the bundled `lib/models.mjs` catalog. Passing `--write` regenerates `skills/adversarial-review/references/models.json` inside an `antigravity-booster` repository checkout (it refuses to write in arbitrary user workspaces and does not mutate `lib/models.mjs` or `lib/pools.mjs`).
 
 ## How to run it
 

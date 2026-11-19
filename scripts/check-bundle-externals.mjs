@@ -27,8 +27,8 @@ export const DEFAULT_BUNDLES = [
 // depends on typescript at install or runtime. Booster's own bundles still
 // forbid every non-builtin specifier without exception.
 export const BUNDLE_ALLOWED_OPTIONAL_PROBES = Object.freeze({
-  'vendor/adlc/dist/adlc.bundle.mjs': Object.freeze(new Set(['typescript'])),
-  'vendor/adlc/dist/syntax-check-typescript.mjs': Object.freeze(new Set(['typescript', 'resolved.path'])),
+  'vendor/adlc/dist/adlc.bundle.mjs': Object.freeze(new Set(['typescript', 'path'])),
+  'vendor/adlc/dist/syntax-check-typescript.mjs': Object.freeze(new Set(['typescript', 'resolved.path', 'path'])),
 });
 
 const BUILTINS = new Set(builtinModules);
@@ -145,7 +145,7 @@ function recordCallArg(rawArg, found) {
     } else if (!isBuiltin(inner)) {
       found.add(inner);
     }
-  } else if (!isBuiltin(trimmed)) {
+  } else if (trimmed.length > 0) {
     found.add(trimmed);
   }
 }
