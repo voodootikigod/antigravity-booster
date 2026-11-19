@@ -41,6 +41,7 @@ test('compilePlan: fails closed when .adlc or .adlc/tickets is a symlink instead
   try {
     mkdirSync(join(repo, 'lib'), { recursive: true });
     writeFileSync(join(repo, 'lib', 'mod.mjs'), 'export const x = 1;\n');
+    writeFileSync(join(repo, 'package.json'), '{"name":"audit-symlink-test"}\n');
     // Plant a symlink at .adlc/tickets pointing outside the repo
     mkdirSync(join(repo, '.adlc'), { recursive: true });
     symlinkSync(outside, join(repo, '.adlc', 'tickets'));
@@ -53,26 +54,37 @@ test('compilePlan: fails closed when .adlc or .adlc/tickets is a symlink instead
       [
         '# Symlink Projection Test',
         '',
-        '## Ticket T-SYM-1: Update mod',
+        '### Ticket 1: `T-SYM-1` — Update mod',
         '- **Scope**: `lib/mod.mjs`',
         '- **Rails**: `package.json`',
-        '- **Depends on**: none',
-        '- **Body**:',
-        '  Export `y = 2` from `lib/mod.mjs`.',
+        '- **Tier**: `mid`',
+        '',
+        '#### Requirements',
+        'Export `y = 2` from `lib/mod.mjs`.',
+        '',
+        '#### Acceptance Criteria',
+        '- [ ] `lib/mod.mjs` exports `y = 2`.',
       ].join('\n'),
     );
 
-    await assert.rejects(
-      compilePlan('audit-symlink-conv', {
-        repo,
-        brainDir,
-        gate: { test: 'npm test' },
-        coldstart: false,
-        parallax: false,
-        premortem: false,
-      }),
-      /symlink/i,
-    );
+    const prevAgy = process.env.AGB_AGY_BIN;
+    process.env.AGB_AGY_BIN = '/nonexistent-agy-binary';
+    try {
+      await assert.rejects(
+        compilePlan('audit-symlink-conv', {
+          repo,
+          brainDir,
+          gate: { test: 'npm test' },
+          coldstart: false,
+          parallax: false,
+          premortem: false,
+        }),
+        /symlink/i,
+      );
+    } finally {
+      if (prevAgy === undefined) delete process.env.AGB_AGY_BIN;
+      else process.env.AGB_AGY_BIN = prevAgy;
+    }
   } finally {
     rmSync(brainDir, { recursive: true, force: true });
     rmSync(repo, { recursive: true, force: true });
