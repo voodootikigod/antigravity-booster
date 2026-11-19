@@ -1,18 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, rmSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runAgy } from '../lib/agy.mjs';
 import { prosecute } from '../lib/prosecute.mjs';
+import { materializeWorktreeNodeModules, removeMaterializedNodeModules, createIntegrationWorktree } from '../lib/worktrees.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const libSrc = (f) => readFileSync(fileURLToPath(new URL(`../lib/${f}`, import.meta.url)), 'utf8');
 
 const SAVED = {};
-const KEYS = ['AGB_WORKER_TICKET', 'AGB_WORKER_MODE', 'FAKE_STATE_DIR', 'FAKE_RECORD_ENV', 'AGB_AGY_BIN', 'INIT_CWD', 'PWD', 'AGY_WORKSPACE', 'ANTIGRAVITY_WORKSPACE'];
+const KEYS = ['AGB_WORKER_TICKET', 'AGB_WORKER_MODE', 'AGB_WORKER_BUILD_CMD', 'FAKE_STATE_DIR', 'FAKE_RECORD_ENV', 'AGB_AGY_BIN', 'INIT_CWD', 'PWD', 'AGY_WORKSPACE', 'ANTIGRAVITY_WORKSPACE'];
 function setup() {
   for (const k of KEYS) SAVED[k] = process.env[k];
   const dir = mkdtempSync(join(tmpdir(), 'agb-worker-env-'));
@@ -134,8 +136,28 @@ for (const [file, count] of [['review.mjs', 3], ['prosecute.mjs', 1], ['prefligh
 test('static: scheduler builder runAgy call passes worker ticket', () => {
   const blocks = runAgyBlocks(libSrc('scheduler.mjs'));
   assert.equal(blocks.length, 1);
-  assert.match(blocks[0], /worker:\s*\{\s*ticket:\s*ticketId \?\? t\.id\s*\}/);
+  assert.match(blocks[0], /worker:\s*\{\s*ticket:\s*ticketId \?\? t\.id,\s*buildCmd:\s*gate\?\.build\s*\}/);
   assert.doesNotMatch(blocks[0], /mode:\s*'readonly'/);
+});
+
+test('worker buildCmd sets AGB_WORKER_BUILD_CMD only for valid npm run gate on ticketed workers and scrubs smuggled env', async () => {
+  const dir = setup();
+  try {
+    process.env.AGB_WORKER_BUILD_CMD = 'npm run evil';
+    const roRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', worker: { mode: 'readonly', buildCmd: 'npm run build' } });
+    assert.ok(roRes.ok, roRes.error);
+    assert.equal(fullEnvMap(dir).AGB_WORKER_BUILD_CMD, undefined);
+
+    const smuggledRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', worker: { ticket: 'T1' }, env: { AGB_WORKER_BUILD_CMD: 'npm run evil' } });
+    assert.ok(smuggledRes.ok, smuggledRes.error);
+    assert.equal(fullEnvMap(dir).AGB_WORKER_BUILD_CMD, undefined);
+
+    const validRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', worker: { ticket: 'T1', buildCmd: 'npm run build:cursor-mcp' } });
+    assert.ok(validRes.ok, validRes.error);
+    assert.equal(fullEnvMap(dir).AGB_WORKER_BUILD_CMD, 'npm run build:cursor-mcp');
+  } finally {
+    teardown(dir);
+  }
 });
 
 test('static: sweep spawns no agy session directly (compiles to a plan only)', () => {
@@ -219,5 +241,86 @@ test('runAgy scrubs INIT_CWD, pins PWD to cwd, and sets AGY_WORKSPACE + ANTIGRAV
   } finally {
     teardown(dir);
     rmSync(wtDir, { recursive: true, force: true });
+  }
+});
+
+test('builder sandbox preserves npm symlink resolution when Node lives in a home-mounted version manager prefix', async () => {
+  const wtDir = mkdtempSync(join(tmpdir(), 'agb-wt-npm-'));
+  const dir = setup();
+  const npmBinDir = mkdtempSync(join(tmpdir(), 'agb-npm-bin-'));
+  try {
+    const npmProbeStub = join(npmBinDir, 'npm-probe-agy');
+    writeFileSync(
+      npmProbeStub,
+      `#!/bin/sh\nnpm --version > "${join(wtDir, 'npm-ver.txt')}" 2>&1\necho "npm-exit=$?" >> "${join(wtDir, 'npm-ver.txt')}"\necho "ok"\n`,
+      { mode: 0o755 },
+    );
+    process.env.AGB_AGY_BIN = npmProbeStub;
+    const res = await runAgy({
+      model: 'gemini-3-pro',
+      prompt: 'hello',
+      cwd: wtDir,
+      repo: wtDir,
+      role: 'builder',
+      sandbox: true,
+      worker: { ticket: 'T1' },
+    });
+    assert.ok(res.ok, res.error);
+    const probeOut = readFileSync(join(wtDir, 'npm-ver.txt'), 'utf8');
+    assert.match(probeOut, /npm-exit=0/, `expected npm --version to succeed inside builder sandbox, got:\n${probeOut}`);
+  } finally {
+    teardown(dir);
+    rmSync(wtDir, { recursive: true, force: true });
+    rmSync(npmBinDir, { recursive: true, force: true });
+  }
+});
+
+test('materializeWorktreeNodeModules & createIntegrationWorktree preserve workspace-relative symlinks so candidate packages resolve locally', () => {
+  const parentRepo = mkdtempSync(join(tmpdir(), 'agb-ws-nm-'));
+  try {
+    execFileSync('git', ['init', '-b', 'main'], { cwd: parentRepo, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: parentRepo, stdio: 'ignore' });
+    execFileSync('git', ['config', 'user.email', 'test@local'], { cwd: parentRepo, stdio: 'ignore' });
+    writeFileSync(join(parentRepo, '.gitignore'), 'node_modules/\n.worktrees/\n');
+    writeFileSync(join(parentRepo, 'package.json'), '{"name":"ws-root","private":true}\n');
+    mkdirSync(join(parentRepo, 'packages', 'core'), { recursive: true });
+    writeFileSync(join(parentRepo, 'packages', 'core', 'package.json'), '{"name":"@adlc/core","type":"module","main":"index.mjs"}\n');
+    writeFileSync(join(parentRepo, 'packages', 'core', 'index.mjs'), 'export const ORIGIN = "parent";\n');
+    execFileSync('git', ['add', '.'], { cwd: parentRepo, stdio: 'ignore' });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: parentRepo, stdio: 'ignore' });
+
+    mkdirSync(join(parentRepo, 'node_modules', '@adlc'), { recursive: true });
+    symlinkSync('../../packages/core', join(parentRepo, 'node_modules', '@adlc', 'core'));
+    mkdirSync(join(parentRepo, 'node_modules', 'ext-dep'), { recursive: true });
+    writeFileSync(join(parentRepo, 'node_modules', 'ext-dep', 'package.json'), '{"name":"ext-dep","type":"module","main":"index.mjs"}\n');
+    writeFileSync(join(parentRepo, 'node_modules', 'ext-dep', 'index.mjs'), 'export const EXT = 42;\n');
+
+    const intWt = createIntegrationWorktree(parentRepo, 'abcdef1234567890', 'main');
+    writeFileSync(join(intWt, 'packages', 'core', 'index.mjs'), 'export const ORIGIN = "integration";\n');
+
+    const out = execFileSync(
+      process.execPath,
+      ['-e', 'Promise.all([import("@adlc/core"), import("ext-dep")]).then(([c, e]) => console.log(c.ORIGIN + ":" + e.EXT))'],
+      { cwd: intWt, encoding: 'utf8' },
+    ).trim();
+    assert.equal(out, 'integration:42');
+
+    // Candidate worktree materialization cleans up only sentinel-marked node_modules
+    const candWt = join(parentRepo, '.worktrees', 'agb-cand');
+    mkdirSync(join(candWt, 'packages', 'core'), { recursive: true });
+    writeFileSync(join(candWt, 'packages', 'core', 'package.json'), '{"name":"@adlc/core","type":"module","main":"index.mjs"}\n');
+    writeFileSync(join(candWt, 'packages', 'core', 'index.mjs'), 'export const ORIGIN = "candidate";\n');
+    assert.equal(materializeWorktreeNodeModules(candWt, join(parentRepo, 'node_modules')), true);
+    assert.equal(materializeWorktreeNodeModules(candWt, join(parentRepo, 'node_modules')), false);
+    const candOut = execFileSync(
+      process.execPath,
+      ['-e', 'import("@adlc/core").then((c) => console.log(c.ORIGIN))'],
+      { cwd: candWt, encoding: 'utf8' },
+    ).trim();
+    assert.equal(candOut, 'candidate');
+    removeMaterializedNodeModules(candWt);
+    assert.equal(existsSync(join(candWt, 'node_modules')), false);
+  } finally {
+    rmSync(parentRepo, { recursive: true, force: true });
   }
 });

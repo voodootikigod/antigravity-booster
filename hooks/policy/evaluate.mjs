@@ -983,6 +983,8 @@ export function buildContext(payload, options = {}) {
     .map((p) => resolve(p));
   const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, '/', platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
+  const rawWorkerBuildCmd = typeof env.AGB_WORKER_BUILD_CMD === 'string' ? env.AGB_WORKER_BUILD_CMD.trim() : '';
+  const workerBuildCmd = /^npm run [a-zA-Z0-9_.:-]+$/.test(rawWorkerBuildCmd) ? rawWorkerBuildCmd : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
   const args = payload?.toolCall?.args;
   const cwd = typeof args?.Cwd === 'string' && isAbsolute(args.Cwd) ? resolve(args.Cwd) : null;
@@ -1019,6 +1021,7 @@ export function buildContext(payload, options = {}) {
     workspacePaths,
     workspaceRealPaths,
     workerTicket,
+    workerBuildCmd,
     readonly,
     cdpath: Boolean(env.CDPATH),
     headless: Boolean(workerTicket) || readonly,

@@ -42,7 +42,7 @@
 | lib/status.mjs | RunStatus, cleanOldLogs, formatReportMarkdown, renderStatus, sanitizeRunId, watchStatus |
 | lib/sweep.mjs | expandTargets, sweepToPlan |
 | lib/tui.mjs | ANSI, PHASE_CONFIG, SPINNERS, formatDuration, padVisible, renderPoolGauge, renderProgressBar, renderTUIDashboard, stripAnsi, visibleLength |
-| lib/worktrees.mjs | JOURNAL_PHASES, abortAnyMerge, assertSafeAdlcDir, branchDiff, changedFiles, cleanEmptyNodeModules, commitAll, createIntegrationWorktree, createWorktree, currentBranch, deleteBranch, discardProjection, ensureGitignore, isDirty, isMidMerge, mergeWorktree, pruneWorktrees, quarantineIntegrationJournal, readIntegrationJournal, reapIntegrationWorktrees, removeWorktree, resetToBase, unlinkIntegrationJournal, validateWorktreeRoot, writeIntegrationJournal |
+| lib/worktrees.mjs | JOURNAL_PHASES, abortAnyMerge, assertSafeAdlcDir, branchDiff, changedFiles, cleanEmptyNodeModules, commitAll, createIntegrationWorktree, createWorktree, currentBranch, deleteBranch, discardProjection, ensureGitignore, isDirty, isMidMerge, materializeWorktreeNodeModules, mergeWorktree, pruneWorktrees, quarantineIntegrationJournal, readIntegrationJournal, reapIntegrationWorktrees, removeMaterializedNodeModules, removeWorktree, resetToBase, unlinkIntegrationJournal, validateWorktreeRoot, writeIntegrationJournal |
 | mcp/server.mjs | resolveAgbEntry |
 | sidecars/jetski-launcher.mjs | (no exports: entry point) |
 | sidecars/server.mjs | serveSidecar |

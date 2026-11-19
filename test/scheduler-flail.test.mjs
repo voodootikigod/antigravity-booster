@@ -139,3 +139,27 @@ test('checkFlailDetector: unauthenticated binary fails open without executing ra
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('checkFlailDetector: agy stream-json Created At / Completed At timestamps do not false-positive as scope-violation or edit-churn on At:', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-flail-created-at-'));
+  try {
+    const logFile = join(tmp, 'T-P08.jsonl');
+    const streamOut = Array.from({ length: 5 }, (_, idx) => JSON.stringify({
+      event: 'step_update',
+      step_update: {
+        step_index: idx + 1,
+        state: 'DONE',
+        tool_name: 'run_command',
+        tool_info: {
+          name: 'run_command',
+          result: `Created At: 2026-11-19T01:48:3${idx}-05:00\nCompleted At: 2026-11-19T01:48:4${idx}-05:00\nCommand exited with code 0.\n`,
+        },
+      },
+    })).join('\n');
+    writeFileSync(logFile, JSON.stringify({ role: 'builder', ts: '2026-11-19T01:48:30Z', model: 'm', cwd: tmp, ok: false, kind: 'timeout', prompt: 'build', output: streamOut }) + '\n');
+    const res = await checkFlailDetector({ logFile, scope: ['packages/lesson-foundry/**'], cwd: tmp });
+    assert.equal(res.detected, false, `unexpected flail signals: ${JSON.stringify(res.signals)}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});

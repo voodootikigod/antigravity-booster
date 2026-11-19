@@ -6894,7 +6894,7 @@ __export(status_exports, {
 });
 import { writeFileSync as writeFileSync15, renameSync as renameSync7, mkdirSync as mkdirSync14, readFileSync as readFileSync23, existsSync as existsSync26, chmodSync as chmodSync4, rmSync as rmSync10, readdirSync as readdirSync13, lstatSync as lstatSync13, realpathSync as realpathSync11, openSync as openSync10, readSync as readSync4, closeSync as closeSync10, fstatSync as fstatSync4 } from "node:fs";
 import { appendFile as appendFile2 } from "node:fs/promises";
-import { join as join28, dirname as dirname18, resolve as resolve15, relative as relative11, isAbsolute as isAbsolute9 } from "node:path";
+import { join as join28, dirname as dirname19, resolve as resolve15, relative as relative11, isAbsolute as isAbsolute9 } from "node:path";
 function sanitizeRunId(runId) {
   return String(runId ?? "").replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.\.+/g, "_");
 }
@@ -7480,7 +7480,7 @@ var init_status = __esm({
         const eventsPath = join28(this.repo, ".booster", "logs", safeRunId, "events.jsonl");
         ownerOnlyDir(join28(this.repo, ".booster"));
         ownerOnlyDir(join28(this.repo, ".booster", "logs"));
-        ownerOnlyDir(dirname18(eventsPath));
+        ownerOnlyDir(dirname19(eventsPath));
         const str = JSON.stringify(evt) + "\n";
         this.writePromise = this.writePromise.then(() => appendFile2(eventsPath, str, { mode: 384 })).catch(() => {
         });
@@ -7489,7 +7489,7 @@ var init_status = __esm({
         this.state.done = true;
         this.state.report = summary;
         this.flush();
-        const boosterDir = dirname18(this.path);
+        const boosterDir = dirname19(this.path);
         writeOwnerOnly(join28(boosterDir, "report.json"), JSON.stringify(summary, null, 2));
         try {
           writeOwnerOnly(join28(boosterDir, "report.md"), formatReportMarkdown(summary, this.state));
@@ -7502,7 +7502,7 @@ var init_status = __esm({
       }
       flush() {
         this.state.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-        ownerOnlyDir(dirname18(this.path));
+        ownerOnlyDir(dirname19(this.path));
         writeOwnerOnly(this.path, JSON.stringify(this.state, null, 2));
       }
     };
@@ -7531,7 +7531,7 @@ __export(sync_models_exports, {
   syncModels: () => syncModels
 });
 import { mkdirSync as mkdirSync19, readFileSync as readFileSync28, realpathSync as realpathSync14, writeFileSync as writeFileSync19 } from "node:fs";
-import { basename as basename11, dirname as dirname22, join as join35 } from "node:path";
+import { basename as basename12, dirname as dirname23, join as join35 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 function parseAgyModelsOutput(rawOutput) {
   return parseAgyModelRows(rawOutput);
@@ -7608,7 +7608,7 @@ function buildModelsReferencePayload(liveModels = parseAgyModelsOutput(CACHED_MO
 }
 function resolveDefaultRootDir() {
   if (IS_BUNDLED) return process.cwd();
-  return dirname22(dirname22(fileURLToPath6(import.meta.url)));
+  return dirname23(dirname23(fileURLToPath6(import.meta.url)));
 }
 function syncModels({
   check = false,
@@ -7690,7 +7690,7 @@ function isStandaloneSyncModelsEntry() {
   if (IS_BUNDLED || !process.argv[1]) return false;
   try {
     const selfPath = fileURLToPath6(import.meta.url);
-    if (basename11(selfPath) !== "sync-models.mjs") return false;
+    if (basename12(selfPath) !== "sync-models.mjs") return false;
     return realpathSync14(process.argv[1]) === realpathSync14(selfPath);
   } catch {
     return false;
@@ -7759,7 +7759,7 @@ import {
   rmSync as rmSync15,
   existsSync as existsSync34
 } from "node:fs";
-import { join as join36, basename as basename12 } from "node:path";
+import { join as join36, basename as basename13 } from "node:path";
 import { homedir as homedir10 } from "node:os";
 import { execFileSync as execFileSync17 } from "node:child_process";
 import { randomBytes as randomBytes3 } from "node:crypto";
@@ -7941,7 +7941,7 @@ function removeImportEntry(home, name) {
   renameSync8(tmp, p);
 }
 function removeUninstallerDir(dir) {
-  if (dir && basename12(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
+  if (dir && basename13(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
     try {
       rmSync15(dir, { recursive: true, force: true });
     } catch {
@@ -8033,7 +8033,7 @@ import {
   rmSync as rmSync16,
   readdirSync as readdirSync16,
   lstatSync as lstatSync18,
-  readlinkSync as readlinkSync4,
+  readlinkSync as readlinkSync5,
   symlinkSync as symlinkSync6,
   unlinkSync as unlinkSync8,
   renameSync as renameSync9,
@@ -8043,7 +8043,7 @@ import {
   statSync as statSync10,
   mkdtempSync as mkdtempSync9
 } from "node:fs";
-import { join as join37, dirname as dirname23, resolve as resolve21, sep as sep5, isAbsolute as isAbsolute11, delimiter as delimiter2 } from "node:path";
+import { join as join37, dirname as dirname24, resolve as resolve21, sep as sep6, isAbsolute as isAbsolute11, delimiter as delimiter2 } from "node:path";
 import { homedir as homedir11, tmpdir as tmpdir10 } from "node:os";
 import { execFileSync as execFileSync18, spawn as spawn4 } from "node:child_process";
 import { randomBytes as randomBytes4 } from "node:crypto";
@@ -8072,7 +8072,7 @@ function readJson(file, fallback) {
   }
 }
 function writeJsonAtomic(file, value, mode = 420) {
-  mkdirSync21(dirname23(file), { recursive: true });
+  mkdirSync21(dirname24(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${randomBytes4(3).toString("hex")}.tmp`;
   writeFileSync21(tmp, JSON.stringify(value, null, 2) + "\n", { mode });
   renameSync9(tmp, file);
@@ -8156,7 +8156,7 @@ function scanSkillSymlinks(skillsDir) {
   if (!existsSync35(skillsDir)) return [];
   const links = [];
   for (const e of readdirSync16(skillsDir, { withFileTypes: true })) {
-    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync4(join37(skillsDir, e.name)) });
+    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync5(join37(skillsDir, e.name)) });
   }
   return links.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -8175,11 +8175,11 @@ function realOrResolved(p) {
   }
 }
 function boosterCheckoutFor(target) {
-  let dir = dirname23(target);
-  while (dir && dir !== dirname23(dir)) {
+  let dir = dirname24(target);
+  while (dir && dir !== dirname24(dir)) {
     const pkg = join37(dir, "package.json");
     if (existsSync35(pkg) && readJson(pkg, {})?.name === BOOSTER_PLUGIN_NAME) return dir;
-    dir = dirname23(dir);
+    dir = dirname24(dir);
   }
   return null;
 }
@@ -8192,7 +8192,7 @@ function isOwnedSkillLink(link, { skillsDir, home, npmRoot }) {
   ];
   if (npmRoot) roots.push(join37(npmRoot, BOOSTER_PLUGIN_NAME));
   if ([raw, target].some((t) => roots.some((r) => isUnder(t, realOrResolved(r)) || isUnder(t, r)))) return true;
-  if ([raw, target].some((t) => t.split(sep5).join("/").includes("/node_modules/@adlc/antigravity/") || t.split(sep5).join("/").endsWith("/node_modules/@adlc/antigravity"))) return true;
+  if ([raw, target].some((t) => t.split(sep6).join("/").includes("/node_modules/@adlc/antigravity/") || t.split(sep6).join("/").endsWith("/node_modules/@adlc/antigravity"))) return true;
   for (const t of [raw, target]) {
     const checkout = boosterCheckoutFor(t);
     if (checkout && isUnder(t, join37(checkout, "skills"))) return true;
@@ -8317,7 +8317,7 @@ function step6Finalize(ctx, state) {
   for (const { name, target } of state.recordedSymlinks ?? []) {
     const at = join37(p.skills, name);
     try {
-      if (lstatSync18(at).isSymbolicLink() && readlinkSync4(at) === target) unlinkSync8(at);
+      if (lstatSync18(at).isSymbolicLink() && readlinkSync5(at) === target) unlinkSync8(at);
     } catch {
     }
   }
@@ -8474,7 +8474,7 @@ async function restoreFromBaseline(ctx, state) {
   assertMigrationLockHeld(lock);
   if (baseline.shimPreviouslyAbsent) rmSync16(p.shim, { force: true });
   else {
-    mkdirSync21(dirname23(p.shim), { recursive: true });
+    mkdirSync21(dirname24(p.shim), { recursive: true });
     copyFileSync7(join37(base, "shim", "agb"), p.shim);
     chmodSync5(p.shim, 493);
   }
@@ -8703,7 +8703,7 @@ var init_migrate2 = __esm({
     COMPLETION_NOTICE = "Migration successful. Global npm package may be uninstalled: npm uninstall -g antigravity-booster. CLI commands remain available via ~/.local/bin/agb and slash commands (/agb-doctor, /agb-bootstrap, /agb-migrate).";
     MigrateError = class extends Error {
     };
-    isUnder = (child, parent) => child === parent || child.startsWith(parent.endsWith(sep5) ? parent : parent + sep5);
+    isUnder = (child, parent) => child === parent || child.startsWith(parent.endsWith(sep6) ? parent : parent + sep6);
     sleep3 = (ms) => new Promise((r) => setTimeout(r, ms));
   }
 });
@@ -8715,7 +8715,7 @@ __export(server_exports, {
 });
 import { createServer } from "node:http";
 import { readFileSync as readFileSync31, statSync as statSync11, existsSync as existsSync36, openSync as openSync12, readSync as readSync5, closeSync as closeSync12, writeFileSync as writeFileSync22, mkdirSync as mkdirSync22, createReadStream } from "node:fs";
-import { join as join38, dirname as dirname24 } from "node:path";
+import { join as join38, dirname as dirname25 } from "node:path";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
 import { timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 function serveSidecar(repoPath, port = 3333, token = null) {
@@ -8924,13 +8924,13 @@ function serveSidecar(repoPath, port = 3333, token = null) {
 var __dirname;
 var init_server = __esm({
   "sidecars/server.mjs"() {
-    __dirname = dirname24(fileURLToPath7(import.meta.url));
+    __dirname = dirname25(fileURLToPath7(import.meta.url));
   }
 });
 
 // bin/agb.mjs
 import { readFileSync as readFileSync32, writeFileSync as writeFileSync23, mkdirSync as mkdirSync23, appendFileSync as appendFileSync3, existsSync as existsSync37 } from "node:fs";
-import { resolve as resolve22, join as join39, basename as basename13 } from "node:path";
+import { resolve as resolve22, join as join39, basename as basename14 } from "node:path";
 import { fileURLToPath as fileURLToPath8 } from "node:url";
 import { execFileSync as execFileSync19 } from "node:child_process";
 
@@ -8938,7 +8938,7 @@ import { execFileSync as execFileSync19 } from "node:child_process";
 import { writeFileSync as writeFileSync18, mkdtempSync as mkdtempSync8, rmSync as rmSync13, existsSync as existsSync31, readFileSync as readFileSync25, readdirSync as readdirSync14, realpathSync as realpathSync13, mkdirSync as mkdirSync17, lstatSync as lstatSync16, openSync as openSync11, closeSync as closeSync11, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
 import { execFileSync as execFileSync13 } from "node:child_process";
 import { tmpdir as tmpdir9 } from "node:os";
-import path3, { join as join33, resolve as resolve18, isAbsolute as isAbsolute10, dirname as dirname20, basename as basename9 } from "node:path";
+import path3, { join as join33, resolve as resolve18, isAbsolute as isAbsolute10, dirname as dirname21, basename as basename10 } from "node:path";
 import { pathToFileURL } from "node:url";
 import crypto5 from "node:crypto";
 
@@ -9040,7 +9040,7 @@ import { spawn as spawn2, execFileSync as execFileSync10 } from "node:child_proc
 import { mkdirSync as mkdirSync11, existsSync as existsSync21, readFileSync as readFileSync19, writeFileSync as writeFileSync12, rmdirSync as rmdirSync2, unlinkSync as unlinkSync6, realpathSync as realpathSync7, openSync as openSync9, writeSync as writeSync4, closeSync as closeSync9, constants as constants4, rmSync as rmSync8, mkdtempSync as mkdtempSync5, lstatSync as lstatSync11, statSync as statSync5, symlinkSync as symlinkSync4, readdirSync as readdirSync10, copyFileSync as copyFileSync5, cpSync as cpSync3 } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { tmpdir as tmpdir6, homedir as homedir5 } from "node:os";
-import { dirname as dirname16, join as join22, resolve as resolve11, relative as relative8, isAbsolute as isAbsolute7 } from "node:path";
+import { basename as basename8, dirname as dirname17, join as join22, resolve as resolve11, relative as relative8, isAbsolute as isAbsolute7 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import crypto4 from "node:crypto";
 
@@ -9072,11 +9072,12 @@ import {
   rmSync as rmSync5,
   rmdirSync,
   symlinkSync as symlinkSync3,
+  readlinkSync as readlinkSync2,
   cpSync as cpSync2,
   lstatSync as lstatSync8,
   realpathSync as realpathSync4
 } from "node:fs";
-import { join as join19, basename as basename7, resolve as resolve8, relative as relative6, isAbsolute as isAbsolute5 } from "node:path";
+import { join as join19, dirname as dirname14, basename as basename7, resolve as resolve8, relative as relative6, isAbsolute as isAbsolute5, sep as sep4 } from "node:path";
 import crypto2 from "node:crypto";
 var NULL_HOOKS_PATH = process.platform === "win32" ? "NUL" : "/dev/null";
 function git(repo, ...args) {
@@ -9303,6 +9304,14 @@ function discardProjection(worktree, base = "HEAD") {
       } catch {
       }
     }
+    try {
+      git(worktree, "clean", "-fd", "--", p);
+    } catch {
+    }
+  }
+  try {
+    rmSync5(join19(worktree, ".agb_home"), { recursive: true, force: true });
+  } catch {
   }
 }
 function cleanEmptyNodeModules(worktree) {
@@ -9311,6 +9320,81 @@ function cleanEmptyNodeModules(worktree) {
     const st = lstatSync8(nm);
     if (st.isDirectory() && !st.isSymbolicLink() && readdirSync8(nm).length === 0) {
       rmdirSync(nm);
+    }
+  } catch {
+  }
+}
+function materializeWorktreeNodeModules(worktreePath, sourceNodeModules) {
+  if (!worktreePath || !sourceNodeModules || !existsSync18(sourceNodeModules)) return false;
+  cleanEmptyNodeModules(worktreePath);
+  const targetModules = join19(worktreePath, "node_modules");
+  try {
+    lstatSync8(targetModules);
+    return false;
+  } catch {
+  }
+  let realSource;
+  try {
+    realSource = realpathSync4(sourceNodeModules);
+  } catch {
+    return false;
+  }
+  const sourceRepoRoot = dirname14(realSource);
+  const linkItem = (srcItem, dstItem) => {
+    const st = lstatSync8(srcItem);
+    if (st.isSymbolicLink()) {
+      const rawLink = readlinkSync2(srcItem);
+      if (!isAbsolute5(rawLink)) {
+        const resolvedInSource = resolve8(dirname14(srcItem), rawLink);
+        if (resolvedInSource.startsWith(realSource + sep4)) {
+          symlinkSync3(rawLink, dstItem);
+          return;
+        }
+        if (resolvedInSource.startsWith(sourceRepoRoot + sep4) && existsSync18(resolve8(dirname14(dstItem), rawLink))) {
+          symlinkSync3(rawLink, dstItem);
+          return;
+        }
+        symlinkSync3(resolvedInSource, dstItem, "junction");
+        return;
+      }
+      symlinkSync3(rawLink, dstItem);
+      return;
+    }
+    symlinkSync3(srcItem, dstItem, st.isDirectory() ? "junction" : "file");
+  };
+  try {
+    mkdirSync8(targetModules, { recursive: true });
+    writeFileSync9(join19(targetModules, ".agb-materialized"), "");
+    for (const name of readdirSync8(realSource)) {
+      if (name === ".agb-materialized") continue;
+      const srcEntry = join19(realSource, name);
+      const dstEntry = join19(targetModules, name);
+      const st = lstatSync8(srcEntry);
+      if ((name === ".bin" || name.startsWith("@")) && st.isDirectory() && !st.isSymbolicLink()) {
+        mkdirSync8(dstEntry, { recursive: true });
+        for (const sub of readdirSync8(srcEntry)) {
+          linkItem(join19(srcEntry, sub), join19(dstEntry, sub));
+        }
+      } else {
+        linkItem(srcEntry, dstEntry);
+      }
+    }
+    return true;
+  } catch {
+    try {
+      rmSync5(targetModules, { recursive: true, force: true });
+    } catch {
+    }
+    return false;
+  }
+}
+function removeMaterializedNodeModules(worktreePath) {
+  if (!worktreePath) return;
+  const nm = join19(worktreePath, "node_modules");
+  try {
+    const st = lstatSync8(nm);
+    if (st.isDirectory() && !st.isSymbolicLink() && existsSync18(join19(nm, ".agb-materialized"))) {
+      rmSync5(nm, { recursive: true, force: true });
     }
   } catch {
   }
@@ -9363,12 +9447,14 @@ function createIntegrationWorktree(repo, token, base = "main") {
   const repoModules = join19(repo, "node_modules");
   const targetModules = join19(path4, "node_modules");
   if (existsSync18(repoModules) && !existsSync18(targetModules)) {
-    try {
-      symlinkSync3(repoModules, targetModules, "junction");
-    } catch {
+    if (!materializeWorktreeNodeModules(path4, repoModules)) {
       try {
-        cpSync2(repoModules, targetModules, { recursive: true });
+        symlinkSync3(repoModules, targetModules, "junction");
       } catch {
+        try {
+          cpSync2(repoModules, targetModules, { recursive: true });
+        } catch {
+        }
       }
     }
   }
@@ -9558,7 +9644,7 @@ function unlinkIntegrationJournal(repo) {
 // lib/doctor.mjs
 import { existsSync as existsSync19, readFileSync as readFileSync17, readdirSync as readdirSync9, mkdtempSync as mkdtempSync4, writeFileSync as writeFileSync10, copyFileSync as copyFileSync4, openSync as openSync7, closeSync as closeSync7, writeSync as writeSync2, fsyncSync as fsyncSync4, realpathSync as realpathSync5, mkdirSync as mkdirSync9, rmSync as rmSync6, unlinkSync as unlinkSync4, lstatSync as lstatSync9, statSync as statSync3, truncateSync, constants as constants2 } from "fs";
 import { homedir as homedir4, tmpdir as tmpdir4 } from "os";
-import { join as join20, dirname as dirname14, relative as relative7, resolve as resolve9, isAbsolute as isAbsolute6, delimiter } from "path";
+import { join as join20, dirname as dirname15, relative as relative7, resolve as resolve9, isAbsolute as isAbsolute6, delimiter } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 import crypto3 from "crypto";
 import net from "net";
@@ -9914,7 +10000,7 @@ async function checkAdlcBinary({ env = process.env, cwd = process.cwd() } = {}) 
   }
 }
 function withFileLockSync(lockPath, fn, { timeoutMs = 1e4 } = {}) {
-  const dir = dirname14(lockPath);
+  const dir = dirname15(lockPath);
   mkdirSync9(dir, { recursive: true, mode: 448 });
   const start = Date.now();
   let fd = null;
@@ -10214,7 +10300,7 @@ function verifyWindowsSandboxAttestation({
   }
   const record = JSON.stringify({ nonce: att.nonce, runId: att.runId, consumedAt: (/* @__PURE__ */ new Date()).toISOString() }) + "\n";
   const appendLedger = (filePath) => {
-    const dir = dirname14(filePath);
+    const dir = dirname15(filePath);
     mkdirSync9(dir, { recursive: true });
     if (lstatSync9(dir).isSymbolicLink()) {
       throw new Error(`attestation ledger directory is a symbolic link: ${dir}`);
@@ -10420,7 +10506,7 @@ async function verifyWindowsSandboxActive({ cwd = process.cwd(), env = process.e
       server.listen(0, "127.0.0.1", resolve23);
     });
     const port = server.address().port;
-    const probeHelper = isTestExecution(env) && env.AGB_SANDBOX_PROBE_HELPER ? env.AGB_SANDBOX_PROBE_HELPER : join20(dirname14(fileURLToPath2(import.meta.url)), "..", "lib", "sandbox-probe-helper.mjs");
+    const probeHelper = isTestExecution(env) && env.AGB_SANDBOX_PROBE_HELPER ? env.AGB_SANDBOX_PROBE_HELPER : join20(dirname15(fileURLToPath2(import.meta.url)), "..", "lib", "sandbox-probe-helper.mjs");
     let probeStdout = "";
     let probeStderr = "";
     if (env.AGB_SANDBOX_PROBE_CMD) {
@@ -11036,7 +11122,7 @@ import {
   fstatSync as fstatSync3,
   writeSync as writeSync3
 } from "node:fs";
-import { join as join21, dirname as dirname15, resolve as resolve10 } from "node:path";
+import { join as join21, dirname as dirname16, resolve as resolve10 } from "node:path";
 import { tmpdir as tmpdir5 } from "node:os";
 import { execFileSync as execFileSync9, execFile as execFile4 } from "node:child_process";
 import { promisify as promisify3 } from "node:util";
@@ -11190,7 +11276,7 @@ function reclaimStaleLock(lockFile, expectedToken, expectedIno) {
   }
 }
 async function withLock(lockFile = getLockFile(), fn, { timeoutMs = 1e4, retryMs = 25, startTimeLookup = getProcessStartTime2 } = {}) {
-  const dir = dirname15(lockFile);
+  const dir = dirname16(lockFile);
   mkdirSync10(dir, { recursive: true, mode: 448 });
   const lockToken = `${process.pid}:${randomUUID4()}`;
   const myStartTime = startTimeLookup(process.pid);
@@ -11248,7 +11334,7 @@ async function withLock(lockFile = getLockFile(), fn, { timeoutMs = 1e4, retryMs
   }
 }
 function withLockSync(lockFile = getLockFile(), fn, { timeoutMs = 5e3, retryMs = 10, startTimeLookup = getProcessStartTime2 } = {}) {
-  const dir = dirname15(lockFile);
+  const dir = dirname16(lockFile);
   mkdirSync10(dir, { recursive: true, mode: 448 });
   const lockToken = `${process.pid}:${randomUUID4()}`;
   const myStartTime = startTimeLookup(process.pid);
@@ -11302,7 +11388,7 @@ function withLockSync(lockFile = getLockFile(), fn, { timeoutMs = 5e3, retryMs =
   }
 }
 function durableWriteJson(targetPath, data) {
-  const dir = dirname15(targetPath);
+  const dir = dirname16(targetPath);
   mkdirSync10(dir, { recursive: true, mode: 448 });
   const tmpPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
   const fd = openSync8(tmpPath, "w", 384);
@@ -11733,21 +11819,21 @@ function writeLeaseHeartbeat(repo, leaseId, ownerToken, timestamp) {
   if (existsSync20(leasesDir)) {
     const realLeases = realpathSync6(leasesDir);
     const isWin = process.platform === "win32";
-    const sep6 = isWin ? "\\" : "/";
-    if (!realLeases.startsWith(realRepo + sep6) && realLeases !== realRepo) {
+    const sep7 = isWin ? "\\" : "/";
+    if (!realLeases.startsWith(realRepo + sep7) && realLeases !== realRepo) {
       throw new Error(`refusing to write lease heartbeat outside repository: ${realLeases}`);
     }
   }
   const primaryPath = getLeaseHeartbeatPath(repo, leaseId);
   try {
-    mkdirSync10(dirname15(primaryPath), { recursive: true, mode: 448 });
+    mkdirSync10(dirname16(primaryPath), { recursive: true, mode: 448 });
     if (lstatSync10(adlcDir).isSymbolicLink() || lstatSync10(leasesDir).isSymbolicLink()) {
       throw new Error(`refusing to write lease heartbeat through symlinked directory`);
     }
     const realLeases = realpathSync6(leasesDir);
     const isWin = process.platform === "win32";
-    const sep6 = isWin ? "\\" : "/";
-    if (!realLeases.startsWith(realRepo + sep6) && realLeases !== realRepo) {
+    const sep7 = isWin ? "\\" : "/";
+    if (!realLeases.startsWith(realRepo + sep7) && realLeases !== realRepo) {
       throw new Error(`refusing to write lease heartbeat outside repository: ${realLeases}`);
     }
     safeWriteHeartbeatFile(primaryPath, { ownerToken, timestamp });
@@ -13645,29 +13731,29 @@ async function runAgy({
           const findRepoRoot = (startDir) => {
             let cur = resolve11(startDir);
             let root = null;
-            while (cur && cur !== dirname16(cur)) {
+            while (cur && cur !== dirname17(cur)) {
               if (existsSync21(join22(cur, ".git")) || existsSync21(join22(cur, "package.json"))) {
                 root = cur;
               }
-              cur = dirname16(cur);
+              cur = dirname17(cur);
             }
             return root;
           };
-          const wtRepo = findRepoRoot(dirname16(realAllowedDir));
+          const wtRepo = findRepoRoot(dirname17(realAllowedDir));
           let candidateNm = null;
           const searchNodeModules = (startDir, stopDir = null) => {
             let cur = startDir;
-            while (cur && cur !== dirname16(cur)) {
+            while (cur && cur !== dirname17(cur)) {
               const nm = join22(cur, "node_modules");
               if (existsSync21(nm)) return nm;
               if (stopDir && cur === stopDir) break;
-              cur = dirname16(cur);
+              cur = dirname17(cur);
             }
             return null;
           };
-          candidateNm = searchNodeModules(dirname16(realAllowedDir), wtRepo);
+          candidateNm = searchNodeModules(dirname17(realAllowedDir), wtRepo);
           if (!candidateNm && targetGitDir) {
-            candidateNm = searchNodeModules(dirname16(targetGitDir));
+            candidateNm = searchNodeModules(dirname17(targetGitDir));
           }
           if (!candidateNm && altDirs.length > 0) {
             for (const alt of altDirs) {
@@ -13819,14 +13905,14 @@ async function runAgy({
         }
         if (resolvedAgy && existsSync21(resolvedAgy)) {
           launchArgs.push("--ro-bind", resolvedAgy, resolvedAgy);
-          const agyDir = dirname16(resolvedAgy);
+          const agyDir = dirname17(resolvedAgy);
           if (existsSync21(agyDir)) {
             launchArgs.push("--ro-bind", agyDir, agyDir);
           }
         }
         if (entrypointAgy && entrypointAgy !== resolvedAgy && existsSync21(entrypointAgy)) {
           launchArgs.push("--ro-bind", entrypointAgy, entrypointAgy);
-          const entryDir = dirname16(entrypointAgy);
+          const entryDir = dirname17(entrypointAgy);
           if (existsSync21(entryDir)) {
             launchArgs.push("--ro-bind", entryDir, entryDir);
           }
@@ -13839,9 +13925,21 @@ async function runAgy({
         }
         if (resolvedNode && existsSync21(resolvedNode)) {
           launchArgs.push("--ro-bind", resolvedNode, resolvedNode);
-          const nodeDir = dirname16(resolvedNode);
+          const nodeDir = dirname17(resolvedNode);
           if (existsSync21(nodeDir)) {
             launchArgs.push("--ro-bind", nodeDir, nodeDir);
+          }
+          if (basename8(nodeDir) === "bin") {
+            const nodePrefix = dirname17(nodeDir);
+            const broadPrefixes = /* @__PURE__ */ new Set(["/", userHome, homedir5(), join22(userHome, ".local"), join22(homedir5(), ".local")]);
+            if (!broadPrefixes.has(nodePrefix)) {
+              for (const subDir of ["lib", "share"]) {
+                const candidate = join22(nodePrefix, subDir);
+                if (existsSync21(candidate)) {
+                  launchArgs.push("--ro-bind", candidate, candidate);
+                }
+              }
+            }
           }
         }
         const bwrapAgyBin = resolvedAgy || entrypointAgy || agyBin;
@@ -13931,15 +14029,28 @@ async function runAgy({
         }
         let extraReadPaths = "";
         try {
-          const agyRealDir = dirname16(realpathSync7(resolvedAgyCandidate)).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+          const agyRealDir = dirname17(realpathSync7(resolvedAgyCandidate)).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
           extraReadPaths += `
 (allow file-read* (subpath "${agyRealDir}"))`;
         } catch {
         }
         try {
-          const nodeRealDir = dirname16(realpathSync7(process.execPath)).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+          const nodeRealPath = realpathSync7(process.execPath);
+          const nodeBinDir = dirname17(nodeRealPath);
+          const escapedBin = nodeBinDir.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
           extraReadPaths += `
-(allow file-read* (subpath "${nodeRealDir}"))`;
+(allow file-read* (subpath "${escapedBin}"))`;
+          if (basename8(nodeBinDir) === "bin") {
+            const nodePrefix = dirname17(nodeBinDir);
+            if (nodePrefix !== "/" && nodePrefix !== homeDir && nodePrefix !== join22(homeDir, ".local")) {
+              const nodeLibDir = join22(nodePrefix, "lib");
+              if (existsSync21(nodeLibDir)) {
+                const escapedLib = nodeLibDir.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                extraReadPaths += `
+(allow file-read* (subpath "${escapedLib}"))`;
+              }
+            }
+          }
         } catch {
         }
         let extraGitPaths = "";
@@ -14099,14 +14210,21 @@ async function runAgy({
       spawnEnv = { ...process.env, ...env || {} };
     }
     for (const k of Object.keys(spawnEnv)) {
-      if (/^(?:agb_worker_ticket|agb_worker_mode|init_cwd)$/i.test(k)) delete spawnEnv[k];
+      if (/^(?:agb_worker_ticket|agb_worker_mode|agb_worker_build_cmd|init_cwd)$/i.test(k)) delete spawnEnv[k];
     }
     if (cwd) {
       spawnEnv.PWD = cwd;
     }
     const workerTicket = typeof worker?.ticket === "string" ? worker.ticket.trim() : "";
-    if (workerTicket) spawnEnv.AGB_WORKER_TICKET = workerTicket;
-    else spawnEnv.AGB_WORKER_MODE = "readonly";
+    const workerBuildCmd = typeof worker?.buildCmd === "string" ? worker.buildCmd.trim() : "";
+    if (workerTicket) {
+      spawnEnv.AGB_WORKER_TICKET = workerTicket;
+      if (/^npm run [a-zA-Z0-9_.:-]+$/.test(workerBuildCmd)) {
+        spawnEnv.AGB_WORKER_BUILD_CMD = workerBuildCmd;
+      }
+    } else {
+      spawnEnv.AGB_WORKER_MODE = "readonly";
+    }
     if (!isTestExecution(effectiveEnv)) {
       for (const k of Object.keys(spawnEnv)) {
         if (k.startsWith("FAKE_")) delete spawnEnv[k];
@@ -14124,18 +14242,26 @@ async function runAgy({
       spawnEnv.AGY_WORKSPACE = cwd;
       spawnEnv.ANTIGRAVITY_WORKSPACE = cwd;
       if (repo || cwd) {
-        const rootDir = repo ?? dirname16(cwd);
+        const rootDir = repo ?? dirname17(cwd);
         spawnEnv.GIT_CEILING_DIRECTORIES = join22(rootDir, ".worktrees");
       }
       spawnEnv.GIT_CONFIG_NOSYSTEM = "1";
       spawnEnv.GIT_CONFIG_GLOBAL = process.platform === "win32" ? "NUL" : "/dev/null";
       try {
-        const realNodeDir = dirname16(realpathSync7(process.execPath));
-        const sep6 = process.platform === "win32" ? ";" : ":";
+        const realNodeBinDir = dirname17(realpathSync7(process.execPath));
+        const pathEntries = (spawnEnv.PATH || "").split(":").filter(Boolean);
+        if (realNodeBinDir && !pathEntries.includes(realNodeBinDir)) {
+          spawnEnv.PATH = [...pathEntries, realNodeBinDir].join(":");
+        }
+      } catch {
+      }
+      try {
+        const realNodeDir = dirname17(realpathSync7(process.execPath));
+        const sep7 = process.platform === "win32" ? ";" : ":";
         const curPath = spawnEnv.PATH || "";
-        const parts = curPath.split(sep6).filter(Boolean);
+        const parts = curPath.split(sep7).filter(Boolean);
         if (realNodeDir && !parts.includes(realNodeDir)) {
-          spawnEnv.PATH = parts.length > 0 ? `${curPath}${sep6}${realNodeDir}` : realNodeDir;
+          spawnEnv.PATH = parts.length > 0 ? `${curPath}${sep7}${realNodeDir}` : realNodeDir;
         }
       } catch {
       }
@@ -14564,7 +14690,7 @@ async function runAgy({
       result.conversationId = extractedConversationId;
       result.rateLimited = Boolean(classified.rateLimited);
       if (logFile) {
-        mkdirSync11(dirname16(logFile), { recursive: true, mode: 448 });
+        mkdirSync11(dirname17(logFile), { recursive: true, mode: 448 });
         const record = {
           ts: (/* @__PURE__ */ new Date()).toISOString(),
           model,
@@ -14973,16 +15099,6 @@ ${err.stderr ?? ""}`.slice(-2e3);
     if (emptyRoDir) rmSync9(emptyRoDir, { recursive: true, force: true });
   }
 }
-async function runGates(gates, cwd, { sandbox = false, env = process.env } = {}) {
-  const results = [];
-  for (const [name, cmd2] of Object.entries(gates ?? {})) {
-    if (!cmd2) continue;
-    const r = await runGate(name, cmd2, cwd, { sandbox, env });
-    results.push(r);
-    if (!r.ok) return { ok: false, results };
-  }
-  return { ok: true, results };
-}
 
 // lib/prosecute.mjs
 import { execFile as execFile6 } from "node:child_process";
@@ -15368,7 +15484,7 @@ init_plugin_paths();
 
 // lib/plan-integrity.mjs
 import { existsSync as existsSync23, lstatSync as lstatSync12, mkdirSync as mkdirSync13, chmodSync as chmodSync3, realpathSync as realpathSync9, writeFileSync as writeFileSync14, renameSync as renameSync6 } from "node:fs";
-import { basename as basename8, dirname as dirname17, isAbsolute as isAbsolute8, join as join24, posix as posix2, relative as relative9, resolve as resolve12, sep as sep4 } from "node:path";
+import { basename as basename9, dirname as dirname18, isAbsolute as isAbsolute8, join as join24, posix as posix2, relative as relative9, resolve as resolve12, sep as sep5 } from "node:path";
 import { createHash as createHash5, randomUUID as randomUUID6 } from "node:crypto";
 var TICKET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 var PATHSPEC_RE = /^(?:[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\.[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\*{1,2}(?:\.[a-zA-Z0-9_-]+)?|[a-zA-Z0-9_.-]*\*[a-zA-Z0-9_.-]*)(?:\/(?:[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\.[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\*{1,2}(?:\.[a-zA-Z0-9_-]+)?|[a-zA-Z0-9_.-]*\*[a-zA-Z0-9_.-]*))*$/;
@@ -15406,7 +15522,7 @@ function sanitizeRemoteUrl(remote) {
   return trimmed2.replace(/\/\/[^/@\s]+@/, "//");
 }
 function isEscapingRelative(rel) {
-  return rel === ".." || rel.startsWith(`..${sep4}`) || rel.startsWith("../") || rel.startsWith("..\\") || isAbsolute8(rel);
+  return rel === ".." || rel.startsWith(`..${sep5}`) || rel.startsWith("../") || rel.startsWith("..\\") || isAbsolute8(rel);
 }
 function writeArtifactFileAtomically(dir, filename, content, { rootDir } = {}) {
   if (!isSafePathSegment(filename)) {
@@ -15437,20 +15553,20 @@ function writeArtifactFileAtomically(dir, filename, content, { rootDir } = {}) {
             } catch (err) {
               if (err?.code !== "ENOENT") throw err;
             }
-            const parent = dirname17(probe);
+            const parent = dirname18(probe);
             if (parent === probe) break;
-            tail.unshift(basename8(probe));
+            tail.unshift(basename9(probe));
             probe = parent;
           }
           if (!matched) {
             return { ok: false, path: null, error: `artifact directory escapes root: ${resolvedDir}` };
           }
-          relFromRoot = tail.join(sep4);
+          relFromRoot = tail.join(sep5);
         }
       }
       targetDir = relFromRoot ? join24(realRoot, relFromRoot) : realRoot;
       let cur = realRoot;
-      for (const seg of relFromRoot.split(sep4).filter(Boolean)) {
+      for (const seg of relFromRoot.split(sep5).filter(Boolean)) {
         cur = join24(cur, seg);
         try {
           const st = lstatSync12(cur);
@@ -17440,7 +17556,7 @@ init_status();
 // lib/active-rails.mjs
 import { existsSync as existsSync27, lstatSync as lstatSync14, statSync as statSync8 } from "node:fs";
 init_tickets();
-import { dirname as dirname19, join as join29, resolve as resolve16 } from "node:path";
+import { dirname as dirname20, join as join29, resolve as resolve16 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
 function isActiveTicket(ticket) {
   if (!ticket || typeof ticket !== "object") return true;
@@ -17776,7 +17892,7 @@ var TerminalHUD = class {
 };
 
 // lib/scheduler-verify.mjs
-import { existsSync as existsSync30, lstatSync as lstatSync15, mkdirSync as mkdirSync16, mkdtempSync as mkdtempSync7, readlinkSync as readlinkSync2, realpathSync as realpathSync12, rmSync as rmSync12, writeFileSync as writeFileSync17 } from "node:fs";
+import { existsSync as existsSync30, lstatSync as lstatSync15, mkdirSync as mkdirSync16, mkdtempSync as mkdtempSync7, readlinkSync as readlinkSync3, realpathSync as realpathSync12, rmSync as rmSync12, writeFileSync as writeFileSync17 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
 import { homedir as homedir8, platform as platform2, tmpdir as tmpdir8 } from "node:os";
 import path2, { join as join32 } from "node:path";
@@ -17856,7 +17972,7 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
         try {
           const st = lstatSync15(fullPath);
           if (st.isSymbolicLink()) {
-            const rawTarget = readlinkSync2(fullPath);
+            const rawTarget = readlinkSync3(fullPath);
             let finalReal;
             try {
               finalReal = realpathSync12(fullPath);
@@ -17910,7 +18026,7 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
           const header = { ts: o.ts, model: o.model, cwd: o.cwd, ms: o.ms, ok: o.ok, error: o.error, kind: o.kind };
           for (const k of Object.keys(header)) if (header[k] === void 0) delete header[k];
           const safePrompt = String(o.prompt || "").replace(/(^|\r\n|\r|\n)===(?=\r\n|\r|\n|$)/g, "$1_=_").replace(/(^|\r\n|\r|\n)---PROMPT---(?=\r\n|\r|\n|$)/g, "$1_-_PROMPT_-_").replace(/(^|\r\n|\r|\n)---OUTPUT---(?=\r\n|\r|\n|$)/g, "$1_-_OUTPUT_-_");
-          const safeOut = String(o.output || "").replace(/(^|\r\n|\r|\n)===(?=\r\n|\r|\n|$)/g, "$1_=_").replace(/(^|\r\n|\r|\n)---PROMPT---(?=\r\n|\r|\n|$)/g, "$1_-_PROMPT_-_").replace(/(^|\r\n|\r|\n)---OUTPUT---(?=\r\n|\r|\n|$)/g, "$1_-_OUTPUT_-_");
+          const safeOut = String(o.output || "").replace(/(^|\r\n|\r|\n)===(?=\r\n|\r|\n|$)/g, "$1_=_").replace(/(^|\r\n|\r|\n)---PROMPT---(?=\r\n|\r|\n|$)/g, "$1_-_PROMPT_-_").replace(/(^|\r\n|\r|\n)---OUTPUT---(?=\r\n|\r|\n|$)/g, "$1_-_OUTPUT_-_").replace(/\b(Created|Completed) At:(\s*\d{4}-\d{2}-\d{2}T)/g, "$1_At:$2");
           legacyContent += JSON.stringify(header) + "\n---PROMPT---\n" + safePrompt + "\n---OUTPUT---\n" + safeOut + "\n===\n";
         } catch {
         }
@@ -18737,7 +18853,7 @@ function hostMediatedFetch(repo, worktreePath, attemptNamespace, expectedGitDir 
     env: gitEnv
   }).trim();
 }
-var BUILD_TIMEOUT = process.env.AGB_BUILD_TIMEOUT ?? "5m";
+var BUILD_TIMEOUT = process.env.AGB_BUILD_TIMEOUT ?? "15m";
 async function reconcileIntegrationJournal(repo, base = "main") {
   assertSafeAdlcDir(repo);
   const readRes = readIntegrationJournal(repo);
@@ -19295,6 +19411,23 @@ Fix: ${agyCheck.fix}`);
         }
       }
     }
+    async function runConfiguredGates(gatesObj, cwd, { sandbox = false } = {}) {
+      const rawTimeout = Number(process.env.AGB_GATE_TIMEOUT_MS);
+      const timeoutMs = Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 18e5;
+      const materialized = cwd !== repo ? materializeWorktreeNodeModules(cwd, join33(repo, "node_modules")) : false;
+      try {
+        const results = [];
+        for (const [name, cmd2] of Object.entries(gatesObj ?? {})) {
+          if (!cmd2) continue;
+          const r = await runGate(name, cmd2, cwd, { timeoutMs, sandbox });
+          results.push(r);
+          if (!r.ok) return { ok: false, results };
+        }
+        return { ok: true, results };
+      } finally {
+        if (materialized) removeMaterializedNodeModules(cwd);
+      }
+    }
     async function buildOnce(t, worktree, model, prompt, strike, { ticketId, token, repo: targetRepo, baseRefSha, conversation, warmResume, onReroute } = {}) {
       const { model: activeModel, release } = await acquireWithQuotaHandling(model, {
         role: "builder",
@@ -19332,7 +19465,7 @@ Fix: ${agyCheck.fix}`);
           project: finalProject,
           strike,
           role: "builder",
-          worker: { ticket: ticketId ?? t.id },
+          worker: { ticket: ticketId ?? t.id, buildCmd: gate?.build },
           repo: targetRepo ?? repo,
           ticketId: ticketId ?? t.id,
           token,
@@ -19774,7 +19907,8 @@ Fix: ${agyCheck.fix}`);
                     continue;
                   }
                   status.ticket(t.id, { phase: "gating" });
-                  const gates = await runGates(gate, worktree, { sandbox: true });
+                  discardProjection(worktree, "HEAD");
+                  const gates = await runConfiguredGates(gate, worktree, { sandbox: true });
                   cleanEmptyNodeModules(worktree);
                   await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: gates.ok, strikes }, adlcBin: runAdlcBin });
                   if (!gates.ok) {
@@ -19882,7 +20016,7 @@ ${JSON.stringify(blocking, null, 2)}`;
                                   cfFailureReason = `consensus-fix candidate tampered with gate script: ${cfGateIntegrityError.message}`;
                                 } else {
                                   status.ticket(t.id, { phase: "gating" });
-                                  const cfGates = await runGates(gate, worktree, { sandbox: true });
+                                  const cfGates = await runConfiguredGates(gate, worktree, { sandbox: true });
                                   cleanEmptyNodeModules(worktree);
                                   await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: cfGates.ok, strikes, consensusFix: true }, adlcBin: runAdlcBin });
                                   if (cfGates.ok) {
@@ -19969,7 +20103,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             } catch {
             }
           }
-          const gitDir = join33(repo, ".worktrees", ".attempt_git", basename9(worktree));
+          const gitDir = join33(repo, ".worktrees", ".attempt_git", basename10(worktree));
           try {
             rmSync13(gitDir, { recursive: true, force: true });
           } catch {
@@ -20085,7 +20219,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           }
           if (hasBaselineTests && gate?.test) {
             execFileSync13("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH3}`, "checkout", headBefore, "--", "test"], { cwd: integrationPath });
-            const pass1 = await runGates({ test: gate.test }, integrationPath, { sandbox: true });
+            const pass1 = await runConfiguredGates({ test: gate.test }, integrationPath, { sandbox: true });
             if (!pass1.ok) {
               const g = pass1.results.at(-1);
               const pass1Err = new Error(`Pass 1 (baseline regression) failed: gate ${g?.name ?? "test"} failed:
@@ -20095,7 +20229,7 @@ ${g?.output?.slice(0, 300)}`);
             }
             execFileSync13("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH3}`, "reset", "--hard", rebasedSha], { cwd: integrationPath });
           }
-          const post = await runGates(gate, integrationPath, { sandbox: true });
+          const post = await runConfiguredGates(gate, integrationPath, { sandbox: true });
           await recordGate({ repo, gateName: "post-merge-build", ticketId: t.id, data: { ok: post.ok }, adlcBin: runAdlcBin });
           if (!post.ok) {
             const g = post.results.at(-1);
@@ -21083,8 +21217,8 @@ ${shapeSummaryJson}`.trim(),
 
 // lib/bootstrap.mjs
 init_adlc_bridge();
-import { existsSync as existsSync33, mkdirSync as mkdirSync18, readdirSync as readdirSync15, lstatSync as lstatSync17, readlinkSync as readlinkSync3, symlinkSync as symlinkSync5, copyFileSync as copyFileSync6, rmSync as rmSync14, readFileSync as readFileSync27, appendFileSync as appendFileSync2 } from "node:fs";
-import { join as join34, resolve as resolve20, dirname as dirname21, basename as basename10 } from "node:path";
+import { existsSync as existsSync33, mkdirSync as mkdirSync18, readdirSync as readdirSync15, lstatSync as lstatSync17, readlinkSync as readlinkSync4, symlinkSync as symlinkSync5, copyFileSync as copyFileSync6, rmSync as rmSync14, readFileSync as readFileSync27, appendFileSync as appendFileSync2 } from "node:fs";
+import { join as join34, resolve as resolve20, dirname as dirname22, basename as basename11 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { homedir as homedir9 } from "node:os";
 import { execSync as execSync2, execFileSync as execFileSync16 } from "node:child_process";
@@ -21206,7 +21340,7 @@ function installBoosterPlugin({ home, agyBin, agyCheckFailed }) {
   return true;
 }
 function installReason(r, forceReinstall) {
-  if (forceReinstall) return `reinstalling ${basename10(r.dir)}: --force-reinstall`;
+  if (forceReinstall) return `reinstalling ${basename11(r.dir)}: --force-reinstall`;
   if (r.report === "not-installed") return `installing bundled adlc-antigravity ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
   if (r.report === "outdated-plugin") return `upgrading adlc-antigravity ${r.version} -> ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
   return `reinstalling adlc-antigravity: ${r.report}`;
@@ -21301,7 +21435,7 @@ function bootstrap({
       const retiredStat = lstatSync17(retiredDst, { throwIfNoEntry: false });
       if (retiredStat && retiredStat.isSymbolicLink()) {
         try {
-          const target = resolve20(dirname21(retiredDst), readlinkSync3(retiredDst));
+          const target = resolve20(dirname22(retiredDst), readlinkSync4(retiredDst));
           const normalizedTarget = target.replace(/\\/g, "/");
           if (target === resolve20(join34(skillsSrc, retired)) || !existsSync33(retiredDst) && normalizedTarget.endsWith(`/antigravity-booster/skills/${retired}`)) {
             rmSync14(retiredDst, { recursive: true, force: true });
@@ -21323,7 +21457,7 @@ function bootstrap({
         } else if (isSymlink) {
           let targetMatches = false;
           try {
-            targetMatches = resolve20(dirname21(dst), readlinkSync3(dst)) === resolve20(src) && existsSync33(dst);
+            targetMatches = resolve20(dirname22(dst), readlinkSync4(dst)) === resolve20(src) && existsSync33(dst);
           } catch {
             targetMatches = false;
           }
@@ -22081,7 +22215,7 @@ try {
             execFileSync19(agyBin, ["plugin", "uninstall", pluginId], { stdio: "ignore" });
           } catch {
           }
-          const dirBase = pluginDir ? basename13(pluginDir) : "";
+          const dirBase = pluginDir ? basename14(pluginDir) : "";
           if (dirBase && dirBase !== pluginId) {
             try {
               execFileSync19(agyBin, ["plugin", "uninstall", dirBase], { stdio: "ignore" });
