@@ -12,7 +12,7 @@ const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const libSrc = (f) => readFileSync(fileURLToPath(new URL(`../lib/${f}`, import.meta.url)), 'utf8');
 
 const SAVED = {};
-const KEYS = ['AGB_WORKER_TICKET', 'AGB_WORKER_MODE', 'FAKE_STATE_DIR', 'FAKE_RECORD_ENV', 'AGB_AGY_BIN', 'INIT_CWD', 'PWD', 'AGY_WORKSPACE', 'ANTIGRAVITY_WORKSPACE'];
+const KEYS = ['AGB_WORKER_TICKET', 'AGB_WORKER_MODE', 'AGB_WORKER_BUILD_CMD', 'FAKE_STATE_DIR', 'FAKE_RECORD_ENV', 'AGB_AGY_BIN', 'INIT_CWD', 'PWD', 'AGY_WORKSPACE', 'ANTIGRAVITY_WORKSPACE'];
 function setup() {
   for (const k of KEYS) SAVED[k] = process.env[k];
   const dir = mkdtempSync(join(tmpdir(), 'agb-worker-env-'));
@@ -134,8 +134,28 @@ for (const [file, count] of [['review.mjs', 3], ['prosecute.mjs', 1], ['prefligh
 test('static: scheduler builder runAgy call passes worker ticket', () => {
   const blocks = runAgyBlocks(libSrc('scheduler.mjs'));
   assert.equal(blocks.length, 1);
-  assert.match(blocks[0], /worker:\s*\{\s*ticket:\s*ticketId \?\? t\.id\s*\}/);
+  assert.match(blocks[0], /worker:\s*\{\s*ticket:\s*ticketId \?\? t\.id,\s*buildCmd:\s*gate\?\.build\s*\}/);
   assert.doesNotMatch(blocks[0], /mode:\s*'readonly'/);
+});
+
+test('worker buildCmd sets AGB_WORKER_BUILD_CMD only for valid npm run gate on ticketed workers and scrubs smuggled env', async () => {
+  const dir = setup();
+  try {
+    process.env.AGB_WORKER_BUILD_CMD = 'npm run evil';
+    const roRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', worker: { mode: 'readonly', buildCmd: 'npm run build' } });
+    assert.ok(roRes.ok, roRes.error);
+    assert.equal(fullEnvMap(dir).AGB_WORKER_BUILD_CMD, undefined);
+
+    const smuggledRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', worker: { ticket: 'T1' }, env: { AGB_WORKER_BUILD_CMD: 'npm run evil' } });
+    assert.ok(smuggledRes.ok, smuggledRes.error);
+    assert.equal(fullEnvMap(dir).AGB_WORKER_BUILD_CMD, undefined);
+
+    const validRes = await runAgy({ model: 'gemini-3-pro', prompt: 'hello', worker: { ticket: 'T1', buildCmd: 'npm run build:cursor-mcp' } });
+    assert.ok(validRes.ok, validRes.error);
+    assert.equal(fullEnvMap(dir).AGB_WORKER_BUILD_CMD, 'npm run build:cursor-mcp');
+  } finally {
+    teardown(dir);
+  }
 });
 
 test('static: sweep spawns no agy session directly (compiles to a plan only)', () => {
@@ -219,5 +239,36 @@ test('runAgy scrubs INIT_CWD, pins PWD to cwd, and sets AGY_WORKSPACE + ANTIGRAV
   } finally {
     teardown(dir);
     rmSync(wtDir, { recursive: true, force: true });
+  }
+});
+
+test('builder sandbox preserves npm symlink resolution when Node lives in a home-mounted version manager prefix', async () => {
+  const wtDir = mkdtempSync(join(tmpdir(), 'agb-wt-npm-'));
+  const dir = setup();
+  const npmBinDir = mkdtempSync(join(tmpdir(), 'agb-npm-bin-'));
+  try {
+    const npmProbeStub = join(npmBinDir, 'npm-probe-agy');
+    writeFileSync(
+      npmProbeStub,
+      `#!/bin/sh\nnpm --version > "${join(wtDir, 'npm-ver.txt')}" 2>&1\necho "npm-exit=$?" >> "${join(wtDir, 'npm-ver.txt')}"\necho "ok"\n`,
+      { mode: 0o755 },
+    );
+    process.env.AGB_AGY_BIN = npmProbeStub;
+    const res = await runAgy({
+      model: 'gemini-3-pro',
+      prompt: 'hello',
+      cwd: wtDir,
+      repo: wtDir,
+      role: 'builder',
+      sandbox: true,
+      worker: { ticket: 'T1' },
+    });
+    assert.ok(res.ok, res.error);
+    const probeOut = readFileSync(join(wtDir, 'npm-ver.txt'), 'utf8');
+    assert.match(probeOut, /npm-exit=0/, `expected npm --version to succeed inside builder sandbox, got:\n${probeOut}`);
+  } finally {
+    teardown(dir);
+    rmSync(wtDir, { recursive: true, force: true });
+    rmSync(npmBinDir, { recursive: true, force: true });
   }
 });

@@ -17,7 +17,7 @@
     {
       "name": "AGB_BUILD_TIMEOUT",
       "group": "core",
-      "default": "5m",
+      "default": "15m",
       "bundledIgnored": false,
       "description": "Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply."
     },
@@ -83,6 +83,13 @@
       "default": "1",
       "bundledIgnored": false,
       "description": "Set to 0 to disable warm second-strike builder resumption via agy --conversation <id> when a ticket fails its first attempt on the same model."
+    },
+    {
+      "name": "AGB_WORKER_BUILD_CMD",
+      "group": "core",
+      "default": "set by agb on builders",
+      "bundledIgnored": false,
+      "description": "Set by agb on ticketed builder agy processes when plan.gate.build is a valid npm run script; permits the PreToolUse shell guard to allow that exact build gate command."
     },
     {
       "name": "AGB_WORKER_MODE",

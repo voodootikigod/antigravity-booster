@@ -1,0 +1,31 @@
+{
+  "body": "Resolve upstream Linux headless builder and gate execution blockers uncovered during multi-ticket Wave 1A execution:\n1. lib/agy.mjs: when Node resides in a home-mounted version-manager prefix (fnm/nvm/volta/mise .../bin/node), bind-mount sibling ../lib and ../share read-only inside bwrap (and allow ../lib in Darwin Seatbelt) and ensure realpath dirname(process.execPath) is on builder PATH so npm/npx symlinks resolve.\n2. lib/gates.mjs: when a nested git worktree lacks its own node_modules directory, bind-mount the ancestor repository node_modules read-only onto <worktree>/node_modules in linuxBwrapArgs so workspace package symlinks and node_modules/.bin resolve inside the candidate worktree.\n3. hooks/policy/shell-lexer.mjs + hooks/policy/shell.mjs + hooks/policy/evaluate.mjs + lib/scheduler.mjs: track shell expansion separately from bare globs so node --test relative *.test.mjs globs pass in headless workers (including directories containing declared rails), allow Stage 1 read-only git grep and git ls-files flags, allow benign *_FULL/*_TEST/*_CI env flags on test commands, and pass operator-configured plan.gate.build via AGB_WORKER_BUILD_CMD (15m default AGB_BUILD_TIMEOUT).\n4. lib/scheduler-verify.mjs: sanitize agy tool-output Created At / Completed At ISO timestamps before invoking adlc flail-detector so VERB_PATTERN never false-positives on At: as scope-violation or edit-churn.\n5. Rebuild dist/ bundles and website/generated/ docs, and verify via npm test and npm run plugin:validate.",
+  "completed": true,
+  "edges": [],
+  "id": "t-linux-worker-npm-and-shell-policy",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/pools.mjs",
+    "bin/node-launcher.sh",
+    "vendor/cache/**"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "lib/gates.mjs",
+    "lib/scheduler.mjs",
+    "lib/scheduler-verify.mjs",
+    "hooks/policy/shell-lexer.mjs",
+    "hooks/policy/shell.mjs",
+    "hooks/policy/evaluate.mjs",
+    "dist/**",
+    "website/env-docs.json",
+    "website/content/docs/reference/environment.mdx",
+    "website/content/docs/reference/agy-integration.mdx",
+    "website/generated/**",
+    "test/agy-worker-env.test.mjs",
+    "test/pre-tool-use.test.mjs",
+    "test/scheduler-flail.test.mjs",
+    "test/security.test.mjs"
+  ],
+  "title": "Fix Linux bwrap npm/ancestor-node_modules mounts, Node v24 test globs, AGB_WORKER_BUILD_CMD, and Created-At flail false positives"
+}

@@ -531,6 +531,23 @@ test('linuxBwrapArgs: binds temp dir properly and asserts security args', () => 
   } finally {
     rmSync(existingDir, { recursive: true, force: true });
   }
+
+  // Case 3: nested worktree without its own node_modules mounts ancestor repo node_modules read-only
+  const parentRepo = mkdtempSync(join(tmpdir(), 'agb-parent-nm-test-'));
+  try {
+    const realParent = canonical(parentRepo);
+    mkdirSync(join(realParent, '.git'));
+    mkdirSync(join(realParent, 'node_modules'));
+    writeFileSync(join(realParent, 'package.json'), '{"name":"t"}\n');
+    const nestedWt = join(realParent, '.worktrees', 'agb-t1');
+    mkdirSync(nestedWt, { recursive: true });
+    const argsNested = linuxBwrapArgs(nestedWt, 'npm test', emptyRo);
+    const expectedAncNm = join(realParent, 'node_modules');
+    const nestedNmIdx = argsNested.findIndex((v, i) => v === '--ro-bind' && argsNested[i + 1] === expectedAncNm && argsNested[i + 2] === join(nestedWt, 'node_modules'));
+    assert.ok(nestedNmIdx > -1, 'must mount ancestor repo node_modules read-only onto worktree/node_modules');
+  } finally {
+    rmSync(parentRepo, { recursive: true, force: true });
+  }
 });
 
 test('runGate: captures unprivileged namespaces bwrap failure on linux', async () => {
