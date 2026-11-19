@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { request, createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import {
-  mkdtempSync, mkdirSync, rmSync, writeFileSync, readdirSync, existsSync, chmodSync,
+  mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync, existsSync, chmodSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -211,19 +211,37 @@ test('scheduler: wrapConsensusGateCommand wraps gate.test for hollow-test and fa
     });
     assert.deepEqual(disabled, { ok: true, cmd: 'node test/sample.test.js' });
 
+    const noSbxDir = wrapConsensusGateCommand('node test/sample.test.js', worktree, {
+      env: envWithBwrap,
+      plat: 'linux',
+    });
+    assert.equal(noSbxDir.ok, false);
+    assert.match(noSbxDir.error, /gate sandbox unavailable/);
+  } finally {
+    rmSync(worktree, { recursive: true, force: true });
+    rmSync(sbxDir, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('wrapConsensusGateCommand: fails closed on Linux when bwrap is not on PATH', (t) => {
+  if (process.platform !== 'linux') {
+    t.skip('Linux bwrap PATH probe only runs on Linux');
+    return;
+  }
+  const worktree = mkdtempSync(join(tmpdir(), 'agb-audit-wt-'));
+  const sbxDir = mkdtempSync(join(tmpdir(), 'agb-audit-sbx-'));
+  try {
     const noSandbox = wrapConsensusGateCommand('node test/sample.test.js', worktree, {
       env: { PATH: '/nonexistent' },
       plat: 'linux',
       sandboxTmpDir: sbxDir,
     });
-    if (process.platform === 'linux') {
-      assert.equal(noSandbox.ok, false);
-      assert.match(noSandbox.error, /gate sandbox unavailable/);
-    }
+    assert.equal(noSandbox.ok, false);
+    assert.match(noSandbox.error, /gate sandbox unavailable/);
   } finally {
     rmSync(worktree, { recursive: true, force: true });
     rmSync(sbxDir, { recursive: true, force: true });
-    rmSync(binDir, { recursive: true, force: true });
   }
 });
 
@@ -255,6 +273,14 @@ test('scheduler: Pass 2 hollow-test runs sandboxed when AGB_SANDBOX_GATES !== "0
     );
 
     assert.deepEqual(report.merged, ['T1']);
+
+    // Verify fake-adlc hollow-test actually received a sandbox-wrapped --test-cmd referencing agb-ht-sbx-*
+    const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
+    if (process.platform === 'darwin') {
+      assert.match(htLog, /test-cmd='sandbox-exec' '-f' '[^']*agb-ht-sbx-[^']*\/gate\.sb' '\/bin\/sh' '-c' 'node test\/sample\.test\.js'/);
+    } else {
+      assert.match(htLog, /test-cmd='bwrap' '--unshare-net'.*agb-ht-sbx-.*'--' '\/bin\/sh' '-c' 'node test\/sample\.test\.js'/);
+    }
 
     // Verify no agb-ht-sbx-* temp directories were leaked
     const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-') && !beforeSbxDirs.has(n));

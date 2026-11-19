@@ -291,6 +291,19 @@ $2"; shift 2 ;;
   exit 2
 fi
 if [ "$1" = "hollow-test" ]; then
+  shift
+  ht_testcmd=""
+  ht_base=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --test-cmd) ht_testcmd="$2"; shift 2 ;;
+      --base) ht_base="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  if [ -n "$FAKE_STATE_DIR" ]; then
+    printf 'test-cmd=%s base=%s\n' "$ht_testcmd" "$ht_base" >> "$FAKE_STATE_DIR/hollow-test-invocations"
+  fi
   case "${FAKE_HOLLOW_TEST_MODE:-clean}" in
     survivors)
       echo '{"tool":"hollow-test","summary":{"total":2,"killed":1,"survived":1},"mutants":[{"file":"lib/x.mjs","line":1,"operator":"null-return","status":"survived","original":"return x;","mutated":"return null;"},{"file":"lib/x.mjs","line":2,"operator":"null-return","status":"killed","original":"return y;","mutated":"return null;"}]}'
