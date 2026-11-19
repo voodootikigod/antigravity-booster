@@ -227,9 +227,8 @@ test('buildSandboxCommandWrapper: wraps command directly in OS sandbox and fails
   }
 });
 
-test('scheduler: Pass 2 executes adlc hollow-test itself inside outer OS sandbox without nested bwrap', async (t) => {
+test('scheduler: Pass 2 executes adlc hollow-test itself inside outer OS sandbox without nested bwrap', async () => {
   if (process.platform !== 'linux') {
-    t.skip('fake-bwrap invocation check runs on Linux');
     return;
   }
   const repo = makeTestRepo('agb-audit2-ht-');

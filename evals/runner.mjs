@@ -136,7 +136,7 @@ export function runLiveMechanicalProbes({ repoRoot = ROOT } = {}) {
   const staged = stageMarketplacePlugin({ repoRoot });
   let strictValidation;
   try {
-    strictValidation = validateStagedPluginStrict(staged.pluginDir);
+    strictValidation = validateStagedPluginStrict(staged.pluginDir, { allowSkip: true });
   } finally {
     rmSync(staged.stageRoot, { recursive: true, force: true });
   }

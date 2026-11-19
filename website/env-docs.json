@@ -342,7 +342,7 @@
       "default": "unset (launcher port 3333)",
       "bundledIgnored": false,
       "description": "Selects unauthenticated Jetski mode (token = null) and sets the listen port in sidecars/jetski-launcher.mjs only. sidecars/server.mjs and agb sidecar always enforce explicit tokens regardless of this variable.",
-      "security": "Causes sidecars/jetski-launcher.mjs to launch without a token (token = null); do not export it in shells where you run the Jetski launcher."
+      "security": "In sidecars/jetski-launcher.mjs, disables token auth (passes token = null to serveSidecar) for Jetski mode; sidecars/server.mjs and agb sidecar always enforce explicit tokens."
     },
     {
       "name": "AGB_ARTIFACT_DIR",

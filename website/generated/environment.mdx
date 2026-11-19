@@ -68,7 +68,7 @@
 | Name | Default | Description | Bundled |
 | --- | --- | --- | --- |
 | AGB_SIDECAR_PORT | 3333 | Default port for agb sidecar; --port overrides it. | honoured |
-| ANTIGRAVITY_SIDECAR_WEB_PORT | unset (launcher port 3333) | Selects unauthenticated Jetski mode (token = null) and sets the listen port in sidecars/jetski-launcher.mjs only. sidecars/server.mjs and agb sidecar always enforce explicit tokens regardless of this variable. Security: Causes sidecars/jetski-launcher.mjs to launch without a token (token = null); do not export it in shells where you run the Jetski launcher. | honoured |
+| ANTIGRAVITY_SIDECAR_WEB_PORT | unset (launcher port 3333) | Selects unauthenticated Jetski mode (token = null) and sets the listen port in sidecars/jetski-launcher.mjs only. sidecars/server.mjs and agb sidecar always enforce explicit tokens regardless of this variable. Security: In sidecars/jetski-launcher.mjs, disables token auth (passes token = null to serveSidecar) for Jetski mode; sidecars/server.mjs and agb sidecar always enforce explicit tokens. | honoured |
 
 **Paths**
 
