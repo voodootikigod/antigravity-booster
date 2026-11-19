@@ -550,6 +550,33 @@ test('linuxBwrapArgs: binds temp dir properly and asserts security args', () => 
   }
 });
 
+test('runGate: unsandboxed nested worktree gate materializes workspace-relative node_modules and cleans up afterwards', async () => {
+  const parentRepo = mkdtempSync(join(tmpdir(), 'agb-unsandboxed-nm-'));
+  try {
+    mkdirSync(join(parentRepo, '.git'));
+    writeFileSync(join(parentRepo, 'package.json'), '{"name":"t"}\n');
+    mkdirSync(join(parentRepo, 'packages', 'core'), { recursive: true });
+    writeFileSync(join(parentRepo, 'packages', 'core', 'index.mjs'), 'export const WHO = "parent";\n');
+    mkdirSync(join(parentRepo, 'node_modules', '@adlc'), { recursive: true });
+    const { symlinkSync } = await import('node:fs');
+    symlinkSync('../../packages/core', join(parentRepo, 'node_modules', '@adlc', 'core'));
+
+    const nestedWt = join(parentRepo, '.worktrees', 'agb-t1');
+    mkdirSync(join(nestedWt, 'packages', 'core'), { recursive: true });
+    writeFileSync(join(nestedWt, 'packages', 'core', 'index.mjs'), 'export const WHO = "worktree";\n');
+    writeFileSync(join(nestedWt, 'packages', 'core', 'package.json'), '{"name":"@adlc/core","type":"module","main":"index.mjs"}\n');
+
+    const r = await runGate('test', `${JSON.stringify(process.execPath)} -e "import('@adlc/core').then(m => { if (m.WHO !== 'worktree') process.exit(1); })"`, nestedWt, {
+      sandbox: true,
+      env: { ...process.env, AGB_SANDBOX_GATES: '0' },
+    });
+    assert.equal(r.ok, true, r.output);
+    assert.equal(existsSync(join(nestedWt, 'node_modules')), false, 'temporary node_modules must be cleaned up');
+  } finally {
+    rmSync(parentRepo, { recursive: true, force: true });
+  }
+});
+
 test('runGate: captures unprivileged namespaces bwrap failure on linux', async () => {
   const origPlatform = process.platform;
   try {

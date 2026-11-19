@@ -6892,7 +6892,7 @@ __export(status_exports, {
   sanitizeRunId: () => sanitizeRunId,
   watchStatus: () => watchStatus
 });
-import { writeFileSync as writeFileSync15, renameSync as renameSync7, mkdirSync as mkdirSync14, readFileSync as readFileSync23, existsSync as existsSync26, chmodSync as chmodSync4, rmSync as rmSync10, readdirSync as readdirSync13, lstatSync as lstatSync13, realpathSync as realpathSync11, openSync as openSync10, readSync as readSync4, closeSync as closeSync10, fstatSync as fstatSync4 } from "node:fs";
+import { writeFileSync as writeFileSync15, renameSync as renameSync7, mkdirSync as mkdirSync14, readFileSync as readFileSync23, existsSync as existsSync26, chmodSync as chmodSync4, rmSync as rmSync10, readdirSync as readdirSync14, lstatSync as lstatSync14, realpathSync as realpathSync11, openSync as openSync10, readSync as readSync4, closeSync as closeSync10, fstatSync as fstatSync4 } from "node:fs";
 import { appendFile as appendFile2 } from "node:fs/promises";
 import { join as join28, dirname as dirname19, resolve as resolve15, relative as relative11, isAbsolute as isAbsolute9 } from "node:path";
 function sanitizeRunId(runId) {
@@ -6905,7 +6905,7 @@ function assertSafeBoosterSubdir(repo, segments) {
     cur = join28(cur, seg);
     if (!existsSync26(cur)) {
       try {
-        if (lstatSync13(cur).isSymbolicLink()) {
+        if (lstatSync14(cur).isSymbolicLink()) {
           throw new Error(`Security violation: symbolic link in .booster path: ${cur}`);
         }
       } catch (err) {
@@ -6913,7 +6913,7 @@ function assertSafeBoosterSubdir(repo, segments) {
       }
       return null;
     }
-    const st = lstatSync13(cur);
+    const st = lstatSync14(cur);
     if (st.isSymbolicLink()) {
       throw new Error(`Security violation: symbolic link in .booster path: ${cur}`);
     }
@@ -6939,11 +6939,11 @@ function cleanOldLogs(repo, maxAgeMs = 14 * 24 * 60 * 60 * 1e3) {
   const removed = [];
   const now = Date.now();
   try {
-    const entries = readdirSync13(logsDir);
+    const entries = readdirSync14(logsDir);
     for (const entry of entries) {
       const fullPath = join28(logsDir, entry);
       try {
-        const stat = lstatSync13(fullPath);
+        const stat = lstatSync14(fullPath);
         if (stat.isSymbolicLink()) continue;
         if (now - stat.mtimeMs > maxAgeMs) {
           rmSync10(fullPath, { recursive: true, force: true });
@@ -7344,7 +7344,7 @@ var init_status = __esm({
     init_tui();
     writeOwnerOnly = (file, data) => {
       try {
-        if (lstatSync13(file).isSymbolicLink()) {
+        if (lstatSync14(file).isSymbolicLink()) {
           throw new Error(`Security violation: refusing to overwrite symbolic link: ${file}`);
         }
       } catch (err) {
@@ -7358,7 +7358,7 @@ var init_status = __esm({
     warned = /* @__PURE__ */ new Set();
     ownerOnlyDir = (dir) => {
       try {
-        if (lstatSync13(dir).isSymbolicLink()) {
+        if (lstatSync14(dir).isSymbolicLink()) {
           throw new Error(`Security violation: refusing to use symbolic link directory: ${dir}`);
         }
       } catch (err) {
@@ -8031,10 +8031,10 @@ import {
   writeFileSync as writeFileSync21,
   mkdirSync as mkdirSync21,
   rmSync as rmSync16,
-  readdirSync as readdirSync16,
-  lstatSync as lstatSync18,
-  readlinkSync as readlinkSync4,
-  symlinkSync as symlinkSync6,
+  readdirSync as readdirSync17,
+  lstatSync as lstatSync19,
+  readlinkSync as readlinkSync5,
+  symlinkSync as symlinkSync7,
   unlinkSync as unlinkSync8,
   renameSync as renameSync9,
   chmodSync as chmodSync5,
@@ -8079,7 +8079,7 @@ function writeJsonAtomic(file, value, mode = 420) {
 }
 function treeSize(dir) {
   let total = 0;
-  for (const e of readdirSync16(dir, { withFileTypes: true })) {
+  for (const e of readdirSync17(dir, { withFileTypes: true })) {
     if (STAGE_COPY_EXCLUSIONS.includes(e.name)) continue;
     const full = join37(dir, e.name);
     if (e.isDirectory()) total += treeSize(full);
@@ -8155,8 +8155,8 @@ function restoreImportEntries(p, entries, { keep = [] } = {}) {
 function scanSkillSymlinks(skillsDir) {
   if (!existsSync35(skillsDir)) return [];
   const links = [];
-  for (const e of readdirSync16(skillsDir, { withFileTypes: true })) {
-    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync4(join37(skillsDir, e.name)) });
+  for (const e of readdirSync17(skillsDir, { withFileTypes: true })) {
+    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync5(join37(skillsDir, e.name)) });
   }
   return links.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -8205,7 +8205,7 @@ function recreateSymlinks(p, links, log2) {
     const at = join37(p.skills, name);
     let present = false;
     try {
-      lstatSync18(at);
+      lstatSync19(at);
       present = true;
     } catch {
     }
@@ -8215,7 +8215,7 @@ function recreateSymlinks(p, links, log2) {
       log2(`Notice: Symlink target ${target} missing; skipping dangling link`);
       continue;
     }
-    symlinkSync6(target, at);
+    symlinkSync7(target, at);
   }
 }
 function restorePluginDir(p, name, fromDir) {
@@ -8317,7 +8317,7 @@ function step6Finalize(ctx, state) {
   for (const { name, target } of state.recordedSymlinks ?? []) {
     const at = join37(p.skills, name);
     try {
-      if (lstatSync18(at).isSymbolicLink() && readlinkSync4(at) === target) unlinkSync8(at);
+      if (lstatSync19(at).isSymbolicLink() && readlinkSync5(at) === target) unlinkSync8(at);
     } catch {
     }
   }
@@ -8935,7 +8935,7 @@ import { fileURLToPath as fileURLToPath8 } from "node:url";
 import { execFileSync as execFileSync19 } from "node:child_process";
 
 // lib/scheduler.mjs
-import { writeFileSync as writeFileSync18, mkdtempSync as mkdtempSync8, rmSync as rmSync13, existsSync as existsSync31, readFileSync as readFileSync25, readdirSync as readdirSync14, realpathSync as realpathSync13, mkdirSync as mkdirSync17, lstatSync as lstatSync16, openSync as openSync11, closeSync as closeSync11, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
+import { writeFileSync as writeFileSync18, mkdtempSync as mkdtempSync8, rmSync as rmSync13, existsSync as existsSync31, readFileSync as readFileSync25, readdirSync as readdirSync15, realpathSync as realpathSync13, mkdirSync as mkdirSync17, lstatSync as lstatSync17, openSync as openSync11, closeSync as closeSync11, writeSync as writeSync5, fsyncSync as fsyncSync6, unlinkSync as unlinkSync7, constants as constants5 } from "node:fs";
 import { execFileSync as execFileSync13 } from "node:child_process";
 import { tmpdir as tmpdir9 } from "node:os";
 import path3, { join as join33, resolve as resolve18, isAbsolute as isAbsolute10, dirname as dirname21, basename as basename10 } from "node:path";
@@ -14888,7 +14888,7 @@ verdict "ship" is a fully acceptable answer.`;
 // lib/gates.mjs
 import { execFile as execFile5, spawnSync as spawnSync5 } from "node:child_process";
 import { promisify as promisify4 } from "node:util";
-import { writeFileSync as writeFileSync13, mkdtempSync as mkdtempSync6, rmSync as rmSync9, realpathSync as realpathSync8, existsSync as existsSync22, mkdirSync as mkdirSync12 } from "node:fs";
+import { writeFileSync as writeFileSync13, mkdtempSync as mkdtempSync6, rmSync as rmSync9, realpathSync as realpathSync8, existsSync as existsSync22, mkdirSync as mkdirSync12, lstatSync as lstatSync12, readdirSync as readdirSync11, readlinkSync as readlinkSync2, symlinkSync as symlinkSync5 } from "node:fs";
 import { tmpdir as tmpdir7, homedir as homedir6, platform } from "node:os";
 import { dirname as dirname17, join as join23 } from "node:path";
 var execFileP2 = promisify4(execFile5);
@@ -14973,9 +14973,43 @@ function gateSandboxEnabled(env = process.env) {
   if (env.AGB_SANDBOX_GATES === "0") return false;
   return gateSandboxAvailable(env);
 }
+function materializeTempWorktreeNodeModules(cwd) {
+  const realCwd = canonical(cwd);
+  const nmPath = join23(realCwd, "node_modules");
+  try {
+    lstatSync12(nmPath);
+    return null;
+  } catch {
+  }
+  const ancestorNm = findAncestorRepoNodeModules(realCwd);
+  if (!ancestorNm) return null;
+  mkdirSync12(nmPath, { recursive: true });
+  for (const entry of readdirSync11(ancestorNm, { withFileTypes: true })) {
+    const src = join23(ancestorNm, entry.name);
+    const dst = join23(nmPath, entry.name);
+    if (entry.isSymbolicLink()) {
+      symlinkSync5(readlinkSync2(src), dst);
+    } else if (entry.isDirectory() && (entry.name === ".bin" || entry.name.startsWith("@"))) {
+      mkdirSync12(dst, { recursive: true });
+      for (const sub of readdirSync11(src, { withFileTypes: true })) {
+        const subSrc = join23(src, sub.name);
+        const subDst = join23(dst, sub.name);
+        if (sub.isSymbolicLink()) {
+          symlinkSync5(readlinkSync2(subSrc), subDst);
+        } else {
+          symlinkSync5(subSrc, subDst);
+        }
+      }
+    } else {
+      symlinkSync5(src, dst);
+    }
+  }
+  return nmPath;
+}
 async function runGate(name, cmd2, cwd, { timeoutMs = 6e5, sandbox = false, env = process.env } = {}) {
   let profileFile;
   let emptyRoDir;
+  let tempNmDir = null;
   let argv = ["/bin/sh", ["-c", cmd2]];
   const explicitlyDisabled = env.AGB_SANDBOX_GATES === "0";
   if (sandbox && !gateSandboxAvailable(env) && !explicitlyDisabled) {
@@ -14997,6 +15031,11 @@ async function runGate(name, cmd2, cwd, { timeoutMs = 6e5, sandbox = false, env 
     } else if (platform() === "linux") {
       emptyRoDir = mkdtempSync6(join23(tmpdir7(), "agb-empty-ro-"));
       argv = ["bwrap", linuxBwrapArgs(cwd, cmd2, emptyRoDir)];
+    }
+  } else if (cwd) {
+    try {
+      tempNmDir = materializeTempWorktreeNodeModules(cwd);
+    } catch {
     }
   }
   try {
@@ -15028,6 +15067,7 @@ ${err.stderr ?? ""}`.slice(-2e3);
   } finally {
     if (profileFile) rmSync9(join23(profileFile, ".."), { recursive: true, force: true });
     if (emptyRoDir) rmSync9(emptyRoDir, { recursive: true, force: true });
+    if (tempNmDir) rmSync9(tempNmDir, { recursive: true, force: true });
   }
 }
 async function runGates(gates, cwd, { sandbox = false, env = process.env } = {}) {
@@ -15424,7 +15464,7 @@ init_models();
 init_plugin_paths();
 
 // lib/plan-integrity.mjs
-import { existsSync as existsSync23, lstatSync as lstatSync12, mkdirSync as mkdirSync13, chmodSync as chmodSync3, realpathSync as realpathSync9, writeFileSync as writeFileSync14, renameSync as renameSync6 } from "node:fs";
+import { existsSync as existsSync23, lstatSync as lstatSync13, mkdirSync as mkdirSync13, chmodSync as chmodSync3, realpathSync as realpathSync9, writeFileSync as writeFileSync14, renameSync as renameSync6 } from "node:fs";
 import { basename as basename9, dirname as dirname18, isAbsolute as isAbsolute8, join as join24, posix as posix2, relative as relative9, resolve as resolve12, sep as sep4 } from "node:path";
 import { createHash as createHash5, randomUUID as randomUUID6 } from "node:crypto";
 var TICKET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
@@ -15510,7 +15550,7 @@ function writeArtifactFileAtomically(dir, filename, content, { rootDir } = {}) {
       for (const seg of relFromRoot.split(sep4).filter(Boolean)) {
         cur = join24(cur, seg);
         try {
-          const st = lstatSync12(cur);
+          const st = lstatSync13(cur);
           if (st.isSymbolicLink()) {
             return { ok: false, path: null, error: `symbolic link not allowed: ${cur}` };
           }
@@ -15520,7 +15560,7 @@ function writeArtifactFileAtomically(dir, filename, content, { rootDir } = {}) {
       }
     } else {
       try {
-        if (lstatSync12(resolvedDir).isSymbolicLink()) {
+        if (lstatSync13(resolvedDir).isSymbolicLink()) {
           return { ok: false, path: null, error: `symbolic link not allowed: ${resolvedDir}` };
         }
       } catch (err) {
@@ -15543,7 +15583,7 @@ function writeArtifactFileAtomically(dir, filename, content, { rootDir } = {}) {
     }
     const targetPath = join24(targetDir, filename);
     try {
-      if (lstatSync12(targetPath).isSymbolicLink()) {
+      if (lstatSync13(targetPath).isSymbolicLink()) {
         return { ok: false, path: null, error: `refusing to overwrite symbolic link: ${targetPath}` };
       }
     } catch (err) {
@@ -16063,7 +16103,7 @@ async function preflight(plan, opts = {}) {
 init_plugin_paths();
 
 // lib/brain.mjs
-import { readdirSync as readdirSync11, readFileSync as readFileSync20, statSync as statSync6, existsSync as existsSync24 } from "node:fs";
+import { readdirSync as readdirSync12, readFileSync as readFileSync20, statSync as statSync6, existsSync as existsSync24 } from "node:fs";
 import { join as join26, resolve as resolve13 } from "node:path";
 import { homedir as homedir7 } from "node:os";
 import { randomUUID as randomUUID8 } from "node:crypto";
@@ -16197,7 +16237,7 @@ function listBrains(brainDir = getBrainDir()) {
   const results = [];
   for (const bDir of dirsToSearch) {
     if (!existsSync24(bDir)) continue;
-    for (const id of readdirSync11(bDir)) {
+    for (const id of readdirSync12(bDir)) {
       if (seen.has(id)) continue;
       const dir = join26(bDir, id);
       const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync24(join26(dir, f))).map((f) => ({ path: join26(dir, f), mtime: statSync6(join26(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
@@ -16343,7 +16383,7 @@ async function brainToPlan(idOrPrefix, { repo, gate, model, brainDir = getBrainD
 }
 
 // lib/shape.mjs
-import { existsSync as existsSync25, readdirSync as readdirSync12, readFileSync as readFileSync21, realpathSync as realpathSync10, statSync as statSync7 } from "node:fs";
+import { existsSync as existsSync25, readdirSync as readdirSync13, readFileSync as readFileSync21, realpathSync as realpathSync10, statSync as statSync7 } from "node:fs";
 import { extname, join as join27, posix as posix3, relative as relative10, resolve as resolve14 } from "node:path";
 var SKIP_DIRS2 = /* @__PURE__ */ new Set(["node_modules", ".git", ".hg", ".worktrees", "coverage", ".booster", ".review", "scratch", ".adlc", "dist", "build"]);
 var SOURCE_EXTS = /* @__PURE__ */ new Set([".mjs", ".js", ".cjs", ".ts", ".tsx", ".mts", ".cts"]);
@@ -16679,7 +16719,7 @@ function walkRepoFiles(dir, rootDir, realRoot, allTicketScopes = null, out = [])
   if (!existsSync25(dir)) return out;
   let entries = [];
   try {
-    entries = readdirSync12(dir, { withFileTypes: true });
+    entries = readdirSync13(dir, { withFileTypes: true });
   } catch {
     return out;
   }
@@ -17495,7 +17535,7 @@ init_adlc_bridge();
 init_status();
 
 // lib/active-rails.mjs
-import { existsSync as existsSync27, lstatSync as lstatSync14, statSync as statSync8 } from "node:fs";
+import { existsSync as existsSync27, lstatSync as lstatSync15, statSync as statSync8 } from "node:fs";
 init_tickets();
 import { dirname as dirname20, join as join29, resolve as resolve16 } from "node:path";
 var INACTIVE_STATUSES = /* @__PURE__ */ new Set(["completed", "closed", "archived"]);
@@ -17507,7 +17547,7 @@ function isActiveTicket(ticket) {
 function hasSymlinkStorePath(repoRoot) {
   for (const rel of [".adlc", join29(".adlc", "tickets"), join29(".adlc", "tickets.json")]) {
     try {
-      const st = lstatSync14(join29(repoRoot, rel), { throwIfNoEntry: false });
+      const st = lstatSync15(join29(repoRoot, rel), { throwIfNoEntry: false });
       if (st?.isSymbolicLink()) return true;
     } catch {
       return true;
@@ -17527,7 +17567,7 @@ function loadSnapshot(repoRoot) {
   }
 }
 function unionActiveRails(repoRoot) {
-  const adlcSt = lstatSync14(join29(repoRoot, ".adlc"), { throwIfNoEntry: false });
+  const adlcSt = lstatSync15(join29(repoRoot, ".adlc"), { throwIfNoEntry: false });
   if (!adlcSt) {
     return { ok: true, adlc: false, hasActiveTickets: false, rails: [] };
   }
@@ -17833,7 +17873,7 @@ var TerminalHUD = class {
 };
 
 // lib/scheduler-verify.mjs
-import { existsSync as existsSync30, lstatSync as lstatSync15, mkdirSync as mkdirSync16, mkdtempSync as mkdtempSync7, readlinkSync as readlinkSync2, realpathSync as realpathSync12, rmSync as rmSync12, writeFileSync as writeFileSync17 } from "node:fs";
+import { existsSync as existsSync30, lstatSync as lstatSync16, mkdirSync as mkdirSync16, mkdtempSync as mkdtempSync7, readlinkSync as readlinkSync3, realpathSync as realpathSync12, rmSync as rmSync12, writeFileSync as writeFileSync17 } from "node:fs";
 import { execFileSync as execFileSync12 } from "node:child_process";
 import { homedir as homedir9, platform as platform2, tmpdir as tmpdir8 } from "node:os";
 import path2, { join as join32 } from "node:path";
@@ -17911,9 +17951,9 @@ function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
       } else {
         const fullPath = join32(worktreePath, p);
         try {
-          const st = lstatSync15(fullPath);
+          const st = lstatSync16(fullPath);
           if (st.isSymbolicLink()) {
-            const rawTarget = readlinkSync2(fullPath);
+            const rawTarget = readlinkSync3(fullPath);
             let finalReal;
             try {
               finalReal = realpathSync12(fullPath);
@@ -18106,14 +18146,14 @@ function checkEnforcementAvailable(repo, { env = process.env, home = env.AGB_HOM
   if (contract.status === "unreadable" && !bundled && !env.AGB_PLUGIN_DIR) {
     let primaryAbsent = false;
     try {
-      lstatSync15(join32(primaryDir, "plugin.json"));
+      lstatSync16(join32(primaryDir, "plugin.json"));
     } catch (err) {
       primaryAbsent = err?.code === "ENOENT";
     }
     if (primaryAbsent) {
       const geminiDir = join32(pluginsDirFor(home), ADLC_GEMINI_PLUGIN_NAME);
       try {
-        lstatSync15(join32(geminiDir, "plugin.json"));
+        lstatSync16(join32(geminiDir, "plugin.json"));
         pluginName = ADLC_GEMINI_PLUGIN_NAME;
         contract = readPluginContract({ dir: geminiDir });
       } catch {
@@ -18180,7 +18220,7 @@ function hashDir(dir, filterFn = () => true) {
   let count = 0;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync14(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+      const entries = readdirSync15(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join33(d, ent.name);
@@ -18205,7 +18245,7 @@ function listObjects(objectsDir) {
   if (!existsSync31(objectsDir)) return set;
   const walk = (d, rel = "") => {
     try {
-      const entries = readdirSync14(d, { withFileTypes: true });
+      const entries = readdirSync15(d, { withFileTypes: true });
       for (const ent of entries) {
         const entRel = rel ? `${rel}/${ent.name}` : ent.name;
         const full = join33(d, ent.name);
@@ -18666,7 +18706,7 @@ function verifyRootGitIntegrity(repo, pre, {
 }
 function safeWriteWorktreeFile(filePath, content) {
   try {
-    const st = lstatSync16(filePath);
+    const st = lstatSync17(filePath);
     if (st.isSymbolicLink()) {
       unlinkSync7(filePath);
     } else if (!st.isFile()) {
@@ -18730,7 +18770,7 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
   if (!existsSync31(gitEntry)) {
     throw new Error(`Security violation: worktree .git pointer missing at ${gitEntry}`);
   }
-  const stat = lstatSync16(gitEntry);
+  const stat = lstatSync17(gitEntry);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw new Error(`Security violation: worktree .git pointer at ${gitEntry} is not a regular file`);
   }
@@ -18747,7 +18787,7 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
   }
   const hooksDir = join33(resolvedTarget, "hooks");
   if (existsSync31(hooksDir)) {
-    const entries = readdirSync14(hooksDir);
+    const entries = readdirSync15(hooksDir);
     for (const ent of entries) {
       if (!ent.endsWith(".sample")) {
         throw new Error(`Security violation: unexpected hook file found in attempt git database: ${ent}`);
@@ -21140,7 +21180,7 @@ ${shapeSummaryJson}`.trim(),
 
 // lib/bootstrap.mjs
 init_adlc_bridge();
-import { existsSync as existsSync33, mkdirSync as mkdirSync18, readdirSync as readdirSync15, lstatSync as lstatSync17, readlinkSync as readlinkSync3, symlinkSync as symlinkSync5, copyFileSync as copyFileSync6, rmSync as rmSync14, readFileSync as readFileSync27, appendFileSync as appendFileSync2 } from "node:fs";
+import { existsSync as existsSync33, mkdirSync as mkdirSync18, readdirSync as readdirSync16, lstatSync as lstatSync18, readlinkSync as readlinkSync4, symlinkSync as symlinkSync6, copyFileSync as copyFileSync6, rmSync as rmSync14, readFileSync as readFileSync27, appendFileSync as appendFileSync2 } from "node:fs";
 import { join as join34, resolve as resolve20, dirname as dirname22, basename as basename11 } from "node:path";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 import { homedir as homedir10 } from "node:os";
@@ -21169,7 +21209,7 @@ function isNpxTemp(filePath = fileURLToPath5(import.meta.url), env = process.env
 }
 function copyDirSync(src, dest) {
   mkdirSync18(dest, { recursive: true });
-  for (const entry of readdirSync15(src, { withFileTypes: true })) {
+  for (const entry of readdirSync16(src, { withFileTypes: true })) {
     const srcPath = join34(src, entry.name);
     const destPath = join34(dest, entry.name);
     if (entry.isDirectory()) {
@@ -21352,13 +21392,13 @@ function bootstrap({
     } else {
       console.log("installation directory is stable: using symlinks for auto-upgrades");
     }
-    const skills = readdirSync15(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    const skills = readdirSync16(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
     for (const retired of ["modernize", "release", "release-audit"]) {
       const retiredDst = join34(destination, retired);
-      const retiredStat = lstatSync17(retiredDst, { throwIfNoEntry: false });
+      const retiredStat = lstatSync18(retiredDst, { throwIfNoEntry: false });
       if (retiredStat && retiredStat.isSymbolicLink()) {
         try {
-          const target = resolve20(dirname22(retiredDst), readlinkSync3(retiredDst));
+          const target = resolve20(dirname22(retiredDst), readlinkSync4(retiredDst));
           const normalizedTarget = target.replace(/\\/g, "/");
           if (target === resolve20(join34(skillsSrc, retired)) || !existsSync33(retiredDst) && normalizedTarget.endsWith(`/antigravity-booster/skills/${retired}`)) {
             rmSync14(retiredDst, { recursive: true, force: true });
@@ -21371,7 +21411,7 @@ function bootstrap({
     for (const name of skills) {
       const src = join34(skillsSrc, name);
       const dst = join34(destination, name);
-      const dstStat = lstatSync17(dst, { throwIfNoEntry: false });
+      const dstStat = lstatSync18(dst, { throwIfNoEntry: false });
       if (dstStat) {
         const isSymlink = dstStat.isSymbolicLink();
         if (force) {
@@ -21380,7 +21420,7 @@ function bootstrap({
         } else if (isSymlink) {
           let targetMatches = false;
           try {
-            targetMatches = resolve20(dirname22(dst), readlinkSync3(dst)) === resolve20(src) && existsSync33(dst);
+            targetMatches = resolve20(dirname22(dst), readlinkSync4(dst)) === resolve20(src) && existsSync33(dst);
           } catch {
             targetMatches = false;
           }
@@ -21405,7 +21445,7 @@ function bootstrap({
         }
       } else {
         try {
-          symlinkSync5(src, dst);
+          symlinkSync6(src, dst);
           console.log(`linked  ${name} -> ${dst}`);
         } catch (err) {
           console.error(`error: failed to symlink skill ${name}: ${err.message}`);
