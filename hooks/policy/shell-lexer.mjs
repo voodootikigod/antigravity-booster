@@ -12,11 +12,11 @@
 const GLOB_CHARS = new Set(['*', '?', '[']);
 
 function newSubcommand() {
-  return { argv: [], redirects: [], dynamic: false, assignments: [] };
+  return { argv: [], redirects: [], dynamic: false, hasExpansion: false, assignments: [] };
 }
 
 function newToken() {
-  return { value: '', quoted: false, started: false, dynamic: false };
+  return { value: '', quoted: false, started: false, dynamic: false, hasExpansion: false };
 }
 
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
@@ -33,6 +33,7 @@ export function lexCommandLine(line) {
   const flushToken = () => {
     if (!tok.started) return;
     if (tok.dynamic) sub.dynamic = true;
+    if (tok.hasExpansion) sub.hasExpansion = true;
     if (pendingRedirect) {
       sub.redirects.push({ op: pendingRedirect, target: tok.value, dynamic: tok.dynamic });
       pendingRedirect = null;
@@ -47,6 +48,7 @@ export function lexCommandLine(line) {
     flushToken();
     if (pendingRedirect) {
       sub.dynamic = true; // dangling redirection operator
+      sub.hasExpansion = true;
       pendingRedirect = null;
     }
     if (sub.argv.length || sub.redirects.length || sub.assignments.length || sub.dynamic) subcommands.push(sub);
@@ -68,7 +70,9 @@ export function lexCommandLine(line) {
       else if (ch === '\\' && next !== undefined) {
         if (/[xuUc0-7]/.test(next)) {
           tok.dynamic = true;
+          tok.hasExpansion = true;
           sub.dynamic = true;
+          sub.hasExpansion = true;
         }
         add(next === 'n' ? '\n' : next === 't' ? '\t' : next);
         i += 1;
@@ -89,7 +93,10 @@ export function lexCommandLine(line) {
         add(next);
         i += 1;
       } else {
-        if (ch === '$' || ch === '`') tok.dynamic = true;
+        if (ch === '$' || ch === '`') {
+          tok.dynamic = true;
+          tok.hasExpansion = true;
+        }
         add(ch);
       }
       i += 1;
@@ -158,6 +165,7 @@ export function lexCommandLine(line) {
     }
     if (ch === '<' && (next === '(' || next === '<')) {
       sub.dynamic = true; // process substitution or heredoc
+      sub.hasExpansion = true;
       add(ch);
       i += 1;
       continue;
@@ -193,13 +201,16 @@ export function lexCommandLine(line) {
     }
     if (ch === '$' || ch === '`' || ch === '(' || ch === ')' || ch === '{' || ch === '}') {
       tok.dynamic = true;
+      tok.hasExpansion = true;
       sub.dynamic = true;
+      sub.hasExpansion = true;
       add(ch);
       i += 1;
       continue;
     }
     if (ch === '#' && !tok.started) {
       sub.dynamic = true; // comment: hides the rest of the line from review
+      sub.hasExpansion = true;
       break;
     }
     if (GLOB_CHARS.has(ch)) {

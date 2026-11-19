@@ -5,8 +5,9 @@
 | AGB_AGY_BIN | agy | Path or name of the agy executable used for builds, quota telemetry, doctor checks and bootstrap. | honoured |
 | AGB_ALLOW_DIRTY | unset | Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start). | honoured |
 | AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
-| AGB_BUILD_TIMEOUT | 5m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
+| AGB_BUILD_TIMEOUT | 15m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
 | AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
+| AGB_GATE_TIMEOUT_MS | 1800000 | Per-gate execution timeout in milliseconds for deterministic build/test gates in lib/scheduler.mjs. | honoured |
 | AGB_HUD | auto on TTY | Set to 0 to disable the inline ANSI status bar during agb run, or 1 to force-enable it. | honoured |
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
@@ -14,6 +15,7 @@
 | AGB_SYNC_MODELS_OFFLINE | unset | Set to 1 to use the built-in static model catalog instead of invoking agy models during doctor or sync-models. | honoured |
 | AGB_TARGET_REPO | unset | Target repository path checked by bin/node-launcher.sh; any candidate Node binary whose realpath resolves inside AGB_TARGET_REPO (or the current working directory) is rejected to prevent repo-planted binary execution. | honoured |
 | AGB_WARM_STRIKES | 1 | Set to 0 to disable warm second-strike builder resumption via agy --conversation &lt;id&gt; when a ticket fails its first attempt on the same model. | honoured |
+| AGB_WORKER_BUILD_CMD | set by agb on builders | Set by agb on ticketed builder agy processes when plan.gate.build is a valid npm run script; permits the PreToolUse shell guard to allow that exact build gate command. | honoured |
 | AGB_WORKER_MODE | set by agb | Set by agb on read-only worker agy processes (value readonly). The PreToolUse guard denies mutations and never prompts while it is set. | honoured |
 | AGB_WORKER_TICKET | set by agb | Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts. | honoured |
 | AGY_BIN | agy | Override path for the agy CLI executable used by scripts/stage-marketplace-plugin.mjs when validating staged plugin bundles. | honoured |

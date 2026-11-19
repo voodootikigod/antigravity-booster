@@ -66,7 +66,7 @@ A builder call is bounded by up to three independent timers. Whichever fires fir
 
 | Timer | Default | Set by | Notes |
 |---|---|---|---|
-| Per-call timeout | `5m` for builders | `AGB_BUILD_TIMEOUT` ([C19](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L822)) | Passed to agy as `--print-timeout`, enforced locally after a grace period (`AGB_KILL_GRACE_MS`, default 15 s). For stream-json, an empty value or `0` means no per-call limit ([C19](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L249)). |
+| Per-call timeout | `15m` for builders | `AGB_BUILD_TIMEOUT` ([C19](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L822)) | Passed to agy as `--print-timeout`, enforced locally after a grace period (`AGB_KILL_GRACE_MS`, default 15 s). For stream-json, an empty value or `0` means no per-call limit ([C19](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L249)). |
 | Wall-clock ceiling | `30m` | `AGB_BUILD_MAX_TIMEOUT` | Always on, even when the per-call timeout is unlimited ([C19](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L910)). |
 | No-progress watchdog | `5m` | `AGB_EVENT_PROGRESS_TIMEOUT` | Reset by each stream event; fires when agy goes silent ([C19](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L911-L921)). |
 

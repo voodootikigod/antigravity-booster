@@ -857,3 +857,41 @@ test('Shell: POSIX /dev/null output redirections and pure git rev-parse flags pa
     'deny',
   );
 });
+
+test('Shell: git grep/ls-files inspection, Node v24 test globs, safe test env flags, and AGB_WORKER_BUILD_CMD', () => {
+  // Stage 1 git grep & git ls-files pass across interactive, worker, and readonly
+  for (const cmd of [
+    'git grep -n "lock" lib',
+    'git grep --line-number --fixed-strings "foo" -- lib/lock.mjs',
+    'git ls-files --stage -- lib/lock.mjs',
+  ]) {
+    assert.equal(shell(cmd, fx.active, INTERACTIVE).decision, 'pass', `interactive: ${cmd}`);
+    assert.equal(shell(cmd, fx.active, WORKER).decision, 'pass', `worker: ${cmd}`);
+    assert.equal(shell(cmd, fx.active, READONLY).decision, 'pass', `readonly: ${cmd}`);
+  }
+  // Pager/file-pattern git grep flags stay excluded from Stage 1
+  assert.equal(shell('git grep -Ovi foo', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('git grep -f patterns.txt', fx.active, READONLY).decision, 'deny');
+
+  // Node v24 relative test globs pass in worker mode (including directories containing declared rails), while expansions/traversals deny
+  assert.equal(shell('node --test test/*.test.mjs', fx.active, WORKER).decision, 'pass');
+  assert.equal(shell('node --test lib/*.mjs', fx.active, WORKER).decision, 'pass');
+  assert.equal(shell('node --test ../outside/*.test.mjs', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('node --test /tmp/*.test.mjs', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('node --test ~/.gemini/*.test.mjs', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('node --test $(id).test.mjs', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('rm lib/*.mjs', fx.active, WORKER).decision, 'deny');
+
+  // Benign test mode env flags pass on test commands; runtime code-injection / secret env vars deny
+  assert.equal(shell('AUTOPILOT_GATE_FULL=1 node --test test/a.test.mjs', fx.active, WORKER).decision, 'pass');
+  assert.equal(shell('NODE_OPTIONS=--require=/tmp/evil.js node --test test/a.test.mjs', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('LD_PRELOAD=/tmp/evil.so node --test test/a.test.mjs', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('ADLC_MANIFEST_KEY=secret node --test test/a.test.mjs', fx.active, WORKER).decision, 'deny');
+
+  // Exact operator-configured plan.gate.build passes only for non-readonly ticket workers matching AGB_WORKER_BUILD_CMD
+  const WORKER_WITH_BUILD = { AGB_WORKER_TICKET: 'T1', AGB_WORKER_BUILD_CMD: 'npm run build:cursor-mcp' };
+  assert.equal(shell('npm run build:cursor-mcp', fx.active, WORKER_WITH_BUILD).decision, 'pass');
+  assert.equal(shell('npm run build', fx.active, WORKER_WITH_BUILD).decision, 'deny');
+  assert.equal(shell('FOO=1 npm run build:cursor-mcp', fx.active, WORKER_WITH_BUILD).decision, 'deny');
+  assert.equal(shell('npm run build:cursor-mcp', fx.active, { AGB_WORKER_MODE: 'readonly', AGB_WORKER_BUILD_CMD: 'npm run build:cursor-mcp' }).decision, 'deny');
+});

@@ -357,12 +357,14 @@ test('Integration Journal: rebase conflict quarantine preserves candidate withou
   const headBefore = g('rev-parse', 'HEAD');
 
   try {
-    // Run plan where T0 and T1 both touch shared.txt in parallel, causing rebase conflict for T1
+    // Run plan where T0 and T1 both touch shared.txt in parallel, causing rebase conflict for T1.
+    // Synchronize T1's gate on T0 landing in repo HEAD so T0 always merges first regardless of CI runner speed.
+    const waitForT0 = `node -e 'const fs=require("fs"),{execFileSync}=require("child_process");if(fs.readFileSync("shared.txt","utf8").trim()==="conflict t1 line"){const end=Date.now()+30000;while(Date.now()<end){try{if(execFileSync("git",["-C",${JSON.stringify(repo)},"show","HEAD:shared.txt"],{encoding:"utf8"}).trim()==="conflict t0 line")break;}catch{}Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,100);}}'`;
     const report = await withEnv(
       { AGB_AGY_BIN: FAKE_AGY, AGB_SANDBOX_GATES: '0', FAKE_BUILDER_MODE: 'conflict' },
       () => runPlan({
         repo,
-        gate: { test: 'true' },
+        gate: { test: waitForT0 },
         tickets: [
           { id: 'T0', title: 'zero', body: 'write T0', scope: ['shared.txt'] },
           { id: 'T1', title: 'one', body: 'write T1', scope: ['shared.txt'], edges: [{ to: 'T2' }] },

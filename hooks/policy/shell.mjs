@@ -25,9 +25,13 @@ const GIT_READ_FLAGS = {
   log: [/^--follow$/, /^-n\d*$/, /^-\d+$/, /^--max-count=\d+$/, /^--oneline$/, /^--graph$/, /^--stat$/, /^--pretty=.*$/, /^-p$/, /^--$/],
   show: [/^--stat$/, /^--name-only$/, /^--oneline$/, /^--$/],
   blame: [/^-L.+$/, /^-w$/, /^-M$/, /^-C$/, /^-e$/, /^--porcelain$/, /^--$/],
+  grep: [/^-[inrwIEeFclLCABCvhHqz0p]+$/, /^-[ABC]\d+$/, /^--(line-number|ignore-case|word-regexp|extended-regexp|fixed-strings|perl-regexp|count|files-with-matches|files-without-match|name-only|null|heading|break|full-name|color(=.*)?|no-color|untracked|no-index|recurse-submodules|max-depth=\d+|threads=\d+|and|or|not)$/, /^--$/],
+  'ls-files': [/^-[cdmosiktuVz]+$/, /^--(cached|deleted|modified|others|stage|ignored|killed|unmerged|resolve-undo|exclude-standard|full-name|error-unmatch|recurse-submodules)$/, /^--$/],
   'rev-parse': [/^--abbrev-ref(=.*)?$/, /^--verify$/, /^--short(=\d+)?$/, /^--show-toplevel$/, /^--git-dir$/, /^--git-common-dir$/, /^--git-path$/, /^--is-inside-work-tree$/, /^-q$/, /^--quiet$/, /^--$/],
 };
 const TEST_FLAG_OK = /^(--test-(name-pattern|skip-pattern|concurrency|timeout)=.+|--test-only|--test-force-exit|--experimental-test-coverage)$/;
+const SAFE_TEST_ENV_RE = /^[A-Z][A-Z0-9_]*_(?:FULL|TEST|TESTS|DEBUG|VERBOSE|STRICT|CI|OFFLINE)=[\w.:-]+$/;
+const SAFE_TEST_GLOB_RE = /^[\w./*?[\]-]+\.(?:m|c)?[jt]sx?$/;
 const GIT_OUTPUT_FLAG = /^(--output(=.*)?|-o.*)$/;
 const LIFECYCLE_VERBS = new Set(['complete', 'archive', 'update', 'edit', 'discard', 'restore', 'store']);
 const DIR_CHANGE = new Set(['cd', 'pushd', 'popd']);
@@ -188,19 +192,37 @@ function isStage2(sub, cwd, ctx) {
   return false;
 }
 
+function isSafeTestGlobToken(t) {
+  if (!GLOB_CHARS.test(t)) return true;
+  if (t.startsWith('-') || t.startsWith('/') || hasHomePrefix(t) || /(?:^|\/)\.\.(?:\/|$)/.test(t)) return false;
+  return SAFE_TEST_GLOB_RE.test(t);
+}
+
 /** Appendix A.4 item 8: headless worker test allowlist. */
 function isTestCommand(sub, platform) {
-  if (sub.dynamic || sub.assignments.length > 0 || !sub.redirects.every((r) => isNullDeviceSink(r, platform))) return false;
+  if (!sub.assignments.every((a) => SAFE_TEST_ENV_RE.test(a)) || !sub.redirects.every((r) => isNullDeviceSink(r, platform))) return false;
   const [cmd, a1, a2] = sub.argv;
   if (cmd === 'npm' && a1 === 'test') {
+    if (sub.dynamic) return false;
     if (sub.argv.length === 2) return true;
     if (a2 !== '--') return false;
     return sub.argv.slice(3).every((t) => !t.startsWith('-') || TEST_FLAG_OK.test(t));
   }
-  if (cmd === 'npm' && a1 === 'run' && sub.argv.length === 3) return a2 === 'test' || /^test:[\w.:-]+$/.test(a2);
+  if (cmd === 'npm' && a1 === 'run' && sub.argv.length === 3) {
+    if (sub.dynamic) return false;
+    return a2 === 'test' || /^test:[\w.:-]+$/.test(a2);
+  }
   if (cmd !== 'node' || a1 !== '--test') return false;
+  if (sub.hasExpansion) return false;
+  if (sub.dynamic && !sub.argv.slice(2).every(isSafeTestGlobToken)) return false;
   // Only flags that cannot write files (e.g. not --test-reporter-destination; P5 round 3 W2).
   return sub.argv.slice(2).every((t) => !t.startsWith('-') || TEST_FLAG_OK.test(t));
+}
+
+function isWorkerBuildCommand(sub, ctx) {
+  if (!ctx.workerTicket || ctx.readonly || !ctx.workerBuildCmd) return false;
+  if (sub.dynamic || sub.assignments.length > 0 || !sub.redirects.every((r) => isNullDeviceSink(r, ctx.platform))) return false;
+  return sub.argv.length === 3 && sub.argv[0] === 'npm' && sub.argv[1] === 'run' && `npm run ${sub.argv[2]}` === ctx.workerBuildCmd;
 }
 
 /** A pathspec that resolves to a whole repository (`.`, `./`, `docs/..`, `:/` magic). */
@@ -303,7 +325,7 @@ function resolveTokenCandidates(token, cwd, ctx) {
   return [resolveCandidate(token, cwd, ctx.home, ctx.platform)];
 }
 
-function globTargetVerdict(token, cwd, ctx) {
+function globTargetVerdict(token, cwd, ctx, { allowDeclaredRailRead = false } = {}) {
   if (!GLOB_CHARS.test(token)) return null;
   if (token.length > MAX_PATTERN_LENGTH) return deny('Over-long glob pattern in a shell command cannot be verified');
   const homes = hasHomePrefix(token) ? (ctx.homes ?? [ctx.home]) : [ctx.home];
@@ -321,8 +343,10 @@ function globTargetVerdict(token, cwd, ctx) {
     const nocase = ctx.platform === 'darwin' || ctx.platform === 'win32';
     const hit = trustRootSamples(repo).find((p) => minimatch(p, relPattern, { nocase }));
     if (hit) return deny(`Glob in a shell command can match the ADLC trust root: ${hit}`);
-    const rail = repo.activeRail && repo.store.ok ? repo.store.rails.find((r) => railStaticPrefix(r) === r && minimatch(r, relPattern, { nocase })) : null;
-    if (rail) return deny(`Glob in a shell command can match frozen rail: ${rail}`);
+    if (!allowDeclaredRailRead) {
+      const rail = repo.activeRail && repo.store.ok ? repo.store.rails.find((r) => railStaticPrefix(r) === r && minimatch(r, relPattern, { nocase })) : null;
+      if (rail) return deny(`Glob in a shell command can match frozen rail: ${rail}`);
+    }
   }
   return null;
 }
@@ -360,7 +384,7 @@ function checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd =
     // (`cat lib/*.mjs`) is dynamic and falls to Stage 5 instead.
     const pureRead = PURE_READERS.has(sub.argv[0]) && !hasWriteRedirect(sub, ctx.platform);
     if (!stage1 && (!pureRead || writeTargets.has(token))) {
-      const glob = globTargetVerdict(token, cwd, ctx);
+      const glob = globTargetVerdict(token, cwd, ctx, { allowDeclaredRailRead: Boolean(testCmd && !writeTargets.has(token)) });
       if (glob) return { verdict: glob, repos };
     }
     const repo = ctx.repoAt(r.real);
@@ -462,8 +486,9 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   const shim = isShimInvocation(argv, ctx);
   const stage1 = !shim && isStage1(sub, ctx.platform);
   const testCmd = !shim && isTestCommand(sub, ctx.platform);
+  const workerBuildCmd = !shim && isWorkerBuildCommand(sub, ctx);
   const dirChange = DIR_CHANGE.has(argv[0]);
-  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd });
+  const { verdict: targetVerdict, repos } = checkTargets(sub, cwd, ctx, { stage1, shim, dirChange, verbs, testCmd: testCmd || workerBuildCmd });
   if (targetVerdict.decision === 'deny') return targetVerdict;
   const contextRepos = [cwdRepo, ...ctx.workspacePaths.map((w) => ctx.repoAt(w)), ...repos];
   const finish = (v) => mostRestrictive([targetVerdict, v]);
@@ -487,7 +512,7 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
     return finish(stage5(ctx, contextRepos, 'agb command in an active-rail ADLC repository requires operator confirmation'));
   }
   if (dirChange) return finish(stage5(ctx, contextRepos, 'Directory change in an active-rail ADLC repository requires operator confirmation'));
-  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && testCmd) return finish(PASS);
+  if (ctx.workerTicket && !ctx.readonly && contextRepos.some((r) => r.adlc) && (testCmd || workerBuildCmd)) return finish(PASS);
   if (!ctx.headless && contextRepos.some((r) => r.adlc && r.activeRail) && isRoutine(sub, cwd, ctx)) return finish(PASS);
   return finish(stage5(ctx, contextRepos, 'Unlisted or dynamic shell command in an active-rail ADLC repository requires operator confirmation'));
 }
