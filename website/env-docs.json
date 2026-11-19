@@ -36,6 +36,13 @@
       "description": "No-progress watchdog: an agy stream that emits no events for this long is terminated."
     },
     {
+      "name": "AGB_GATE_TIMEOUT_MS",
+      "group": "core",
+      "default": "1800000",
+      "bundledIgnored": false,
+      "description": "Per-gate execution timeout in milliseconds for deterministic build/test gates in lib/gates.mjs."
+    },
+    {
       "name": "AGB_KILL_GRACE_MS",
       "group": "core",
       "default": "15000",

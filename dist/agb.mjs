@@ -15006,7 +15006,8 @@ function materializeTempWorktreeNodeModules(cwd) {
   }
   return nmPath;
 }
-async function runGate(name, cmd2, cwd, { timeoutMs = 6e5, sandbox = false, env = process.env } = {}) {
+async function runGate(name, cmd2, cwd, { timeoutMs, sandbox = false, env = process.env } = {}) {
+  const effectiveTimeoutMs = timeoutMs ?? (Number(env.AGB_GATE_TIMEOUT_MS) > 0 ? Number(env.AGB_GATE_TIMEOUT_MS) : 18e5);
   let profileFile;
   let emptyRoDir;
   let tempNmDir = null;
@@ -15040,7 +15041,7 @@ async function runGate(name, cmd2, cwd, { timeoutMs = 6e5, sandbox = false, env 
   }
   try {
     const spawnEnv = env === process.env ? process.env : { ...process.env, ...env };
-    const { stdout: stdout2 } = await execFileP2(argv[0], argv[1], { cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: spawnEnv });
+    const { stdout: stdout2 } = await execFileP2(argv[0], argv[1], { cwd, encoding: "utf8", timeout: effectiveTimeoutMs, maxBuffer: 16 * 1024 * 1024, env: spawnEnv });
     return { name, cmd: cmd2, ok: true, output: stdout2.slice(-2e3), sandboxed };
   } catch (err) {
     if (sandboxed && platform() === "linux" && err.code === "ENOENT" && argv[0] === "bwrap") {

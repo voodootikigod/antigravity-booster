@@ -7,6 +7,7 @@
 | AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
 | AGB_BUILD_TIMEOUT | 15m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
 | AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
+| AGB_GATE_TIMEOUT_MS | 1800000 | Per-gate execution timeout in milliseconds for deterministic build/test gates in lib/gates.mjs. | honoured |
 | AGB_HUD | auto on TTY | Set to 0 to disable the inline ANSI status bar during agb run, or 1 to force-enable it. | honoured |
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
