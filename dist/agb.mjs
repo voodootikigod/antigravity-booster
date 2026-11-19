@@ -9303,6 +9303,14 @@ function discardProjection(worktree, base = "HEAD") {
       } catch {
       }
     }
+    try {
+      git(worktree, "clean", "-fd", "--", p);
+    } catch {
+    }
+  }
+  try {
+    rmSync5(join19(worktree, ".agb_home"), { recursive: true, force: true });
+  } catch {
   }
 }
 function cleanEmptyNodeModules(worktree) {
@@ -19872,6 +19880,7 @@ Fix: ${agyCheck.fix}`);
                     continue;
                   }
                   status.ticket(t.id, { phase: "gating" });
+                  discardProjection(worktree, "HEAD");
                   const gates = await runGates(gate, worktree, { sandbox: true });
                   cleanEmptyNodeModules(worktree);
                   await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: gates.ok, strikes }, adlcBin: runAdlcBin });
