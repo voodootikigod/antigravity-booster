@@ -163,3 +163,24 @@ test('checkFlailDetector: agy stream-json Created At / Completed At timestamps d
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('runPlan: prosecutor 503 operational error on primary cross-family model fails over to secondary cross-family prosecutor without burning a strike', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-prosecutor-failover-'));
+  try {
+    const report = await withEnv(
+      { AGB_AGY_BIN: FAKE_AGY, AGB_ADLC_BIN: FAKE_ADLC, FAKE_STATE_DIR: state, FAKE_PROSECUTOR_VERDICT: 'error-503-on-gpt', AGB_SANDBOX_GATES: '0' },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], tier: 'mid', pool_hint: 'gemini' }],
+      }, quiet)
+    );
+    assert.deepEqual(report.merged, ['T1'], JSON.stringify(report.failed));
+    const modelsTried = readFileSync(join(state, 'prosecutor-models'), 'utf8').trim().split('\n');
+    assert.deepEqual(modelsTried, ['gpt-oss-120b-medium', 'claude-sonnet-5-5-medium']);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});

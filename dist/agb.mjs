@@ -19495,59 +19495,72 @@ Fix: ${agyCheck.fix}`);
       }
     }
     async function prosecuteBranch(t, worktree, builderModel, baseRef = base) {
-      const prosecutorModel = pools.prosecutorFor(builderModel);
-      const { model: activeProsecutor, release } = await acquireWithQuotaHandling(prosecutorModel, {
-        role: "prosecutor",
-        builderModel,
-        repo,
-        ticketId: t.id
-      });
-      status.pools(pools.snapshot());
-      const scratch = mkdtempSync8(join33(tmpdir9(), "agb-prosecute-"));
-      const safeId = t.id.replace(/[\/\\]/g, "_");
-      if (release.isActive && !release.isActive()) {
-        rmSync13(scratch, { recursive: true, force: true });
-        await release();
+      const candidates = typeof pools.prosecutorsFor === "function" ? pools.prosecutorsFor(builderModel) : [pools.prosecutorFor(builderModel)];
+      const tried = /* @__PURE__ */ new Set();
+      let lastErrorVerdict = null;
+      for (const prosecutorModel of candidates) {
+        if (tried.has(prosecutorModel)) continue;
+        const { model: activeProsecutor, release } = await acquireWithQuotaHandling(prosecutorModel, {
+          role: "prosecutor",
+          builderModel,
+          repo,
+          ticketId: t.id
+        });
+        tried.add(activeProsecutor);
         status.pools(pools.snapshot());
-        const err = new Error(`Cannot spawn prosecutor for ticket ${t.id}: lease is no longer active (pool is draining)`);
-        err.kind = "lease_revoked";
-        throw err;
-      }
-      try {
-        return await prosecute({
-          ticket: t,
-          diff: branchDiff(worktree, baseRef),
-          model: activeProsecutor,
-          cwd: scratch,
-          logFile: join33(logDir, `${safeId}.jsonl`),
-          worktree,
-          testCmd: gate?.test,
-          base,
-          project: finalProject,
-          adlcBin: runAdlcBin,
-          onSpawn: (child) => {
-            if (child) {
-              activeChildren.add(child);
-              child.once("exit", () => activeChildren.delete(child));
-              if (fleetAborted) {
-                terminateProcessTree(child, "SIGKILL");
-              }
-            }
-            if (child?.pid) {
-              Promise.resolve(release.registerWorkerPid?.(child.pid)).then((ok2) => {
-                if (ok2 === false) {
+        const scratch = mkdtempSync8(join33(tmpdir9(), "agb-prosecute-"));
+        const safeId = t.id.replace(/[\/\\]/g, "_");
+        if (release.isActive && !release.isActive()) {
+          rmSync13(scratch, { recursive: true, force: true });
+          await release();
+          status.pools(pools.snapshot());
+          const err = new Error(`Cannot spawn prosecutor for ticket ${t.id}: lease is no longer active (pool is draining)`);
+          err.kind = "lease_revoked";
+          throw err;
+        }
+        let res;
+        try {
+          res = await prosecute({
+            ticket: t,
+            diff: branchDiff(worktree, baseRef),
+            model: activeProsecutor,
+            cwd: scratch,
+            logFile: join33(logDir, `${safeId}.jsonl`),
+            worktree,
+            testCmd: gate?.test,
+            base,
+            project: finalProject,
+            adlcBin: runAdlcBin,
+            onSpawn: (child) => {
+              if (child) {
+                activeChildren.add(child);
+                child.once("exit", () => activeChildren.delete(child));
+                if (fleetAborted) {
                   terminateProcessTree(child, "SIGKILL");
                 }
-              }).catch(() => {
-              });
+              }
+              if (child?.pid) {
+                Promise.resolve(release.registerWorkerPid?.(child.pid)).then((ok2) => {
+                  if (ok2 === false) {
+                    terminateProcessTree(child, "SIGKILL");
+                  }
+                }).catch(() => {
+                });
+              }
             }
-          }
-        });
-      } finally {
-        await release();
-        status.pools(pools.snapshot());
-        rmSync13(scratch, { recursive: true, force: true });
+          });
+        } finally {
+          await release();
+          status.pools(pools.snapshot());
+          rmSync13(scratch, { recursive: true, force: true });
+        }
+        if (res?.verdict !== "error") return res;
+        lastErrorVerdict = res;
+        if (candidates.some((c) => !tried.has(c))) {
+          log2(`[agb] prosecutor ${activeProsecutor} returned operational error for ${t.id} (${res.error?.slice(0, 120)}); failing over to alternate cross-family prosecutor`);
+        }
       }
+      return lastErrorVerdict;
     }
     async function runTicket(t) {
       started.add(t.id);

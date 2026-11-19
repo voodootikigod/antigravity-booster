@@ -178,10 +178,13 @@ input_format=""
 output_format=""
 json_schema=""
 conversation_arg=""
+model_arg=""
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--print" ]; then
     prompt="$arg"
+  elif [ "$prev" = "--model" ]; then
+    model_arg="$arg"
   elif [ "$prev" = "--input-format" ]; then
     input_format="$arg"
   elif [ "$prev" = "--output-format" ]; then
@@ -417,9 +420,14 @@ case "$prompt" in
       count_file="$FAKE_STATE_DIR/prosecutions"
       n=$(cat "$count_file" 2>/dev/null || echo 0)
       echo $((n + 1)) > "$count_file"
+      echo "$model_arg" >> "$FAKE_STATE_DIR/prosecutor-models"
       if [ "$n" -eq 0 ] && [ "$verdict" = "block-then-ship" ]; then verdict=block; else
         [ "$verdict" = "block-then-ship" ] && verdict=ship
       fi
+    fi
+    if [ "$verdict" = "error-503-on-gpt" ] && [ "$model_arg" = "gpt-oss-120b-medium" ]; then
+      echo '{"status":"ERROR","error":"UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"}'
+      exit 0
     fi
     # ship-with-high / ship-with-low decouple the two signals the real gate
     # reads: the model's stated verdict, and the severity of its findings. The
