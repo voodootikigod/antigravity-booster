@@ -29,7 +29,7 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
       if (reqUrl.pathname === '/' || reqUrl.pathname === '/index.html') {
         const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
         const isAuth = reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual(reqTokenBuf, tokenBuf);
-        if (!isAuth && !process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
+        if (!isAuth) {
           res.writeHead(403);
           return res.end('Forbidden: Invalid token');
         }
@@ -40,7 +40,7 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
         const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
         const isAuth = (bearerTokenBuf && bearerTokenBuf.length === tokenBuf.length && timingSafeEqual(bearerTokenBuf, tokenBuf)) ||
                        (reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual(reqTokenBuf, tokenBuf));
-        if (!isAuth && !process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
+        if (!isAuth) {
           res.writeHead(403);
           return res.end('Forbidden: Invalid token header');
         }

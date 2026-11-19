@@ -60,8 +60,8 @@ jobs:
       - name: Upgrade npm for OIDC trusted publishing
         # Node 22 ships npm 10.x, which cannot use OIDC trusted publishing.
         # npm >= 11.5.1 is required to mint a registry token from the GitHub
-        # id-token (the `id-token: write` permission above). Without this the
-        # publish falls through to needing NODE_AUTH_TOKEN and fails ENEEDAUTH.
+        # id-token (the `id-token: write` permission above). Without this, npm
+        # cannot authenticate via OIDC and fails with ENEEDAUTH.
         # Still pinned to the 11.x line (NOT @latest) after the Node 20 -> 22
         # bump: npm 12 requires node ^22.22 || ^24.15 || >=26, but our engines
         # floor is >=22.19.0, so `npm@latest` can fail EBADENGINE on a runner
@@ -115,11 +115,5 @@ jobs:
       - name: Publish
         run: npm publish --provenance --access public
         env:
-          # Bootstrap run only: set NPM_TOKEN as an ENVIRONMENT secret on
-          # `npm-publish` (Settings > Environments > npm-publish > Secrets), NOT a
-          # repo secret, so it cannot be read outside the gated environment. After
-          # configuring npm trusted publishing for `antigravity-booster` on
-          # npmjs.com, delete the secret — this var becomes empty and npm falls
-          # through to OIDC trusted publishing.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Publish relies strictly on OIDC Trusted Publishing (`id-token: write`).
           NPM_CONFIG_PROVENANCE: "true"

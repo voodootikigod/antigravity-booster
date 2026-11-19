@@ -4,16 +4,20 @@ description: "Run a read-only lens fleet over a diff until no new findings appea
 claims: [C11]
 ---
 
-`agb review` prosecutes a diff with a read-only fleet of model "lenses" and loops until the review converges.
+`agb review` prosecutes a diff or a plan specification with a read-only fleet of model "lenses" and loops until the review converges.
 
 ## Synopsis
 
 <include>../../../../generated/cli-review.mdx</include>
 
-## Arguments
+## Arguments and flags
 
 - `repo` is optional and defaults to the current directory ([C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L147)).
-- `ref` is optional: a range such as `main...HEAD` or a SHA range. Without it, uncommitted changes are reviewed against `HEAD` ([ref handling](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L148-L149)).
+- `ref` is optional: a range such as `main...HEAD` or a SHA range. Without it, uncommitted changes are reviewed against `HEAD`.
+- `--plan <spec.md>` runs the 5-lens Plan Adversarial Review Loop (ARL) against a Markdown specification instead of a git diff.
+- `--loop` runs iterative ARL up to 3 rounds.
+- `--five-lens` (alias `--5-lens`) uses the 5-lens Code ARL (Correctness/Red-Team, Simplicity, Security, Evidence Runner, Anti-Slop) instead of the default 4-lens fleet.
+- `--no-arbiter` skips neutral arbiter triage.
 
 An empty diff exits 0 with nothing to review. Quota telemetry must be available.
 

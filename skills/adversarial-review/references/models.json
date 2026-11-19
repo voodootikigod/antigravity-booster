@@ -2,27 +2,6 @@
   "schema_version": "1.0",
   "catalog": [
     {
-      "slug": "gemini-4-argon-low",
-      "display_name": "Gemini 4 Argon (Low)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-argon-medium",
-      "display_name": "Gemini 4 Argon (Medium)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-argon-high",
-      "display_name": "Gemini 4 Argon (High)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
       "slug": "gemini-3.8-flash-low",
       "display_name": "Gemini 3.8 Flash (Low)",
       "pool": "gemini-flash",
@@ -44,24 +23,87 @@
       "status": "MAPPED"
     },
     {
-      "slug": "claude-opus-5-5-low",
-      "display_name": "Claude Opus 5.5 (Low)",
-      "pool": "claude",
-      "family": "claude",
+      "slug": "gemini-4-argon-low",
+      "display_name": "Gemini 4 Argon (Low)",
+      "pool": "gemini-pro",
+      "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "claude-opus-5-5-medium",
-      "display_name": "Claude Opus 5.5 (Medium)",
-      "pool": "claude",
-      "family": "claude",
+      "slug": "gemini-4-argon-medium",
+      "display_name": "Gemini 4 Argon (Medium)",
+      "pool": "gemini-pro",
+      "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "claude-opus-5-5-high",
-      "display_name": "Claude Opus 5.5 (High)",
-      "pool": "claude",
-      "family": "claude",
+      "slug": "gemini-4-argon-high",
+      "display_name": "Gemini 4 Argon (High)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-carbon-low",
+      "display_name": "Gemini 4 Carbon (Low)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-carbon-medium",
+      "display_name": "Gemini 4 Carbon (Medium)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-carbon-high",
+      "display_name": "Gemini 4 Carbon (High)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-low",
+      "display_name": "Gemini 4 Hydrogen (Low)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-medium",
+      "display_name": "Gemini 4 Hydrogen (Medium)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-high",
+      "display_name": "Gemini 4 Hydrogen (High)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-xhigh",
+      "display_name": "Gemini 4 Hydrogen (Xhigh)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-pro-orchestrator",
+      "display_name": "Orchestrator (Carbon)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-pro-orchestrator-argon",
+      "display_name": "Orchestrator (Argon)",
+      "pool": "gemini-pro",
+      "family": "gemini",
       "status": "MAPPED"
     },
     {
@@ -81,6 +123,27 @@
     {
       "slug": "claude-sonnet-5-5-high",
       "display_name": "Claude Sonnet 5.5 (High)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-low",
+      "display_name": "Claude Opus 5.5 (Low)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-medium",
+      "display_name": "Claude Opus 5.5 (Medium)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-high",
+      "display_name": "Claude Opus 5.5 (High)",
       "pool": "claude",
       "family": "claude",
       "status": "MAPPED"

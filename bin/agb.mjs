@@ -185,6 +185,45 @@ function loadPlan(path) {
   return { plan, errors };
 }
 
+function rejectUnknownFlags(cmdName, tokens, allowedBoolFlags, allowedValueFlags = new Set()) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (allowedValueFlags.has(token)) {
+      if (i + 1 >= tokens.length || tokens[i + 1].startsWith('--')) {
+        console.error(`agb: missing value for ${token}`);
+        process.exit(1);
+      }
+      i += 1;
+      continue;
+    }
+    if (allowedBoolFlags.has(token)) continue;
+    if (token.startsWith('--')) {
+      console.error(`agb: unknown flag '${token}' for ${cmdName}`);
+      process.exit(1);
+    }
+  }
+}
+
+function parseIntervalFlag(tokens, defaultMs) {
+  let intervalMs = defaultMs;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] === '--interval') {
+      const val = tokens[i + 1];
+      if (val === undefined || val.startsWith('--')) {
+        console.error('agb: missing value for --interval');
+        process.exit(1);
+      }
+      if (!/^\d+$/.test(val) || Number(val) < 1) {
+        console.error(`agb: invalid --interval '${val}' (expected positive integer milliseconds >= 1)`);
+        process.exit(1);
+      }
+      intervalMs = Number(val);
+      i += 1;
+    }
+  }
+  return intervalMs;
+}
+
 try {
   if (cmd === 'run') {
     let concurrency;
@@ -229,6 +268,12 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'review') {
+    rejectUnknownFlags(
+      'review',
+      rest,
+      new Set(['--loop', '--five-lens', '--5-lens', '--no-arbiter']),
+      new Set(['--plan'])
+    );
     let planSpec = null;
     const pIdx = rest.indexOf('--plan');
     if (pIdx !== -1) {
@@ -292,6 +337,7 @@ try {
     const code = runShapeCli(rest, { repo: process.cwd() });
     process.exit(code);
   } else if (cmd === 'preflight') {
+    rejectUnknownFlags('preflight', rest, new Set(['--no-coldstart']));
     const planPath = rest.find((arg) => !arg.startsWith('--')) ?? 'plan.json';
     const { plan, errors } = loadPlan(planPath);
     if (errors.length) {
@@ -312,6 +358,12 @@ try {
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
+    rejectUnknownFlags(
+      'plan',
+      rest,
+      new Set(['--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
+      new Set(['--out', '--max-ticket-scope'])
+    );
     // The plan itself is authored in Antigravity (GUI plan mode or an agy
     // planning session) — this command only compiles that artifact.
     let out = 'plan.json';
@@ -416,13 +468,17 @@ try {
       console.error('The --ui TUI flag has been removed. Use agb sidecar or agb watch instead.');
       process.exit(1);
     }
+    rejectUnknownFlags(
+      'status',
+      rest,
+      new Set(['--watch', '-w', '--tui', '--follow', '--compact']),
+      new Set(['--interval'])
+    );
     const isWatch = rest.includes('--watch') || rest.includes('-w');
     const wantsTui = rest.includes('--tui');
     const follow = rest.includes('--follow');
     const compact = rest.includes('--compact');
-    let intervalMs = isWatch ? 200 : 1000;
-    const iIdx = rest.indexOf('--interval');
-    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
+    const intervalMs = parseIntervalFlag(rest, isWatch ? 200 : 1000);
     const positional = extractPositionalArgs(rest, new Set(['--interval']));
     const targetRepo = resolve(positional[0] ?? '.');
 
@@ -439,11 +495,15 @@ try {
       console.log(renderStatus(targetRepo, { tui: wantsTui, compact }));
     }
   } else if (cmd === 'watch') {
+    rejectUnknownFlags(
+      'watch',
+      rest,
+      new Set(['--follow', '--compact']),
+      new Set(['--interval'])
+    );
     const follow = rest.includes('--follow');
     const compact = rest.includes('--compact');
-    let intervalMs = 200;
-    const iIdx = rest.indexOf('--interval');
-    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
+    const intervalMs = parseIntervalFlag(rest, 200);
     const positional = extractPositionalArgs(rest, new Set(['--interval']));
     const targetRepo = resolve(positional[0] ?? '.');
     const { watchStatus } = await import('../lib/status.mjs');
@@ -460,6 +520,7 @@ try {
     const res = runInit({ repo: targetRepo });
     console.log(JSON.stringify(res, null, 2));
   } else if (cmd === 'sync-models') {
+    rejectUnknownFlags('sync-models', rest, new Set(['--check', '--offline', '--json', '--write']));
     const { syncModels } = await import('../scripts/sync-models.mjs');
     const isJson = rest.includes('--json');
     const res = syncModels({
@@ -481,6 +542,7 @@ try {
     console.error('The TUI has been removed. Use agb sidecar or agb watch instead.');
     process.exit(1);
   } else if (cmd === 'doctor') {
+    rejectUnknownFlags('doctor', rest, new Set(['--fix']));
     const repoArg = extractPositionalArgs(rest)[0];
     const fix = rest.includes('--fix');
     process.exitCode = await runDoctor({
@@ -488,6 +550,7 @@ try {
       fix,
     });
   } else if (cmd === 'validate') {
+    rejectUnknownFlags('validate', rest, new Set());
     const { errors } = loadPlan(rest[0] ?? 'plan.json');
     if (errors.length) {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
@@ -495,6 +558,7 @@ try {
     }
     console.log('plan valid');
   } else if (cmd === 'bootstrap' || cmd === 'setup' || cmd === 'install' || (cmd === 'skills' && ['install', 'setup', 'bootstrap'].includes(rest[0]))) {
+    rejectUnknownFlags('bootstrap', rest, new Set(['--force', '-f', '--force-reinstall']));
     const force = rest.includes('--force') || rest.includes('-f');
     const forceReinstall = rest.includes('--force-reinstall');
     bootstrap({ force, forceReinstall });

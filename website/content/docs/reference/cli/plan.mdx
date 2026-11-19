@@ -14,7 +14,10 @@ claims: [C13]
 
 - `--out <file>` sets the output path (default `plan.json`).
 - `--force` overwrites an existing output file; without it the command exits 1 rather than replace a hand-written plan ([C13](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L197-L203)).
-- `--no-coldstart`, `--no-parallax` and `--no-premortem` skip the corresponding gate ([gate switches](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L211-L219)).
+- `--decompose` automatically splits wide tickets whose file scope exceeds `--max-ticket-scope`.
+- `--max-ticket-scope <n>` sets the maximum files per ticket when `--decompose` is enabled.
+- `--no-fast-path` disables the zero-LLM structured Markdown fast-path and forces LLM conversion.
+- `--no-coldstart`, `--no-parallax` and `--no-premortem` skip the corresponding gate.
 
 ## Gates
 

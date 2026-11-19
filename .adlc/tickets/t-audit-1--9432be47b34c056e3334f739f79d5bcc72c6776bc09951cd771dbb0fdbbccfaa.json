@@ -1,0 +1,21 @@
+{
+  "body": "## Shared Spec Context\nResolve all 19 `SHOULD-FIX` findings identified in the `1.3.0` release audit (`VERDICT: GO-WITH-RISK`) across ADLC gates, CLI flag validation, doctor repo guard, scheduler `hollow-test` sandboxing, sidecar token enforcement, policy-guard case normalization, supply-chain hardening, model catalog synchronization, skill docs, changelog, website documentation, and distribution bundles.\n\nStanding frozen rails across all tickets: `lib/lock.mjs`, `lib/gates.mjs`, `.adlc/config.json`.\n\n```mermaid\ngraph TD\n  T1[\"Ticket 1: T-AUDIT-1 — Harden ADLC gate error handling and script extraction\"]\n  T2[\"Ticket 2: T-AUDIT-2 — Strict CLI flag validation and doctor --fix repo guard\"]\n  T3[\"Ticket 3: T-AUDIT-3 — Sandbox post-merge hollow-test and enforce sidecar token auth\"]\n  T4[\"Ticket 4: T-AUDIT-4 — Policy workflow case normalization, bundle-externals parser, OIDC-only publish\"]\n  T5[\"Ticket 5: T-AUDIT-5 — Sync models.json, fix agb-run docs, update CHANGELOG/website, rebuild bundles\"]\n  T1 --> T5\n  T2 --> T5\n  T3 --> T5\n  T4 --> T5\n```\n\n## Ticket T-AUDIT-1: Harden ADLC gate error handling and script extraction\n- **Scope**: `lib/plan.mjs`, `lib/review.mjs`, `lib/plan-integrity.mjs`, `test/audit-adlc-gates.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `.adlc/config.json`\n- **Tier**: `mid`\n\n#### Requirements\n1. **`lib/plan.mjs` (`compilePlan` / `writeAdlcTickets`):**\n   - Currently `compilePlan` downgrades symlink-refusal and ticket-store write/integrity errors from `writeAdlcTickets` to a log warning (only rethrowing `LEGACY_TICKET_STORE`).\n   - Treat symlink-refusal and store-integrity / write errors as fatal (rethrow / fail closed) so `compilePlan` never silently succeeds when ticket projection fails due to symlink refusal or store corruption.\n2. **`lib/review.mjs` (`triageFindings`):**\n   - When the LLM arbiter invocation fails and falls back to `deterministicTriage`, emit a warning (via `console.warn` / stderr diagnostic) and include `arbiterDegraded: true` and `arbiterError: String(err?.message ?? err)` on the returned triage result object.\n3. **`lib/plan-integrity.mjs` (`extractDelegatedScripts`):**\n   - Update the `npm run` / `npm run-script` regex so optional flags before the script name (such as `npm run --silent <name>`, `npm run -s <name>`, `npm run --if-present <name>`) are skipped and `<name>` is still extracted.\n\n#### Acceptance Criteria\n- [ ] `compilePlan` in `lib/plan.mjs` fails closed (throws) when `writeAdlcTickets` fails due to symlink refusal or ticket-store integrity/write errors.\n- [ ] `triageFindings` in `lib/review.mjs` logs a warning and returns `arbiterDegraded: true` and `arbiterError` when falling back to `deterministicTriage`.\n- [ ] `extractDelegatedScripts` in `lib/plan-integrity.mjs` extracts script names preceded by `--silent`, `-s`, `--if-present`, or multiple flags.\n- [ ] Unit tests in `test/audit-adlc-gates.test.mjs` cover all three fixes and `npm test` passes.\n\n---",
+  "edges": [
+    {
+      "to": "T-AUDIT-5"
+    }
+  ],
+  "id": "T-AUDIT-1",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json"
+  ],
+  "scope": [
+    "lib/plan.mjs",
+    "lib/review.mjs",
+    "lib/plan-integrity.mjs",
+    "test/audit-adlc-gates.test.mjs"
+  ],
+  "title": "Harden ADLC gate error handling and script extraction"
+}

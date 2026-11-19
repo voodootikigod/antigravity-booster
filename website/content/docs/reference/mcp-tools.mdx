@@ -16,7 +16,7 @@ Child processes inherit the ambient environment from the host agent harness. Unk
 
 The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
 
-<Callout type="info" title="agb_run takes only a plan">`agb run` has no concurrency flag, so `agb_run` accepts no `concurrency` parameter: a call that supplies one returns a tool error naming it (v1.0.0 forwarded it to `agb run`, which ignored it: [C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)). Runtime concurrency is enforced by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`).</Callout>
+<Callout type="info" title="agb_run takes only a plan">While the CLI `agb run` supports `-c <n>` to cap total concurrent workers, the MCP `agb_run` tool accepts only `plan` (and no `concurrency`, `project`, or `cwd` parameter): a call that supplies `concurrency` returns a tool error naming it (v1.0.0 forwarded it to `agb run`, which ignored it: [C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)). Per-pool runtime concurrency is enforced by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`).</Callout>
 
 <include>../../../generated/mcp-tools.mdx</include>
 
@@ -24,11 +24,13 @@ The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
 
 | Tool | Runs |
 | --- | --- |
-| `agb_plan` | `agb plan <spec> <repo>` plus `--out`, `--force`, `--no-coldstart`, `--no-parallax`, `--no-premortem` |
+| `agb_shape` | `agb shape <spec> [repo]` plus `--sync-brain`, `--max-ticket-scope`, `--strict` |
+| `agb_plan` | `agb plan <spec> <repo>` plus `--out`, `--force`, `--decompose`, `--max-ticket-scope`, `--no-fast-path`, `--no-coldstart`, `--no-parallax`, `--no-premortem` |
 | `agb_run` | `agb run <plan>` |
 | `agb_preflight` | `agb preflight <plan>` plus `--no-coldstart` |
 | `agb_status` | `agb status <repo>` |
-| `agb_doctor` | `agb doctor` |
-| `agb_review` | `agb review <repo> [ref]` |
+| `agb_doctor` | `agb doctor [repo]` plus `--fix` |
+| `agb_init` | `agb init <repo>` |
+| `agb_review` | `agb review <repo> [ref]` plus `--plan`, `--loop`, `--five-lens`, `--no-arbiter` |
 
 Evidence: [tool dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L178-L196). The server resolves the CLI to the sibling `dist/agb.mjs` in the bundled plugin, `bin/agb.mjs` in a source checkout, or `agb` on `PATH` ([resolveAgbEntry](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L19-L23)). See [Headless and MCP](/docs/guides/headless-and-mcp).

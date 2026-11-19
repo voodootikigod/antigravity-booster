@@ -47,9 +47,9 @@ A ticket's `tier` (default `mid`) picks a candidate list. Candidates are listed 
 | --- | --- |
 | `cheap` | `gemini-3.8-flash-low`, `gemini-3.8-flash-medium` |
 | `mid` | `gemini-3.8-flash-high`, `gemini-4-argon-low`, `gemini-4-carbon-medium`, `gemini-4-hydrogen-medium`, `claude-sonnet-5-5-medium` |
-| `frontier` | `gemini-4-argon-high`, `gemini-4-carbon-high`, `claude-sonnet-5-5-high`, `claude-opus-5-5-high` |
+| `frontier` | `gemini-pro-orchestrator`, `claude-sonnet-5-5-high`, `gemini-pro-orchestrator-argon`, `gemini-4-argon-high`, `gemini-4-carbon-high`, `claude-opus-5-5-high` |
 
-`gemini-pro-orchestrator` and `gemini-pro-orchestrator-argon` are registered in the `gemini-pro` pool for explicit quota tracking and display-alias resolution, but are excluded from leaf builder and prosecutor tiers because `agb` itself performs ticket DAG orchestration. `route()` prefers candidates whose pool and family both have capacity, then picks the one with the lowest reserved-to-cap ratio ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1770-L1790)).
+On `agy >= 1.5.9`, `gemini-pro-orchestrator` and `gemini-pro-orchestrator-argon` sit in `TIER_CANDIDATES.frontier` interleaved with `claude` candidates so frontier runs spread load across `gemini-pro` and `claude` pools; they remain excluded from `cheap`/`mid` builder tiers and all prosecutor/role tables. On `agy < 1.5.9` — or when an operator opts out via `AGB_DISABLE_ORCHESTRATOR=1` or `plan.disableOrchestrator: true` — frontier routing automatically falls back to `FRONTIER_NO_ORCHESTRATOR` (`gemini-4-argon-high`, `claude-sonnet-5-5-high`, `gemini-4-carbon-high`, `claude-opus-5-5-high`). `route()` prefers candidates whose pool and family both have capacity, then picks the one with the lowest reserved-to-cap ratio ([lib/pools.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/pools.mjs#L1770-L1790)).
 
 ## `pool_hint`
 
