@@ -8739,7 +8739,7 @@ function serveSidecar(repoPath, port = 3333, token = null) {
       if (reqUrl.pathname === "/" || reqUrl.pathname === "/index.html") {
         const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
         const isAuth = reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual2(reqTokenBuf, tokenBuf);
-        if (!isAuth && !process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
+        if (!isAuth) {
           res.writeHead(403);
           return res.end("Forbidden: Invalid token");
         }
@@ -8749,7 +8749,7 @@ function serveSidecar(repoPath, port = 3333, token = null) {
         const bearerTokenBuf = bearerToken ? Buffer.from(bearerToken) : null;
         const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
         const isAuth = bearerTokenBuf && bearerTokenBuf.length === tokenBuf.length && timingSafeEqual2(bearerTokenBuf, tokenBuf) || reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual2(reqTokenBuf, tokenBuf);
-        if (!isAuth && !process.env.ANTIGRAVITY_SIDECAR_WEB_PORT) {
+        if (!isAuth) {
           res.writeHead(403);
           return res.end("Forbidden: Invalid token header");
         }
@@ -10925,19 +10925,21 @@ async function applyDoctorFixes(opts = {}) {
   const env = opts.env ?? process.env;
   const home = opts.home ?? (env.HOME || homedir4());
   assertNoLegacyTicketStore(realRepo);
-  const adlcDir = ensureContainedRepoDir(realRepo, ".adlc");
-  const configPath = join20(adlcDir, "config.json");
-  assertNoSymlinkFile(configPath);
-  if (!existsSync19(configPath)) {
-    writeFileSync10(
-      configPath,
-      JSON.stringify({ version: 1, securityMode: "unsigned-fallback" }, null, 2) + "\n",
-      "utf8"
-    );
-    fixesApplied.push("Initialized .adlc/config.json (unsigned-fallback)");
-  }
-  if (ensureTicketsDirectoryStore(realRepo, adlcDir)) {
-    fixesApplied.push("Initialized .adlc/tickets directory store");
+  if (existsSync19(join20(realRepo, ".git")) || existsSync19(join20(realRepo, ".adlc"))) {
+    const adlcDir = ensureContainedRepoDir(realRepo, ".adlc");
+    const configPath = join20(adlcDir, "config.json");
+    assertNoSymlinkFile(configPath);
+    if (!existsSync19(configPath)) {
+      writeFileSync10(
+        configPath,
+        JSON.stringify({ version: 1, securityMode: "unsigned-fallback" }, null, 2) + "\n",
+        "utf8"
+      );
+      fixesApplied.push("Initialized .adlc/config.json (unsigned-fallback)");
+    }
+    if (ensureTicketsDirectoryStore(realRepo, adlcDir)) {
+      fixesApplied.push("Initialized .adlc/tickets directory store");
+    }
   }
   if (existsSync19(join20(realRepo, ".git"))) {
     if (ensureGitignore(realRepo)) {
@@ -15540,7 +15542,7 @@ function verifyGateScriptIntegrity(candidatePkg, baselinePkg, gateCommand) {
   function extractDelegatedScripts(commandStr) {
     if (typeof commandStr !== "string") return [];
     const matches = [];
-    const re = /\bnpm\s+(?:run(?:-script)?\s+([a-zA-Z0-9_:-]+)|test)\b/g;
+    const re = /\bnpm\s+(?:--?[a-zA-Z0-9][a-zA-Z0-9_.:=-]*\s+)*(?:run(?:-script)?\s+(?:--?[a-zA-Z0-9][a-zA-Z0-9_.:=-]*\s+)*([a-zA-Z0-9_:][a-zA-Z0-9_.:-]*)|test)\b/g;
     let m;
     while ((m = re.exec(commandStr)) !== null) {
       matches.push(m[1] || "test");
@@ -17225,8 +17227,28 @@ async function parallaxEdges(plan, {
     }
   }));
 }
+var FATAL_PROJECTION_CODES = /* @__PURE__ */ new Set([
+  "LEGACY_TICKET_STORE",
+  "ELOOP",
+  "ERR_SYMLINK",
+  "UNSAFE_STORE_PATH",
+  "STORE_EXISTS",
+  "STORE_CORRUPT",
+  "INVALID_STORE",
+  "INVALID_TICKET",
+  "TICKET_STORE_INTEGRITY",
+  "ERR_TICKET_STORE",
+  "ACTIVE_STORE_UNREADABLE",
+  "CONFLICTING_STORE_OVERRIDE"
+]);
 function projectionErrorIsFatal(err) {
-  return err?.code === "LEGACY_TICKET_STORE";
+  if (!err || typeof err !== "object") return false;
+  if (typeof err.code === "string" && FATAL_PROJECTION_CODES.has(err.code)) return true;
+  if (err.name === "TicketStoreError") return true;
+  const msg = typeof err.message === "string" ? err.message : "";
+  if (/symlink/i.test(msg)) return true;
+  if (/(?:\bticket\s+store\b|\bstore\s+integrity\b|\.store\.json\b)/i.test(msg)) return true;
+  return false;
 }
 async function compilePlan(idOrPrefix, opts = {}) {
   const {
@@ -20085,20 +20107,41 @@ ${g?.output?.slice(0, 300)}`);
           const diffFiles = execFileSync13("git", ["diff-tree", "-r", "--name-only", "-z", headBefore, rebasedSha], { cwd: repo }).toString("utf8").split("\0").filter(Boolean);
           const modifiedTests = diffFiles.filter((p) => p.startsWith("test/"));
           if (modifiedTests.length > 0 && gate?.test) {
+            const hollowSandboxDir = process.env.AGB_SANDBOX_GATES !== "0" ? mkdtempSync8(join33(tmpdir9(), "agb-ht-sbx-")) : null;
             try {
+              let hollowTestCmd = gate.test;
+              if (process.env.AGB_SANDBOX_GATES !== "0") {
+                const wrapped = wrapConsensusGateCommand(gate.test, integrationPath, { sandboxTmpDir: hollowSandboxDir });
+                if (!wrapped.ok) {
+                  const sandboxErr = new Error(
+                    `hollow-test mutation verification failed: gate sandbox unavailable (${wrapped.error ?? "OS sandbox required unless AGB_SANDBOX_GATES=0"})`
+                  );
+                  sandboxErr.kind = "post_merge_gate_failure";
+                  throw sandboxErr;
+                }
+                hollowTestCmd = wrapped.cmd;
+              }
               await execFileAuthenticatedAdlc(
                 runAdlcBin,
-                ["hollow-test", "--test-cmd", gate.test, "--base", headBefore],
+                ["hollow-test", "--test-cmd", hollowTestCmd, "--base", headBefore],
                 { cwd: integrationPath, maxBuffer: 10 * 1024 * 1024 },
                 { repo }
               );
             } catch (err) {
+              if (err.kind === "post_merge_gate_failure") throw err;
               const isAuth = err.code === "EAUTH" || /Authenticated ADLC binary verification failed/i.test(err.message);
               const hollowErr = new Error(
                 isAuth ? `hollow-test mutation verification failed: authenticated adlc binary is unavailable or failed revalidation to verify modified tests (${modifiedTests.join(", ")}): ${err.message}` : `hollow-test mutation verification failed: ${String(err.stderr ?? err.stdout ?? err.message).slice(0, 300)}`
               );
               hollowErr.kind = "post_merge_gate_failure";
               throw hollowErr;
+            } finally {
+              if (hollowSandboxDir) {
+                try {
+                  rmSync13(hollowSandboxDir, { recursive: true, force: true });
+                } catch {
+                }
+              }
             }
           }
           journalData.phase = JOURNAL_PHASES.GATES_PASSED;
@@ -20600,6 +20643,7 @@ async function triageFindings({
   const finalProject = project2 ?? `agb-arbiter-${Date.now()}`;
   let release = () => {
   };
+  let arbiterErr = null;
   try {
     if (pools) release = await pools.acquire(arbiterModel, { repo });
     const res = await runAgy({
@@ -20677,12 +20721,22 @@ async function triageFindings({
           grillMeFindings: surviving.filter((f) => f.resolution_route === "grill-me")
         };
       }
+      arbiterErr = new Error("Arbiter returned non-conforming or empty triage output");
+    } else {
+      arbiterErr = new Error(res.error || "Arbiter invocation failed");
     }
-  } catch {
+  } catch (err) {
+    arbiterErr = err;
   } finally {
     await release();
   }
-  return deterministicTriage(indexed, { targetType });
+  const arbiterError = String(arbiterErr?.message ?? arbiterErr ?? "Arbiter invocation failed");
+  console.warn(`agb review: LLM arbiter failed, falling back to deterministic triage: ${arbiterError}`);
+  return {
+    ...deterministicTriage(indexed, { targetType }),
+    arbiterDegraded: true,
+    arbiterError
+  };
 }
 async function reviewFleet({
   diff,
@@ -21489,6 +21543,43 @@ function loadPlan(path4) {
   if (plan.repo) plan.repo = resolve22(plan.repo);
   return { plan, errors };
 }
+function rejectUnknownFlags(cmdName, tokens, allowedBoolFlags, allowedValueFlags = /* @__PURE__ */ new Set()) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (allowedValueFlags.has(token)) {
+      if (i + 1 >= tokens.length || tokens[i + 1].startsWith("--")) {
+        console.error(`agb: missing value for ${token}`);
+        process.exit(1);
+      }
+      i += 1;
+      continue;
+    }
+    if (allowedBoolFlags.has(token)) continue;
+    if (token.startsWith("--")) {
+      console.error(`agb: unknown flag '${token}' for ${cmdName}`);
+      process.exit(1);
+    }
+  }
+}
+function parseIntervalFlag(tokens, defaultMs) {
+  let intervalMs = defaultMs;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] === "--interval") {
+      const val = tokens[i + 1];
+      if (val === void 0 || val.startsWith("--")) {
+        console.error("agb: missing value for --interval");
+        process.exit(1);
+      }
+      if (!/^\d+$/.test(val) || Number(val) < 1) {
+        console.error(`agb: invalid --interval '${val}' (expected positive integer milliseconds >= 1)`);
+        process.exit(1);
+      }
+      intervalMs = Number(val);
+      i += 1;
+    }
+  }
+  return intervalMs;
+}
 try {
   if (cmd === "run") {
     let concurrency;
@@ -21533,6 +21624,12 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length > 0 || Boolean(report.compromised) ? 2 : 0);
   } else if (cmd === "review") {
+    rejectUnknownFlags(
+      "review",
+      rest,
+      /* @__PURE__ */ new Set(["--loop", "--five-lens", "--5-lens", "--no-arbiter"]),
+      /* @__PURE__ */ new Set(["--plan"])
+    );
     let planSpec = null;
     const pIdx = rest.indexOf("--plan");
     if (pIdx !== -1) {
@@ -21593,6 +21690,7 @@ try {
     const code = runShapeCli(rest, { repo: process.cwd() });
     process.exit(code);
   } else if (cmd === "preflight") {
+    rejectUnknownFlags("preflight", rest, /* @__PURE__ */ new Set(["--no-coldstart"]));
     const planPath = rest.find((arg) => !arg.startsWith("--")) ?? "plan.json";
     const { plan, errors } = loadPlan(planPath);
     if (errors.length) {
@@ -21613,6 +21711,12 @@ try {
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === "plan") {
+    rejectUnknownFlags(
+      "plan",
+      rest,
+      /* @__PURE__ */ new Set(["--force", "--decompose", "--no-fast-path", "--no-coldstart", "--no-parallax", "--no-premortem"]),
+      /* @__PURE__ */ new Set(["--out", "--max-ticket-scope"])
+    );
     let out = "plan.json";
     let maxTicketScope;
     const decompose = rest.includes("--decompose");
@@ -21714,13 +21818,17 @@ try {
       console.error("The --ui TUI flag has been removed. Use agb sidecar or agb watch instead.");
       process.exit(1);
     }
+    rejectUnknownFlags(
+      "status",
+      rest,
+      /* @__PURE__ */ new Set(["--watch", "-w", "--tui", "--follow", "--compact"]),
+      /* @__PURE__ */ new Set(["--interval"])
+    );
     const isWatch = rest.includes("--watch") || rest.includes("-w");
     const wantsTui = rest.includes("--tui");
     const follow = rest.includes("--follow");
     const compact = rest.includes("--compact");
-    let intervalMs = isWatch ? 200 : 1e3;
-    const iIdx = rest.indexOf("--interval");
-    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
+    const intervalMs = parseIntervalFlag(rest, isWatch ? 200 : 1e3);
     const positional = extractPositionalArgs(rest, /* @__PURE__ */ new Set(["--interval"]));
     const targetRepo = resolve22(positional[0] ?? ".");
     if (isWatch) {
@@ -21736,11 +21844,15 @@ try {
       console.log(renderStatus(targetRepo, { tui: wantsTui, compact }));
     }
   } else if (cmd === "watch") {
+    rejectUnknownFlags(
+      "watch",
+      rest,
+      /* @__PURE__ */ new Set(["--follow", "--compact"]),
+      /* @__PURE__ */ new Set(["--interval"])
+    );
     const follow = rest.includes("--follow");
     const compact = rest.includes("--compact");
-    let intervalMs = 200;
-    const iIdx = rest.indexOf("--interval");
-    if (iIdx !== -1 && rest[iIdx + 1]) intervalMs = parseInt(rest[iIdx + 1], 10);
+    const intervalMs = parseIntervalFlag(rest, 200);
     const positional = extractPositionalArgs(rest, /* @__PURE__ */ new Set(["--interval"]));
     const targetRepo = resolve22(positional[0] ?? ".");
     const { watchStatus: watchStatus2 } = await Promise.resolve().then(() => (init_status(), status_exports));
@@ -21757,6 +21869,7 @@ try {
     const res = runInit({ repo: targetRepo });
     console.log(JSON.stringify(res, null, 2));
   } else if (cmd === "sync-models") {
+    rejectUnknownFlags("sync-models", rest, /* @__PURE__ */ new Set(["--check", "--offline", "--json", "--write"]));
     const { syncModels: syncModels2 } = await Promise.resolve().then(() => (init_sync_models(), sync_models_exports));
     const isJson = rest.includes("--json");
     const res = syncModels2({
@@ -21778,6 +21891,7 @@ try {
     console.error("The TUI has been removed. Use agb sidecar or agb watch instead.");
     process.exit(1);
   } else if (cmd === "doctor") {
+    rejectUnknownFlags("doctor", rest, /* @__PURE__ */ new Set(["--fix"]));
     const repoArg = extractPositionalArgs(rest)[0];
     const fix = rest.includes("--fix");
     process.exitCode = await runDoctor({
@@ -21785,6 +21899,7 @@ try {
       fix
     });
   } else if (cmd === "validate") {
+    rejectUnknownFlags("validate", rest, /* @__PURE__ */ new Set());
     const { errors } = loadPlan(rest[0] ?? "plan.json");
     if (errors.length) {
       console.error("plan invalid:\n  " + errors.join("\n  "));
@@ -21792,6 +21907,7 @@ try {
     }
     console.log("plan valid");
   } else if (cmd === "bootstrap" || cmd === "setup" || cmd === "install" || cmd === "skills" && ["install", "setup", "bootstrap"].includes(rest[0])) {
+    rejectUnknownFlags("bootstrap", rest, /* @__PURE__ */ new Set(["--force", "-f", "--force-reinstall"]));
     const force = rest.includes("--force") || rest.includes("-f");
     const forceReinstall = rest.includes("--force-reinstall");
     bootstrap({ force, forceReinstall });

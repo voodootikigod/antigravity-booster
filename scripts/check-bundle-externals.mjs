@@ -43,10 +43,88 @@ const STATIC_PATTERNS = [
 ];
 
 const CALL_PATTERN = /\b(?:import|(?:__)?require\d*(?:\s*\.\s*resolve)?)\s*\(([^)]+)\)/g;
-const CREATE_REQUIRE_IDENT = '(?:createRequire\\d*|__agbCreateRequire\\d*)';
-const DIRECT_CREATE_REQUIRE_PATTERN = new RegExp(`\\b${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)(?:\\s*\\.\\s*resolve)?\\s*\\(([^)]+)\\)`, 'g');
-const BOUND_CREATE_REQUIRE_DECL = new RegExp(`(?:\\b(?:const|let|var)\\s+|(?:^|[;,{}\\n])\\s*)([A-Za-z_$][\\w$]*)\\s*=\\s*(?:[\\w$]+\\.)?${CREATE_REQUIRE_IDENT}\\s*\\([^)]*\\)`, 'gm');
+const IMPORT_META_RESOLVE_PATTERN = /\bimport\s*\.\s*meta\s*\.\s*resolve\s*\(/g;
 const PROCESS_BINDING_PATTERN = /\bprocess\s*\.\s*(?:binding|_linkedBinding|dlopen)\s*\(([^)]+)\)/g;
+
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findMatchingParen(source, openIdx) {
+  let depth = 0;
+  let quote = null;
+  for (let i = openIdx; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quote) {
+      if (ch === '\\') {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+    } else if (ch === '(') {
+      depth += 1;
+    } else if (ch === ')') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function extractFirstCallArg(rawArgs) {
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < rawArgs.length; i += 1) {
+    const ch = rawArgs[i];
+    if (quote) {
+      if (ch === '\\') {
+        i += 1;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+    } else if (ch === '(' || ch === '[' || ch === '{') {
+      depth += 1;
+    } else if (ch === ')' || ch === ']' || ch === '}') {
+      depth -= 1;
+    } else if (ch === ',' && depth === 0) {
+      return rawArgs.slice(0, i);
+    }
+  }
+  return rawArgs;
+}
+
+function collectCreateRequireIdents(source) {
+  const idents = new Set();
+  const importRe = /\bimport\s*\{([^}]+)\}\s*from\s*["'`](?:node:)?module["'`]/g;
+  for (const m of source.matchAll(importRe)) {
+    for (const aliasMatch of m[1].matchAll(/\bcreateRequire\s+as\s+([A-Za-z_$][\w$]*)/g)) {
+      idents.add(aliasMatch[1]);
+    }
+  }
+  const destructureRe = /\{[^}]*\bcreateRequire\s*:\s*([A-Za-z_$][\w$]*)/g;
+  for (const m of source.matchAll(destructureRe)) {
+    idents.add(m[1]);
+  }
+  const aliasAssignRe = /(?:\b(?:const|let|var)\s+|(?:^|[;,{}\n])\s*)([A-Za-z_$][\w$]*)\s*=\s*(?:[\w$]+\.)?createRequire\d*\b(?!\s*\()/gm;
+  for (const m of source.matchAll(aliasAssignRe)) {
+    idents.add(m[1]);
+  }
+  return idents;
+}
+
+function buildCreateRequireIdentPattern(source) {
+  const extra = [...collectCreateRequireIdents(source)].map(escapeRegExp);
+  const parts = ['createRequire\\d*', '__agbCreateRequire\\d*', ...extra];
+  return `(?:${parts.join('|')})`;
+}
 
 export function isBuiltin(specifier) {
   if (typeof nodeIsBuiltin === 'function' && nodeIsBuiltin(specifier)) return true;
@@ -83,20 +161,46 @@ export function findExternalSpecifiers(source) {
   for (const m of source.matchAll(CALL_PATTERN)) {
     recordCallArg(m[1], found);
   }
-  for (const m of source.matchAll(DIRECT_CREATE_REQUIRE_PATTERN)) {
-    recordCallArg(m[1], found);
+  for (const m of source.matchAll(IMPORT_META_RESOLVE_PATTERN)) {
+    const openIdx = m.index + m[0].length - 1;
+    const closeIdx = findMatchingParen(source, openIdx);
+    if (closeIdx !== -1) {
+      recordCallArg(extractFirstCallArg(source.slice(openIdx + 1, closeIdx)), found);
+    }
+  }
+  const createRequireIdent = buildCreateRequireIdentPattern(source);
+  const directCreateRequireRe = new RegExp(`(?:[\\w$]+\\.)?\\b${createRequireIdent}\\s*\\(`, 'g');
+  for (const m of source.matchAll(directCreateRequireRe)) {
+    const openIdx = m.index + m[0].length - 1;
+    const closeIdx = findMatchingParen(source, openIdx);
+    if (closeIdx === -1) continue;
+    const tail = source.slice(closeIdx + 1);
+    const chained = /^(?:\s*\.\s*resolve)?\s*\(/.exec(tail);
+    if (!chained) continue;
+    const argOpenIdx = closeIdx + 1 + chained[0].length - 1;
+    const argCloseIdx = findMatchingParen(source, argOpenIdx);
+    if (argCloseIdx !== -1) {
+      recordCallArg(extractFirstCallArg(source.slice(argOpenIdx + 1, argCloseIdx)), found);
+    }
   }
   for (const m of source.matchAll(PROCESS_BINDING_PATTERN)) {
     const raw = m[1].trim().replace(/^["'`]|["'`]$/g, '');
     found.add(`process.binding:${raw}`);
   }
-  for (const decl of source.matchAll(BOUND_CREATE_REQUIRE_DECL)) {
+  const boundCreateRequireDecl = new RegExp(`(?:\\b(?:const|let|var)\\s+|(?:^|[;,{}\\n])\\s*)([A-Za-z_$][\\w$]*)\\s*=\\s*(?:[\\w$]+\\.)?${createRequireIdent}\\s*\\(`, 'gm');
+  for (const decl of source.matchAll(boundCreateRequireDecl)) {
     const ident = decl[1];
+    const openIdx = decl.index + decl[0].length - 1;
+    if (findMatchingParen(source, openIdx) === -1) continue;
     if (/^(?:__)?require\d*$/.test(ident)) continue;
-    const escaped = ident.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const boundCallRe = new RegExp(`\\b${escaped}(?:\\s*\\.\\s*resolve)?\\s*\\(([^)]+)\\)`, 'g');
+    const escaped = escapeRegExp(ident);
+    const boundCallRe = new RegExp(`\\b${escaped}(?:\\s*\\.\\s*resolve)?\\s*\\(`, 'g');
     for (const m of source.matchAll(boundCallRe)) {
-      recordCallArg(m[1], found);
+      const callOpenIdx = m.index + m[0].length - 1;
+      const callCloseIdx = findMatchingParen(source, callOpenIdx);
+      if (callCloseIdx !== -1) {
+        recordCallArg(extractFirstCallArg(source.slice(callOpenIdx + 1, callCloseIdx)), found);
+      }
     }
   }
   return [...found].sort();

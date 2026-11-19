@@ -148,15 +148,17 @@ async function start() {
     // sidecar_sdk not available, proceed to standalone HTTP server
   }
 
-  const token = randomBytes(16).toString('hex');
+  const token = isJetski ? null : randomBytes(16).toString('hex');
 
-  try {
-    const boosterDir = join(repoPath, '.booster');
-    const tokenFile = join(boosterDir, 'token');
-    mkdirSync(boosterDir, { recursive: true, mode: 0o700 });
-    writeFileSync(tokenFile, token, { mode: 0o600 });
-    chmodSync(tokenFile, 0o600);
-  } catch {}
+  if (token) {
+    try {
+      const boosterDir = join(repoPath, '.booster');
+      const tokenFile = join(boosterDir, 'token');
+      mkdirSync(boosterDir, { recursive: true, mode: 0o700 });
+      writeFileSync(tokenFile, token, { mode: 0o600 });
+      chmodSync(tokenFile, 0o600);
+    } catch {}
+  }
 
   console.log(`Starting AGB Dashboard for repository: ${repoPath} on port: ${port}`);
   serveSidecar(repoPath, port, token)

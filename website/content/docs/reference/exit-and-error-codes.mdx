@@ -30,14 +30,19 @@ Any exception that reaches the top level prints `agb: <message>` and exits 1 ([t
 | `review` | 0 | Converged with no critical or high finding, or empty diff. |
 | | 2 | A critical or high finding, or the review did not converge ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L162-L164)). |
 | | 1 | Quota telemetry unavailable. |
+| `shape` | 0 | Deterministic pre-analysis passed (DAG valid, no blocking overlap/coupling errors). |
+| | 1 | Bad arguments, missing spec, or `--sync-brain` write failure. |
+| | 2 | Pre-analysis failed (blocking DAG, overlap, or `--strict` coupling/scope findings). |
 | `plan` | 0 | Plan compiled and written. |
 | | 1 | Bad arguments, output file exists without `--force`, or no quota telemetry ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L194-L210)). |
 | | 2 | Blocking plan-gate findings; nothing written ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L220-L230)). |
 | `import-brain` | 0 / 1 | Deprecated; 1 on bad arguments or no telemetry. |
 | `status` | 0 | Rendered once. |
-| | 1 | `--ui` given (removed) ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L269-L272)). |
-| `status --watch` | 0 / 2 | Exits when the run finishes: 2 if any ticket failed ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/status.mjs#L186)). |
-| `tui` | 1 | Removed; points to `agb sidecar`. |
+| | 1 | `--ui` given (removed) or invalid/unknown flag. |
+| `status --watch` / `watch` | 0 / 2 | Exits when the run finishes: 0 if all tickets succeeded, 2 if any ticket failed (1 on invalid `--interval` or unknown flag). |
+| `init` | 0 / 1 | 0 when repository scaffolding completes; 1 on error. |
+| `sync-models` | 0 / 1 | 0 when audit completes (or no drift under `--check`); 1 on drift under `--check`, invalid flag, or probe error. |
+| `tui` | 1 | Removed; points to `agb sidecar` or `agb watch`. |
 | `doctor` | 0 / 1 | 1 if any check has level `fail` or errored ([runDoctor](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1265)). |
 | `migrate` (all modes) | 0 / 1 | Return value of `migrate`, `breakLock` or `finishUninstallCommand`: 0 on success or nothing to do, 1 on refusal or failure ([lib/migrate.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/migrate.mjs#L640-L710)). |
 | `probe` | 0 | Even when every request failed (rows are just not recorded). |

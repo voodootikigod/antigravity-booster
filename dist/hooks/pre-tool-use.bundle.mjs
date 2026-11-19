@@ -5216,12 +5216,16 @@ function evaluateOrchestrationTool(name, args, ctx) {
 function evaluateWorkflowTool(args, ctx) {
   if (ctx.readonly) return deny("Read-only agb worker session cannot execute run_workflow");
   if (ctx.headless) return deny("Headless agb worker session cannot execute run_workflow");
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const folded = norm.folded;
   const scannedRepos = [];
-  const hasExplicitCwd = args?.Cwd !== void 0 && args?.Cwd !== null;
-  if (hasExplicitCwd && (typeof args.Cwd !== "string" || args.Cwd.trim().length === 0)) {
+  const cwdArg = folded.cwd;
+  const hasExplicitCwd = cwdArg !== void 0 && cwdArg !== null;
+  if (hasExplicitCwd && (typeof cwdArg !== "string" || cwdArg.trim().length === 0)) {
     return deny("Workflow working directory must be a non-empty path string");
   }
-  const rawCwd = hasExplicitCwd ? args.Cwd : ctx.workspacePaths[0];
+  const rawCwd = hasExplicitCwd ? cwdArg : ctx.workspacePaths[0];
   if (!rawCwd) {
     return deny("Cannot determine workflow working directory");
   }
@@ -5234,16 +5238,17 @@ function evaluateWorkflowTool(args, ctx) {
   const wsAdlc = ctx.workspacePaths.some((w) => ctx.repoAt(w).adlc);
   const adlcContext = cwdRepo.adlc || wsAdlc;
   const insideWorkspace = ctx.workspaceRealPaths.some((wReal) => isWithin(cwdPhys, wReal, ctx.platform));
-  if (adlcContext && (hasExplicitCwd && !isAbsolute5(args.Cwd) || !insideWorkspace)) {
+  if (adlcContext && (hasExplicitCwd && !isAbsolute5(cwdArg) || !insideWorkspace)) {
     return deny("Workflow working directory outside declared workspace paths in an ADLC repository is forbidden");
   }
   const wfCtx = { ...ctx, anchors: unique([cwdPhys, ...ctx.anchors]) };
-  if (args?.ScriptPath !== void 0 && args?.ScriptPath !== null) {
-    if (typeof args.ScriptPath !== "string" || args.ScriptPath.trim().length === 0) {
+  const scriptPathArg = folded.scriptpath;
+  if (scriptPathArg !== void 0 && scriptPathArg !== null) {
+    if (typeof scriptPathArg !== "string" || scriptPathArg.trim().length === 0) {
       return schemaViolationVerdict("run_workflow", args, "Invalid ScriptPath parameter in run_workflow", wfCtx);
     }
-    const resolved = resolveAll(toPath(args.ScriptPath), wfCtx);
-    if (resolved.length === 0) return deny(`Relative ScriptPath '${args.ScriptPath}' has no workspace to anchor it`);
+    const resolved = resolveAll(toPath(scriptPathArg), wfCtx);
+    if (resolved.length === 0) return deny(`Relative ScriptPath '${scriptPathArg}' has no workspace to anchor it`);
     for (const r of resolved) {
       const { verdict, repo } = gateOnePath(r, wfCtx, { rootIsTarget: true });
       scannedRepos.push(repo);
