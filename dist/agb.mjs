@@ -19415,6 +19415,7 @@ Fix: ${agyCheck.fix}`);
       const rawTimeout = Number(process.env.AGB_GATE_TIMEOUT_MS);
       const timeoutMs = Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 18e5;
       const gateEnv = {
+        ...process.env,
         ANTIGRAVITY_CONVERSATION_ID: "",
         ANTIGRAVITY_TRAJECTORY_ID: "",
         GEMINI_CONVERSATION_ID: "",
