@@ -9,7 +9,7 @@
  * optionally writes `skills/adversarial-review/references/models.json`.
  */
 
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IS_BUNDLED } from '../lib/adlc-bridge.mjs';
@@ -129,6 +129,19 @@ export function buildModelsReferencePayload(liveModels = parseAgyModelsOutput(CA
   };
 }
 
+export function isBoosterRepoCheckout(dir) {
+  if (!dir) return false;
+  try {
+    if (!existsSync(join(dir, 'lib', 'models.mjs'))) return false;
+    const pkgPath = join(dir, 'package.json');
+    if (!existsSync(pkgPath)) return false;
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    return pkg?.name === 'antigravity-booster';
+  } catch {
+    return false;
+  }
+}
+
 function resolveDefaultRootDir() {
   if (IS_BUNDLED) return process.cwd();
   return dirname(dirname(fileURLToPath(import.meta.url)));
@@ -140,9 +153,28 @@ export function syncModels({
   offline = false,
   json = false,
   inputPath = null,
-  rootDir = resolveDefaultRootDir(),
+  rootDir,
+  requireBoosterCheckout = false,
   env = process.env,
 } = {}) {
+  const explicitRootDir = rootDir !== undefined;
+  const effectiveRootDir = explicitRootDir ? rootDir : resolveDefaultRootDir();
+  if (write && (requireBoosterCheckout || !explicitRootDir) && !isBoosterRepoCheckout(effectiveRootDir)) {
+    return {
+      ok: false,
+      exitCode: 1,
+      error: '--write only updates skills/adversarial-review/references/models.json inside an antigravity-booster repository checkout.',
+      source: 'error',
+      degradedFallback: false,
+      totalLive: 0,
+      unmappedCount: 0,
+      unmapped: [],
+      retired: [],
+      report: [],
+      writtenPaths: [],
+      json,
+    };
+  }
   const useOffline = offline || env.AGB_SYNC_MODELS_OFFLINE === '1';
   let rawOutput = '';
   let source = 'live';
@@ -190,7 +222,7 @@ export function syncModels({
   const writtenPaths = [];
   if (write) {
     const payload = buildModelsReferencePayload(liveModels);
-    const refDir = join(rootDir, 'skills', 'adversarial-review', 'references');
+    const refDir = join(effectiveRootDir, 'skills', 'adversarial-review', 'references');
     mkdirSync(refDir, { recursive: true });
     const refPath = join(refDir, 'models.json');
     writeFileSync(refPath, JSON.stringify(payload, null, 2) + '\n', 'utf8');

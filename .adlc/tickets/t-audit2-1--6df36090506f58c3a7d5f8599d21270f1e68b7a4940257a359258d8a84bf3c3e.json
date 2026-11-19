@@ -1,0 +1,23 @@
+{
+  "body": "Clear/verify runId on .booster/report.json in watchStatus/RunStatus, remove duplicate Linux PATH append in lib/agy.mjs, check dataRoot symlink in checkHookLogDir, guard sync-models --write.",
+  "edges": [
+    {
+      "to": "T-AUDIT2-4"
+    }
+  ],
+  "id": "T-AUDIT2-1",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json"
+  ],
+  "scope": [
+    "lib/status.mjs",
+    "lib/agy.mjs",
+    "lib/doctor.mjs",
+    "bin/agb.mjs",
+    "scripts/sync-models.mjs",
+    "test/audit2-cli-status-doctor.test.mjs"
+  ],
+  "title": "Fix watchStatus stale report BLOCKER, Windows PATH append, doctor DATA_ROOT symlink, and sync-models --write guard"
+}

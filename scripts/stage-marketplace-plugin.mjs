@@ -125,32 +125,19 @@ export function stageMarketplacePlugin({
 }
 
 function resolveAgyBin() {
-  if (process.env.AGY_BIN && existsSync(process.env.AGY_BIN)) return process.env.AGY_BIN;
+  if (process.env.AGY_BIN) return process.env.AGY_BIN;
   return resolveAgyBinary();
 }
 
 export function validateStagedPluginStrict(pluginDir, options = {}) {
-  const explicitBin = Boolean(options.agyBin || (process.env.AGY_BIN && existsSync(process.env.AGY_BIN)));
+  const allowSkip = Boolean(options.allowSkip);
   const agyBin = options.agyBin ?? resolveAgyBin();
-  let res = spawnSync(agyBin, ['plugin', 'validate', '--strict', '--json', pluginDir], {
+  const res = spawnSync(agyBin, ['plugin', 'validate', '--strict', '--json', pluginDir], {
     encoding: 'utf8',
     timeout: 30_000,
   });
-  if (
-    !explicitBin
-    && (res.error?.code === 'ENOENT' || res.error?.code === 'EAGAIN')
-    && existsSync(join(ROOT, 'test', 'fixtures', 'fake-agy'))
-  ) {
-    const fakeAgy = join(ROOT, 'test', 'fixtures', 'fake-agy');
-    if (agyBin !== fakeAgy) {
-      res = spawnSync(fakeAgy, ['plugin', 'validate', '--strict', '--json', pluginDir], {
-        encoding: 'utf8',
-        timeout: 30_000,
-      });
-    }
-  }
   if (res.error && res.error.code === 'ENOENT') {
-    return { skipped: true, ok: true, reason: `agy binary not found (${agyBin})` };
+    return { skipped: true, ok: allowSkip, reason: `agy binary not found (${agyBin})` };
   }
   let parsed = null;
   try {
@@ -196,6 +183,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   let outDir = null;
   let validateStrict = false;
   let keepTemp = false;
+  let allowSkip = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--out' && args[i + 1]) {
       outDir = args[++i];
@@ -204,15 +192,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       validateStrict = true;
     } else if (args[i] === '--keep') {
       keepTemp = true;
+    } else if (args[i] === '--allow-skip') {
+      allowSkip = true;
     }
   }
 
   const staged = stageMarketplacePlugin({ outDir });
   try {
     if (validateStrict) {
-      const result = validateStagedPluginStrict(staged.pluginDir);
+      const result = validateStagedPluginStrict(staged.pluginDir, { allowSkip });
       if (result.skipped) {
-        console.log(JSON.stringify({ ok: true, skipped: true, reason: result.reason, manifest: staged.manifest.name }, null, 2));
+        console.log(JSON.stringify({ ok: result.ok, skipped: true, reason: result.reason, manifest: staged.manifest.name }, null, 2));
+        if (!result.ok) process.exitCode = 1;
       } else {
         console.log(JSON.stringify({
           ok: result.ok,

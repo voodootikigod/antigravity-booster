@@ -376,7 +376,7 @@ test('CLI subprocess: agb run -c validation, agb watch, agb review --plan, agb p
   const watchRepo = makeRepo('watch-cli-repo');
   mkdirSync(join(watchRepo, '.booster'), { recursive: true });
   writeFileSync(join(watchRepo, '.booster', 'run.json'), JSON.stringify({ runId: 'r1', startedAt: new Date().toISOString() }));
-  writeFileSync(join(watchRepo, '.booster', 'report.json'), JSON.stringify({ merged: ['T1'], failed: {} }));
+  writeFileSync(join(watchRepo, '.booster', 'report.json'), JSON.stringify({ runId: 'r1', merged: ['T1'], failed: {} }));
   const watchRes = spawnSync(process.execPath, [AGB_BIN, 'watch', watchRepo, '--interval', '20', '--compact'], {
     encoding: 'utf8',
     env: { ...process.env, CI: '1' },

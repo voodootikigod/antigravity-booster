@@ -1,7 +1,7 @@
 | Command | Usage | Description |
 | --- | --- | --- |
 | /agb-bootstrap | /agb-bootstrap [--force] [--force-reinstall] | Install or refresh antigravity-booster's ADLC doctrine plugin, skills and the ~/.local/bin/agb terminal shim |
-| /agb-doctor | /agb-doctor [repo-path] [--fix] [--project &lt;name&gt;] | Verify your environment and tools, with optional self-healing (--fix) |
+| /agb-doctor | /agb-doctor [repo-path] [--fix] | Verify your environment and tools, with optional self-healing (--fix) |
 | /agb-migrate | /agb-migrate [--rollback] [--force-rollback] [--force] [--break-lock] | Migrate from the npm-global/legacy install to the native agy plugin, or roll back |
 | /agb-plan | /agb-plan &lt;id &#124; spec.md&gt; [repo-path] [--out &lt;file&gt;] [--force] [--decompose] [--max-ticket-scope &lt;n&gt;] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project &lt;name&gt;] | Compile an Antigravity brain plan or spec file into plan.json (with 0-LLM Structured Spec Fast-Path) |
 | /agb-preflight | /agb-preflight [plan.json] [--no-coldstart] [--project &lt;name&gt;] | Run plan-time coldstart probes and forecast scope overlaps between parallel tickets in a plan.json DAG |
@@ -10,7 +10,7 @@
 | /agb-shape | /agb-shape &lt;idea &#124; spec.md&gt; [--yolo] [--out specs/&lt;slug&gt;-spec.md] | Shape a raw feature idea or spec file via reconnaissance, /grill-me, DAG pre-analysis, and 5-lens Plan ARL |
 | /agb-sidecar | /agb-sidecar [repo-path] [--port &lt;port&gt;] | Launch the HTTP server for the Antigravity Sidecar UI |
 | /agb-status | /agb-status [repo-path] [--watch] [-w] [--tui] [--interval &lt;ms&gt;] [--follow] [--compact] | View real-time build progress, quota pool meters, and ticket state for an Antigravity Booster run |
-| /agb-sync-models | /agb-sync-models [--check] [--write] [--offline] [--json] | Audit live Antigravity models (agy models) and synchronize model mappings and cross-model routing tables |
+| /agb-sync-models | /agb-sync-models [--check] [--write] [--offline] [--json] | Audit live Antigravity models (agy models) against lib/models.mjs and regenerate references/models.json (--write) in an antigravity-booster checkout |
 | /agb-watch | /agb-watch [repo-path] [--interval &lt;ms&gt;] [--follow] [--compact] | Launch the interactive live terminal TUI dashboard for real-time build progress and ticket state |
 | /agb | /agb &lt;description&gt; [--yolo] | End-to-end 5-phase Factory orchestrator and umbrella router (/agb &lt;description&gt; [--yolo]) |
 | /code-review | /code-review [repo-path] [ref] [--loop] | Adversarially review a code change or branch across 5 isolated lenses with neutral arbiter triage |

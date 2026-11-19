@@ -60,7 +60,7 @@ test('agb status and watch accept valid positive integer --interval', () => {
   const repo = join(TMP, 'interval-ok-repo');
   mkdirSync(join(repo, '.booster'), { recursive: true });
   writeFileSync(join(repo, '.booster', 'run.json'), JSON.stringify({ runId: 'r-ok', startedAt: new Date().toISOString() }));
-  writeFileSync(join(repo, '.booster', 'report.json'), JSON.stringify({ merged: ['T1'], failed: {} }));
+  writeFileSync(join(repo, '.booster', 'report.json'), JSON.stringify({ runId: 'r-ok', merged: ['T1'], failed: {} }));
 
   const statusRes = runAgb(['status', repo, '--interval', '25', '--compact'], {
     env: { ...process.env, CI: '1' },

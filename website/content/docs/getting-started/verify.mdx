@@ -13,17 +13,19 @@ claims: [C1, C31]
 The level is `PASS`, `WARN` or `FAIL`. Doctor exits `1` if any check is `FAIL`, or if a check itself throws (it then prints `Error check failed: <reason>` in place of a table row), and `0` otherwise. Warnings never change the exit code ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1229-L1265)).
 
 ```sh
-agb doctor
+agb doctor [repo] [--fix]
 ```
+
+Pass an optional repository path (`[repo]`) to inspect a specific checkout, and `--fix` to auto-repair recoverable setup issues (missing `.adlc/config.json`, missing `.adlc/tickets/` store, missing `.gitignore` stanzas, or missing `adlc-antigravity` companion plugin).
 
 ## Checks
 
-The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1229-L1242)). Fix text is quoted verbatim from lib/doctor.mjs at v1.0.0.
+The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1229-L1242)). Fix text is quoted verbatim from lib/doctor.mjs at v1.0.0 (plus newer checks added since).
 
 | Name | Levels | Fix text | Source |
 | --- | --- | --- | --- |
 | `Node.js` | pass / fail | `Upgrade Node.js to v22.19.0 or newer.` | [L20-L24](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L20-L24) |
-| `agy CLI` | pass / fail | Too old: `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` Unparseable version: `Ensure agy outputs standard SemVer version string.` Missing: `Install Google Antigravity CLI and ensure it is on PATH.` | [C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26), [L35-L54](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L35-L54) |
+| `agy CLI` | pass / warn / fail | Too old (`< 1.2.6`): `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` Below recommended (`< 1.5.9`, `warn`, Orchestrator slugs auto-disabled): `Upgrade agy to >= 1.5.9 for Orchestrator (Carbon/Argon) support.` Unparseable version: `Ensure agy outputs standard SemVer version string.` Missing: `Install Google Antigravity CLI and ensure it is on PATH.` | [C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26), [L35-L54](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L35-L54) |
 | `agy Auth` | pass / fail | ``Run `agy login` to authenticate.`` | [L71-L75](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L71-L75) |
 | `Model catalog` | pass / warn | Drift: ``Update MODELS in lib/models.mjs to match `agy models`.`` Listing failed: ``Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor.`` Empty listing: ``Run `agy models`; if it prints models, report the output format change.`` Never fails the run. | `lib/doctor.mjs` |
 | `adlc-antigravity plugin` | pass / warn / fail | See [plugin states](#adlc-antigravity-plugin) | [L151-L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L166) |
@@ -32,6 +34,7 @@ The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/ant
 | `Brain Dir` | pass / warn | Default (`~/.gemini/antigravity-cli/brain`, `~/.gemini/antigravity/brain`, `~/.gemini/jetski/brain`): `Run an agy session to initialize the brain directory.` Custom (`AGB_BRAIN_DIR`): `Create directory <custom> or unset AGB_BRAIN_DIR.` | [L1150-L1154](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1150-L1154) |
 | `Ticket Store` | pass / warn / fail | See [Ticket store](#ticket-store) | [L1157-L1194](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1157-L1194) |
 | `Policy guard self-test` | pass / fail | ``Run `agb bootstrap --force-reinstall` and check hooks.log.`` | [L251](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L251) |
+| `Hook audit log` | pass / warn | Degraded or symlinked: `Inspect <logDir> permissions/symlinks and remove <markerPath>.` | `lib/doctor.mjs` |
 | `agb install` | pass / warn | `prefer ~/.local/bin/agb (npm is a secondary channel)` | [L281-L282](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L281-L282) |
 | `Hook killswitch` | pass / warn | `Unset AGB_HOOK_DISABLE; the rails guard is bypassed while it is set.` | [L291-L292](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L291-L292) |
 | `Probe plugins` | pass / warn | ``Run `agy plugin uninstall <first probe>` for each probe plugin.`` | [L300-L301](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L300-L301) |

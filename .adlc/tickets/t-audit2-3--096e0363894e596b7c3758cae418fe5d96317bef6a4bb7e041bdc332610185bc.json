@@ -1,0 +1,22 @@
+{
+  "body": "Fix case-folding in classifyRunCommand, buildContext, evaluateMcpTool, stepOne; harden check-bundle-externals and stage-marketplace-plugin.",
+  "edges": [
+    {
+      "to": "T-AUDIT2-4"
+    }
+  ],
+  "id": "T-AUDIT2-3",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json"
+  ],
+  "scope": [
+    "hooks/policy/shell.mjs",
+    "hooks/policy/evaluate.mjs",
+    "scripts/check-bundle-externals.mjs",
+    "scripts/stage-marketplace-plugin.mjs",
+    "test/audit2-policy-supply.test.mjs"
+  ],
+  "title": "Policy-guard Go JSON case-folding parity and supply-chain gate hardening"
+}

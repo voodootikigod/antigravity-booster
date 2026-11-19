@@ -341,8 +341,8 @@
       "group": "sidecar",
       "default": "unset (launcher port 3333)",
       "bundledIgnored": false,
-      "description": "Selects jetski mode in the sidecar launcher and sets its port.",
-      "security": "Setting it disables token auth on the sidecar dashboard and event stream: any local client can read run data."
+      "description": "Selects unauthenticated Jetski mode (token = null) and sets the listen port in sidecars/jetski-launcher.mjs only. sidecars/server.mjs and agb sidecar always enforce explicit tokens regardless of this variable.",
+      "security": "In sidecars/jetski-launcher.mjs, disables token auth (passes token = null to serveSidecar) for Jetski mode; sidecars/server.mjs and agb sidecar always enforce explicit tokens."
     },
     {
       "name": "AGB_ARTIFACT_DIR",
@@ -383,8 +383,8 @@
       "name": "AGB_HOME_DIR",
       "group": "paths",
       "default": "the OS home directory",
-      "bundledIgnored": false,
-      "description": "Home directory override for agb's per-user state."
+      "bundledIgnored": true,
+      "description": "Home directory override for agb's per-user state. Ignored in bundled plugin builds (IS_BUNDLED === true)."
     },
     {
       "name": "AGB_MOCK_CONTAINMENT_MECHANISM",

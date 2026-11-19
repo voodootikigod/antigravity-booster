@@ -1,0 +1,22 @@
+{
+  "body": "Resolve all doc-claim SHOULD-FIX findings from 1.3.0 release-audit round 2 and rebuild dist/ + website/generated/.",
+  "edges": [],
+  "id": "T-AUDIT2-4",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json"
+  ],
+  "scope": [
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "rules/AGENTS.md",
+    "skills/**",
+    "commands/**",
+    "website/**",
+    "dist/**"
+  ],
+  "title": "Docs, skills, commands, rules, CHANGELOG, website generator, and bundle rebuild"
+}

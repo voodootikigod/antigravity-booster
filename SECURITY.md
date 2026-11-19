@@ -15,8 +15,8 @@ warranted, we will agree a disclosure timeline with you before publishing.
 
 ## Supported versions
 
-Only the latest published version receives security fixes. The project is at
-[1.1.0](https://github.com/voodootikigod/antigravity-booster/blob/v1.1.0/package.json#L3) and follows semver (see
+Only the latest published version receives security fixes. The project tracks
+the latest released minor version in [package.json](https://github.com/voodootikigod/antigravity-booster/blob/main/package.json#L3) and follows semver (see
 [Stability](README.md#stability)); there are no long-term support branches.
 
 ## Threat model

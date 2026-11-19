@@ -419,7 +419,7 @@ test('checkEnforcementAvailable: recognizes adlc-gemini when adlc-antigravity is
     try {
       const viaAgbHomeEmpty = checkEnforcementAvailable(repo, { env: { AGB_HOME_DIR: emptyCustomHome }, bundled: false });
       assert.equal(viaAgbHomeEmpty.available, false, 'empty AGB_HOME_DIR must not falsely report enforcement from real HOME');
-      const viaAgbHomePresent = checkEnforcementAvailable(repo, { env: { AGB_HOME_DIR: home }, bundled: true });
+      const viaAgbHomePresent = checkEnforcementAvailable(repo, { env: { AGB_HOME_DIR: home }, bundled: false });
       assert.deepEqual(viaAgbHomePresent, { available: true, reason: null });
     } finally {
       rmSync(emptyCustomHome, { recursive: true, force: true });

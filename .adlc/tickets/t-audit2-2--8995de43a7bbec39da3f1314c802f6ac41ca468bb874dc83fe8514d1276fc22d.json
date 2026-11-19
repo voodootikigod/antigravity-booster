@@ -1,0 +1,25 @@
+{
+  "body": "Apply sanitizedGitEnv in worktrees/scheduler, upstreamPoolOf failover, sandbox hollow-test process, gate AGB_HOME_DIR when bundled, propagate arbiterDegraded and allow integer line in ARL/arbiter schemas.",
+  "edges": [
+    {
+      "to": "T-AUDIT2-4"
+    }
+  ],
+  "id": "T-AUDIT2-2",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    ".adlc/config.json"
+  ],
+  "scope": [
+    "lib/worktrees.mjs",
+    "lib/scheduler.mjs",
+    "lib/scheduler-verify.mjs",
+    "lib/adlc-bridge.mjs",
+    "lib/run-integrity.mjs",
+    "lib/review.mjs",
+    "lib/schemas.mjs",
+    "test/audit2-scheduler-gates.test.mjs"
+  ],
+  "title": "Sanitize git env, cross-family failover, hollow-test sandbox, bundled AGB_HOME_DIR, reviewPlan/schemas"
+}
