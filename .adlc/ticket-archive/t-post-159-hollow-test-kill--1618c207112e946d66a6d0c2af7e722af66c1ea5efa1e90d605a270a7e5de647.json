@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-20T01:19:11.056Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "7e50bf789e5b274a94980387beee965eaafe8e08e5c96068c5ed534a3e2a3a5c",
+    "ticketHash": "7c67c8e8b46119b73d5458e8f1233bf7e146cb21efc1aa33c69025d1b6c5ae32",
+    "version": 1
+  },
   "body": "Extract verifyStagedPasswdHomeAnchoring() in evals/v13-enhancements-bench.mjs without magic integer suffixes and add comprehensive unit tests in test/evals.test.mjs covering bwrap, Darwin Seatbelt, unprivileged fallback, and every failure clause so adlc hollow-test achieves 0 surviving mutants.",
   "completed": true,
   "edges": [

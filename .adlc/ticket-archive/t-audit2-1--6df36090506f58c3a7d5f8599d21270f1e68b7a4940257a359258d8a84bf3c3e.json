@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-20T01:19:06.121Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b1f19a702995c756c82bdc76281d763a2c6bd089e8abd46699201e14ab291d1e",
+    "ticketHash": "03c83ed5561a4f247993ec018e67c5c0b662c40df2c6ce1e3860ddb69e7b2804",
+    "version": 1
+  },
   "body": "Clear/verify runId on .booster/report.json in watchStatus/RunStatus, remove duplicate Linux PATH append in lib/agy.mjs, check dataRoot symlink in checkHookLogDir, guard sync-models --write.",
+  "completed": true,
   "edges": [
     {
       "to": "T-AUDIT2-4"

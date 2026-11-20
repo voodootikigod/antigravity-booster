@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-20T01:19:11.442Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "5bd05e07f5547868efb65bdb5a7fa80b425be1d281d1447df2c71f551d23ae01",
+    "ticketHash": "05fbe84a883c13cba654ef633a246ecd204d862604b0f7a22a9bda620f66250d",
+    "version": 1
+  },
   "body": "Update runLiveHookRunnerSecurityBenchmark Check 1 in evals/v13-enhancements-bench.mjs so staged hook-runner PASSWD_HOME anchoring is verified without relying on a PATH getent shim (using bwrap --ro-bind /etc/passwd on Linux and sandbox-exec ~/.gemini write-denial on macOS, falling back to real OS account home verification only inside an isolated sandbox).",
   "completed": true,
   "edges": [
