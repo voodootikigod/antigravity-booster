@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-20T01:19:06.507Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b1cd19c40d25f66f54794c4ad60608f5c9400821d4e564896ba188f05706ee74",
+    "ticketHash": "1c8f5b4dd9a96644bf2a4dfa0dcbf85b934fade6af0ba4bff341e42e2adbf138",
+    "version": 1
+  },
   "body": "Apply sanitizedGitEnv in worktrees/scheduler, upstreamPoolOf failover, sandbox hollow-test process, gate AGB_HOME_DIR when bundled, propagate arbiterDegraded and allow integer line in ARL/arbiter schemas.",
+  "completed": true,
   "edges": [
     {
       "to": "T-AUDIT2-4"

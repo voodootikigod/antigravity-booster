@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-20T01:19:06.892Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "270dd3f8dd25d32abbaa65aa506e435f7a9dd32553c9491a94ec3da6b903e969",
+    "ticketHash": "5cd64d4b71ac3d1a4d6ecd5867a1e60f0bd3d3e399288bc56c69c346c2591baa",
+    "version": 1
+  },
   "body": "Fix case-folding in classifyRunCommand, buildContext, evaluateMcpTool, stepOne; harden check-bundle-externals and stage-marketplace-plugin.",
+  "completed": true,
   "edges": [
     {
       "to": "T-AUDIT2-4"
