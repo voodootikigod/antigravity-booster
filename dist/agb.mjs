@@ -6354,8 +6354,13 @@ var init_models = __esm({
         "gemini-4-hydrogen-medium",
         "gemini-4-hydrogen-high",
         "gemini-4-hydrogen-xhigh",
+        "gemini-4-neon-low",
+        "gemini-4-neon-medium",
+        "gemini-4-neon-high",
+        "gemini-4-neon-xhigh",
         "gemini-pro-orchestrator",
-        "gemini-pro-orchestrator-argon"
+        "gemini-pro-orchestrator-argon",
+        "gemini-pro-orchestrator-neon"
       ],
       claude: [
         "claude-sonnet-5-5-low",
@@ -6382,8 +6387,13 @@ var init_models = __esm({
       "gemini 4 hydrogen (medium)": "gemini-4-hydrogen-medium",
       "gemini 4 hydrogen (high)": "gemini-4-hydrogen-high",
       "gemini 4 hydrogen (xhigh)": "gemini-4-hydrogen-xhigh",
+      "gemini 4 neon (low)": "gemini-4-neon-low",
+      "gemini 4 neon (medium)": "gemini-4-neon-medium",
+      "gemini 4 neon (high)": "gemini-4-neon-high",
+      "gemini 4 neon (xhigh)": "gemini-4-neon-xhigh",
       "orchestrator (carbon)": "gemini-pro-orchestrator",
       "orchestrator (argon)": "gemini-pro-orchestrator-argon",
+      "orchestrator (neon)": "gemini-pro-orchestrator-neon",
       "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
       "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
       "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
@@ -6413,12 +6423,14 @@ var init_models = __esm({
     RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
     ORCHESTRATOR_MODELS = /* @__PURE__ */ new Set([
       "gemini-pro-orchestrator",
-      "gemini-pro-orchestrator-argon"
+      "gemini-pro-orchestrator-argon",
+      "gemini-pro-orchestrator-neon"
     ]);
     FRONTIER_NO_ORCHESTRATOR = Object.freeze([
       "gemini-4-argon-high",
       "claude-sonnet-5-5-high",
       "gemini-4-carbon-high",
+      "gemini-4-neon-high",
       "claude-opus-5-5-high"
     ]);
     TIER_CANDIDATES = {
@@ -6428,14 +6440,17 @@ var init_models = __esm({
         "gemini-4-argon-low",
         "gemini-4-carbon-medium",
         "gemini-4-hydrogen-medium",
+        "gemini-4-neon-medium",
         "claude-sonnet-5-5-medium"
       ],
       frontier: Object.freeze([
         "gemini-pro-orchestrator",
         "claude-sonnet-5-5-high",
         "gemini-pro-orchestrator-argon",
+        "gemini-pro-orchestrator-neon",
         "gemini-4-argon-high",
         "gemini-4-carbon-high",
+        "gemini-4-neon-high",
         "claude-opus-5-5-high"
       ])
     };
@@ -6446,8 +6461,8 @@ var init_models = __esm({
     };
     PROSECUTOR_CANDIDATES = {
       gemini: ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
-      claude: ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
-      "gpt-oss": ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
+      claude: ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-4-neon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
+      "gpt-oss": ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-4-neon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
     };
     CODE_ARL_LENSES = Object.freeze([
       "correctness_redteam",
@@ -9811,7 +9826,7 @@ async function checkNodeVersion({ version = process.version } = {}) {
   return { name: "Node.js", level: "fail", detail: version, fix: `Upgrade Node.js to v${MIN_NODE_VERSION} or newer.` };
 }
 var MIN_AGY_VERSION = "1.2.6";
-var RECOMMENDED_AGY_VERSION = "1.5.9";
+var RECOMMENDED_AGY_VERSION = "1.5.13";
 async function checkAgyBinary({ env = process.env, home = env.HOME || homedir5() } = {}) {
   try {
     const agyCmd = env.AGB_AGY_BIN || resolveAgyBinary(home);
@@ -9839,12 +9854,13 @@ async function checkAgyBinary({ env = process.env, home = env.HOME || homedir5()
     let v = rawOut;
     if (!v.startsWith("v")) v = "v" + v;
     if (lt(versionStr, RECOMMENDED_AGY_VERSION)) {
+      const belowOrchestrator = lt(versionStr, "1.5.9");
       return {
         name: "agy CLI",
         level: "warn",
         version: versionStr,
-        detail: `${v} (recommended >= v${RECOMMENDED_AGY_VERSION}; Orchestrator slugs auto-disabled)`,
-        fix: `Upgrade agy to >= ${RECOMMENDED_AGY_VERSION} for Orchestrator (Carbon/Argon) support.`
+        detail: belowOrchestrator ? `${v} (recommended >= v${RECOMMENDED_AGY_VERSION}; Orchestrator slugs auto-disabled)` : `${v} (recommended >= v${RECOMMENDED_AGY_VERSION} for Gemini 4 Neon & stream-json fixes)`,
+        fix: `Upgrade agy to >= ${RECOMMENDED_AGY_VERSION} for Gemini 4 Neon, Orchestrator (Neon/Carbon/Argon), and stream-json fixes.`
       };
     }
     return { name: "agy CLI", level: "pass", version: versionStr, detail: v, fix: null };

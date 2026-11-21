@@ -899,7 +899,7 @@ ${Object.values(a159.perClass)
 | **18-State \`classifyAgyOutcome()\` Golden Matrix** | **${results.liveBenchmarks.v13PrintAndSandbox.classifierExactMatches} / ${results.liveBenchmarks.v13PrintAndSandbox.classifierCasesTotal} exact** (prevents ${results.liveBenchmarks.v13PrintAndSandbox.naiveExitZeroSilentFalsePositives} silent \`exit 0\` false positives) | **${results.liveBenchmarks.v13PrintAndSandbox.checks.classifierAll18Exact ? 'PASS' : 'FAIL'}** |
 | **Unconditional \`--disable-slash-commands\` & Readonly \`--sandbox\`** | Present on direct \`runAgy()\` print invocations | **${results.liveBenchmarks.v13PrintAndSandbox.checks.disableSlashCommandsPresent && results.liveBenchmarks.v13PrintAndSandbox.checks.directReadonlyKeepsSandbox ? 'PASS' : 'FAIL'}** |
 | **Outer \`bwrap_pid\` Builder Omits Nested \`--sandbox\`** | Prevents nested \`CLONE_NEWUSER\` \`EPERM\` on \`agy 1.5.9\` | **${results.liveBenchmarks.v13PrintAndSandbox.checks.outerBwrapOmitsNestedSandbox ? 'PASS' : 'FAIL'}** |
-| **\`plan.disableOrchestrator\` & \`RECOMMENDED_AGY_VERSION = '1.5.9'\`** | Schema + version constants verified | **${results.liveBenchmarks.v13PrintAndSandbox.checks.planSchemaAndVersionConstantsOk ? 'PASS' : 'FAIL'}** |
+| **\`plan.disableOrchestrator\` & \`RECOMMENDED_AGY_VERSION = '1.5.13'\`** | Schema + version constants verified | **${results.liveBenchmarks.v13PrintAndSandbox.checks.planSchemaAndVersionConstantsOk ? 'PASS' : 'FAIL'}** |
 
 ### 6k. v1.3 Live Hermetic Orchestrator Routing, Per-Slug Circuit Breaker & \`AsyncLocalStorage\` Isolation (\`lib/models.mjs\`, \`lib/scheduler.mjs\`)
 

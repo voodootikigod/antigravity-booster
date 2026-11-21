@@ -140,6 +140,8 @@ test('PoolSet.route("frontier", "auto") spreads 4+4 at 4/4 capacity and 2+4 at 2
   setOrchestratorRoutingState({ disabledModels: new Set(['gemini-pro-orchestrator']) });
   assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator-argon');
   setOrchestratorRoutingState({ disabledModels: ['gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon'] });
+  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator-neon');
+  setOrchestratorRoutingState({ disabledModels: ['gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon', 'gemini-pro-orchestrator-neon'] });
   assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-4-argon-high');
   assert.equal(tierCandidates('frontier', 'gemini', { disabledModels: null })[0], 'gemini-pro-orchestrator');
   assert.equal(tierCandidates('frontier', 'gemini', { disabledModels: ['gemini-pro-orchestrator'] })[0], 'gemini-pro-orchestrator-argon');
@@ -159,7 +161,7 @@ test('runWithOrchestratorRoutingState isolates concurrent async contexts via Asy
     }),
     runWithOrchestratorRoutingState({}, async () => tierCandidates('frontier', 'gemini')),
   ]);
-  assert.deepEqual(resA, ['gemini-4-argon-high', 'gemini-4-carbon-high']);
+  assert.deepEqual(resA, ['gemini-4-argon-high', 'gemini-4-carbon-high', 'gemini-4-neon-high']);
   assert.equal(resB[0], 'gemini-pro-orchestrator-argon');
   assert.equal(resDefault[0], 'gemini-pro-orchestrator');
   // Outside both async contexts, default state remains untouched

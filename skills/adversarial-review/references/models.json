@@ -2,50 +2,29 @@
   "schema_version": "1.0",
   "catalog": [
     {
-      "slug": "gemini-3.8-flash-low",
-      "display_name": "Gemini 3.8 Flash (Low)",
-      "pool": "gemini-flash",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-3.8-flash-medium",
-      "display_name": "Gemini 3.8 Flash (Medium)",
-      "pool": "gemini-flash",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-3.8-flash-high",
-      "display_name": "Gemini 3.8 Flash (High)",
-      "pool": "gemini-flash",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-argon-low",
-      "display_name": "Gemini 4 Argon (Low)",
+      "slug": "gemini-4-neon-high",
+      "display_name": "Gemini 4 Neon (High)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-argon-medium",
-      "display_name": "Gemini 4 Argon (Medium)",
+      "slug": "gemini-4-neon-xhigh",
+      "display_name": "Gemini 4 Neon (XHigh)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-argon-high",
-      "display_name": "Gemini 4 Argon (High)",
+      "slug": "gemini-4-neon-medium",
+      "display_name": "Gemini 4 Neon (Medium)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-carbon-low",
-      "display_name": "Gemini 4 Carbon (Low)",
+      "slug": "gemini-4-neon-low",
+      "display_name": "Gemini 4 Neon (Low)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
@@ -65,15 +44,29 @@
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-hydrogen-low",
-      "display_name": "Gemini 4 Hydrogen (Low)",
+      "slug": "gemini-4-carbon-low",
+      "display_name": "Gemini 4 Carbon (Low)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-hydrogen-medium",
-      "display_name": "Gemini 4 Hydrogen (Medium)",
+      "slug": "gemini-4-argon-medium",
+      "display_name": "Gemini 4 Argon (Medium)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-argon-high",
+      "display_name": "Gemini 4 Argon (High)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-argon-low",
+      "display_name": "Gemini 4 Argon (Low)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
@@ -87,7 +80,28 @@
     },
     {
       "slug": "gemini-4-hydrogen-xhigh",
-      "display_name": "Gemini 4 Hydrogen (Xhigh)",
+      "display_name": "Gemini 4 Hydrogen (XHigh)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-medium",
+      "display_name": "Gemini 4 Hydrogen (Medium)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-low",
+      "display_name": "Gemini 4 Hydrogen (Low)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-pro-orchestrator-neon",
+      "display_name": "Orchestrator (Neon)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
@@ -107,24 +121,24 @@
       "status": "MAPPED"
     },
     {
-      "slug": "claude-sonnet-5-5-low",
-      "display_name": "Claude Sonnet 5.5 (Low)",
-      "pool": "claude",
-      "family": "claude",
+      "slug": "gemini-3.8-flash-high",
+      "display_name": "Gemini 3.8 Flash (High)",
+      "pool": "gemini-flash",
+      "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "claude-sonnet-5-5-medium",
-      "display_name": "Claude Sonnet 5.5 (Medium)",
-      "pool": "claude",
-      "family": "claude",
+      "slug": "gemini-3.8-flash-medium",
+      "display_name": "Gemini 3.8 Flash (Medium)",
+      "pool": "gemini-flash",
+      "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "claude-sonnet-5-5-high",
-      "display_name": "Claude Sonnet 5.5 (High)",
-      "pool": "claude",
-      "family": "claude",
+      "slug": "gemini-3.8-flash-low",
+      "display_name": "Gemini 3.8 Flash (Low)",
+      "pool": "gemini-flash",
+      "family": "gemini",
       "status": "MAPPED"
     },
     {
@@ -144,6 +158,27 @@
     {
       "slug": "claude-opus-5-5-high",
       "display_name": "Claude Opus 5.5 (High)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-sonnet-5-5-low",
+      "display_name": "Claude Sonnet 5.5 (Low)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-sonnet-5-5-medium",
+      "display_name": "Claude Sonnet 5.5 (Medium)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-sonnet-5-5-high",
+      "display_name": "Claude Sonnet 5.5 (High)",
       "pool": "claude",
       "family": "claude",
       "status": "MAPPED"

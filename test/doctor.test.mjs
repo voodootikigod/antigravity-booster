@@ -40,9 +40,9 @@ test('checkAgyBinary: passes when fake-agy is provided', async () => {
   assert.equal(res.version, RECOMMENDED_AGY_VERSION);
 });
 
-test('checkAgyBinary: version bands (< 1.2.6 fail, 1.2.6..<1.5.9 warn, >= 1.5.9 pass)', async () => {
+test('checkAgyBinary: version bands (< 1.2.6 fail, 1.2.6..<1.5.13 warn, >= 1.5.13 pass)', async () => {
   assert.equal(MIN_AGY_VERSION, '1.2.6');
-  assert.equal(RECOMMENDED_AGY_VERSION, '1.5.9');
+  assert.equal(RECOMMENDED_AGY_VERSION, '1.5.13');
   const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
   const at = (v) => checkAgyBinary({ env: { AGB_AGY_BIN: FAKE_AGY, FAKE_AGY_VERSION: v } });
 
@@ -54,11 +54,19 @@ test('checkAgyBinary: version bands (< 1.2.6 fail, 1.2.6..<1.5.9 warn, >= 1.5.9 
     const warn = await at(v);
     assert.equal(warn.level, 'warn', v);
     assert.equal(warn.version, v);
-    assert.match(warn.detail, /recommended >= v1\.5\.9; Orchestrator slugs auto-disabled/);
-    assert.match(warn.fix, /Upgrade agy to >= 1\.5\.9 for Orchestrator \(Carbon\/Argon\) support\./);
+    assert.match(warn.detail, /recommended >= v1\.5\.13; Orchestrator slugs auto-disabled/);
+    assert.match(warn.fix, /Upgrade agy to >= 1\.5\.13 for Gemini 4 Neon, Orchestrator \(Neon\/Carbon\/Argon\), and stream-json fixes\./);
   }
 
-  for (const v of ['1.5.9', '1.6.0']) {
+  for (const v of ['1.5.9', '1.5.12']) {
+    const warn = await at(v);
+    assert.equal(warn.level, 'warn', v);
+    assert.equal(warn.version, v);
+    assert.match(warn.detail, /recommended >= v1\.5\.13 for Gemini 4 Neon & stream-json fixes/);
+    assert.match(warn.fix, /Upgrade agy to >= 1\.5\.13 for Gemini 4 Neon, Orchestrator \(Neon\/Carbon\/Argon\), and stream-json fixes\./);
+  }
+
+  for (const v of ['1.5.13', '1.6.0']) {
     const pass = await at(v);
     assert.equal(pass.level, 'pass', v);
     assert.equal(pass.version, v);

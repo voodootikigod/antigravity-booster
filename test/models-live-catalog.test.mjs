@@ -18,9 +18,13 @@ import {
   tierCandidates,
 } from '../lib/models.mjs';
 
-// Snapshot of `agy models` (agy 1.5.9). Update together with lib/models.mjs;
+// Snapshot of `agy models` (agy 1.5.13). Update together with lib/models.mjs;
 // `agb doctor` (t-doctor-catalog-drift) reports drift against the live CLI.
 const LIVE_CATALOG = [
+  'gemini-4-neon-low',
+  'gemini-4-neon-medium',
+  'gemini-4-neon-high',
+  'gemini-4-neon-xhigh',
   'gemini-4-carbon-low',
   'gemini-4-carbon-medium',
   'gemini-4-carbon-high',
@@ -31,6 +35,7 @@ const LIVE_CATALOG = [
   'gemini-4-hydrogen-medium',
   'gemini-4-hydrogen-high',
   'gemini-4-hydrogen-xhigh',
+  'gemini-pro-orchestrator-neon',
   'gemini-pro-orchestrator',
   'gemini-pro-orchestrator-argon',
   'gemini-3.8-flash-low',
@@ -53,7 +58,7 @@ const RETIRED_SLUGS = [
   'claude-sonnet-4-6', 'claude-opus-4-6-thinking',
 ];
 
-describe('models-live-catalog: MODELS matches agy 1.5.9', () => {
+describe('models-live-catalog: MODELS matches agy 1.5.13', () => {
   it('ALL_MODELS equals the live catalog exactly', () => {
     assert.deepEqual([...ALL_MODELS].sort(), [...LIVE_CATALOG].sort());
   });
@@ -65,8 +70,11 @@ describe('models-live-catalog: MODELS matches agy 1.5.9', () => {
     assert.equal(familyOf('gemini-4-carbon-low'), 'gemini');
     assert.equal(poolOf('gemini-4-hydrogen-xhigh'), 'gemini-pro');
     assert.equal(familyOf('gemini-4-hydrogen-medium'), 'gemini');
+    assert.equal(poolOf('gemini-4-neon-xhigh'), 'gemini-pro');
+    assert.equal(familyOf('gemini-4-neon-medium'), 'gemini');
     assert.equal(poolOf('gemini-pro-orchestrator'), 'gemini-pro');
     assert.equal(poolOf('gemini-pro-orchestrator-argon'), 'gemini-pro');
+    assert.equal(poolOf('gemini-pro-orchestrator-neon'), 'gemini-pro');
     assert.equal(poolOf('claude-opus-5-5-high'), 'claude');
     assert.equal(poolOf('claude-sonnet-5-5-medium'), 'claude');
     assert.equal(poolOf('gemini-3.8-flash-high'), 'gemini-flash');
@@ -77,17 +85,20 @@ describe('models-live-catalog: MODELS matches agy 1.5.9', () => {
       'gemini-pro-orchestrator',
       'claude-sonnet-5-5-high',
       'gemini-pro-orchestrator-argon',
+      'gemini-pro-orchestrator-neon',
       'gemini-4-argon-high',
       'gemini-4-carbon-high',
+      'gemini-4-neon-high',
       'claude-opus-5-5-high',
     ]);
     assert.deepEqual(FRONTIER_NO_ORCHESTRATOR, [
       'gemini-4-argon-high',
       'claude-sonnet-5-5-high',
       'gemini-4-carbon-high',
+      'gemini-4-neon-high',
       'claude-opus-5-5-high',
     ]);
-    assert.equal(tierCandidates('frontier', 'gemini').length, 4);
+    assert.equal(tierCandidates('frontier', 'gemini').length, 6);
     for (const tier of ['cheap', 'mid']) {
       for (const m of TIER_CANDIDATES[tier]) assert.ok(!m.includes('orchestrator'), `${tier} must not schedule orchestrator ${m}`);
     }
@@ -215,6 +226,10 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
 
   it('every live slug resolves from its `agy models` display name, silently', () => {
     const display = {
+      'gemini-4-neon-low': 'Gemini 4 Neon (Low)',
+      'gemini-4-neon-medium': 'Gemini 4 Neon (Medium)',
+      'gemini-4-neon-high': 'Gemini 4 Neon (High)',
+      'gemini-4-neon-xhigh': 'Gemini 4 Neon (XHigh)',
       'gemini-4-carbon-low': 'Gemini 4 Carbon (Low)',
       'gemini-4-carbon-medium': 'Gemini 4 Carbon (Medium)',
       'gemini-4-carbon-high': 'Gemini 4 Carbon (High)',
@@ -225,6 +240,7 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
       'gemini-4-hydrogen-medium': 'Gemini 4 Hydrogen (Medium)',
       'gemini-4-hydrogen-high': 'Gemini 4 Hydrogen (High)',
       'gemini-4-hydrogen-xhigh': 'Gemini 4 Hydrogen (XHigh)',
+      'gemini-pro-orchestrator-neon': 'Orchestrator (Neon)',
       'gemini-pro-orchestrator': 'Orchestrator (Carbon)',
       'gemini-pro-orchestrator-argon': 'Orchestrator (Argon)',
       'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
@@ -286,8 +302,8 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     }
     assert.deepEqual(counts, {
       'cheap+gemini': 2, 'cheap+claude': 0, 'cheap+claude-gpt': 0, 'cheap+gpt-oss': 0,
-      'mid+gemini': 4, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
-      'frontier+gemini': 4, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
+      'mid+gemini': 5, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
+      'frontier+gemini': 6, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
     });
   });
 

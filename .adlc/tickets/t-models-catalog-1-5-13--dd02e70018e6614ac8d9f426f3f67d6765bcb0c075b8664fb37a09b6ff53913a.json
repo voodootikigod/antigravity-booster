@@ -1,0 +1,32 @@
+{
+  "body": "Update lib/models.mjs to match the 27-slug live agy 1.5.13 catalog: add gemini-4-neon-{low,medium,high,xhigh} and gemini-pro-orchestrator-neon to MODELS['gemini-pro'], add their exact agy models display-name entries ('Gemini 4 Neon (Low|Medium|High|XHigh)', 'Orchestrator (Neon)') to MODEL_ALIASES, and add gemini-pro-orchestrator-neon to ORCHESTRATOR_MODELS. Keep all 22 existing 1.5.9 slugs and RETIRED_35_MAP intact. Append gemini-4-neon-medium to TIER_CANDIDATES.mid, append gemini-4-neon-high to FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES.frontier, and PROSECUTOR_CANDIDATES.{claude,'gpt-oss'} (preserving cross-family independence), and append gemini-pro-orchestrator-neon to TIER_CANDIDATES.frontier (keeping all orchestrator slugs excluded from cheap/mid, PROSECUTORS, and ROLE_MODELS). Update CACHED_MODELS_OUTPUT in scripts/sync-models.mjs and regenerate skills/adversarial-review/references/models.json via sync-models. Update test/fixtures/fake-agy models output to all 27 slugs, update LIVE_CATALOG in test/models-live-catalog.test.mjs, update test/models-registry.test.mjs, test/pools.test.mjs, test/orchestrator-routing.test.mjs, test/sync-models.test.mjs, and test/unit.test.mjs, and run `npm run build` so dist/ has zero drift. Acceptance: `npm run build && npm test` green; ALL_MODELS equals the 27 live agy 1.5.13 slugs; `node bin/agb.mjs doctor` reports Model catalog PASS.",
+  "edges": [
+    {
+      "to": "t-doctor-and-modernize-1-5-13"
+    },
+    {
+      "to": "t-docs-refresh-1-5-13"
+    }
+  ],
+  "id": "t-models-catalog-1-5-13",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/models.mjs",
+    "scripts/sync-models.mjs",
+    "skills/adversarial-review/references/models.json",
+    "dist/**",
+    "test/models-live-catalog.test.mjs",
+    "test/models-registry.test.mjs",
+    "test/pools.test.mjs",
+    "test/orchestrator-routing.test.mjs",
+    "test/sync-models.test.mjs",
+    "test/unit.test.mjs",
+    "test/fixtures/fake-agy"
+  ],
+  "title": "Refresh model catalog to live agy 1.5.13 (Gemini 4 Neon & Orchestrator Neon)"
+}
