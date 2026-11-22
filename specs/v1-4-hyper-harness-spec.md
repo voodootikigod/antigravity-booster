@@ -1,6 +1,6 @@
 # Specification: Antigravity Booster v1.4 Hyper-Tuned Harness & ADLC Accelerator (`v1.4.0`)
 
-**Base:** `feat/v1-4-hyper-harness` \
+**Base:** `main` \
 **Gate:** `{"test": "npm test"}`
 
 --------------------------------------------------------------------------------
