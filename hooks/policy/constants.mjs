@@ -9,6 +9,7 @@ export const READ_ONLY_TOOLS = new Set([
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',
   'find_by_name',
   'list_dir', 'list_permissions', 'search_in_file', 'wait', 'wait_5_seconds',
+  'codegraph_explore', 'mcp_codegraph_codegraph_explore', 'mcp__codegraph__codegraph_explore',
 ]);
 
 export const ORCHESTRATION_TOOLS = new Set([
@@ -45,7 +46,7 @@ export const AGY_CONTROL_TOOLS = new Set(['finish']);
 export const BOOSTER_MCP_SERVER = 'agb';
 export const BOOSTER_MCP_SERVERS = new Set(['agb', 'antigravity-booster_agb']);
 export const BOOSTER_MCP_TOOLS = new Set([
-  'agb_shape', 'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_init', 'agb_review',
+  'agb_shape', 'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_init', 'agb_review', 'agb_distill',
 ]);
 
 export const PATH_MUTATING_TOOLS = new Set([
@@ -77,6 +78,9 @@ export const READ_TOOL_PATH_SCHEMAS = {
   list_dir: ['DirectoryPath', 'DirAbsolutePath', 'AbsolutePath', 'path', 'dir'],
   list_permissions: ['paths', 'path'],
   search_in_file: ['paths', 'path', 'DirectoryPath', 'SearchPath'],
+  codegraph_explore: ['projectPath', 'path', 'DirectoryPath'],
+  mcp_codegraph_codegraph_explore: ['projectPath', 'path', 'DirectoryPath'],
+  mcp__codegraph__codegraph_explore: ['projectPath', 'path', 'DirectoryPath'],
 };
 
 // Folded (lowercase) path keys of the read tools that REQUIRE a path argument.

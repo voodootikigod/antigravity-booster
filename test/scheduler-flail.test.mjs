@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runPlan, checkFlailDetector } from '../lib/scheduler.mjs';
+import { runPlan, checkFlailDetector, sanitizeBuilderStreamOutputForFlail } from '../lib/scheduler.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_flail_test_${process.pid}.json`);
 
@@ -159,6 +159,70 @@ test('checkFlailDetector: agy stream-json Created At / Completed At timestamps d
     writeFileSync(logFile, JSON.stringify({ role: 'builder', ts: '2026-11-19T01:48:30Z', model: 'm', cwd: tmp, ok: false, kind: 'timeout', prompt: 'build', output: streamOut }) + '\n');
     const res = await checkFlailDetector({ logFile, scope: ['packages/lesson-foundry/**'], cwd: tmp });
     assert.equal(res.detected, false, `unexpected flail signals: ${JSON.stringify(res.signals)}`);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('checkFlailDetector & sanitizeBuilderStreamOutputForFlail: stream-json passing node --test outputs (fail 0) and agent_response text_delta chunks mentioning error do not false-positive, while genuine repeated tool ERROR steps are detected', async () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-test-flail-stream-sanitize-'));
+  try {
+    const passingStream = [
+      JSON.stringify({ event: 'init', session_id: 's1', model: 'gemini-4-neon-high' }),
+      JSON.stringify({
+        event: 'step_update',
+        step_update: { step_index: 1, step_type: 'agent_response', state: 'GENERATING', text_delta: 'Checking error handling and failure modes' },
+      }),
+      JSON.stringify({
+        event: 'step_update',
+        step_update: { step_index: 1, step_type: 'agent_response', state: 'GENERATING', text_delta: 'Checking error handling and failure modes' },
+      }),
+      ...Array.from({ length: 3 }, (_, idx) => JSON.stringify({
+        event: 'step_update',
+        step_update: {
+          step_index: idx + 2,
+          step_type: 'tool',
+          state: 'DONE',
+          tool_name: 'run_command',
+          tool_info: {
+            name: 'run_command',
+            parameters: { CommandLine: 'node --test test/ndjson-worker.test.mjs' },
+            result: 'Command exited with code 0.\n\nCommand output:\n✔ error frame normalized\nℹ tests 10\nℹ pass 10\nℹ fail 0\n',
+          },
+        },
+      })),
+    ].join('\n');
+
+    const sanitizedPass = sanitizeBuilderStreamOutputForFlail(passingStream);
+    assert.equal(sanitizedPass.includes('fail 0'), false);
+    assert.equal(sanitizedPass.includes('Checking error handling'), false);
+
+    const passLogFile = join(tmp, 'T-PASS.jsonl');
+    writeFileSync(
+      passLogFile,
+      JSON.stringify({ role: 'builder', ts: '2026-11-22T15:00:00Z', model: 'm', cwd: tmp, ok: true, output: passingStream }) + '\n'
+    );
+    const passRes = await checkFlailDetector({ logFile: passLogFile, scope: ['lib/ndjson-worker.mjs'], cwd: tmp });
+    assert.equal(passRes.detected, false, `passing stream-json log must not trigger flail: ${JSON.stringify(passRes.signals)}`);
+
+    const errorStream = Array.from({ length: 3 }, (_, idx) => JSON.stringify({
+      event: 'step_update',
+      step_update: {
+        step_index: idx + 1,
+        step_type: 'tool',
+        state: 'ERROR',
+        tool_name: 'run_command',
+        content: 'SyntaxError: Unexpected token export in lib/foo.mjs',
+        tool_info: {
+          name: 'run_command',
+          parameters: { CommandLine: 'node --test test/foo.test.mjs' },
+        },
+      },
+    })).join('\n');
+
+    const sanitizedErr = sanitizeBuilderStreamOutputForFlail(errorStream);
+    assert.ok(sanitizedErr.includes('[run_command:node_--test_test/foo.test.mjs]'));
+    assert.ok(sanitizedErr.includes('SyntaxError: Unexpected token export'));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

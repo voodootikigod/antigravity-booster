@@ -53,6 +53,7 @@ import {
   renderMarkdownReport,
   loadBaseline,
   compareAgainstBaseline,
+  runLiveV14HyperHarnessBenchmark,
 } from '../evals/runner.mjs';
 
 test('stats: mulberry32 PRNG is deterministic across identical seeds and default seed', () => {
@@ -495,4 +496,12 @@ test('verifyStagedPasswdHomeAnchoring: covers bwrap, Darwin Seatbelt, unprivileg
   assert.equal(runFallbackCase({ runnerContent: '#!/bin/sh\necho none\n' }), false);
   assert.equal(runFallbackCase({ probeStatus: 1 }), false);
   assert.equal(runFallbackCase({ probeStdout: '/t/spoof' }), false);
+});
+
+test('v14HyperHarness: live mechanical benchmark passes all 8 pillar checks', () => {
+  const res = runLiveV14HyperHarnessBenchmark();
+  assert.equal(res.ok, true);
+  assert.equal(res.passed, 8);
+  assert.equal(res.total, 8);
+  assert.equal(res.passRate, 1);
 });

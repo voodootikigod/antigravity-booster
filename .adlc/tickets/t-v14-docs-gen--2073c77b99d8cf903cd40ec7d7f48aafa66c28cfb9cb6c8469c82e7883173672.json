@@ -1,0 +1,14 @@
+{
+  "body": "Run node website/scripts/gen-reference.mjs so website/generated/modules.mdx reflects newly exported sanitizeBuilderStreamOutputForFlail and arbiterPrompt symbols.",
+  "edges": [],
+  "id": "T-V14-DOCS-GEN",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "website/generated/modules.mdx"
+  ],
+  "title": "Regenerate website/generated/modules.mdx for v1.4 dogfooding exports"
+}

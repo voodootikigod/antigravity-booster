@@ -43,6 +43,13 @@ import { evaluatePayload } from '../hooks/policy/evaluate.mjs';
 import { writeAdlcTickets } from '../lib/adlc-bridge.mjs';
 import { parseValidateOutput } from '../lib/migrate.mjs';
 import { stageMarketplacePlugin, validateStagedPluginStrict } from '../scripts/stage-marketplace-plugin.mjs';
+import { buildRoleSettingsProfile } from '../lib/ndjson-worker.mjs';
+import { StreamWatchdog, resolveDynamicEffort } from '../lib/stream-watchdog.mjs';
+import { verifySymbolScopeDiff } from '../lib/context-slice.mjs';
+import { shouldRunTddSplit } from '../lib/tdd-split.mjs';
+import { BanditModelRouter } from '../lib/bandit-router.mjs';
+import { compilePlanToWorkflow } from '../lib/workflow-emit.mjs';
+import { sanitizeBuilderStreamOutputForFlail } from '../lib/scheduler-verify.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -192,6 +199,49 @@ export function loadBaseline(baselinePath = join(ROOT, 'evals', 'baseline.json')
 }
 
 /**
+ * Execute live mechanical runtime probes against v1.4 Hyper-Tuned Harness pillars:
+ * role settings profiles, stream watchdog, dynamic effort, symbol-level rails,
+ * cross-pool TDD split, Thompson-sampling bandit router, workflow emitter, and
+ * stream-json flail sanitizer.
+ */
+export function runLiveV14HyperHarnessBenchmark() {
+  const prof = buildRoleSettingsProfile('prosecutor');
+  const wd = new StreamWatchdog({ maxIdenticalFailures: 2 });
+  wd.observeStep({ step_type: 'tool', state: 'ERROR', tool_name: 'run_command', error: 'Command failed' });
+  const wdStatus = wd.observeStep({ step_type: 'tool', state: 'ERROR', tool_name: 'run_command', error: 'Command failed' });
+  const effort = resolveDynamicEffort({ tier: 'mid' }, { strike: 1 });
+  const symOk = verifySymbolScopeDiff(
+    '--- a/lib/a.mjs\n+++ b/lib/a.mjs\n@@ -2,1 +2,1 @@\n-  return 1;\n+  return 2;\n',
+    { symbolRails: ['lib/a.mjs#frozenFn'], fileSources: { 'lib/a.mjs': 'export function ok() {\n  return 1;\n}\nexport function frozenFn() {\n  return 9;\n}\n' } }
+  );
+  const tdd = shouldRunTddSplit({ tier: 'frontier', scope: ['lib/a.mjs', 'test/a.test.mjs'] });
+  const router = new BanditModelRouter({ seed: 20261122 });
+  const ranked = router.rankCandidates(['gemini-4-neon-high', 'claude-opus-4-6-thinking'], { tier: 'frontier' });
+  const wf = compilePlanToWorkflow({
+    repo: ROOT,
+    base: 'main',
+    gate: { test: 'npm test' },
+    tickets: [{ id: 'T1', title: 'One', body: 'Do work', scope: ['lib/a.mjs'], edges: [] }],
+  });
+  const sanitized = sanitizeBuilderStreamOutputForFlail(
+    JSON.stringify({ event: 'step_update', step_update: { step_type: 'tool', state: 'DONE', content: 'Command exited with code 0.\nℹ pass 10\nℹ fail 0' } })
+  );
+  const checks = {
+    roleSettingsReadonly: prof.mode === 'readonly' && prof.mcpServersDisabled === true,
+    watchdogDetectsErrorCycle: wdStatus.action === 'abort' && /in-turn flail detected/.test(wdStatus.reason),
+    dynamicEffortEscalatesOnStrike: effort.effort === 'xhigh' && effort.escalated === true,
+    symbolRailsEnforced: symOk.ok === true,
+    crossPoolTddTriggersOnFrontier: tdd === true,
+    banditRouterDeterministic: ranked.length === 2,
+    workflowCompilerValid: wf.ok === true && wf.waves.length === 1,
+    streamFlailSanitizerStripsPassingStdout: !sanitized.includes('fail 0'),
+  };
+  const passed = Object.values(checks).filter(Boolean).length;
+  const total = Object.keys(checks).length;
+  return { ok: passed === total, passed, total, passRate: passed / total, checks };
+}
+
+/**
  * Compare current evaluation results against the committed `evals/baseline.json` ratchet.
  */
 export function compareAgainstBaseline(results, baseline = loadBaseline()) {
@@ -335,6 +385,7 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
   const v13HookSecurity = runLiveHookRunnerSecurityBenchmark({ repoRoot });
   const v13PrintAndSandbox = await runLiveAgy159PrintAndSandboxBenchmark();
   const v13OrchestratorScheduler = await runLiveOrchestratorSchedulerBenchmark();
+  const v14HyperHarness = runLiveV14HyperHarnessBenchmark();
   const liveV13Rates = computeLiveAgy159HazardRates({
     policyMatrix: v13PolicyMatrix,
     hookSecurity: v13HookSecurity,
@@ -358,6 +409,7 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
     v13HookSecurity,
     v13PrintAndSandbox,
     v13OrchestratorScheduler,
+    v14HyperHarness,
   };
 
   const baselineRatchet = compareAgainstBaseline({
@@ -422,6 +474,7 @@ export async function runAllEvals({ trials = 100, seed = 20261030, repoRoot = RO
     liveV13HookSecurityPass: v13HookSecurity.ok,
     liveV13PrintAndSandboxPass: v13PrintAndSandbox.ok,
     liveV13OrchestratorSchedulerPass: v13OrchestratorScheduler.ok,
+    liveV14HyperHarnessPass: v14HyperHarness.ok,
     baselineRegressionRatchetPass: baselineRatchet.ok,
   };
 

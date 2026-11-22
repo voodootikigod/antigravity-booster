@@ -1,0 +1,16 @@
+{
+  "body": "In lib/ndjson-worker.mjs _spawnDaemon(), attach error listeners to child.stdin, child.stdout, and child.stderr so an immediate child exit during child.stdin.write triggers the write callback / exit fallback rather than throwing an uncaught EPIPE stream error.",
+  "edges": [],
+  "id": "T-V14-NDJSON-EPIPE",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/ndjson-worker.mjs",
+    "dist/agb.mjs",
+    "dist/mcp-server.mjs"
+  ],
+  "title": "Attach error handler on NdjsonWorkerDaemon child.stdin to prevent uncaught EPIPE race"
+}

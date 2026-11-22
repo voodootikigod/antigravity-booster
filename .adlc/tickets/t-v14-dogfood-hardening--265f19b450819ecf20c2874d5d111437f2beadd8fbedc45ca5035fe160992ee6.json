@@ -1,0 +1,23 @@
+{
+  "body": "Wire v1.4 engines into runPlan(), filter stream-json NDJSON in checkFlailDetector(), allow codegraph_explore in READ_ONLY_TOOLS and agb_distill in BOOSTER_MCP_TOOLS, compact arbiterPrompt evidence with 8m timeout, and add v14HyperHarness evals.",
+  "edges": [],
+  "id": "T-V14-DOGFOOD-HARDENING",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/scheduler-verify.mjs",
+    "lib/scheduler.mjs",
+    "lib/review.mjs",
+    "hooks/policy/constants.mjs",
+    "evals/runner.mjs",
+    "dist/**",
+    "test/scheduler-flail.test.mjs",
+    "test/v14-integration.test.mjs",
+    "test/evals.test.mjs"
+  ],
+  "title": "Wire v1.4 hooks into runPlan loop, harden stream-json flail-detector, codegraph MCP policy, arbiter timeout, and v1.4 evals"
+}
