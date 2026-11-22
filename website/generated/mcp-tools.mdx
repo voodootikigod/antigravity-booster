@@ -1,3 +1,10 @@
+**`agb_distill`**: Scan repository review and prosecution logs for recurring finding patterns and stage or apply learned ADLC defenses
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| apply | boolean | no | Write compacted defenses to .gemini/rules/adlc-learned.md |
+| repo | string | yes | Path to target repository |
+
 **`agb_doctor`**: Run diagnostic health check for tools, auth, and sandbox setup
 
 | Parameter | Type | Required | Description |
@@ -16,6 +23,7 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | decompose | boolean | no | Automatically split wide tickets exceeding maxTicketScope |
+| emitWorkflow | string | no | Optional output path for compiled run_workflow Python script |
 | force | boolean | no | Force overwrite the output file if it exists |
 | maxTicketScope | number | no | Maximum files per ticket when decompose is enabled (default 3) |
 | noColdstart | boolean | no | Skip coldstart plan gate |

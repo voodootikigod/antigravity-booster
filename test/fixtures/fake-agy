@@ -190,12 +190,14 @@ for arg in "$@"; do
     json_schema="$arg"
   elif [ "$prev" = "--conversation" ] || [ "$prev" = "-c" ]; then
     conversation_arg="$arg"
+  elif [ "$prev" = "--settings" ]; then
+    settings_arg="$arg"
   fi
   case "$prev" in
-    --print|--print-timeout|--model|--conversation|-c|--output-format|--input-format|--json-schema|--project|--add-dir|--effort) ;;
+    --print|--print-timeout|--model|--conversation|-c|--output-format|--input-format|--json-schema|--project|--add-dir|--effort|--settings) ;;
     *)
       case "$arg" in
-        --print|--print-timeout|--model|--conversation|--output-format|--input-format|--json-schema|--project|--add-dir|--effort|--sandbox|--disable-slash-commands|--version|--help) ;;
+        --print|--print-timeout|--model|--conversation|--output-format|--input-format|--json-schema|--project|--add-dir|--effort|--settings|--sandbox|--disable-slash-commands|--version|--help) ;;
         --*) unknown_flag="$arg" ;;
       esac ;;
   esac
@@ -211,6 +213,29 @@ fi
 if [ -n "$input_format" ] && [ "$input_format" != "text" ] && [ "$input_format" != "stream-json" ]; then
   echo "Error: invalid --input-format '$input_format' (expected text or stream-json)" >&2
   exit 2
+fi
+if [ -n "$FAKE_SETTINGS_FILE" ] && [ -n "$settings_arg" ]; then
+  printf '%s' "$settings_arg" > "$FAKE_SETTINGS_FILE"
+fi
+if [ "$input_format" = "stream-json" ] && [ "$FAKE_AGY_MODE" = "fail" ]; then
+  echo "boom: simulated agy failure" >&2
+  exit 1
+fi
+if [ "$input_format" = "stream-json" ] && [ "$FAKE_AGY_NDJSON_DAEMON" = "1" ]; then
+  if [ "$output_format" != "stream-json" ]; then
+    echo "Error: --input-format stream-json requires --output-format stream-json" >&2
+    exit 2
+  fi
+  conv_id="${FAKE_CONVERSATION_ID:-fake-conv-123}"
+  turn_idx=0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    turn_idx=$((turn_idx + 1))
+    printf '{"event":"init","conversation_id":"%s","init":{"tools":["read_file","write_file","run_command"]}}\n' "$conv_id"
+    printf '{"event":"step_update","step_update":{"conversation_id":"%s","step_index":%d,"state":"DONE","step_type":"agent_response","text_delta":"TICKET-DONE\\n"}}\n' "$conv_id" "$turn_idx"
+    printf '{"event":"result","result":{"conversation_id":"%s","status":"SUCCESS","response":"turn-%d TICKET-DONE","num_turns":%d}}\n' "$conv_id" "$turn_idx" "$turn_idx"
+  done
+  exit 0
 fi
 if [ -z "$prompt" ] && [ "$1" != "--version" ] && [ "$1" != "--help" ] && [ "$1" != "models" ] && [ "$1" != "plugin" ]; then
   prompt=$(cat)
