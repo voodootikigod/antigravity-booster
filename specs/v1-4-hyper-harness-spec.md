@@ -131,7 +131,7 @@ graph TD
 ### Ticket 4: `T-V14-4` — Cross-Pool Adversarial TDD Split, Empirical Bandit Router & Defense Distiller
 
 -   **Scope**: `lib/tdd-split.mjs`, `lib/bandit-router.mjs`, `lib/distill.mjs`, `test/tdd-split.test.mjs`, `test/bandit-distill.test.mjs`
--   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`, `test/fixtures/fake-agy`, `lib/ndjson-worker.mjs`, `lib/context-slice.mjs`, `lib/test-impact.mjs`
+-   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`
 -   **Edges**: `T-V14-4 -> T-V14-6`
 -   **Gate**: `node --test test/tdd-split.test.mjs test/bandit-distill.test.mjs`
 -   **Tier**: `frontier`
@@ -158,7 +158,7 @@ graph TD
 ### Ticket 5: `T-V14-5` — Hybrid In-Harness `run_workflow` Compiler & Native Overview Panel Telemetry Bridge
 
 -   **Scope**: `lib/workflow-emit.mjs`, `lib/overview-pane.mjs`, `test/workflow-emit.test.mjs`
--   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`, `test/fixtures/fake-agy`, `lib/ndjson-worker.mjs`, `lib/context-slice.mjs`, `lib/test-impact.mjs`
+-   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`
 -   **Edges**: `T-V14-5 -> T-V14-6`
 -   **Gate**: `node --test test/workflow-emit.test.mjs`
 -   **Tier**: `mid`
@@ -179,7 +179,7 @@ graph TD
 ### Ticket 6: `T-V14-6` — Wire v1.4 Hyper-Harness Engines into Runtime, Scheduler, Plan & CLI/MCP Surface
 
 -   **Scope**: `lib/agy.mjs`, `lib/prosecute.mjs`, `lib/scheduler.mjs`, `lib/scheduler-verify.mjs`, `lib/plan.mjs`, `bin/agb.mjs`, `mcp/server.mjs`, `test/v14-integration.test.mjs`
--   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`, `test/fixtures/fake-agy`, `lib/ndjson-worker.mjs`, `lib/stream-watchdog.mjs`, `lib/context-slice.mjs`, `lib/test-impact.mjs`, `lib/tdd-split.mjs`, `lib/bandit-router.mjs`, `lib/distill.mjs`, `lib/workflow-emit.mjs`, `lib/overview-pane.mjs`
+-   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`
 -   **Edges**: `T-V14-6 -> T-V14-7`
 -   **Gate**: `node --test test/v14-integration.test.mjs test/agy.test.mjs test/prosecute.test.mjs test/scheduler.test.mjs test/plan.test.mjs test/cli.test.mjs`
 -   **Tier**: `frontier`
@@ -207,7 +207,7 @@ graph TD
 ### Ticket 7: `T-V14-7` — Rebuild Bundles, Reference Docs & End-to-End Verification Gate
 
 -   **Scope**: `dist/**`, `website/env-docs.json`, `website/content/docs/**`, `website/generated/**`
--   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`, `test/fixtures/fake-agy`, `lib/**`, `bin/**`, `mcp/**`
+-   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`
 -   **Edges**: `(none)`
 -   **Gate**: `npm run build && npm --prefix website run gen && npm test`
 -   **Tier**: `cheap`
