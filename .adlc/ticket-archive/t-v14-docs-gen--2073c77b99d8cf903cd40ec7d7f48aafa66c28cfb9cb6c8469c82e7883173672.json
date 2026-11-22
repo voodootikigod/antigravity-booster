@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-22T22:55:17.143Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "fd98d64223b9b2d240f02831ed207da1c6d9de5df6a28ff212cbb84485a8cd63",
+    "ticketHash": "526cc0f8c17726e1d96148443ef3c46fdf553ef0c03222d9928703366c1a66b8",
+    "version": 1
+  },
   "body": "Run node website/scripts/gen-reference.mjs so website/generated/modules.mdx reflects newly exported sanitizeBuilderStreamOutputForFlail and arbiterPrompt symbols.",
+  "completed": true,
   "edges": [],
   "id": "T-V14-DOCS-GEN",
   "rails": [

@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-22T22:55:17.885Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "5ad011024b2d2ad559ed16d3a26925685e0c7d552ec6d69000cfaab3078c4380",
+    "ticketHash": "5ea9f1ed5cdf272c3272f75723ee57663d1aace95c7cb1938b1cc812168a7803",
+    "version": 1
+  },
   "body": "In lib/ndjson-worker.mjs _spawnDaemon(), attach error listeners to child.stdin, child.stdout, and child.stderr so an immediate child exit during child.stdin.write triggers the write callback / exit fallback rather than throwing an uncaught EPIPE stream error.",
+  "completed": true,
   "edges": [],
   "id": "T-V14-NDJSON-EPIPE",
   "rails": [
