@@ -92,6 +92,20 @@
       "description": "Set to 0 to disable warm second-strike builder resumption via agy --conversation <id> when a ticket fails its first attempt on the same model."
     },
     {
+      "name": "AGB_ROUTER_STATIC",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to bypass empirical BanditModelRouter candidate re-ranking and use static TIER_CANDIDATES order."
+    },
+    {
+      "name": "AGB_MODEL_STATS_FILE",
+      "group": "core",
+      "default": "<plugin_data>/model_stats.jsonl",
+      "bundledIgnored": false,
+      "description": "Override path for the BanditModelRouter empirical model outcome ledger."
+    },
+    {
       "name": "AGB_WORKER_BUILD_CMD",
       "group": "core",
       "default": "set by agb on builders",

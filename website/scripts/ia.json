@@ -44,6 +44,7 @@
             "validate",
             "preflight",
             "review",
+            "distill",
             "status",
             "watch",
             "doctor",

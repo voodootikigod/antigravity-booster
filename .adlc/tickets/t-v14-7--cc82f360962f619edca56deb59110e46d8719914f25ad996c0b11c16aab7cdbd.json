@@ -1,0 +1,18 @@
+{
+  "body": "## Shared Spec Context\nThis specification defines the **v1.4.0 Hyper-Tuned Harness & ADLC Accelerator** architecture for `antigravity-booster` (`agb`), evolving it from a batch subprocess wrapper (`agy --print` per strike/phase over file-glob scopes) into a live, semantically aware, harness-native ADLC execution engine tailored for Google Antigravity (`agy` $\\ge$ `1.5.13`).\n\n## Ticket T-V14-7: Rebuild Bundles, Reference Docs & End-to-End Verification Gate\n-   **Scope**: `dist/**`, `website/env-docs.json`, `website/content/docs/**`, `website/generated/**`\n-   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n-   **Edges**: `(none)`\n-   **Gate**: `npm run build && npm --prefix website run gen && npm test`\n-   **Tier**: `cheap`\n-   **Pool Hint**: `gemini`\n-   **Objectives**:\n    1.  Run `npm run build` to rebuild `dist/agb.mjs`, `dist/mcp-server.mjs`, and `dist/hooks/pre-tool-use.bundle.mjs` and verify zero external dependencies via `scripts/check-bundle-externals.mjs`.\n    2.  Register `AGB_ROUTER_STATIC` (and any new `AGB_*` environment variables introduced by v1.4 modules) in `website/env-docs.json` so `website/scripts/gen-reference.mjs`'s `ENV_TOKEN` audit passes cleanly.\n    3.  Update `website/content/docs/**` to document `agb plan --emit-workflow`, `agb distill`, Persistent NDJSON Builder Daemons, Hybrid CodeGraph Context Slicing & Caller Prosecution, Cross-Pool Adversarial TDD Split, Test-Impact Delta Gates, and Sub-Turn Stream Watchdog.\n    4.  Run `npm --prefix website run gen` to regenerate `website/generated/**` reference partials cleanly.\n-   **Acceptance Criteria**:\n    -   `npm run build && git diff --exit-code dist/ vendor/adlc/dist/` exits 0.\n    -   `npm --prefix website run gen` succeeds with zero drift and zero undocumented env-token errors.\n    -   Full `npm test` suite passes with 0 failures.",
+  "edges": [],
+  "id": "T-V14-7",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "dist/**",
+    "website/env-docs.json",
+    "website/content/docs/**",
+    "website/generated/**"
+  ],
+  "title": "Rebuild Bundles, Reference Docs & End-to-End Verification Gate"
+}

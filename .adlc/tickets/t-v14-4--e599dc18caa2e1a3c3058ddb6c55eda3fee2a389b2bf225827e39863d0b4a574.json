@@ -1,0 +1,23 @@
+{
+  "body": "## Shared Spec Context\nThis specification defines the **v1.4.0 Hyper-Tuned Harness & ADLC Accelerator** architecture for `antigravity-booster` (`agb`), evolving it from a batch subprocess wrapper (`agy --print` per strike/phase over file-glob scopes) into a live, semantically aware, harness-native ADLC execution engine tailored for Google Antigravity (`agy` $\\ge$ `1.5.13`).\n\n## Ticket T-V14-4: Cross-Pool Adversarial TDD Split, Empirical Bandit Router & Defense Distiller\n-   **Scope**: `lib/tdd-split.mjs`, `lib/bandit-router.mjs`, `lib/distill.mjs`, `test/tdd-split.test.mjs`, `test/bandit-distill.test.mjs`\n-   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n-   **Edges**: `T-V14-4 -> T-V14-6`\n-   **Gate**: `node --test test/tdd-split.test.mjs test/bandit-distill.test.mjs`\n-   **Tier**: `frontier`\n-   **Pool Hint**: `claude-gpt`\n-   **Objectives**:\n    1.  Create `lib/tdd-split.mjs` (strictly under 800 lines) implementing:\n        -   `shouldRunTddSplit(ticket, plan = {})`: returns `true` when `ticket.tdd_split === true` or (`ticket.tdd_split !== false && plan.tddSplit !== false && ticket.tier === 'frontier'`) and `ticket.scope` contains both `test/**` paths and non-test implementation paths.\n        -   `partitionTddScopes(ticket)`: partitions `ticket.scope` into `testScope` (`test/**`) and `implScope` (non-test paths), producing:\n            1.  `specAuthorSubTicket`: scoped strictly to `testScope`, with `implScope` added to `rails`, routed to the opposite quota pool via `selectOppositePoolHint(ticket.pool_hint, builderModel)`.\n            2.  `verifyRedPhaseTests(testFiles, { worktree, testCmd })`: verifies the Spec-Test Author's committed tests parse cleanly (`node --check`) and fail against unimplemented `base` (`exitCode !== 0`, anti-tautology check); if the Spec-Test Author fails or produces tautological passing tests on `base`, discards the spec-test commit and degrades cleanly to standard single-builder execution.\n            3.  `promoteTestsToBuilderRails(ticket, committedTestFiles)`: appends `committedTestFiles` to the Implementation Builder's `rails` array so `PreToolUse` and `adlc rails-guard` mechanically block the builder from weakening or deleting the spec tests.\n    2.  Create `lib/bandit-router.mjs` (strictly under 800 lines) implementing:\n        -   `BanditModelRouter`: persists empirical outcome records (`{ ts, model, role, tier, strike0Pass, hollowTestKilled, prosecutorPrecision, latencyMs }`) in `<plugin_data>/model_stats.jsonl` protected by `withLockSync` from `./pools.mjs` and bounded to `MAX_STATS_ENTRIES = 2000`.\n        -   `rankCandidates(candidates, { role = 'builder', tier = 'mid', seed = null, staticMode = process.env.AGB_ROUTER_STATIC === '1' } = {})`: returns `candidates` in original order when `staticMode` is true or no history exists, and otherwise ranks same-tier candidates using a deterministic seeded EWMA / Beta-Bernoulli score.\n    3.  Create `lib/distill.mjs` (strictly under 800 lines) implementing:\n        -   `distillRunDefenses({ repo, apply = false, maxRuleBytes = 12000 } = {})`: scans `<repo>/.adlc/manifest.jsonl` and `<repo>/.booster/` review/prosecution JSON artifacts for recurring finding fingerprints ($\\ge 2$ occurrences), stages human-reviewable defenses at `<repo>/.booster/distilled-defenses.md`, and when `apply === true`, writes compacted guidance to `<repo>/.gemini/rules/adlc-learned.md` within `maxRuleBytes`.\n    4.  Create `test/tdd-split.test.mjs` and `test/bandit-distill.test.mjs` covering frontier auto-activation, red-phase anti-tautology verification, graceful fallback on spec-author failure, rail promotion, locked JSONL stats persistence, seeded bandit ranking, and `--apply` rule compaction.\n-   **Acceptance Criteria**:\n    -   `lib/tdd-split.mjs`, `lib/bandit-router.mjs`, and `lib/distill.mjs` are each strictly under 800 lines.\n    -   `node --test test/tdd-split.test.mjs test/bandit-distill.test.mjs` passes with 0 failures.\n\n--------------------------------------------------------------------------------",
+  "edges": [
+    {
+      "to": "T-V14-6"
+    }
+  ],
+  "id": "T-V14-4",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/tdd-split.mjs",
+    "lib/bandit-router.mjs",
+    "lib/distill.mjs",
+    "test/tdd-split.test.mjs",
+    "test/bandit-distill.test.mjs"
+  ],
+  "title": "Cross-Pool Adversarial TDD Split, Empirical Bandit Router & Defense Distiller"
+}

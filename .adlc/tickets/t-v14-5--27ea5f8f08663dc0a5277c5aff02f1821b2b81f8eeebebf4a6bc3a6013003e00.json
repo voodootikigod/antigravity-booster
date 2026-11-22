@@ -1,0 +1,21 @@
+{
+  "body": "## Shared Spec Context\nThis specification defines the **v1.4.0 Hyper-Tuned Harness & ADLC Accelerator** architecture for `antigravity-booster` (`agb`), evolving it from a batch subprocess wrapper (`agy --print` per strike/phase over file-glob scopes) into a live, semantically aware, harness-native ADLC execution engine tailored for Google Antigravity (`agy` $\\ge$ `1.5.13`).\n\n## Ticket T-V14-5: Hybrid In-Harness `run_workflow` Compiler & Native Overview Panel Telemetry Bridge\n-   **Scope**: `lib/workflow-emit.mjs`, `lib/overview-pane.mjs`, `test/workflow-emit.test.mjs`\n-   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n-   **Edges**: `T-V14-5 -> T-V14-6`\n-   **Gate**: `node --test test/workflow-emit.test.mjs`\n-   **Tier**: `mid`\n-   **Pool Hint**: `gemini`\n-   **Objectives**:\n    1.  Create `lib/workflow-emit.mjs` (strictly under 800 lines) implementing:\n        -   `compilePlanToWorkflow(plan, { outPath, agbBin = 'agb' } = {})`: compiles a validated `plan.json` DAG into a deterministic Python script for `agy`'s `run_workflow` tool (`phase()`, `parallel()`, `pipeline()`, `agent(..., workspace=\"share\")`).\n        -   Serializes all ticket IDs, titles, bodies, scopes, rails, and gate commands via `JSON.stringify` into a static Python `PLAN_DATA` dictionary (never interpolating untrusted strings into Python syntax or shell commands) and invokes `subprocess.run([BOOSTER_BIN, ...], check=True)` with list arguments (`shell=False`, using Python identifier `BOOSTER_BIN` so `website/scripts/gen-reference.mjs`'s `ENV_TOKEN` scanner is not false-triggered) for lease acquisition, gate execution, cross-model prosecution, and rebase-merge. Validates generated Python syntax with `python3 -m py_compile` when `python3` is available.\n    2.  Create `lib/overview-pane.mjs` (strictly under 800 lines) implementing:\n        -   `syncOverviewPaneState(statusSnapshot, { repo, brainDir } = {})`: writes Antigravity Overview Panel (`swarm_pane`) telemetry atomically to `<repo>/.booster/overview_pane.json` and `<repo>/.booster/overview_pane.md` (and mirrors to the active brain session directory when present).\n    3.  Create `test/workflow-emit.test.mjs` verifying topological wave generation, adversarial quote/backtick/newline injection resistance in ticket metadata, `py_compile` validation, and Overview Panel file generation.\n-   **Acceptance Criteria**:\n    -   `lib/workflow-emit.mjs` and `lib/overview-pane.mjs` are each strictly under 800 lines.\n    -   `node --test test/workflow-emit.test.mjs` passes with 0 failures.\n\n--------------------------------------------------------------------------------",
+  "edges": [
+    {
+      "to": "T-V14-6"
+    }
+  ],
+  "id": "T-V14-5",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/workflow-emit.mjs",
+    "lib/overview-pane.mjs",
+    "test/workflow-emit.test.mjs"
+  ],
+  "title": "Hybrid In-Harness `run_workflow` Compiler & Native Overview Panel Telemetry Bridge"
+}

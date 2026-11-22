@@ -12,7 +12,8 @@ import { sweepToPlan } from '../lib/sweep.mjs';
 import { reviewFleet, reviewDiff, reviewPlan } from '../lib/review.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
-import { validatePlan, compilePlan } from '../lib/plan.mjs';
+import { validatePlan, compilePlan, compilePlanToWorkflow } from '../lib/plan.mjs';
+import { distillRunDefenses } from '../lib/distill.mjs';
 import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor, runInit } from '../lib/doctor.mjs';
@@ -66,7 +67,12 @@ const COMMANDS = {
     args: '<id | spec.md> [repo]',
     desc: 'compile an Antigravity brain plan or spec file into plan.json',
     extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
-    flags: '[--out <file> (output plan path)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
+    flags: '[--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
+  },
+  distill: {
+    args: '[repo]',
+    desc: 'scan run/review findings for recurring patterns and stage or apply learned ADLC defenses',
+    flags: '[--apply (write compacted rules to .gemini/rules/adlc-learned.md)] [--json (emit JSON)]'
   },
   preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart', flags: '--no-coldstart' },
   doctor: { args: '[repo]', desc: 'verify your environment and tools', flags: '[--fix (auto-repair setup)]' },
@@ -362,11 +368,12 @@ try {
       'plan',
       rest,
       new Set(['--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
-      new Set(['--out', '--max-ticket-scope'])
+      new Set(['--out', '--max-ticket-scope', '--emit-workflow'])
     );
     // The plan itself is authored in Antigravity (GUI plan mode or an agy
     // planning session) — this command only compiles that artifact.
     let out = 'plan.json';
+    let emitWorkflow = null;
     let maxTicketScope;
     const decompose = rest.includes('--decompose');
     const noFastPath = rest.includes('--no-fast-path');
@@ -377,6 +384,12 @@ try {
           process.exit(1);
         }
         out = rest[++i];
+      } else if (rest[i] === '--emit-workflow') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --emit-workflow');
+          process.exit(1);
+        }
+        emitWorkflow = rest[++i];
       } else if (rest[i] === '--max-ticket-scope') {
         if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
           console.error('agb: missing value for --max-ticket-scope');
@@ -390,7 +403,7 @@ try {
         maxTicketScope = parsedScope;
       }
     }
-    const positional = extractPositionalArgs(rest, new Set(['--out', '--max-ticket-scope']));
+    const positional = extractPositionalArgs(rest, new Set(['--out', '--max-ticket-scope', '--emit-workflow']));
     const id = positional[0];
     const repo = positional[1] ?? '.';
     if (!id || !out) {
@@ -433,6 +446,10 @@ try {
       process.exit(2);
     }
     writeFileSync(out, JSON.stringify(result.plan, null, 2) + '\n');
+    if (emitWorkflow) {
+      const wfRes = compilePlanToWorkflow(result.plan, { outPath: resolve(targetRepo, emitWorkflow) });
+      console.error(`plan: emitted workflow (${wfRes.waves.length} wave(s)) → ${wfRes.outPath}`);
+    }
     if (result.brain.sourceType === 'local-spec') {
       console.error(`plan: ${result.plan.tickets.length} ticket(s) compiled from spec '${result.brain.title}' → ${out}`);
     } else {
@@ -444,6 +461,21 @@ try {
       for (const c of causes) console.error(`  - [${c.likelihood ?? '?'}] ${c.cause}`);
     }
     console.error(`next: agb run ${out}`);
+  } else if (cmd === 'distill') {
+    rejectUnknownFlags('distill', rest, new Set(['--apply', '--json']));
+    const apply = rest.includes('--apply');
+    const json = rest.includes('--json');
+    const positional = extractPositionalArgs(rest);
+    const repo = resolve(positional[0] ?? '.');
+    const res = distillRunDefenses({ repo, apply });
+    if (json) {
+      console.log(JSON.stringify(res, null, 2));
+    } else {
+      console.log(
+        `distill: scanned=${res.scannedCount} recurring=${res.recurringCount} staged=${res.stagedPath || 'none'}${res.applied ? ` applied=${res.appliedPath} (${res.ruleBytes}B)` : ''}`
+      );
+    }
+    process.exit(0);
   } else if (cmd === 'brains') {
     for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);
   } else if (cmd === 'import-brain') {

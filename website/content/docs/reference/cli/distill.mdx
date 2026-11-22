@@ -1,0 +1,15 @@
+---
+title: "agb distill"
+description: "Scan repository review and prosecution logs for recurring finding patterns and stage or apply learned ADLC defenses."
+---
+
+`agb distill` scans `<repo>/.adlc/manifest.jsonl` and `<repo>/.booster/` review/prosecution artifacts for recurring finding fingerprints ($\ge 2$ occurrences across tickets or rounds), stages human-reviewable defenses at `<repo>/.booster/distilled-defenses.md`, and optionally compacts them into `<repo>/.gemini/rules/adlc-learned.md`.
+
+## Synopsis
+
+<include>../../../../generated/cli-distill.mdx</include>
+
+## Flags
+
+- `--apply` writes compacted guidance to `<repo>/.gemini/rules/adlc-learned.md`, bounded strictly under `12,000` bytes (`agy 1.5.10` rule-size budget). Without `--apply`, proposals are only staged in `.booster/distilled-defenses.md`.
+- `--json` emits the distillation report as JSON (`scannedCount`, `recurringCount`, `recurring`, `stagedPath`, `applied`, `appliedPath`, `ruleBytes`).

@@ -63,9 +63,22 @@ var TOOLS = [
         noFastPath: { type: "boolean", description: "Disable zero-LLM structured Markdown fast-path and force LLM conversion" },
         noColdstart: { type: "boolean", description: "Skip coldstart plan gate" },
         noParallax: { type: "boolean", description: "Skip parallax spec ambiguity check" },
-        noPremortem: { type: "boolean", description: "Skip premortem advisory risk gate" }
+        noPremortem: { type: "boolean", description: "Skip premortem advisory risk gate" },
+        emitWorkflow: { type: "string", description: "Optional output path for compiled run_workflow Python script" }
       },
       required: ["spec", "repo"]
+    }
+  },
+  {
+    name: "agb_distill",
+    description: "Scan repository review and prosecution logs for recurring finding patterns and stage or apply learned ADLC defenses",
+    inputSchema: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "Path to target repository" },
+        apply: { type: "boolean", description: "Write compacted defenses to .gemini/rules/adlc-learned.md" }
+      },
+      required: ["repo"]
     }
   },
   {
@@ -314,6 +327,28 @@ async function handleToolCall(id, name, args) {
     if (args.noColdstart) cliArgs.push("--no-coldstart");
     if (args.noParallax) cliArgs.push("--no-parallax");
     if (args.noPremortem) cliArgs.push("--no-premortem");
+    if (args.emitWorkflow !== void 0) {
+      const wfCheck = requireNonFlagString(args, "emitWorkflow");
+      if (!wfCheck.ok) {
+        sendError(id, -32602, wfCheck.error);
+        return;
+      }
+      cliArgs.push("--emit-workflow", resolve(targetCwd, wfCheck.value));
+    }
+  } else if (name === "agb_distill") {
+    const repoCheck = requireNonFlagString(args, "repo");
+    if (!repoCheck.ok) {
+      sendError(id, -32602, repoCheck.error);
+      return;
+    }
+    targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, "repo", repoCheck.value);
+    if (!dirCheck.ok) {
+      sendError(id, -32602, dirCheck.error);
+      return;
+    }
+    cliArgs.push("distill", targetCwd, "--json");
+    if (args.apply) cliArgs.push("--apply");
   } else if (name === "agb_run") {
     if (args.concurrency !== void 0) {
       sendResult(id, {
