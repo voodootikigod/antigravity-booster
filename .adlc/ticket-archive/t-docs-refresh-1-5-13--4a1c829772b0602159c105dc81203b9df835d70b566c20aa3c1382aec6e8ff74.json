@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-22T14:05:49.025Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "5b4fde2da4caeae7d2233def0746452dbe09fc7e0871ef29f9cbde0a59726dfa",
+    "ticketHash": "8e23fd12a94b45d6f368141b61a1aec374a9c9485c2cffaa3ea57613df6bbc1f",
+    "version": 1
+  },
   "body": "After t-models-catalog-1-5-13 and t-doctor-and-modernize-1-5-13 land, regenerate website/generated/** using the repo docs generator script and update any agy 1.5.9 / 22-model catalog references in website/content/docs/** to reflect the 27-slug agy 1.5.13 catalog (including Gemini 4 Neon and Orchestrator Neon). Acceptance: docs generator runs cleanly with zero diff drift and `npm test` remains green.",
+  "completed": true,
   "edges": [],
   "id": "t-docs-refresh-1-5-13",
   "rails": [
