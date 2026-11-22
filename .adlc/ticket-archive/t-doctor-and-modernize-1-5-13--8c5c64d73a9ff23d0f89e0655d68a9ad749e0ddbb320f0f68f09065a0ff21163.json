@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-22T14:05:48.630Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "dc9c989cc4ae92c39c7223affa49c55098b35ed0077bc15865146a6dee42aae9",
+    "ticketHash": "18acc7e24c25e7f7f4f6659e4731a8719d276acd0e023ba4c0a9f7b775a1d0d9",
+    "version": 1
+  },
   "body": "Update lib/doctor.mjs RECOMMENDED_AGY_VERSION from '1.5.9' to '1.5.13' (if approved by owner; otherwise retain '1.5.9' and update only audit.mjs) and align test/doctor.test.mjs version-band assertions accordingly. Update maintainer-skills/modernize/scripts/audit.mjs Stage 1 candidateModels to include the 5 new agy 1.5.13 Neon slugs (gemini-4-neon-{low,medium,high,xhigh}, gemini-pro-orchestrator-neon) so Stage 1 verifies all 27 live models, run `npm run skills:sync` to keep .claude/skills/ and .agents/skills/ mirrors in sync, update test/modernize-skill.test.mjs to target agy 1.5.13 and docs/research/roadmap-agy-1.5.13-adlc-1.13.0.md, and run `npm run build` so dist/ has zero drift. Acceptance: `npm run build && npm run skills:check && npm test` green; `node maintainer-skills/modernize/scripts/audit.mjs 1.13.0 \"\" 1.5.13` passes all 5 stages.",
+  "completed": true,
   "edges": [
     {
       "to": "t-docs-refresh-1-5-13"
