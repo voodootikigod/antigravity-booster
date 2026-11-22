@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-22T22:55:16.416Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "468c824299f3b1cf806100c26399fd64fb59673a8c1287b6380d40fbc8908f61",
+    "ticketHash": "2b055fd9046d981614fc69723bababc87c5e2d826eb5380848b297dda0a1ca0a",
+    "version": 1
+  },
   "body": "Wire v1.4 engines into runPlan(), filter stream-json NDJSON in checkFlailDetector(), allow codegraph_explore in READ_ONLY_TOOLS and agb_distill in BOOSTER_MCP_TOOLS, compact arbiterPrompt evidence with 8m timeout, and add v14HyperHarness evals.",
+  "completed": true,
   "edges": [],
   "id": "T-V14-DOGFOOD-HARDENING",
   "rails": [
