@@ -1,0 +1,16 @@
+{
+  "body": "After t-models-catalog-1-5-13 and t-doctor-and-modernize-1-5-13 land, regenerate website/generated/** using the repo docs generator script and update any agy 1.5.9 / 22-model catalog references in website/content/docs/** to reflect the 27-slug agy 1.5.13 catalog (including Gemini 4 Neon and Orchestrator Neon). Acceptance: docs generator runs cleanly with zero diff drift and `npm test` remains green.",
+  "edges": [],
+  "id": "t-docs-refresh-1-5-13",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "website/content/docs/**",
+    "website/generated/**"
+  ],
+  "title": "Regenerate website docs and reference pages for agy 1.5.13 catalog"
+}

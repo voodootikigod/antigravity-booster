@@ -188,12 +188,14 @@ describe('models-registry: single source of truth', () => {
     assert.deepEqual(pools.prosecutorsFor('claude-sonnet-5-5-medium'), [
       'gemini-4-argon-high',
       'gemini-4-carbon-high',
+      'gemini-4-neon-high',
       'gemini-3.8-flash-high',
       'gpt-oss-120b-medium',
     ]);
     assert.deepEqual(pools.prosecutorsFor('gpt-oss-120b-medium'), [
       'gemini-4-argon-high',
       'gemini-4-carbon-high',
+      'gemini-4-neon-high',
       'gemini-3.8-flash-high',
       'claude-sonnet-5-5-medium',
     ]);

@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-21T00:34:00.150Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "839a0245daecbc57cfa4552d96dad16697ad6e503dd350fd5f8f3667c76ed59b",
+    "ticketHash": "c6852f585755f047de6c3bdb643a28a751870f89715ac58e4d084d6769699d1d",
+    "version": 1
+  },
   "body": "Remediate post-PR-159 cross-model adversarial review findings:\n1. bin/hook-runner.sh: resolve SYS_ID (/usr/bin/id or /bin/id) and SYS_FIND (/usr/bin/find or /bin/find) by absolute path so PATH manipulation cannot spoof owned_by_euid() or CUR_UID; resolve REAL_PASSWD_HOME via absolute system getent/dscl/cut/awk and prepend /usr/bin:/bin to PATH when RUNNER_ROOT resides inside REAL_PASSWD_HOME/.gemini/config/plugins/*; update the fallback active-ticket grep to recognize \"completed\": true alongside terminal status values.\n2. test/hook-runner.test.mjs: verify PATH-shadowed find and id cannot spoof owned_by_euid() or CUR_UID, verify owned_by_euid() rejects foreign-UID system paths (/etc when euid != 0), and verify fallback active-ticket detection treats completed:true shards as inactive.\n3. lib/agy.mjs + dist/*: document why macOS Seatbelt (sandbox_init nested sandbox restriction) omits inner agy --sandbox alongside Linux bwrap, and rebuild dist bundles.",
   "completed": true,
   "edges": [],

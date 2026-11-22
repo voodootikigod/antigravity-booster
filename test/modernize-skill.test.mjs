@@ -71,7 +71,7 @@ test('Modernize Skill: SKILL.md frontmatter and structure conformance', () => {
   assert.match(content, /audit\.mjs/);
 });
 
-const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 'roadmap-agy-1.5.9-adlc-1.13.0.md');
+const AGY_RELEASE_FIXTURE = join(import.meta.dirname, '..', 'docs', 'research', 'roadmap-agy-1.5.13-adlc-1.13.0.md');
 const ADLC_CHANGELOG_FIXTURE = join(import.meta.dirname, 'fixtures', 'adlc-changelog-fixture-1.11.1.json');
 const REPO_WITH_NM = (() => {
   let d = join(import.meta.dirname, '..');
@@ -100,7 +100,7 @@ function makeAuditRepoCopy() {
 // throwaway key) with the registry digests of the published @adlc/cli@1.13.0
 // tarball and the sha256 of the pinned changelog fixture, never the real store.
 const AUDIT_ADLC_TARGET = '1.13.0';
-const AUDIT_AGY_TARGET = '1.5.9';
+const AUDIT_AGY_TARGET = '1.5.13';
 const AUDIT_TEST_KEY = 'agb-test-only-admin-key';
 function auditTrustEnv() {
   const home = makeTempDir('agb-mod-trust-home-');
@@ -137,7 +137,7 @@ test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
   assert.match(out, /Codeweight audit: lib\/ total \d+ lines \([\d.]+ KB\)\. Found 0 pruning candidate\(s\)\./);
   assert.match(out, /Stage 3 \(Subsystem Delta Matrix\):\s*\[PASS\]/);
   assert.match(out, /Pillar 6: Deprecation & Codeweight Pruning: Codebase clean of deprecated models and dead shims/);
-  assert.match(out, /Pillar 1: Model Catalog & Dual-Pool Quota Routing: Verified 22 models aligned with live runtime/, 'the registry in lib/models.mjs matches the live catalog, so nothing is reported as new');
+  assert.match(out, /Pillar 1: Model Catalog & Dual-Pool Quota Routing: Verified 27 models aligned with live runtime/, 'the registry in lib/models.mjs matches the live catalog, so nothing is reported as new');
   assert.match(out, /Stage 4 \(Roadmap DAG Validation\):\s*\[PASS\]/);
   assert.match(out, /Stage 5 \(Provenance & Release Ledger\):\s*\[PASS\]/);
   assert.match(out, /All checks PASSED/);

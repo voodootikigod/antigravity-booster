@@ -486,7 +486,8 @@ async function runStage1LiveProbe(targetAgyVer, targetAdlcVer) {
     'gemini-4-argon-high', 'gemini-4-argon-medium', 'gemini-4-argon-low',
     'gemini-4-carbon-high', 'gemini-4-carbon-medium', 'gemini-4-carbon-low',
     'gemini-4-hydrogen-xhigh', 'gemini-4-hydrogen-high', 'gemini-4-hydrogen-medium', 'gemini-4-hydrogen-low',
-    'gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon',
+    'gemini-4-neon-xhigh', 'gemini-4-neon-high', 'gemini-4-neon-medium', 'gemini-4-neon-low',
+    'gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon', 'gemini-pro-orchestrator-neon',
     'claude-sonnet-5-5-high', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-low',
     'claude-opus-5-5-high', 'claude-opus-5-5-medium', 'claude-opus-5-5-low',
     'gpt-oss-120b-medium'

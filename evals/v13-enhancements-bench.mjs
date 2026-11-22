@@ -1209,7 +1209,7 @@ export async function runLiveAgy159PrintAndSandboxBenchmark() {
     validPlanBool.length === 0 &&
     invalidPlanBool.some((e) => /disableOrchestrator/.test(e)) &&
     BRAIN_PLAN_SCHEMA?.properties?.disableOrchestrator?.type === 'boolean' &&
-    RECOMMENDED_AGY_VERSION === '1.5.9' &&
+    RECOMMENDED_AGY_VERSION === '1.5.13' &&
     ALL_AGY_ERROR_KINDS.length === 17 &&
     FAILURE_FINISHED_REASONS.size === 9;
 

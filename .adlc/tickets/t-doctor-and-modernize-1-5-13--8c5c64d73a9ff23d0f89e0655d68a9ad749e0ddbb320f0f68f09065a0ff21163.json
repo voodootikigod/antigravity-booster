@@ -1,0 +1,25 @@
+{
+  "body": "Update lib/doctor.mjs RECOMMENDED_AGY_VERSION from '1.5.9' to '1.5.13' (if approved by owner; otherwise retain '1.5.9' and update only audit.mjs) and align test/doctor.test.mjs version-band assertions accordingly. Update maintainer-skills/modernize/scripts/audit.mjs Stage 1 candidateModels to include the 5 new agy 1.5.13 Neon slugs (gemini-4-neon-{low,medium,high,xhigh}, gemini-pro-orchestrator-neon) so Stage 1 verifies all 27 live models, run `npm run skills:sync` to keep .claude/skills/ and .agents/skills/ mirrors in sync, update test/modernize-skill.test.mjs to target agy 1.5.13 and docs/research/roadmap-agy-1.5.13-adlc-1.13.0.md, and run `npm run build` so dist/ has zero drift. Acceptance: `npm run build && npm run skills:check && npm test` green; `node maintainer-skills/modernize/scripts/audit.mjs 1.13.0 \"\" 1.5.13` passes all 5 stages.",
+  "edges": [
+    {
+      "to": "t-docs-refresh-1-5-13"
+    }
+  ],
+  "id": "t-doctor-and-modernize-1-5-13",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/doctor.mjs",
+    "maintainer-skills/modernize/scripts/audit.mjs",
+    ".claude/skills/modernize/**",
+    ".agents/skills/modernize/**",
+    "dist/**",
+    "test/doctor.test.mjs",
+    "test/modernize-skill.test.mjs"
+  ],
+  "title": "Update RECOMMENDED_AGY_VERSION and modernize audit script for agy 1.5.13"
+}
