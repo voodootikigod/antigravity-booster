@@ -20,6 +20,9 @@ import {
   syncOverviewPaneState,
 } from '../lib/scheduler.mjs';
 import { compilePlanToWorkflow } from '../lib/plan.mjs';
+import { evaluatePayload } from '../hooks/policy/evaluate.mjs';
+import { writeAdlcTickets } from '../lib/adlc-bridge.mjs';
+import { arbiterPrompt } from '../lib/review.mjs';
 
 const FAKE_AGY = join(process.cwd(), 'test', 'fixtures', 'fake-agy');
 const AGB_BIN = join(process.cwd(), 'bin', 'agb.mjs');
@@ -190,5 +193,76 @@ test('v1.4 integration: CLI `agb distill --json` and `compilePlanToWorkflow` exe
     assert.ok(existsSync(wfPath));
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('v1.4 integration: PreToolUse hook allows in-workspace CodeGraph explore tools and agb_distill, and arbiterPrompt compacts oversized payloads', () => {
+  const ws = mkdtempSync(join(tmpdir(), 'agb-v14-hook-'));
+  try {
+    mkdirSync(join(ws, '.git'), { recursive: true });
+    writeAdlcTickets(ws, [
+      { id: 'T-V14-1', title: 'Test ticket', body: 'Test', scope: ['lib/**'], rails: ['lib/lock.mjs'] },
+    ]);
+    for (const toolName of [
+      'codegraph_explore',
+      'mcp_codegraph_codegraph_explore',
+      'mcp__codegraph__codegraph_explore',
+    ]) {
+      const allowed = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: toolName,
+            args: { projectPath: ws, query: 'BanditModelRouter' },
+          },
+        },
+        { env: { AGB_WORKER_TICKET: 'T-V14-1' } }
+      );
+      assert.equal(allowed.decision, 'pass', `${toolName} inside workspace must be allowed`);
+
+      const denied = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: toolName,
+            args: {
+              projectPath: join(ws, '.config', 'antigravity-booster'),
+              query: 'secret',
+            },
+          },
+        },
+        { home: ws, env: { AGB_WORKER_TICKET: 'T-V14-1' } }
+      );
+      assert.equal(denied.decision, 'deny', `${toolName} on protected booster data root must be denied`);
+    }
+
+    const distillRes = evaluatePayload(
+      {
+        workspacePaths: [ws],
+        toolCall: {
+          name: 'mcp__agb__agb_distill',
+          args: { repo: ws },
+        },
+      },
+      { env: {} }
+    );
+    assert.equal(distillRes.decision, 'pass');
+
+    const hugeContext = 'A'.repeat(25000);
+    const hugeFindings = Array.from({ length: 70 }, (_, i) => ({
+      id: `fp-${i}`,
+      lens: 'correctness',
+      severity: 'high',
+      file: 'lib/a.mjs',
+      line: i + 1,
+      claim: 'C'.repeat(800),
+      evidence: 'E'.repeat(800),
+    }));
+    const prompt = arbiterPrompt(hugeFindings, { targetType: 'plan', context: hugeContext });
+    assert.ok(prompt.includes('...(truncated)'), 'oversized context must be compacted');
+    assert.ok(!prompt.includes('fp-65'), 'findings list must be capped at 60 items');
+    assert.ok(prompt.length < 90000, `compacted prompt length (${prompt.length}) must stay bounded`);
+  } finally {
+    rmSync(ws, { recursive: true, force: true });
   }
 });

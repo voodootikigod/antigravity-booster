@@ -2104,7 +2104,10 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "list_permissions",
   "search_in_file",
   "wait",
-  "wait_5_seconds"
+  "wait_5_seconds",
+  "codegraph_explore",
+  "mcp_codegraph_codegraph_explore",
+  "mcp__codegraph__codegraph_explore"
 ]);
 var ORCHESTRATION_TOOLS = /* @__PURE__ */ new Set([
   "invoke_subagent",
@@ -2147,7 +2150,8 @@ var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
   "agb_status",
   "agb_doctor",
   "agb_init",
-  "agb_review"
+  "agb_review",
+  "agb_distill"
 ]);
 var PATH_MUTATING_TOOLS = /* @__PURE__ */ new Set([
   "run_command",
@@ -2190,7 +2194,10 @@ var READ_TOOL_PATH_SCHEMAS = {
   find_by_name: ["SearchPath", "DirectoryPath", "path", "dir"],
   list_dir: ["DirectoryPath", "DirAbsolutePath", "AbsolutePath", "path", "dir"],
   list_permissions: ["paths", "path"],
-  search_in_file: ["paths", "path", "DirectoryPath", "SearchPath"]
+  search_in_file: ["paths", "path", "DirectoryPath", "SearchPath"],
+  codegraph_explore: ["projectPath", "path", "DirectoryPath"],
+  mcp_codegraph_codegraph_explore: ["projectPath", "path", "DirectoryPath"],
+  mcp__codegraph__codegraph_explore: ["projectPath", "path", "DirectoryPath"]
 };
 var REQUIRED_READ_PATH_KEYS = {
   view_file: ["absolutepath", "filepath", "path"],
