@@ -383,14 +383,15 @@ test('runHollowTest: only substitutes fastHollowTest for compatible Node test co
 });
 
 test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GATES=0 and fails closed when unavailable', async () => {
-  const worktree = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-wt-'));
-  const state = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-state-'));
-  const binDir = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-bin-'));
-  const emptyBinDir = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-empty-'));
-  const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-prosecute-ht-sbx-')));
+  const worktree = mkdtempSync(join(tmpdir(), 'agb-prosecute-wt-'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-prosecute-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-bin-'));
+  const emptyBinDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-empty-'));
+  const isolatedTmp = mkdtempSync(join(tmpdir(), 'agb-prosecute-ht-tmp-'));
+  const tmpEnv = { TMPDIR: isolatedTmp, TMP: isolatedTmp, TEMP: isolatedTmp };
   try {
     // 1. Missing worktree fails closed when sandboxing is enabled
-    await withFakes({ AGB_SANDBOX_GATES: undefined, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+    await withFakes({ ...tmpEnv, AGB_SANDBOX_GATES: undefined, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
       const noWt = await runHollowTest({ testCmd: 'npm test' });
       assert.equal(noWt.ok, false);
       assert.match(noWt.error, /gate sandbox requires a worktree path/);
@@ -398,7 +399,7 @@ test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GAT
 
     if (process.platform === 'linux') {
       // 2. Fails closed when bwrap is unavailable on PATH and AGB_SANDBOX_GATES !== '0'
-      await withFakes({ AGB_SANDBOX_GATES: undefined, PATH: emptyBinDir, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+      await withFakes({ ...tmpEnv, AGB_SANDBOX_GATES: undefined, PATH: emptyBinDir, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
         const failClosed = await runHollowTest({ worktree, testCmd: 'npm test' });
         assert.equal(failClosed.ok, false);
         assert.match(failClosed.error, /gate sandbox unavailable/);
@@ -423,6 +424,7 @@ test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GAT
 
       await withFakes(
         {
+          ...tmpEnv,
           AGB_SANDBOX_GATES: undefined,
           PATH: `${binDir}:${process.env.PATH}`,
           FAKE_HOLLOW_TEST_MODE: 'clean',
@@ -438,15 +440,17 @@ test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GAT
 
       const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
       assert.match(htLog, /^test-cmd='?bwrap'? .*--unshare-net.*npm test.* base=main/);
+      assert.ok(htLog.includes(isolatedTmp), 'sandbox temp dir must be created inside isolated TMPDIR');
     }
 
-    const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-prosecute-ht-sbx-') && !beforeSbxDirs.has(n));
-    assert.deepEqual(afterSbxDirs, [], 'sandbox temp dirs must be cleaned up');
+    const leakedSbxDirs = readdirSync(isolatedTmp).filter((n) => n.startsWith('agb-prosecute-ht-sbx-'));
+    assert.deepEqual(leakedSbxDirs, [], 'sandbox temp dirs must be cleaned up');
   } finally {
     rmSync(worktree, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
     rmSync(emptyBinDir, { recursive: true, force: true });
+    rmSync(isolatedTmp, { recursive: true, force: true });
   }
 });
 

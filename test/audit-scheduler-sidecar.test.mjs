@@ -250,7 +250,7 @@ test('scheduler: Pass 2 hollow-test runs sandboxed when AGB_SANDBOX_GATES !== "0
   const repo = makeTestRepo();
   const state = mkdtempSync(join(tmpdir(), 'agb-audit-ht-state-'));
   const binDir = mkdtempSync(join(tmpdir(), 'agb-audit-ht-bin-'));
-  const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-')));
+  const isolatedTmp = mkdtempSync(join(tmpdir(), 'agb-audit-ht-tmp-'));
   const bwrapLog = join(state, 'bwrap-invocations.log');
   try {
     if (process.platform === 'linux') {
@@ -265,6 +265,9 @@ test('scheduler: Pass 2 hollow-test runs sandboxed when AGB_SANDBOX_GATES !== "0
         FAKE_BUILDER_MODE: 'mod-test',
         FAKE_STATE_DIR: state,
         AGB_SANDBOX_GATES: undefined,
+        TMPDIR: isolatedTmp,
+        TMP: isolatedTmp,
+        TEMP: isolatedTmp,
         PATH: `${binDir}:${process.env.PATH}`,
       },
       () => runPlan({
@@ -280,19 +283,22 @@ test('scheduler: Pass 2 hollow-test runs sandboxed when AGB_SANDBOX_GATES !== "0
     const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
     if (process.platform === 'linux') {
       assert.match(htLog, /test-cmd='?bwrap'? .*--unshare-net.*agb-ht-sbx-.*node test\/sample\.test\.js/);
+      assert.ok(htLog.includes(isolatedTmp), 'sandbox temp dir must be created inside isolated TMPDIR');
     } else if (process.platform === 'darwin') {
       assert.match(htLog, /test-cmd='?sandbox-exec'? .*agb-ht-sbx-.*node test\/sample\.test\.js/);
+      assert.ok(htLog.includes(isolatedTmp), 'sandbox temp dir must be created inside isolated TMPDIR');
     } else {
       assert.match(htLog, /node test\/sample\.test\.js/);
     }
 
-    // Verify no agb-ht-sbx-* temp directories were leaked
-    const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-') && !beforeSbxDirs.has(n));
-    assert.deepEqual(afterSbxDirs, [], 'hollow-test sandbox temp dir must be cleaned up');
+    // Verify no agb-ht-sbx-* temp directories were leaked inside the isolated temp root
+    const leakedSbxDirs = readdirSync(isolatedTmp).filter((n) => n.startsWith('agb-ht-sbx-'));
+    assert.deepEqual(leakedSbxDirs, [], 'hollow-test sandbox temp dir must be cleaned up');
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
+    rmSync(isolatedTmp, { recursive: true, force: true });
   }
 });
 
@@ -306,7 +312,7 @@ test('scheduler: Pass 2 hollow-test fails closed when OS sandbox is unavailable 
   const state = mkdtempSync(join(tmpdir(), 'agb-audit-ht-fc-state-'));
   const binDir = mkdtempSync(join(tmpdir(), 'agb-audit-ht-fc-bin-'));
   const shimDir = mkdtempSync(join(tmpdir(), 'agb-audit-ht-shim-'));
-  const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-')));
+  const isolatedTmp = mkdtempSync(join(tmpdir(), 'agb-audit-ht-fc-tmp-'));
   try {
     const countFile = join(state, 'bwrap-count');
     // Builder gating (1) + merge Pass 1 (2) + merge Pass 2 (3) invoke bwrap with /bin/sh;
@@ -336,6 +342,9 @@ test('scheduler: Pass 2 hollow-test fails closed when OS sandbox is unavailable 
         FAKE_BUILDER_MODE: 'mod-test',
         FAKE_STATE_DIR: state,
         AGB_SANDBOX_GATES: undefined,
+        TMPDIR: isolatedTmp,
+        TMP: isolatedTmp,
+        TEMP: isolatedTmp,
         PATH: `${binDir}:${shimDir}`,
       },
       () => runPlan({
@@ -350,13 +359,14 @@ test('scheduler: Pass 2 hollow-test fails closed when OS sandbox is unavailable 
     const headAfter = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
     assert.equal(headAfter, headBefore, 'HEAD must remain unchanged on fail-closed rollback');
 
-    // Verify sandbox temp dir is cleaned up even on fail-closed error
-    const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-') && !beforeSbxDirs.has(n));
-    assert.deepEqual(afterSbxDirs, [], 'hollow-test sandbox temp dir must be cleaned up on failure');
+    // Verify sandbox temp dir is cleaned up inside isolated TMPDIR even on fail-closed error
+    const leakedSbxDirs = readdirSync(isolatedTmp).filter((n) => n.startsWith('agb-ht-sbx-'));
+    assert.deepEqual(leakedSbxDirs, [], 'hollow-test sandbox temp dir must be cleaned up on failure');
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
     rmSync(shimDir, { recursive: true, force: true });
+    rmSync(isolatedTmp, { recursive: true, force: true });
   }
 });
