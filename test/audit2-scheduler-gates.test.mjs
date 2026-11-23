@@ -234,8 +234,8 @@ test('scheduler: Pass 2 wraps hollow-test --test-cmd inside OS sandbox so adlc c
   const repo = makeTestRepo('agb-audit2-ht-');
   const state = mkdtempSync(join(tmpdir(), 'agb-audit2-ht-state-'));
   const binDir = mkdtempSync(join(tmpdir(), 'agb-audit2-ht-bin-'));
+  const isolatedTmp = mkdtempSync(join(tmpdir(), 'agb-audit2-ht-tmp-'));
   const bwrapLog = join(state, 'bwrap.log');
-  const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-')));
   try {
     makeLoggingFakeBwrap(binDir, bwrapLog);
     const report = await withEnv(
@@ -246,6 +246,9 @@ test('scheduler: Pass 2 wraps hollow-test --test-cmd inside OS sandbox so adlc c
         FAKE_BUILDER_MODE: 'mod-test',
         FAKE_STATE_DIR: state,
         AGB_SANDBOX_GATES: undefined,
+        TMPDIR: isolatedTmp,
+        TMP: isolatedTmp,
+        TEMP: isolatedTmp,
         PATH: `${binDir}:${process.env.PATH}`,
       },
       () => runPlan({
@@ -259,13 +262,15 @@ test('scheduler: Pass 2 wraps hollow-test --test-cmd inside OS sandbox so adlc c
     // Ensure hollow-test received the sandbox-wrapped test command (adlc itself stays outside bwrap so gitDir inflight record works)
     const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
     assert.match(htLog, /^test-cmd='?bwrap'? .*--unshare-net.*node test\/sample\.test\.js.* base=/);
+    assert.ok(htLog.includes(isolatedTmp), 'sandbox temp dir must be created inside isolated TMPDIR');
 
-    const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-') && !beforeSbxDirs.has(n));
-    assert.deepEqual(afterSbxDirs, []);
+    const leakedSbxDirs = readdirSync(isolatedTmp).filter((n) => n.startsWith('agb-ht-sbx-'));
+    assert.deepEqual(leakedSbxDirs, []);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
+    rmSync(isolatedTmp, { recursive: true, force: true });
   }
 });
 
