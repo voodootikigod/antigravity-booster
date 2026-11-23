@@ -9,7 +9,15 @@ export const READ_ONLY_TOOLS = new Set([
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',
   'find_by_name',
   'list_dir', 'list_permissions', 'search_in_file', 'wait', 'wait_5_seconds',
-  'codegraph_explore', 'mcp_codegraph_codegraph_explore', 'mcp__codegraph__codegraph_explore',
+]);
+
+// CodeGraph MCP exploration tools: permitted interactively for in-workspace paths
+// outside boosterDataRoots; denied in headless/read-only worker sessions unless
+// AGB_ALLOW_CODEGRAPH_MCP=1.
+export const CODEGRAPH_READ_TOOLS = new Set([
+  'codegraph_explore',
+  'mcp_codegraph_codegraph_explore',
+  'mcp__codegraph__codegraph_explore',
 ]);
 
 export const ORCHESTRATION_TOOLS = new Set([

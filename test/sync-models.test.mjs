@@ -57,10 +57,22 @@ test('syncModels --offline --write writes skills/adversarial-review/references/m
   }
 });
 
-test('checkModelCatalog honors AGB_SYNC_MODELS_OFFLINE=1', async () => {
+test('checkModelCatalog honors AGB_SYNC_MODELS_OFFLINE=1 with explicit offline/info diagnostic', async () => {
   const res = await checkModelCatalog({
     env: { ...process.env, AGB_SYNC_MODELS_OFFLINE: '1' },
   });
-  assert.equal(res.level, 'pass');
-  assert.match(res.detail, /models match/);
+  assert.equal(res.level, 'info');
+  assert.match(res.detail, /offline/i);
+  assert.match(res.detail, /skipped/i);
+  assert.doesNotMatch(res.detail, /models match/);
+  assert.match(res.fix, /AGB_SYNC_MODELS_OFFLINE/);
+
+  // Also honors AGB_SYNC_MODELS_OFFLINE=1 even when a modelsPromise is supplied.
+  const withPromise = await checkModelCatalog({
+    env: { ...process.env, AGB_SYNC_MODELS_OFFLINE: '1' },
+    modelsPromise: Promise.resolve('gemini-9-unknown-high\tGemini 9 Unknown (High)\n'),
+  });
+  assert.equal(withPromise.level, 'info');
+  assert.match(withPromise.detail, /offline/i);
+  assert.doesNotMatch(withPromise.detail, /models match/);
 });

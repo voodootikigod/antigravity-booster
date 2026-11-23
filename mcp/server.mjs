@@ -106,7 +106,12 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        plan: { type: 'string', description: 'Path to plan.json file' }
+        plan: { type: 'string', description: 'Path to plan.json file' },
+        concurrency: {
+          type: 'integer',
+          minimum: 1,
+          description: 'Optional maximum concurrent workers cap (-c <n>)'
+        }
       },
       required: ['plan']
     }
@@ -354,22 +359,24 @@ async function handleToolCall(id, name, args) {
     cliArgs.push('distill', targetCwd, '--json');
     if (args.apply) cliArgs.push('--apply');
   } else if (name === 'agb_run') {
-    // `agb run` has no --concurrency flag (caps come from plan.json), so an
-    // explicit value would be silently ignored — reject it instead.
-    if (args.concurrency !== undefined) {
-      sendResult(id, {
-        content: [{ type: 'text', text: "agb_run: unsupported parameter 'concurrency' — agb run has no concurrency flag; set caps in plan.json instead" }],
-        isError: true
-      });
-      return;
-    }
     const planCheck = requireNonFlagString(args, 'plan');
     if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
+    let concurrency;
+    if (args.concurrency !== undefined) {
+      if (typeof args.concurrency !== 'number' || !Number.isInteger(args.concurrency) || args.concurrency < 1) {
+        sendError(id, -32602, 'Invalid concurrency: expected integer >= 1');
+        return;
+      }
+      concurrency = args.concurrency;
+    }
     const absPlan = resolve(planCheck.value);
     targetCwd = dirname(absPlan);
     const dirCheck = validateDirectory(targetCwd, 'plan', planCheck.value);
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('run', absPlan);
+    if (concurrency !== undefined) {
+      cliArgs.push('-c', String(concurrency));
+    }
   } else if (name === 'agb_preflight') {
     const planCheck = requireNonFlagString(args, 'plan');
     if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }

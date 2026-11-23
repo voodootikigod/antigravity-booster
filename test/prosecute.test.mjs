@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,16 +10,36 @@ import { prosecute, runHollowTest, blockingFindings } from '../lib/prosecute.mjs
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
 
-const FAKE_ENV_KEYS = ['AGB_AGY_BIN', 'AGB_ADLC_BIN', 'AGB_ALLOW_CUSTOM_ADLC_CLI', 'FAKE_PROSECUTOR_VERDICT', 'FAKE_HOLLOW_TEST_MODE'];
+const FAKE_ENV_KEYS = [
+  'AGB_AGY_BIN',
+  'AGB_ADLC_BIN',
+  'AGB_ALLOW_CUSTOM_ADLC_CLI',
+  'AGB_SANDBOX_GATES',
+  'FAKE_PROSECUTOR_VERDICT',
+  'FAKE_HOLLOW_TEST_MODE',
+  'FAKE_STATE_DIR',
+];
 
 function withFakes(env, fn) {
+  const prev = {};
+  const keys = new Set([...FAKE_ENV_KEYS, ...Object.keys(env)]);
+  for (const k of keys) prev[k] = process.env[k];
   process.env.AGB_AGY_BIN = FAKE_AGY;
   process.env.AGB_ADLC_BIN = FAKE_ADLC;
   process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = '1';
-  for (const [k, v] of Object.entries(env)) process.env[k] = v;
+  process.env.AGB_SANDBOX_GATES = '0';
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
   return Promise.resolve()
     .then(fn)
-    .finally(() => { for (const k of FAKE_ENV_KEYS) delete process.env[k]; });
+    .finally(() => {
+      for (const k of keys) {
+        if (prev[k] === undefined) delete process.env[k];
+        else process.env[k] = prev[k];
+      }
+    });
 }
 
 // --- runHollowTest ---
@@ -248,7 +268,6 @@ test('prosecute: forwards adlcBin to runHollowTest (#122)', async () => {
 });
 
 test('prosecute: normalizes verdict to ship when model returns block with only low/medium findings and no hollow-test survivors', async () => {
-  const { writeFileSync } = await import('node:fs');
   const dir = mkdtempSync(join(tmpdir(), 'agb-prosecute-lowblock-'));
   const customAgy = join(dir, 'agy');
   writeFileSync(
@@ -268,6 +287,166 @@ test('prosecute: normalizes verdict to ship when model returns block with only l
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('blockingFindings and prosecute: normalize mixed-case severities ("HIGH", "Critical") so they block', async () => {
+  const mixed = [
+    { severity: 'HIGH', claim: 'uppercase high' },
+    { severity: 'Critical', claim: 'titlecase critical' },
+    { severity: '  high  ', claim: 'padded high' },
+    { severity: 'MEDIUM', claim: 'uppercase medium' },
+    { severity: 'LOW', claim: 'uppercase low' },
+    { claim: 'missing severity' },
+  ];
+  const blocked = blockingFindings(mixed);
+  assert.deepEqual(
+    blocked.map((f) => f.claim),
+    ['uppercase high', 'titlecase critical', 'padded high'],
+  );
+
+  const dir = mkdtempSync(join(tmpdir(), 'agb-prosecute-mixed-sev-'));
+  const highBlockAgy = join(dir, 'agy-high');
+  const critShipAgy = join(dir, 'agy-crit');
+  writeFileSync(
+    highBlockAgy,
+    `#!/bin/sh\necho '{"verdict":"block","findings":[{"severity":"HIGH","charge":"correctness","file":"a.mjs","claim":"mixed-case high","evidence":"line 1"}]}'\n`,
+    { mode: 0o755 },
+  );
+  writeFileSync(
+    critShipAgy,
+    `#!/bin/sh\necho '{"verdict":"ship","findings":[{"severity":"Critical","charge":"security","file":"a.mjs","claim":"mixed-case critical","evidence":"line 2"}]}'\n`,
+    { mode: 0o755 },
+  );
+  try {
+    await withFakes({ AGB_AGY_BIN: highBlockAgy }, async () => {
+      const v = await prosecute({
+        ticket: { id: 'T1', body: 'spec' },
+        diff: 'real diff',
+        model: 'Claude Sonnet 4.6 (Thinking)',
+      });
+      assert.equal(v.verdict, 'block', 'mixed-case HIGH must not flip block verdict to ship');
+      assert.equal(blockingFindings(v.findings).length, 1);
+    });
+
+    await withFakes({ AGB_AGY_BIN: critShipAgy }, async () => {
+      const v = await prosecute({
+        ticket: { id: 'T1', body: 'spec' },
+        diff: 'real diff',
+        model: 'Claude Sonnet 4.6 (Thinking)',
+      });
+      assert.equal(v.verdict, 'block', 'mixed-case Critical must force block even when model votes ship');
+      assert.equal(blockingFindings(v.findings).length, 1);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runHollowTest: only substitutes fastHollowTest for compatible Node test commands (npm test / node --test) and executes non-Node commands directly', async () => {
+  const worktree = mkdtempSync(join(tmpdir(), 'agb-ht-fast-wt-'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-ht-fast-state-'));
+  try {
+    mkdirSync(join(worktree, 'lib'), { recursive: true });
+    mkdirSync(join(worktree, 'test'), { recursive: true });
+    writeFileSync(join(worktree, 'lib', 'calc.mjs'), 'export const add = (a, b) => a + b;\n');
+    writeFileSync(join(worktree, 'test', 'calc.test.mjs'), 'import { add } from "../lib/calc.mjs";\n');
+
+    await withFakes({ FAKE_HOLLOW_TEST_MODE: 'clean', FAKE_STATE_DIR: state }, async () => {
+      const rNpm = await runHollowTest({ worktree, testCmd: 'npm test', changedFiles: ['lib/calc.mjs'] });
+      assert.equal(rNpm.ok, true);
+
+      const rNode = await runHollowTest({ worktree, testCmd: 'node --test', changedFiles: ['lib/calc.mjs'] });
+      assert.equal(rNode.ok, true);
+
+      const rPytest = await runHollowTest({ worktree, testCmd: 'pytest', changedFiles: ['lib/calc.mjs'] });
+      assert.equal(rPytest.ok, true);
+
+      const rVitest = await runHollowTest({ worktree, testCmd: 'vitest run', changedFiles: ['lib/calc.mjs'] });
+      assert.equal(rVitest.ok, true);
+
+      const rCustomNpm = await runHollowTest({ worktree, testCmd: 'npm run test:e2e', changedFiles: ['lib/calc.mjs'] });
+      assert.equal(rCustomNpm.ok, true);
+    });
+
+    const lines = readFileSync(join(state, 'hollow-test-invocations'), 'utf8').trim().split('\n');
+    assert.equal(lines.length, 5);
+    assert.equal(lines[0], 'test-cmd=node --test test/calc.test.mjs base=main');
+    assert.equal(lines[1], 'test-cmd=node --test test/calc.test.mjs base=main');
+    assert.equal(lines[2], 'test-cmd=pytest base=main');
+    assert.equal(lines[3], 'test-cmd=vitest run base=main');
+    assert.equal(lines[4], 'test-cmd=npm run test:e2e base=main');
+  } finally {
+    rmSync(worktree, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GATES=0 and fails closed when unavailable', async () => {
+  const worktree = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-wt-'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-bin-'));
+  const emptyBinDir = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-empty-'));
+  const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-')));
+  try {
+    // 1. Missing worktree fails closed when sandboxing is enabled
+    await withFakes({ AGB_SANDBOX_GATES: undefined, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+      const noWt = await runHollowTest({ testCmd: 'npm test' });
+      assert.equal(noWt.ok, false);
+      assert.match(noWt.error, /gate sandbox requires a worktree path/);
+    });
+
+    if (process.platform === 'linux') {
+      // 2. Fails closed when bwrap is unavailable on PATH and AGB_SANDBOX_GATES !== '0'
+      await withFakes({ AGB_SANDBOX_GATES: undefined, PATH: emptyBinDir, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+        const failClosed = await runHollowTest({ worktree, testCmd: 'npm test' });
+        assert.equal(failClosed.ok, false);
+        assert.match(failClosed.error, /gate sandbox unavailable/);
+      });
+
+      // 3. Executes adlc hollow-test via bwrap wrapper when AGB_SANDBOX_GATES is unset
+      const bwrapLog = join(state, 'bwrap.log');
+      const fakeBwrap = join(binDir, 'bwrap');
+      writeFileSync(
+        fakeBwrap,
+        [
+          '#!/bin/sh',
+          `printf '%s\\n' "$*" >> ${JSON.stringify(bwrapLog)}`,
+          'while [ $# -gt 0 ]; do',
+          '  if [ "$1" = "--" ]; then shift; break; fi',
+          '  shift',
+          'done',
+          'exec "$@"',
+        ].join('\n'),
+        { mode: 0o755 },
+      );
+
+      await withFakes(
+        {
+          AGB_SANDBOX_GATES: undefined,
+          PATH: `${binDir}:${process.env.PATH}`,
+          FAKE_HOLLOW_TEST_MODE: 'clean',
+          FAKE_STATE_DIR: state,
+        },
+        async () => {
+          const r = await runHollowTest({ worktree, testCmd: 'npm test', base: 'main' });
+          assert.equal(r.ok, true, r.error);
+          assert.equal(r.total, 2);
+          assert.equal(r.survived, 0);
+        },
+      );
+
+      const bwrapCalls = readFileSync(bwrapLog, 'utf8');
+      assert.match(bwrapCalls, /--unshare-net.*-- .* hollow-test --test-cmd npm test --base main --json/);
+    }
+
+    const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-') && !beforeSbxDirs.has(n));
+    assert.deepEqual(afterSbxDirs, [], 'sandbox temp dirs must be cleaned up');
+  } finally {
+    rmSync(worktree, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+    rmSync(emptyBinDir, { recursive: true, force: true });
   }
 });
 

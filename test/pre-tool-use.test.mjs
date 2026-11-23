@@ -895,3 +895,137 @@ test('Shell: git grep/ls-files inspection, Node v24 test globs, safe test env fl
   assert.equal(shell('FOO=1 npm run build:cursor-mcp', fx.active, WORKER_WITH_BUILD).decision, 'deny');
   assert.equal(shell('npm run build:cursor-mcp', fx.active, { AGB_WORKER_MODE: 'readonly', AGB_WORKER_BUILD_CMD: 'npm run build:cursor-mcp' }).decision, 'deny');
 });
+
+// ---------- T-RA-1: Policy Guard Hardening ----------
+
+test('T-RA-1: agb_distill is denied unconditionally in readonly and worker modes, allowed interactively', () => {
+  // Interactive allows both direct MCP and call_mcp_tool forms
+  assert.equal(run('mcp__agb__agb_distill', { repo: fx.active }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('mcp__agb__agb_distill', { repo: fx.active, apply: true }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(
+    run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_distill', Arguments: { repo: fx.active } }, fx.active, INTERACTIVE).decision,
+    'pass',
+  );
+
+  // Readonly denies unconditionally regardless of apply flag or invocation form
+  for (const args of [{ repo: fx.active }, { repo: fx.active, apply: false }, { repo: fx.active, apply: true }]) {
+    const direct = run('mcp__agb__agb_distill', args, fx.active, READONLY);
+    assert.equal(direct.decision, 'deny');
+    assert.match(direct.reason, /agb_distill/);
+
+    const wrapped = run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_distill', Arguments: args }, fx.active, READONLY);
+    assert.equal(wrapped.decision, 'deny');
+    assert.match(wrapped.reason, /agb_distill/);
+  }
+
+  // Headless ticket worker denies both invocation forms
+  assert.equal(run('mcp__agb__agb_distill', { repo: fx.active }, fx.active, WORKER).decision, 'deny');
+  assert.equal(
+    run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_distill', Arguments: { repo: fx.active } }, fx.active, WORKER).decision,
+    'deny',
+  );
+});
+
+test('T-RA-1: CodeGraph tools enforce workspace containment, boosterDataRoots, and headless opt-in', () => {
+  const outsideDir = join(fx.base, 'cg-outside');
+  mkdirSync(outsideDir, { recursive: true });
+  const escapeLink = join(fx.active, 'cg-escape-link');
+  symlinkSync(outsideDir, escapeLink);
+  try {
+    for (const toolName of ['codegraph_explore', 'mcp_codegraph_codegraph_explore', 'mcp__codegraph__codegraph_explore']) {
+      // Interactive allows in-workspace paths and pathless symbol queries
+      assert.equal(run(toolName, { query: 'BanditModelRouter' }, fx.active, INTERACTIVE).decision, 'pass', `${toolName} pathless interactive`);
+      assert.equal(run(toolName, { projectPath: fx.active, query: 'BanditModelRouter' }, fx.active, INTERACTIVE).decision, 'pass', `${toolName} projectPath interactive`);
+      assert.equal(run(toolName, { path: join(fx.active, 'lib'), query: 'foo' }, fx.active, INTERACTIVE).decision, 'pass', `${toolName} path interactive`);
+      assert.equal(run(toolName, { DirectoryPath: 'lib', query: 'foo' }, fx.active, INTERACTIVE).decision, 'pass', `${toolName} rel DirectoryPath interactive`);
+
+      // Out-of-workspace paths (absolute, traversal, symlink escape, case-folded key, extra path-like string) are denied interactively
+      assert.equal(run(toolName, { projectPath: outsideDir, query: 'foo' }, fx.active, INTERACTIVE).decision, 'deny', `${toolName} outside projectPath`);
+      assert.equal(run(toolName, { PROJECTPATH: outsideDir, query: 'foo' }, fx.active, INTERACTIVE).decision, 'deny', `${toolName} case-folded outside`);
+      assert.equal(run(toolName, { path: '../cg-outside', query: 'foo' }, fx.active, INTERACTIVE).decision, 'deny', `${toolName} traversal`);
+      assert.equal(run(toolName, { DirectoryPath: escapeLink, query: 'foo' }, fx.active, INTERACTIVE).decision, 'deny', `${toolName} symlink escape`);
+      assert.equal(run(toolName, { query: 'foo', extra: outsideDir }, fx.active, INTERACTIVE).decision, 'deny', `${toolName} extra path-like arg`);
+      assert.equal(run(toolName, { projectPath: 123, query: 'foo' }, fx.active, INTERACTIVE).decision, 'deny', `${toolName} non-string projectPath`);
+
+      // boosterDataRoots denied even if workspace === home
+      assert.equal(
+        evaluatePayload(
+          payload(toolName, { projectPath: join(fx.home, '.config', 'antigravity-booster'), query: 'secret' }, fx.home),
+          { env: INTERACTIVE, home: fx.home, platform: 'linux' },
+        ).decision,
+        'deny',
+        `${toolName} boosterDataRoots`,
+      );
+
+      // Headless and readonly denied by default (and when AGB_ALLOW_CODEGRAPH_MCP !== '1')
+      assert.equal(run(toolName, { projectPath: fx.active, query: 'foo' }, fx.active, WORKER).decision, 'deny', `${toolName} worker default deny`);
+      assert.equal(run(toolName, { projectPath: fx.active, query: 'foo' }, fx.active, READONLY).decision, 'deny', `${toolName} readonly default deny`);
+      assert.equal(run(toolName, { projectPath: fx.active, query: 'foo' }, fx.active, { ...WORKER, AGB_ALLOW_CODEGRAPH_MCP: 'true' }).decision, 'deny', `${toolName} non-1 opt-in deny`);
+
+      // Headless and readonly allowed when AGB_ALLOW_CODEGRAPH_MCP=1 and path is strictly in workspace
+      assert.equal(run(toolName, { projectPath: fx.active, query: 'foo' }, fx.active, { ...WORKER, AGB_ALLOW_CODEGRAPH_MCP: '1' }).decision, 'pass', `${toolName} worker opt-in allow`);
+      assert.equal(run(toolName, { projectPath: fx.active, query: 'foo' }, fx.active, { ...READONLY, AGB_ALLOW_CODEGRAPH_MCP: '1' }).decision, 'pass', `${toolName} readonly opt-in allow`);
+
+      // Opt-in still enforces workspace containment and boosterDataRoots
+      assert.equal(run(toolName, { projectPath: outsideDir, query: 'foo' }, fx.active, { ...WORKER, AGB_ALLOW_CODEGRAPH_MCP: '1' }).decision, 'deny', `${toolName} worker opt-in outside deny`);
+      assert.equal(
+        evaluatePayload(
+          payload(toolName, { projectPath: join(fx.home, '.config', 'antigravity-booster'), query: 'secret' }, fx.home),
+          { env: { ...WORKER, AGB_ALLOW_CODEGRAPH_MCP: '1' }, home: fx.home, platform: 'linux' },
+        ).decision,
+        'deny',
+        `${toolName} worker opt-in boosterDataRoots deny`,
+      );
+    }
+  } finally {
+    rmSync(escapeLink, { force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+test('T-RA-1: newShardVerdict validates case-folded codecontent and content keys', () => {
+  const shardPath = join(fx.active, '.adlc/tickets', ticketFilename('T55'));
+  const validTicket = JSON.stringify({ id: 'T55', title: 't', body: 'b', scope: [], rails: [], edges: [] });
+  const wrongIdTicket = JSON.stringify({ id: 'T99', title: 't', body: 'b', scope: [], rails: [], edges: [] });
+
+  // Lowercase valid shard passes; lowercase invalid JSON, wrong id, or mixed valid CodeContent + invalid lowercase content denies
+  assert.equal(run('write_to_file', { TargetFile: shardPath, codecontent: validTicket }, fx.active).decision, 'pass');
+  assert.equal(run('write_file', { Path: shardPath, content: validTicket }, fx.active).decision, 'pass');
+  assert.equal(run('write_to_file', { TargetFile: shardPath, codecontent: '{not-json' }, fx.active).decision, 'deny');
+  assert.equal(run('write_file', { Path: shardPath, content: wrongIdTicket }, fx.active).decision, 'deny');
+  assert.equal(run('write_to_file', { TargetFile: shardPath, CodeContent: validTicket, content: '{broken' }, fx.active).decision, 'deny');
+  assert.equal(run('write_to_file', { TargetFile: shardPath, codecontent: 123 }, fx.active).decision, 'deny');
+});
+
+test('T-RA-1: evaluateOrchestrationTool denies schedule/send_message in headless mode, case-folds swarm workspace, and denies swarm on corrupt stores', () => {
+  // schedule & send_message: pass interactively, deny in WORKER and READONLY
+  for (const name of ['schedule', 'send_message']) {
+    assert.equal(run(name, {}, fx.active, INTERACTIVE).decision, 'pass', `${name} interactive`);
+    assert.equal(run(name, {}, fx.active, WORKER).decision, 'deny', `${name} worker`);
+    assert.equal(run(name, {}, fx.active, READONLY).decision, 'deny', `${name} readonly`);
+  }
+
+  // swarm: case-folded invalid Workspace / WORKSPACE rejected
+  assert.equal(run('swarm', { action: 'add', Workspace: 'custom' }, fx.plain, INTERACTIVE).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', WORKSPACE: '/tmp/outside' }, fx.plain, INTERACTIVE).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', Workspace: 42 }, fx.plain, INTERACTIVE).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', workspace: 'share', Workspace: 'inherit' }, fx.plain, INTERACTIVE).decision, 'deny');
+  assert.equal(run('swarm', { action: 'add', Workspace: 'share' }, fx.plain, INTERACTIVE).decision, 'pass');
+
+  // swarm: corrupt ticket store fails closed even for status with no path args
+  const corruptRoot = join(fx.base, 'corrupt-swarm');
+  mkdirSync(join(corruptRoot, '.adlc'), { recursive: true });
+  writeFileSync(join(corruptRoot, '.adlc', 'config.json'), '{}\n');
+  initializeDirectoryStore(join(corruptRoot, '.adlc', 'tickets'));
+  writeFileSync(join(corruptRoot, '.adlc', 'tickets', ticketFilename('T1')), '{corrupt');
+  const v = run('swarm', { action: 'status' }, corruptRoot, INTERACTIVE);
+  assert.equal(v.decision, 'deny');
+  assert.match(v.reason, /corrupt or unreadable/);
+});
+
+test('T-RA-1: protectedRoots protects default macOS fnm directory (~/Library/Application Support/fnm)', () => {
+  const macFnmTarget = join(fx.home, 'Library', 'Application Support', 'fnm', 'node-versions', 'v22.20.0', 'installation', 'bin', 'node');
+  const v = run('write_to_file', { TargetFile: macFnmTarget, CodeContent: 'evil' }, fx.plain, INTERACTIVE);
+  assert.equal(v.decision, 'deny');
+  assert.match(v.reason, /platform configuration/);
+});

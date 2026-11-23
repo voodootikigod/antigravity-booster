@@ -193,6 +193,7 @@ export function protectedRoots(home) {
     join(home, '.config', 'antigravity-booster'),
     join(home, '.local', 'bin', 'agb'),
     join(home, '.local', 'share', 'fnm'),
+    join(home, 'Library', 'Application Support', 'fnm'),
     join(home, '.local', 'share', 'mise'),
     join(home, '.asdf'),
     join(home, '.volta'),

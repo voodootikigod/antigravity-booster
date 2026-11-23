@@ -1,7 +1,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -192,4 +192,90 @@ test('mcp resolveAgbEntry fails closed to bundled agb.mjs when bundled=true', as
   const bundledEntry = resolveAgbEntry(nonExistentDir, true);
   assert.strictEqual(bundledEntry.cmd, process.execPath);
   assert.deepStrictEqual(bundledEntry.args, [join(nonExistentDir, 'agb.mjs')]);
+});
+
+test('T-RA-4B: --follow help text describes keep-watching behavior, not log tailing', () => {
+  for (const args of [['--help'], ['help', 'status'], ['help', 'watch']]) {
+    const out = execFileSync(process.execPath, [AGB_BIN, ...args], { encoding: 'utf8' });
+    assert.match(out, /--follow \(keep watching after run completion\)/);
+    assert.doesNotMatch(out, /follow logs/i);
+  }
+});
+
+test('T-RA-4B: agb plan --emit-workflow refuses to overwrite existing file without --force before compilePlan()', () => {
+  const repo = join(TMP, 'emit-wf-refuse-repo');
+  mkdirSync(repo, { recursive: true });
+  const existingWf = join(repo, 'existing-workflow.py');
+  writeFileSync(existingWf, '# hand-edited workflow\n');
+  const outPlan = join(TMP, 'emit-wf-out.json');
+
+  // Relative --emit-workflow resolves against [repo]; invalid AGB_AGY_BIN proves
+  // we fail closed before quota refresh / compilePlan().
+  const resRel = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'plan', 'nonexistent-spec.md', repo, '--out', outPlan, '--emit-workflow', 'existing-workflow.py'],
+    { encoding: 'utf8', env: { ...process.env, AGB_AGY_BIN: '/nonexistent/agy' } }
+  );
+  assert.strictEqual(resRel.status, 1);
+  assert.match(resRel.stderr, /already exists/);
+  assert.match(resRel.stderr, /--force/);
+  assert.doesNotMatch(resRel.stderr, /quota telemetry unavailable/i);
+  assert.strictEqual(readFileSync(existingWf, 'utf8'), '# hand-edited workflow\n');
+  assert.strictEqual(existsSync(outPlan), false);
+
+  // Absolute --emit-workflow path is also guarded before compilePlan().
+  const resAbs = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'plan', 'nonexistent-spec.md', repo, '--out', outPlan, '--emit-workflow', existingWf],
+    { encoding: 'utf8', env: { ...process.env, AGB_AGY_BIN: '/nonexistent/agy' } }
+  );
+  assert.strictEqual(resAbs.status, 1);
+  assert.match(resAbs.stderr, /already exists/);
+  assert.match(resAbs.stderr, /--force/);
+  assert.strictEqual(readFileSync(existingWf, 'utf8'), '# hand-edited workflow\n');
+});
+
+test('T-RA-4B: init, sweep, brains, import-brain, probe, and pool reject unknown flags without mutating cwd', () => {
+  const cleanDir = join(TMP, 'no-mutate-init');
+  mkdirSync(cleanDir, { recursive: true });
+
+  const initDryRun = spawnSync(process.execPath, [AGB_BIN, 'init', '--dry-run'], {
+    cwd: cleanDir,
+    encoding: 'utf8',
+  });
+  assert.strictEqual(initDryRun.status, 1);
+  assert.match(initDryRun.stderr, /unknown flag '--dry-run' for init/);
+  assert.strictEqual(existsSync(join(cleanDir, '.adlc')), false, 'must not create .adlc on rejected flag');
+  assert.strictEqual(existsSync(join(cleanDir, 'specs')), false, 'must not create specs on rejected flag');
+  assert.strictEqual(existsSync(join(cleanDir, '.gitignore')), false, 'must not create .gitignore on rejected flag');
+
+  const initShort = spawnSync(process.execPath, [AGB_BIN, 'init', cleanDir, '-n'], {
+    cwd: cleanDir,
+    encoding: 'utf8',
+  });
+  assert.strictEqual(initShort.status, 1);
+  assert.match(initShort.stderr, /unknown flag '-n' for init/);
+  assert.strictEqual(existsSync(join(cleanDir, '.adlc')), false);
+
+  const cases = [
+    { args: ['sweep', 'sweep.json', '--dry-run'], flag: '--dry-run', cmd: 'sweep' },
+    { args: ['sweep', '-x'], flag: '-x', cmd: 'sweep' },
+    { args: ['brains', '--json'], flag: '--json', cmd: 'brains' },
+    { args: ['brains', '-l'], flag: '-l', cmd: 'brains' },
+    { args: ['import-brain', 'abc', cleanDir, '--force'], flag: '--force', cmd: 'import-brain' },
+    { args: ['probe', '2', '--json'], flag: '--json', cmd: 'probe' },
+    { args: ['pool', 'drain', cleanDir, '--force'], flag: '--force', cmd: 'pool' },
+    { args: ['pool', '--bogus'], flag: '--bogus', cmd: 'pool' },
+  ];
+  for (const { args, flag, cmd } of cases) {
+    const r = spawnSync(process.execPath, [AGB_BIN, ...args], { cwd: cleanDir, encoding: 'utf8' });
+    assert.strictEqual(r.status, 1, `expected exit 1 for agb ${args.join(' ')}, got ${r.status}`);
+    assert.match(r.stderr, new RegExp(`unknown flag '${flag}' for ${cmd}`));
+  }
+
+  // Verify valid invocations of brains and pool drain still succeed.
+  const poolRes = spawnSync(process.execPath, [AGB_BIN, 'pool', 'drain', cleanDir], { encoding: 'utf8' });
+  assert.strictEqual(poolRes.status, 0, poolRes.stderr);
+  const brainsRes = spawnSync(process.execPath, [AGB_BIN, 'brains'], { encoding: 'utf8' });
+  assert.strictEqual(brainsRes.status, 0, brainsRes.stderr);
 });

@@ -198,3 +198,43 @@ test('unionActiveRails: ignores ambient ADLC_TICKET_STORE env overrides', () => 
   }
 });
 
+test('unionActiveRails and resolveTicket degrade cleanly to { ok: false, error } on lstatSync errors', async () => {
+  const { chmodSync } = await import('node:fs');
+  const root = makeRepo({ adlc: false });
+  const fileAsRoot = join(root, 'not-a-dir');
+  writeFileSync(fileAsRoot, 'regular file\n');
+  const fileAdlcRepo = makeRepo({ adlc: false });
+  writeFileSync(join(fileAdlcRepo, '.adlc'), 'not a directory\n');
+  const noPermRepo = makeRepo({ adlc: true, store: false });
+  try {
+    // ENOTDIR: repoRoot is a regular file -> unionActiveRails returns { ok: false, error, railsPresent: true }
+    const u1 = unionActiveRails(fileAsRoot);
+    assert.equal(u1.ok, false);
+    assert.equal(u1.railsPresent, true);
+    assert.match(u1.error, /ENOTDIR/);
+
+    // ENOTDIR: .adlc is a regular file -> resolveTicket returns { ok: false, error }
+    const r1 = resolveTicket(fileAdlcRepo, 'T1');
+    assert.equal(r1.ok, false);
+    assert.match(r1.error, /ENOTDIR/);
+
+    // EACCES (when non-root): unreadable repoRoot / .adlc degrades cleanly
+    if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+      chmodSync(noPermRepo, 0o000);
+      const u2 = unionActiveRails(noPermRepo);
+      assert.equal(u2.ok, false);
+      assert.equal(u2.railsPresent, true);
+      assert.match(u2.error, /EACCES/);
+
+      const r2 = resolveTicket(noPermRepo, 'T1');
+      assert.equal(r2.ok, false);
+      assert.match(r2.error, /EACCES/);
+    }
+  } finally {
+    try { chmodSync(noPermRepo, 0o755); } catch {}
+    rmSync(root, { recursive: true, force: true });
+    rmSync(fileAdlcRepo, { recursive: true, force: true });
+    rmSync(noPermRepo, { recursive: true, force: true });
+  }
+});
+

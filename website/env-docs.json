@@ -96,14 +96,14 @@
       "group": "core",
       "default": "unset",
       "bundledIgnored": false,
-      "description": "Set to 1 to bypass empirical BanditModelRouter candidate re-ranking and use static TIER_CANDIDATES order."
+      "description": "Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order."
     },
     {
       "name": "AGB_MODEL_STATS_FILE",
       "group": "core",
       "default": "<plugin_data>/model_stats.jsonl",
       "bundledIgnored": false,
-      "description": "Override path for the BanditModelRouter empirical model outcome ledger."
+      "description": "Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): override path for the BanditModelRouter empirical model outcome ledger."
     },
     {
       "name": "AGB_WORKER_BUILD_CMD",
@@ -258,6 +258,13 @@
       "default": "unset",
       "bundledIgnored": false,
       "description": "Ticket-store path override the PreToolUse guard also protects."
+    },
+    {
+      "name": "AGB_ALLOW_CODEGRAPH_MCP",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to allow CodeGraph MCP queries (codegraph_explore) in headless or read-only agb worker sessions (still restricted to paths inside the declared workspace and outside boosterDataRoots)."
     },
     {
       "name": "AGB_HOOK_DISABLE",

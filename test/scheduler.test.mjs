@@ -9,7 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 
 import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/scheduler.mjs';
-import { reapIntegrationWorktrees, resetToBase, cleanEmptyNodeModules, isDirty, createWorktree, removeWorktree } from '../lib/worktrees.mjs';
+import {
+  reapIntegrationWorktrees, resetToBase, cleanEmptyNodeModules, isDirty, createWorktree, removeWorktree,
+  JOURNAL_PHASES, writeIntegrationJournal, readIntegrationJournal,
+} from '../lib/worktrees.mjs';
 import { PoolSet } from '../lib/pools.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_scheduler_test_${process.pid}.json`);
@@ -1125,6 +1128,8 @@ test('runPlan: aborts fleet on root integrity violation, marks remaining tickets
     assert.match(report.failed.T1, /root integrity violation: Root Git config altered/);
     assert.ok(report.failed.T2, 'T2 must fail due to fleet abort');
     assert.match(report.failed.T2, /fleet aborted: root integrity violation: Root Git config altered/);
+    assert.ok(report.compromised, 'root integrity violation must mark report.compromised');
+    assert.match(String(report.compromised), /root integrity violation: Root Git config altered/);
   } finally {
     clearInterval(poller);
     rmSync(repo, { recursive: true, force: true });
@@ -1191,5 +1196,101 @@ test('cleanEmptyNodeModules & resetToBase: removes empty node_modules mountpoint
     assert.equal(existsSync(nm), true, 'non-empty node_modules must be preserved');
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: discards orchestrator AGENTS.md and .adlc/tickets projections before checkRailsGuard()', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-discard-rails-state-'));
+  try {
+    // Commit tracked AGENTS.md and .adlc/tickets/ store in base repo
+    writeFileSync(join(repo, 'AGENTS.md'), '# Repo Agents Policy\n');
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ version: 1 }) + '\n');
+    initializeDirectoryStore(join(repo, '.adlc', 'tickets'));
+    writeFileSync(
+      join(repo, '.adlc', 'tickets', ticketFilename('T1')),
+      JSON.stringify({ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['AGENTS.md', '.adlc/tickets/**'], edges: [] }) + '\n',
+    );
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'track AGENTS.md and .adlc/tickets'], { cwd: repo });
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        AGB_PLUGIN_DIR: PLUGIN_COMPATIBLE,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{
+          id: 'T1',
+          title: 'one',
+          body: 'write T1.txt',
+          scope: ['T1.txt'],
+          rails: ['AGENTS.md', '.adlc/tickets/**'],
+        }],
+      }, quiet),
+    );
+
+    assert.deepEqual(report.merged, ['T1'], `orchestrator projections must not trip rails-guard: ${JSON.stringify(report.failed)}`);
+    const invocations = readFileSync(join(state, 'rails-guard-invocations'), 'utf8');
+    assert.match(invocations, /AGENTS\.md/);
+    assert.match(invocations, /\.adlc\/tickets\/\*\*/);
+    assert.equal(readFileSync(join(repo, 'AGENTS.md'), 'utf8'), '# Repo Agents Policy\n');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: runs reconcileIntegrationJournal() BEFORE ensureGitignore() commits to base branch (#167)', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-journal-order-state-'));
+  try {
+    // Commit a partial .gitignore that ignores .adlc/* (so the pending journal is
+    // not flagged by isDirty) while still missing .worktrees/ and .booster/ so
+    // ensureGitignore(repo) WILL create a commit on main during startup.
+    writeFileSync(join(repo, '.gitignore'), '.adlc/*\n');
+    execFileSync('git', ['add', '.gitignore'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'partial gitignore'], { cwd: repo });
+    const preMergeSha = execFileSync('git', ['rev-parse', 'refs/heads/main'], { cwd: repo, encoding: 'utf8' }).trim();
+
+    // Plant a PREPARED integration journal from a simulated prior crash at preMergeSha.
+    // If ensureGitignore() ran first, main would advance past preMergeSha and
+    // reconcileIntegrationJournal() would throw external_ref_divergence!
+    writeIntegrationJournal(repo, {
+      ticketId: 'T-PRIOR',
+      transactionToken: 'tok-prior-crash',
+      preMergeSha,
+      candidateSha: preMergeSha,
+      phase: JOURNAL_PHASES.PREPARED,
+      timestamp: Date.now(),
+    });
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{ id: 'T1', title: 'after recovery', body: 'write T1.txt', scope: ['T1.txt'] }],
+      }, quiet),
+    );
+
+    assert.deepEqual(report.merged, ['T1']);
+    assert.equal(readIntegrationJournal(repo).exists, false, 'PREPARED journal must be rolled back and unlinked');
+    const gitLog = execFileSync('git', ['log', '--format=%s'], { cwd: repo, encoding: 'utf8' });
+    assert.match(gitLog, /chore: gitignore agb working dirs/, 'ensureGitignore still created its commit after reconciliation');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
   }
 });

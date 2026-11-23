@@ -1,0 +1,20 @@
+{
+  "body": "## Shared Spec Context\nNine dependency-layered tickets eliminate all static import coupling and concurrent file overlap across waves, converging into `T-RA-8` which aligns documentation (`CHANGELOG.md`, `website/content/docs/**`, `website/env-docs.json`), rebuilds all committed esbuild bundles (`dist/**`), and regenerates all website reference partials (`website/generated/**`).\n\nStanding rails (`lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`) remain strictly frozen across every ticket.\n\n```mermaid\ngraph TD\n  T-RA-1[T-RA-1: Policy Guard, Active Rails & Launcher] --> T-RA-2[T-RA-2: ADLC Gates & Review Arbiter]\n  T-RA-5[T-RA-5: Doctor & Install] --> T-RA-4A[T-RA-4A: Agy & Status]\n  T-RA-4A --> T-RA-2\n  T-RA-2 --> T-RA-3[T-RA-3: Scheduler Integrity]\n  T-RA-3 --> T-RA-4B[T-RA-4B: CLI & MCP Entrypoints]\n  T-RA-6[T-RA-6: Sidecar & Supply-Chain] --> T-RA-4B\n  T-RA-4B --> T-RA-8[T-RA-8: Docs, Bundles & Ref Gen]\n  T-RA-7[T-RA-7: Skills, Commands & Rules] --> T-RA-8\n```\n\n## Ticket T-RA-7: Skills, Commands & Rules Documentation Alignment\n- **Scope**: `commands/*.md`, `rules/AGENTS.md`, `skills/*/SKILL.md`, `skills/adversarial-review/personas/code_evidence_runner.md`, `test/skills-cross-harness.test.mjs`, `test/commands.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n- **Edges**: none\n- **Tier**: `cheap`\n- **Pool Hint**: `gemini`\n\n#### Objectives\n1. **Fix SHOULD-FIX (`skills/agb/SKILL.md:99` & `commands/agb.md`)**: Update Phase 5 in both `skills/agb/SKILL.md` and `commands/agb.md` to capture `<pre-run-base-sha>` before Phase 4 `agb run` and run `agb review . <pre-run-base-sha> --five-lens --loop` (not `agb review . main` after merging onto `main`, which diffs nothing and false-greens).\n2. **Fix SHOULD-FIX (`skills/implement-and-review/SKILL.md:17` & `commands/implement-and-review.md`)**: Update both files to review against `main` (noting that untracked files must be staged/committed or inspected explicitly) instead of `agb review . HEAD`.\n3. **Fix SHOULD-FIX (`skills/adversarial-review/SKILL.md:65` & `skills/adversarial-review/personas/code_evidence_runner.md`, #177)**: Clarify that `agb review` routes lenses from `lib/models.mjs` at runtime (`references/models.json` is an offline reference snapshot) and align `personas/code_evidence_runner.md` with `AGB_WORKER_MODE=readonly` constraints.\n4. **Fix SHOULD-FIX (`commands/agb-run.md:15`, `skills/agb-run/SKILL.md:15`, #165)**: Document `[-c <n>]` concurrency cap flag in `commands/agb-run.md` and `skills/agb-run/SKILL.md`.\n5. **Fix SHOULD-FIX (`commands/agb.md`, `commands/agb-plan.md`, `rules/AGENTS.md`, `skills/agb/SKILL.md`, `skills/agb-plan/SKILL.md`)**: Document `agb distill`, `agb_distill`, and `--emit-workflow` / `emitWorkflow`.\n6. **Fix SHOULD-FIX (`skills/agb-shape/SKILL.md:76`, #176)**: State the exact filenames written by `agb shape --sync-brain`: `implementation_plan.md` in the active brain directory and `.booster/agb_plan_artifact.md` in the repository.\n\n#### Acceptance Criteria\n- Every command, skill, and rule file matches the live CLI/MCP surface (`distill`, `agb_distill`, `--emit-workflow`, `-c <n>`, `implementation_plan.md` in brain dir / `.booster/agb_plan_artifact.md` in repo).\n- Neither `/agb` nor `/implement-and-review` instructs a false-green empty diff review.\n- `test/skills-cross-harness.test.mjs` and `test/commands.test.mjs` pass.\n\n---",
+  "edges": [],
+  "id": "T-RA-7",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "commands/*.md",
+    "rules/AGENTS.md",
+    "skills/*/SKILL.md",
+    "skills/adversarial-review/personas/code_evidence_runner.md",
+    "test/skills-cross-harness.test.mjs",
+    "test/commands.test.mjs"
+  ],
+  "title": "Skills, Commands & Rules Documentation Alignment"
+}

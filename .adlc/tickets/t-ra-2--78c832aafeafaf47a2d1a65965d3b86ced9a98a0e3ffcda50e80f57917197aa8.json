@@ -1,0 +1,29 @@
+{
+  "body": "## Shared Spec Context\nNine dependency-layered tickets eliminate all static import coupling and concurrent file overlap across waves, converging into `T-RA-8` which aligns documentation (`CHANGELOG.md`, `website/content/docs/**`, `website/env-docs.json`), rebuilds all committed esbuild bundles (`dist/**`), and regenerates all website reference partials (`website/generated/**`).\n\nStanding rails (`lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`) remain strictly frozen across every ticket.\n\n```mermaid\ngraph TD\n  T-RA-1[T-RA-1: Policy Guard, Active Rails & Launcher] --> T-RA-2[T-RA-2: ADLC Gates & Review Arbiter]\n  T-RA-5[T-RA-5: Doctor & Install] --> T-RA-4A[T-RA-4A: Agy & Status]\n  T-RA-4A --> T-RA-2\n  T-RA-2 --> T-RA-3[T-RA-3: Scheduler Integrity]\n  T-RA-3 --> T-RA-4B[T-RA-4B: CLI & MCP Entrypoints]\n  T-RA-6[T-RA-6: Sidecar & Supply-Chain] --> T-RA-4B\n  T-RA-4B --> T-RA-8[T-RA-8: Docs, Bundles & Ref Gen]\n  T-RA-7[T-RA-7: Skills, Commands & Rules] --> T-RA-8\n```\n\n## Ticket T-RA-2: ADLC Gates, Prosecutor & Review Arbiter Hardening\n- **Scope**: `lib/review.mjs`, `lib/prosecute.mjs`, `lib/adlc-tool.mjs`, `test/review.test.mjs`, `test/review-arl.test.mjs`, `test/prosecute.test.mjs`, `test/adlc-tool.test.mjs`, `test/agy-worker-env.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n- **Edges**: `T-RA-1`, `T-RA-4A`\n- **Tier**: `frontier`\n- **Pool Hint**: `gemini`\n\n#### Objectives\n1. **Fix BLOCKER (`lib/review.mjs:178`)**: Sort findings deterministically by severity priority (`critical` -> `high` -> `medium` -> `low`, prioritizing `blast_radius === true` and `SHAPE-*` IDs) before slicing the first 60 for `arbiterPrompt()` in `triageFindings()`. For any overflow findings beyond index 60 that were never sent to the arbiter, run them through `deterministicTriage()` and merge them into the triaged result so no `critical` or `high` finding is ever dropped or causes a false-green `SHIP` (computing `gateVerdict` across the merged findings using the existing `'SHIP' | 'AUTO-FIX' | 'ESCALATE'` contract).\n2. **Fix SHOULD-FIX (`lib/review.mjs:694`, #169)**: In `reviewPlan({ loop: true })`, when `specPath` is re-read on round > 1, recompute `shapeReport = preAnalyzeSpec(currentSpecText, ...)` so subsequent rounds evaluate the updated spec's DAG analysis and never carry stale Round 1 `SHAPE-*` findings forward.\n3. **Fix SHOULD-FIX (`lib/prosecute.mjs:36` & `lib/adlc-tool.mjs`)**: In `runHollowTest()`, pass `wrapCommand` (built via `buildSandboxCommandWrapper` when `process.env.AGB_SANDBOX_GATES !== '0'`) into `runAdlcTool()` / `execFileAuthenticatedAdlc()`, failing closed if the OS sandbox is unavailable (matching `lib/scheduler.mjs` Pass 2).\n4. **Fix SHOULD-FIX (`lib/prosecute.mjs:31`)**: In `runHollowTest()`, only apply the `fastHollowTest` (`node --test <impacted>`) substitution when `testCmd` is a compatible Node test command (`npm test` or `node --test`) and impacted test files are resolved; otherwise execute `testCmd` directly.\n5. **Fix SHOULD-FIX (`lib/prosecute.mjs:121,162-164`)**: Normalize finding `severity` (`String(f.severity || '').toLowerCase()`) inside both `blockingFindings()` and `prosecute()` so mixed-case severities (`\"HIGH\"`, `\"Critical\"`) never flip a `block` verdict to `ship`.\n\n#### Acceptance Criteria\n- A review with 65 `low` findings followed by 2 `critical`/`high` findings produces a non-`SHIP` `gateVerdict` (`'AUTO-FIX'` or `'ESCALATE'`) and preserves both `critical`/`high` findings in `triageFindings()`.\n- `reviewPlan({ loop: true })` recomputes `shapeReport` after spec edits between rounds.\n- `runHollowTest()` enforces OS sandboxing unless `AGB_SANDBOX_GATES=0` and only uses `fastHollowTest` for compatible Node test runners.\n- `blockingFindings()` and `prosecute()` treat `\"HIGH\"` and `\"Critical\"` as blocking severities.\n- `test/review.test.mjs`, `test/review-arl.test.mjs`, `test/prosecute.test.mjs`, `test/adlc-tool.test.mjs`, and `test/agy-worker-env.test.mjs` pass.\n\n---",
+  "edges": [
+    {
+      "to": "T-RA-1"
+    },
+    {
+      "to": "T-RA-4A"
+    }
+  ],
+  "id": "T-RA-2",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/review.mjs",
+    "lib/prosecute.mjs",
+    "lib/adlc-tool.mjs",
+    "test/review.test.mjs",
+    "test/review-arl.test.mjs",
+    "test/prosecute.test.mjs",
+    "test/adlc-tool.test.mjs",
+    "test/agy-worker-env.test.mjs"
+  ],
+  "title": "ADLC Gates, Prosecutor & Review Arbiter Hardening"
+}

@@ -87,7 +87,12 @@ var TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        plan: { type: "string", description: "Path to plan.json file" }
+        plan: { type: "string", description: "Path to plan.json file" },
+        concurrency: {
+          type: "integer",
+          minimum: 1,
+          description: "Optional maximum concurrent workers cap (-c <n>)"
+        }
       },
       required: ["plan"]
     }
@@ -350,17 +355,18 @@ async function handleToolCall(id, name, args) {
     cliArgs.push("distill", targetCwd, "--json");
     if (args.apply) cliArgs.push("--apply");
   } else if (name === "agb_run") {
-    if (args.concurrency !== void 0) {
-      sendResult(id, {
-        content: [{ type: "text", text: "agb_run: unsupported parameter 'concurrency' \u2014 agb run has no concurrency flag; set caps in plan.json instead" }],
-        isError: true
-      });
-      return;
-    }
     const planCheck = requireNonFlagString(args, "plan");
     if (!planCheck.ok) {
       sendError(id, -32602, planCheck.error);
       return;
+    }
+    let concurrency;
+    if (args.concurrency !== void 0) {
+      if (typeof args.concurrency !== "number" || !Number.isInteger(args.concurrency) || args.concurrency < 1) {
+        sendError(id, -32602, "Invalid concurrency: expected integer >= 1");
+        return;
+      }
+      concurrency = args.concurrency;
     }
     const absPlan = resolve(planCheck.value);
     targetCwd = dirname(absPlan);
@@ -370,6 +376,9 @@ async function handleToolCall(id, name, args) {
       return;
     }
     cliArgs.push("run", absPlan);
+    if (concurrency !== void 0) {
+      cliArgs.push("-c", String(concurrency));
+    }
   } else if (name === "agb_preflight") {
     const planCheck = requireNonFlagString(args, "plan");
     if (!planCheck.ok) {

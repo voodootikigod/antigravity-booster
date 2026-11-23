@@ -15,7 +15,7 @@ description: "Parse a structured Markdown specification, run deterministic DAG p
 - `[repo]` is optional and sets the target repository root for literal rail verification and static import coupling analysis (default `.`).
 - `--analyze` runs deterministic DAG pre-analysis (default behavior).
 - `--strict` treats non-empty warnings as exit code `2`.
-- `--sync-brain` writes the formatted plan artifact to `.booster/agb_plan_artifact.md` and `agb_plan_artifact.md` inside the active Antigravity brain session directory.
+- `--sync-brain` writes the formatted plan artifact to `implementation_plan.md` in the active Antigravity brain session directory and `.booster/agb_plan_artifact.md` in the repository.
 - `--max-ticket-scope <n>` sets the per-ticket scope warning threshold (default `12`).
 - `--json` emits the structured JSON report to stdout.
 

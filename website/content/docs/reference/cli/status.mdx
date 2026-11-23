@@ -15,7 +15,7 @@ claims: [C11]
 - `repo` is optional and defaults to the current directory ([C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L274-L280)).
 - `--watch` / `-w` re-renders continuously until the run ends; `--interval <ms>` sets the refresh period (default `200` ms in watch mode, `1000` ms otherwise).
 - `--tui` renders a one-shot TUI snapshot.
-- `--follow` tails worker logs while watching.
+- `--follow` keeps watching and polling after the run completes instead of exiting on completion.
 - `--compact` renders compact ticket rows.
 
 The old `--ui` flag was removed; passing it exits 1 with a pointer to `agb sidecar` or `agb watch` (see [Removed and deprecated](/docs/reference/cli/removed)). For an interactive terminal dashboard use `agb watch`, or for a browser dashboard use [`agb sidecar`](/docs/reference/cli/sidecar).

@@ -17,7 +17,7 @@ claims: [C15]
 | `agb migrate` | Run or resume the migration. |
 | `agb migrate --force` | Re-run after the state is already `MIGRATED`. |
 | `agb migrate --rollback` | Roll the migration back. |
-| `agb migrate --force-rollback` | Roll back even when the recorded state would refuse. |
+| `agb migrate --rollback --force-rollback` | Roll back even when the recorded state would refuse (for example, when staged plugins changed after migration). |
 | `agb migrate --break-lock` | Break a stale migration lock after an interactive confirmation (refused when stdin is not a TTY); `--force` skips the confirmation. |
 
 Evidence: [C15](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L51-L55) (the `COMMANDS` entry), [migrate dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L297-L318).

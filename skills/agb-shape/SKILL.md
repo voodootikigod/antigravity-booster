@@ -73,7 +73,7 @@ Run the 5-lens cross-model Plan Gate (`devils_advocate`,
 Upon receiving `gate_verdict: "SHIP"` from the Plan ARL and exit `0` from
 `agb shape`:
 
-1.  Sync the hardened spec to the Antigravity Brain Artifact (`agb_plan_artifact.md` in the active brain directory and `.booster/agb_plan_artifact.md`) via `~/.local/bin/agb shape specs/<slug>-spec.md --sync-brain` (or `mcp__agb__agb_shape` with `syncBrain: true`).
+1.  Sync the hardened spec to the Antigravity Brain Artifact (`implementation_plan.md` in the active brain directory and `.booster/agb_plan_artifact.md` in the repository) via `~/.local/bin/agb shape specs/<slug>-spec.md --sync-brain` (or `mcp__agb__agb_shape` with `syncBrain: true`).
 2.  Present a concise summary of the Plan ARL convergence and `agb shape`
     pre-analysis report, and **pause for explicit human sign-off** before
     running `agb plan` (applies to both `/agb-shape` and `/agb-shape --yolo`).

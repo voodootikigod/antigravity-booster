@@ -3,10 +3,10 @@
 | /agb-bootstrap | /agb-bootstrap [--force] [--force-reinstall] | Install or refresh antigravity-booster's ADLC doctrine plugin, skills and the ~/.local/bin/agb terminal shim |
 | /agb-doctor | /agb-doctor [repo-path] [--fix] | Verify your environment and tools, with optional self-healing (--fix) |
 | /agb-migrate | /agb-migrate [--rollback] [--force-rollback] [--force] [--break-lock] | Migrate from the npm-global/legacy install to the native agy plugin, or roll back |
-| /agb-plan | /agb-plan &lt;id &#124; spec.md&gt; [repo-path] [--out &lt;file&gt;] [--force] [--decompose] [--max-ticket-scope &lt;n&gt;] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project &lt;name&gt;] | Compile an Antigravity brain plan or spec file into plan.json (with 0-LLM Structured Spec Fast-Path) |
+| /agb-plan | /agb-plan &lt;id &#124; spec.md&gt; [repo-path] [--out &lt;file&gt;] [--emit-workflow &lt;file.py&gt;] [--force] [--decompose] [--max-ticket-scope &lt;n&gt;] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project &lt;name&gt;] | Compile an Antigravity brain plan or spec file into plan.json (with 0-LLM Structured Spec Fast-Path) |
 | /agb-preflight | /agb-preflight [plan.json] [--no-coldstart] [--project &lt;name&gt;] | Run plan-time coldstart probes and forecast scope overlaps between parallel tickets in a plan.json DAG |
 | /agb-review | /agb-review [repo-path] [ref] [--plan &lt;spec.md&gt;] [--loop] [--five-lens] [--no-arbiter] [--project &lt;name&gt;] | Read-only lens fleet or 5-lens Adversarial Review Loop over a diff or plan |
-| /agb-run | /agb-run &lt;plan.json&gt; [--project &lt;name&gt;] | Execute a ticket DAG (build, gate, prosecute, merge) |
+| /agb-run | /agb-run &lt;plan.json&gt; [-c &lt;n&gt;] [--project &lt;name&gt;] | Execute a ticket DAG (build, gate, prosecute, merge) |
 | /agb-shape | /agb-shape &lt;idea &#124; spec.md&gt; [--yolo] [--out specs/&lt;slug&gt;-spec.md] | Shape a raw feature idea or spec file via reconnaissance, /grill-me, DAG pre-analysis, and 5-lens Plan ARL |
 | /agb-sidecar | /agb-sidecar [repo-path] [--port &lt;port&gt;] | Launch the HTTP server for the Antigravity Sidecar UI |
 | /agb-status | /agb-status [repo-path] [--watch] [-w] [--tui] [--interval &lt;ms&gt;] [--follow] [--compact] | View real-time build progress, quota pool meters, and ticket state for an Antigravity Booster run |

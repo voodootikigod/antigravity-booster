@@ -239,3 +239,42 @@ test('emptying skills/ clears the manifest so a later foreign skill of the same 
   for (const mirror of MIRRORS) assert.equal(readFileSync(join(root, mirror, 'alpha/SKILL.md'), 'utf8'), 'mine');
   assert.deepEqual(syncSkills({ root, check: true }).problems, []);
 });
+
+test('user-facing skills & personas align with live CLI/MCP surface and readonly review constraints (T-RA-7)', () => {
+  const readSkill = (rel) => readFileSync(join(ROOT, 'skills', rel), 'utf8');
+
+  const agbSkill = readSkill('agb/SKILL.md');
+  assert.ok(agbSkill.includes('<pre-run-base-sha>'), 'skills/agb/SKILL.md must capture <pre-run-base-sha>');
+  assert.ok(agbSkill.includes('~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop'), 'skills/agb/SKILL.md must review against <pre-run-base-sha>');
+  assert.ok(!agbSkill.includes('agb review . main'), 'skills/agb/SKILL.md must not instruct empty-diff review against main after merge');
+  assert.ok(agbSkill.includes('~/.local/bin/agb distill'), 'skills/agb/SKILL.md must document agb distill');
+  assert.ok(agbSkill.includes('mcp__agb__agb_distill'), 'skills/agb/SKILL.md must document mcp__agb__agb_distill');
+  assert.ok(agbSkill.includes('--emit-workflow'), 'skills/agb/SKILL.md must document --emit-workflow');
+  assert.ok(agbSkill.includes('emitWorkflow'), 'skills/agb/SKILL.md must document emitWorkflow');
+
+  const implReviewSkill = readSkill('implement-and-review/SKILL.md');
+  assert.ok(implReviewSkill.includes('~/.local/bin/agb review . main --five-lens --loop'), 'skills/implement-and-review/SKILL.md must review against main');
+  assert.ok(!implReviewSkill.includes('agb review . HEAD'), 'skills/implement-and-review/SKILL.md must not instruct review against HEAD');
+  assert.match(implReviewSkill, /untracked/i, 'skills/implement-and-review/SKILL.md must note untracked files');
+
+  const advReviewSkill = readSkill('adversarial-review/SKILL.md');
+  assert.ok(advReviewSkill.includes('lib/models.mjs'), 'skills/adversarial-review/SKILL.md must reference lib/models.mjs runtime routing');
+  assert.match(advReviewSkill, /offline\s+reference\s+snapshot/i, 'skills/adversarial-review/SKILL.md must clarify references/models.json is an offline reference snapshot');
+
+  const evidencePersona = readSkill('adversarial-review/personas/code_evidence_runner.md');
+  assert.ok(evidencePersona.includes('AGB_WORKER_MODE=readonly'), 'code_evidence_runner.md must document AGB_WORKER_MODE=readonly');
+  assert.match(evidencePersona, /read-only/i, 'code_evidence_runner.md must align with read-only constraints');
+  assert.ok(!evidencePersona.includes('Then actually execute:'), 'code_evidence_runner.md must not instruct unconditional mutating execution');
+
+  const runSkill = readSkill('agb-run/SKILL.md');
+  assert.ok(runSkill.includes('[-c <n>]'), 'skills/agb-run/SKILL.md must document [-c <n>]');
+
+  const planSkill = readSkill('agb-plan/SKILL.md');
+  assert.ok(planSkill.includes('--emit-workflow'), 'skills/agb-plan/SKILL.md must document --emit-workflow');
+  assert.ok(planSkill.includes('emitWorkflow'), 'skills/agb-plan/SKILL.md must document emitWorkflow');
+
+  const shapeSkill = readSkill('agb-shape/SKILL.md');
+  assert.ok(shapeSkill.includes('implementation_plan.md'), 'skills/agb-shape/SKILL.md must state implementation_plan.md');
+  assert.ok(shapeSkill.includes('.booster/agb_plan_artifact.md'), 'skills/agb-shape/SKILL.md must state .booster/agb_plan_artifact.md');
+  assert.ok(!shapeSkill.includes('`agb_plan_artifact.md` in the active brain directory'), 'skills/agb-shape/SKILL.md must not claim agb_plan_artifact.md is written in brain dir');
+});

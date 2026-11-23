@@ -16,7 +16,7 @@ Child processes inherit the ambient environment from the host agent harness. Unk
 
 The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
 
-<Callout type="info" title="agb_run takes only a plan">While the CLI `agb run` supports `-c <n>` to cap total concurrent workers, the MCP `agb_run` tool accepts only `plan` (and no `concurrency`, `project`, or `cwd` parameter): a call that supplies `concurrency` returns a tool error naming it (v1.0.0 forwarded it to `agb run`, which ignored it: [C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)). Per-pool runtime concurrency is enforced by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`).</Callout>
+<Callout type="info" title="agb_run concurrency cap">The MCP `agb_run` tool accepts `plan` and an optional positive integer `concurrency` parameter, which is validated and forwarded as `-c <n>` to `agb run` to cap total concurrent workers (v1.0.0 previously forwarded an unsupported flag that `agb run` ignored: [C33](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L185-L187)). Per-pool runtime concurrency is also governed by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`).</Callout>
 
 <include>../../../generated/mcp-tools.mdx</include>
 
@@ -24,9 +24,10 @@ The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
 
 | Tool | Runs |
 | --- | --- |
-| `agb_shape` | `agb shape <spec> [repo]` plus `--sync-brain`, `--max-ticket-scope`, `--strict` |
-| `agb_plan` | `agb plan <spec> <repo>` plus `--out`, `--force`, `--decompose`, `--max-ticket-scope`, `--no-fast-path`, `--no-coldstart`, `--no-parallax`, `--no-premortem` |
-| `agb_run` | `agb run <plan>` |
+| `agb_shape` | `agb shape <spec> [repo] --json` plus `--sync-brain`, `--max-ticket-scope`, `--strict` |
+| `agb_plan` | `agb plan <spec> <repo>` plus `--out`, `--emit-workflow` (`emitWorkflow`), `--force`, `--decompose`, `--max-ticket-scope`, `--no-fast-path`, `--no-coldstart`, `--no-parallax`, `--no-premortem` |
+| `agb_distill` | `agb distill <repo> --json` plus `--apply` |
+| `agb_run` | `agb run <plan>` plus `-c <n>` (`concurrency`) |
 | `agb_preflight` | `agb preflight <plan>` plus `--no-coldstart` |
 | `agb_status` | `agb status <repo>` |
 | `agb_doctor` | `agb doctor [repo]` plus `--fix` |

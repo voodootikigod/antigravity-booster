@@ -46,13 +46,16 @@ These fields are validated by `lib/plan.mjs`.
   }}
 />
 
-The scheduler also reads these optional fields ([`plan.base`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1291), [`plan.caps`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1394), [`plan.prosecution.dryPasses`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1964)). `validatePlan` does not check them.
+The scheduler also reads these optional top-level fields ([`plan.base`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1291), [`plan.caps`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1394), [`plan.prosecution.dryPasses`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L1964)):
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `base` | string | `main` | Branch the run builds on and merges into. |
 | `caps` | object | pool defaults | Per-pool concurrency caps, merged over the defaults (`gemini-flash`, `gemini-pro`, `claude`, `gpt-oss`). See [Calibration](/docs/reference/calibration). |
 | `prosecution.dryPasses` | number | `1` | Consecutive clean prosecution passes required before a ticket may merge. |
+| `disableOrchestrator` | boolean | `false` | Disables routing `frontier`-tier tickets to `gemini-pro-orchestrator*` models, falling back to `FRONTIER_NO_ORCHESTRATOR` (equivalent to `AGB_DISABLE_ORCHESTRATOR=1`). Validated as a boolean by `validatePlan`. |
+| `contextSlice` | boolean | `false` | Enables pre-baked `.booster/context-slice.md` context injection (via `.codegraph/` or static AST fallback) on every ticket's builder charter even when `symbol_scope` or `symbol_rails` are not declared. |
+| `overviewPane` | boolean | `false` | Emits native Antigravity Overview Panel (`swarm_pane`) telemetry snapshots to `.booster/overview_pane.json` and `.booster/overview_pane.md` (mirrored to the active brain session directory when available). |
 
 ## Ticket fields
 
@@ -97,6 +100,14 @@ The scheduler also reads these optional fields ([`plan.base`](https://github.com
   }}
 />
 
+Tickets may also declare these optional v1.4 context-slicing and symbol-constraint fields read by the scheduler:
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `contextSlice` | boolean | `false` | Enables pre-baked `.booster/context-slice.md` context injection for this ticket's builder charter (also enabled automatically when `plan.contextSlice` is `true` or when `symbol_scope` / `symbol_rails` are non-empty). |
+| `symbol_scope` | string[] | unset | Additive symbol-level scope constraints in `path/to/file.mjs#SymbolName` form. File-glob `scope` remains enforced by `PreToolUse` and `adlc rails-guard`, while `verifySymbolScopeDiff()` verifies post-turn and `consensus-fix` diffs stay within the declared symbol spans. |
+| `symbol_rails` | string[] | unset | Additive symbol-level rails in `path/to/file.mjs#SymbolName` form. File-glob `rails` remains enforced by `PreToolUse` and `adlc rails-guard`, while `verifySymbolScopeDiff()` rejects any builder or `consensus-fix` diff that modifies a railed symbol span. |
+
 ## Validation rules
 
 `validatePlan` returns a list of error strings; an empty list means the plan is valid. Every rule below produces one error per offending item, so you see all problems at once.
@@ -105,6 +116,7 @@ The scheduler also reads these optional fields ([`plan.base`](https://github.com
 
 - `repo` must be present ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L244)).
 - `adlcBin` must be absent ([C21](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L245-L247)).
+- `disableOrchestrator`, when present, must be a boolean.
 - `gate` must declare `build` or `test`. With strict gates, each declared command must match `^npm (test|run [a-zA-Z0-9_:-]+)$`, that is `npm test` or `npm run <script>` and nothing else ([C21](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L248-L258)). Strict mode is on unless `AGB_STRICT_GATES=0` ([compilePlan default](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L587)); `agb run`, `validate` and `preflight` always call `validatePlan` with its default, which is strict ([default argument](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L242)).
 - `tickets` must be non-empty ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L260)).
 

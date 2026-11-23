@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -327,5 +327,165 @@ test('wrapConsensusGateCommand & runConsensusFix: wraps gate commands in OS sand
     rmSync(state, { recursive: true, force: true });
     rmSync(fakeBin, { recursive: true, force: true });
     rmSync(sbxDir, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: consensus-fix candidate violating symbol_rails or symbol_scope is rejected, reset, and falls back to regeneration', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-cf-sym-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-cf-sym-bin-'));
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  mkdirSync(join(repoRoot, '.adlc'), { recursive: true });
+  const adlcDir = mkdtempSync(join(repoRoot, '.adlc', 'tmp-cf-sym-adlc-'));
+  try {
+    const modContent = (editableRet, frozenRet) => [
+      'export function editableFn() {',
+      '  const a = 1;',
+      '  const b = 2;',
+      '  const c = 3;',
+      `  const v = ${editableRet};`,
+      '  const d = 4;',
+      '  const e = 5;',
+      '  const f = 6;',
+      '  return v + a + b + c + d + e + f;',
+      '}',
+      '',
+      '// separator',
+      '',
+      'export function frozenFn() {',
+      `  return ${frozenRet};`,
+      '}',
+      '',
+    ].join('\n');
+
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'mod.mjs'), modContent(1, 42));
+    execFileSync('git', ['add', 'src/mod.mjs'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add src/mod.mjs'], { cwd: repo });
+
+    // Custom fake agy: delegates quota/version/models/prosecutor (readonly) to FAKE_AGY;
+    // builder edits ONLY editableFn and records its received prompt per strike.
+    const customAgy = join(binDir, 'fake-agy-sym');
+    writeFileSync(
+      customAgy,
+      [
+        '#!/bin/sh',
+        'if [ "${AGB_WORKER_MODE:-}" = "readonly" ]; then',
+        `  exec "${FAKE_AGY}" "$@"`,
+        'fi',
+        'for arg in "$@"; do',
+        '  if [ "$arg" = "/quota" ] || [ "$arg" = "--version" ] || [ "$arg" = "models" ]; then',
+        `    exec "${FAKE_AGY}" "$@"`,
+        '  fi',
+        'done',
+        'prompt=$(cat)',
+        'bn=$(cat "$FAKE_STATE_DIR/build-count" 2>/dev/null || echo 0)',
+        'bn=$((bn+1))',
+        'echo "$bn" > "$FAKE_STATE_DIR/build-count"',
+        'printf "%s\\n%s" "$*" "$prompt" > "$FAKE_STATE_DIR/build-prompt-$bn.txt"',
+        'cat > src/mod.mjs << \'EOF\'',
+        modContent(2, 42).trimEnd(),
+        'EOF',
+        'printf \'{"type":"step_update","step":1,"action":"edit"}\\n\'',
+        'printf \'{"type":"result","status":"SUCCESS","exit_code":0,"response":"updated editableFn"}\\n\'',
+        'exit 0',
+      ].join('\n') + '\n',
+      { mode: 0o755 },
+    );
+
+    // Custom fake adlc in a non-temp dir (passes adlc-bridge path security):
+    // consensus-fix mutates frozenFn (violating symbol_rails and symbol_scope).
+    writeFileSync(
+      join(adlcDir, 'package.json'),
+      JSON.stringify({ name: '@adlc/cli', version: '1.13.0', bin: { adlc: './fake-adlc-sym' } }),
+    );
+    const customAdlc = join(adlcDir, 'fake-adlc-sym');
+    writeFileSync(
+      customAdlc,
+      [
+        '#!/bin/sh',
+        'if [ "$1" = "consensus-fix" ]; then',
+        '  cat > src/mod.mjs << \'EOF\'',
+        modContent(2, 999).trimEnd(),
+        'EOF',
+        '  echo \'{"survivors":[{}],"discarded":[],"failed":[],"allDivergent":false,"applied":true}\'',
+        '  exit 0',
+        'fi',
+        `exec "${FAKE_ADLC}" "$@"`,
+      ].join('\n') + '\n',
+      { mode: 0o755 },
+    );
+
+    // 1. Violating symbol_rails rejects consensus-fix and falls back to clean strike 2
+    const reportRails = await withEnv(
+      {
+        AGB_AGY_BIN: customAgy,
+        AGB_ADLC_BIN: customAdlc,
+        FAKE_STATE_DIR: state,
+        FAKE_PROSECUTOR_VERDICT: 'block-then-ship',
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [{
+          id: 'T1',
+          title: 'symbol rail check',
+          body: 'edit editableFn only',
+          scope: ['src/mod.mjs'],
+          symbol_rails: ['src/mod.mjs#frozenFn'],
+        }],
+      }, quiet),
+    );
+    assert.deepEqual(reportRails.merged, ['T1'], `expected T1 merged, failed=${JSON.stringify(reportRails.failed)}`);
+    const finalMod = readFileSync(join(repo, 'src', 'mod.mjs'), 'utf8');
+    assert.match(finalMod, /const v = 2;/, 'strike 2 clean edit to editableFn merged');
+    assert.match(finalMod, /return 42;/, 'frozenFn was NOT overwritten by rejected consensus-fix');
+    assert.doesNotMatch(finalMod, /return 999;/);
+    const strike2Prompt = readFileSync(join(state, 'build-prompt-2.txt'), 'utf8');
+    assert.match(strike2Prompt, /consensus-fix candidate violated symbol constraints:.*symbol rail violation/);
+
+    // 2. Violating symbol_scope alone also rejects consensus-fix
+    const state2 = mkdtempSync(join(tmpdir(), 'agb-cf-symscope-state-'));
+    const repo2 = makeRepo();
+    try {
+      mkdirSync(join(repo2, 'src'), { recursive: true });
+      writeFileSync(join(repo2, 'src', 'mod.mjs'), modContent(1, 42));
+      execFileSync('git', ['add', 'src/mod.mjs'], { cwd: repo2 });
+      execFileSync('git', ['commit', '-qm', 'add src/mod.mjs'], { cwd: repo2 });
+
+      const reportScope = await withEnv(
+        {
+          AGB_AGY_BIN: customAgy,
+          AGB_ADLC_BIN: customAdlc,
+          FAKE_STATE_DIR: state2,
+          FAKE_PROSECUTOR_VERDICT: 'block-then-ship',
+          AGB_SANDBOX_GATES: '0',
+        },
+        () => runPlan({
+          repo: repo2,
+          gate: { test: 'true' },
+          tickets: [{
+            id: 'T2',
+            title: 'symbol scope check',
+            body: 'edit editableFn only',
+            scope: ['src/mod.mjs'],
+            symbol_scope: ['src/mod.mjs#editableFn'],
+          }],
+        }, quiet),
+      );
+      assert.deepEqual(reportScope.merged, ['T2'], `expected T2 merged, failed=${JSON.stringify(reportScope.failed)}`);
+      assert.match(readFileSync(join(repo2, 'src', 'mod.mjs'), 'utf8'), /return 42;/);
+      const strike2PromptScope = readFileSync(join(state2, 'build-prompt-2.txt'), 'utf8');
+      assert.match(strike2PromptScope, /consensus-fix candidate violated symbol constraints:.*symbol scope violation/);
+    } finally {
+      rmSync(repo2, { recursive: true, force: true });
+      rmSync(state2, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+    rmSync(adlcDir, { recursive: true, force: true });
   }
 });

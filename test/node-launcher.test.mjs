@@ -77,6 +77,7 @@ exec "${REAL_NODE}" "$@"
 }
 
 const fnmPath = (home, v) => join(home, '.local/share/fnm/node-versions', `v${v}`, 'installation/bin/node');
+const macFnmPath = (home, v) => join(home, 'Library/Application Support/fnm/node-versions', `v${v}`, 'installation/bin/node');
 const misePath = (home, v) => join(home, '.local/share/mise/installs/node', v, 'bin/node');
 
 function run(fx, args, { shell = '/bin/sh', cwd, env = {} } = {}) {
@@ -126,6 +127,48 @@ describe('bin/node-launcher.sh', { skip }, () => {
         const r = run(fx, ['dist/hello.mjs'], { shell });
         assert.equal(r.status, 0, r.stderr);
         assert.match(r.stderr, /MOCKNODE:22\.20\.0/);
+      });
+
+      test('macOS default fnm candidate under $HOME/Library/Application Support/fnm is accepted', () => {
+        const fx = fixture();
+        mockNode(macFnmPath(fx.home, '22.20.0'), '22.20.0');
+        const r = run(fx, ['dist/hello.mjs', 'mac-fnm'], { shell });
+        assert.equal(r.status, 0, r.stderr);
+        assert.match(r.stderr, /MOCKNODE:22\.20\.0/);
+        assert.deepEqual(JSON.parse(r.stdout), ['mac-fnm']);
+      });
+
+      test('NixOS /nix/store/*/bin/node trust rule accepts store node and rejects non-node or tmp segments', () => {
+        const src = readFileSync(LAUNCHER_SRC, 'utf8');
+        assert.match(src, /\/nix\/store\/\*\/bin\/node\)\s+TRUSTED=1\s*;;/);
+
+        // Exercise the exact NixOS case arm via a hermetic store-prefix rewrite with PATH fallback active
+        const fx = fixture();
+        const fakeNixRoot = join(fx.dir, 'fake-nix-store');
+        const nixLauncherSrc = src
+          .replace(/^check_candidate "\/(opt\/homebrew|usr\/local|usr|)\/?bin\/node"$/gm, ':')
+          .replace(/^check_candidate "\/bin\/node"$/gm, ':')
+          .replace('/opt/homebrew/*|/usr/local/*|/usr/*|/bin/*|/System/*', '/opt/homebrew/*|/System/*')
+          .replace('/nix/store/*/bin/node', `${fakeNixRoot}/*/bin/node`);
+        writeFileSync(fx.launcher, nixLauncherSrc);
+
+        const goodNixNode = mockNode(join(fakeNixRoot, 'abc123-nodejs-22.20.0/bin/node'), '22.20.0', 'nix-22.20.0');
+        const rGood = run(fx, ['dist/hello.mjs', 'nix-ok'], {
+          shell,
+          env: { PATH: `${dirname(goodNixNode)}:/usr/bin:/bin` },
+        });
+        assert.equal(rGood.status, 0, rGood.stderr);
+        assert.match(rGood.stderr, /MOCKNODE:nix-22\.20\.0/);
+        assert.deepEqual(JSON.parse(rGood.stdout), ['nix-ok']);
+
+        // Reject candidate under a /tmp segment inside the store prefix
+        const badTmpNode = mockNode(join(fakeNixRoot, 'tmp/bin/node'), '22.20.0', 'nix-tmp');
+        const rBad = run(fx, ['dist/hello.mjs'], {
+          shell,
+          env: { PATH: `${dirname(badTmpNode)}:/usr/bin:/bin` },
+        });
+        assert.equal(rBad.status, 86);
+        assert.doesNotMatch(rBad.stderr, /MOCKNODE:nix-tmp/);
       });
 
       test('arguments with spaces and metacharacters pass through intact', () => {

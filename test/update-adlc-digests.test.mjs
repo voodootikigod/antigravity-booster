@@ -141,3 +141,30 @@ test('verifyAgainstLockfile: normalizes leading ./ and key order on bin field be
   }
 });
 
+test('direct-invocation guard executes main() when invoked through a symlink', async () => {
+  const { mkdtempSync, symlinkSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'agb-digest-symlink-'));
+  try {
+    const linkPath = join(dir, 'update-adlc-digests-link.mjs');
+    symlinkSync(join(ROOT, 'scripts', 'update-adlc-digests.mjs'), linkPath);
+
+    const okRun = spawnSync(process.execPath, [linkPath, '--skip-registry'], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(okRun.status, 0, okRun.stderr);
+    assert.match(okRun.stdout, /KNOWN_VENDORED_ADLC is current/);
+
+    const errRun = spawnSync(process.execPath, [linkPath, '--write', '--skip-registry'], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(errRun.status, 1, 'symlinked invocation must execute main() and propagate exit code 1');
+    assert.match(errRun.stderr, /--write cannot be combined with --skip-registry/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('.github/workflows/publish.yml omits stale registry-url token stub for OIDC trusted publishing', () => {
+  const publishYml = readFileSync(join(ROOT, '.github', 'workflows', 'publish.yml'), 'utf8');
+  assert.doesNotMatch(publishYml, /^\s*registry-url\s*:/m);
+  assert.match(publishYml, /id-token:\s*write/);
+  assert.match(publishYml, /NPM_CONFIG_PROVENANCE:\s*"true"/);
+});
+
