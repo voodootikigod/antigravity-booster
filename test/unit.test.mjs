@@ -772,7 +772,7 @@ test('resolvePluginPath: falls back to the ../adlc/plugins/adlc-antigravity sibl
   const libDir = join(isoRoot, 'lib');
   mkdirSync(libDir);
   const libSrc = fileURLToPath(new URL('../lib', import.meta.url));
-  for (const f of ['bootstrap.mjs', 'adlc-bridge.mjs', 'plugin-paths.mjs', 'semver.mjs', 'digest.mjs', 'doctor.mjs', 'doctor-models.mjs', 'models.mjs', 'worktrees.mjs', 'run-integrity.mjs']) {
+  for (const f of readdirSync(libSrc).filter((name) => name.endsWith('.mjs'))) {
     writeFileSync(join(libDir, f), readFileSync(join(libSrc, f)));
   }
   // adlc-bridge statically imports @adlc/tickets (bundling), so the copy needs

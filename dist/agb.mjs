@@ -21726,10 +21726,11 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
       }
     }
     const diffText = branchDiff(integWorktree, baseHeadSha);
-    let prosecutorModel = "claude-sonnet-5-5-high";
+    let prosecutorModel = PROSECUTOR_CANDIDATES[0];
     try {
       const pools = new PoolSet(void 0, { repo: resolvedRepo });
-      prosecutorModel = pools.prosecutorFor("gemini-3.8-flash-high");
+      const referenceBuilder = tierCandidates(canonicalTicket.tier ?? "mid", canonicalTicket.pool_hint)[0];
+      prosecutorModel = pools.prosecutorFor(referenceBuilder);
     } catch {
     }
     prosecuteScratch = mkdtempSync9(join38(tmpdir11(), "agb-rescue-prosecute-"));
@@ -21900,6 +21901,7 @@ var init_rescue = __esm({
     init_adlc_bridge();
     init_gates();
     init_lock2();
+    init_models();
     init_plan_integrity();
     init_plugin_paths();
     init_pools();
