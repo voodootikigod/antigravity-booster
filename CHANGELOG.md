@@ -9,6 +9,10 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-11-23
+
+**Autonomous factory parity (`agb shape`, `agb watch`, `agb init`, `agb sync-models`, `agb distill`), `agy 1.5.13+` / `@adlc/* 1.13.0` adaptation (27 live models & orchestrator routing), 7-pillar v1.4 harness accelerator, full release-audit hardening, and elimination of headless `agy` MCP/plugin process storms.**
+
 ### Added
 - **End-to-end autonomous factory parity** (#157):
   - New CLI commands: `agb shape <spec.md | id> [repo]` (deterministic DAG pre-analysis, scope overlap & static import coupling checks, `--analyze`, `--json`, `--sync-brain`, `--max-ticket-scope <n>`, `--strict`), `agb watch [repo]` (interactive live terminal TUI dashboard with `--interval <ms>`, `--follow`, `--compact`), `agb init [repo]` (scaffolds `.adlc/config.json`, `specs/feature-template.md`, `.gitignore`), and `agb sync-models` (`--check`, `--offline`, `--json`, `--write`).
@@ -51,9 +55,10 @@ rather than enumerate.
   - *Doctor, sidecar & supply-chain (`T-RA-5`, `T-RA-6`)*: ignored `AGB_HOME_DIR` when bundled in `verifyWindowsSandboxAttestation()`; honored `AGB_SYNC_MODELS_OFFLINE=1` in `checkModelCatalog()` and `runDoctor()`; caught `LEGACY_TICKET_STORE` cleanly during `agb doctor --fix`; forwarded resolved `{ home, env }` to all 6 home-scoped doctor checks; rejected symlinks on `.booster`, `.booster/token`, and `/events` log paths plus empty `runId` in both sidecar servers; validated `ANTIGRAVITY_SIDECAR_WEB_PORT` strictly in `1..65535`; used `realpathSync` in `scripts/update-adlc-digests.mjs`'s direct-invocation guard; removed stale `registry-url` from `.github/workflows/publish.yml` for clean OIDC trusted publishing.
   - *Skills, commands, rules & docs (`T-RA-7`, `T-RA-8`)*: fixed Phase 5 `/agb` and `/implement-and-review` diff bases to prevent empty-diff false-green reviews; aligned skills, commands, `rules/AGENTS.md`, `website/content/docs/**`, `website/env-docs.json`, committed `dist/**` / `vendor/adlc/dist/**` bundles, and regenerated `website/generated/**`.
   - *Round 2 release-audit blockers (#191, `T-RA-R2-BLOCKERS`)*: passed `--no-optional-locks` to `git status` in `lib/scheduler.mjs` and `lib/worktrees.mjs` so `feature.manyfiles=true` / `core.untrackedCache=true` never self-mutate `.git/index`; sandboxed `--test-cmd` via `wrapConsensusGateCommand()` in `runHollowTest()` and post-merge hollow-test verification so vendored `adlc hollow-test` writes its crash-recovery in-flight record into `gitDir` while untrusted tests remain inside `bwrap`/`sandbox-exec`; required `repo` on MCP `agb_shape` (`required: ['spec', 'repo']`, JSON-RPC `-32602` when omitted) so MCP calls never default to the staged plugin directory.
-- **Eliminated headless `agy` MCP & plugin process storm** (`T-STORM-1`..`T-STORM-3`):
+- **Eliminated headless `agy` MCP & plugin process storm** (#193, `T-STORM-1`..`T-STORM-3`):
   - Unified symlink-safe isolated home staging (`stageIsolatedGeminiHome`, `stageBuilderGeminiHome`, `stageReadonlyGeminiHome`) across all builders, readonly/schema probes, and `probeQuota()` (`lib/pools.mjs`), staging a hooks-only `antigravity-booster` projection (`plugin.json`, `hooks.json`, `bin/`, `dist/hooks/` only — excluding `mcp_config.json`, `dist/mcp-server.mjs`, `rules/`, `skills/`, `commands/`, `agents/`) and default-empty `{"mcpServers":{}}` at both `.gemini/mcp_config.json` and `.gemini/config/mcp_config.json` (extracting only `codegraph` when both `AGB_ALLOW_CODEGRAPH_MCP=1` and `<repo>/.codegraph` exist).
   - Redesigned `buildRoleSettingsProfile()` (`lib/ndjson-worker.mjs`) around live-verified `agy 1.5.15` `--settings` keys (`{ permissions: { deny: [...] } }`), enforced strict `--settings` key validation in `test/fixtures/fake-agy`, and wired explicit `role` + `useRoleSettings: true` across every production `runAgy()` call site.
+- **Parallel test `TMPDIR` isolation for hollow-test sandbox leak assertions** (#194): isolated per-test `TMPDIR`/`TMP`/`TEMP` roots in `test/audit-scheduler-sidecar.test.mjs`, `test/audit2-scheduler-gates.test.mjs`, and `test/prosecute.test.mjs` so parallel `node --test` workers cannot observe sibling in-flight sandbox temp directories.
 
 ## [1.2.0] — 2026-11-05
 
