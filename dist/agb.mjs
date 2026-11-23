@@ -21133,7 +21133,8 @@ function saveRescueSnapshot(repo, ticketOrId, worktreePath, { runId = "manual", 
       files.push({
         path: rel,
         mode,
-        contentBase64: wtBuf.toString("base64")
+        contentBase64: wtBuf.toString("base64"),
+        baseSha256: baseBuf ? crypto6.createHash("sha256").update(baseBuf).digest("hex") : null
       });
       changedRecords.push({ path: rel, kind, mode, oldBuf: baseBuf, newBuf: wtBuf });
     }
@@ -21207,12 +21208,25 @@ function saveRescueSnapshot(repo, ticketOrId, worktreePath, { runId = "manual", 
   const lowerId = ticketId.toLowerCase();
   const rescueLogDir = ensureSafeBoosterSubdir(repo, ["logs", safeRunId, "rescue"]);
   const rescueLatestDir = ensureSafeBoosterSubdir(repo, ["rescue-latest"]);
+  let baseSha = null;
+  if (baselineRoot) {
+    try {
+      const resolvedHead = execFileSync16(
+        "git",
+        ["-c", `core.hooksPath=${NULL_HOOKS_PATH3}`, "-c", "core.fsmonitor=false", "rev-parse", "--verify", "HEAD^{commit}"],
+        { cwd: baselineRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], env: sanitizedGitEnv() }
+      ).trim();
+      if (/^[0-9a-f]{40,64}$/i.test(resolvedHead)) baseSha = resolvedHead;
+    } catch {
+    }
+  }
   const snapshotPath = join38(rescueLogDir, `${lowerId}.json`);
   const latestPath = join38(rescueLatestDir, `${lowerId}.json`);
   const payload = {
     ticketId,
     runId: safeRunId,
     savedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    baseSha,
     files,
     deletedPaths,
     diff
@@ -21247,12 +21261,62 @@ ${safeTicket.body ?? ""}
 Fix the ticket inside this worktree, verify tests pass, and exit cleanly so AGB can run P3/P5 gates and merge.`;
 }
 function gitSync(cwd, ...args) {
-  return execFileSync16("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH3}`, ...args], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-    env: sanitizedGitEnv()
-  });
+  return execFileSync16(
+    "git",
+    [
+      "-c",
+      `core.hooksPath=${NULL_HOOKS_PATH3}`,
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "diff.external=",
+      ...args
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: sanitizedGitEnv()
+    }
+  );
+}
+function resolveCommonGitDirReal(repo) {
+  const out = gitSync(repo, "rev-parse", "--git-common-dir").trim();
+  return realpathSync15(resolve23(repo, out));
+}
+function verifyRescueWorktreeGitPointer(repo, worktreePath, expectedGitDir = null) {
+  const wtSt = lstatOrNull2(worktreePath);
+  if (!wtSt || wtSt.isSymbolicLink() || !wtSt.isDirectory()) {
+    throw new Error(`Security violation: rescue worktree is missing or symbolic link: ${worktreePath}`);
+  }
+  const dotGit = join38(worktreePath, ".git");
+  const gitSt = lstatOrNull2(dotGit);
+  if (!gitSt || gitSt.isSymbolicLink() || !gitSt.isFile()) {
+    throw new Error(`Security violation: rescue worktree .git pointer must be a regular file: ${dotGit}`);
+  }
+  const content = readFileSync28(dotGit, "utf8").trim();
+  const match2 = /^gitdir:\s*(.+)$/.exec(content);
+  if (!match2) {
+    throw new Error(`Security violation: invalid rescue worktree .git pointer format: ${dotGit}`);
+  }
+  const targetDir = realpathSync15(resolve23(worktreePath, match2[1].trim()));
+  const worktreesParent = join38(resolveCommonGitDirReal(repo), "worktrees");
+  const relToParent = relative14(worktreesParent, targetDir);
+  if (!relToParent || relToParent === "." || relToParent.startsWith("..") || isAbsolute11(relToParent)) {
+    throw new Error(`Security violation: rescue worktree .git target escapes repository worktrees: ${targetDir}`);
+  }
+  if (expectedGitDir && targetDir !== expectedGitDir) {
+    throw new Error(`Security violation: rescue worktree .git pointer changed (${expectedGitDir} -> ${targetDir})`);
+  }
+  const hooksDir = join38(targetDir, "hooks");
+  if (existsSync35(hooksDir)) {
+    try {
+      rmSync15(hooksDir, { recursive: true, force: true });
+      mkdirSync19(hooksDir, { recursive: true });
+    } catch {
+    }
+  }
+  return targetDir;
 }
 function readJsonIfSafeFile(filePath) {
   const st = lstatOrNull2(filePath);
@@ -21308,16 +21372,32 @@ function readRunJsonSafe(repo) {
   if (!boosterSt || boosterSt.isSymbolicLink() || !boosterSt.isDirectory()) return null;
   return readJsonIfSafeFile(join38(repo, ".booster", "run.json"));
 }
-function readExistingRescueLockState(repo, ticketId) {
+function readExistingRescueLock(repo, ticketId) {
   const boosterSt = lstatOrNull2(join38(repo, ".booster"));
   if (!boosterSt || boosterSt.isSymbolicLink() || !boosterSt.isDirectory()) return null;
   const locksDir = join38(repo, ".booster", "rescue-locks");
   const locksSt = lstatOrNull2(locksDir);
   if (!locksSt || locksSt.isSymbolicLink() || !locksSt.isDirectory()) return null;
-  const lockData = readJsonIfSafeFile(join38(locksDir, `${ticketId.toLowerCase()}.json`));
-  return typeof lockData?.state === "string" ? lockData.state : null;
+  return readJsonIfSafeFile(join38(locksDir, `${ticketId.toLowerCase()}.json`));
 }
-function restoreSavedSnapshotIntoWorktree(repo, worktreePath, ticket) {
+function peekSavedSnapshotBaseSha(repo, ticketId) {
+  const boosterSt = lstatOrNull2(join38(repo, ".booster"));
+  if (!boosterSt || boosterSt.isSymbolicLink() || !boosterSt.isDirectory()) return null;
+  const latestDir = join38(repo, ".booster", "rescue-latest");
+  const latestSt = lstatOrNull2(latestDir);
+  if (!latestSt || latestSt.isSymbolicLink() || !latestSt.isDirectory()) return null;
+  const snap = readJsonIfSafeFile(join38(latestDir, `${ticketId.toLowerCase()}.json`));
+  if (!snap || typeof snap.baseSha !== "string" || !/^[0-9a-f]{40,64}$/i.test(snap.baseSha)) {
+    return null;
+  }
+  try {
+    const verified = gitSync(repo, "rev-parse", "--verify", `${snap.baseSha}^{commit}`).trim();
+    return verified || null;
+  } catch {
+    return null;
+  }
+}
+function restoreSavedSnapshotIntoWorktree(repo, worktreePath, ticket, { restoredAtSnapBase = false } = {}) {
   const boosterSt = lstatOrNull2(join38(repo, ".booster"));
   if (!boosterSt || boosterSt.isSymbolicLink() || !boosterSt.isDirectory()) return;
   const latestDir = join38(repo, ".booster", "rescue-latest");
@@ -21361,6 +21441,14 @@ function restoreSavedSnapshotIntoWorktree(repo, worktreePath, ticket) {
     const buf = Buffer.from(entry.contentBase64, "base64");
     const existingSt = lstatOrNull2(targetPath);
     if (existingSt && !existingSt.isFile()) continue;
+    if (!restoredAtSnapBase && entry.baseSha256 !== void 0) {
+      const currentSha = existingSt ? crypto6.createHash("sha256").update(readFileSync28(targetPath)).digest("hex") : null;
+      if (currentSha !== entry.baseSha256) {
+        throw new Error(
+          `cannot safely restore snapshot for '${entry.path}': base branch diverged since snapshot was taken`
+        );
+      }
+    }
     const flags = constants5.O_WRONLY | constants5.O_CREAT | constants5.O_TRUNC | (constants5.O_NOFOLLOW || 0);
     const mode = typeof entry.mode === "number" ? entry.mode & 511 : 420;
     const fd = openSync11(targetPath, flags, mode || 420);
@@ -21410,15 +21498,27 @@ function configureRescueWorktreeGit(worktreePath) {
   } catch {
   }
 }
-function spawnDefaultInteractiveAgy(agyBin, brief, worktreePath) {
+function spawnDefaultInteractiveAgy(agyBin, brief, worktreePath, ticketId) {
   return new Promise((resolveExit, rejectExit) => {
+    const onParentSigint = () => {
+    };
+    process.on("SIGINT", onParentSigint);
+    const detachSigint = () => {
+      process.off("SIGINT", onParentSigint);
+    };
     const child = spawn4(agyBin, ["-i", brief], {
       cwd: worktreePath,
       stdio: "inherit",
-      env: process.env
+      env: { ...process.env, AGB_RESCUE_TICKET: ticketId }
     });
-    child.on("error", rejectExit);
-    child.on("close", (code) => resolveExit(code ?? 1));
+    child.on("error", (err) => {
+      detachSigint();
+      rejectExit(err);
+    });
+    child.on("close", (code) => {
+      detachSigint();
+      resolveExit(code ?? 1);
+    });
   });
 }
 async function runInteractiveRescue(repo, ticketId, options = {}) {
@@ -21451,20 +21551,32 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
   const lastError = options.lastError !== void 0 ? options.lastError : runJson?.tickets?.[ticketId]?.error ?? runJson?.tickets?.[canonicalTicket.id]?.error ?? "";
   const worktreePath = join38(resolvedRepo, ".worktrees", `agb-${ticketId.toLowerCase()}`);
   let lockA = null;
+  let expectedWtGitDir = null;
+  let refusedLiveRescue = false;
   try {
     lockA = acquireRepoLock(resolvedRepo, { runId });
     lockA.assertStillHeld();
-    const priorLockState = readExistingRescueLockState(resolvedRepo, ticketId);
-    writeRescueWorktreeLock(resolvedRepo, ticketId, { state: "active", runId });
-    const reuseExisting = existsSync35(worktreePath) && (Boolean(options.continueExisting) || priorLockState === "preserved");
-    if (!reuseExisting) {
-      createWorktree(resolvedRepo, ticketId, baseBranch, { allowResetRescue: true });
-      restoreSavedSnapshotIntoWorktree(resolvedRepo, worktreePath, canonicalTicket);
+    const priorLock = readExistingRescueLock(resolvedRepo, ticketId);
+    if (priorLock?.state === "active" && typeof priorLock.pid === "number" && priorLock.pid !== process.pid && existsSync35(worktreePath) && isProcessAlive2(priorLock.pid, priorLock.startTime ?? null)) {
+      refusedLiveRescue = true;
+      throw new Error(
+        `another interactive rescue session (pid ${priorLock.pid}) is already active for ticket '${ticketId}'`
+      );
     }
+    const reuseExisting = existsSync35(worktreePath) && (Boolean(options.continueExisting) || priorLock?.state === "preserved" || priorLock?.state === "active");
+    writeRescueWorktreeLock(resolvedRepo, ticketId, { state: "active", runId });
+    if (!reuseExisting) {
+      const snapBaseSha = peekSavedSnapshotBaseSha(resolvedRepo, canonicalTicket.id);
+      createWorktree(resolvedRepo, ticketId, snapBaseSha || baseBranch, { allowResetRescue: true });
+      restoreSavedSnapshotIntoWorktree(resolvedRepo, worktreePath, canonicalTicket, {
+        restoredAtSnapBase: Boolean(snapBaseSha)
+      });
+    }
+    expectedWtGitDir = verifyRescueWorktreeGitPointer(resolvedRepo, worktreePath);
     configureRescueWorktreeGit(worktreePath);
     materializeWorktreeNodeModules(worktreePath, join38(resolvedRepo, "node_modules"));
   } catch (err) {
-    const wtPresent = existsSync35(worktreePath);
+    const wtPresent = !refusedLiveRescue && existsSync35(worktreePath);
     if (wtPresent) {
       try {
         writeRescueWorktreeLock(resolvedRepo, ticketId, { state: "preserved", runId });
@@ -21518,7 +21630,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
         else if (typeof rawExit.status === "number") exitCode = rawExit.status;
       }
     } else {
-      exitCode = await spawnDefaultInteractiveAgy(effectiveAgyBin, rescueBrief, worktreePath);
+      exitCode = await spawnDefaultInteractiveAgy(effectiveAgyBin, rescueBrief, worktreePath, canonicalTicket.id);
     }
   } catch (err) {
     try {
@@ -21581,14 +21693,16 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
     const baseHeadSha = gitSync(resolvedRepo, "rev-parse", "--verify", `${baseBranch}^{commit}`).trim();
     removeMaterializedNodeModules(worktreePath);
     cleanEmptyNodeModules(worktreePath);
+    verifyRescueWorktreeGitPointer(resolvedRepo, worktreePath, expectedWtGitDir);
     configureRescueWorktreeGit(worktreePath);
     commitAll(worktreePath, `${ticketId}: ${canonicalTicket.title || ticketId} (rescue)`);
+    verifyRescueWorktreeGitPointer(resolvedRepo, worktreePath, expectedWtGitDir);
     const transactionToken = crypto6.randomUUID();
     markerRef = `refs/transactions/${ticketId}/${transactionToken}`;
     integWorktree = createIntegrationWorktree(resolvedRepo, transactionToken, baseBranch);
     removeMaterializedNodeModules(integWorktree);
     cleanEmptyNodeModules(integWorktree);
-    const wtGitUrl = pathToFileURL(join38(worktreePath, ".git")).href;
+    const wtGitUrl = pathToFileURL(expectedWtGitDir).href;
     gitSync(
       integWorktree,
       "fetch",
@@ -21697,33 +21811,38 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
       join38(resolvedRepo, "node_modules")
     );
     let gateRes;
+    let hollowRes = null;
     try {
       gateRes = await runGatesFn(resolvedGate, integWorktree, { sandbox: true });
+      if (!gateRes?.ok) {
+        const failedGate = Array.isArray(gateRes?.results) ? gateRes.results.at(-1) : null;
+        throw new Error(
+          failedGate ? `gate ${failedGate.name} failed:
+${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
+        );
+      }
+      if (hollowTestEnabled && changed.some((f) => f.startsWith("lib/"))) {
+        hollowRes = await runHollowTestFn({
+          worktree: integWorktree,
+          testCmd: resolvedGate?.test,
+          base: baseHeadSha,
+          adlcBin: runAdlcBin,
+          changedFiles: changed
+        });
+        if (hollowRes?.ok === false && Boolean(options.runHollowTestFn || runAdlcBin)) {
+          throw new Error(
+            `adlc hollow-test failed: ${hollowRes.error || "mutation gate execution error"}`
+          );
+        }
+        if ((hollowRes?.survived ?? 0) > 0) {
+          throw new Error(
+            `adlc hollow-test: ${hollowRes.survived}/${hollowRes.total ?? hollowRes.survived} mutant(s) survived`
+          );
+        }
+      }
     } finally {
       if (materialized) removeMaterializedNodeModules(integWorktree);
       cleanEmptyNodeModules(integWorktree);
-    }
-    if (!gateRes?.ok) {
-      const failedGate = Array.isArray(gateRes?.results) ? gateRes.results.at(-1) : null;
-      throw new Error(
-        failedGate ? `gate ${failedGate.name} failed:
-${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
-      );
-    }
-    let hollowRes = null;
-    if (hollowTestEnabled && changed.some((f) => f.startsWith("lib/"))) {
-      hollowRes = await runHollowTestFn({
-        worktree: integWorktree,
-        testCmd: resolvedGate?.test,
-        base: baseHeadSha,
-        adlcBin: runAdlcBin,
-        changedFiles: changed
-      });
-      if ((hollowRes?.survived ?? 0) > 0) {
-        throw new Error(
-          `adlc hollow-test: ${hollowRes.survived}/${hollowRes.total ?? hollowRes.survived} mutant(s) survived`
-        );
-      }
     }
     const diffText = branchDiff(integWorktree, baseHeadSha);
     let prosecutorModel = PROSECUTOR_CANDIDATES[0];
@@ -21815,6 +21934,48 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
         gitSync(resolvedRepo, "read-tree", "-u", "-m", baseHeadSha, candidateSha);
       } catch {
       }
+    }
+    try {
+      const boosterDir = join38(resolvedRepo, ".booster");
+      const bSt = lstatOrNull2(boosterDir);
+      if (bSt && !bSt.isSymbolicLink() && bSt.isDirectory()) {
+        const runFile = join38(boosterDir, "run.json");
+        const existingRun = readJsonIfSafeFile(runFile);
+        if (existingRun && typeof existingRun === "object" && !Array.isArray(existingRun)) {
+          const updatedTickets = { ...existingRun.tickets ?? {} };
+          updatedTickets[canonicalTicket.id] = {
+            ...updatedTickets[canonicalTicket.id] ?? {},
+            phase: "merged",
+            detail: "merged via agb rescue",
+            mergeSha: candidateSha
+          };
+          const updatedRun = { ...existingRun, tickets: updatedTickets };
+          if (updatedRun.report && typeof updatedRun.report === "object") {
+            const mergedSet = new Set(Array.isArray(updatedRun.report.merged) ? updatedRun.report.merged : []);
+            mergedSet.add(canonicalTicket.id);
+            const nextFailed = { ...updatedRun.report.failed ?? {} };
+            delete nextFailed[canonicalTicket.id];
+            delete nextFailed[ticketId];
+            updatedRun.report = { ...updatedRun.report, merged: [...mergedSet], failed: nextFailed };
+          }
+          writeOwnerOnlyJsonAtomic(runFile, updatedRun);
+        }
+        const reportFile = join38(boosterDir, "report.json");
+        const existingReport = readJsonIfSafeFile(reportFile);
+        if (existingReport && typeof existingReport === "object" && !Array.isArray(existingReport)) {
+          const mergedSet = new Set(Array.isArray(existingReport.merged) ? existingReport.merged : []);
+          mergedSet.add(canonicalTicket.id);
+          const nextFailed = { ...existingReport.failed ?? {} };
+          delete nextFailed[canonicalTicket.id];
+          delete nextFailed[ticketId];
+          writeOwnerOnlyJsonAtomic(reportFile, {
+            ...existingReport,
+            merged: [...mergedSet],
+            failed: nextFailed
+          });
+        }
+      }
+    } catch {
     }
     try {
       removeWorktree(resolvedRepo, integWorktree, { force: true });
@@ -25317,10 +25478,11 @@ function formatStepClock(ts) {
   const ss = String(d.getSeconds()).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
 }
-function readLiveWorktreeDiff(worktreePath, baseRef) {
-  if (!worktreePath || !existsSync36(worktreePath)) return "";
+function readLiveWorktreeDiff(worktreePath, baseRef, expectedGitDir) {
+  if (!worktreePath || !expectedGitDir || !existsSync36(worktreePath)) return "";
   try {
     if (lstatSync20(worktreePath).isSymbolicLink()) return "";
+    verifyWorktreeGitPointer(worktreePath, expectedGitDir);
   } catch {
     return "";
   }
@@ -25332,6 +25494,10 @@ function readLiveWorktreeDiff(worktreePath, baseRef) {
       [
         "-c",
         `core.hooksPath=${NULL_HOOKS_PATH4}`,
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "diff.external=",
         "diff",
         baseRef,
         "--",
@@ -25349,7 +25515,17 @@ function readLiveWorktreeDiff(worktreePath, baseRef) {
   try {
     const untrackedOut = execFileSync17(
       "git",
-      ["-c", `core.hooksPath=${NULL_HOOKS_PATH4}`, "ls-files", "--others", "--exclude-standard"],
+      [
+        "-c",
+        `core.hooksPath=${NULL_HOOKS_PATH4}`,
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "diff.external=",
+        "ls-files",
+        "--others",
+        "--exclude-standard"
+      ],
       { cwd: worktreePath, encoding: "utf8", maxBuffer: 1024 * 1024, env: gitEnv }
     );
     const untrackedFiles = untrackedOut.split("\n").map((f) => f.trim()).filter(Boolean).filter(
@@ -25402,71 +25578,72 @@ function readSavedRescueDiff(repo, ticketId) {
     return "";
   }
 }
-function verifyTicketLandedOnBase(repo, baseRef, ticketId) {
-  if (!ticketId || typeof ticketId !== "string" || !TICKET_ID_RE.test(ticketId)) return false;
-  const gitEnv = sanitizedGitEnv();
+function computeTicketResumeHash(t) {
+  return crypto7.createHash("sha256").update(JSON.stringify({ id: t?.id ?? "", scope: [...t?.scope ?? []].sort() })).digest("hex");
+}
+function isCommitAncestorAndUnreverted(repo, baseRef, commitSha, ticketId, gitEnv) {
+  if (!commitSha || !/^[0-9a-f]{40,64}$/i.test(commitSha)) return false;
   try {
-    const mergeOut = execFileSync17(
+    execFileSync17(
       "git",
-      [
-        "-c",
-        `core.hooksPath=${NULL_HOOKS_PATH4}`,
-        "log",
-        "--fixed-strings",
-        `--grep=merge: ${ticketId} (agb)`,
-        "-n",
-        "1",
-        "--format=%H",
-        baseRef
-      ],
-      { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], env: gitEnv }
-    ).trim();
-    if (mergeOut.length > 0) return true;
+      ["-c", `core.hooksPath=${NULL_HOOKS_PATH4}`, "merge-base", "--is-ancestor", commitSha, baseRef],
+      { cwd: repo, stdio: "ignore", env: gitEnv }
+    );
   } catch {
+    return false;
   }
   try {
-    const prefixLower = `${ticketId.toLowerCase()}: `;
-    const subjOut = execFileSync17(
+    const afterSubjects = execFileSync17(
+      "git",
+      ["-c", `core.hooksPath=${NULL_HOOKS_PATH4}`, "log", "--format=%s", `${commitSha}..${baseRef}`],
+      { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], env: gitEnv }
+    );
+    const idLower = ticketId.toLowerCase();
+    for (const raw of afterSubjects.split("\n")) {
+      const s = raw.trim().toLowerCase();
+      if (s.startsWith(`revert "${idLower}: `) || s.startsWith(`revert "merge: ${idLower} (agb)"`)) {
+        return false;
+      }
+    }
+  } catch {
+  }
+  return true;
+}
+function verifyTicketLandedOnBase(repo, baseRef, ticketId, { mergeSha = null, rescueOnly = false } = {}) {
+  if (!ticketId || typeof ticketId !== "string" || !TICKET_ID_RE.test(ticketId)) return false;
+  const gitEnv = sanitizedGitEnv();
+  if (!rescueOnly && mergeSha && isCommitAncestorAndUnreverted(repo, baseRef, mergeSha, ticketId, gitEnv)) {
+    return true;
+  }
+  try {
+    const logLines = execFileSync17(
       "git",
       [
         "-c",
         `core.hooksPath=${NULL_HOOKS_PATH4}`,
         "log",
         "--fixed-strings",
-        `--grep=${ticketId}: `,
+        `--grep=${ticketId}`,
         "-n",
         "50",
-        "--format=%s",
+        "--format=%H %s",
         baseRef
       ],
       { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], env: gitEnv }
     );
-    for (const line of subjOut.split("\n")) {
-      if (line.trim().toLowerCase().startsWith(prefixLower)) return true;
-    }
-  } catch {
-  }
-  try {
-    const adlcDir = assertSafeAdlcDir(repo);
-    const manifestPath = join39(adlcDir, "manifest.jsonl");
-    const st = lstatSync20(manifestPath);
-    if (!st.isSymbolicLink() && st.isFile()) {
-      const content = readFileSync29(manifestPath, "utf8");
-      for (const line of content.split("\n")) {
-        if (!line.trim()) continue;
-        try {
-          const entry = JSON.parse(line);
-          if (entry && typeof entry === "object" && String(entry.ticket ?? "").toLowerCase() === ticketId.toLowerCase() && (entry.gate === "prosecution" || entry.gate === "merge" || entry.gate === "post-merge-build")) {
-            if (entry.gate === "prosecution" && entry.data?.verdict && entry.data.verdict !== "ship") {
-              continue;
-            }
-            if (entry.gate === "post-merge-build" && entry.data?.ok === false) {
-              continue;
-            }
-            return true;
-          }
-        } catch {
+    const prefixLower = `${ticketId.toLowerCase()}: `;
+    const mergeLower = `merge: ${ticketId.toLowerCase()} (agb)`;
+    for (const raw of logLines.split("\n")) {
+      const spaceIdx = raw.indexOf(" ");
+      if (spaceIdx <= 0) continue;
+      const sha = raw.slice(0, spaceIdx).trim();
+      const subjLower = raw.slice(spaceIdx + 1).trim().toLowerCase();
+      if (rescueOnly) {
+        if (subjLower.startsWith(prefixLower) && subjLower.endsWith("(rescue)") && isCommitAncestorAndUnreverted(repo, baseRef, sha, ticketId, gitEnv)) {
+          return true;
         }
+      } else if ((subjLower === mergeLower || subjLower.startsWith(prefixLower)) && isCommitAncestorAndUnreverted(repo, baseRef, sha, ticketId, gitEnv)) {
+        return true;
       }
     }
   } catch {
@@ -25603,6 +25780,7 @@ Fix: ${agyCheck.fix}`);
   let activeDisabledModels = /* @__PURE__ */ new Set();
   const merged = /* @__PURE__ */ new Set();
   const mergedShas = /* @__PURE__ */ new Set();
+  const resumedMergeShas = /* @__PURE__ */ new Map();
   const failed = /* @__PURE__ */ new Map();
   const started = /* @__PURE__ */ new Set();
   const running = [];
@@ -25624,6 +25802,7 @@ Fix: ${agyCheck.fix}`);
   const abortedByUser = /* @__PURE__ */ new Set();
   const ticketChildren = /* @__PURE__ */ new Map();
   const ticketWorktrees = /* @__PURE__ */ new Map();
+  const ticketGitDirs = /* @__PURE__ */ new Map();
   const streamBuffers = /* @__PURE__ */ new Map();
   let controlServer = null;
   const resolveCanonicalTicketId = (rawId) => {
@@ -25729,25 +25908,40 @@ Fix: ${agyCheck.fix}`);
     } catch {
     }
     if (resume === true) {
-      const resumeCandidates = /* @__PURE__ */ new Set();
+      const resumeCandidates = /* @__PURE__ */ new Map();
       if (Array.isArray(priorReportJson?.merged)) {
         for (const mId of priorReportJson.merged) {
           const canon = resolveCanonicalTicketId(mId);
-          if (canon) resumeCandidates.add(canon);
+          if (canon && !resumeCandidates.has(canon)) resumeCandidates.set(canon, null);
         }
       }
       if (priorRunJson?.tickets && typeof priorRunJson.tickets === "object") {
         for (const [k, v] of Object.entries(priorRunJson.tickets)) {
           if (v?.phase === "merged") {
             const canon = resolveCanonicalTicketId(k);
-            if (canon) resumeCandidates.add(canon);
+            if (canon) resumeCandidates.set(canon, typeof v.mergeSha === "string" ? v.mergeSha : null);
           }
         }
       }
-      for (const candId of resumeCandidates) {
-        if (verifyTicketLandedOnBase(repo, base, candId)) {
+      for (const [candId, recordedSha] of resumeCandidates.entries()) {
+        const tObj = tickets.find((x) => x.id === candId);
+        if (!tObj) continue;
+        const priorEntry = priorRunJson?.tickets?.[candId];
+        const ticketHashMatches = !priorEntry?.ticketHash || priorEntry.ticketHash === computeTicketResumeHash(tObj);
+        if (!ticketHashMatches) continue;
+        if (verifyTicketLandedOnBase(repo, base, candId, { mergeSha: recordedSha })) {
           merged.add(candId);
           started.add(candId);
+          if (recordedSha) resumedMergeShas.set(candId, recordedSha);
+        }
+      }
+      for (const t of tickets) {
+        if (merged.has(t.id)) continue;
+        const priorEntry = priorRunJson?.tickets?.[t.id];
+        if (priorEntry?.ticketHash && priorEntry.ticketHash !== computeTicketResumeHash(t)) continue;
+        if (verifyTicketLandedOnBase(repo, base, t.id, { rescueOnly: true })) {
+          merged.add(t.id);
+          started.add(t.id);
         }
       }
     }
@@ -25796,7 +25990,13 @@ Fix: ${agyCheck.fix}`);
     let fleetCliFailures = 0;
     for (const t of tickets) {
       if (merged.has(t.id)) {
-        status.ticket(t.id, { phase: "merged", detail: "resumed (already merged)" });
+        const prevSha = resumedMergeShas.get(t.id);
+        status.ticket(t.id, {
+          phase: "merged",
+          detail: "resumed (already merged)",
+          ...prevSha ? { mergeSha: prevSha } : {},
+          ticketHash: computeTicketResumeHash(t)
+        });
       } else {
         status.ticket(t.id, { phase: "pending" });
       }
@@ -25856,7 +26056,8 @@ Fix: ${agyCheck.fix}`);
             const rawId = typeof req?.ticketId === "string" ? req.ticketId : "";
             const canonId = resolveCanonicalTicketId(rawId) ?? rawId;
             const wt = ticketWorktrees.get(canonId);
-            const diff = wt && existsSync36(wt) ? readLiveWorktreeDiff(wt, base) : readSavedRescueDiff(repo, canonId);
+            const expectedGitDir = ticketGitDirs.get(canonId);
+            const diff = wt && expectedGitDir && existsSync36(wt) ? readLiveWorktreeDiff(wt, base, expectedGitDir) : readSavedRescueDiff(repo, canonId);
             return { ticketId: canonId, diff };
           },
           stream: (req) => {
@@ -26184,6 +26385,7 @@ Fix: ${agyCheck.fix}`);
           try {
             const preSnapshot = snapshotRootGit(repo);
             const { baseSha: baseRefSha, gitDir: expectedGitDir } = setupAttemptGitDatabase(repo, worktree, base);
+            ticketGitDirs.set(t.id, expectedGitDir);
             let charterMd = builderAgentsMd(t, gate);
             const hasSymbolConstraintsForSlice = Array.isArray(t.symbol_scope) && t.symbol_scope.length > 0 || Array.isArray(t.symbol_rails) && t.symbol_rails.length > 0;
             if (t.contextSlice === true || plan.contextSlice === true || hasSymbolConstraintsForSlice) {
@@ -26739,6 +26941,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
             captureTicketRescueSnapshot();
           }
           ticketWorktrees.delete(t.id);
+          ticketGitDirs.delete(t.id);
           try {
             removeWorktree(repo, worktree, { force: true });
           } catch {
@@ -26754,6 +26957,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           }
         } else {
           ticketWorktrees.delete(t.id);
+          ticketGitDirs.delete(t.id);
         }
         if (plan.overviewPane === true) {
           try {
@@ -27024,6 +27228,7 @@ ${g?.output?.slice(0, 300)}`);
         merged.add(t.id);
         mergedShas.add(rebasedSha);
         ticketWorktrees.delete(t.id);
+        ticketGitDirs.delete(t.id);
         try {
           execFileSync17("git", ["update-ref", `refs/heads/agb/${t.id.toLowerCase()}`, rebasedSha], { cwd: repo, env: gitEnv });
         } catch {
@@ -27041,7 +27246,11 @@ ${g?.output?.slice(0, 300)}`);
           rmSync16(gitDir, { recursive: true, force: true });
         } catch {
         }
-        status.ticket(t.id, { phase: "merged" });
+        status.ticket(t.id, {
+          phase: "merged",
+          mergeSha: rebasedSha,
+          ticketHash: computeTicketResumeHash(t)
+        });
         log2(`\u2713 ${t.id} merged`);
         try {
           let isCleanNow = false;

@@ -1074,16 +1074,17 @@ test('T-NG-1: interactive brain artifact carve-out permits verified active sessi
   const planFile = join(artifactDir, 'implementation_plan.md');
   const validMeta = { conversationId: convId, artifactDirectoryPath: artifactDir };
 
-  // 2. .system_generated and .system_generated/** are strictly denied for both interactive writes and reads
+  // 2. .system_generated and .system_generated/** are strictly denied for interactive writes/deletes while interactive transcript reads remain permitted
   const sysGenDir = join(artifactDir, '.system_generated');
   const sysGenLog = join(sysGenDir, 'logs', 'transcript.jsonl');
   mkdirSync(join(sysGenDir, 'logs'), { recursive: true });
   writeFileSync(sysGenLog, '{}\n');
   assert.equal(evalBrain('write_file', { Path: sysGenLog, Content: 'x' }, validMeta).decision, 'deny');
-  assert.equal(evalBrain('read_file', { Path: sysGenLog }, validMeta).decision, 'deny');
-  assert.equal(evalBrain('view_file', { AbsolutePath: sysGenLog }, validMeta).decision, 'deny');
-  assert.equal(evalBrain('list_dir', { DirectoryPath: sysGenDir }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('edit_file', { Path: sysGenLog, Target: '{}', Replacement: 'x' }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('delete_file', { TargetFile: sysGenLog }, validMeta).decision, 'deny');
   assert.equal(evalBrain('delete_directory', { directoryPath: sysGenDir }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('read_file', { Path: sysGenLog }, validMeta).decision, 'pass', 'interactive agent can read its own .system_generated transcript');
+  assert.equal(evalBrain('read_file', { Path: sysGenLog }, {}).decision, 'pass', 'interactive read passes even if host omits conversationId');
 
   // 3. Ancestor / exact-root directory deletions and shell mutations remain denied
   assert.equal(evalBrain('delete_directory', { directoryPath: artifactDir }, validMeta).decision, 'deny', 'cannot delete active brain root itself');
@@ -1092,15 +1093,14 @@ test('T-NG-1: interactive brain artifact carve-out permits verified active sessi
   assert.equal(evalBrain('run_command', { CommandLine: `rm -rf ${cliBrain}`, Cwd: fx.active }, validMeta).decision, 'deny');
   assert.equal(evalBrain('run_command', { CommandLine: `rm -f ${planFile}`, Cwd: fx.active }, validMeta).decision, 'deny');
 
-  // 4. Mismatched conversationId and invalid/missing conversationId or artifactDirectoryPath deny both reads and writes
+  // 4. Mismatched conversationId and invalid/missing conversationId or artifactDirectoryPath deny all interactive writes/edits
   const otherDir = join(cliBrain, otherConvId);
   mkdirSync(otherDir, { recursive: true });
   const otherPlan = join(otherDir, 'implementation_plan.md');
   writeFileSync(otherPlan, '# Other\n');
   assert.equal(evalBrain('write_file', { Path: otherPlan, Content: 'x' }, validMeta).decision, 'deny', 'target in different convId');
-  assert.equal(evalBrain('read_file', { Path: otherPlan }, validMeta).decision, 'deny', 'read in different convId');
+  assert.equal(evalBrain('edit_file', { Path: otherPlan, Target: '# Other', Replacement: 'x' }, validMeta).decision, 'deny');
   assert.equal(evalBrain('write_file', { Path: planFile, Content: 'x' }, { conversationId: otherConvId, artifactDirectoryPath: artifactDir }).decision, 'deny', 'convId != artifactDir leaf');
-  assert.equal(evalBrain('read_file', { Path: planFile }, { conversationId: otherConvId, artifactDirectoryPath: artifactDir }).decision, 'deny');
 
   for (const badMeta of [
     {},
@@ -1114,7 +1114,6 @@ test('T-NG-1: interactive brain artifact carve-out permits verified active sessi
     { conversationId: convId, artifactDirectoryPath: `${artifactDir}/../${convId}` },
   ]) {
     assert.equal(evalBrain('write_file', { Path: planFile, Content: 'x' }, badMeta).decision, 'deny', `write badMeta ${JSON.stringify(badMeta)}`);
-    assert.equal(evalBrain('read_file', { Path: planFile }, badMeta).decision, 'deny', `read badMeta ${JSON.stringify(badMeta)}`);
   }
 
   // Traversal out of artifactDir (`<artifactDir>/../...`) is denied
@@ -1133,20 +1132,12 @@ test('T-NG-1: interactive brain artifact carve-out permits verified active sessi
   symlinkSync(artifactDir, symConvDir);
   try {
     assert.equal(evalBrain('write_file', { Path: fileSym, Content: 'x' }, validMeta).decision, 'deny', 'symlinked file inside brain');
-    assert.equal(evalBrain('read_file', { Path: fileSym }, validMeta).decision, 'deny', 'read symlinked file inside brain');
     assert.equal(evalBrain('write_file', { Path: join(subSym, 'a.md'), Content: 'x' }, validMeta).decision, 'deny', 'symlinked subdir inside brain');
-    assert.equal(evalBrain('read_file', { Path: join(subSym, 'notes.md') }, validMeta).decision, 'deny', 'read symlinked subdir inside brain');
-    assert.equal(evalBrain('read_file', { Path: wsSym }, validMeta).decision, 'deny', 'workspace symlink pointing into brain');
     assert.equal(evalBrain('write_file', { Path: wsSym, Content: 'x' }, validMeta).decision, 'deny', 'write workspace symlink pointing into brain');
     assert.equal(
       evalBrain('write_file', { Path: join(symConvDir, 'implementation_plan.md'), Content: 'x' }, { conversationId: symConvId, artifactDirectoryPath: symConvDir }).decision,
       'deny',
       'symlinked <convId> dir',
-    );
-    assert.equal(
-      evalBrain('read_file', { Path: join(symConvDir, 'implementation_plan.md') }, { conversationId: symConvId, artifactDirectoryPath: symConvDir }).decision,
-      'deny',
-      'read symlinked <convId> dir',
     );
   } finally {
     rmSync(fileSym, { force: true });
@@ -1234,10 +1225,18 @@ test('T-NG-1: headless and readonly workers are denied on .booster IPC/rescue pa
         assert.equal(shell(`rm -rf ${target}`, fx.plain, env).decision, 'deny', `shell rm ${target}`);
       }
 
-      // Parent .booster deletion and shell wildcard bypasses in headless mode (even in non-ADLC plain repo!)
+      // Parent .booster directory-level reads, globs, oversized globs, and shell bypasses in headless mode (even in non-ADLC plain repo!)
+      assert.equal(run('list_dir', { DirectoryPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
+      assert.equal(run('grep_search', { SearchPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
+      assert.equal(run('find_by_name', { SearchPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
       assert.equal(run('delete_directory', { directoryPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
+      assert.equal(shell('ls .booster', fx.plain, env).decision, 'deny');
+      assert.equal(shell('tar -cf /dev/null .booster', fx.plain, env).decision, 'deny');
+      assert.equal(shell('python3 -c "print(open(\'.booster/control.json\').read())"', fx.plain, env).decision, 'deny');
       assert.equal(shell('rm -rf .booster', fx.plain, env).decision, 'deny');
       assert.equal(shell('cat .booster/*', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booste*/control.json', fx.plain, env).decision, 'deny');
+      assert.equal(shell(`cat ${join(fx.plain, 'a'.repeat(1100), '.booster/control*')}`, fx.plain, env).decision, 'deny');
       assert.equal(shell('cat .booster/control*', fx.plain, env).decision, 'deny');
       assert.equal(shell('cat /tmp/agb-ctrl-*', fx.plain, env).decision, 'deny');
       assert.equal(shell('cat /tmp/agb-ctrl*', fx.plain, env).decision, 'deny');
@@ -1246,6 +1245,13 @@ test('T-NG-1: headless and readonly workers are denied on .booster IPC/rescue pa
       assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'run.json') }, fx.active, env).decision, 'pass');
       assert.equal(shell('cat .booster/run.json', fx.active, env).decision, 'pass');
     }
+
+    // AGB_RESCUE_TICKET protects .booster/control.json and rescue-locks while keeping interactive prompts working
+    const RESCUE_ENV = { ...INTERACTIVE, AGB_RESCUE_TICKET: 'T1' };
+    assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'control.json') }, fx.active, RESCUE_ENV).decision, 'deny');
+    assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'rescue-locks', 'T1.json') }, fx.active, RESCUE_ENV).decision, 'deny');
+    assert.equal(shell('cat .booster/control.json', fx.active, RESCUE_ENV).decision, 'deny');
+    assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'run.json') }, fx.active, RESCUE_ENV).decision, 'pass');
 
     // Interactive sessions are not blocked from .booster/control.json or rescue-locks
     assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'control.json') }, fx.active, INTERACTIVE).decision, 'pass');

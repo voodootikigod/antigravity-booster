@@ -774,6 +774,121 @@ test('control-ipc, worktrees & rescue: timeout, invalid JSON, dead active lock w
     assert.equal(hollowBlock.merged, false);
     assert.match(hollowBlock.error, /hollow-test: 1\/4 mutant\(s\) survived/);
     assert.equal(existsSync(hollowBlock.preservedWorktree), true);
+
+    // 5d. Hollow-test execution error ({ ok: false }) fails closed AND sees materialized node_modules
+    mkdirSync(join(repo, 'node_modules', 'dummy-dep'), { recursive: true });
+    writeFileSync(join(repo, 'node_modules', 'dummy-dep', 'index.js'), 'export default 1;\n');
+    let sawNodeModulesInHollow = false;
+    const hollowExecErr = await runInteractiveRescue(repo, 'T-PLAN', {
+      continueExisting: true,
+      spawnInteractive: async ({ worktreePath }) => {
+        writeFileSync(join(worktreePath, 'lib', 'feature.mjs'), 'export const v = 5;\n');
+        return 0;
+      },
+      railsGuardFn: async () => ({ violations: [] }),
+      runGatesFn: async () => ({ ok: true, results: [{ name: 'test', ok: true, output: 'ok' }] }),
+      runHollowTestFn: async ({ worktree }) => {
+        sawNodeModulesInHollow = existsSync(join(worktree, 'node_modules', 'dummy-dep', 'index.js'));
+        return { ok: false, error: 'hollow-test binary crashed' };
+      },
+      prosecuteFn: async () => ({ verdict: 'ship', findings: [] }),
+    });
+    assert.equal(sawNodeModulesInHollow, true, 'hollow-test must run before materialized node_modules is removed');
+    assert.equal(hollowExecErr.ok, false, 'hollow-test ok: false must fail closed');
+    assert.match(hollowExecErr.error, /adlc hollow-test failed: hollow-test binary crashed/);
+
+    // 5e. Concurrent live rescue session refuses to clobber active worktree
+    const sleeper = execFileSync; // spawn a short background node sleeper to simulate live rescue pid
+    const { spawn: spawnChild } = await import('node:child_process');
+    const liveHolder = spawnChild(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], { stdio: 'ignore' });
+    try {
+      writeFileSync(
+        join(repo, '.booster', 'rescue-locks', 't-plan.json'),
+        JSON.stringify({ ticketId: 'T-PLAN', state: 'active', pid: liveHolder.pid, startTime: null }),
+        { mode: 0o600 }
+      );
+      const concurrentRefused = await runInteractiveRescue(repo, 'T-PLAN', {
+        spawnInteractive: async () => 0,
+      });
+      assert.equal(concurrentRefused.ok, false);
+      assert.match(concurrentRefused.error, /another interactive rescue session .* is already active/);
+      const lockStillActive = JSON.parse(readFileSync(join(repo, '.booster', 'rescue-locks', 't-plan.json'), 'utf8'));
+      assert.equal(lockStillActive.state, 'active');
+      assert.equal(lockStillActive.pid, liveHolder.pid);
+    } finally {
+      liveHolder.kill('SIGKILL');
+    }
+
+    // 5f. Tampered .git pointer inside rescue worktree is rejected in Phase B
+    writeFileSync(
+      join(repo, '.booster', 'rescue-locks', 't-plan.json'),
+      JSON.stringify({ ticketId: 'T-PLAN', state: 'preserved', pid: process.pid, startTime: null }),
+      { mode: 0o600 }
+    );
+    const gitTamperRes = await runInteractiveRescue(repo, 'T-PLAN', {
+      continueExisting: true,
+      spawnInteractive: async ({ worktreePath }) => {
+        const origGit = readFileSync(join(worktreePath, '.git'), 'utf8');
+        writeFileSync(join(worktreePath, '.orig-git-backup'), origGit);
+        writeFileSync(join(worktreePath, '.git'), 'gitdir: /tmp\n');
+        return 0;
+      },
+    });
+    assert.equal(gitTamperRes.ok, false);
+    assert.match(gitTamperRes.error, /Security violation: rescue worktree \.git/);
+    // Restore valid .git pointer for clean teardown
+    const wtPlan = join(repo, '.worktrees', 'agb-t-plan');
+    if (existsSync(join(wtPlan, '.orig-git-backup'))) {
+      writeFileSync(join(wtPlan, '.git'), readFileSync(join(wtPlan, '.orig-git-backup'), 'utf8'));
+      unlinkSync(join(wtPlan, '.orig-git-backup'));
+    }
+
+    // 5g. Snapshot baseSha restore + 3-way rebase preserves newer upstream edits on main AND updates run.json/report.json
+    clearRescueWorktreeLock(repo, 'T-PLAN');
+    writeFileSync(join(repo, 'lib', 'shared.mjs'), 'export const top = 1;\nexport const mid = 2;\nexport const bot = 3;\n');
+    execFileSync('git', ['-C', repo, 'add', 'lib/shared.mjs']);
+    execFileSync('git', ['-C', repo, 'commit', '-qm', 'add shared']);
+
+    const snapWt = createWorktree(repo, 'T-BASE-SNAP', 'main');
+    writeFileSync(join(snapWt, 'lib', 'shared.mjs'), 'export const top = 1;\nexport const mid = 2;\nexport const bot = 999;\n');
+    const baseTicket = { id: 'T-BASE-SNAP', title: 'Update bot', scope: ['lib/**'], rails: [] };
+    saveRescueSnapshot(repo, baseTicket, snapWt, { runId: 'r-snap', baselineRoot: repo });
+    rmSync(snapWt, { recursive: true, force: true });
+    execFileSync('git', ['-C', repo, 'worktree', 'prune']);
+
+    // Advance main upstream on a different line of lib/shared.mjs AFTER snapshot was taken!
+    writeFileSync(join(repo, 'lib', 'shared.mjs'), 'export const top = 111;\nexport const mid = 2;\nexport const bot = 3;\n');
+    execFileSync('git', ['-C', repo, 'add', 'lib/shared.mjs']);
+    execFileSync('git', ['-C', repo, 'commit', '-qm', 'upstream edit top']);
+
+    writeFileSync(
+      join(repo, '.booster', 'run.json'),
+      JSON.stringify({ runId: 'r-snap', done: true, tickets: { 'T-BASE-SNAP': { phase: 'failed' } } })
+    );
+    writeFileSync(
+      join(repo, '.booster', 'report.json'),
+      JSON.stringify({ runId: 'r-snap', merged: [], failed: { 'T-BASE-SNAP': 'failed' } })
+    );
+
+    const rebasedRescue = await runInteractiveRescue(repo, 'T-BASE-SNAP', {
+      ticket: baseTicket,
+      gate: { test: 'npm test' },
+      spawnInteractive: async () => 0,
+      railsGuardFn: async () => ({ violations: [] }),
+      runGatesFn: async () => ({ ok: true, results: [] }),
+      runHollowTestFn: async () => ({ ok: true, total: 1, killed: 1, survived: 0, mutants: [] }),
+      prosecuteFn: async () => ({ verdict: 'ship', findings: [] }),
+      recordGateFn: async () => ({ ok: true }),
+    });
+    assert.equal(rebasedRescue.ok, true, rebasedRescue.error);
+    assert.equal(
+      readFileSync(join(repo, 'lib', 'shared.mjs'), 'utf8'),
+      'export const top = 111;\nexport const mid = 2;\nexport const bot = 999;\n',
+      '3-way rebase from snap.baseSha must preserve upstream top=111 AND rescued bot=999'
+    );
+    const updatedReport = JSON.parse(readFileSync(join(repo, '.booster', 'report.json'), 'utf8'));
+    assert.ok(updatedReport.merged.includes('T-BASE-SNAP'));
+    assert.equal(updatedReport.failed['T-BASE-SNAP'], undefined);
   } finally {
     if (customPingSrv) await customPingSrv.close();
     if (stalledSrv) await new Promise((r) => stalledSrv.close(r));

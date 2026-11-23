@@ -226,7 +226,8 @@ function stripProcRoot(p) {
   return stripped.startsWith('/') ? stripped : `/${stripped}`;
 }
 
-const HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$)/;
+const HEADLESS_BOOSTER_SUBPATH =
+  /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$))/;
 const HEADLESS_BOOSTER_SAMPLES = [
   'control.json',
   'control.sock',
@@ -234,6 +235,13 @@ const HEADLESS_BOOSTER_SAMPLES = [
   'rescue-locks/x',
   'rescue-latest',
   'rescue-latest/x',
+];
+const HEADLESS_BOOSTER_TAIL_SAMPLES = [
+  '.booster',
+  '.booster/control.json',
+  '.booster/control.sock',
+  '.booster/rescue-locks',
+  '.booster/rescue-latest',
 ];
 
 export function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
@@ -244,7 +252,9 @@ export function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = pro
   if (HEADLESS_BOOSTER_SUBPATH.test(norm)) return true;
 
   const nocase = platform === 'darwin' || platform === 'win32';
-  const hasGlob = /[*?[\]{}!]/.test(normRaw) && normRaw.length <= 1024;
+  const rawHasGlob = /[*?[\]{}!]/.test(normRaw);
+  if (rawHasGlob && normRaw.length > 1024) return true; // fail closed on oversized globs
+  const hasGlob = rawHasGlob;
   if (hasGlob) {
     const boosterIdx = norm.lastIndexOf('/.booster/');
     if (boosterIdx >= 0) {
@@ -255,6 +265,17 @@ export function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = pro
       if (HEADLESS_BOOSTER_SAMPLES.some((s) => subMatcher.match(s) || firstMatcher.match(s))) {
         return true;
       }
+    }
+    const cleanSegs = normRaw.replace(/\/+$/, '').split('/').filter(Boolean);
+    const tail1 = cleanSegs.at(-1) ?? '';
+    const tail2 = cleanSegs.slice(-2).join('/');
+    if (tail1 && /[*?[\]{}!]/.test(tail1)) {
+      const m1 = new Minimatch(tail1, { dot: true, nocase });
+      if (m1.match('.booster') || HEADLESS_BOOSTER_SAMPLES.some((s) => m1.match(s))) return true;
+    }
+    if (tail2 && /[*?[\]{}!]/.test(tail2)) {
+      const m2 = new Minimatch(tail2, { dot: true, nocase });
+      if (HEADLESS_BOOSTER_TAIL_SAMPLES.some((s) => m2.match(s))) return true;
     }
   }
 

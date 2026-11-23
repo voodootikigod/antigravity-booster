@@ -127,6 +127,13 @@
       "description": "Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts."
     },
     {
+      "name": "AGB_RESCUE_TICKET",
+      "group": "core",
+      "default": "set by agb rescue",
+      "bundledIgnored": false,
+      "description": "Set by agb rescue on interactive agy -i sessions to protect .booster IPC tokens and rescue locks via PreToolUse while preserving interactive operator prompts."
+    },
+    {
       "name": "AGY_BIN",
       "group": "core",
       "default": "agy",

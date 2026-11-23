@@ -12,6 +12,7 @@
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
 | AGB_MODEL_STATS_FILE | &lt;plugin_data&gt;/model_stats.jsonl | Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): override path for the BanditModelRouter empirical model outcome ledger. | honoured |
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
+| AGB_RESCUE_TICKET | set by agb rescue | Set by agb rescue on interactive agy -i sessions to protect .booster IPC tokens and rescue locks via PreToolUse while preserving interactive operator prompts. | honoured |
 | AGB_ROUTER_STATIC | unset | Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order. | honoured |
 | AGB_SESSION_ID | unset | Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes. | honoured |
 | AGB_SYNC_MODELS_OFFLINE | unset | Set to 1 to use the built-in static model catalog instead of invoking agy models during doctor or sync-models. | honoured |

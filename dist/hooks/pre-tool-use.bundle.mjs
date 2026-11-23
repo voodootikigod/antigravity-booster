@@ -2179,16 +2179,6 @@ var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
 ]);
 var READONLY_BOOSTER_CONTROL_ACTIONS = /* @__PURE__ */ new Set(["snapshot", "diff", "stream"]);
 var BRAIN_APPS = ["antigravity", "antigravity-cli", "antigravity-ide", "jetski"];
-var DIR_READ_TOOLS = /* @__PURE__ */ new Set([
-  "list_dir",
-  "list_directory",
-  "grep_search",
-  "code_search",
-  "file_search",
-  "find_by_name",
-  "search_in_file",
-  "list_permissions"
-]);
 var PATH_MUTATING_TOOLS = /* @__PURE__ */ new Set([
   "run_command",
   "write_to_file",
@@ -3796,7 +3786,7 @@ function stripProcRoot(p) {
   const stripped = p.replace(PROC_ROOT_PREFIX, "");
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
-var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$)/;
+var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$))/;
 var HEADLESS_BOOSTER_SAMPLES = [
   "control.json",
   "control.sock",
@@ -3805,6 +3795,13 @@ var HEADLESS_BOOSTER_SAMPLES = [
   "rescue-latest",
   "rescue-latest/x"
 ];
+var HEADLESS_BOOSTER_TAIL_SAMPLES = [
+  ".booster",
+  ".booster/control.json",
+  ".booster/control.sock",
+  ".booster/rescue-locks",
+  ".booster/rescue-latest"
+];
 function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
   if (typeof absPath !== "string" || absPath.length === 0) return false;
   const isWin = platform === "win32";
@@ -3812,7 +3809,9 @@ function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.pl
   const norm = fold(normRaw, platform);
   if (HEADLESS_BOOSTER_SUBPATH.test(norm)) return true;
   const nocase = platform === "darwin" || platform === "win32";
-  const hasGlob = /[*?[\]{}!]/.test(normRaw) && normRaw.length <= 1024;
+  const rawHasGlob = /[*?[\]{}!]/.test(normRaw);
+  if (rawHasGlob && normRaw.length > 1024) return true;
+  const hasGlob = rawHasGlob;
   if (hasGlob) {
     const boosterIdx = norm.lastIndexOf("/.booster/");
     if (boosterIdx >= 0) {
@@ -3823,6 +3822,17 @@ function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.pl
       if (HEADLESS_BOOSTER_SAMPLES.some((s) => subMatcher.match(s) || firstMatcher.match(s))) {
         return true;
       }
+    }
+    const cleanSegs = normRaw.replace(/\/+$/, "").split("/").filter(Boolean);
+    const tail1 = cleanSegs.at(-1) ?? "";
+    const tail2 = cleanSegs.slice(-2).join("/");
+    if (tail1 && /[*?[\]{}!]/.test(tail1)) {
+      const m1 = new Minimatch(tail1, { dot: true, nocase });
+      if (m1.match(".booster") || HEADLESS_BOOSTER_SAMPLES.some((s) => m1.match(s))) return true;
+    }
+    if (tail2 && /[*?[\]{}!]/.test(tail2)) {
+      const m2 = new Minimatch(tail2, { dot: true, nocase });
+      if (HEADLESS_BOOSTER_TAIL_SAMPLES.some((s) => m2.match(s))) return true;
     }
   }
   for (const tmpRoot of tmpRoots) {
@@ -5087,7 +5097,6 @@ function stepOne(name, args, ctx) {
     const wfCwdPhys = physicalResolve(wfCwdArg, ctx.workspacePaths[0] || "/", ctx.platform);
     if (wfCwdPhys) stepCtx = { ...ctx, anchors: unique([wfCwdPhys, ...ctx.anchors]) };
   }
-  const allowExactBrainDir = DIR_READ_TOOLS.has(name);
   for (const token of candidates) {
     for (const r of resolveAll(token, stepCtx)) {
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
@@ -5096,13 +5105,10 @@ function stepOne(name, args, ctx) {
       if (r.unresolved && !(isRead && isBenignProcRead(token, r))) {
         return deny("Target path cannot be resolved (symlink loop or oversized path)");
       }
-      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
-        if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: allowExactBrainDir, platform: ctx.platform })) {
-          return deny("Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden");
-        }
-        continue;
-      }
       if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
+        if (matchRoot(r, ctx.brainRoots, ctx.platform) && isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, platform: ctx.platform })) {
+          continue;
+        }
         return deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden");
       }
     }
@@ -5649,6 +5655,7 @@ function buildContext(payload, options = {}) {
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : []).filter((p) => typeof p === "string" && isAbsolute5(p)).map((p) => resolve8(p));
   const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, "/", platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
+  const rescueTicket = env.AGB_RESCUE_TICKET ? String(env.AGB_RESCUE_TICKET) : null;
   const rawWorkerBuildCmd = typeof env.AGB_WORKER_BUILD_CMD === "string" ? env.AGB_WORKER_BUILD_CMD.trim() : "";
   const workerBuildCmd = /^npm run [a-zA-Z0-9_.:-]+$/.test(rawWorkerBuildCmd) ? rawWorkerBuildCmd : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
@@ -5700,6 +5707,7 @@ function buildContext(payload, options = {}) {
     workspacePaths,
     workspaceRealPaths,
     workerTicket,
+    rescueTicket,
     workerBuildCmd,
     readonly,
     allowCodegraphMcp: env.AGB_ALLOW_CODEGRAPH_MCP === "1",
@@ -5712,47 +5720,52 @@ function buildContext(payload, options = {}) {
     anchors: unique([...cwd ? [cwd] : [], ...workspacePaths]),
     // Roots for both the lexical and the physical home (P5 round 3 M4).
     protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
-    boosterDataRoots: headless ? [...baseBoosterDataRoots, ...brainRootsList, headlessProtectedMatcher(tmpRoots)] : baseBoosterDataRoots,
+    boosterDataRoots: headless ? [...baseBoosterDataRoots, ...brainRootsList, headlessProtectedMatcher(tmpRoots)] : rescueTicket ? [...baseBoosterDataRoots, headlessProtectedMatcher(tmpRoots)] : baseBoosterDataRoots,
     limits: { subtreeEntries: options.limits?.subtreeEntries ?? DEFAULT_SUBTREE_ENTRIES },
     storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === "string" && p.length > 0).map((p) => realOr(resolve8(p))),
     ...makeRepoCache(home, homes)
   };
 }
-var HEADLESS_DESTRUCTIVE_SHELL_CMDS = /* @__PURE__ */ new Set([
-  "rm",
-  "mv",
-  "shred",
-  "unlink",
-  "rmdir",
-  "cp",
-  "tar",
-  "rsync",
-  "chmod",
-  "chown",
-  "chgrp",
-  "find"
-]);
+var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);
-  if (verdict.decision === "deny" || !ctx.headless) return verdict;
+  if (verdict.decision === "deny" || !ctx.headless && !ctx.rescueTicket) return verdict;
   const norm = normalizeArgsCaseInsensitive(args);
   if (!norm.ok) return deny(norm.reason);
   const line = norm.folded.commandline;
-  if (typeof line !== "string") return verdict;
+  if (typeof line !== "string") return deny("run_command without a CommandLine string cannot be verified");
+  if (HEADLESS_FORBIDDEN_SHELL_LITERAL.test(line)) {
+    return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+  }
   const lexed = lexCommandLine(line);
-  if (!lexed.ok) return verdict;
+  if (!lexed.ok) {
+    return ctx.headless ? deny("Headless shell command could not be parsed") : verdict;
+  }
   const cwdArg = norm.folded.cwd;
   const baseCwd = typeof cwdArg === "string" && cwdArg.length > 0 ? resolve8(cwdArg) : ctx.workspacePaths[0] ?? "/";
+  const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
     const cmd = basename5(sub.argv[0] ?? "");
-    if (!HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd)) continue;
-    for (const tok of sub.argv.slice(1)) {
-      if (tok.startsWith("-")) continue;
+    const isPureReader = PURE_READERS.has(cmd);
+    const tokens = [
+      ...sub.argv.slice(1).flatMap((t) => {
+        if (!t.startsWith("-")) return [t];
+        const eq = t.indexOf("=");
+        return eq > 0 && eq < t.length - 1 ? [t.slice(eq + 1)] : [];
+      }),
+      ...(sub.redirects ?? []).map((r) => r.target).filter(Boolean)
+    ];
+    for (const tok of tokens) {
       const cand = resolveCandidate(tok, baseCwd, ctx.home, ctx.platform);
-      const isBoosterDir = /(?:^|[\\/])\.booster$/i.test(cand.real) || /(?:^|[\\/])\.booster$/i.test(cand.lexical);
-      const containsTmp = (ctx.tmpRoots ?? []).some((t) => isWithin(t, cand.real, ctx.platform) || isWithin(t, cand.lexical, ctx.platform));
-      if (isBoosterDir || containsTmp) {
+      if (ipcMatcher(cand.real, ctx.platform) || ipcMatcher(cand.lexical, ctx.platform)) {
         return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+      }
+      if (!isPureReader) {
+        const isBoosterTree = /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.real) || /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.lexical);
+        const containsTmp = (ctx.tmpRoots ?? []).some((t) => isWithin(t, cand.real, ctx.platform) || isWithin(t, cand.lexical, ctx.platform));
+        if (isBoosterTree || containsTmp) {
+          return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+        }
       }
     }
   }

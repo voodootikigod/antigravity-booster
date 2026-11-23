@@ -316,6 +316,41 @@ test('runPlan: saves pure-FS rescue snapshot on failure with root git integrity 
     );
     assert.equal(existsSync(join(repo, 'T3.txt')), true, 'unverified T3 must execute rather than being skipped');
     assert.deepEqual(new Set(report3.merged), new Set(['T1', 'T2', 'T3']));
+
+    // Also verify reusing ticket ID T1 in a NEW plan with a different scope rebuilds T1 instead of skipping!
+    writeFileSync(join(stateDir, 'built-tickets.log'), '');
+    const customBinV2 = join(binDir, 'custom-agy-v2.sh');
+    writeFileSync(
+      customBinV2,
+      [
+        '#!/usr/bin/env bash',
+        'all_args="$*"',
+        'if [[ "$all_args" == *"ticket T1"* ]] && [[ "$all_args" == *"TICKET-DONE or TICKET-BLOCKED"* ]]; then',
+        `  echo "T1-rebuilt" >> "${stateDir}/built-tickets.log"`,
+        '  echo "v2" > T1-v2.txt',
+        '  echo \'{"type":"result","status":"SUCCESS","exit_code":0,"conversation_id":"c-t1-v2"}\'',
+        '  exit 0',
+        'fi',
+        `exec "${FAKE_AGY}" "$@"`,
+        '',
+      ].join('\n'),
+      { mode: 0o755 }
+    );
+    const newPlanReusingT1 = {
+      repo,
+      gate: { test: 'true' },
+      tickets: [{ id: 'T1', title: 'new plan T1', body: 'write T1-v2.txt', scope: ['T1-v2.txt'] }],
+    };
+    const report4 = await withEnv(
+      { AGB_AGY_BIN: customBinV2, AGB_SANDBOX_GATES: '0', FAKE_STATE_DIR: stateDir },
+      () => runPlan(newPlanReusingT1, { ...quiet, resume: true })
+    );
+    assert.deepEqual(report4.merged, ['T1']);
+    assert.equal(
+      readFileSync(join(stateDir, 'built-tickets.log'), 'utf8').trim(),
+      'T1-rebuilt',
+      'Reusing ticket ID T1 with a new scope must rebuild T1 rather than skipping from stale run.json'
+    );
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(stateDir, { recursive: true, force: true });
