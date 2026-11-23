@@ -11730,6 +11730,16 @@ function stageHooksOnlyBoosterPlugin(srcPluginDir, dstPluginDir, platform3 = pro
     } catch {
     }
   }
+  const srcSessionStart = join23(srcPluginDir, "hooks", "session-start.mjs");
+  if (existsSync22(srcSessionStart)) {
+    try {
+      const dstHooks = join23(dstPluginDir, "hooks");
+      mkdirSync11(dstHooks, { recursive: true, mode: 448 });
+      const st = lstatSync11(srcSessionStart);
+      stageGeminiEntry(st, srcSessionStart, join23(dstHooks, "session-start.mjs"), platform3);
+    } catch {
+    }
+  }
   return true;
 }
 function stageFilteredMcpConfig(userHome, targetGemini, targetConfig, { allowCodegraph = false, repoRoot = null } = {}) {
