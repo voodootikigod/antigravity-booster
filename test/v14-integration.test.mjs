@@ -50,8 +50,11 @@ test('v1.4 integration: runAgy supports --settings and --effort and re-exports N
     assert.equal(res.ok, true);
     assert.ok(existsSync(settingsOut));
     const parsed = JSON.parse(readFileSync(settingsOut, 'utf8'));
-    assert.equal(parsed.mode, 'readonly');
-    assert.equal(parsed.mcpServersDisabled, true);
+    assert.deepEqual(Object.keys(parsed), ['permissions']);
+    assert.ok(Array.isArray(parsed.permissions.deny));
+    assert.ok(parsed.permissions.deny.includes('write_file'));
+    assert.ok(parsed.permissions.deny.includes('run_command'));
+    assert.ok(parsed.permissions.deny.includes('call_mcp_tool'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

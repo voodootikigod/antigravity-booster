@@ -227,7 +227,12 @@ export function runLiveV14HyperHarnessBenchmark() {
     JSON.stringify({ event: 'step_update', step_update: { step_type: 'tool', state: 'DONE', content: 'Command exited with code 0.\nℹ pass 10\nℹ fail 0' } })
   );
   const checks = {
-    roleSettingsReadonly: prof.mode === 'readonly' && prof.mcpServersDisabled === true,
+    roleSettingsReadonly:
+      Array.isArray(prof?.permissions?.deny) &&
+      prof.permissions.deny.includes('write_file') &&
+      prof.permissions.deny.includes('run_command') &&
+      prof.permissions.deny.includes('call_mcp_tool') &&
+      Object.keys(prof).every((k) => k === 'permissions'),
     watchdogDetectsErrorCycle: wdStatus.action === 'abort' && /in-turn flail detected/.test(wdStatus.reason),
     dynamicEffortEscalatesOnStrike: effort.effort === 'xhigh' && effort.escalated === true,
     symbolRailsEnforced: symOk.ok === true,

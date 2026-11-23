@@ -12630,10 +12630,29 @@ function defaultAgyBin() {
   }
 }
 async function probeQuota(agyBin = defaultAgyBin(), { timeoutMs = QUOTA_PROBE_TIMEOUT_MS } = {}) {
+  let cleanup = null;
   try {
+    const isBundled = Boolean(true);
+    const userHome = resolveUserHome({ env: process.env, bundled: isBundled });
+    const staged = stageReadonlyGeminiHome(userHome, { allowCodegraph: false });
+    cleanup = staged.cleanup;
+    const probeEnv = { ...process.env };
+    for (const k of Object.keys(probeEnv)) {
+      if (/^(?:home|userprofile|xdg_config_home|agb_user_home|agb_worker_mode|agb_worker_ticket|agb_worker_build_cmd)$/i.test(k)) {
+        delete probeEnv[k];
+      }
+    }
+    probeEnv.HOME = staged.agbHome;
+    probeEnv.XDG_CONFIG_HOME = join22(staged.agbHome, ".config");
+    probeEnv.AGB_USER_HOME = userHome;
+    probeEnv.AGB_WORKER_MODE = "readonly";
+    if (process.platform === "win32") {
+      probeEnv.USERPROFILE = staged.agbHome;
+    }
     const { stdout: stdout2 } = await execFileP(agyBin, ["-p", "/quota", "--output-format", "json"], {
       encoding: "utf8",
       timeout: timeoutMs,
+      env: probeEnv,
       stdio: ["ignore", "pipe", "ignore"]
     });
     return parseQuotaProbeOutput(stdout2);
@@ -12641,6 +12660,8 @@ async function probeQuota(agyBin = defaultAgyBin(), { timeoutMs = QUOTA_PROBE_TI
     const e = new Error(`Quota probe failed: ${err.message}`);
     e.kind = "quota_probe_failure";
     throw e;
+  } finally {
+    cleanup?.();
   }
 }
 var PoolSet = class {
@@ -13240,6 +13261,7 @@ init_semver();
 var READONLY_ROLES = /* @__PURE__ */ new Set([
   "prosecutor",
   "review",
+  "review-plan",
   "coldstart",
   "parallax",
   "premortem",
@@ -13247,35 +13269,57 @@ var READONLY_ROLES = /* @__PURE__ */ new Set([
   "arbiter",
   "readonly"
 ]);
+var READONLY_DENY_TOOLS = [
+  "write_file",
+  "write_to_file",
+  "edit_file",
+  "replace_file_content",
+  "multi_replace_file_content",
+  "create_file",
+  "save_file",
+  "delete_file",
+  "delete_directory",
+  "move",
+  "sed_file",
+  "write_blob",
+  "edit_notebook",
+  "notebook_edit",
+  "notebook_execution",
+  "run_command",
+  "send_command_input",
+  "invoke_subagent",
+  "define_subagent",
+  "manage_subagents",
+  "swarm",
+  "run_workflow",
+  "schedule",
+  "send_message",
+  "manage_task",
+  "call_mcp_tool"
+];
+var BUILDER_BASE_DENY_TOOLS = [
+  "invoke_subagent",
+  "define_subagent",
+  "manage_subagents",
+  "swarm",
+  "run_workflow",
+  "schedule",
+  "send_message"
+];
 function buildRoleSettingsProfile(role = "builder", { hasCodegraph = false, extraSettings = {} } = {}) {
   const normalizedRole = String(role || "builder").trim().toLowerCase();
   const isReadonly = READONLY_ROLES.has(normalizedRole);
   if (isReadonly) {
     return {
-      role: normalizedRole,
-      mode: "readonly",
-      mcpServersDisabled: true,
-      subagentsDisabled: true,
-      swarmDisabled: true,
-      allowedMcpServers: [],
-      modelFeatures: {
-        supportsThinking: true,
-        supportsToolCalls: false
+      permissions: {
+        deny: [...READONLY_DENY_TOOLS]
       },
       ...extraSettings
     };
   }
-  const allowedMcpServers = hasCodegraph ? ["codegraph"] : [];
   return {
-    role: "builder",
-    mode: "worker",
-    mcpServersDisabled: !hasCodegraph,
-    subagentsDisabled: true,
-    swarmDisabled: true,
-    allowedMcpServers,
-    modelFeatures: {
-      supportsThinking: true,
-      supportsToolCalls: true
+    permissions: {
+      deny: hasCodegraph ? [...BUILDER_BASE_DENY_TOOLS] : [...BUILDER_BASE_DENY_TOOLS, "call_mcp_tool"]
     },
     ...extraSettings
   };
@@ -13800,6 +13844,54 @@ var WRITABLE_ANTIGRAVITY_CLI_ENTRIES = /* @__PURE__ */ new Set([
   "last_check.timestamp",
   "settings.json.bak"
 ]);
+function unlinkIfSymlink(p) {
+  try {
+    if (lstatSync11(p, { throwIfNoEntry: false })?.isSymbolicLink()) {
+      rmSync8(p, { force: true });
+    }
+  } catch {
+  }
+}
+function stripJsonc(raw) {
+  const text = String(raw ?? "").replace(/^\uFEFF/, "");
+  let out = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const next = text[i + 1];
+    if (inString) {
+      out += ch;
+      if (escape) {
+        escape = false;
+      } else if (ch === "\\") {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      i += 2;
+      while (i < text.length && text[i] !== "\n" && text[i] !== "\r") i++;
+      i--;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i++;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
 function stageGeminiEntry(entry, srcPath, dstPath, platform3) {
   if (lstatSync11(dstPath, { throwIfNoEntry: false })) return;
   if (platform3 !== "win32") {
@@ -13809,40 +13901,115 @@ function stageGeminiEntry(entry, srcPath, dstPath, platform3) {
     }
     return;
   }
-  if (entry.isFile()) {
+  let effectiveEntry = entry;
+  if (entry?.isSymbolicLink?.()) {
+    try {
+      effectiveEntry = statSync6(srcPath);
+    } catch {
+      return;
+    }
+  }
+  if (effectiveEntry?.isFile?.()) {
     try {
       copyFileSync5(srcPath, dstPath);
     } catch {
     }
-  } else if (entry.isDirectory()) {
+  } else if (effectiveEntry?.isDirectory?.()) {
     try {
       cpSync3(srcPath, dstPath, { recursive: true, force: false, errorOnExist: false });
     } catch {
     }
   }
 }
-function stageBuilderGeminiHome(cwd, userHome, platform3 = process.platform) {
-  let worktreeDir = cwd;
+function stageHooksOnlyBoosterPlugin(srcPluginDir, dstPluginDir, platform3 = process.platform) {
+  if (!srcPluginDir || !existsSync22(srcPluginDir)) return false;
   try {
-    worktreeDir = realpathSync7(cwd);
+    const existing = lstatSync11(dstPluginDir, { throwIfNoEntry: false });
+    if (existing?.isSymbolicLink()) {
+      rmSync8(dstPluginDir, { force: true });
+    } else if (existing) {
+      rmSync8(dstPluginDir, { recursive: true, force: true });
+    }
+    mkdirSync11(dstPluginDir, { recursive: true, mode: 448 });
+  } catch {
+    return false;
+  }
+  for (const name of ["plugin.json", "hooks.json", "bin"]) {
+    const src = join23(srcPluginDir, name);
+    if (!existsSync22(src)) continue;
+    try {
+      const st = lstatSync11(src);
+      stageGeminiEntry(st, src, join23(dstPluginDir, name), platform3);
+    } catch {
+    }
+  }
+  const srcDistHooks = join23(srcPluginDir, "dist", "hooks");
+  if (existsSync22(srcDistHooks)) {
+    try {
+      const dstDist = join23(dstPluginDir, "dist");
+      mkdirSync11(dstDist, { recursive: true, mode: 448 });
+      const st = lstatSync11(srcDistHooks);
+      stageGeminiEntry(st, srcDistHooks, join23(dstDist, "hooks"), platform3);
+    } catch {
+    }
+  }
+  return true;
+}
+function stageFilteredMcpConfig(userHome, targetGemini, targetConfig, { allowCodegraph = false, repoRoot = null } = {}) {
+  const dstGeminiMcp = join23(targetGemini, "mcp_config.json");
+  const dstConfigMcp = join23(targetConfig, "mcp_config.json");
+  unlinkIfSymlink(dstGeminiMcp);
+  unlinkIfSymlink(dstConfigMcp);
+  let payload = '{"mcpServers":{}}\n';
+  if (allowCodegraph === true && repoRoot && existsSync22(join23(repoRoot, ".codegraph"))) {
+    const candidates = [
+      join23(userHome, ".gemini", "config", "mcp_config.json"),
+      join23(userHome, ".gemini", "mcp_config.json")
+    ];
+    for (const candidate of candidates) {
+      if (!existsSync22(candidate)) continue;
+      try {
+        const raw = readFileSync19(candidate, "utf8");
+        const parsed = JSON.parse(stripJsonc(raw));
+        const cg = parsed?.mcpServers?.codegraph;
+        if (cg && typeof cg === "object" && !Array.isArray(cg)) {
+          payload = `${JSON.stringify({ mcpServers: { codegraph: cg } }, null, 2)}
+`;
+          break;
+        }
+      } catch {
+      }
+    }
+  }
+  try {
+    mkdirSync11(targetGemini, { recursive: true, mode: 448 });
+    mkdirSync11(targetConfig, { recursive: true, mode: 448 });
+    writeFileSync12(dstGeminiMcp, payload, { encoding: "utf8", mode: 384 });
+    writeFileSync12(dstConfigMcp, payload, { encoding: "utf8", mode: 384 });
   } catch {
   }
-  const agbHome = join23(worktreeDir, ".agb_home");
+}
+function stageIsolatedGeminiHome(agbHome, userHome, { mode = "readonly", platform: platform3 = process.platform, allowCodegraph = false, repoRoot = null } = {}) {
   const targetGemini = join23(agbHome, ".gemini");
   const targetCli = join23(targetGemini, "antigravity-cli");
   const targetConfig = join23(targetGemini, "config");
+  const targetPlugins = join23(targetConfig, "plugins");
+  unlinkIfSymlink(targetGemini);
+  unlinkIfSymlink(targetConfig);
+  unlinkIfSymlink(targetPlugins);
+  unlinkIfSymlink(join23(targetGemini, "mcp_config.json"));
+  unlinkIfSymlink(join23(targetConfig, "mcp_config.json"));
+  unlinkIfSymlink(join23(targetGemini, "extensions"));
   try {
-    if (lstatSync11(targetGemini, { throwIfNoEntry: false })?.isSymbolicLink()) {
-      rmSync8(targetGemini, { force: true });
-    }
-    if (lstatSync11(targetConfig, { throwIfNoEntry: false })?.isSymbolicLink()) {
-      rmSync8(targetConfig, { force: true });
+    if (lstatSync11(targetPlugins, { throwIfNoEntry: false })) {
+      rmSync8(targetPlugins, { recursive: true, force: true });
     }
   } catch {
   }
   try {
     mkdirSync11(join23(targetCli, "plugin_data", "antigravity-booster", "logs"), { recursive: true, mode: 448 });
     mkdirSync11(join23(targetConfig, "projects"), { recursive: true, mode: 448 });
+    mkdirSync11(targetPlugins, { recursive: true, mode: 448 });
     for (const sub of ["bin", "brain", "conversations", "crashes", "log", "presence", "scratch", "cache"]) {
       mkdirSync11(join23(targetCli, sub), { recursive: true, mode: 448 });
     }
@@ -13852,7 +14019,9 @@ function stageBuilderGeminiHome(cwd, userHome, platform3 = process.platform) {
   if (existsSync22(realGemini)) {
     try {
       for (const entry of readdirSync10(realGemini, { withFileTypes: true })) {
-        if (WRITABLE_GEMINI_RUNTIME_DIRS.has(entry.name) || entry.name.startsWith("agb-sidecar-plugin-")) continue;
+        if (WRITABLE_GEMINI_RUNTIME_DIRS.has(entry.name) || entry.name === "mcp_config.json" || entry.name === "extensions" || entry.name.startsWith("agb-sidecar-plugin-")) {
+          continue;
+        }
         stageGeminiEntry(entry, join23(realGemini, entry.name), join23(targetGemini, entry.name), platform3);
       }
     } catch {
@@ -13861,10 +14030,28 @@ function stageBuilderGeminiHome(cwd, userHome, platform3 = process.platform) {
     if (existsSync22(realConfig)) {
       try {
         for (const entry of readdirSync10(realConfig, { withFileTypes: true })) {
-          if (entry.name === "projects") continue;
+          if (entry.name === "projects" || entry.name === "plugins" || entry.name === "mcp_config.json") continue;
           stageGeminiEntry(entry, join23(realConfig, entry.name), join23(targetConfig, entry.name), platform3);
         }
       } catch {
+      }
+      const realPlugins = join23(realConfig, "plugins");
+      if (existsSync22(realPlugins)) {
+        const srcBooster = join23(realPlugins, "antigravity-booster");
+        if (existsSync22(srcBooster)) {
+          stageHooksOnlyBoosterPlugin(srcBooster, join23(targetPlugins, "antigravity-booster"), platform3);
+        }
+        if (mode === "builder") {
+          for (const pluginName of ["adlc-antigravity", "adlc-gemini"]) {
+            const srcPlugin = join23(realPlugins, pluginName);
+            if (!existsSync22(srcPlugin)) continue;
+            try {
+              const st = lstatSync11(srcPlugin);
+              stageGeminiEntry(st, srcPlugin, join23(targetPlugins, pluginName), platform3);
+            } catch {
+            }
+          }
+        }
       }
     }
     const realCli = join23(realGemini, "antigravity-cli");
@@ -13878,7 +14065,45 @@ function stageBuilderGeminiHome(cwd, userHome, platform3 = process.platform) {
       }
     }
   }
+  stageFilteredMcpConfig(userHome, targetGemini, targetConfig, { allowCodegraph, repoRoot });
   return agbHome;
+}
+function stageBuilderGeminiHome(cwd, userHome, platform3 = process.platform, opts = {}) {
+  let worktreeDir = cwd;
+  try {
+    worktreeDir = realpathSync7(cwd);
+  } catch {
+  }
+  const agbHome = join23(worktreeDir, ".agb_home");
+  return stageIsolatedGeminiHome(agbHome, userHome, {
+    mode: "builder",
+    platform: platform3,
+    allowCodegraph: Boolean(opts?.allowCodegraph),
+    repoRoot: opts?.repoRoot ?? worktreeDir
+  });
+}
+function stageReadonlyGeminiHome(userHome, { platform: platform3 = process.platform, allowCodegraph = false, repoRoot = null } = {}) {
+  const root = mkdtempSync5(join23(tmpdir6(), "agb-ro-"));
+  const agbHome = join23(root, ".agb_home");
+  try {
+    mkdirSync11(agbHome, { recursive: true, mode: 448 });
+  } catch {
+  }
+  stageIsolatedGeminiHome(agbHome, userHome, {
+    mode: "readonly",
+    platform: platform3,
+    allowCodegraph: Boolean(allowCodegraph),
+    repoRoot
+  });
+  return {
+    agbHome,
+    cleanup: () => {
+      try {
+        rmSync8(root, { recursive: true, force: true });
+      } catch {
+      }
+    }
+  };
 }
 function assignSanitizedEnv(target, key2, val, isWin, isOverride = false) {
   if (!isWin) {
@@ -13918,17 +14143,24 @@ function buildSpawnEnv({
   env,
   cwd,
   repo,
+  repoRoot,
+  role,
   isBuilder = false,
   sanitizeEnv = false,
   worker,
   userHome,
+  readonlyHome,
+  builderHome,
   platform: platform3 = process.platform
 } = {}) {
   const isWin = platform3 === "win32";
+  const effectiveIsBuilder = Boolean(isBuilder || role === "builder");
   const effectiveEnv = env ? { ...processEnv, ...env } : processEnv;
   const resolvedUserHome = userHome ?? resolveUserHome({ env: processEnv });
+  const allowCodegraph = (env?.AGB_ALLOW_CODEGRAPH_MCP ?? processEnv?.AGB_ALLOW_CODEGRAPH_MCP) === "1";
+  const effectiveRepoRoot = repoRoot ?? repo ?? cwd ?? null;
   let spawnEnv = {};
-  const shouldSanitize = sanitizeEnv || isBuilder;
+  const shouldSanitize = sanitizeEnv || effectiveIsBuilder;
   if (shouldSanitize) {
     for (const [key2, val] of Object.entries(processEnv)) {
       if (isAllowedEnvVar(key2, effectiveEnv, platform3)) {
@@ -13972,18 +14204,22 @@ function buildSpawnEnv({
       if (k.startsWith("FAKE_") || isWin && k.toUpperCase().startsWith("FAKE_")) delete spawnEnv[k];
     }
   }
-  if (isBuilder) {
+  if (effectiveIsBuilder) {
     delete spawnEnv.XDG_RUNTIME_DIR;
     delete spawnEnv.DBUS_SESSION_BUS_ADDRESS;
     for (const k of Object.keys(spawnEnv)) {
-      if (/^(?:git_|agy_workspace$|antigravity_workspace$|userprofile$|home$|xdg_config_home$|xdg_runtime_dir$|dbus_session_bus_address$)/i.test(k)) {
+      if (/^(?:git_|agy_workspace$|antigravity_workspace$|userprofile$|home$|xdg_config_home$|agb_user_home$|xdg_runtime_dir$|dbus_session_bus_address$)/i.test(k)) {
         delete spawnEnv[k];
       }
     }
-    const agbHome = stageBuilderGeminiHome(cwd, resolvedUserHome, platform3);
-    spawnEnv.HOME = agbHome;
-    spawnEnv.USERPROFILE = agbHome;
-    spawnEnv.XDG_CONFIG_HOME = agbHome;
+    const agbHome = builderHome ?? stageBuilderGeminiHome(cwd, resolvedUserHome, platform3, {
+      allowCodegraph,
+      repoRoot: effectiveRepoRoot
+    });
+    assignSanitizedEnv(spawnEnv, "HOME", agbHome, isWin, true);
+    assignSanitizedEnv(spawnEnv, "USERPROFILE", agbHome, isWin, true);
+    assignSanitizedEnv(spawnEnv, "XDG_CONFIG_HOME", agbHome, isWin, true);
+    assignSanitizedEnv(spawnEnv, "AGB_USER_HOME", resolvedUserHome, isWin, true);
     spawnEnv.AGY_WORKSPACE = cwd;
     spawnEnv.ANTIGRAVITY_WORKSPACE = cwd;
     if (repo || cwd) {
@@ -14017,6 +14253,21 @@ function buildSpawnEnv({
       }
     } catch {
     }
+  } else if (spawnEnv.AGB_WORKER_MODE === "readonly") {
+    for (const k of Object.keys(spawnEnv)) {
+      if (/^(?:home|userprofile|xdg_config_home|agb_user_home)$/i.test(k)) {
+        delete spawnEnv[k];
+      }
+    }
+    const roHome = readonlyHome ?? stageReadonlyGeminiHome(resolvedUserHome, {
+      platform: platform3,
+      allowCodegraph,
+      repoRoot: effectiveRepoRoot
+    }).agbHome;
+    assignSanitizedEnv(spawnEnv, "HOME", roHome, isWin, true);
+    assignSanitizedEnv(spawnEnv, "USERPROFILE", roHome, isWin, true);
+    assignSanitizedEnv(spawnEnv, "XDG_CONFIG_HOME", join23(roHome, ".config"), isWin, true);
+    assignSanitizedEnv(spawnEnv, "AGB_USER_HOME", resolvedUserHome, isWin, true);
   }
   return spawnEnv;
 }
@@ -14078,15 +14329,19 @@ async function runAgy({
   if (typeof effort === "string" && effort.trim()) {
     args.push("--effort", effort.trim());
   }
-  const effectiveSettings = settings !== void 0 ? settings : useRoleSettings ? buildRoleSettingsProfile(role) : null;
+  const isBuilder = role === "builder";
+  const effectiveEnv = env ? { ...process.env, ...env } : process.env;
+  const allowCodegraph = (env?.AGB_ALLOW_CODEGRAPH_MCP ?? process.env.AGB_ALLOW_CODEGRAPH_MCP) === "1";
+  const effectiveRepoRoot = repo ?? cwd ?? null;
+  const hasCodegraph = allowCodegraph && Boolean(effectiveRepoRoot && existsSync22(join23(effectiveRepoRoot, ".codegraph")));
+  const effectiveSettings = settings !== void 0 ? settings : useRoleSettings ? buildRoleSettingsProfile(role, { hasCodegraph }) : null;
   if (effectiveSettings) {
     args.push(
       "--settings",
       typeof effectiveSettings === "string" ? effectiveSettings : JSON.stringify(effectiveSettings)
     );
   }
-  const isBuilder = role === "builder";
-  const effectiveEnv = env ? { ...process.env, ...env } : process.env;
+  let stagedBuilderHome = null;
   let effectiveSandbox = sandbox;
   let verifiedBypass = null;
   if (isBuilder) {
@@ -14537,7 +14792,10 @@ async function runAgy({
             launchArgs.push("--ro-bind", realGeminiDir, realGeminiDir);
           }
           if (isBuilder && cwd) {
-            stageBuilderGeminiHome(cwd, userHome, platform3);
+            stagedBuilderHome = stageBuilderGeminiHome(cwd, userHome, platform3, {
+              allowCodegraph,
+              repoRoot: effectiveRepoRoot
+            });
           }
         }
         const innerBwrapArgs = args.filter((a) => a !== "--sandbox");
@@ -14764,271 +15022,85 @@ async function runAgy({
       }
     }
   }
-  return new Promise((resolve29) => {
-    const t0 = Date.now();
-    const spawnEnv = buildSpawnEnv({
-      processEnv: process.env,
-      env,
-      cwd,
-      repo,
-      isBuilder,
-      sanitizeEnv,
-      worker,
-      userHome,
-      platform: platform3
+  const workerTicket = typeof worker?.ticket === "string" ? worker.ticket.trim() : "";
+  let readonlyHome = null;
+  let readonlyCleanup = null;
+  if (!isBuilder && !workerTicket) {
+    const stagedRo = stageReadonlyGeminiHome(userHome, {
+      platform: platform3,
+      allowCodegraph,
+      repoRoot: effectiveRepoRoot
     });
-    const spawnOpts = { cwd, stdio: [pipePromptViaStdin ? "pipe" : "ignore", "pipe", "pipe"], env: spawnEnv };
-    if (process.platform !== "win32") {
-      spawnOpts.detached = true;
-    }
-    let p = null;
-    let syncSpawnErr = null;
-    try {
-      p = spawn2(launchBin, launchArgs, spawnOpts);
-    } catch (spawnErr) {
-      syncSpawnErr = spawnErr;
-    }
-    if (p?.stdin) {
-      p.stdin.on("error", () => {
+    readonlyHome = stagedRo.agbHome;
+    readonlyCleanup = stagedRo.cleanup;
+  }
+  try {
+    return await new Promise((resolve29) => {
+      const t0 = Date.now();
+      const spawnEnv = buildSpawnEnv({
+        processEnv: process.env,
+        env,
+        cwd,
+        repo,
+        repoRoot: effectiveRepoRoot,
+        role,
+        isBuilder,
+        sanitizeEnv,
+        worker,
+        userHome,
+        readonlyHome,
+        builderHome: stagedBuilderHome,
+        platform: platform3
       });
-      p.stdin.end(prompt, "utf8");
-    }
-    const originalPid = p?.pid ?? null;
-    const originalStartTime = originalPid ? getProcessStartTime2(originalPid) : null;
-    if (typeof onSpawn === "function" && p) {
+      const spawnOpts = { cwd, stdio: [pipePromptViaStdin ? "pipe" : "ignore", "pipe", "pipe"], env: spawnEnv };
+      if (process.platform !== "win32") {
+        spawnOpts.detached = true;
+      }
+      let p = null;
+      let syncSpawnErr = null;
       try {
-        onSpawn(p);
-      } catch {
+        p = spawn2(launchBin, launchArgs, spawnOpts);
+      } catch (spawnErr) {
+        syncSpawnErr = spawnErr;
       }
-    }
-    let out = "";
-    let err = "";
-    let resolved = false;
-    let currentLineBuffer = Buffer.alloc(0);
-    let totalBytes = 0;
-    let consecutiveGarbageBytes = 0;
-    const events = [];
-    let terminalResult = null;
-    let extractedConversationId = null;
-    let killReason = null;
-    let childKilled = false;
-    const recordKillReason = (reason) => {
-      if (!killReason) {
-        killReason = reason;
+      if (p?.stdin) {
+        p.stdin.on("error", () => {
+        });
+        p.stdin.end(prompt, "utf8");
       }
-    };
-    const killProcessTree = (sig = "SIGTERM") => {
-      try {
-        if (systemdUnit) {
-          try {
-            execFileSync11("systemctl", ["--user", "stop", systemdUnit], { stdio: "ignore", timeout: 5e3 });
-          } catch {
-          }
+      const originalPid = p?.pid ?? null;
+      const originalStartTime = originalPid ? getProcessStartTime2(originalPid) : null;
+      if (typeof onSpawn === "function" && p) {
+        try {
+          onSpawn(p);
+        } catch {
         }
-        if (originalPid && isProcessAlive(originalPid, originalStartTime)) {
-          if (process.platform === "win32") {
+      }
+      let out = "";
+      let err = "";
+      let resolved = false;
+      let currentLineBuffer = Buffer.alloc(0);
+      let totalBytes = 0;
+      let consecutiveGarbageBytes = 0;
+      const events = [];
+      let terminalResult = null;
+      let extractedConversationId = null;
+      let killReason = null;
+      let childKilled = false;
+      const recordKillReason = (reason) => {
+        if (!killReason) {
+          killReason = reason;
+        }
+      };
+      const killProcessTree = (sig = "SIGTERM") => {
+        try {
+          if (systemdUnit) {
             try {
-              execFileSync11("taskkill", ["/pid", String(originalPid), "/T", "/F"], { stdio: "ignore" });
-            } catch {
-            }
-          } else {
-            try {
-              process.kill(-originalPid, sig);
-            } catch {
-            }
-            try {
-              const pids = execFileSync11("pgrep", ["-P", String(originalPid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
-              for (const pidStr of pids) {
-                const subPid = Number(pidStr);
-                if (subPid) {
-                  try {
-                    process.kill(subPid, sig);
-                  } catch {
-                  }
-                }
-              }
+              execFileSync11("systemctl", ["--user", "stop", systemdUnit], { stdio: "ignore", timeout: 5e3 });
             } catch {
             }
           }
-        }
-        p.kill(sig);
-      } catch {
-      }
-    };
-    let delayedKillTimer = null;
-    const terminateTree = () => {
-      if (childKilled) return;
-      childKilled = true;
-      killProcessTree("SIGTERM");
-      delayedKillTimer = setTimeout(() => {
-        killProcessTree("SIGKILL");
-      }, 1e4);
-      delayedKillTimer.unref?.();
-    };
-    const maxTimeoutMs = parseTimeoutMs(maxTimeout ?? process.env.AGB_BUILD_MAX_TIMEOUT ?? "30m");
-    const eventProgressTimeoutMs = parseTimeoutMs(eventProgressTimeout ?? process.env.AGB_EVENT_PROGRESS_TIMEOUT ?? "5m");
-    let eventProgressTimer = null;
-    const resetEventProgressTimer = () => {
-      if (eventProgressTimer) clearTimeout(eventProgressTimer);
-      eventProgressTimer = setTimeout(() => {
-        if (resolved) return;
-        recordKillReason({ kind: "timeout", error: "event progress watchdog timed out" });
-        terminateTree();
-      }, eventProgressTimeoutMs);
-      eventProgressTimer.unref?.();
-    };
-    let maxWallClockTimer = null;
-    maxWallClockTimer = setTimeout(() => {
-      if (resolved) return;
-      recordKillReason({ kind: "timeout", error: "orchestrator wall-clock ceiling exceeded" });
-      terminateTree();
-      if (!out.includes("Error: timed out waiting for response")) {
-        out = (out ? out + "\n" : "") + "Error: timed out waiting for response.";
-      }
-    }, maxTimeoutMs);
-    maxWallClockTimer.unref?.();
-    const timeoutMs = parseTimeoutMs(timeout);
-    let timer = null;
-    if (timeoutMs > 0) {
-      const killGraceMs = process.env.AGB_KILL_GRACE_MS ? parseInt(process.env.AGB_KILL_GRACE_MS, 10) : 15e3;
-      timer = setTimeout(() => {
-        if (resolved) return;
-        recordKillReason({ kind: "timeout", error: outputFormat === "stream-json" ? "stream-timeout" : "print-timeout" });
-        terminateTree();
-        if (!out.includes("Error: timed out waiting for response")) {
-          out = (out ? out + "\n" : "") + "Error: timed out waiting for response.";
-        }
-      }, timeoutMs + killGraceMs);
-      timer.unref?.();
-    }
-    if (outputFormat === "stream-json") {
-      resetEventProgressTimer();
-    }
-    const captureEventConversationId = (ev) => {
-      const candidateConvId = typeof ev.conversation_id === "string" && ev.conversation_id.trim() || typeof ev.init?.conversation_id === "string" && ev.init.conversation_id.trim() || typeof ev.step_update?.conversation_id === "string" && ev.step_update.conversation_id.trim() || typeof ev.result?.conversation_id === "string" && ev.result.conversation_id.trim() || null;
-      if (candidateConvId) {
-        extractedConversationId = candidateConvId;
-      }
-    };
-    const normalizeNestedStreamEvent = (ev) => {
-      if (ev.event === "init") {
-        events.push(ev);
-        return true;
-      }
-      if (ev.event === "step_update") {
-        const normStep = {
-          ...ev.step_update && typeof ev.step_update === "object" ? ev.step_update : {},
-          ...ev,
-          type: "step_update"
-        };
-        events.push(normStep);
-        return true;
-      }
-      if (ev.event === "result" && ev.result && (ev.result.status === "SUCCESS" || ev.result.status === "ERROR")) {
-        const normResult = {
-          ...ev.result,
-          type: "result",
-          exit_code: typeof ev.result.exit_code === "number" ? ev.result.exit_code : ev.result.status === "SUCCESS" ? 0 : 1
-        };
-        if (!terminalResult) {
-          terminalResult = normResult;
-          events.push(normResult);
-        } else {
-          console.warn("[agb] Warning: duplicate terminal result event received; first result wins");
-        }
-        return true;
-      }
-      return false;
-    };
-    const flushStreamBuffer = () => {
-      if (killReason) return;
-      if (outputFormat === "stream-json" && currentLineBuffer.length > 0) {
-        if (currentLineBuffer.length > MAX_STREAM_LINE_BYTES) {
-          recordKillReason({ kind: "stream_overflow", error: "stream line exceeded 1MB limit" });
-          terminateTree();
-          return;
-        }
-        const lineStr = currentLineBuffer.toString("utf8").trim();
-        currentLineBuffer = Buffer.alloc(0);
-        if (lineStr) {
-          let validEvent = false;
-          try {
-            const ev = JSON.parse(lineStr);
-            if (ev && typeof ev === "object" && ev.type) {
-              if (ev.type === "step_update" && typeof ev.step === "number" && typeof ev.action === "string") {
-                validEvent = true;
-                events.push(ev);
-              } else if (ev.type === "heartbeat" && typeof ev.timestamp === "number") {
-                validEvent = true;
-                events.push(ev);
-              } else if (ev.type === "result" && (ev.status === "SUCCESS" || ev.status === "ERROR") && typeof ev.exit_code === "number") {
-                validEvent = true;
-                if (!terminalResult) {
-                  terminalResult = ev;
-                  events.push(ev);
-                }
-              }
-            } else if (ev && typeof ev === "object" && ev.event) {
-              validEvent = normalizeNestedStreamEvent(ev);
-            }
-            if (validEvent) captureEventConversationId(ev);
-          } catch {
-          }
-          if (validEvent) {
-            consecutiveGarbageBytes = 0;
-            resetEventProgressTimer();
-          } else {
-            consecutiveGarbageBytes += Buffer.byteLength(lineStr);
-            if (consecutiveGarbageBytes > MAX_CONSECUTIVE_GARBAGE_BYTES) {
-              recordKillReason({ kind: "stream_corruption", error: "exceeded 5MB consecutive garbage without valid stream event" });
-              terminateTree();
-            }
-          }
-        }
-      }
-    };
-    const finish = async (code, signal, spawnError) => {
-      if (resolved) return;
-      resolved = true;
-      flushStreamBuffer();
-      if (timer) clearTimeout(timer);
-      if (eventProgressTimer) clearTimeout(eventProgressTimer);
-      if (maxWallClockTimer) clearTimeout(maxWallClockTimer);
-      if (delayedKillTimer) {
-        clearTimeout(delayedKillTimer);
-        delayedKillTimer = null;
-      }
-      if (argsTempFile) {
-        try {
-          unlinkSync6(argsTempFile);
-        } catch {
-        }
-        argsTempFile = null;
-      }
-      if (argsTempDir) {
-        try {
-          rmSync8(argsTempDir, { recursive: true, force: true });
-        } catch {
-        }
-        argsTempDir = null;
-      }
-      if (bwrapTempDir) {
-        try {
-          rmSync8(bwrapTempDir, { recursive: true, force: true });
-        } catch {
-        }
-        bwrapTempDir = null;
-      }
-      if (bwrapCreatedLocalNm) {
-        try {
-          rmdirSync2(bwrapCreatedLocalNm);
-        } catch {
-        }
-        bwrapCreatedLocalNm = null;
-      }
-      if (childKilled || killReason || signal) {
-        if (originalPid && isProcessAlive(originalPid, originalStartTime)) {
-          try {
+          if (originalPid && isProcessAlive(originalPid, originalStartTime)) {
             if (process.platform === "win32") {
               try {
                 execFileSync11("taskkill", ["/pid", String(originalPid), "/T", "/F"], { stdio: "ignore" });
@@ -15036,7 +15108,7 @@ async function runAgy({
               }
             } else {
               try {
-                process.kill(-originalPid, "SIGTERM");
+                process.kill(-originalPid, sig);
               } catch {
               }
               try {
@@ -15045,24 +15117,7 @@ async function runAgy({
                   const subPid = Number(pidStr);
                   if (subPid) {
                     try {
-                      process.kill(subPid, "SIGTERM");
-                    } catch {
-                    }
-                  }
-                }
-              } catch {
-              }
-              try {
-                process.kill(-originalPid, "SIGKILL");
-              } catch {
-              }
-              try {
-                const pids = execFileSync11("pgrep", ["-P", String(originalPid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
-                for (const pidStr of pids) {
-                  const subPid = Number(pidStr);
-                  if (subPid) {
-                    try {
-                      process.kill(subPid, "SIGKILL");
+                      process.kill(subPid, sig);
                     } catch {
                     }
                   }
@@ -15070,265 +15125,494 @@ async function runAgy({
               } catch {
               }
             }
-          } catch {
           }
+          p.kill(sig);
+        } catch {
         }
-      }
-      const ms = Date.now() - t0;
-      let envelope = null;
-      let jsonValid = true;
-      let jsonParseMsg = null;
-      if (outputFormat === "json") {
-        try {
-          const parsedEnvelope = JSON.parse(out);
-          if (parsedEnvelope && typeof parsedEnvelope === "object") envelope = parsedEnvelope;
-        } catch (e) {
-          jsonValid = false;
-          jsonParseMsg = `Invalid JSON structured output: ${e.message}`;
-        }
-      }
-      const legacyJsonTimeout = outputFormat === "json" && isAgyTimeout(out);
-      const classified = classifyAgyOutcome({
-        outputFormat: outputFormat ?? "text",
-        killReason,
-        spawnError,
-        code,
-        signal,
-        terminalResult,
-        envelope,
-        jsonValid,
-        schemaErrorMsg: jsonParseMsg,
-        finishedReason: legacyJsonTimeout ? "print_timeout" : void 0,
-        out,
-        err,
-        legacyPre150: true,
-        requestedModel: resolvedModel
-      });
-      let kind = classified.kind;
-      let errorMsg = classified.error;
-      let ok2 = kind === null;
-      let result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId, rateLimited: Boolean(classified.rateLimited) };
-      if (envelope && (ok2 || kind === "envelope_error")) {
-        result.envelope = envelope;
-      }
-      if (outputFormat === "stream-json") {
-        result.events = events;
-        result.terminalResult = terminalResult;
-      }
-      if (ok2 && outputFormat === "json") {
-        try {
-          const parsed = JSON.parse(out);
-          if (parsed && typeof parsed === "object") {
-            if (typeof parsed?.conversation_id === "string" && parsed.conversation_id.trim()) {
-              extractedConversationId = parsed.conversation_id.trim();
-            }
-            result.envelope = parsed;
-            const statusStr = typeof parsed.status === "string" ? parsed.status.toLowerCase() : "";
-            if (statusStr === "error" || statusStr === "failed") {
-              ok2 = false;
-              kind = "envelope_error";
-              errorMsg = `agy returned error status in JSON envelope: ${parsed.status}${parsed.error || parsed.response ? ` (${parsed.error || parsed.response})` : ""}`;
-              result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
-            } else if (jsonSchema) {
-              const schemaObj = typeof jsonSchema === "string" ? JSON.parse(jsonSchema) : jsonSchema;
-              let structured = parsed.structured_output;
-              if (structured === void 0 || structured === null) {
-                if (parsed.status !== void 0 || parsed.type === "result" || parsed.response !== void 0 || parsed.error !== void 0) {
-                  ok2 = false;
-                  kind = "missing_structured_output";
-                  errorMsg = "agy JSON response envelope missing required structured_output";
-                  result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
-                } else {
-                  structured = parsed;
-                }
-              }
-              if (ok2) {
-                if (typeof structured === "string") {
-                  try {
-                    structured = JSON.parse(structured);
-                  } catch (e) {
-                    ok2 = false;
-                    kind = "schema_violation";
-                    errorMsg = `structured_output is invalid JSON: ${e.message}`;
-                    result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
-                  }
-                }
-                if (ok2) {
-                  const validation = validateJsonSchema(structured, schemaObj);
-                  if (!validation.valid) {
-                    ok2 = false;
-                    kind = "schema_violation";
-                    errorMsg = `structured output violates schema: ${validation.errors.join("; ")}`;
-                    result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
-                  } else {
-                    result.data = structured;
-                  }
-                }
-              }
-            } else {
-              let structured = parsed.structured_output !== void 0 ? parsed.structured_output : parsed.response !== void 0 ? parsed.response : parsed;
-              if (typeof structured === "string") {
-                try {
-                  structured = JSON.parse(structured);
-                } catch {
-                }
-              }
-              result.data = structured;
-            }
-          } else {
-            if (jsonSchema) {
-              const schemaObj = typeof jsonSchema === "string" ? JSON.parse(jsonSchema) : jsonSchema;
-              const validation = validateJsonSchema(parsed, schemaObj);
-              if (!validation.valid) {
-                ok2 = false;
-                kind = "schema_violation";
-                errorMsg = `structured output violates schema: ${validation.errors.join("; ")}`;
-                result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
-              } else {
-                result.data = parsed;
-              }
-            } else {
-              result.data = parsed;
-            }
-          }
-        } catch (e) {
-          ok2 = false;
-          kind = "schema_violation";
-          errorMsg = `Invalid JSON structured output: ${e.message}`;
-          result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
-        }
-      }
-      result.conversationId = extractedConversationId;
-      result.rateLimited = Boolean(classified.rateLimited);
-      if (logFile) {
-        mkdirSync11(dirname17(logFile), { recursive: true, mode: 448 });
-        const record = {
-          ts: (/* @__PURE__ */ new Date()).toISOString(),
-          model,
-          cwd,
-          strike,
-          ms,
-          prompt,
-          output: out,
-          ok: ok2,
-          role
-        };
-        if (extractedConversationId !== null) {
-          record.conversationId = extractedConversationId;
-        }
-        if (!ok2) {
-          record.kind = kind;
-          record.error = result.error;
-        }
-        await appendFile(logFile, JSON.stringify(record) + "\n", { mode: 384 });
-      }
-      resolve29(result);
-    };
-    if (syncSpawnErr) {
-      void finish(null, null, syncSpawnErr);
-      return;
-    }
-    p.stdout.on("data", (d) => {
-      if (killReason) return;
-      const chunk = Buffer.isBuffer(d) ? d : Buffer.from(d);
-      out += d;
-      if (outputFormat === "stream-json") {
-        totalBytes += chunk.length;
-        if (totalBytes > MAX_STREAM_TOTAL_BYTES) {
-          recordKillReason({ kind: "stream_overflow", error: "total stream size exceeded 50MB limit" });
+      };
+      let delayedKillTimer = null;
+      const terminateTree = () => {
+        if (childKilled) return;
+        childKilled = true;
+        killProcessTree("SIGTERM");
+        delayedKillTimer = setTimeout(() => {
+          killProcessTree("SIGKILL");
+        }, 1e4);
+        delayedKillTimer.unref?.();
+      };
+      const maxTimeoutMs = parseTimeoutMs(maxTimeout ?? process.env.AGB_BUILD_MAX_TIMEOUT ?? "30m");
+      const eventProgressTimeoutMs = parseTimeoutMs(eventProgressTimeout ?? process.env.AGB_EVENT_PROGRESS_TIMEOUT ?? "5m");
+      let eventProgressTimer = null;
+      const resetEventProgressTimer = () => {
+        if (eventProgressTimer) clearTimeout(eventProgressTimer);
+        eventProgressTimer = setTimeout(() => {
+          if (resolved) return;
+          recordKillReason({ kind: "timeout", error: "event progress watchdog timed out" });
           terminateTree();
-          return;
+        }, eventProgressTimeoutMs);
+        eventProgressTimer.unref?.();
+      };
+      let maxWallClockTimer = null;
+      maxWallClockTimer = setTimeout(() => {
+        if (resolved) return;
+        recordKillReason({ kind: "timeout", error: "orchestrator wall-clock ceiling exceeded" });
+        terminateTree();
+        if (!out.includes("Error: timed out waiting for response")) {
+          out = (out ? out + "\n" : "") + "Error: timed out waiting for response.";
         }
-        currentLineBuffer = Buffer.concat([currentLineBuffer, chunk]);
-        let newlineIndex;
-        while ((newlineIndex = currentLineBuffer.indexOf(10)) !== -1) {
-          const lineBuf = currentLineBuffer.subarray(0, newlineIndex);
-          currentLineBuffer = currentLineBuffer.subarray(newlineIndex + 1);
-          if (lineBuf.length > MAX_STREAM_LINE_BYTES) {
+      }, maxTimeoutMs);
+      maxWallClockTimer.unref?.();
+      const timeoutMs = parseTimeoutMs(timeout);
+      let timer = null;
+      if (timeoutMs > 0) {
+        const killGraceMs = process.env.AGB_KILL_GRACE_MS ? parseInt(process.env.AGB_KILL_GRACE_MS, 10) : 15e3;
+        timer = setTimeout(() => {
+          if (resolved) return;
+          recordKillReason({ kind: "timeout", error: outputFormat === "stream-json" ? "stream-timeout" : "print-timeout" });
+          terminateTree();
+          if (!out.includes("Error: timed out waiting for response")) {
+            out = (out ? out + "\n" : "") + "Error: timed out waiting for response.";
+          }
+        }, timeoutMs + killGraceMs);
+        timer.unref?.();
+      }
+      if (outputFormat === "stream-json") {
+        resetEventProgressTimer();
+      }
+      const captureEventConversationId = (ev) => {
+        const candidateConvId = typeof ev.conversation_id === "string" && ev.conversation_id.trim() || typeof ev.init?.conversation_id === "string" && ev.init.conversation_id.trim() || typeof ev.step_update?.conversation_id === "string" && ev.step_update.conversation_id.trim() || typeof ev.result?.conversation_id === "string" && ev.result.conversation_id.trim() || null;
+        if (candidateConvId) {
+          extractedConversationId = candidateConvId;
+        }
+      };
+      const normalizeNestedStreamEvent = (ev) => {
+        if (ev.event === "init") {
+          events.push(ev);
+          return true;
+        }
+        if (ev.event === "step_update") {
+          const normStep = {
+            ...ev.step_update && typeof ev.step_update === "object" ? ev.step_update : {},
+            ...ev,
+            type: "step_update"
+          };
+          events.push(normStep);
+          return true;
+        }
+        if (ev.event === "result" && ev.result && (ev.result.status === "SUCCESS" || ev.result.status === "ERROR")) {
+          const normResult = {
+            ...ev.result,
+            type: "result",
+            exit_code: typeof ev.result.exit_code === "number" ? ev.result.exit_code : ev.result.status === "SUCCESS" ? 0 : 1
+          };
+          if (!terminalResult) {
+            terminalResult = normResult;
+            events.push(normResult);
+          } else {
+            console.warn("[agb] Warning: duplicate terminal result event received; first result wins");
+          }
+          return true;
+        }
+        return false;
+      };
+      const flushStreamBuffer = () => {
+        if (killReason) return;
+        if (outputFormat === "stream-json" && currentLineBuffer.length > 0) {
+          if (currentLineBuffer.length > MAX_STREAM_LINE_BYTES) {
             recordKillReason({ kind: "stream_overflow", error: "stream line exceeded 1MB limit" });
             terminateTree();
             return;
           }
-          const lineStr = lineBuf.toString("utf8").trim();
-          if (!lineStr) continue;
-          let validEvent = false;
-          try {
-            const ev = JSON.parse(lineStr);
-            if (ev && typeof ev === "object" && ev.type) {
-              if (ev.type === "step_update" && typeof ev.step === "number" && typeof ev.action === "string") {
-                validEvent = true;
-                events.push(ev);
-              } else if (ev.type === "heartbeat" && typeof ev.timestamp === "number") {
-                validEvent = true;
-                events.push(ev);
-              } else if (ev.type === "result" && (ev.status === "SUCCESS" || ev.status === "ERROR") && typeof ev.exit_code === "number") {
-                validEvent = true;
-                if (!terminalResult) {
-                  terminalResult = ev;
+          const lineStr = currentLineBuffer.toString("utf8").trim();
+          currentLineBuffer = Buffer.alloc(0);
+          if (lineStr) {
+            let validEvent = false;
+            try {
+              const ev = JSON.parse(lineStr);
+              if (ev && typeof ev === "object" && ev.type) {
+                if (ev.type === "step_update" && typeof ev.step === "number" && typeof ev.action === "string") {
+                  validEvent = true;
                   events.push(ev);
-                } else {
-                  console.warn("[agb] Warning: duplicate terminal result event received; first result wins");
+                } else if (ev.type === "heartbeat" && typeof ev.timestamp === "number") {
+                  validEvent = true;
+                  events.push(ev);
+                } else if (ev.type === "result" && (ev.status === "SUCCESS" || ev.status === "ERROR") && typeof ev.exit_code === "number") {
+                  validEvent = true;
+                  if (!terminalResult) {
+                    terminalResult = ev;
+                    events.push(ev);
+                  }
                 }
+              } else if (ev && typeof ev === "object" && ev.event) {
+                validEvent = normalizeNestedStreamEvent(ev);
               }
-            } else if (ev && typeof ev === "object" && ev.event) {
-              validEvent = normalizeNestedStreamEvent(ev);
+              if (validEvent) captureEventConversationId(ev);
+            } catch {
             }
-            if (validEvent) captureEventConversationId(ev);
+            if (validEvent) {
+              consecutiveGarbageBytes = 0;
+              resetEventProgressTimer();
+            } else {
+              consecutiveGarbageBytes += Buffer.byteLength(lineStr);
+              if (consecutiveGarbageBytes > MAX_CONSECUTIVE_GARBAGE_BYTES) {
+                recordKillReason({ kind: "stream_corruption", error: "exceeded 5MB consecutive garbage without valid stream event" });
+                terminateTree();
+              }
+            }
+          }
+        }
+      };
+      const finish = async (code, signal, spawnError) => {
+        if (resolved) return;
+        resolved = true;
+        flushStreamBuffer();
+        if (timer) clearTimeout(timer);
+        if (eventProgressTimer) clearTimeout(eventProgressTimer);
+        if (maxWallClockTimer) clearTimeout(maxWallClockTimer);
+        if (delayedKillTimer) {
+          clearTimeout(delayedKillTimer);
+          delayedKillTimer = null;
+        }
+        if (argsTempFile) {
+          try {
+            unlinkSync6(argsTempFile);
           } catch {
           }
-          if (validEvent) {
-            consecutiveGarbageBytes = 0;
-            resetEventProgressTimer();
-          } else {
-            consecutiveGarbageBytes += Buffer.byteLength(lineStr);
-            if (consecutiveGarbageBytes > MAX_CONSECUTIVE_GARBAGE_BYTES) {
-              recordKillReason({ kind: "stream_corruption", error: "exceeded 5MB consecutive garbage without valid stream event" });
+          argsTempFile = null;
+        }
+        if (argsTempDir) {
+          try {
+            rmSync8(argsTempDir, { recursive: true, force: true });
+          } catch {
+          }
+          argsTempDir = null;
+        }
+        if (bwrapTempDir) {
+          try {
+            rmSync8(bwrapTempDir, { recursive: true, force: true });
+          } catch {
+          }
+          bwrapTempDir = null;
+        }
+        if (bwrapCreatedLocalNm) {
+          try {
+            rmdirSync2(bwrapCreatedLocalNm);
+          } catch {
+          }
+          bwrapCreatedLocalNm = null;
+        }
+        if (childKilled || killReason || signal) {
+          if (originalPid && isProcessAlive(originalPid, originalStartTime)) {
+            try {
+              if (process.platform === "win32") {
+                try {
+                  execFileSync11("taskkill", ["/pid", String(originalPid), "/T", "/F"], { stdio: "ignore" });
+                } catch {
+                }
+              } else {
+                try {
+                  process.kill(-originalPid, "SIGTERM");
+                } catch {
+                }
+                try {
+                  const pids = execFileSync11("pgrep", ["-P", String(originalPid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
+                  for (const pidStr of pids) {
+                    const subPid = Number(pidStr);
+                    if (subPid) {
+                      try {
+                        process.kill(subPid, "SIGTERM");
+                      } catch {
+                      }
+                    }
+                  }
+                } catch {
+                }
+                try {
+                  process.kill(-originalPid, "SIGKILL");
+                } catch {
+                }
+                try {
+                  const pids = execFileSync11("pgrep", ["-P", String(originalPid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
+                  for (const pidStr of pids) {
+                    const subPid = Number(pidStr);
+                    if (subPid) {
+                      try {
+                        process.kill(subPid, "SIGKILL");
+                      } catch {
+                      }
+                    }
+                  }
+                } catch {
+                }
+              }
+            } catch {
+            }
+          }
+        }
+        const ms = Date.now() - t0;
+        let envelope = null;
+        let jsonValid = true;
+        let jsonParseMsg = null;
+        if (outputFormat === "json") {
+          try {
+            const parsedEnvelope = JSON.parse(out);
+            if (parsedEnvelope && typeof parsedEnvelope === "object") envelope = parsedEnvelope;
+          } catch (e) {
+            jsonValid = false;
+            jsonParseMsg = `Invalid JSON structured output: ${e.message}`;
+          }
+        }
+        const legacyJsonTimeout = outputFormat === "json" && isAgyTimeout(out);
+        const classified = classifyAgyOutcome({
+          outputFormat: outputFormat ?? "text",
+          killReason,
+          spawnError,
+          code,
+          signal,
+          terminalResult,
+          envelope,
+          jsonValid,
+          schemaErrorMsg: jsonParseMsg,
+          finishedReason: legacyJsonTimeout ? "print_timeout" : void 0,
+          out,
+          err,
+          legacyPre150: true,
+          requestedModel: resolvedModel
+        });
+        let kind = classified.kind;
+        let errorMsg = classified.error;
+        let ok2 = kind === null;
+        let result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId, rateLimited: Boolean(classified.rateLimited) };
+        if (envelope && (ok2 || kind === "envelope_error")) {
+          result.envelope = envelope;
+        }
+        if (outputFormat === "stream-json") {
+          result.events = events;
+          result.terminalResult = terminalResult;
+        }
+        if (ok2 && outputFormat === "json") {
+          try {
+            const parsed = JSON.parse(out);
+            if (parsed && typeof parsed === "object") {
+              if (typeof parsed?.conversation_id === "string" && parsed.conversation_id.trim()) {
+                extractedConversationId = parsed.conversation_id.trim();
+              }
+              result.envelope = parsed;
+              const statusStr = typeof parsed.status === "string" ? parsed.status.toLowerCase() : "";
+              if (statusStr === "error" || statusStr === "failed") {
+                ok2 = false;
+                kind = "envelope_error";
+                errorMsg = `agy returned error status in JSON envelope: ${parsed.status}${parsed.error || parsed.response ? ` (${parsed.error || parsed.response})` : ""}`;
+                result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
+              } else if (jsonSchema) {
+                const schemaObj = typeof jsonSchema === "string" ? JSON.parse(jsonSchema) : jsonSchema;
+                let structured = parsed.structured_output;
+                if (structured === void 0 || structured === null) {
+                  if (parsed.status !== void 0 || parsed.type === "result" || parsed.response !== void 0 || parsed.error !== void 0) {
+                    ok2 = false;
+                    kind = "missing_structured_output";
+                    errorMsg = "agy JSON response envelope missing required structured_output";
+                    result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
+                  } else {
+                    structured = parsed;
+                  }
+                }
+                if (ok2) {
+                  if (typeof structured === "string") {
+                    try {
+                      structured = JSON.parse(structured);
+                    } catch (e) {
+                      ok2 = false;
+                      kind = "schema_violation";
+                      errorMsg = `structured_output is invalid JSON: ${e.message}`;
+                      result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
+                    }
+                  }
+                  if (ok2) {
+                    const validation = validateJsonSchema(structured, schemaObj);
+                    if (!validation.valid) {
+                      ok2 = false;
+                      kind = "schema_violation";
+                      errorMsg = `structured output violates schema: ${validation.errors.join("; ")}`;
+                      result = { ok: ok2, output: out, ms, error: errorMsg, kind, envelope: parsed, conversationId: extractedConversationId };
+                    } else {
+                      result.data = structured;
+                    }
+                  }
+                }
+              } else {
+                let structured = parsed.structured_output !== void 0 ? parsed.structured_output : parsed.response !== void 0 ? parsed.response : parsed;
+                if (typeof structured === "string") {
+                  try {
+                    structured = JSON.parse(structured);
+                  } catch {
+                  }
+                }
+                result.data = structured;
+              }
+            } else {
+              if (jsonSchema) {
+                const schemaObj = typeof jsonSchema === "string" ? JSON.parse(jsonSchema) : jsonSchema;
+                const validation = validateJsonSchema(parsed, schemaObj);
+                if (!validation.valid) {
+                  ok2 = false;
+                  kind = "schema_violation";
+                  errorMsg = `structured output violates schema: ${validation.errors.join("; ")}`;
+                  result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
+                } else {
+                  result.data = parsed;
+                }
+              } else {
+                result.data = parsed;
+              }
+            }
+          } catch (e) {
+            ok2 = false;
+            kind = "schema_violation";
+            errorMsg = `Invalid JSON structured output: ${e.message}`;
+            result = { ok: ok2, output: out, ms, error: errorMsg, kind, conversationId: extractedConversationId };
+          }
+        }
+        result.conversationId = extractedConversationId;
+        result.rateLimited = Boolean(classified.rateLimited);
+        if (logFile) {
+          mkdirSync11(dirname17(logFile), { recursive: true, mode: 448 });
+          const record = {
+            ts: (/* @__PURE__ */ new Date()).toISOString(),
+            model,
+            cwd,
+            strike,
+            ms,
+            prompt,
+            output: out,
+            ok: ok2,
+            role
+          };
+          if (extractedConversationId !== null) {
+            record.conversationId = extractedConversationId;
+          }
+          if (!ok2) {
+            record.kind = kind;
+            record.error = result.error;
+          }
+          await appendFile(logFile, JSON.stringify(record) + "\n", { mode: 384 });
+        }
+        resolve29(result);
+      };
+      if (syncSpawnErr) {
+        void finish(null, null, syncSpawnErr);
+        return;
+      }
+      p.stdout.on("data", (d) => {
+        if (killReason) return;
+        const chunk = Buffer.isBuffer(d) ? d : Buffer.from(d);
+        out += d;
+        if (outputFormat === "stream-json") {
+          totalBytes += chunk.length;
+          if (totalBytes > MAX_STREAM_TOTAL_BYTES) {
+            recordKillReason({ kind: "stream_overflow", error: "total stream size exceeded 50MB limit" });
+            terminateTree();
+            return;
+          }
+          currentLineBuffer = Buffer.concat([currentLineBuffer, chunk]);
+          let newlineIndex;
+          while ((newlineIndex = currentLineBuffer.indexOf(10)) !== -1) {
+            const lineBuf = currentLineBuffer.subarray(0, newlineIndex);
+            currentLineBuffer = currentLineBuffer.subarray(newlineIndex + 1);
+            if (lineBuf.length > MAX_STREAM_LINE_BYTES) {
+              recordKillReason({ kind: "stream_overflow", error: "stream line exceeded 1MB limit" });
               terminateTree();
               return;
             }
+            const lineStr = lineBuf.toString("utf8").trim();
+            if (!lineStr) continue;
+            let validEvent = false;
+            try {
+              const ev = JSON.parse(lineStr);
+              if (ev && typeof ev === "object" && ev.type) {
+                if (ev.type === "step_update" && typeof ev.step === "number" && typeof ev.action === "string") {
+                  validEvent = true;
+                  events.push(ev);
+                } else if (ev.type === "heartbeat" && typeof ev.timestamp === "number") {
+                  validEvent = true;
+                  events.push(ev);
+                } else if (ev.type === "result" && (ev.status === "SUCCESS" || ev.status === "ERROR") && typeof ev.exit_code === "number") {
+                  validEvent = true;
+                  if (!terminalResult) {
+                    terminalResult = ev;
+                    events.push(ev);
+                  } else {
+                    console.warn("[agb] Warning: duplicate terminal result event received; first result wins");
+                  }
+                }
+              } else if (ev && typeof ev === "object" && ev.event) {
+                validEvent = normalizeNestedStreamEvent(ev);
+              }
+              if (validEvent) captureEventConversationId(ev);
+            } catch {
+            }
+            if (validEvent) {
+              consecutiveGarbageBytes = 0;
+              resetEventProgressTimer();
+            } else {
+              consecutiveGarbageBytes += Buffer.byteLength(lineStr);
+              if (consecutiveGarbageBytes > MAX_CONSECUTIVE_GARBAGE_BYTES) {
+                recordKillReason({ kind: "stream_corruption", error: "exceeded 5MB consecutive garbage without valid stream event" });
+                terminateTree();
+                return;
+              }
+            }
+          }
+          if (currentLineBuffer.length > MAX_STREAM_LINE_BYTES) {
+            recordKillReason({ kind: "stream_overflow", error: "stream line exceeded 1MB limit" });
+            terminateTree();
+            return;
           }
         }
-        if (currentLineBuffer.length > MAX_STREAM_LINE_BYTES) {
-          recordKillReason({ kind: "stream_overflow", error: "stream line exceeded 1MB limit" });
-          terminateTree();
-          return;
+      });
+      let stdoutEnded = false;
+      let pendingExit = null;
+      const maybeFinish = () => {
+        if (pendingExit && stdoutEnded) {
+          finish(pendingExit.code, pendingExit.signal, pendingExit.err);
         }
-      }
-    });
-    let stdoutEnded = false;
-    let pendingExit = null;
-    const maybeFinish = () => {
-      if (pendingExit && stdoutEnded) {
-        finish(pendingExit.code, pendingExit.signal, pendingExit.err);
-      }
-    };
-    p.stdout.on("end", () => {
-      stdoutEnded = true;
-      flushStreamBuffer();
-      maybeFinish();
-    });
-    p.stderr.on("data", (d) => err += d);
-    p.on("error", (e) => {
-      pendingExit = { code: null, signal: null, err: e };
-      stdoutEnded = true;
-      maybeFinish();
-    });
-    p.on("close", (code, signal) => {
-      pendingExit = { code, signal, err: null };
-      flushStreamBuffer();
-      if (stdoutEnded) {
+      };
+      p.stdout.on("end", () => {
+        stdoutEnded = true;
+        flushStreamBuffer();
         maybeFinish();
-      } else {
-        setTimeout(() => {
-          if (!stdoutEnded) {
-            stdoutEnded = true;
-            flushStreamBuffer();
-            maybeFinish();
-          }
-        }, 1e3).unref?.();
-      }
+      });
+      p.stderr.on("data", (d) => err += d);
+      p.on("error", (e) => {
+        pendingExit = { code: null, signal: null, err: e };
+        stdoutEnded = true;
+        maybeFinish();
+      });
+      p.on("close", (code, signal) => {
+        pendingExit = { code, signal, err: null };
+        flushStreamBuffer();
+        if (stdoutEnded) {
+          maybeFinish();
+        } else {
+          setTimeout(() => {
+            if (!stdoutEnded) {
+              stdoutEnded = true;
+              flushStreamBuffer();
+              maybeFinish();
+            }
+          }, 1e3).unref?.();
+        }
+      });
     });
-  });
+  } finally {
+    if (readonlyCleanup) {
+      try {
+        readonlyCleanup();
+      } catch {
+      }
+      readonlyCleanup = null;
+    }
+  }
 }
 
 // lib/scheduler.mjs
@@ -17063,6 +17347,9 @@ async function brainToPlan(idOrPrefix, { repo, gate, model, brainDir = getBrainD
       prompt: conversionPrompt(brain, repo, gate, feedback, previousPlan),
       timeout: "5m",
       project: finalProject,
+      repo,
+      role: "brain",
+      useRoleSettings: true,
       outputFormat: "json",
       jsonSchema: BRAIN_PLAN_SCHEMA,
       worker: { mode: "readonly" }
@@ -17183,6 +17470,9 @@ async function coldstartTickets(tickets, gate, { pools, model = COLDSTART_MODEL,
           prompt: coldstartPrompt(t, gate),
           timeout: "4m",
           project: project2,
+          repo,
+          role: "coldstart",
+          useRoleSettings: true,
           outputFormat: "json",
           jsonSchema: COLDSTART_SCHEMA,
           worker: { mode: "readonly" }
@@ -18633,11 +18923,13 @@ ${externalCallers.promptBlock}` : basePrompt;
     model,
     prompt: fullPrompt,
     cwd,
+    repo: worktree,
     timeout: "8m",
     logFile,
     project: finalProject,
     strike: 0,
     role: "prosecutor",
+    useRoleSettings: true,
     outputFormat: "json",
     jsonSchema: PROSECUTION_VERDICT_SCHEMA,
     worker: { mode: "readonly" },
@@ -18957,6 +19249,9 @@ async function premortemPlan(plan, brain, { pools, model = PREMORTEM_MODEL, proj
       prompt: premortemPrompt(plan, brain),
       timeout: "5m",
       project: project2,
+      repo: targetRepo,
+      role: "premortem",
+      useRoleSettings: true,
       outputFormat: "json",
       jsonSchema: PREMORTEM_SCHEMA,
       worker: { mode: "readonly" }
@@ -19074,6 +19369,9 @@ async function parallaxEdges(plan, {
           prompt: contractPrompt(from, to, i),
           timeout: "4m",
           project: project2,
+          repo: targetRepo,
+          role: "parallax",
+          useRoleSettings: true,
           outputFormat: "json",
           jsonSchema: PARALLAX_READER_SCHEMA,
           worker: { mode: "readonly" }
@@ -19109,6 +19407,9 @@ async function parallaxEdges(plan, {
         prompt: judgePrompt(from, to, readings),
         timeout: "4m",
         project: project2,
+        repo: targetRepo,
+        role: "parallax",
+        useRoleSettings: true,
         outputFormat: "json",
         jsonSchema: PARALLAX_JUDGE_SCHEMA,
         worker: { mode: "readonly" }
@@ -20944,6 +21245,7 @@ Fix: ${agyCheck.fix}`);
           project: finalProject,
           strike,
           role: "builder",
+          useRoleSettings: true,
           worker: { ticket: ticketId ?? t.id, buildCmd: gate?.build },
           repo: targetRepo ?? repo,
           ticketId: ticketId ?? t.id,
@@ -22371,6 +22673,9 @@ async function triageFindings({
       prompt: arbiterPrompt(arbiterBatch, { targetType, context }),
       timeout: "8m",
       project: finalProject,
+      repo,
+      role: "arbiter",
+      useRoleSettings: true,
       outputFormat: "json",
       jsonSchema: ARBITER_TRIAGE_SCHEMA,
       worker: { mode: "readonly" }
@@ -22563,6 +22868,9 @@ async function reviewFleet({
             prompt: lensPrompt(lens, desc, diff, context),
             timeout: "5m",
             project: finalProject,
+            repo,
+            role: "review",
+            useRoleSettings: true,
             outputFormat: "json",
             jsonSchema: fiveLens ? ARL_FINDING_SCHEMA : REVIEW_FINDINGS_SCHEMA,
             worker: { mode: "readonly" }
@@ -22763,6 +23071,9 @@ async function reviewPlan({
             ),
             timeout: "5m",
             project: finalProject,
+            repo: targetRepo,
+            role: "review-plan",
+            useRoleSettings: true,
             outputFormat: "json",
             jsonSchema: ARL_FINDING_SCHEMA,
             worker: { mode: "readonly" }
@@ -23934,7 +24245,14 @@ try {
       const results = await Promise.all(
         Array.from(
           { length: n },
-          (_, i) => runAgy({ model, prompt: `Reply with exactly: PONG-${i}`, timeout: "120s", worker: { mode: "readonly" } }).then((r) => ({
+          (_, i) => runAgy({
+            model,
+            prompt: `Reply with exactly: PONG-${i}`,
+            timeout: "120s",
+            role: "readonly",
+            useRoleSettings: true,
+            worker: { mode: "readonly" }
+          }).then((r) => ({
             ...r,
             ok: r.ok && r.output.includes(`PONG-${i}`)
           }))
