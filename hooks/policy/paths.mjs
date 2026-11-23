@@ -2,7 +2,7 @@
 import { existsSync, lstatSync, readlinkSync, realpathSync } from 'node:fs';
 import { dirname, basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Minimatch } from 'minimatch';
-import { IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, TICKET_STORE_DIR } from './constants.mjs';
+import { BRAIN_APPS, IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, TICKET_STORE_DIR } from './constants.mjs';
 
 const SHARD_NAME = /^[^/]+--[0-9a-f]{64}\.json$/;
 const HOME_PREFIX = /^(~[A-Za-z0-9._-]*|\$HOME|\$\{HOME\})(?=\/|$)/;
@@ -214,6 +214,10 @@ export function boosterDataRoots(home) {
   ];
 }
 
+export function brainRoots(home) {
+  return BRAIN_APPS.map((app) => join(home, '.gemini', app, 'brain'));
+}
+
 const PROC_ROOT_PREFIX = /^(?:\/proc\/(?:self|thread-self|\d+)\/root)+(?=\/|$)/;
 
 function stripProcRoot(p) {
@@ -222,11 +226,201 @@ function stripProcRoot(p) {
   return stripped.startsWith('/') ? stripped : `/${stripped}`;
 }
 
+const HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$)/;
+const HEADLESS_BOOSTER_SAMPLES = [
+  'control.json',
+  'control.sock',
+  'rescue-locks',
+  'rescue-locks/x',
+  'rescue-latest',
+  'rescue-latest/x',
+];
+
+export function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
+  if (typeof absPath !== 'string' || absPath.length === 0) return false;
+  const isWin = platform === 'win32';
+  const normRaw = isWin ? absPath.replace(/\\/g, '/') : absPath;
+  const norm = fold(normRaw, platform);
+  if (HEADLESS_BOOSTER_SUBPATH.test(norm)) return true;
+
+  const nocase = platform === 'darwin' || platform === 'win32';
+  const hasGlob = /[*?[\]{}!]/.test(normRaw) && normRaw.length <= 1024;
+  if (hasGlob) {
+    const boosterIdx = norm.lastIndexOf('/.booster/');
+    if (boosterIdx >= 0) {
+      const subPattern = normRaw.slice(boosterIdx + '/.booster/'.length);
+      const firstSub = subPattern.split('/')[0] ?? '';
+      const subMatcher = new Minimatch(subPattern, { dot: true, nocase });
+      const firstMatcher = new Minimatch(firstSub, { dot: true, nocase });
+      if (HEADLESS_BOOSTER_SAMPLES.some((s) => subMatcher.match(s) || firstMatcher.match(s))) {
+        return true;
+      }
+    }
+  }
+
+  for (const tmpRoot of tmpRoots) {
+    if (typeof tmpRoot !== 'string' || tmpRoot.length === 0) continue;
+    const normTmp = fold((isWin ? tmpRoot.replace(/\\/g, '/') : tmpRoot).replace(/\/+$/, ''), platform);
+    const prefix = normTmp === '' ? '/' : `${normTmp}/`;
+    if (!norm.startsWith(prefix)) continue;
+    const rest = norm.slice(prefix.length);
+    const firstSeg = rest.split('/')[0] ?? '';
+    if (firstSeg.startsWith('agb-ctrl-')) return true;
+    if (hasGlob && /[*?[\]{}!]/.test(firstSeg)) {
+      const rawRest = normRaw.slice(prefix.length);
+      const rawFirst = rawRest.split('/')[0] ?? '';
+      if (new Minimatch(rawFirst, { dot: true, nocase }).match('agb-ctrl-probe')) return true;
+    }
+  }
+  return false;
+}
+
+export function headlessProtectedMatcher(tmpRoots) {
+  return (absPath, platform) => isHeadlessIpcOrRescuePath(absPath, tmpRoots, platform);
+}
+
+const VALID_CONVERSATION_ID = /^[A-Za-z0-9_-]{8,128}$/;
+
+function hasDotDotSegment(rawPath) {
+  return String(rawPath).split(/[\\/]/).includes('..');
+}
+
+function hasDotOrDotDotSegment(rawPath) {
+  return String(rawPath).split(/[\\/]/).some((seg) => seg === '.' || seg === '..');
+}
+
+/**
+ * Verify active interactive Brain Artifact directory (`payload.conversationId` +
+ * `payload.artifactDirectoryPath`) with zero symlink components from `<home>`
+ * down through `<conversationId>`.
+ */
+export function verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform = process.platform }) {
+  if (headless) return null;
+  const convId = payload?.conversationId;
+  const rawDir = payload?.artifactDirectoryPath;
+  if (typeof convId !== 'string' || !VALID_CONVERSATION_ID.test(convId)) return null;
+  if (typeof rawDir !== 'string' || rawDir.trim().length === 0 || !isAbsolute(rawDir)) return null;
+  if (PROC_ROOT_PREFIX.test(rawDir) || hasDotOrDotDotSegment(rawDir)) return null;
+
+  const lexDir = resolve(rawDir);
+  const candidateHomes = home === realHome ? [home] : [home, realHome];
+
+  for (const candidateHome of candidateHomes) {
+    const homeStat = lstatOrNull(candidateHome);
+    if (homeStat?.isSymbolicLink()) continue;
+    if (homeStat && !homeStat.isDirectory()) continue;
+
+    let physHome = candidateHome;
+    try {
+      physHome = realpathSync(candidateHome);
+    } catch {
+      physHome = physicalResolve(candidateHome, '/', platform) ?? candidateHome;
+    }
+
+    for (const app of BRAIN_APPS) {
+      const expectedLex = join(candidateHome, '.gemini', app, 'brain', convId);
+      if (fold(lexDir, platform) !== fold(expectedLex, platform)) continue;
+
+      let cur = candidateHome;
+      let cleanChain = true;
+      for (const seg of ['.gemini', app, 'brain', convId]) {
+        cur = join(cur, seg);
+        const st = lstatOrNull(cur);
+        if (st?.isSymbolicLink() || (st && !st.isDirectory())) {
+          cleanChain = false;
+          break;
+        }
+      }
+      if (!cleanChain) return null;
+
+      const expectedPhys = join(physHome, '.gemini', app, 'brain', convId);
+      const resolvedPhys = physicalResolve(rawDir, '/', platform);
+      if (!resolvedPhys || fold(resolvedPhys, platform) !== fold(expectedPhys, platform)) {
+        return null;
+      }
+      return { lexDir: expectedLex, physDir: expectedPhys, convId };
+    }
+  }
+  return null;
+}
+
+/**
+ * True only when `resolved` (`lexical` AND `real`) sits inside the verified
+ * active session `artifactDirectoryPath` with zero symlink hops and never
+ * touches `.system_generated` or `.system_generated/**`.
+ */
+export function isAllowedBrainArtifactTarget(
+  token,
+  resolved,
+  verifiedBrainArtifact,
+  { allowExactDir = false, platform = process.platform } = {},
+) {
+  if (!verifiedBrainArtifact || !resolved || resolved.unresolved) return false;
+  const raw = String(token ?? '');
+  if (
+    raw.length === 0 ||
+    PROC_ROOT_PREFIX.test(raw) ||
+    PROC_ROOT_PREFIX.test(resolved.lexical) ||
+    PROC_ROOT_PREFIX.test(resolved.real) ||
+    hasDotDotSegment(raw)
+  ) {
+    return false;
+  }
+
+  const { lexDir, physDir } = verifiedBrainArtifact;
+  const inLex = isWithin(resolved.lexical, lexDir, platform) || isWithin(resolved.lexical, physDir, platform);
+  const inPhys = isWithin(resolved.real, physDir, platform);
+  if (!inLex || !inPhys) return false;
+
+  const isExactPhys = fold(resolved.real, platform) === fold(physDir, platform);
+  const isExactLex =
+    fold(resolved.lexical, platform) === fold(lexDir, platform) ||
+    fold(resolved.lexical, platform) === fold(physDir, platform);
+
+  if (isExactPhys || isExactLex) {
+    return Boolean(allowExactDir && isExactPhys && isExactLex);
+  }
+
+  const relPhys = relative(physDir, resolved.real).split(sep).join('/');
+  if (!relPhys || relPhys.startsWith('..') || isAbsolute(relPhys)) return false;
+
+  const matchedLexBase = isWithin(resolved.lexical, lexDir, platform) ? lexDir : physDir;
+  const relLex = relative(matchedLexBase, resolved.lexical).split(sep).join('/');
+  if (!relLex || relLex.startsWith('..') || isAbsolute(relLex)) return false;
+
+  if (fold(relPhys, platform) !== fold(relLex, platform)) return false;
+
+  const segments = relPhys.split('/');
+  if (segments.some((seg) => seg.length === 0 || seg === '.' || seg === '..' || seg.toLowerCase() === '.system_generated')) {
+    return false;
+  }
+
+  let cur = physDir;
+  for (let i = 0; i < segments.length; i += 1) {
+    cur = join(cur, segments[i]);
+    const st = lstatOrNull(cur);
+    if (st?.isSymbolicLink()) return false;
+    if (i < segments.length - 1 && st && !st.isDirectory()) return false;
+  }
+  return true;
+}
+
 /** First root (from `roots`) that contains either form of the resolved path. */
 export function matchRoot(resolved, roots, platform) {
   const lexStripped = stripProcRoot(resolved.lexical);
   const realStripped = stripProcRoot(resolved.real);
   for (const root of roots) {
+    if (typeof root === 'function') {
+      if (
+        root(resolved.lexical, platform) ||
+        root(resolved.real, platform) ||
+        (lexStripped !== resolved.lexical && root(lexStripped, platform)) ||
+        (realStripped !== resolved.real && root(realStripped, platform))
+      ) {
+        return '.booster/control-or-rescue';
+      }
+      continue;
+    }
     if (
       isWithin(resolved.lexical, root, platform) ||
       isWithin(resolved.real, root, platform) ||

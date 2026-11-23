@@ -55,6 +55,13 @@ export const BOOSTER_MCP_SERVER = 'agb';
 export const BOOSTER_MCP_SERVERS = new Set(['agb', 'antigravity-booster_agb']);
 export const BOOSTER_MCP_TOOLS = new Set([
   'agb_shape', 'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_init', 'agb_review', 'agb_distill',
+  'agb_flight_deck', 'agb_mission_control', 'agb_plan_viewer', 'agb_control',
+]);
+export const READONLY_BOOSTER_CONTROL_ACTIONS = new Set(['snapshot', 'diff', 'stream']);
+export const BRAIN_APPS = ['antigravity', 'antigravity-cli', 'antigravity-ide', 'jetski'];
+export const DIR_READ_TOOLS = new Set([
+  'list_dir', 'list_directory', 'grep_search', 'code_search', 'file_search',
+  'find_by_name', 'search_in_file', 'list_permissions',
 ]);
 
 export const PATH_MUTATING_TOOLS = new Set([
