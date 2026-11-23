@@ -1,8 +1,23 @@
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve, isAbsolute } from 'node:path';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
+import { readFreshStatusLineQuotaCache } from '../lib/pools.mjs';
+import { sendControlCommand } from '../lib/control-ipc.mjs';
+import { TICKET_ID_RE, validatePlan } from '../lib/plan-integrity.mjs';
+import { UI_RESOURCES, renderUiResource } from './ui-views.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const IS_MAIN = process.argv[1] && (
@@ -13,6 +28,11 @@ const IS_MAIN = process.argv[1] && (
 
 const activeProcesses = new Map();
 const cancelledRequests = new Set();
+
+const MAX_STRUCTURED_BYTES = 512 * 1024;
+const CLI_UI_TOOLS = new Set(['agb_shape', 'agb_plan', 'agb_preflight', 'agb_review']);
+const CONTROL_ACTIONS = new Set(['snapshot', 'pause', 'resume', 'abort', 'diff', 'stream']);
+const TICKET_SCOPED_ACTIONS = new Set(['abort', 'diff', 'stream']);
 
 // Same version source as `agb --version`: the manifest one level up. Both
 // `mcp/server.mjs` and the bundled `dist/mcp-server.mjs` sit one directory
@@ -25,7 +45,6 @@ function readPackageVersion() {
     return 'unknown';
   }
 }
-
 
 // Resolution of the agb CLI entry point (spec §4.1):
 // 1. Bundled (`dist/mcp-server.mjs`, built with --define:__AGB_BUNDLED__=true):
@@ -65,6 +84,11 @@ const TOOLS = [
         strict: { type: 'boolean', description: 'Fail closed on coupling or scope warnings' }
       },
       required: ['spec', 'repo']
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/plan-card.html'
+      }
     }
   },
   {
@@ -86,6 +110,11 @@ const TOOLS = [
         emitWorkflow: { type: 'string', description: 'Optional output path for compiled run_workflow Python script' }
       },
       required: ['spec', 'repo']
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/plan-card.html'
+      }
     }
   },
   {
@@ -111,6 +140,14 @@ const TOOLS = [
           type: 'integer',
           minimum: 1,
           description: 'Optional maximum concurrent workers cap (-c <n>)'
+        },
+        resume: {
+          type: 'boolean',
+          description: 'Resume from previously merged tickets'
+        },
+        resetRescue: {
+          type: 'boolean',
+          description: 'Clear active or preserved rescue locks before running'
         }
       },
       required: ['plan']
@@ -126,6 +163,11 @@ const TOOLS = [
         noColdstart: { type: 'boolean', description: 'Skip coldstart plan gate' }
       },
       required: ['plan']
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/plan-card.html'
+      }
     }
   },
   {
@@ -175,6 +217,93 @@ const TOOLS = [
         arbiter: { type: 'boolean', description: 'Enable neutral arbiter triage (default true; pass false for --no-arbiter)' }
       },
       required: ['repo']
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/review-card.html'
+      }
+    }
+  },
+  {
+    name: 'agb_flight_deck',
+    description: 'Open the live AGB Flight Deck auxiliary pane to monitor and control active fleet runs',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Path to target repository (defaults to cwd)' }
+      }
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/flight-deck.html',
+        surface: 'aux_pane',
+        visibility: ['model', 'app']
+      }
+    }
+  },
+  {
+    name: 'agb_mission_control',
+    description: 'Open the global AGB Mission Control dashboard for 4-window quota gauges and model telemetry',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Optional path to target repository' }
+      }
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/mission-control.html',
+        surface: 'global',
+        visibility: ['model', 'app']
+      }
+    }
+  },
+  {
+    name: 'agb_plan_viewer',
+    description: 'Inspect, validate, and edit a .agbplan or plan.json ticket DAG file',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to .agbplan or plan.json file' },
+        repo: { type: 'string', description: 'Optional repository path' }
+      },
+      required: ['path']
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/plan-viewer.html',
+        surface: 'file',
+        extensions: ['.agbplan'],
+        visibility: ['model', 'app']
+      }
+    }
+  },
+  {
+    name: 'agb_control',
+    description: 'Send authenticated control IPC or snapshot/diff/stream telemetry queries to an AGB run',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Path to target repository (defaults to cwd)' },
+        action: {
+          type: 'string',
+          enum: ['snapshot', 'pause', 'resume', 'abort', 'diff', 'stream'],
+          description: 'Control or telemetry action'
+        },
+        ticketId: { type: 'string', description: 'Target ticket ID for abort, diff, or stream' },
+        lines: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 200,
+          description: 'Max stream lines to return (default 40)'
+        }
+      },
+      required: ['action']
+    },
+    _meta: {
+      ui: {
+        visibility: ['model', 'app']
+      }
     }
   }
 ];
@@ -221,10 +350,13 @@ async function handleRequest(req) {
   const { method, params, id } = req;
 
   if (method === 'initialize') {
+    const hasUiExtension = Boolean(params?.capabilities?.extensions?.['io.modelcontextprotocol/ui']);
     sendResult(id, {
       protocolVersion: '2024-11-05',
       capabilities: {
-        tools: {}
+        tools: {},
+        resources: {},
+        ...(hasUiExtension ? { extensions: { 'io.modelcontextprotocol/ui': {} } } : {})
       },
       serverInfo: {
         name: 'antigravity-booster-mcp',
@@ -241,6 +373,22 @@ async function handleRequest(req) {
 
   if (method === 'tools/list') {
     sendResult(id, { tools: TOOLS });
+    return;
+  }
+
+  if (method === 'resources/list') {
+    sendResult(id, { resources: UI_RESOURCES });
+    return;
+  }
+
+  if (method === 'resources/read') {
+    const uri = typeof params?.uri === 'string' ? params.uri : '';
+    const rendered = uri ? renderUiResource(uri) : null;
+    if (!rendered) {
+      sendError(id, -32602, `Unknown resource URI: ${params?.uri}`);
+      return;
+    }
+    sendResult(id, { contents: [rendered] });
     return;
   }
 
@@ -286,9 +434,576 @@ function resolveSpecPath(rawSpec, targetCwd) {
   return rawSpec;
 }
 
+function symlinkSecurityError(targetPath) {
+  const err = new Error(`Security violation: symbolic link not allowed: ${targetPath}`);
+  err.code = 'ESYMLINK';
+  return err;
+}
+
+function lstatOrNull(targetPath) {
+  try {
+    return lstatSync(targetPath);
+  } catch (err) {
+    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') return null;
+    throw err;
+  }
+}
+
+function readRegularFileBounded(filePath, maxBytes = MAX_STRUCTURED_BYTES) {
+  const st = lstatOrNull(filePath);
+  if (!st) return { missing: true };
+  if (st.isSymbolicLink()) throw symlinkSecurityError(filePath);
+  if (!st.isFile()) {
+    const err = new Error(`Refusing to read non-regular file: ${filePath}`);
+    err.code = 'ENOTFILE';
+    throw err;
+  }
+  if (st.size > maxBytes) {
+    const err = new Error(`File exceeds ${maxBytes} byte limit: ${filePath}`);
+    err.code = 'ETOOBIG';
+    throw err;
+  }
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW || 0);
+  let fd;
+  try {
+    fd = openSync(filePath, flags);
+  } catch (err) {
+    if (err?.code === 'ELOOP') throw symlinkSecurityError(filePath);
+    if (err?.code === 'ENOENT') return { missing: true };
+    throw err;
+  }
+  try {
+    const fst = fstatSync(fd);
+    if (!fst.isFile()) {
+      const err = new Error(`Refusing to read non-regular file: ${filePath}`);
+      err.code = 'ENOTFILE';
+      throw err;
+    }
+    if (fst.size > maxBytes) {
+      const err = new Error(`File exceeds ${maxBytes} byte limit: ${filePath}`);
+      err.code = 'ETOOBIG';
+      throw err;
+    }
+    const text = readFileSync(fd, 'utf8');
+    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
+      const err = new Error(`File exceeds ${maxBytes} byte limit: ${filePath}`);
+      err.code = 'ETOOBIG';
+      throw err;
+    }
+    return { missing: false, text };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function readJsonOrNull(filePath, maxBytes = 256 * 1024) {
+  let res;
+  try {
+    res = readRegularFileBounded(filePath, maxBytes);
+  } catch (err) {
+    if (err?.code === 'ESYMLINK') throw err;
+    return null;
+  }
+  if (res.missing) return null;
+  try {
+    const parsed = JSON.parse(res.text);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readTailJsonl(filePath, { maxLines = 50, maxTailBytes = 192 * 1024 } = {}) {
+  const st = lstatOrNull(filePath);
+  if (!st) return [];
+  if (st.isSymbolicLink()) throw symlinkSecurityError(filePath);
+  if (!st.isFile()) return [];
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW || 0);
+  let fd;
+  try {
+    fd = openSync(filePath, flags);
+  } catch (err) {
+    if (err?.code === 'ELOOP') throw symlinkSecurityError(filePath);
+    return [];
+  }
+  try {
+    const fst = fstatSync(fd);
+    if (!fst.isFile() || fst.size === 0) return [];
+    const readLen = Math.min(fst.size, maxTailBytes);
+    const offset = fst.size - readLen;
+    const buf = Buffer.alloc(readLen);
+    const bytesRead = readSync(fd, buf, 0, readLen, offset);
+    let text = buf.subarray(0, bytesRead).toString('utf8');
+    if (offset > 0) {
+      const firstNl = text.indexOf('\n');
+      text = firstNl === -1 ? '' : text.slice(firstNl + 1);
+    }
+    const items = [];
+    for (const rawLine of text.split('\n')) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          items.push(parsed);
+        }
+      } catch {}
+    }
+    return items.slice(-maxLines);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function inspectBoosterDir(repo) {
+  const rawRepo = resolve(repo);
+  const rawBooster = join(rawRepo, '.booster');
+  const rawSt = lstatOrNull(rawBooster);
+  if (rawSt && rawSt.isSymbolicLink()) {
+    throw symlinkSecurityError(rawBooster);
+  }
+
+  let canonicalRepo = rawRepo;
+  try {
+    canonicalRepo = realpathSync(rawRepo);
+  } catch {}
+
+  const boosterDir = join(canonicalRepo, '.booster');
+  const boosterSt = lstatOrNull(boosterDir);
+  if (!boosterSt) {
+    return { resolvedRepo: rawRepo, canonicalRepo, boosterDir, exists: false };
+  }
+  if (boosterSt.isSymbolicLink() || !boosterSt.isDirectory()) {
+    throw symlinkSecurityError(boosterDir);
+  }
+  for (const sub of ['run.json', 'report.json', 'model_stats.jsonl', 'rescue-latest']) {
+    const p = join(boosterDir, sub);
+    const st = lstatOrNull(p);
+    if (st && st.isSymbolicLink()) {
+      throw symlinkSecurityError(p);
+    }
+  }
+  return { resolvedRepo: rawRepo, canonicalRepo, boosterDir, exists: true };
+}
+
+function sliceUtf8(str, maxBytes) {
+  const s = String(str ?? '');
+  if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
+  return Buffer.from(s, 'utf8').subarray(0, maxBytes).toString('utf8').replace(/\uFFFD+$/, '');
+}
+
+function boundStructuredObject(obj, fallbackFactory) {
+  const encoded = JSON.stringify(obj);
+  if (Buffer.byteLength(encoded, 'utf8') < MAX_STRUCTURED_BYTES) {
+    return obj;
+  }
+  return fallbackFactory();
+}
+
+export async function buildSnapshotPayload(repo) {
+  const { resolvedRepo, boosterDir, exists } = inspectBoosterDir(repo);
+  const run = exists ? readJsonOrNull(join(boosterDir, 'run.json'), 192 * 1024) : null;
+  const report = exists ? readJsonOrNull(join(boosterDir, 'report.json'), 192 * 1024) : null;
+  const quotaCache = readFreshStatusLineQuotaCache();
+  const modelStats = exists ? readTailJsonl(join(boosterDir, 'model_stats.jsonl'), { maxLines: 50 }) : [];
+
+  const rawControl = await sendControlCommand(resolvedRepo, { action: 'status' });
+  if (rawControl?.error && /symbolic link/i.test(rawControl.error)) {
+    throw symlinkSecurityError(join(boosterDir, 'control.json'));
+  }
+  const control = rawControl && typeof rawControl === 'object'
+    ? (rawControl.ok ? rawControl : { ok: false, offline: true, ...(rawControl.error ? { error: rawControl.error } : {}) })
+    : { ok: false, offline: true };
+
+  const snapshot = {
+    ok: true,
+    repo: resolvedRepo,
+    run,
+    report,
+    control,
+    quotaCache,
+    modelStats,
+  };
+
+  return boundStructuredObject(snapshot, () => ({
+    ok: true,
+    repo: resolvedRepo,
+    run: run ? { runId: run.runId ?? null, done: run.done ?? null, startedAt: run.startedAt ?? null, truncated: true } : null,
+    report: report ? { runId: report.runId ?? null, merged: Array.isArray(report.merged) ? report.merged : [], truncated: true } : null,
+    control,
+    quotaCache,
+    modelStats: modelStats.slice(-20),
+    truncated: true,
+  }));
+}
+
+function sendToolError(id, message) {
+  sendResult(id, {
+    content: [{ type: 'text', text: message }],
+    isError: true,
+  });
+}
+
+function resolveOptionalRepoArg(args) {
+  if (args?.repo === undefined) {
+    return { ok: true, repo: process.cwd() };
+  }
+  const repoCheck = requireNonFlagString(args, 'repo');
+  if (!repoCheck.ok) return repoCheck;
+  const resolved = resolve(repoCheck.value);
+  const dirCheck = validateDirectory(resolved, 'repo', repoCheck.value);
+  if (!dirCheck.ok) return dirCheck;
+  return { ok: true, repo: resolved };
+}
+
+function assertNoSymlinkSegments(baseDir, targetPath) {
+  const rel = relative(baseDir, targetPath);
+  if (!rel.startsWith('..') && !isAbsolute(rel)) {
+    let cur = baseDir;
+    for (const seg of rel.split(sep).filter(Boolean)) {
+      cur = join(cur, seg);
+      const st = lstatOrNull(cur);
+      if (st && st.isSymbolicLink()) {
+        throw symlinkSecurityError(cur);
+      }
+    }
+  }
+  const finalSt = lstatOrNull(targetPath);
+  if (finalSt && finalSt.isSymbolicLink()) {
+    throw symlinkSecurityError(targetPath);
+  }
+}
+
+async function handleInProcessUiTool(id, name, args) {
+  if (name === 'agb_flight_deck' || name === 'agb_mission_control') {
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    try {
+      const snap = await buildSnapshotPayload(repoRes.repo);
+      const surface = name === 'agb_flight_deck' ? 'aux_pane' : 'global';
+      const structuredContent = boundStructuredObject(
+        { ...snap, surface },
+        () => ({ ...snap, modelStats: [], surface, truncated: true })
+      );
+      sendResult(id, {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: true,
+              runId: snap.run?.runId ?? null,
+              done: snap.run?.done ?? null,
+              offline: Boolean(snap.control?.offline),
+            }),
+          },
+        ],
+        structuredContent,
+      });
+    } catch (err) {
+      sendToolError(id, err.message);
+    }
+    return;
+  }
+
+  if (name === 'agb_plan_viewer') {
+    const pathCheck = requireNonFlagString(args, 'path');
+    if (!pathCheck.ok) {
+      sendToolError(id, pathCheck.error);
+      return;
+    }
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    const planFile = resolve(repoRes.repo, pathCheck.value);
+    let fileData;
+    try {
+      assertNoSymlinkSegments(repoRes.repo, planFile);
+      fileData = readRegularFileBounded(planFile, MAX_STRUCTURED_BYTES);
+    } catch (err) {
+      sendToolError(id, err.message);
+      return;
+    }
+    if (fileData.missing) {
+      sendToolError(id, `Plan file does not exist: ${planFile}`);
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(fileData.text);
+    } catch (err) {
+      sendToolError(id, `Invalid JSON in plan file ${planFile}: ${err.message}`);
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      sendToolError(id, `Invalid plan object in ${planFile}`);
+      return;
+    }
+    const errors = validatePlan(parsed);
+    const structuredContent = {
+      ok: errors.length === 0,
+      path: planFile,
+      plan: parsed,
+      validationErrors: errors,
+    };
+    if (Buffer.byteLength(JSON.stringify(structuredContent), 'utf8') >= MAX_STRUCTURED_BYTES) {
+      sendToolError(id, `Plan payload exceeds 512 KiB limit: ${planFile}`);
+      return;
+    }
+    sendResult(id, {
+      content: [
+        {
+          type: 'text',
+          text: `Plan ${basename(planFile)}: ${(parsed.tickets ?? []).length} ticket(s)`,
+        },
+      ],
+      structuredContent,
+    });
+    return;
+  }
+
+  if (name === 'agb_control') {
+    const action = args?.action;
+    if (typeof action !== 'string' || !CONTROL_ACTIONS.has(action)) {
+      sendToolError(id, `Invalid or missing control action: ${String(action)}`);
+      return;
+    }
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    let ticketId;
+    if (TICKET_SCOPED_ACTIONS.has(action)) {
+      if (typeof args?.ticketId !== 'string' || !args.ticketId.trim() || !TICKET_ID_RE.test(args.ticketId.trim())) {
+        sendToolError(id, `Action '${action}' requires a valid non-empty ticketId`);
+        return;
+      }
+      ticketId = args.ticketId.trim();
+    } else if (args?.ticketId !== undefined) {
+      if (typeof args.ticketId !== 'string' || !args.ticketId.trim() || !TICKET_ID_RE.test(args.ticketId.trim())) {
+        sendToolError(id, `Invalid ticketId: ${String(args.ticketId)}`);
+        return;
+      }
+      ticketId = args.ticketId.trim();
+    }
+
+    let lines;
+    if (args?.lines !== undefined) {
+      if (typeof args.lines !== 'number' || !Number.isInteger(args.lines) || args.lines < 1 || args.lines > 200) {
+        sendToolError(id, 'Invalid lines: expected integer between 1 and 200');
+        return;
+      }
+      lines = args.lines;
+    }
+
+    const targetRepo = repoRes.repo;
+    let boosterInfo;
+    try {
+      boosterInfo = inspectBoosterDir(targetRepo);
+    } catch (err) {
+      sendToolError(id, err.message);
+      return;
+    }
+
+    if (action === 'snapshot') {
+      try {
+        const snap = await buildSnapshotPayload(targetRepo);
+        sendResult(id, {
+          content: [{ type: 'text', text: JSON.stringify(snap) }],
+          structuredContent: snap,
+        });
+      } catch (err) {
+        sendToolError(id, err.message);
+      }
+      return;
+    }
+
+    if (action === 'diff') {
+      const res = await sendControlCommand(targetRepo, { action: 'diff', ticketId });
+      if (res?.error && /symbolic link/i.test(res.error)) {
+        sendToolError(id, res.error);
+        return;
+      }
+      if (res && res.ok === true) {
+        const diffText = sliceUtf8(typeof res.diff === 'string' ? res.diff : '', 384 * 1024);
+        const structuredContent = {
+          ...res,
+          ok: true,
+          offline: false,
+          ticketId: res.ticketId ?? ticketId,
+          diff: diffText,
+        };
+        sendResult(id, {
+          content: [{ type: 'text', text: diffText || JSON.stringify(structuredContent) }],
+          structuredContent,
+          isError: false,
+        });
+        return;
+      }
+
+      if (res?.offline === true) {
+        const rescueDir = join(boosterInfo.boosterDir, 'rescue-latest');
+        try {
+          const dirSt = lstatOrNull(rescueDir);
+          if (dirSt && (dirSt.isSymbolicLink() || !dirSt.isDirectory())) {
+            throw symlinkSecurityError(rescueDir);
+          }
+          const latestFile = join(rescueDir, `${ticketId.toLowerCase()}.json`);
+          const saved = dirSt ? readJsonOrNull(latestFile, 384 * 1024) : null;
+          if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+            const diffText = sliceUtf8(typeof saved.diff === 'string' ? saved.diff : '', 384 * 1024);
+            const structuredContent = {
+              ok: true,
+              offline: true,
+              ticketId,
+              diff: diffText,
+            };
+            sendResult(id, {
+              content: [{ type: 'text', text: diffText || JSON.stringify(structuredContent) }],
+              structuredContent,
+              isError: false,
+            });
+            return;
+          }
+        } catch (err) {
+          if (err?.code === 'ESYMLINK') {
+            sendToolError(id, err.message);
+            return;
+          }
+        }
+        const missPayload = {
+          ok: false,
+          offline: true,
+          ticketId,
+          diff: '',
+          error: 'no active run or saved rescue snapshot',
+        };
+        sendResult(id, {
+          content: [{ type: 'text', text: JSON.stringify(missPayload) }],
+          structuredContent: missPayload,
+          isError: false,
+        });
+        return;
+      }
+
+      const failPayload = {
+        ok: false,
+        offline: false,
+        action: 'diff',
+        ticketId,
+        diff: '',
+        error: res?.error ?? 'control command failed',
+      };
+      sendResult(id, {
+        content: [{ type: 'text', text: JSON.stringify(failPayload) }],
+        structuredContent: failPayload,
+        isError: false,
+      });
+      return;
+    }
+
+    // 'pause', 'resume', 'abort', 'stream'
+    const cmdPayload = {
+      action,
+      ...(ticketId ? { ticketId } : {}),
+      ...(lines !== undefined ? { lines } : {}),
+    };
+    const res = await sendControlCommand(targetRepo, cmdPayload);
+    if (res?.error && /symbolic link/i.test(res.error)) {
+      sendToolError(id, res.error);
+      return;
+    }
+    if (res && res.ok === true) {
+      const structuredContent = boundStructuredObject(
+        {
+          ...res,
+          ok: true,
+          offline: false,
+          action,
+          ...(ticketId ? { ticketId: res.ticketId ?? ticketId } : {}),
+        },
+        () => ({
+          ok: true,
+          offline: false,
+          action,
+          ...(ticketId ? { ticketId } : {}),
+          ...(action === 'stream' && Array.isArray(res.lines) ? { lines: res.lines.slice(-40).map((l) => sliceUtf8(l, 2048)) } : {}),
+          truncated: true,
+        })
+      );
+      sendResult(id, {
+        content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
+        structuredContent,
+        isError: false,
+      });
+      return;
+    }
+
+    const structuredContent = {
+      ok: false,
+      offline: Boolean(res?.offline),
+      action,
+      ticketId: ticketId ?? null,
+      ...(action === 'stream' ? { lines: [] } : {}),
+      error: res?.error ?? 'control command failed',
+    };
+    sendResult(id, {
+      content: [{ type: 'text', text: JSON.stringify(structuredContent) }],
+      structuredContent,
+      isError: false,
+    });
+  }
+}
+
+function buildCliStructuredContent(name, stdout, stderr, exitCode, planOutPath = null) {
+  const trimmed = stdout.trim();
+  if (trimmed) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if (name === 'agb_plan' && exitCode === 0 && !Array.isArray(parsed.tickets) && planOutPath) {
+          try {
+            const compiled = readJsonOrNull(planOutPath, 256 * 1024);
+            if (compiled && Array.isArray(compiled.tickets)) {
+              parsed.tickets = compiled.tickets;
+            }
+          } catch {}
+        }
+        if (Buffer.byteLength(JSON.stringify(parsed), 'utf8') < MAX_STRUCTURED_BYTES) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Non-JSON CLI output: fall back to bounded rawText object.
+    }
+  }
+  const rawSource = trimmed || stderr.trim();
+  return {
+    ok: exitCode === 0,
+    rawText: sliceUtf8(rawSource.slice(0, 262144), 262144),
+    exitCode: exitCode ?? 1,
+  };
+}
+
 async function handleToolCall(id, name, args) {
+  if (
+    name === 'agb_flight_deck' ||
+    name === 'agb_mission_control' ||
+    name === 'agb_plan_viewer' ||
+    name === 'agb_control'
+  ) {
+    await handleInProcessUiTool(id, name, args);
+    return;
+  }
+
   let cliArgs = [...baseArgs];
   let targetCwd;
+  let planOutPath = null;
 
   if (name === 'agb_shape') {
     const specCheck = requireNonFlagString(args, 'spec');
@@ -323,9 +1038,11 @@ async function handleToolCall(id, name, args) {
     if (args.out !== undefined) {
       const outCheck = requireNonFlagString(args, 'out');
       if (!outCheck.ok) { sendError(id, -32602, outCheck.error); return; }
-      cliArgs.push('--out', resolve(targetCwd, outCheck.value));
+      planOutPath = resolve(targetCwd, outCheck.value);
+      cliArgs.push('--out', planOutPath);
     } else {
-      cliArgs.push('--out', resolve(targetCwd, 'plan.json'));
+      planOutPath = resolve(targetCwd, 'plan.json');
+      cliArgs.push('--out', planOutPath);
     }
     if (args.force) cliArgs.push('--force');
     if (args.decompose) cliArgs.push('--decompose');
@@ -365,6 +1082,14 @@ async function handleToolCall(id, name, args) {
       }
       concurrency = args.concurrency;
     }
+    if (args.resume !== undefined && typeof args.resume !== 'boolean') {
+      sendError(id, -32602, 'Invalid resume: expected boolean');
+      return;
+    }
+    if (args.resetRescue !== undefined && typeof args.resetRescue !== 'boolean') {
+      sendError(id, -32602, 'Invalid resetRescue: expected boolean');
+      return;
+    }
     const absPlan = resolve(planCheck.value);
     targetCwd = dirname(absPlan);
     const dirCheck = validateDirectory(targetCwd, 'plan', planCheck.value);
@@ -372,6 +1097,12 @@ async function handleToolCall(id, name, args) {
     cliArgs.push('run', absPlan);
     if (concurrency !== undefined) {
       cliArgs.push('-c', String(concurrency));
+    }
+    if (args.resume) {
+      cliArgs.push('--resume');
+    }
+    if (args.resetRescue) {
+      cliArgs.push('--reset-rescue');
     }
   } else if (name === 'agb_preflight') {
     const planCheck = requireNonFlagString(args, 'plan');
@@ -470,7 +1201,7 @@ async function handleToolCall(id, name, args) {
         return;
       }
       const output = stdout.trim() + (stderr ? '\nStderr:\n' + stderr.trim() : '');
-      sendResult(id, {
+      const resultPayload = {
         content: [
           {
             type: 'text',
@@ -478,7 +1209,11 @@ async function handleToolCall(id, name, args) {
           }
         ],
         isError: code !== 0
-      });
+      };
+      if (CLI_UI_TOOLS.has(name)) {
+        resultPayload.structuredContent = buildCliStructuredContent(name, stdout, stderr, code, planOutPath);
+      }
+      sendResult(id, resultPayload);
     });
 
     child.on('error', (err) => {
