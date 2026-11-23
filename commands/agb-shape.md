@@ -17,7 +17,7 @@ Use your shell tool (`run_command`) to run the antigravity-booster terminal shim
 
 Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 2 = structural or scope-overlap findings, 1 = usage or internal error).
 
-If the `agb` MCP server is connected, you may instead prefer the `mcp__agb__agb_shape` tool with `spec` (plus `repo`, `strict`, `syncBrain`, `maxTicketScope` when applicable); it runs the same command and returns its output.
+If the `agb` MCP server is connected, you may instead prefer the `mcp__agb__agb_shape` tool with required `spec` and `repo` (plus optional `strict`, `syncBrain`, `maxTicketScope` when applicable); it runs the same command and returns its output.
 
 ## If the shim is missing
 

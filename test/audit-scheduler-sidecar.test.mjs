@@ -276,12 +276,14 @@ test('scheduler: Pass 2 hollow-test runs sandboxed when AGB_SANDBOX_GATES !== "0
 
     assert.deepEqual(report.merged, ['T1']);
 
-    // Verify outer adlc hollow-test itself ran inside the OS sandbox (with raw --test-cmd to avoid nested sandboxing)
+    // Verify hollow-test received a sandbox-wrapped --test-cmd (adlc itself runs outside so gitDir inflight record stays writable)
     const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
-    assert.match(htLog, /test-cmd=node test\/sample\.test\.js\b/);
     if (process.platform === 'linux') {
-      const bwrapLines = readFileSync(bwrapLog, 'utf8');
-      assert.match(bwrapLines, /--unshare-net.*agb-ht-sbx-.*hollow-test --test-cmd node test\/sample\.test\.js/);
+      assert.match(htLog, /test-cmd='?bwrap'? .*--unshare-net.*agb-ht-sbx-.*node test\/sample\.test\.js/);
+    } else if (process.platform === 'darwin') {
+      assert.match(htLog, /test-cmd='?sandbox-exec'? .*agb-ht-sbx-.*node test\/sample\.test\.js/);
+    } else {
+      assert.match(htLog, /node test\/sample\.test\.js/);
     }
 
     // Verify no agb-ht-sbx-* temp directories were leaked

@@ -362,8 +362,20 @@ test('MCP server exposes agb_shape, agb_init, and extended agb_plan/agb_review/a
   assert.equal(reviewTool.inputSchema.properties.fiveLens?.type, 'boolean');
   assert.equal(reviewTool.inputSchema.properties.arbiter?.type, 'boolean');
 
+  const shapeTool = tools.find((t) => t.name === 'agb_shape');
+  assert.deepEqual(shapeTool.inputSchema.required, ['spec', 'repo']);
+
   const doctorTool = tools.find((t) => t.name === 'agb_doctor');
   assert.equal(doctorTool.inputSchema.properties.fix?.type, 'boolean');
+
+  // Calling agb_shape without repo must fail closed with -32602 instead of using plugin process.cwd()
+  const missingRepoRes = await mcpExchange([
+    { id: 300, method: 'tools/call', params: { name: 'agb_shape', arguments: { spec: 'spec.md' } } },
+  ]);
+  const missingRepoList = Array.isArray(missingRepoRes) ? missingRepoRes : (missingRepoRes?.messages ?? missingRepoRes?.responses ?? []);
+  const missingRepoMsg = missingRepoList.find((m) => m.id === 300) ?? missingRepoRes?.get?.(300);
+  assert.equal(missingRepoMsg?.error?.code, -32602);
+  assert.match(missingRepoMsg?.error?.message ?? '', /repo/i);
 
   // Verify MCP tools/call argv forwarding for agb_shape, agb_init, agb_plan, agb_review, agb_doctor
   const log = join(TMP, 'agb-mcp-dispatch.jsonl');

@@ -40,12 +40,12 @@ var TOOLS = [
       type: "object",
       properties: {
         spec: { type: "string", description: "Path to spec.md or brain conversation ID/prefix" },
-        repo: { type: "string", description: "Optional path to target repository (defaults to cwd)" },
+        repo: { type: "string", description: "Absolute path to the target repository" },
         syncBrain: { type: "boolean", description: "Sync formatted plan artifact to .booster/agb_plan_artifact.md and active brain session" },
         maxTicketScope: { type: "number", description: "Maximum recommended file scope per ticket before emitting a scope warning (default 12)" },
         strict: { type: "boolean", description: "Fail closed on coupling or scope warnings" }
       },
-      required: ["spec"]
+      required: ["spec", "repo"]
     }
   },
   {
@@ -262,20 +262,16 @@ async function handleToolCall(id, name, args) {
       sendError(id, -32602, specCheck.error);
       return;
     }
-    if (args.repo !== void 0) {
-      const repoCheck = requireNonFlagString(args, "repo");
-      if (!repoCheck.ok) {
-        sendError(id, -32602, repoCheck.error);
-        return;
-      }
-      targetCwd = resolve(repoCheck.value);
-      const dirCheck = validateDirectory(targetCwd, "repo", repoCheck.value);
-      if (!dirCheck.ok) {
-        sendError(id, -32602, dirCheck.error);
-        return;
-      }
-    } else {
-      targetCwd = process.cwd();
+    const repoCheck = requireNonFlagString(args, "repo");
+    if (!repoCheck.ok) {
+      sendError(id, -32602, repoCheck.error);
+      return;
+    }
+    targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, "repo", repoCheck.value);
+    if (!dirCheck.ok) {
+      sendError(id, -32602, dirCheck.error);
+      return;
     }
     const resolvedSpec = resolveSpecPath(specCheck.value, targetCwd);
     cliArgs.push("shape", resolvedSpec, targetCwd, "--json");

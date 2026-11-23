@@ -450,3 +450,29 @@ test('runPlan: root Git integrity violation marks report.compromised truthy', as
     for (const d of [repo, home, state]) rmSync(d, { recursive: true, force: true });
   }
 });
+
+test('runPlan: git --no-optional-locks prevents feature.manyfiles / core.untrackedCache from self-mutating .git/index', async () => {
+  const repo = makeRepo();
+  const home = mkdtempSync(join(tmpdir(), 'agb-manyfiles-home-'));
+  const state = mkdtempSync(join(tmpdir(), 'agb-manyfiles-state-'));
+  try {
+    execFileSync('git', ['config', 'feature.manyfiles', 'true'], { cwd: repo });
+    execFileSync('git', ['config', 'core.untrackedCache', 'true'], { cwd: repo });
+    const report = await withEnv({
+      HOME: home,
+      AGB_AGY_BIN: FAKE_AGY,
+      AGB_ADLC_BIN: FAKE_ADLC,
+      AGB_ALLOW_CUSTOM_ADLC_CLI: '1',
+      FAKE_STATE_DIR: state,
+      AGB_SANDBOX_GATES: '0',
+    }, () => runPlan({
+      repo,
+      gate: { test: 'true' },
+      tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+    }, quiet));
+    assert.deepEqual(report.merged, ['T1'], `unexpected failure under feature.manyfiles: ${JSON.stringify(report.failed)}`);
+    assert.equal(Boolean(report.compromised), false);
+  } finally {
+    for (const d of [repo, home, state]) rmSync(d, { recursive: true, force: true });
+  }
+});
