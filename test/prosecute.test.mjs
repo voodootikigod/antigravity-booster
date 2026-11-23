@@ -387,7 +387,7 @@ test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GAT
   const state = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-state-'));
   const binDir = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-bin-'));
   const emptyBinDir = mkdtempSync(join(tmpdir(), 'agb-ht-sbx-empty-'));
-  const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-')));
+  const beforeSbxDirs = new Set(readdirSync(tmpdir()).filter((n) => n.startsWith('agb-prosecute-ht-sbx-')));
   try {
     // 1. Missing worktree fails closed when sandboxing is enabled
     await withFakes({ AGB_SANDBOX_GATES: undefined, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
@@ -404,7 +404,7 @@ test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GAT
         assert.match(failClosed.error, /gate sandbox unavailable/);
       });
 
-      // 3. Executes adlc hollow-test via bwrap wrapper when AGB_SANDBOX_GATES is unset
+      // 3. Wraps --test-cmd in bwrap (leaving authenticated adlc hollow-test outside so gitDir inflight record stays writable)
       const bwrapLog = join(state, 'bwrap.log');
       const fakeBwrap = join(binDir, 'bwrap');
       writeFileSync(
@@ -436,17 +436,58 @@ test('runHollowTest: wraps adlc hollow-test in OS sandbox unless AGB_SANDBOX_GAT
         },
       );
 
-      const bwrapCalls = readFileSync(bwrapLog, 'utf8');
-      assert.match(bwrapCalls, /--unshare-net.*-- .* hollow-test --test-cmd npm test --base main --json/);
+      const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
+      assert.match(htLog, /^test-cmd='?bwrap'? .*--unshare-net.*npm test.* base=main/);
     }
 
-    const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-') && !beforeSbxDirs.has(n));
+    const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-prosecute-ht-sbx-') && !beforeSbxDirs.has(n));
     assert.deepEqual(afterSbxDirs, [], 'sandbox temp dirs must be cleaned up');
   } finally {
     rmSync(worktree, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
     rmSync(binDir, { recursive: true, force: true });
     rmSync(emptyBinDir, { recursive: true, force: true });
+  }
+});
+
+test('runHollowTest: real vendored adlc hollow-test succeeds under real OS sandbox without EROFS on gitDir', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { gateSandboxAvailable } = await import('../lib/gates.mjs');
+  if (!gateSandboxAvailable()) return;
+
+  const repo = mkdtempSync(join(tmpdir(), 'agb-prosecute-real-ht-'));
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+  try {
+    g('init', '-q', '-b', 'main');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'commit.gpgsign', 'false');
+    writeFileSync(join(repo, 'math.mjs'), 'export function add(a, b) { return a + b; }\n');
+    writeFileSync(join(repo, 'math.test.mjs'), 'import assert from "node:assert/strict"; import { add } from "./math.mjs"; assert.equal(add(2, 3), 5);\n');
+    g('add', '-A');
+    g('commit', '-qm', 'init');
+
+    g('checkout', '-qb', 'feat');
+    writeFileSync(join(repo, 'math.mjs'), 'export function add(a, b) {\n  if (a < 0) return 0;\n  return a + b;\n}\n');
+    writeFileSync(join(repo, 'math.test.mjs'), 'import assert from "node:assert/strict"; import { add } from "./math.mjs"; assert.equal(add(-1, 7), 0); assert.equal(add(0, 7), 7); assert.equal(add(2, 3), 5);\n');
+    g('add', '-A');
+    g('commit', '-qm', 'feat');
+
+    const prevSbx = process.env.AGB_SANDBOX_GATES;
+    const prevBin = process.env.AGB_ADLC_BIN;
+    try {
+      delete process.env.AGB_SANDBOX_GATES;
+      delete process.env.AGB_ADLC_BIN;
+      const r = await runHollowTest({ worktree: repo, testCmd: `${process.execPath} math.test.mjs`, base: 'main', fastHollowTest: false });
+      assert.equal(r.ok, true, `real vendored adlc hollow-test must succeed under OS sandbox, got: ${r.error}`);
+      assert.ok(r.total >= 1, `expected >= 1 mutant tested, got ${r.total}`);
+      assert.equal(r.survived, 0, 'all mutants should be killed by math.test.mjs');
+    } finally {
+      if (prevSbx === undefined) delete process.env.AGB_SANDBOX_GATES; else process.env.AGB_SANDBOX_GATES = prevSbx;
+      if (prevBin === undefined) delete process.env.AGB_ADLC_BIN; else process.env.AGB_ADLC_BIN = prevBin;
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
 

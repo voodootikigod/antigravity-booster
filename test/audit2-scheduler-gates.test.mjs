@@ -227,7 +227,7 @@ test('buildSandboxCommandWrapper: wraps command directly in OS sandbox and fails
   }
 });
 
-test('scheduler: Pass 2 executes adlc hollow-test itself inside outer OS sandbox without nested bwrap', async () => {
+test('scheduler: Pass 2 wraps hollow-test --test-cmd inside OS sandbox so adlc can write gitDir inflight record while tests stay sandboxed', async () => {
   if (process.platform !== 'linux') {
     return;
   }
@@ -256,12 +256,9 @@ test('scheduler: Pass 2 executes adlc hollow-test itself inside outer OS sandbox
     );
 
     assert.deepEqual(report.merged, ['T1']);
-    const bwrapCalls = readFileSync(bwrapLog, 'utf8');
-    assert.match(bwrapCalls, /--unshare-net.*-- .*fake-adlc hollow-test --test-cmd node test\/sample\.test\.js --base /);
-
-    // Ensure hollow-test received the raw test command (no nested bwrap)
+    // Ensure hollow-test received the sandbox-wrapped test command (adlc itself stays outside bwrap so gitDir inflight record works)
     const htLog = readFileSync(join(state, 'hollow-test-invocations'), 'utf8');
-    assert.match(htLog, /^test-cmd=node test\/sample\.test\.js base=/);
+    assert.match(htLog, /^test-cmd='?bwrap'? .*--unshare-net.*node test\/sample\.test\.js.* base=/);
 
     const afterSbxDirs = readdirSync(tmpdir()).filter((n) => n.startsWith('agb-ht-sbx-') && !beforeSbxDirs.has(n));
     assert.deepEqual(afterSbxDirs, []);

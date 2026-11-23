@@ -9470,7 +9470,7 @@ function ensureGitignore(repo) {
   return true;
 }
 function isDirty(repo) {
-  const status = git(repo, "status", "--porcelain", "-u");
+  const status = git(repo, "--no-optional-locks", "status", "--porcelain", "-u");
   if (!status.trim()) return false;
   const lines = status.split("\n");
   for (const line of lines) {
@@ -18377,39 +18377,6 @@ function wrapConsensusGateCommand(cmd2, worktree, { env = process.env, plat = pl
   mkdirSync14(emptyRoDir, { recursive: true });
   return { ok: true, cmd: ["bwrap", ...linuxBwrapArgs(worktree, cmd2, emptyRoDir)].map(shellQuote).join(" ") };
 }
-function buildSandboxCommandWrapper(worktree, { env = process.env, plat = platform2(), sandboxTmpDir } = {}) {
-  if (env.AGB_SANDBOX_GATES === "0") {
-    return { ok: true, wrap: (cmd2) => cmd2 };
-  }
-  if (!sandboxTmpDir || !gateSandboxAvailable(env)) {
-    return { ok: false, error: `gate sandbox unavailable on ${plat}` };
-  }
-  if (plat === "darwin") {
-    const profileFile = join32(sandboxTmpDir, "gate.sb");
-    writeFileSync15(profileFile, sandboxProfile(worktree));
-    return {
-      ok: true,
-      wrap: ({ command, args, options }) => ({
-        command: "sandbox-exec",
-        args: ["-f", profileFile, command, ...args],
-        options
-      })
-    };
-  }
-  const emptyRoDir = join32(sandboxTmpDir, "empty-ro");
-  mkdirSync14(emptyRoDir, { recursive: true });
-  const full = linuxBwrapArgs(worktree, "", emptyRoDir);
-  const sepIdx = full.lastIndexOf("--");
-  const bwrapPrefix = full.slice(0, sepIdx + 1);
-  return {
-    ok: true,
-    wrap: ({ command, args, options }) => ({
-      command: "bwrap",
-      args: [...bwrapPrefix, command, ...args],
-      options
-    })
-  };
-}
 async function runConsensusFix({ worktree, testCmd, railsCmd, files, rails = [], adlcBin }) {
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
@@ -18592,9 +18559,9 @@ async function runHollowTest({ worktree, testCmd, base = "main", adlcBin, change
     }
   }
   const useSandbox = process.env.AGB_SANDBOX_GATES !== "0";
-  const hollowSandboxDir = useSandbox ? mkdtempSync8(join33(tmpdir9(), "agb-ht-sbx-")) : null;
+  const hollowSandboxDir = useSandbox ? mkdtempSync8(join33(tmpdir9(), "agb-prosecute-ht-sbx-")) : null;
   try {
-    let wrapCommand = null;
+    let hollowTestCmd = effectiveTestCmd;
     if (useSandbox) {
       if (!worktree) {
         return {
@@ -18602,23 +18569,22 @@ async function runHollowTest({ worktree, testCmd, base = "main", adlcBin, change
           error: "hollow-test skipped: gate sandbox requires a worktree path (set AGB_SANDBOX_GATES=0 to bypass)"
         };
       }
-      const sbx = buildSandboxCommandWrapper(worktree, { sandboxTmpDir: hollowSandboxDir });
-      if (!sbx.ok) {
+      const wrapped = wrapConsensusGateCommand(effectiveTestCmd, worktree, { sandboxTmpDir: hollowSandboxDir });
+      if (!wrapped.ok) {
         return {
           ok: false,
-          error: `hollow-test skipped: gate sandbox unavailable (${sbx.error ?? "OS sandbox required unless AGB_SANDBOX_GATES=0"})`
+          error: `hollow-test skipped: gate sandbox unavailable (${wrapped.error ?? "OS sandbox required unless AGB_SANDBOX_GATES=0"})`
         };
       }
-      wrapCommand = sbx.wrap;
+      hollowTestCmd = wrapped.cmd;
     }
     const res = await runAdlcTool({
       tool: "hollow-test",
-      args: ["--test-cmd", effectiveTestCmd, "--base", base, "--json"],
+      args: ["--test-cmd", hollowTestCmd, "--base", base, "--json"],
       cwd: worktree,
       timeoutMs: HOLLOW_TEST_TIMEOUT_MS,
       adlcBin,
-      repo: worktree,
-      wrapCommand
+      repo: worktree
     });
     if (!res.ok || res.exitCode !== 0 && res.exitCode !== 2) {
       return { ok: false, error: res.error || `hollow-test exited with code ${res.exitCode}` };
@@ -19735,7 +19701,7 @@ function snapshotRootGit(repo) {
   const g = (...args) => execFileSync15("git", args, { cwd: repo, encoding: "utf8", maxBuffer: GIT_MAX_BUFFER2, env: gitEnv }).trim();
   const gitDir = getGitCommonDir(repo);
   const headSha = g("rev-parse", "HEAD");
-  const status = execFileSync15("git", ["status", "--porcelain=v1", "-z"], {
+  const status = execFileSync15("git", ["--no-optional-locks", "status", "--porcelain=v1", "-z"], {
     cwd: repo,
     maxBuffer: GIT_MAX_BUFFER2,
     env: gitEnv
@@ -19855,7 +19821,7 @@ function verifyRootGitIntegrity(repo, pre, {
       return { ok: false, error: `Root HEAD moved from ${pre.headSha} to unproven commit ${postHeadSha}` };
     }
   }
-  const postStatus = execFileSync15("git", ["status", "--porcelain=v1", "-z"], {
+  const postStatus = execFileSync15("git", ["--no-optional-locks", "status", "--porcelain=v1", "-z"], {
     cwd: repo,
     maxBuffer: gitMaxBuffer,
     env: gitEnv
@@ -21750,7 +21716,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           emptyErr.kind = "empty_diff";
           throw emptyErr;
         }
-        const canAdvisorySync = currentBranch2(repo) === base && execFileSync15("git", ["status", "--porcelain=v1", "-z"], { cwd: repo, env: gitEnv }).length === 0 && execFileSync15("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8", env: gitEnv }).trim() === headBefore;
+        const canAdvisorySync = currentBranch2(repo) === base && execFileSync15("git", ["--no-optional-locks", "status", "--porcelain=v1", "-z"], { cwd: repo, env: gitEnv }).length === 0 && execFileSync15("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8", env: gitEnv }).trim() === headBefore;
         const transactionToken = crypto5.randomUUID();
         const agbRef = `refs/heads/agb/${t.id.toLowerCase()}`;
         const markerRef = `refs/transactions/${t.id}/${transactionToken}`;
@@ -21816,23 +21782,23 @@ ${g?.output?.slice(0, 300)}`);
           if (modifiedTests.length > 0 && gate?.test) {
             const hollowSandboxDir = process.env.AGB_SANDBOX_GATES !== "0" ? mkdtempSync9(join37(tmpdir10(), "agb-ht-sbx-")) : null;
             try {
-              let wrapCommand = null;
+              let hollowTestCmd = gate.test;
               if (process.env.AGB_SANDBOX_GATES !== "0") {
-                const sbx = buildSandboxCommandWrapper(integrationPath, { sandboxTmpDir: hollowSandboxDir });
-                if (!sbx.ok) {
+                const wrapped = wrapConsensusGateCommand(gate.test, integrationPath, { sandboxTmpDir: hollowSandboxDir });
+                if (!wrapped.ok) {
                   const sandboxErr = new Error(
-                    `hollow-test mutation verification failed: gate sandbox unavailable (${sbx.error ?? "OS sandbox required unless AGB_SANDBOX_GATES=0"})`
+                    `hollow-test mutation verification failed: gate sandbox unavailable (${wrapped.error ?? "OS sandbox required unless AGB_SANDBOX_GATES=0"})`
                   );
                   sandboxErr.kind = "post_merge_gate_failure";
                   throw sandboxErr;
                 }
-                wrapCommand = sbx.wrap;
+                hollowTestCmd = wrapped.cmd;
               }
               await execFileAuthenticatedAdlc(
                 runAdlcBin,
-                ["hollow-test", "--test-cmd", gate.test, "--base", headBefore],
+                ["hollow-test", "--test-cmd", hollowTestCmd, "--base", headBefore],
                 { cwd: integrationPath, maxBuffer: 10 * 1024 * 1024 },
-                { repo, wrapCommand }
+                { repo }
               );
             } catch (err) {
               if (err.kind === "post_merge_gate_failure") throw err;

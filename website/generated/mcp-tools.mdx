@@ -64,7 +64,7 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | maxTicketScope | number | no | Maximum recommended file scope per ticket before emitting a scope warning (default 12) |
-| repo | string | no | Optional path to target repository (defaults to cwd) |
+| repo | string | yes | Absolute path to the target repository |
 | spec | string | yes | Path to spec.md or brain conversation ID/prefix |
 | strict | boolean | no | Fail closed on coupling or scope warnings |
 | syncBrain | boolean | no | Sync formatted plan artifact to .booster/agb_plan_artifact.md and active brain session |

@@ -1,0 +1,26 @@
+{
+  "body": "1. Add --no-optional-locks to git status in scheduler/worktrees. 2. Sandbox --test-cmd via wrapConsensusGateCommand in runHollowTest and post-merge hollow-test. 3. Require repo in MCP agb_shape and update agb-shape docs/bundles.",
+  "edges": [],
+  "id": "T-RA-R2-BLOCKERS",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/scheduler.mjs",
+    "lib/worktrees.mjs",
+    "lib/prosecute.mjs",
+    "mcp/server.mjs",
+    "skills/agb-shape/SKILL.md",
+    "commands/agb-shape.md",
+    "dist/agb.mjs",
+    "dist/mcp-server.mjs",
+    "website/generated/mcp-tools.mdx",
+    "test/scheduler-integrity.test.mjs",
+    "test/prosecute.test.mjs",
+    "test/audit2-scheduler-gates.test.mjs",
+    "test/cli-fixes.test.mjs"
+  ],
+  "title": "Fix Round 2 release-audit blockers"
+}
