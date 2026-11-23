@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { serveSidecar } from '../sidecars/server.mjs';
+import { serveSidecar, resolveSafeEventsPath } from '../sidecars/server.mjs';
+import { parseJetskiPort, writeTokenFile, readJetskiEvents, start as startJetskiLauncher } from '../sidecars/jetski-launcher.mjs';
 import { request } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, statSync, chmodSync, existsSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 function fetchP(url, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -376,5 +378,239 @@ test('sidecar: serves dashboard static web assets (index.html, app.js, style.css
     assert.equal(resCss.statusCode, 200);
   } finally {
     server.close();
+  }
+});
+
+test('jetski-launcher: parseJetskiPort strictly validates integers in 1..65535', () => {
+  assert.equal(parseJetskiPort('1'), 1);
+  assert.equal(parseJetskiPort('3333'), 3333);
+  assert.equal(parseJetskiPort('65535'), 65535);
+
+  for (const invalid of ['0', '00', '65536', '99999', '-1', 'false', 'true', 'abc', '3333.5', ' 3333', '3333 ', '0x10', '', undefined, null]) {
+    assert.equal(parseJetskiPort(invalid), null, `expected ${JSON.stringify(invalid)} to be rejected`);
+  }
+});
+
+test('jetski-launcher: non-port ANTIGRAVITY_SIDECAR_WEB_PORT values do not disable token auth', async () => {
+  for (const rawPort of ['0', 'false', 'abc', '65536']) {
+    const repo = mkdtempSync(join(tmpdir(), 'agb-jetski-port-'));
+    let server;
+    try {
+      server = await startJetskiLauncher({
+        repoPath: repo,
+        env: { ANTIGRAVITY_SIDECAR_WEB_PORT: rawPort },
+        defaultPort: 0,
+      });
+      const port = server.address().port;
+      const tokenPath = join(repo, '.booster', 'token');
+      assert.equal(existsSync(tokenPath), true, `token file must be created for invalid port ${rawPort}`);
+      const token = readFileSync(tokenPath, 'utf8').trim();
+      assert.ok(token.length >= 16, 'generated token must be non-empty');
+
+      assert.equal((await fetchP(`http://127.0.0.1:${port}/`)).statusCode, 403);
+      assert.equal((await fetchP(`http://127.0.0.1:${port}/events`)).statusCode, 403);
+      assert.equal((await fetchP(`http://127.0.0.1:${port}/?token=${token}`)).statusCode, 200);
+      assert.equal((await fetchP(`http://127.0.0.1:${port}/events`, { Authorization: `Bearer ${token}` })).statusCode, 200);
+    } finally {
+      server?.close();
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }
+});
+
+test('jetski-launcher: writeTokenFile rejects symlinks on .booster and .booster/token and surfaces errors', () => {
+  const outside = mkdtempSync(join(tmpdir(), 'agb-token-outside-'));
+  const outsideFile = join(outside, 'victim.txt');
+  writeFileSync(outsideFile, 'original-secret', { mode: 0o644 });
+  chmodSync(outsideFile, 0o644);
+
+  // Case 1: .booster is a live symlink
+  const repo1 = mkdtempSync(join(tmpdir(), 'agb-token-symdir-'));
+  try {
+    symlinkSync(outside, join(repo1, '.booster'));
+    assert.throws(() => writeTokenFile(repo1, 'new-token'), /symbolic link/i);
+    assert.equal(existsSync(join(outside, 'token')), false, 'must not write through symlinked .booster');
+  } finally {
+    rmSync(repo1, { recursive: true, force: true });
+  }
+
+  // Case 2: .booster is a dangling symlink
+  const repo2 = mkdtempSync(join(tmpdir(), 'agb-token-danglingdir-'));
+  try {
+    symlinkSync(join(outside, 'does-not-exist'), join(repo2, '.booster'));
+    assert.throws(() => writeTokenFile(repo2, 'new-token'), /symbolic link/i);
+  } finally {
+    rmSync(repo2, { recursive: true, force: true });
+  }
+
+  // Case 3: .booster/token is a symlink to an outside file
+  const repo3 = mkdtempSync(join(tmpdir(), 'agb-token-symfile-'));
+  try {
+    mkdirSync(join(repo3, '.booster'), { recursive: true });
+    symlinkSync(outsideFile, join(repo3, '.booster', 'token'));
+    assert.throws(() => writeTokenFile(repo3, 'new-token'), /symbolic link/i);
+    assert.equal(readFileSync(outsideFile, 'utf8'), 'original-secret', 'must not overwrite symlink target');
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(outsideFile).mode & 0o777, 0o644, 'must not chmod symlink target');
+    }
+  } finally {
+    rmSync(repo3, { recursive: true, force: true });
+  }
+
+  // Case 4: .booster is a regular file (not a directory)
+  const repo4 = mkdtempSync(join(tmpdir(), 'agb-token-notdir-'));
+  try {
+    writeFileSync(join(repo4, '.booster'), 'not-a-dir');
+    assert.throws(() => writeTokenFile(repo4, 'new-token'), /not a directory/i);
+  } finally {
+    rmSync(repo4, { recursive: true, force: true });
+  }
+
+  // Case 5: Subprocess launcher fails closed with error on stderr when .booster is symlinked and port is invalid ("false")
+  const repo5 = mkdtempSync(join(tmpdir(), 'agb-token-subproc-'));
+  const launcherPath = fileURLToPath(new URL('../sidecars/jetski-launcher.mjs', import.meta.url));
+  try {
+    symlinkSync(outside, join(repo5, '.booster'));
+    const res = spawnSync(process.execPath, [launcherPath, repo5], {
+      env: { ...process.env, ANTIGRAVITY_SIDECAR_WEB_PORT: 'false' },
+      encoding: 'utf8',
+    });
+    assert.notEqual(res.status, 0, 'launcher must exit non-zero on token write symlink error');
+    assert.match(res.stderr, /Failed to write sidecar token:.*symbolic link/i);
+    assert.equal(existsSync(join(outside, 'token')), false);
+  } finally {
+    rmSync(repo5, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('sidecar & jetski /events readers reject empty, whitespace, and invalid runId', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-sidecar-empty-runid-'));
+  mkdirSync(join(repo, '.booster', 'logs'), { recursive: true });
+  // Place a decoy file at .booster/logs/events.jsonl that empty runId would previously resolve to
+  writeFileSync(join(repo, '.booster', 'logs', 'events.jsonl'), '{"leaked":true}\n');
+
+  const srv = await serveSidecar(repo, 0);
+  try {
+    const port = srv.address().port;
+    for (const payload of [{ runId: '' }, { runId: '   ' }, { runId: '\t\n' }, { runId: '../escape' }, {}]) {
+      writeFileSync(join(repo, '.booster', 'run.json'), JSON.stringify(payload));
+
+      const res = await fetchP(`http://127.0.0.1:${port}/events`);
+      assert.equal(res.statusCode, 400, `server.mjs must reject ${JSON.stringify(payload)}`);
+      const body = JSON.parse(res.data);
+      assert.deepEqual(body.lines, []);
+      assert.equal(body.runId, null);
+      assert.match(body.error, /runId/i);
+
+      const jetskiBody = readJetskiEvents(repo, { offset: 0 });
+      assert.deepEqual(jetskiBody.lines, []);
+      assert.equal(jetskiBody.runId, null);
+      assert.match(jetskiBody.error, /runId/i);
+    }
+  } finally {
+    srv.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('sidecar & jetski /events readers reject symlinked .booster, run.json, logs, run dir, and events.jsonl', async () => {
+  const outside = mkdtempSync(join(tmpdir(), 'agb-sidecar-outside-'));
+  mkdirSync(join(outside, 'logs', 'r1'), { recursive: true });
+  const secretEvents = join(outside, 'logs', 'r1', 'events.jsonl');
+  writeFileSync(secretEvents, '{"secret":"should-not-leak"}\n');
+  const outsideRunJson = join(outside, 'run.json');
+  writeFileSync(outsideRunJson, JSON.stringify({ runId: 'r1' }));
+
+  const cases = [
+    {
+      name: 'symlinked .booster',
+      setup: (repo) => {
+        symlinkSync(outside, join(repo, '.booster'));
+      },
+    },
+    {
+      name: 'symlinked .booster/run.json',
+      setup: (repo) => {
+        mkdirSync(join(repo, '.booster', 'logs', 'r1'), { recursive: true });
+        symlinkSync(outsideRunJson, join(repo, '.booster', 'run.json'));
+        writeFileSync(join(repo, '.booster', 'logs', 'r1', 'events.jsonl'), '{"secret":"no"}\n');
+      },
+    },
+    {
+      name: 'symlinked .booster/logs',
+      setup: (repo) => {
+        mkdirSync(join(repo, '.booster'), { recursive: true });
+        writeFileSync(join(repo, '.booster', 'run.json'), JSON.stringify({ runId: 'r1' }));
+        symlinkSync(join(outside, 'logs'), join(repo, '.booster', 'logs'));
+      },
+    },
+    {
+      name: 'symlinked .booster/logs/<runId>',
+      setup: (repo) => {
+        mkdirSync(join(repo, '.booster', 'logs'), { recursive: true });
+        writeFileSync(join(repo, '.booster', 'run.json'), JSON.stringify({ runId: 'r1' }));
+        symlinkSync(join(outside, 'logs', 'r1'), join(repo, '.booster', 'logs', 'r1'));
+      },
+    },
+    {
+      name: 'symlinked events.jsonl',
+      setup: (repo) => {
+        mkdirSync(join(repo, '.booster', 'logs', 'r1'), { recursive: true });
+        writeFileSync(join(repo, '.booster', 'run.json'), JSON.stringify({ runId: 'r1' }));
+        symlinkSync(secretEvents, join(repo, '.booster', 'logs', 'r1', 'events.jsonl'));
+      },
+    },
+  ];
+
+  try {
+    for (const c of cases) {
+      const repo = mkdtempSync(join(tmpdir(), 'agb-sidecar-sym-'));
+      c.setup(repo);
+      const srv = await serveSidecar(repo, 0);
+      try {
+        const port = srv.address().port;
+        const resolved = resolveSafeEventsPath(repo);
+        assert.equal(resolved.ok, false, `${c.name}: resolveSafeEventsPath must fail`);
+        assert.equal(resolved.code, 'SYMLINK', `${c.name}: expected SYMLINK code`);
+
+        const res = await fetchP(`http://127.0.0.1:${port}/events`);
+        assert.equal(res.statusCode, 403, `${c.name}: server.mjs must return 403`);
+        const body = JSON.parse(res.data);
+        assert.deepEqual(body.lines, [], `${c.name}: server.mjs must not return lines`);
+        assert.match(body.error, /symlink/i);
+
+        const jetskiBody = readJetskiEvents(repo, { offset: 0 });
+        assert.deepEqual(jetskiBody.lines, [], `${c.name}: jetski-launcher must not return lines`);
+        assert.equal(jetskiBody.runId, null);
+        assert.match(jetskiBody.error, /symlink/i);
+      } finally {
+        srv.close();
+        rmSync(repo, { recursive: true, force: true });
+      }
+    }
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('jetski-launcher: readJetskiEvents reads valid events and advances offset', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-jetski-events-ok-'));
+  try {
+    mkdirSync(join(repo, '.booster', 'logs', 'r-ok'), { recursive: true });
+    writeFileSync(join(repo, '.booster', 'run.json'), JSON.stringify({ runId: 'r-ok' }));
+    writeFileSync(join(repo, '.booster', 'logs', 'r-ok', 'events.jsonl'), '{"t":1}\n{"t":2}\n');
+
+    const r1 = readJetskiEvents(repo, { offset: 0 });
+    assert.equal(r1.error, undefined);
+    assert.equal(r1.runId, 'r-ok');
+    assert.deepEqual(r1.lines, ['{"t":1}', '{"t":2}']);
+    assert.equal(r1.newOffset, 16);
+
+    const r2 = readJetskiEvents(repo, { offset: r1.newOffset });
+    assert.deepEqual(r2.lines, []);
+    assert.equal(r2.newOffset, 16);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });

@@ -2055,7 +2055,16 @@ function loadSnapshot(repoRoot) {
   }
 }
 function unionActiveRails(repoRoot) {
-  const adlcSt = lstatSync6(join9(repoRoot, ".adlc"), { throwIfNoEntry: false });
+  let adlcSt;
+  try {
+    adlcSt = lstatSync6(join9(repoRoot, ".adlc"), { throwIfNoEntry: false });
+  } catch (err) {
+    return {
+      ok: false,
+      error: `${err?.code ?? "ERROR"}: ${err?.message ?? String(err)}`,
+      railsPresent: true
+    };
+  }
   if (!adlcSt) {
     return { ok: true, adlc: false, hasActiveTickets: false, rails: [] };
   }
@@ -2071,7 +2080,16 @@ function unionActiveRails(repoRoot) {
   return { ok: true, adlc: true, hasActiveTickets: active.length > 0, rails: [...rails].sort() };
 }
 function resolveTicket(repoRoot, id) {
-  if (lstatSync6(join9(repoRoot, ".adlc", "tickets.json"), { throwIfNoEntry: false })) {
+  let legacySt;
+  try {
+    legacySt = lstatSync6(join9(repoRoot, ".adlc", "tickets.json"), { throwIfNoEntry: false });
+  } catch (err) {
+    return {
+      ok: false,
+      error: `${err?.code ?? "ERROR"}: ${err?.message ?? String(err)}`
+    };
+  }
+  if (legacySt) {
     return { ok: false, error: "LEGACY_TICKET_STORE: .adlc/tickets.json is the retired single-file backend; run `adlc ticket store migrate`" };
   }
   const loaded = loadSnapshot(repoRoot);
@@ -2104,7 +2122,9 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "list_permissions",
   "search_in_file",
   "wait",
-  "wait_5_seconds",
+  "wait_5_seconds"
+]);
+var CODEGRAPH_READ_TOOLS = /* @__PURE__ */ new Set([
   "codegraph_explore",
   "mcp_codegraph_codegraph_explore",
   "mcp__codegraph__codegraph_explore"
@@ -3732,6 +3752,7 @@ function protectedRoots(home) {
     join10(home, ".config", "antigravity-booster"),
     join10(home, ".local", "bin", "agb"),
     join10(home, ".local", "share", "fnm"),
+    join10(home, "Library", "Application Support", "fnm"),
     join10(home, ".local", "share", "mise"),
     join10(home, ".asdf"),
     join10(home, ".volta"),
@@ -4792,18 +4813,21 @@ function containsProtected(r, ctx) {
   return null;
 }
 var SHARD_WRITERS = /* @__PURE__ */ new Set(["write_to_file", "write_file", "create_file", "save_file"]);
-var SHARD_CONTENT_KEYS = ["CodeContent", "Content"];
+var SHARD_CONTENT_KEYS = ["codecontent", "content"];
 function newShardVerdict(name, rel, args, platform) {
   const folded = platform === "darwin" || platform === "win32" ? rel.toLowerCase() : rel;
   if (!folded.startsWith(`${TICKET_STORE_DIR}/`)) return null;
   const reason = "A new ticket shard must be a schema-valid ticket written whole to its canonical <id>--<sha256(id)>.json file";
   if (!SHARD_WRITERS.has(name)) return deny(reason);
-  const present = SHARD_CONTENT_KEYS.filter((k) => args?.[k] !== void 0);
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const present = SHARD_CONTENT_KEYS.filter((k) => norm.folded[k] !== void 0);
   if (present.length === 0) return deny(reason);
   for (const key of present) {
+    if (typeof norm.folded[key] !== "string") return deny(reason);
     let ticket;
     try {
-      ticket = JSON.parse(args[key]);
+      ticket = JSON.parse(norm.folded[key]);
     } catch {
       return deny(reason);
     }
@@ -5119,7 +5143,7 @@ function evaluateMcpTool(name, args, ctx) {
     const rawMcpArgs = name === "call_mcp_tool" ? norm.folded.arguments ?? norm.folded.toolargs ?? {} : args ?? {};
     const mcpNorm = normalizeArgsCaseInsensitive(rawMcpArgs);
     if (!mcpNorm.ok) return deny(mcpNorm.reason);
-    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
+    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
     }
     return PASS;
@@ -5197,9 +5221,9 @@ function evaluateSendCommandInput(rawArgs, ctx) {
 }
 function evaluateOrchestrationTool(name, args, ctx) {
   if (name === "manage_task") {
-    const norm = normalizeArgsCaseInsensitive(args);
-    if (!norm.ok) return deny(norm.reason);
-    const action = norm.folded.action;
+    const norm2 = normalizeArgsCaseInsensitive(args);
+    if (!norm2.ok) return deny(norm2.reason);
+    const action = norm2.folded.action;
     if (action === "list" || action === "status") return PASS;
     if (action === "kill") {
       if (ctx.headless) return deny("Headless agb worker session cannot kill tasks");
@@ -5212,16 +5236,16 @@ function evaluateOrchestrationTool(name, args, ctx) {
       return PASS;
     }
     if (action === "send_input") {
-      if (typeof norm.folded.input !== "string") return deny("manage_task send_input requires a string Input parameter");
+      if (typeof norm2.folded.input !== "string") return deny("manage_task send_input requires a string Input parameter");
       if (ctx.headless || ctx.anchors.some((a) => {
         const r = ctx.repoAt(a);
         return r.adlc && (r.activeRail || !r.store.ok);
       })) {
         return deny("manage_task send_input forbidden in headless worker or active-rail ADLC repository");
       }
-      const stdinPathErr = scanStdinPaths(args, ctx, norm.folded.input);
+      const stdinPathErr = scanStdinPaths(args, ctx, norm2.folded.input);
       if (stdinPathErr) return stdinPathErr;
-      const shVerdict = classifyRunCommand({ CommandLine: norm.folded.input, Cwd: ctx.anchor }, ctx);
+      const shVerdict = classifyRunCommand({ CommandLine: norm2.folded.input, Cwd: ctx.anchor }, ctx);
       return shVerdict.decision === "pass" ? PASS : deny(shVerdict.reason);
     }
     return deny("Unsupported or missing manage_task Action");
@@ -5250,10 +5274,23 @@ function evaluateOrchestrationTool(name, args, ctx) {
     }
     return PASS;
   }
+  if (name === "schedule" || name === "send_message") {
+    if (ctx.headless) return deny(`Headless agb worker session cannot invoke ${name}`);
+    return PASS;
+  }
   if (name !== "swarm") return PASS;
   if (ctx.headless) return deny("Headless agb worker session cannot invoke native swarm orchestration");
-  if (args?.workspace !== void 0 && args?.workspace !== null) {
-    if (typeof args.workspace !== "string" || !SWARM_WORKSPACE_MODES.has(args.workspace)) {
+  if (ctx.anchors.some((a) => {
+    const r = ctx.repoAt(a);
+    return r.adlc && !r.store.ok;
+  })) {
+    return deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified");
+  }
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const workspace = norm.folded.workspace;
+  if (workspace !== void 0 && workspace !== null) {
+    if (typeof workspace !== "string" || !SWARM_WORKSPACE_MODES.has(workspace)) {
       return deny("Invalid swarm workspace mode; expected inherit, share, or branch");
     }
   }
@@ -5349,6 +5386,48 @@ function evaluateWorkflowTool(args, ctx) {
   }
   return PASS;
 }
+function evaluateCodegraphTool(name, args, ctx) {
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  if ((ctx.headless || ctx.readonly) && !ctx.allowCodegraphMcp) {
+    return deny("CodeGraph MCP queries are denied in headless/read-only worker sessions unless AGB_ALLOW_CODEGRAPH_MCP=1");
+  }
+  if (ctx.workspaceRealPaths.length === 0) {
+    return deny("CodeGraph query requires a declared workspace to verify path containment");
+  }
+  const schemaPaths = [];
+  for (const key of READ_TOOL_PATH_SCHEMAS[name] ?? []) {
+    const fk = goFoldKey(key);
+    const val = norm.folded[fk];
+    if (val === void 0) continue;
+    if (!isNonEmptyString(val)) {
+      return deny(`Invalid CodeGraph path parameter: ${key}`);
+    }
+    schemaPaths.push(toPath(val.trim()));
+  }
+  const scanned = scanPathLike(args);
+  if (scanned.overflow) return OVERFLOW;
+  const candidates = unique([...schemaPaths, ...scanned.paths]);
+  for (const token of candidates) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) {
+      return deny(`Relative path '${token}' in ${name} has no workspace to anchor it`);
+    }
+    for (const r of resolved) {
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+      }
+      if (r.unresolved) {
+        return deny("Target path cannot be resolved (symlink loop or oversized path)");
+      }
+      const insideWorkspace = ctx.workspaceRealPaths.some((wReal) => isWithin(r.real, wReal, ctx.platform));
+      if (!insideWorkspace) {
+        return deny(`CodeGraph query path '${token}' resolves outside declared workspace`);
+      }
+    }
+  }
+  return PASS;
+}
 function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny("Unknown tool in a read-only agb worker session");
   if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; tool call denied");
@@ -5425,6 +5504,7 @@ function buildContext(payload, options = {}) {
     workerTicket,
     workerBuildCmd,
     readonly,
+    allowCodegraphMcp: env.AGB_ALLOW_CODEGRAPH_MCP === "1",
     cdpath: Boolean(env.CDPATH),
     headless: Boolean(workerTicket) || readonly,
     anchor: cwd ?? workspacePaths[0] ?? null,
@@ -5447,6 +5527,7 @@ function evaluatePayload(payload, options = {}) {
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;
   if (READ_ONLY_TOOLS.has(name)) return PASS;
+  if (CODEGRAPH_READ_TOOLS.has(name)) return evaluateCodegraphTool(name, args, ctx);
   if (name === "sed_file") return evaluateSedFile(args, ctx);
   if (NOTEBOOK_EXEC_TOOLS.has(name)) return evaluateNotebookExecution(args, ctx);
   if (STDIN_TOOLS.has(name)) return evaluateSendCommandInput(args, ctx);

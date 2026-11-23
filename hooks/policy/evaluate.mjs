@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
-  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS,
+  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, CODEGRAPH_READ_TOOLS, EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS,
   PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, STDIN_TOOLS,
   SUBAGENT_PROSE_KEYS, SUBAGENT_TOOLS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
   TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS,
@@ -347,7 +347,7 @@ function containsProtected(r, ctx) {
 }
 
 const SHARD_WRITERS = new Set(['write_to_file', 'write_file', 'create_file', 'save_file']);
-const SHARD_CONTENT_KEYS = ['CodeContent', 'Content'];
+const SHARD_CONTENT_KEYS = ['codecontent', 'content'];
 
 /**
  * A new ticket shard must be a schema-valid ticket written to its canonical
@@ -360,12 +360,15 @@ function newShardVerdict(name, rel, args, platform) {
   if (!folded.startsWith(`${TICKET_STORE_DIR}/`)) return null;
   const reason = 'A new ticket shard must be a schema-valid ticket written whole to its canonical <id>--<sha256(id)>.json file';
   if (!SHARD_WRITERS.has(name)) return deny(reason);
-  const present = SHARD_CONTENT_KEYS.filter((k) => args?.[k] !== undefined);
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const present = SHARD_CONTENT_KEYS.filter((k) => norm.folded[k] !== undefined);
   if (present.length === 0) return deny(reason);
   for (const key of present) {
+    if (typeof norm.folded[key] !== 'string') return deny(reason);
     let ticket;
     try {
-      ticket = JSON.parse(args[key]);
+      ticket = JSON.parse(norm.folded[key]);
     } catch {
       return deny(reason);
     }
@@ -724,6 +727,7 @@ function evaluateMcpTool(name, args, ctx) {
         tool === 'agb_run' ||
         tool === 'agb_plan' ||
         tool === 'agb_init' ||
+        tool === 'agb_distill' ||
         (tool === 'agb_doctor' && Boolean(mcpNorm.folded.fix)) ||
         (tool === 'agb_shape' && Boolean(mcpNorm.folded.syncbrain))
       )
@@ -861,10 +865,21 @@ function evaluateOrchestrationTool(name, args, ctx) {
     return PASS;
   }
 
+  if (name === 'schedule' || name === 'send_message') {
+    if (ctx.headless) return deny(`Headless agb worker session cannot invoke ${name}`);
+    return PASS;
+  }
+
   if (name !== 'swarm') return PASS;
   if (ctx.headless) return deny('Headless agb worker session cannot invoke native swarm orchestration');
-  if (args?.workspace !== undefined && args?.workspace !== null) {
-    if (typeof args.workspace !== 'string' || !SWARM_WORKSPACE_MODES.has(args.workspace)) {
+  if (ctx.anchors.some((a) => { const r = ctx.repoAt(a); return r.adlc && !r.store.ok; })) {
+    return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
+  }
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const workspace = norm.folded.workspace;
+  if (workspace !== undefined && workspace !== null) {
+    if (typeof workspace !== 'string' || !SWARM_WORKSPACE_MODES.has(workspace)) {
       return deny('Invalid swarm workspace mode; expected inherit, share, or branch');
     }
   }
@@ -967,6 +982,49 @@ function evaluateWorkflowTool(args, ctx) {
   return PASS;
 }
 
+function evaluateCodegraphTool(name, args, ctx) {
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  if ((ctx.headless || ctx.readonly) && !ctx.allowCodegraphMcp) {
+    return deny('CodeGraph MCP queries are denied in headless/read-only worker sessions unless AGB_ALLOW_CODEGRAPH_MCP=1');
+  }
+  if (ctx.workspaceRealPaths.length === 0) {
+    return deny('CodeGraph query requires a declared workspace to verify path containment');
+  }
+  const schemaPaths = [];
+  for (const key of READ_TOOL_PATH_SCHEMAS[name] ?? []) {
+    const fk = goFoldKey(key);
+    const val = norm.folded[fk];
+    if (val === undefined) continue;
+    if (!isNonEmptyString(val)) {
+      return deny(`Invalid CodeGraph path parameter: ${key}`);
+    }
+    schemaPaths.push(toPath(val.trim()));
+  }
+  const scanned = scanPathLike(args);
+  if (scanned.overflow) return OVERFLOW;
+  const candidates = unique([...schemaPaths, ...scanned.paths]);
+  for (const token of candidates) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) {
+      return deny(`Relative path '${token}' in ${name} has no workspace to anchor it`);
+    }
+    for (const r of resolved) {
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (r.unresolved) {
+        return deny('Target path cannot be resolved (symlink loop or oversized path)');
+      }
+      const insideWorkspace = ctx.workspaceRealPaths.some((wReal) => isWithin(r.real, wReal, ctx.platform));
+      if (!insideWorkspace) {
+        return deny(`CodeGraph query path '${token}' resolves outside declared workspace`);
+      }
+    }
+  }
+  return PASS;
+}
+
 function evaluateUnknownTool(args, ctx) {
   if (ctx.readonly) return deny('Unknown tool in a read-only agb worker session');
   if (ctx.workerTicket && ctx.anchors.length === 0) return deny('Headless worker has no workspace; tool call denied');
@@ -1045,6 +1103,7 @@ export function buildContext(payload, options = {}) {
     workerTicket,
     workerBuildCmd,
     readonly,
+    allowCodegraphMcp: env.AGB_ALLOW_CODEGRAPH_MCP === '1',
     cdpath: Boolean(env.CDPATH),
     headless: Boolean(workerTicket) || readonly,
     anchor: cwd ?? workspacePaths[0] ?? null,
@@ -1071,6 +1130,7 @@ export function evaluatePayload(payload, options = {}) {
   if (step1.decision === 'deny') return step1;
 
   if (READ_ONLY_TOOLS.has(name)) return PASS;
+  if (CODEGRAPH_READ_TOOLS.has(name)) return evaluateCodegraphTool(name, args, ctx);
   if (name === 'sed_file') return evaluateSedFile(args, ctx);
   if (NOTEBOOK_EXEC_TOOLS.has(name)) return evaluateNotebookExecution(args, ctx);
   if (STDIN_TOOLS.has(name)) return evaluateSendCommandInput(args, ctx);

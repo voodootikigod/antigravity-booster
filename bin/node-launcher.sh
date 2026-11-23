@@ -105,10 +105,11 @@ is_valid_node() {
   TRUSTED=0
   case "$REAL_CANDIDATE" in
     /opt/homebrew/*|/usr/local/*|/usr/*|/bin/*|/System/*) TRUSTED=1 ;;
-    "$HOME"/.local/share/fnm/*|"$HOME"/.local/share/mise/*|"$HOME"/.nvm/*|"$HOME"/.asdf/*|"$HOME"/.volta/*|"$HOME"/.nodenv/*|"$HOME"/n/*) TRUSTED=1 ;;
-    "$REAL_HOME"/.local/share/fnm/*|"$REAL_HOME"/.local/share/mise/*|"$REAL_HOME"/.nvm/*|"$REAL_HOME"/.asdf/*|"$REAL_HOME"/.volta/*|"$REAL_HOME"/.nodenv/*|"$REAL_HOME"/n/*) TRUSTED=1 ;;
-    "$USER_HOME"/.local/share/fnm/*|"$USER_HOME"/.local/share/mise/*|"$USER_HOME"/.nvm/*|"$USER_HOME"/.asdf/*|"$USER_HOME"/.volta/*|"$USER_HOME"/.nodenv/*|"$USER_HOME"/n/*) TRUSTED=1 ;;
-    "$REAL_USER_HOME"/.local/share/fnm/*|"$REAL_USER_HOME"/.local/share/mise/*|"$REAL_USER_HOME"/.nvm/*|"$REAL_USER_HOME"/.asdf/*|"$REAL_USER_HOME"/.volta/*|"$REAL_USER_HOME"/.nodenv/*|"$REAL_USER_HOME"/n/*) TRUSTED=1 ;;
+    /nix/store/*/bin/node) TRUSTED=1 ;;
+    "$HOME"/.local/share/fnm/*|"$HOME/Library/Application Support/fnm"/*|"$HOME"/.local/share/mise/*|"$HOME"/.nvm/*|"$HOME"/.asdf/*|"$HOME"/.volta/*|"$HOME"/.nodenv/*|"$HOME"/n/*) TRUSTED=1 ;;
+    "$REAL_HOME"/.local/share/fnm/*|"$REAL_HOME/Library/Application Support/fnm"/*|"$REAL_HOME"/.local/share/mise/*|"$REAL_HOME"/.nvm/*|"$REAL_HOME"/.asdf/*|"$REAL_HOME"/.volta/*|"$REAL_HOME"/.nodenv/*|"$REAL_HOME"/n/*) TRUSTED=1 ;;
+    "$USER_HOME"/.local/share/fnm/*|"$USER_HOME/Library/Application Support/fnm"/*|"$USER_HOME"/.local/share/mise/*|"$USER_HOME"/.nvm/*|"$USER_HOME"/.asdf/*|"$USER_HOME"/.volta/*|"$USER_HOME"/.nodenv/*|"$USER_HOME"/n/*) TRUSTED=1 ;;
+    "$REAL_USER_HOME"/.local/share/fnm/*|"$REAL_USER_HOME/Library/Application Support/fnm"/*|"$REAL_USER_HOME"/.local/share/mise/*|"$REAL_USER_HOME"/.nvm/*|"$REAL_USER_HOME"/.asdf/*|"$REAL_USER_HOME"/.volta/*|"$REAL_USER_HOME"/.nodenv/*|"$REAL_USER_HOME"/n/*) TRUSTED=1 ;;
   esac
   [ "$TRUSTED" -eq 1 ] || return 1
 
@@ -175,17 +176,21 @@ search_home_managers() {
   _h="$1"
   [ -n "$_h" ] || return 0
 
-  # 2. Search fnm locations (aliases/default, current, and installed versions)
+  # 2. Search fnm locations (Linux/XDG ~/.local/share/fnm and macOS ~/Library/Application Support/fnm)
   if [ -z "$NODE_BIN" ]; then
-    check_candidate "$_h/.local/share/fnm/aliases/default/bin/node"
-    check_candidate "$_h/.local/share/fnm/current/bin/node"
-    if [ -z "$NODE_BIN" ] && [ -d "$_h/.local/share/fnm/node-versions" ]; then
-      for vdir in "$_h/.local/share/fnm/node-versions"/*/installation/bin/node; do
-        [ -e "$vdir" ] || continue
-        check_candidate "$vdir"
-        [ -z "$NODE_BIN" ] || break
-      done
-    fi
+    for _fnm_dir in "$_h/.local/share/fnm" "$_h/Library/Application Support/fnm"; do
+      [ -d "$_fnm_dir" ] || continue
+      check_candidate "$_fnm_dir/aliases/default/bin/node"
+      check_candidate "$_fnm_dir/current/bin/node"
+      if [ -z "$NODE_BIN" ] && [ -d "$_fnm_dir/node-versions" ]; then
+        for vdir in "$_fnm_dir/node-versions"/*/installation/bin/node; do
+          [ -e "$vdir" ] || continue
+          check_candidate "$vdir"
+          [ -z "$NODE_BIN" ] || break
+        done
+      fi
+      [ -z "$NODE_BIN" ] || break
+    done
   fi
 
   # 3. Search mise locations

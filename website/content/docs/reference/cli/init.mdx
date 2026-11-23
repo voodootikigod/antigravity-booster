@@ -3,12 +3,14 @@ title: "agb init"
 description: "Initialize a target repository for ADLC and agb (.adlc/config.json, .adlc/tickets/, specs/feature-template.md, .gitignore)."
 ---
 
-`agb init [repo]` bootstraps a target repository for ADLC and `agb`: it creates `.adlc/tickets/` and `.adlc/config.json` (in `unsigned-fallback` mode without setting human-only attestation flags), scaffolds `specs/feature-template.md` when absent, and appends `.booster/` and `.worktrees/` to `.gitignore`.
+`agb init [repo]` bootstraps a target repository for ADLC and `agb`: it verifies there is no retired legacy `.adlc/tickets.json` store (`LEGACY_TICKET_STORE`), creates `.adlc/config.json` (in `unsigned-fallback` mode without setting human-only attestation flags) when absent, ensures the `.adlc/tickets/` directory store exists, scaffolds `specs/feature-template.md` when absent, and updates `.gitignore` with the canonical ADLC and booster stanzas (`.adlc/`, `.booster/`, `.worktrees/`) when `.git` is present.
 
 ## Synopsis
 
 <include>../../../../generated/cli-init.mdx</include>
 
-## Arguments
+## Arguments and output
 
-- `repo` is optional and defaults to the current directory (`.`). Outputs `{ ok, repo, created, skipped }` as JSON.
+- `repo` is optional and defaults to the current directory (`.`).
+- `agb init` accepts no flags; passing any unknown flag exits `1` without modifying the repository.
+- On success, prints JSON to stdout with `{ ok, repo, configPath, createdConfig, templatePath, createdTemplate, updatedGitignore }`.

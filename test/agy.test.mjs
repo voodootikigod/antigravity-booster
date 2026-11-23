@@ -1,11 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, chmodSync, mkdirSync, lstatSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, chmodSync, mkdirSync, lstatSync, existsSync, realpathSync } from 'node:fs';
+import { tmpdir, homedir } from 'node:os';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runAgy, stageBuilderGeminiHome } from '../lib/agy.mjs';
+import {
+  runAgy,
+  stageBuilderGeminiHome,
+  resolveUserHome,
+  isAllowedEnvVar,
+  buildSpawnEnv,
+  WIN32_ENV_ALLOWLIST,
+} from '../lib/agy.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 
@@ -422,5 +429,175 @@ test('runAgy builder: omits nested --sandbox inside outer bwrap_pid containment 
     rmSync(fakeBinDir, { recursive: true, force: true });
   }
 });
+
+test('resolveUserHome and runAgy ignore AGB_HOME_DIR when __AGB_BUNDLED__ is true', async () => {
+  const spoofHome = mkdtempSync(join(tmpdir(), 'agb-bundled-spoof-home-'));
+  const fakeWorktree = mkdtempSync(join(tmpdir(), 'agb-bundled-wt-'));
+  const hadBundled = Object.prototype.hasOwnProperty.call(globalThis, '__AGB_BUNDLED__');
+  const savedBundled = globalThis.__AGB_BUNDLED__;
+  const savedHomeDir = process.env.AGB_HOME_DIR;
+  try {
+    mkdirSync(join(spoofHome, '.gemini'), { recursive: true });
+    writeFileSync(join(spoofHome, '.gemini', 'spoof-only-marker.txt'), 'spoof');
+
+    // Unbundled honors AGB_HOME_DIR
+    assert.equal(resolveUserHome({ env: { AGB_HOME_DIR: spoofHome }, bundled: false }), spoofHome);
+    // Explicit bundled: true ignores AGB_HOME_DIR
+    assert.equal(resolveUserHome({ env: { AGB_HOME_DIR: spoofHome }, bundled: true }), homedir());
+
+    // Global __AGB_BUNDLED__ = true ignores AGB_HOME_DIR in resolveUserHome and runAgy
+    globalThis.__AGB_BUNDLED__ = true;
+    process.env.AGB_HOME_DIR = spoofHome;
+    assert.equal(resolveUserHome({ env: process.env }), homedir());
+
+    const mock = makeMockScript([
+      `echo '{"event":"result","result":{"status":"SUCCESS","exit_code":0}}'`,
+    ]);
+    try {
+      const res = await runAgy({
+        bin: mock.bin,
+        model: 'gemini-3-pro',
+        prompt: 'bundled home test',
+        cwd: fakeWorktree,
+        role: 'builder',
+        sandbox: true,
+        outputFormat: 'stream-json',
+        worker: { ticket: 't-bundled' },
+      });
+      assert.ok(res.ok, res.error);
+      assert.equal(
+        existsSync(join(fakeWorktree, '.agb_home', '.gemini', 'spoof-only-marker.txt')),
+        false,
+        'bundled runAgy must ignore AGB_HOME_DIR and never stage entries from spoofHome',
+      );
+    } finally {
+      mock.cleanup();
+    }
+  } finally {
+    if (hadBundled) globalThis.__AGB_BUNDLED__ = savedBundled;
+    else delete globalThis.__AGB_BUNDLED__;
+    if (savedHomeDir === undefined) delete process.env.AGB_HOME_DIR;
+    else process.env.AGB_HOME_DIR = savedHomeDir;
+    rmSync(spoofHome, { recursive: true, force: true });
+    rmSync(fakeWorktree, { recursive: true, force: true });
+  }
+});
+
+test('isAllowedEnvVar: win32 preserves case-insensitive Path and essential Windows system vars while blocking secrets/USERPROFILE', () => {
+  const prodEnv = { NODE_ENV: 'production' };
+  // Essential Windows vars allowed case-insensitively on win32
+  for (const k of ['Path', 'PATH', 'path', 'PATHEXT', 'PathExt', 'COMSPEC', 'ComSpec', 'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'windir', 'APPDATA', 'AppData', 'LOCALAPPDATA', 'LocalAppData', 'TEMP', 'Temp', 'TMP', 'Tmp']) {
+    assert.equal(isAllowedEnvVar(k, prodEnv, 'win32'), true, `expected ${k} allowed on win32`);
+  }
+  assert.deepEqual(
+    WIN32_ENV_ALLOWLIST,
+    ['PATHEXT', 'COMSPEC', 'SYSTEMROOT', 'WINDIR', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP'],
+  );
+
+  // USERPROFILE and secrets / dangerous runtime vars rejected on win32 regardless of case
+  for (const blocked of ['USERPROFILE', 'UserProfile', 'userprofile', 'GITHUB_TOKEN', 'github_token', 'NODE_OPTIONS', 'node_options', 'Ld_Preload']) {
+    assert.equal(isAllowedEnvVar(blocked, prodEnv, 'win32'), false, `expected ${blocked} rejected on win32`);
+  }
+
+  // POSIX remains case-sensitive and does not allow Windows-only vars
+  assert.equal(isAllowedEnvVar('PATH', prodEnv, 'linux'), true);
+  assert.equal(isAllowedEnvVar('Path', prodEnv, 'linux'), false);
+  assert.equal(isAllowedEnvVar('COMSPEC', prodEnv, 'linux'), false);
+});
+
+test('buildSpawnEnv: win32 builder normalizes Path/PATH without collision, preserves essential Windows vars, and pins USERPROFILE to agbHome', () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agb-win-env-home-'));
+  const fakeWt = mkdtempSync(join(tmpdir(), 'agb-win-env-wt-'));
+  try {
+    const realWt = realpathSync(fakeWt);
+    const expectedAgbHome = join(realWt, '.agb_home');
+    const realNodeDir = dirname(realpathSync(process.execPath));
+
+    const winProcessEnv = {
+      Path: 'C:\\Windows\\System32;C:\\Program Files\\Git\\cmd',
+      PATH: 'C:\\Extra\\Bin;C:\\Windows\\System32',
+      PATHEXT: '.COM;.EXE;.BAT;.CMD',
+      ComSpec: 'C:\\Windows\\system32\\cmd.exe',
+      SystemRoot: 'C:\\Windows',
+      windir: 'C:\\Windows',
+      APPDATA: 'C:\\Users\\Host\\AppData\\Roaming',
+      LOCALAPPDATA: 'C:\\Users\\Host\\AppData\\Local',
+      TEMP: 'C:\\Users\\Host\\AppData\\Local\\Temp',
+      TMP: 'C:\\Users\\Host\\AppData\\Local\\Temp',
+      USERPROFILE: 'C:\\Users\\Host',
+      UserProfile: 'C:\\Users\\HostMixed',
+      HOME: 'C:\\Users\\Host',
+      GITHUB_TOKEN: 'ghp_secret',
+      NODE_OPTIONS: '--require evil.js',
+      GIT_DIR: 'C:\\evil\\.git',
+      INIT_CWD: 'C:\\outer',
+    };
+
+    const spawnEnv = buildSpawnEnv({
+      processEnv: winProcessEnv,
+      env: { userprofile: 'C:\\Users\\Smuggled', AGB_CUSTOM: 'ok' },
+      cwd: fakeWt,
+      repo: fakeWt,
+      isBuilder: true,
+      sanitizeEnv: true,
+      worker: { ticket: 'T-WIN-1' },
+      userHome: fakeHome,
+      platform: 'win32',
+    });
+
+    // No Path/PATH key collision; canonical PATH retains both Path entries + realNodeDir separated by ';'
+    const pathKeys = Object.keys(spawnEnv).filter((k) => k.toLowerCase() === 'path');
+    assert.deepEqual(pathKeys, ['PATH'], `expected single canonical PATH key, got ${JSON.stringify(pathKeys)}`);
+    assert.ok(spawnEnv.PATH.includes('C:\\Windows\\System32'));
+    assert.ok(spawnEnv.PATH.includes('C:\\Program Files\\Git\\cmd'));
+    assert.ok(spawnEnv.PATH.includes('C:\\Extra\\Bin'));
+    assert.ok(spawnEnv.PATH.split(';').includes(realNodeDir), `expected PATH to include node dir ${realNodeDir}: ${spawnEnv.PATH}`);
+
+    // Essential Windows system variables survive sanitization
+    assert.equal(spawnEnv.PATHEXT, '.COM;.EXE;.BAT;.CMD');
+    assert.equal(spawnEnv.ComSpec, 'C:\\Windows\\system32\\cmd.exe');
+    assert.equal(spawnEnv.SystemRoot, 'C:\\Windows');
+    assert.equal(spawnEnv.windir, 'C:\\Windows');
+    assert.equal(spawnEnv.APPDATA, 'C:\\Users\\Host\\AppData\\Roaming');
+    assert.equal(spawnEnv.LOCALAPPDATA, 'C:\\Users\\Host\\AppData\\Local');
+    assert.equal(spawnEnv.TEMP, 'C:\\Users\\Host\\AppData\\Local\\Temp');
+    assert.equal(spawnEnv.TMP, 'C:\\Users\\Host\\AppData\\Local\\Temp');
+
+    // USERPROFILE is pinned to agbHome with all case-variants stripped
+    const userProfileKeys = Object.keys(spawnEnv).filter((k) => k.toLowerCase() === 'userprofile');
+    assert.deepEqual(userProfileKeys, ['USERPROFILE'], `expected single USERPROFILE key, got ${JSON.stringify(userProfileKeys)}`);
+    assert.equal(spawnEnv.USERPROFILE, expectedAgbHome);
+    assert.equal(spawnEnv.HOME, expectedAgbHome);
+    assert.equal(spawnEnv.GIT_CONFIG_GLOBAL, 'NUL');
+
+    // Secrets, dangerous vars, and smuggled git/init vars stripped
+    assert.equal(spawnEnv.GITHUB_TOKEN, undefined);
+    assert.equal(spawnEnv.NODE_OPTIONS, undefined);
+    assert.equal(spawnEnv.GIT_DIR, undefined);
+    assert.equal(spawnEnv.INIT_CWD, undefined);
+    assert.equal(spawnEnv.AGB_CUSTOM, 'ok');
+
+    // Per-call env Path override also normalizes cleanly without collision
+    const overrideEnv = buildSpawnEnv({
+      processEnv: { Path: 'C:\\Windows\\System32', ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+      env: { Path: 'C:\\Override\\Bin', COMSPEC: 'C:\\Override\\cmd.exe' },
+      cwd: fakeWt,
+      repo: fakeWt,
+      isBuilder: true,
+      sanitizeEnv: true,
+      worker: { ticket: 'T-WIN-2' },
+      userHome: fakeHome,
+      platform: 'win32',
+    });
+    assert.deepEqual(Object.keys(overrideEnv).filter((k) => k.toLowerCase() === 'path'), ['PATH']);
+    assert.ok(overrideEnv.PATH.startsWith('C:\\Override\\Bin;'));
+    assert.deepEqual(Object.keys(overrideEnv).filter((k) => k.toLowerCase() === 'comspec'), ['COMSPEC']);
+    assert.equal(overrideEnv.COMSPEC, 'C:\\Override\\cmd.exe');
+  } finally {
+    rmSync(fakeHome, { recursive: true, force: true });
+    rmSync(fakeWt, { recursive: true, force: true });
+  }
+});
+
 
 

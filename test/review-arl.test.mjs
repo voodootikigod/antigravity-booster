@@ -11,6 +11,7 @@ import {
   ARL_FINDING_SCHEMA,
   ARBITER_TRIAGE_SCHEMA,
   normalizeSeverity,
+  arbiterPrompt,
   triageFindings,
   reviewPlan,
   reviewFleet,
@@ -286,5 +287,226 @@ test('triageFindings arbiter reconciliation preserves blast_radius / SHAPE-* blo
     if (prevQuota === undefined) delete process.env.AGB_QUOTA_STATE;
     else process.env.AGB_QUOTA_STATE = prevQuota;
     rmSync(tmpQuotaDir, { recursive: true, force: true });
+  }
+});
+
+test('triageFindings & arbiterPrompt: sorts 65 low + 2 critical/high findings by severity priority before slicing 60 and merges overflow via deterministicTriage', async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'agb-arbiter-overflow-'));
+  const prevAgy = process.env.AGB_AGY_BIN;
+  try {
+    const lowFindings = Array.from({ length: 65 }, (_, i) => ({
+      id: `LOW-${i}`,
+      lens: 'anti_slop',
+      severity: 'low',
+      file: `lib/low-${i}.mjs`,
+      claim: `Minor style nit ${i}`,
+      evidence: `line ${i + 1}`,
+    }));
+    const raw67 = [
+      ...lowFindings,
+      {
+        id: 'CRIT-TAIL',
+        lens: 'security',
+        severity: 'critical',
+        file: 'lib/auth.mjs',
+        claim: 'Unauthenticated admin endpoint',
+        evidence: 'missing auth middleware on /admin',
+        resolution_route: 'auto-fix',
+      },
+      {
+        id: 'HIGH-TAIL',
+        lens: 'correctness_redteam',
+        severity: 'high',
+        file: 'lib/store.mjs',
+        claim: 'Race condition drops concurrent writes',
+        evidence: 'non-atomic read-modify-write at line 42',
+        resolution_route: 'auto-fix',
+      },
+    ];
+
+    // 1. arbiterPrompt puts critical/high ahead of the 65 lows inside the 60-item cap
+    const promptText = arbiterPrompt(raw67, { targetType: 'code' });
+    assert.ok(promptText.includes('CRIT-TAIL'), 'critical finding must be prioritized into arbiter prompt');
+    assert.ok(promptText.includes('HIGH-TAIL'), 'high finding must be prioritized into arbiter prompt');
+    assert.ok(promptText.indexOf('CRIT-TAIL') < promptText.indexOf('HIGH-TAIL'), 'critical must precede high');
+    assert.ok(promptText.indexOf('HIGH-TAIL') < promptText.indexOf('LOW-0'), 'high must precede low');
+    assert.ok(!promptText.includes('"LOW-64"'), 'trailing low findings beyond index 60 must be omitted from prompt');
+
+    // 2. triageFindings with LLM arbiter preserves both critical/high findings and produces non-SHIP verdict
+    const promptCapturePath = join(tmpDir, 'arbiter-prompt.txt');
+    const fakeArbiter = join(tmpDir, 'fake-agy-arbiter.cjs');
+    writeFileSync(
+      fakeArbiter,
+      [
+        '#!/usr/bin/env node',
+        "const fs = require('node:fs');",
+        'const printIdx = process.argv.indexOf("--print");',
+        "let buf = '';",
+        "process.stdin.on('data', (c) => (buf += c));",
+        "process.stdin.on('end', () => {",
+        '  const prompt = printIdx >= 0 ? process.argv[printIdx + 1] : buf;',
+        `  fs.writeFileSync(${JSON.stringify(promptCapturePath)}, prompt);`,
+        "  const m = prompt.match(/<<UNTRUSTED:FINDINGS:[^>]+>>\\n([\\s\\S]*?)\\n<<END:FINDINGS:/);",
+        '  const batch = m ? JSON.parse(m[1]) : [];',
+        '  const triaged = batch.map((f) => ({',
+        '    id: f.id,',
+        '    severity: f.severity,',
+        '    file: f.file,',
+        '    claim: f.claim,',
+        '    evidence: f.evidence,',
+        "    verdict: f.severity === 'critical' || f.severity === 'high' ? 'accept-candidate' : 'drop',",
+        "    resolution_route: 'auto-fix',",
+        '  }));',
+        "  console.log(JSON.stringify({ status: 'ok', structured_output: { gate_verdict: 'SHIP', summary: 'triaged batch', triaged } }));",
+        '});',
+      ].join('\n'),
+      { mode: 0o755 }
+    );
+    process.env.AGB_AGY_BIN = fakeArbiter;
+
+    const res = await triageFindings({ findings: raw67, targetType: 'code', arbiter: true });
+    assert.equal(res.arbiterDegraded, undefined, 'fake arbiter must succeed without degrading');
+    assert.equal(res.gateVerdict, 'ITERATE', 'critical/high findings must never produce SHIP');
+    assert.ok(res.surviving.some((f) => f.id === 'CRIT-TAIL'), 'CRIT-TAIL must survive triage');
+    assert.ok(res.surviving.some((f) => f.id === 'HIGH-TAIL'), 'HIGH-TAIL must survive triage');
+    assert.equal(res.triaged.length, 67, 'all 67 findings (60 arbiter + 7 overflow) must be accounted for');
+    assert.equal(res.dropped.length, 65, 'all 65 low findings should be dropped');
+
+    // 3. When >60 critical/high findings overflow past index 60, overflow findings are triaged deterministically
+    //    and prevent a false-green SHIP even if the arbiter dropped everything in its 60-item batch.
+    const dropAllArbiter = join(tmpDir, 'fake-agy-drop-all.cjs');
+    writeFileSync(
+      dropAllArbiter,
+      [
+        '#!/usr/bin/env node',
+        'const printIdx = process.argv.indexOf("--print");',
+        "let buf = '';",
+        "process.stdin.on('data', (c) => (buf += c));",
+        "process.stdin.on('end', () => {",
+        '  const prompt = printIdx >= 0 ? process.argv[printIdx + 1] : buf;',
+        "  const m = prompt.match(/<<UNTRUSTED:FINDINGS:[^>]+>>\\n([\\s\\S]*?)\\n<<END:FINDINGS:/);",
+        '  const batch = m ? JSON.parse(m[1]) : [];',
+        '  const triaged = batch.map((f) => ({',
+        '    id: f.id,',
+        '    severity: f.severity,',
+        '    file: f.file,',
+        '    claim: f.claim,',
+        '    evidence: f.evidence,',
+        "    verdict: 'drop',",
+        "    resolution_route: 'auto-fix',",
+        '  }));',
+        "  console.log(JSON.stringify({ status: 'ok', structured_output: { gate_verdict: 'SHIP', summary: 'dropped all 60', triaged } }));",
+        '});',
+      ].join('\n'),
+      { mode: 0o755 }
+    );
+    process.env.AGB_AGY_BIN = dropAllArbiter;
+
+    const sixtyThreeHighs = Array.from({ length: 63 }, (_, i) => ({
+      id: `HIGH-${i}`,
+      lens: 'security',
+      severity: i < 2 ? 'critical' : 'high',
+      file: `lib/mod-${i}.mjs`,
+      claim: `Concrete blocking defect ${i}`,
+      evidence: `reproducible stack trace ${i}`,
+    }));
+    const overflowRes = await triageFindings({ findings: sixtyThreeHighs, targetType: 'code', arbiter: true });
+    assert.equal(overflowRes.arbiterDegraded, undefined, 'drop-all arbiter must succeed without degrading');
+    assert.equal(overflowRes.gateVerdict, 'ITERATE', 'overflow high findings must prevent false-green SHIP');
+    assert.equal(overflowRes.surviving.length, 3, 'all 3 overflow high findings must survive deterministic triage');
+    assert.ok(overflowRes.surviving.some((f) => f.id === 'HIGH-60'));
+    assert.ok(overflowRes.surviving.some((f) => f.id === 'HIGH-61'));
+    assert.ok(overflowRes.surviving.some((f) => f.id === 'HIGH-62'));
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN;
+    else process.env.AGB_AGY_BIN = prevAgy;
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('reviewPlan({ loop: true }): recomputes shapeReport on round > 1 after specPath is updated and clears stale Round 1 SHAPE-* findings', async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'agb-plan-round2-shape-'));
+  const prevAgy = process.env.AGB_AGY_BIN;
+  try {
+    writeFileSync(join(tmpDir, 'mod.mjs'), 'export const x = 1;\n');
+    const specPath = join(tmpDir, 'spec.md');
+    writeFileSync(specPath, '# Unstructured Draft\n\nNo ticket headings yet.\n');
+
+    const cleanSpec = [
+      '# Clean Spec',
+      '',
+      '### Ticket 1: `T-1` — Clean Ticket',
+      '- **Scope**: `mod.mjs`',
+      '- **Rails**: (none)',
+      '- **Edges**: (none)',
+      '- **Acceptance Criteria**:',
+      '  - `mod.mjs` exports `x === 1`.',
+      '',
+    ].join('\n');
+
+    const promptsDir = join(tmpDir, 'prompts');
+    const countFile = join(tmpDir, 'round-count.txt');
+    const fakePlanAgy = join(tmpDir, 'fake-plan-agy.cjs');
+    writeFileSync(
+      fakePlanAgy,
+      [
+        '#!/usr/bin/env node',
+        "const fs = require('node:fs');",
+        `const countFile = ${JSON.stringify(countFile)};`,
+        `const promptsDir = ${JSON.stringify(promptsDir)};`,
+        'const printIdx = process.argv.indexOf("--print");',
+        "let buf = '';",
+        "process.stdin.on('data', (c) => (buf += c));",
+        "process.stdin.on('end', () => {",
+        '  const prompt = printIdx >= 0 ? process.argv[printIdx + 1] : buf;',
+        '  fs.mkdirSync(promptsDir, { recursive: true });',
+        "  const n = fs.existsSync(countFile) ? Number(fs.readFileSync(countFile, 'utf8')) + 1 : 1;",
+        '  fs.writeFileSync(countFile, String(n));',
+        "  fs.writeFileSync(promptsDir + '/round-' + n + '.txt', prompt);",
+        '  if (n === 1) {',
+        "    console.log(JSON.stringify({ status: 'ok', structured_output: { findings: [{ severity: 'medium', file: 'spec.md', claim: 'Round 1 non-blocking suggestion', evidence: 'line 1', resolution_route: 'auto-fix' }] } }));",
+        '  } else {',
+        "    console.log(JSON.stringify({ status: 'ok', structured_output: { findings: [] } }));",
+        '  }',
+        '});',
+      ].join('\n'),
+      { mode: 0o755 }
+    );
+    process.env.AGB_AGY_BIN = fakePlanAgy;
+
+    const res = await reviewPlan({
+      specPath,
+      repo: tmpDir,
+      arbiter: false,
+      loop: true,
+      maxRounds: 3,
+      lenses: ['dag_topology'],
+      log: (msg) => {
+        if (msg.includes('round 1:')) {
+          writeFileSync(specPath, cleanSpec);
+        }
+      },
+    });
+
+    assert.equal(res.rounds, 2);
+    assert.equal(res.shapeReport.structured, true, 'Round 2 must recompute shapeReport on updated spec');
+    assert.equal(res.shapeReport.ok, true, 'Updated spec shapeReport must be ok');
+    assert.equal(
+      res.findings.some((f) => typeof f.id === 'string' && f.id.startsWith('SHAPE-')),
+      false,
+      'stale Round 1 SHAPE-* findings must not be carried forward into Round 2'
+    );
+    assert.equal(res.ok, true);
+    assert.equal(res.gateVerdict, 'SHIP');
+
+    const { readFileSync } = await import('node:fs');
+    const round1Prompt = readFileSync(join(promptsDir, 'round-1.txt'), 'utf8');
+    const round2Prompt = readFileSync(join(promptsDir, 'round-2.txt'), 'utf8');
+    assert.match(round1Prompt, /"structured":\s*false/);
+    assert.match(round2Prompt, /"structured":\s*true/);
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN;
+    else process.env.AGB_AGY_BIN = prevAgy;
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 });

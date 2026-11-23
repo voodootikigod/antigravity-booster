@@ -9,10 +9,10 @@ Implements the requested feature or ticket within declared scope, verifies deter
 
 ## How to run it
 
-After implementing the code and passing tests, use your shell tool (`run_command`) to run the antigravity-booster terminal shim (or `mcp__agb__agb_review` with `fiveLens: true` and `loop: true`):
+After implementing the code and passing tests, use your shell tool (`run_command`) to run the antigravity-booster terminal shim against `main` (or `mcp__agb__agb_review` with `ref: "main"`, `fiveLens: true`, and `loop: true`). Note that `git diff main` omits untracked files, so newly created untracked files must be staged/committed or inspected explicitly before running the review:
 
 ```sh
-~/.local/bin/agb review . HEAD --five-lens --loop
+~/.local/bin/agb review . main --five-lens --loop
 ```
 
 Run it from the user's workspace, wait for it to finish, apply any accepted fixes, and report the final output and exit code to the user.

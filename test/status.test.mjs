@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { watchStatus, RunStatus } from '../lib/status.mjs';
@@ -62,4 +62,71 @@ test('watchStatus: exits with 2 when report.compromised is truthy even if failed
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('RunStatus constructor refuses symlinked .booster directory before removing report.json', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-status-symdir-repo-'));
+  const victimDir = mkdtempSync(join(tmpdir(), 'agb-status-symdir-victim-'));
+  try {
+    const victimReport = join(victimDir, 'report.json');
+    writeFileSync(victimReport, '{"victim":true}');
+    symlinkSync(victimDir, join(repo, '.booster'), 'dir');
+
+    assert.throws(
+      () => new RunStatus(repo, 'run-sym-dir'),
+      /Security violation.*symbolic link/i,
+    );
+    assert.equal(existsSync(victimReport), true, 'victim report.json must not be unlinked through symlinked .booster');
+    assert.equal(readFileSync(victimReport, 'utf8'), '{"victim":true}');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(victimDir, { recursive: true, force: true });
+  }
+});
+
+test('RunStatus constructor refuses symlinked .booster/report.json before unlinking it', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-status-symfile-repo-'));
+  const victimDir = mkdtempSync(join(tmpdir(), 'agb-status-symfile-victim-'));
+  try {
+    const boosterDir = join(repo, '.booster');
+    mkdirSync(boosterDir, { recursive: true });
+    const victimFile = join(victimDir, 'secret-report.json');
+    writeFileSync(victimFile, '{"victim":true}');
+    const reportLink = join(boosterDir, 'report.json');
+    symlinkSync(victimFile, reportLink);
+
+    assert.throws(
+      () => new RunStatus(repo, 'run-sym-file'),
+      /Security violation.*symbolic link/i,
+    );
+    assert.equal(lstatSync(reportLink).isSymbolicLink(), true, 'symlinked report.json must not be unlinked');
+    assert.equal(existsSync(victimFile), true, 'symlink target must remain intact');
+    assert.equal(readFileSync(victimFile, 'utf8'), '{"victim":true}');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(victimDir, { recursive: true, force: true });
+  }
+});
+
+test('RunStatus constructor rejects dangling symlinks on .booster and .booster/report.json', () => {
+  const repo1 = mkdtempSync(join(tmpdir(), 'agb-status-dangling1-'));
+  const repo2 = mkdtempSync(join(tmpdir(), 'agb-status-dangling2-'));
+  try {
+    symlinkSync(join(repo1, 'nonexistent-dir'), join(repo1, '.booster'));
+    assert.throws(
+      () => new RunStatus(repo1, 'run-dangling-dir'),
+      /Security violation.*symbolic link/i,
+    );
+
+    mkdirSync(join(repo2, '.booster'), { recursive: true });
+    symlinkSync(join(repo2, 'nonexistent-file'), join(repo2, '.booster', 'report.json'));
+    assert.throws(
+      () => new RunStatus(repo2, 'run-dangling-file'),
+      /Security violation.*symbolic link/i,
+    );
+  } finally {
+    rmSync(repo1, { recursive: true, force: true });
+    rmSync(repo2, { recursive: true, force: true });
+  }
+});
+
 

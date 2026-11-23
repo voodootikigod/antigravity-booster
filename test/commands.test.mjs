@@ -29,7 +29,7 @@ test('commands: every root command instructs running ~/.local/bin/agb <its subco
   for (const file of files) {
     if (file === 'agb.md') {
       const text = read(file);
-      for (const sub of ['shape', 'plan', 'run', 'review', 'doctor', 'bootstrap', 'migrate', 'sidecar', 'status', 'watch', 'preflight', 'sync-models', 'init']) {
+      for (const sub of ['shape', 'plan', 'run', 'review', 'distill', 'doctor', 'bootstrap', 'migrate', 'sidecar', 'status', 'watch', 'preflight', 'sync-models', 'init']) {
         assert.ok(text.includes(`~/.local/bin/agb ${sub}`), `agb.md must route to ~/.local/bin/agb ${sub}`);
       }
       continue;
@@ -136,9 +136,38 @@ test('mcp: moved server answers initialize + tools/list with clean JSON-RPC on s
   assert.equal(init.result.serverInfo.name, 'antigravity-booster-mcp');
   assert.equal(list.id, 2);
   const names = list.result.tools.map((tool) => tool.name);
-  for (const name of ['agb_shape', 'agb_plan', 'agb_run', 'agb_review', 'agb_doctor', 'agb_preflight', 'agb_status', 'agb_init']) {
+  for (const name of ['agb_shape', 'agb_plan', 'agb_run', 'agb_review', 'agb_distill', 'agb_doctor', 'agb_preflight', 'agb_status', 'agb_init']) {
     assert.ok(names.includes(name), name);
   }
+});
+
+test('commands & rules: align with live CLI/MCP surface and avoid false-green empty diff reviews (T-RA-7)', () => {
+  const agbCmd = read('agb.md');
+  assert.ok(agbCmd.includes('<pre-run-base-sha>'), 'commands/agb.md must capture <pre-run-base-sha>');
+  assert.ok(agbCmd.includes('~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop'), 'commands/agb.md must review against <pre-run-base-sha>');
+  assert.ok(!agbCmd.includes('agb review . main'), 'commands/agb.md must not instruct empty-diff review against main after merge');
+  assert.ok(agbCmd.includes('~/.local/bin/agb distill'), 'commands/agb.md must document agb distill');
+  assert.ok(agbCmd.includes('mcp__agb__agb_distill'), 'commands/agb.md must document mcp__agb__agb_distill');
+  assert.ok(agbCmd.includes('--emit-workflow'), 'commands/agb.md must document --emit-workflow');
+  assert.ok(agbCmd.includes('emitWorkflow'), 'commands/agb.md must document emitWorkflow');
+
+  const implReviewCmd = read('implement-and-review.md');
+  assert.ok(implReviewCmd.includes('~/.local/bin/agb review . main --five-lens --loop'), 'commands/implement-and-review.md must review against main');
+  assert.ok(!implReviewCmd.includes('agb review . HEAD'), 'commands/implement-and-review.md must not instruct review against HEAD');
+  assert.match(implReviewCmd, /untracked/i, 'commands/implement-and-review.md must note untracked files');
+
+  const runCmd = read('agb-run.md');
+  assert.ok(runCmd.includes('[-c <n>]'), 'commands/agb-run.md must document [-c <n>]');
+
+  const planCmd = read('agb-plan.md');
+  assert.ok(planCmd.includes('--emit-workflow'), 'commands/agb-plan.md must document --emit-workflow');
+  assert.ok(planCmd.includes('emitWorkflow'), 'commands/agb-plan.md must document emitWorkflow');
+
+  const rules = readFileSync(join(ROOT, 'rules', 'AGENTS.md'), 'utf8');
+  assert.ok(rules.includes('distill'), 'rules/AGENTS.md must document agb distill');
+  assert.ok(rules.includes('agb_distill'), 'rules/AGENTS.md must document agb_distill');
+  assert.ok(rules.includes('--emit-workflow'), 'rules/AGENTS.md must document --emit-workflow');
+  assert.ok(rules.includes('emitWorkflow'), 'rules/AGENTS.md must document emitWorkflow');
 });
 
 test('mcp: malformed input yields a JSON-RPC parse error on stdout, diagnostics only on stderr', async () => {

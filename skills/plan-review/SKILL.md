@@ -9,7 +9,7 @@ Review a specification or plan before writing code to identify unstated
 assumptions, over-engineering, missing acceptance criteria, and
 DAG/scope-partitioning hazards across `gemini` and `claude` model families.
 
-## Cross-Model Lens Routing (`adversarial-review/references/models.json`)
+## Cross-Model Lens Routing (`lib/models.mjs` at runtime; offline snapshot in `adversarial-review/references/models.json`)
 
 1.  **`devils_advocate`**: `claude-opus-5-5-high` (`claude`) -> fallback `gemini-4-argon-high` (`gemini`)
 2.  **`requirements_fidelity`**: `gemini-4-argon-medium` (`gemini`) -> fallback `claude-sonnet-5-5-high` (`claude`)

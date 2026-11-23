@@ -757,3 +757,60 @@ test('verifyWindowsSandboxAttestation: rejects symlinked .adlc directory before 
     rmSync(outsideAdlc, { recursive: true, force: true });
   }
 });
+
+test('verifyWindowsSandboxAttestation: ignores AGB_HOME_DIR when bundled', () => {
+  const { repo, rootCommit, origin } = setupMockGitRepo();
+  const { homeDir: spoofHome, installId } = setupMockHome();
+  const hadBundled = Object.prototype.hasOwnProperty.call(globalThis, '__AGB_BUNDLED__');
+  const savedBundled = globalThis.__AGB_BUNDLED__;
+  try {
+    const adminKey = 'test-key-bundled-home';
+    const att = createAttestation({
+      installId,
+      rootCommit,
+      origin,
+      repoPath: repo,
+      adminKey,
+    });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ sandboxBypassAttestation: att }));
+
+    // Unbundled mode respects env.AGB_HOME_DIR
+    const unbundled = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey, AGB_HOME_DIR: spoofHome },
+      platform: 'win32',
+      bundled: false,
+      consumeNonce: false,
+    });
+    assert.equal(unbundled.valid, true);
+
+    // Explicit bundled: true ignores env.AGB_HOME_DIR and falls back to os.homedir()
+    const bundledParam = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey, AGB_HOME_DIR: spoofHome },
+      platform: 'win32',
+      bundled: true,
+      consumeNonce: false,
+    });
+    assert.equal(bundledParam.valid, false);
+    assert.match(bundledParam.reason, /installation_id missing|installationId mismatch/);
+    assert.ok(!bundledParam.reason.includes(spoofHome), 'bundled mode must not read AGB_HOME_DIR');
+
+    // Global __AGB_BUNDLED__ = true ignores env.AGB_HOME_DIR even when bundled param is omitted
+    globalThis.__AGB_BUNDLED__ = true;
+    const bundledGlobal = verifyWindowsSandboxAttestation({
+      repo,
+      env: { ADLC_ADMIN_KEY: adminKey, AGB_HOME_DIR: spoofHome },
+      platform: 'win32',
+      consumeNonce: false,
+    });
+    assert.equal(bundledGlobal.valid, false);
+    assert.match(bundledGlobal.reason, /installation_id missing|installationId mismatch/);
+    assert.ok(!bundledGlobal.reason.includes(spoofHome), '__AGB_BUNDLED__ must ignore AGB_HOME_DIR');
+  } finally {
+    if (hadBundled) globalThis.__AGB_BUNDLED__ = savedBundled;
+    else delete globalThis.__AGB_BUNDLED__;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(spoofHome, { recursive: true, force: true });
+  }
+});

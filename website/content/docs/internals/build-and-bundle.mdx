@@ -17,9 +17,11 @@ The plugin is installed from a git URL with `agy plugin install`, and that path 
 | `build:mcp` | `mcp/server.mjs` | `dist/mcp-server.mjs` | `true` |
 | `build:hooks` | `hooks/pre-tool-use.mjs` | `dist/hooks/pre-tool-use.bundle.mjs` | `true` |
 | `vendor:bundle` | `vendor/adlc/src/dispatch.mjs` | `vendor/adlc/dist/adlc.bundle.mjs` | not defined |
+| `vendor:bundle` | `node_modules/@adlc/core/lib/syntax-check-typescript.mjs` | `vendor/adlc/dist/syntax-check-typescript.mjs` | not defined |
+| `vendor:bundle` (copy) | `node_modules/@adlc/hollow-test/lib/watchdog.mjs` | `vendor/adlc/dist/watchdog.mjs` | not defined |
 | (check) | `node scripts/check-bundle-externals.mjs` | | |
 
-All four esbuild runs use `--bundle --platform=node --format=esm` and the same banner, which recreates `require` for any CommonJS dependency pulled into the ESM bundle:
+All five esbuild runs use `--bundle --platform=node --format=esm` and the same banner, which recreates `require` for any CommonJS dependency pulled into the ESM bundle (and `vendor:bundle` sets mode `0644` on `vendor/adlc/dist/syntax-check-typescript.mjs` and copies `vendor/adlc/dist/watchdog.mjs` verbatim):
 
 ```js
 import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);
@@ -45,7 +47,7 @@ In bundled mode the developer overrides for the companion plugin location, the i
 
 ## `scripts/check-bundle-externals.mjs`
 
-The last build step asserts that each bundle imports nothing but Node built-ins. By default it checks `dist/agb.mjs`, `dist/mcp-server.mjs`, `dist/hooks/pre-tool-use.bundle.mjs` and `vendor/adlc/dist/adlc.bundle.mjs`; pass paths to check others. It scans for static `import`/`export ... from`, dynamic `import("x")` and `require("x")` specifiers and fails if any is not a built-in, or if a bundle is missing ([scripts/check-bundle-externals.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/check-bundle-externals.mjs#L12-L64)). A dependency that esbuild could not inline, or one marked external by mistake, would break a git-URL install, and this check catches it at build time.
+The last build step asserts that each bundle imports nothing but Node built-ins. By default it checks all six committed runtime artifacts: `dist/agb.mjs`, `dist/mcp-server.mjs`, `dist/hooks/pre-tool-use.bundle.mjs`, `vendor/adlc/dist/adlc.bundle.mjs`, `vendor/adlc/dist/syntax-check-typescript.mjs`, and `vendor/adlc/dist/watchdog.mjs`; pass paths to check others. It scans for static `import`/`export ... from`, dynamic `import("x")`, `require("x")` (including `createRequire` aliases), `import.meta.resolve(...)`, and `process.binding`/`_linkedBinding`/`dlopen`, and fails if any non-builtin specifier is found or if a bundle is missing ([scripts/check-bundle-externals.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/scripts/check-bundle-externals.mjs#L12-L64)). For `vendor/adlc/dist/adlc.bundle.mjs` and `vendor/adlc/dist/syntax-check-typescript.mjs` only, `BUNDLE_ALLOWED_OPTIONAL_PROBES` allows `@adlc/core`'s guarded runtime probe of a target repository's `node_modules/typescript` when syntax-checking `.ts`/`.tsx` mutants; booster's own bundles under `dist/` forbid every non-builtin specifier without exception. A dependency that esbuild could not inline, or one marked external by mistake, would break a git-URL install, and this check catches it at build time.
 
 ## The drift gate
 

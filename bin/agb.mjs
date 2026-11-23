@@ -81,12 +81,12 @@ const COMMANDS = {
   status: {
     args: '[repo]',
     desc: "render the live dashboard for a repo's current run",
-    flags: '[--watch (watch mode)] [-w (watch mode)] [--interval <ms> (poll interval)] [--tui (render TUI snapshot)] [--follow (follow logs)] [--compact (compact rows)]'
+    flags: '[--watch (watch mode)] [-w (watch mode)] [--interval <ms> (poll interval)] [--tui (render TUI snapshot)] [--follow (keep watching after run completion)] [--compact (compact rows)]'
   },
   watch: {
     args: '[repo]',
     desc: 'launch the interactive live terminal TUI dashboard',
-    flags: '[--interval <ms> (refresh interval)] [--follow (follow logs)] [--compact (compact rows)]'
+    flags: '[--interval <ms> (refresh interval)] [--follow (keep watching after run completion)] [--compact (compact rows)]'
   },
   init: {
     args: '[repo]',
@@ -203,7 +203,7 @@ function rejectUnknownFlags(cmdName, tokens, allowedBoolFlags, allowedValueFlags
       continue;
     }
     if (allowedBoolFlags.has(token)) continue;
-    if (token.startsWith('--')) {
+    if (token.startsWith('-') && token !== '-') {
       console.error(`agb: unknown flag '${token}' for ${cmdName}`);
       process.exit(1);
     }
@@ -261,6 +261,7 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'sweep') {
+    rejectUnknownFlags('sweep', rest, new Set());
     const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
     if (spec.repo) spec.repo = resolve(spec.repo);
     const plan = sweepToPlan(spec, { project });
@@ -407,15 +408,21 @@ try {
     const id = positional[0];
     const repo = positional[1] ?? '.';
     if (!id || !out) {
-      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--out plan.json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
+      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
       process.exit(1);
     }
-    if (existsSync(out) && !rest.includes('--force')) {
+    const force = rest.includes('--force');
+    const targetRepo = resolve(repo);
+    const resolvedWorkflowPath = emitWorkflow ? resolve(targetRepo, emitWorkflow) : null;
+    if (existsSync(out) && !force) {
       console.error(`plan: ${out} already exists — pass --force to overwrite ` +
         `(compiled plans are disposable, hand-written ones may not be)`);
       process.exit(1);
     }
-    const targetRepo = resolve(repo);
+    if (resolvedWorkflowPath && existsSync(resolvedWorkflowPath) && !force) {
+      console.error(`plan: workflow ${resolvedWorkflowPath} already exists — pass --force to overwrite`);
+      process.exit(1);
+    }
     const pools = new PoolSet(undefined, { repo: targetRepo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
     if (!quotaRes.ok) {
@@ -446,8 +453,8 @@ try {
       process.exit(2);
     }
     writeFileSync(out, JSON.stringify(result.plan, null, 2) + '\n');
-    if (emitWorkflow) {
-      const wfRes = compilePlanToWorkflow(result.plan, { outPath: resolve(targetRepo, emitWorkflow) });
+    if (resolvedWorkflowPath) {
+      const wfRes = compilePlanToWorkflow(result.plan, { outPath: resolvedWorkflowPath });
       console.error(`plan: emitted workflow (${wfRes.waves.length} wave(s)) → ${wfRes.outPath}`);
     }
     if (result.brain.sourceType === 'local-spec') {
@@ -477,8 +484,10 @@ try {
     }
     process.exit(0);
   } else if (cmd === 'brains') {
+    rejectUnknownFlags('brains', rest, new Set());
     for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);
   } else if (cmd === 'import-brain') {
+    rejectUnknownFlags('import-brain', rest, new Set());
     const [id, repo] = rest;
     if (!id || !repo) {
       console.error('usage: agb import-brain <conversation-id-or-prefix> <repo-path>');
@@ -547,6 +556,7 @@ try {
     });
     process.exitCode = code;
   } else if (cmd === 'init') {
+    rejectUnknownFlags('init', rest, new Set());
     const positional = extractPositionalArgs(rest);
     const targetRepo = resolve(positional[0] ?? '.');
     const res = runInit({ repo: targetRepo });
@@ -644,6 +654,7 @@ try {
       });
     }
   } else if (cmd === 'probe') {
+    rejectUnknownFlags('probe', rest, new Set());
     const widths = (rest[0] ?? '2,4,8').split(',').map(Number);
     const model = rest[1] ?? ROLE_MODELS.probeDefault;
     const rows = [];
@@ -790,6 +801,7 @@ try {
       console.warn(`The dashboard will not appear. To register it manually, add this manifest to your Antigravity plugins: ${pluginDir}`);
     }
   } else if (cmd === 'pool') {
+    rejectUnknownFlags('pool', rest, new Set());
     const sub = rest[0];
     if (sub === 'drain') {
       const repo = resolve(rest[1] ?? '.');

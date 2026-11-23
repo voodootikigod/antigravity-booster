@@ -3,21 +3,21 @@ name: agb-run
 description: Execute a plan.json ticket DAG in parallel across isolated git worktrees with quota-pool routing, PreToolUse rail protection, cross-model prosecution, and serialized merge gates. Use when running a multi-ticket build fleet.
 ---
 
-# /agb-run <plan.json> [--project <name>]
+# /agb-run <plan.json> [-c <n>] [--project <name>]
 
-Executes the ticket DAG defined in `plan.json`: builds each ticket in an isolated worktree fleet, runs the deterministic gates, prosecutes, and merges. This is long-running and mutates the target repository, so confirm the plan path with the user if it is ambiguous.
+Executes the ticket DAG defined in `plan.json`: builds each ticket in an isolated worktree fleet, runs the deterministic gates, prosecutes, and merges. Pass `-c <n>` to cap concurrent workers across the fleet. This is long-running and mutates the target repository, so confirm the plan path with the user if it is ambiguous.
 
 ## How to run it
 
 Use your shell tool (`run_command`) to run the antigravity-booster terminal shim, passing the user's arguments through unchanged (quote each argument; never interpolate untrusted text into a larger shell string):
 
 ```sh
-~/.local/bin/agb run <plan.json> [--project <name>]
+~/.local/bin/agb run <plan.json> [-c <n>] [--project <name>]
 ```
 
 Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 2 = gate failure or findings, 1 = usage or internal error).
 
-If the `agb` MCP server is connected, you may instead prefer the `mcp__agb__agb_run` tool with `plan`; it runs the same command and returns its output.
+If the `agb` MCP server is connected, you may instead prefer the `mcp__agb__agb_run` tool with `plan` (and `concurrency` when `-c <n>` is passed); it runs the same command and returns its output.
 
 ## If the shim is missing
 

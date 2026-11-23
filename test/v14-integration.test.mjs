@@ -196,8 +196,9 @@ test('v1.4 integration: CLI `agb distill --json` and `compilePlanToWorkflow` exe
   }
 });
 
-test('v1.4 integration: PreToolUse hook allows in-workspace CodeGraph explore tools and agb_distill, and arbiterPrompt compacts oversized payloads', () => {
+test('v1.4 integration: PreToolUse hook enforces CodeGraph explore and agb_distill policies, and arbiterPrompt compacts oversized payloads', () => {
   const ws = mkdtempSync(join(tmpdir(), 'agb-v14-hook-'));
+  const outsideDir = mkdtempSync(join(tmpdir(), 'agb-v14-outside-'));
   try {
     mkdirSync(join(ws, '.git'), { recursive: true });
     writeAdlcTickets(ws, [
@@ -208,7 +209,21 @@ test('v1.4 integration: PreToolUse hook allows in-workspace CodeGraph explore to
       'mcp_codegraph_codegraph_explore',
       'mcp__codegraph__codegraph_explore',
     ]) {
-      const allowed = evaluatePayload(
+      // Interactive session allows in-workspace queries
+      const interactiveAllowed = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: toolName,
+            args: { projectPath: ws, query: 'BanditModelRouter' },
+          },
+        },
+        { env: {} }
+      );
+      assert.equal(interactiveAllowed.decision, 'pass', `${toolName} inside workspace must be allowed interactively`);
+
+      // Headless/readonly sessions deny by default
+      const workerDenied = evaluatePayload(
         {
           workspacePaths: [ws],
           toolCall: {
@@ -218,8 +233,59 @@ test('v1.4 integration: PreToolUse hook allows in-workspace CodeGraph explore to
         },
         { env: { AGB_WORKER_TICKET: 'T-V14-1' } }
       );
-      assert.equal(allowed.decision, 'pass', `${toolName} inside workspace must be allowed`);
+      assert.equal(workerDenied.decision, 'deny', `${toolName} must be denied in headless worker by default`);
 
+      const readonlyDenied = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: toolName,
+            args: { projectPath: ws, query: 'BanditModelRouter' },
+          },
+        },
+        { env: { AGB_WORKER_MODE: 'readonly' } }
+      );
+      assert.equal(readonlyDenied.decision, 'deny', `${toolName} must be denied in readonly worker by default`);
+
+      // Headless session with explicit AGB_ALLOW_CODEGRAPH_MCP=1 allows in-workspace queries
+      const optInAllowed = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: toolName,
+            args: { projectPath: ws, query: 'BanditModelRouter' },
+          },
+        },
+        { env: { AGB_WORKER_TICKET: 'T-V14-1', AGB_ALLOW_CODEGRAPH_MCP: '1' } }
+      );
+      assert.equal(optInAllowed.decision, 'pass', `${toolName} inside workspace must be allowed with AGB_ALLOW_CODEGRAPH_MCP=1`);
+
+      // Out-of-workspace path is denied both interactively and with AGB_ALLOW_CODEGRAPH_MCP=1
+      const outsideInteractive = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: toolName,
+            args: { projectPath: outsideDir, query: 'secret' },
+          },
+        },
+        { env: {} }
+      );
+      assert.equal(outsideInteractive.decision, 'deny', `${toolName} outside workspace must be denied interactively`);
+
+      const outsideOptIn = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: toolName,
+            args: { projectPath: outsideDir, query: 'secret' },
+          },
+        },
+        { env: { AGB_WORKER_TICKET: 'T-V14-1', AGB_ALLOW_CODEGRAPH_MCP: '1' } }
+      );
+      assert.equal(outsideOptIn.decision, 'deny', `${toolName} outside workspace must be denied even with AGB_ALLOW_CODEGRAPH_MCP=1`);
+
+      // Protected boosterDataRoots is denied both interactively and with AGB_ALLOW_CODEGRAPH_MCP=1
       const denied = evaluatePayload(
         {
           workspacePaths: [ws],
@@ -231,11 +297,12 @@ test('v1.4 integration: PreToolUse hook allows in-workspace CodeGraph explore to
             },
           },
         },
-        { home: ws, env: { AGB_WORKER_TICKET: 'T-V14-1' } }
+        { home: ws, env: { AGB_WORKER_TICKET: 'T-V14-1', AGB_ALLOW_CODEGRAPH_MCP: '1' } }
       );
       assert.equal(denied.decision, 'deny', `${toolName} on protected booster data root must be denied`);
     }
 
+    // agb_distill: allowed interactively, denied in readonly and headless worker modes
     const distillRes = evaluatePayload(
       {
         workspacePaths: [ws],
@@ -247,6 +314,32 @@ test('v1.4 integration: PreToolUse hook allows in-workspace CodeGraph explore to
       { env: {} }
     );
     assert.equal(distillRes.decision, 'pass');
+
+    for (const env of [{ AGB_WORKER_MODE: 'readonly' }, { AGB_WORKER_TICKET: 'T-V14-1' }]) {
+      const directDenied = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: 'mcp__agb__agb_distill',
+            args: { repo: ws, apply: false },
+          },
+        },
+        { env }
+      );
+      assert.equal(directDenied.decision, 'deny', `mcp__agb__agb_distill must be denied under ${JSON.stringify(env)}`);
+
+      const callMcpDenied = evaluatePayload(
+        {
+          workspacePaths: [ws],
+          toolCall: {
+            name: 'call_mcp_tool',
+            args: { ServerName: 'agb', ToolName: 'agb_distill', Arguments: { repo: ws } },
+          },
+        },
+        { env }
+      );
+      assert.equal(callMcpDenied.decision, 'deny', `call_mcp_tool(agb, agb_distill) must be denied under ${JSON.stringify(env)}`);
+    }
 
     const hugeContext = 'A'.repeat(25000);
     const hugeFindings = Array.from({ length: 70 }, (_, i) => ({
@@ -264,5 +357,6 @@ test('v1.4 integration: PreToolUse hook allows in-workspace CodeGraph explore to
     assert.ok(prompt.length < 90000, `compacted prompt length (${prompt.length}) must stay bounded`);
   } finally {
     rmSync(ws, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   }
 });

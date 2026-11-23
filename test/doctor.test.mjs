@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION, checkHookLogDir } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION, checkHookLogDir, healthLogPath } from '../lib/doctor.mjs';
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { spawnSync } from 'child_process';
-import { join } from 'path';
+import { join, delimiter } from 'path';
 import { tmpdir } from 'os';
-import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync, symlinkSync } from 'fs';
+import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync, symlinkSync, cpSync } from 'fs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
@@ -656,5 +656,182 @@ test('checkModelCatalog: error text instead of a listing stays "no models return
     assert.match(res.detail, /no models returned/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- runDoctor integration: offline catalog, --fix legacy store, home/env forwarding ---
+
+function makeSelftestPluginRoot(baseDir) {
+  const root = join(baseDir, 'plugin-root');
+  mkdirSync(join(root, 'bin'), { recursive: true });
+  mkdirSync(join(root, 'dist', 'hooks'), { recursive: true });
+  cpSync(join(process.cwd(), 'hooks.json'), join(root, 'hooks.json'));
+  cpSync(join(process.cwd(), 'bin', 'hook-runner.sh'), join(root, 'bin', 'hook-runner.sh'));
+  cpSync(join(process.cwd(), 'dist', 'hooks', 'pre-tool-use.bundle.mjs'), join(root, 'dist', 'hooks', 'pre-tool-use.bundle.mjs'));
+  writeFileSync(
+    join(root, 'bin', 'node-launcher.sh'),
+    `#!/bin/sh\nROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)"\nS="$1"; shift\nexec "${process.execPath}" "$ROOT/$S" "$@"\n`
+  );
+  chmodSync(join(root, 'bin', 'node-launcher.sh'), 0o755);
+  return root;
+}
+
+async function captureConsoleLog(fn) {
+  const lines = [];
+  const origLog = console.log;
+  console.log = (...args) => lines.push(args.join(' '));
+  try {
+    const result = await fn();
+    return { result, output: lines.join('\n') };
+  } finally {
+    console.log = origLog;
+  }
+}
+
+test('runDoctor: honors AGB_SYNC_MODELS_OFFLINE=1 with INFO offline diagnostic instead of false-green models match', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'agb-doctor-offline-'));
+  const home = join(base, 'home');
+  const repo = join(base, 'repo');
+  mkdirSync(home, { recursive: true });
+  mkdirSync(repo, { recursive: true });
+  // Stage a compatible newer-unpinned plugin and brain dir so doctor passes cleanly
+  const pluginDir = join(home, '.gemini', 'config', 'plugins', 'adlc-antigravity');
+  mkdirSync(pluginDir, { recursive: true });
+  writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({ version: '1.8.0', adlcContract: 1 }));
+  mkdirSync(join(home, '.gemini', 'antigravity-cli', 'brain'), { recursive: true });
+  const pluginRoot = makeSelftestPluginRoot(base);
+  const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
+
+  try {
+    const { result: exitCode, output } = await captureConsoleLog(() =>
+      runDoctor({
+        cwd: repo,
+        pluginRoot,
+        env: {
+          HOME: home,
+          PATH: process.env.PATH,
+          AGB_AGY_BIN: FAKE_AGY,
+          AGB_SANDBOX_GATES: '0',
+          AGB_SYNC_MODELS_OFFLINE: '1',
+        },
+      })
+    );
+    assert.strictEqual(exitCode, 0, output);
+    assert.match(output, /Model catalog\s+\|\s+INFO\s+\|\s+offline \(skipped live check/);
+    assert.doesNotMatch(output, /models match/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('runDoctor: --fix catches LEGACY_TICKET_STORE cleanly and prints structured diagnostic', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'agb-doctor-fix-legacy-'));
+  const home = join(base, 'home');
+  const repo = join(base, 'repo');
+  mkdirSync(home, { recursive: true });
+  mkdirSync(join(repo, '.adlc'), { recursive: true });
+  writeFileSync(join(repo, '.adlc', 'tickets.json'), '{"tickets":[]}\n');
+  const pluginRoot = makeSelftestPluginRoot(base);
+  const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
+
+  try {
+    const { result: exitCode, output } = await captureConsoleLog(() =>
+      runDoctor({
+        fix: true,
+        cwd: repo,
+        pluginRoot,
+        env: {
+          HOME: home,
+          PATH: process.env.PATH,
+          AGB_AGY_BIN: FAKE_AGY,
+          AGB_SANDBOX_GATES: '0',
+          AGB_SYNC_MODELS_OFFLINE: '1',
+        },
+      })
+    );
+    assert.strictEqual(exitCode, 1);
+    assert.match(output, /Environment Diagnostic:/);
+    assert.match(output, /Self-healing \(--fix\)\s+\|\s+FAIL\s+\|.*legacy \.adlc\/tickets\.json/);
+    assert.match(output, /adlc ticket store migrate/);
+    assert.match(output, /Ticket Store\s+\|\s+FAIL\s+\|\s+legacy single-file store/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('runDoctor: forwards resolved { home, env } to all 6 home-scoped checks', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'agb-doctor-home-forward-'));
+  const customHome = join(base, 'custom-home');
+  const repo = join(base, 'repo');
+  const secondaryBin = join(base, 'secondary-bin');
+  mkdirSync(customHome, { recursive: true });
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(secondaryBin, { recursive: true });
+
+  // 1. checkPlugin: compatible newer-unpinned plugin in customHome
+  const stagedPlugin = join(customHome, '.gemini', 'config', 'plugins', 'adlc-antigravity');
+  mkdirSync(stagedPlugin, { recursive: true });
+  writeFileSync(join(stagedPlugin, 'plugin.json'), JSON.stringify({ version: '1.9.1', adlcContract: 1 }));
+
+  // 2. checkBrainDir: brain dir in customHome (no AGB_BRAIN_DIR env)
+  mkdirSync(join(customHome, '.gemini', 'antigravity-cli', 'brain'), { recursive: true });
+
+  // 3. checkPolicyGuard: will write healthLogPath(customHome)
+  const pluginRoot = makeSelftestPluginRoot(base);
+
+  // 4. checkSecondaryInstall: secondary agb on env.PATH outside customHome/.local/bin/agb
+  const shimDir = join(customHome, '.local', 'bin');
+  mkdirSync(shimDir, { recursive: true });
+  writeFileSync(join(shimDir, 'agb'), '#!/bin/sh\n');
+  chmodSync(join(shimDir, 'agb'), 0o755);
+  writeFileSync(join(secondaryBin, 'agb'), '#!/bin/sh\n');
+  chmodSync(join(secondaryBin, 'agb'), 0o755);
+
+  // 5. checkKillswitchUsage: bypass notice in customHome hooks.log
+  const hookLogDir = join(customHome, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'logs');
+  mkdirSync(hookLogDir, { recursive: true });
+  writeFileSync(
+    join(hookLogDir, 'hooks.log'),
+    '2026-11-22: [CRITICAL NOTICE] AGB_HOOK_DISABLE is active; bypassed.\n'
+  );
+
+  // 6. checkProbePlugins: probe-* plugin in customHome
+  mkdirSync(join(customHome, '.gemini', 'config', 'plugins', 'probe-home-forward'), { recursive: true });
+
+  const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
+
+  try {
+    // Deliberately omit opts.home so runDoctor must resolve home from env.HOME
+    // and forward { ...opts, home, env } to all 6 home-scoped checks.
+    const { result: exitCode, output } = await captureConsoleLog(() =>
+      runDoctor({
+        cwd: repo,
+        pluginRoot,
+        env: {
+          HOME: customHome,
+          PATH: [secondaryBin, shimDir, process.env.PATH].filter(Boolean).join(delimiter),
+          AGB_AGY_BIN: FAKE_AGY,
+          AGB_SANDBOX_GATES: '0',
+          AGB_SYNC_MODELS_OFFLINE: '1',
+        },
+      })
+    );
+
+    assert.strictEqual(exitCode, 0, output);
+    // 1. checkPlugin read customHome
+    assert.match(output, /adlc-antigravity plugin\s+\|\s+PASS\s+\|\s+compatible \(newer-unpinned: v1\.9\.1\)/);
+    // 2. checkBrainDir read customHome
+    assert.match(output, /Brain Dir\s+\|\s+PASS\s+\|\s+exists/);
+    // 3. checkPolicyGuard wrote health log into customHome
+    assert.strictEqual(existsSync(healthLogPath(customHome)), true, 'checkPolicyGuard must write health log under resolved home');
+    // 4. checkSecondaryInstall used resolved home + env.PATH
+    assert.match(output, /agb install\s+\|\s+WARN\s+\|\s+secondary install detected:/);
+    assert.ok(output.includes(join(secondaryBin, 'agb')));
+    // 5. checkKillswitchUsage read customHome hooks.log
+    assert.match(output, /Hook killswitch\s+\|\s+WARN\s+\|\s+1 AGB_HOOK_DISABLE bypass notice\(s\)/);
+    // 6. checkProbePlugins read customHome plugins dir
+    assert.match(output, /Probe plugins\s+\|\s+WARN\s+\|\s+installed: probe-home-forward/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
   }
 });

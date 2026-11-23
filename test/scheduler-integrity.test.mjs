@@ -3,13 +3,20 @@
 // compromised and blocks merge.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { runPlan } from '../lib/scheduler.mjs';
+import {
+  runPlan,
+  snapshotRootGit,
+  verifyRootGitIntegrity,
+  setupAttemptGitDatabase,
+  hostMediatedFetch,
+} from '../lib/scheduler.mjs';
+import { createWorktree, ensureGitignore } from '../lib/worktrees.mjs';
 import { sanitizedGitEnv, snapshotRunIntegrity, diffRunIntegrity, verifyRunIntegrity, ABSENT } from '../lib/run-integrity.mjs';
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_integrity_test_${process.pid}.json`);
@@ -265,6 +272,181 @@ test('a tamper that no per-ticket check observes is still reported as compromise
     assert.match(report.compromised, /staged plugin adlc-antigravity changed/);
     assert.doesNotMatch(report.failed.T1, /run compromised/, 'only the final check could have seen it');
   } finally {
+    for (const d of [repo, home, state]) rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test('verifyRootGitIntegrity: accepts quarantine refs for hyphenated ticket IDs and rejects unknown or unrelated ones', () => {
+  const repo = makeRepo();
+  try {
+    const wt = createWorktree(repo, 'T-V14-1', 'main');
+    setupAttemptGitDatabase(repo, wt, 'main');
+    const baseSha = git(repo, 'rev-parse', 'HEAD').trim();
+
+    // Plant a pre-existing quarantine ref for an unrelated hyphenated ticket T-V14-2
+    git(repo, 'update-ref', 'refs/quarantine/agb-t-v14-2-failed-conflict', baseSha);
+    const pre = snapshotRootGit(repo);
+
+    writeFileSync(join(wt, 'T-V14-1.txt'), 'candidate\n');
+    git(wt, 'add', 'T-V14-1.txt');
+    git(wt, 'commit', '-qm', 'candidate');
+    const slug = 'attempts/T-V14-1/1/tok12345';
+    const candidateSha = hostMediatedFetch(repo, wt, slug);
+    const opts = {
+      ticketId: 'T-V14-1',
+      attemptNamespace: slug,
+      activeAttemptNamespaces: new Set([slug]),
+      candidateSha,
+      knownTickets: [{ id: 'T-V14-1' }, { id: 'T-V14-2' }],
+    };
+
+    // 1. Newly created quarantine refs for known hyphenated ticket IDs pass across all suffixes
+    for (const suffix of ['failed-conflict', 'failed-merge', 'failed-post-merge', 'failed-integration', 'failed-crash', 'unsupported-phase']) {
+      const ref = `refs/quarantine/agb-t-v14-1-${suffix}`;
+      git(repo, 'update-ref', ref, candidateSha);
+      const res = verifyRootGitIntegrity(repo, pre, opts);
+      assert.equal(res.ok, true, `${ref} must be accepted for hyphenated ticket T-V14-1: ${res.error}`);
+      git(repo, 'update-ref', '-d', ref);
+    }
+
+    // 2. Quarantine ref for an UNKNOWN hyphenated ticket ID fails (does not truncate to 't')
+    const unknownRef = 'refs/quarantine/agb-t-v14-99-failed-conflict';
+    git(repo, 'update-ref', unknownRef, candidateSha);
+    const unknownRes = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(unknownRes.ok, false);
+    assert.match(unknownRes.error, /Unauthorized scheduler ref created for unknown ticket/);
+    git(repo, 'update-ref', '-d', unknownRef);
+
+    // 3. Mutating an unrelated hyphenated ticket's pre-existing quarantine ref fails naming the full ID
+    git(repo, 'update-ref', 'refs/quarantine/agb-t-v14-2-failed-conflict', candidateSha);
+    const mutateRes = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(mutateRes.ok, false);
+    assert.match(mutateRes.error, /belonging to unrelated ticket 't-v14-2'/);
+    git(repo, 'update-ref', 'refs/quarantine/agb-t-v14-2-failed-conflict', baseSha);
+
+    // 4. Deleting an unmerged unrelated hyphenated ticket's quarantine ref fails naming the full ID
+    git(repo, 'update-ref', '-d', 'refs/quarantine/agb-t-v14-2-failed-conflict');
+    const delRes = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(delRes.ok, false);
+    assert.match(delRes.error, /belonging to unmerged ticket 't-v14-2'/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('verifyRootGitIntegrity: detects newly dirtied/untracked root paths under AGB_ALLOW_DIRTY=1 even when headMovedByMerge', () => {
+  const repo = makeRepo();
+  try {
+    ensureGitignore(repo);
+    writeFileSync(join(repo, 'tracked.txt'), 'v1\n');
+    writeFileSync(join(repo, 'clean.txt'), 'clean\n');
+    git(repo, 'add', 'tracked.txt', 'clean.txt');
+    git(repo, 'commit', '-qm', 'add tracked files');
+
+    // Simulate AGB_ALLOW_DIRTY=1 pre-existing dirty root state
+    writeFileSync(join(repo, 'README.md'), 'user uncommitted edit\n');
+    writeFileSync(join(repo, 'user-notes.txt'), 'user untracked note\n');
+    const pre = snapshotRootGit(repo);
+
+    // Simulate a concurrent merge in an isolated worktree that adds T1.txt and updates tracked.txt
+    const mergeWt = createWorktree(repo, 'T1', 'main');
+    writeFileSync(join(mergeWt, 'T1.txt'), 'merged file\n');
+    writeFileSync(join(mergeWt, 'tracked.txt'), 'v2\n');
+    git(mergeWt, 'add', 'T1.txt', 'tracked.txt');
+    git(mergeWt, 'commit', '-qm', 'concurrent merge T1');
+    const mergedSha = git(mergeWt, 'rev-parse', 'HEAD').trim();
+    git(repo, 'update-ref', 'refs/heads/main', mergedSha);
+
+    const opts = {
+      ticketId: 'T2',
+      knownTickets: [{ id: 'T1' }, { id: 'T2' }],
+      mergedTickets: new Set(['T1']),
+      mergedShas: new Set([mergedSha]),
+      base: 'main',
+    };
+
+    // 1. Pre-existing dirty files + index-vs-HEAD diffs from merged commit pass
+    const cleanConcurrent = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(cleanConcurrent.ok, true, `concurrent merge on dirty root must pass: ${cleanConcurrent.error}`);
+
+    // 2. Newly untracked root file introduced during worker execution fails
+    writeFileSync(join(repo, 'stray-worker.txt'), 'escaped\n');
+    const untrackedFail = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(untrackedFail.ok, false);
+    assert.match(untrackedFail.error, /Porcelain status altered in root repository/);
+    rmSync(join(repo, 'stray-worker.txt'));
+
+    // 3. Newly dirtied previously-clean tracked file fails
+    writeFileSync(join(repo, 'clean.txt'), 'dirtied by worker\n');
+    const dirtyTrackedFail = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(dirtyTrackedFail.ok, false);
+    assert.match(dirtyTrackedFail.error, /Porcelain status altered in root repository/);
+    writeFileSync(join(repo, 'clean.txt'), 'clean\n');
+
+    // 4. Worker planting an untracked copy of a merged-in path (T1.txt) fails
+    writeFileSync(join(repo, 'T1.txt'), 'planted in root\n');
+    const plantedMergedFail = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(plantedMergedFail.ok, false);
+    assert.match(plantedMergedFail.error, /Porcelain status altered in root repository/);
+    rmSync(join(repo, 'T1.txt'));
+
+    // 5. Worker modifying a merged-in tracked path in root worktree (MM tracked.txt) fails
+    writeFileSync(join(repo, 'tracked.txt'), 'worker root tamper\n');
+    const modifiedMergedFail = verifyRootGitIntegrity(repo, pre, opts);
+    assert.equal(modifiedMergedFail.ok, false);
+    assert.match(modifiedMergedFail.error, /Porcelain status altered in root repository/);
+    writeFileSync(join(repo, 'tracked.txt'), 'v1\n');
+
+    // 6. Concurrent merge that ALSO modifies pre-existing dirty README.md (MM README.md) passes
+    writeFileSync(join(mergeWt, 'README.md'), 'merged readme update\n');
+    git(mergeWt, 'add', 'README.md');
+    git(mergeWt, 'commit', '-qm', 'concurrent merge updating README.md');
+    const mergedSha2 = git(mergeWt, 'rev-parse', 'HEAD').trim();
+    git(repo, 'update-ref', 'refs/heads/main', mergedSha2);
+    const readmeMergeOk = verifyRootGitIntegrity(repo, pre, {
+      ...opts,
+      mergedShas: new Set([mergedSha, mergedSha2]),
+    });
+    assert.equal(readmeMergeOk.ok, true, `concurrent merge touching pre-existing dirty file must pass: ${readmeMergeOk.error}`);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: root Git integrity violation marks report.compromised truthy', async () => {
+  const repo = makeRepo();
+  const home = makeHome();
+  const state = mkdtempSync(join(tmpdir(), 'agb-root-compromise-state-'));
+  let poller;
+  try {
+    let tampered = false;
+    poller = setInterval(() => {
+      if (!tampered && existsSync(join(repo, '.worktrees'))) {
+        writeFileSync(join(repo, 'stray-root-file.txt'), 'tampered root\n');
+        tampered = true;
+      }
+    }, 1);
+
+    const report = await withEnv({
+      HOME: home,
+      AGB_AGY_BIN: FAKE_AGY,
+      AGB_ADLC_BIN: FAKE_ADLC,
+      AGB_ALLOW_CUSTOM_ADLC_CLI: '1',
+      FAKE_STATE_DIR: state,
+      AGB_SANDBOX_GATES: '0',
+    }, () => runPlan({
+      repo,
+      gate: { test: 'true' },
+      tickets: [{ id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'] }],
+    }, quiet));
+
+    assert.ok(tampered, 'precondition: root working tree was dirtied mid-run');
+    assert.equal(report.merged.length, 0);
+    assert.match(report.failed.T1, /root integrity violation: Porcelain status altered/);
+    assert.ok(report.compromised, 'report.compromised must be truthy on root integrity violation');
+    assert.match(String(report.compromised), /root integrity violation: Porcelain status altered/);
+  } finally {
+    clearInterval(poller);
     for (const d of [repo, home, state]) rmSync(d, { recursive: true, force: true });
   }
 });

@@ -1,0 +1,20 @@
+{
+  "body": "## Shared Spec Context\nNine dependency-layered tickets eliminate all static import coupling and concurrent file overlap across waves, converging into `T-RA-8` which aligns documentation (`CHANGELOG.md`, `website/content/docs/**`, `website/env-docs.json`), rebuilds all committed esbuild bundles (`dist/**`), and regenerates all website reference partials (`website/generated/**`).\n\nStanding rails (`lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`) remain strictly frozen across every ticket.\n\n```mermaid\ngraph TD\n  T-RA-1[T-RA-1: Policy Guard, Active Rails & Launcher] --> T-RA-2[T-RA-2: ADLC Gates & Review Arbiter]\n  T-RA-5[T-RA-5: Doctor & Install] --> T-RA-4A[T-RA-4A: Agy & Status]\n  T-RA-4A --> T-RA-2\n  T-RA-2 --> T-RA-3[T-RA-3: Scheduler Integrity]\n  T-RA-3 --> T-RA-4B[T-RA-4B: CLI & MCP Entrypoints]\n  T-RA-6[T-RA-6: Sidecar & Supply-Chain] --> T-RA-4B\n  T-RA-4B --> T-RA-8[T-RA-8: Docs, Bundles & Ref Gen]\n  T-RA-7[T-RA-7: Skills, Commands & Rules] --> T-RA-8\n```\n\n## Ticket T-RA-6: Sidecar Security, Supply-Chain Scripts & Publish Workflow\n- **Scope**: `sidecars/jetski-launcher.mjs`, `sidecars/server.mjs`, `scripts/update-adlc-digests.mjs`, `.github/workflows/publish.yml`, `test/sidecar.test.mjs`, `test/update-adlc-digests.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n- **Edges**: none\n- **Tier**: `mid`\n- **Pool Hint**: `gemini`\n\n#### Objectives\n1. **Fix SHOULD-FIX (`sidecars/jetski-launcher.mjs:153`)**: Reject symlinks on `.booster` and `.booster/token` before writing/chmodding `.booster/token`, and surface write errors cleanly.\n2. **Fix SHOULD-FIX (`sidecars/server.mjs:55` & `sidecars/jetski-launcher.mjs:45-66`)**: Reject empty/whitespace `runId` and reject symlinked `.booster/`, `.booster/logs/`, or log files in BOTH `/events` readers (`sidecars/server.mjs` and `sidecars/jetski-launcher.mjs`).\n3. **Fix SHOULD-FIX (`sidecars/jetski-launcher.mjs:8`)**: Validate `ANTIGRAVITY_SIDECAR_WEB_PORT` as a strict integer in `1..65535` so values like `\"0\"`, `\"false\"`, or `\"abc\"` do not disable token authentication.\n4. **Fix SHOULD-FIX (`scripts/update-adlc-digests.mjs:173`)**: Use `realpathSync` on both `process.argv[1]` and `fileURLToPath(import.meta.url)` in the direct-invocation guard so symlinked invocations execute instead of silently exiting 0.\n5. **Fix SHOULD-FIX (`.github/workflows/publish.yml:54`)**: Remove stale `registry-url: 'https://registry.npmjs.org'` from `actions/setup-node` in `.github/workflows/publish.yml` so OIDC trusted publishing does not leave an unexpanded `_authToken` stub in `.npmrc`.\n\n#### Acceptance Criteria\n- Both sidecar `/events` readers reject symlinked `.booster`/logs/event files and empty `runId`, `.booster/token` writer refuses symlinks, and non-port `ANTIGRAVITY_SIDECAR_WEB_PORT` values (`\"0\"`, `\"false\"`) do not disable token auth.\n- `scripts/update-adlc-digests.mjs` runs when invoked through a symlink.\n- `.github/workflows/publish.yml` has no stale `registry-url` token stub.\n- `test/sidecar.test.mjs` and `test/update-adlc-digests.test.mjs` pass.\n\n---",
+  "edges": [],
+  "id": "T-RA-6",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "sidecars/jetski-launcher.mjs",
+    "sidecars/server.mjs",
+    "scripts/update-adlc-digests.mjs",
+    ".github/workflows/publish.yml",
+    "test/sidecar.test.mjs",
+    "test/update-adlc-digests.test.mjs"
+  ],
+  "title": "Sidecar Security, Supply-Chain Scripts & Publish Workflow"
+}

@@ -78,19 +78,42 @@ function mcpExchange(requests, { timeoutMs = 30000, env = process.env } = {}) {
   });
 }
 
-test('item 2: agb_run input schema does not advertise concurrency', async () => {
+test('item 2 (#172): agb_run input schema advertises concurrency (integer >= 1)', async () => {
   const res = await mcpExchange([{ id: 1, method: 'tools/list' }]);
   const run = res.get(1).result.tools.find((t) => t.name === 'agb_run');
   assert(run, 'agb_run tool missing');
-  assert.equal(Object.hasOwn(run.inputSchema.properties, 'concurrency'), false);
+  assert.equal(Object.hasOwn(run.inputSchema.properties, 'concurrency'), true);
+  assert.equal(run.inputSchema.properties.concurrency.type, 'integer');
+  assert.equal(run.inputSchema.properties.concurrency.minimum, 1);
 });
 
-test('item 2: agb_run with concurrency returns a tool error naming the parameter', async () => {
-  const res = await mcpExchange([{ id: 2, method: 'tools/call', params: { name: 'agb_run', arguments: { plan: join(TMP, 'nope.json'), concurrency: 3 } } }]);
-  const r = res.get(2).result;
-  assert.equal(r.isError, true);
-  assert.match(r.content[0].text, /concurrency/);
-  assert.doesNotMatch(r.content[0].text, /ENOENT|nope\.json/, 'must reject before spawning agb');
+test('item 2 (#172): agb_run rejects invalid concurrency values before spawning agb', async () => {
+  const badValues = [0, -1, 1.5, '3', true, null];
+  const reqs = badValues.map((val, idx) => ({
+    id: 20 + idx,
+    method: 'tools/call',
+    params: { name: 'agb_run', arguments: { plan: join(TMP, 'nope.json'), concurrency: val } },
+  }));
+  const res = await mcpExchange(reqs);
+  for (let idx = 0; idx < badValues.length; idx++) {
+    const msg = res.get(20 + idx);
+    assert(msg.error, `expected JSON-RPC error for concurrency=${JSON.stringify(badValues[idx])}`);
+    assert.equal(msg.error.code, -32602);
+    assert.match(msg.error.message, /concurrency/i);
+    assert.doesNotMatch(msg.error.message, /no concurrency flag|ENOENT|nope\.json/, 'must reject invalid concurrency cleanly before spawning agb');
+  }
+});
+
+test('item 2 (#172): agb_run with valid concurrency forwards [run, <plan>, -c, <n>] to agb', async () => {
+  const log = join(TMP, 'agb-argv-concurrency.json');
+  const preload = join(TMP, 'argv-preload-concurrency.mjs');
+  writeFileSync(preload, `import { writeFileSync } from 'node:fs';
+if (/agb\\.mjs$/.test(process.argv[1] ?? '')) writeFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)));
+`);
+  const plan = join(TMP, 'nope.json');
+  const env = { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import ${pathToFileURL(preload).href}`.trim() };
+  await mcpExchange([{ id: 2, method: 'tools/call', params: { name: 'agb_run', arguments: { plan, concurrency: 3 } } }], { env });
+  assert.deepEqual(JSON.parse(readFileSync(log, 'utf8')), ['run', plan, '-c', '3']);
 });
 
 test('item 2: agb_run without concurrency spawns agb run', async () => {
@@ -421,6 +444,48 @@ test('CLI subprocess: agb run -c validation, agb watch, agb review --plan, agb p
     encoding: 'utf8',
   });
   assert.equal(covRes.status, 0, covRes.stderr);
+});
+
+test('T-RA-4B: agb plan --emit-workflow overwrites existing workflow only when --force is passed', () => {
+  const planRepo = makeRepo('plan-emit-wf-force-repo');
+  mkdirSync(join(planRepo, 'lib'), { recursive: true });
+  writeFileSync(join(planRepo, 'lib', 'x.mjs'), 'export const x = 1;\n');
+  const specPath = join(planRepo, 'spec.md');
+  writeFileSync(specPath, [
+    '# Workflow Spec',
+    '### Ticket 1: `T-WF1` — Simple Ticket',
+    '- **Scope**: `lib/x.mjs`',
+    '- **Acceptance Criteria**:',
+    '  - Exports x.',
+    '',
+  ].join('\n'));
+  const outPlan = join(planRepo, 'plan-wf.json');
+  const existingWf = join(planRepo, 'existing-wf.py');
+  writeFileSync(existingWf, '# old hand-written workflow\n');
+  const env = { ...process.env, AGB_AGY_BIN: FAKE_AGY, AGB_QUOTA_STATE: join(TMP, 'pools-cli-plan-wf.json') };
+
+  // Without --force: fails closed with exit 1, leaves existing workflow untouched, does not write plan.
+  const denied = spawnSync(process.execPath, [
+    AGB_BIN, 'plan', specPath, planRepo,
+    '--out', outPlan, '--emit-workflow', 'existing-wf.py',
+    '--no-coldstart', '--no-parallax', '--no-premortem',
+  ], { encoding: 'utf8', env });
+  assert.equal(denied.status, 1);
+  assert.match(denied.stderr, /already exists/);
+  assert.match(denied.stderr, /--force/);
+  assert.equal(readFileSync(existingWf, 'utf8'), '# old hand-written workflow\n');
+  assert.equal(existsSync(outPlan), false);
+
+  // With --force: compiles plan and overwrites existing workflow.
+  const allowed = spawnSync(process.execPath, [
+    AGB_BIN, 'plan', specPath, planRepo,
+    '--out', outPlan, '--emit-workflow', 'existing-wf.py', '--force',
+    '--no-coldstart', '--no-parallax', '--no-premortem',
+  ], { encoding: 'utf8', env });
+  assert.equal(allowed.status, 0, allowed.stderr);
+  assert.equal(existsSync(outPlan), true);
+  const wfContent = readFileSync(existingWf, 'utf8');
+  assert.match(wfContent, /Generated by `agb plan --emit-workflow`/);
 });
 
 

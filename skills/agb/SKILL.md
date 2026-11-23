@@ -8,8 +8,8 @@ description: End-to-end autonomous software development orchestrator and umbrell
 Executes the complete Agentic Development Lifecycle (ADLC) 5-phase Factory
 workflow end-to-end for a requested feature, refactor, or architectural concept,
 or routes any specific subcommand (`shape`, `plan`, `preflight`, `run`, `review`,
-`status`, `watch`, `sidecar`, `doctor`, `sync-models`, `init`, `bootstrap`,
-`migrate`, `pool`, `brains`, `sweep`).
+`distill`, `status`, `watch`, `sidecar`, `doctor`, `sync-models`, `init`,
+`bootstrap`, `migrate`, `pool`, `brains`, `sweep`).
 
 ## 5-Phase End-to-End Factory Pipeline
 
@@ -70,6 +70,9 @@ DAG:
     the **Structured Spec Fast-Path** (0 Stage A LLM conversion calls) and
     proceeds directly to Stage B (`coldstart`, `parallax`, `premortem`,
     `model-router`, `merge-forecast`).
+-   Pass `--emit-workflow <file.py>` (or `emitWorkflow` via `mcp__agb__agb_plan`)
+    to additionally compile the validated ticket DAG into a native
+    `run_workflow` Python script.
 -   Confirm `plan.json` is generated and tickets are projected into `.adlc/tickets/`.
 
 ### Phase 3: Preflight Validation (`agb preflight`)
@@ -82,9 +85,11 @@ Validate the compiled DAG before parallel execution:
 
 ### Phase 4: Parallel Execution & Prosecution (`agb run`)
 
-Execute the ticket DAG across isolated worktrees:
+Before launching the fleet, capture the pre-run base commit SHA so Phase 5 can
+review the exact combined diff merged onto `main`:
 
 ```sh
+PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
 ~/.local/bin/agb run plan.json
 ```
 
@@ -96,17 +101,19 @@ Execute the ticket DAG across isolated worktrees:
 ### Phase 5: Final Review & Delivery
 
 1.  **Verify Combined Test Suite**: Run the project's test gate (e.g. `npm test`) on `main` to confirm the merged tree passes cleanly.
-2.  **5-Lens Code Adversarial Review Loop**: Run `/code-review` (`~/.local/bin/agb review . main --five-lens --loop`) to audit the combined diff across `correctness_redteam`, `security`, `simplicity`, `evidence_runner`, and `anti_slop` with neutral arbiter triage.
-3.  **Report to User**: Present a concise summary of the implemented components, test results, merged tickets, and gate evidence.
+2.  **5-Lens Code Adversarial Review Loop**: Run `/code-review` against the captured `<pre-run-base-sha>` (`~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop`) — not `main`, because after merging onto `main`, diffing against `main` produces an empty diff and false-greens — to audit the combined diff across `correctness_redteam`, `security`, `simplicity`, `evidence_runner`, and `anti_slop` with neutral arbiter triage.
+3.  **Distill Learned Defenses (Optional)**: Run `~/.local/bin/agb distill . [--apply]` (or `mcp__agb__agb_distill`) to scan run/review findings for recurring patterns and stage or apply learned ADLC rules to `.gemini/rules/adlc-learned.md`.
+4.  **Report to User**: Present a concise summary of the implemented components, test results, merged tickets, and gate evidence.
 
 ## Subcommand Routing Reference
 
 ```sh
 ~/.local/bin/agb shape <spec.md | id> [repo-path] [--analyze] [--strict] [--sync-brain] [--max-ticket-scope <n>] [--json]
-~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
+~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
 ~/.local/bin/agb preflight [plan.json]
 ~/.local/bin/agb run <plan.json> [-c <n>]
 ~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--loop] [--five-lens] [--no-arbiter]
+~/.local/bin/agb distill [repo-path] [--apply] [--json]
 ~/.local/bin/agb status [repo-path] [--watch] [-w] [--interval <ms>] [--tui] [--follow] [--compact]
 ~/.local/bin/agb watch [repo-path] [--interval <ms>] [--follow] [--compact]
 ~/.local/bin/agb sidecar [repo-path] [--port <port>]
@@ -117,7 +124,7 @@ Execute the ticket DAG across isolated worktrees:
 ~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```
 
-If the `agb` MCP server is connected, you may instead prefer `mcp__agb__agb_shape`, `mcp__agb__agb_plan`, `mcp__agb__agb_preflight`, `mcp__agb__agb_run`, `mcp__agb__agb_review`, `mcp__agb__agb_status`, `mcp__agb__agb_doctor`, or `mcp__agb__agb_init`.
+If the `agb` MCP server is connected, you may instead prefer `mcp__agb__agb_shape`, `mcp__agb__agb_plan`, `mcp__agb__agb_preflight`, `mcp__agb__agb_run`, `mcp__agb__agb_review`, `mcp__agb__agb_distill`, `mcp__agb__agb_status`, `mcp__agb__agb_doctor`, or `mcp__agb__agb_init`.
 
 ## If the shim is missing
 

@@ -289,9 +289,16 @@ test('refactored call sites forward exact expected CLI arguments including --jso
     assert.equal(mf.ok, true);
     assert.equal(mf.recommendedWidth, 2);
 
-    const ht = await runHollowTest({ worktree: REPO_ROOT, testCmd: 'npm test', base: 'origin/custom-base', adlcBin });
-    assert.equal(ht.ok, true);
-    assert.equal(ht.total, 3);
+    const prevSandbox = process.env.AGB_SANDBOX_GATES;
+    process.env.AGB_SANDBOX_GATES = '0';
+    try {
+      const ht = await runHollowTest({ worktree: REPO_ROOT, testCmd: 'npm test', base: 'origin/custom-base', adlcBin });
+      assert.equal(ht.ok, true);
+      assert.equal(ht.total, 3);
+    } finally {
+      if (prevSandbox === undefined) delete process.env.AGB_SANDBOX_GATES;
+      else process.env.AGB_SANDBOX_GATES = prevSandbox;
+    }
 
     const rc = await reviewCalibration({ repo: REPO_ROOT, reviewCmd: 'echo ship', adlcBin });
     assert.equal(rc.ok, true);
@@ -301,5 +308,31 @@ test('refactored call sites forward exact expected CLI arguments including --jso
     const fd = await checkFlailDetector({ logFile, scope: ['lib/**'], adlcBin, cwd: REPO_ROOT });
     assert.equal(fd.detected, false);
     assert.equal(fd.error, undefined);
+  });
+});
+
+test('runAdlcTool: forwards wrapCommand to execFileAuthenticatedAdlc', async () => {
+  await withFakeAdlc(`
+    console.log(JSON.stringify({ wrapped: process.env.TEST_WRAPPED === '1', args: process.argv.slice(2) }));
+    process.exit(0);
+  `, async ({ adlcBin }) => {
+    let calledWith = null;
+    const res = await runAdlcTool({
+      tool: 'hollow-test',
+      args: ['--json'],
+      cwd: REPO_ROOT,
+      adlcBin,
+      wrapCommand: (cmd) => {
+        calledWith = cmd;
+        return {
+          ...cmd,
+          options: { ...cmd.options, env: { ...process.env, TEST_WRAPPED: '1' } },
+        };
+      },
+    });
+    assert.ok(calledWith, 'wrapCommand must be invoked');
+    assert.equal(res.ok, true);
+    assert.equal(res.parsed.wrapped, true);
+    assert.deepEqual(res.parsed.args, ['hollow-test', '--json']);
   });
 });
