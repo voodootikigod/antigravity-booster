@@ -2,7 +2,7 @@
 // agb — Antigravity Booster orchestrator.
 
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync, existsSync } from 'node:fs';
-import { resolve, join, basename } from 'node:path';
+import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { runPlan } from '../lib/scheduler.mjs';
@@ -19,9 +19,15 @@ import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor, runInit } from '../lib/doctor.mjs';
 import { resolveAgyBinary } from '../lib/plugin-paths.mjs';
 import { ROLE_MODELS } from '../lib/models.mjs';
-import { IS_BUNDLED } from '../lib/adlc-bridge.mjs';
 import { runShapeCli } from '../lib/shape.mjs';
 import { extractPositionalArgs, sanitizeRemoteUrl } from '../lib/plan-integrity.mjs';
+import {
+  parseAgyStatusPayload,
+  renderCliStatusLine,
+  renderCliWindowTitle,
+  installCliStatusLineSettings,
+  uninstallCliStatusLineSettings,
+} from '../lib/cli-statusline.mjs';
 
 const rawArgs = process.argv.slice(2);
 let project;
@@ -50,7 +56,17 @@ const COMMANDS = {
   run: {
     args: '<plan.json>',
     desc: 'execute a ticket DAG (build → gate → prosecute → merge)',
-    flags: '[-c <n> (cap concurrent workers)]'
+    flags: '[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)]'
+  },
+  rescue: {
+    args: '<ticket-id> [repo]',
+    desc: 'launch an interactive clean-host agy rescue session for a failed ticket and verify/merge on exit',
+    flags: '[--continue (reuse preserved worktree)] [--plan <plan.json> (explicit plan path)]'
+  },
+  statusline: {
+    args: '[render|title|install|uninstall]',
+    desc: 'render or configure the ambient agy CLI statusLine and terminal title HUD',
+    flags: '[--force (overwrite custom statusLine/title commands)]'
   },
   sweep: { args: '<sweep.json>', desc: 'same operation × many targets, then run' },
   review: {
@@ -234,6 +250,8 @@ try {
   if (cmd === 'run') {
     let concurrency;
     let planPath = 'plan.json';
+    let resume = false;
+    let resetRescue = false;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '-c') {
         if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
@@ -245,6 +263,10 @@ try {
           console.error(`agb: invalid concurrency '${rest[i]}'`);
           process.exit(1);
         }
+      } else if (rest[i] === '--resume') {
+        resume = true;
+      } else if (rest[i] === '--reset-rescue') {
+        resetRescue = true;
       } else if (rest[i].startsWith('-')) {
         console.error(`agb: unknown flag '${rest[i]}' for run`);
         process.exit(1);
@@ -257,9 +279,74 @@ try {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
     }
-    const report = await runPlan(plan, { project, concurrency });
+    const report = await runPlan(plan, { project, concurrency, resume, resetRescue });
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
+  } else if (cmd === 'rescue') {
+    rejectUnknownFlags('rescue', rest, new Set(['--continue']), new Set(['--plan']));
+    let planPath;
+    const pIdx = rest.indexOf('--plan');
+    if (pIdx !== -1) {
+      if (pIdx + 1 >= rest.length || rest[pIdx + 1].startsWith('-')) {
+        console.error('agb: missing value for --plan');
+        process.exit(1);
+      }
+      planPath = rest[pIdx + 1];
+    }
+    const positional = extractPositionalArgs(rest, new Set(['--plan']));
+    const ticketId = positional[0];
+    const repoArg = positional[1] ?? '.';
+    if (!ticketId) {
+      console.error('usage: agb rescue <ticket-id> [repo] [--continue] [--plan <plan.json>]');
+      process.exit(1);
+    }
+    const { runInteractiveRescue } = await import('../lib/rescue.mjs');
+    const res = await runInteractiveRescue(resolve(repoArg), ticketId, {
+      continueExisting: rest.includes('--continue'),
+      ...(planPath ? { planPath } : {}),
+    });
+    console.log(JSON.stringify(res, null, 2));
+    if (!res.ok || res.merged !== true) {
+      if (res.error) console.error(`rescue: ${res.error}`);
+      process.exit(2);
+    }
+    process.exit(0);
+  } else if (cmd === 'statusline') {
+    rejectUnknownFlags('statusline', rest, new Set(['--force']));
+    const positional = extractPositionalArgs(rest);
+    const sub = positional[0] ?? 'render';
+    if (!['render', 'title', 'install', 'uninstall'].includes(sub)) {
+      console.error(`agb: unknown statusline action '${sub}'. Expected render, title, install, or uninstall.`);
+      process.exit(1);
+    }
+    if (sub === 'render' || sub === 'title') {
+      let raw = '';
+      if (!process.stdin.isTTY) {
+        try {
+          raw = readFileSync(0, 'utf8');
+        } catch {}
+      }
+      const payload = parseAgyStatusPayload(raw);
+      const out = sub === 'render' ? renderCliStatusLine(payload) : renderCliWindowTitle(payload);
+      if (out) process.stdout.write(`${out}\n`);
+      process.exit(0);
+    }
+    if (sub === 'install') {
+      const res = installCliStatusLineSettings({ force: rest.includes('--force') });
+      if (!res.ok) {
+        console.error(`agb statusline: ${res.warning || 'failed to update settings.json'}`);
+        process.exit(1);
+      }
+      console.log(`configured statusLine and title in ${res.settingsPath}${res.skipped ? ' (preserved custom command; pass --force to overwrite)' : ''}`);
+      process.exit(0);
+    }
+    const res = uninstallCliStatusLineSettings({});
+    if (!res.ok && res.warning) {
+      console.error(`agb statusline: ${res.warning}`);
+      process.exit(1);
+    }
+    console.log(`uninstalled statusLine and title from ${res.settingsPath}`);
+    process.exit(0);
   } else if (cmd === 'sweep') {
     rejectUnknownFlags('sweep', rest, new Set());
     const spec = JSON.parse(readFileSync(rest[0] ?? 'sweep.json', 'utf8'));
@@ -297,7 +384,9 @@ try {
     const repo = resolve(positional[0] ?? '.');
 
     const pools = new PoolSet(undefined, { repo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy', {
+      allowStatusCache: !process.env.AGB_AGY_BIN,
+    });
     if (!quotaRes.ok) {
       console.error(`review: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -355,7 +444,9 @@ try {
     const skipColdstart = rest.includes('--no-coldstart');
     const pools = new PoolSet(undefined, { repo: targetRepo });
     if (!skipColdstart) {
-      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
+      const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy', {
+        allowStatusCache: !process.env.AGB_AGY_BIN,
+      });
       if (!quotaRes.ok) {
         console.error(`preflight: quota telemetry unavailable from agy: ${quotaRes.error}`);
         process.exit(1);
@@ -424,7 +515,9 @@ try {
       process.exit(1);
     }
     const pools = new PoolSet(undefined, { repo: targetRepo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy', {
+      allowStatusCache: !process.env.AGB_AGY_BIN,
+    });
     if (!quotaRes.ok) {
       console.error(`plan: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -496,7 +589,9 @@ try {
     console.error('import-brain is deprecated — use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)');
     const targetRepo = resolve(repo);
     const pools = new PoolSet(undefined, { repo: targetRepo });
-    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy');
+    const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy', {
+      allowStatusCache: !process.env.AGB_AGY_BIN,
+    });
     if (!quotaRes.ok) {
       console.error(`import-brain: quota telemetry unavailable from agy: ${quotaRes.error}`);
       process.exit(1);
@@ -525,11 +620,13 @@ try {
 
     if (isWatch) {
       const { watchStatus } = await import('../lib/status.mjs');
+      const { runInteractiveRescue } = await import('../lib/rescue.mjs');
       const code = await watchStatus(targetRepo, {
         intervalMs,
         interactive: Boolean(process.stdout.isTTY && !process.env.CI),
         follow,
         compact,
+        onRescue: (ticketId, repoDir) => runInteractiveRescue(repoDir, ticketId, { continueExisting: true }),
       });
       process.exitCode = code;
     } else {
@@ -548,11 +645,13 @@ try {
     const positional = extractPositionalArgs(rest, new Set(['--interval']));
     const targetRepo = resolve(positional[0] ?? '.');
     const { watchStatus } = await import('../lib/status.mjs');
+    const { runInteractiveRescue } = await import('../lib/rescue.mjs');
     const code = await watchStatus(targetRepo, {
       intervalMs,
       interactive: Boolean(process.stdout.isTTY && !process.env.CI),
       follow,
       compact,
+      onRescue: (ticketId, repoDir) => runInteractiveRescue(repoDir, ticketId, { continueExisting: true }),
     });
     process.exitCode = code;
   } else if (cmd === 'init') {
@@ -705,26 +804,15 @@ try {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
   } else if (cmd === 'sidecar') {
+    rejectUnknownFlags('sidecar', rest, new Set(), new Set(['--port']));
     let portStr = process.env.AGB_SIDECAR_PORT;
-    const positional = [];
-    for (let i = 0; i < rest.length; i++) {
-      if (rest[i] === '--port') {
-        if (i + 1 >= rest.length || rest[i+1].startsWith('--')) {
-          console.error('agb: missing value for --port');
-          process.exit(1);
-        }
-        portStr = rest[++i];
-      } else if (rest[i].startsWith('--')) {
-        console.error(`agb: unknown flag '${rest[i]}' for sidecar`);
-        process.exit(1);
-      } else {
-        positional.push(rest[i]);
-      }
+    const pIdx = rest.indexOf('--port');
+    if (pIdx !== -1) {
+      portStr = rest[pIdx + 1];
     }
+    const positional = extractPositionalArgs(rest, new Set(['--port']));
     const { serveSidecar } = await import('../sidecars/server.mjs');
     const { randomBytes } = await import('node:crypto');
-    const { rmSync } = await import('node:fs');
-    const { homedir } = await import('node:os');
     const port = portStr ? Number(portStr) : 3333;
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       console.error(`agb: invalid port '${portStr}'`);
@@ -732,81 +820,18 @@ try {
     }
     const token = randomBytes(16).toString('hex');
     const server = await serveSidecar(resolve(positional[0] ?? '.'), port, token);
-
     const actualPort = server.address().port;
+    console.log(`AGB Sidecar Dashboard URL: http://127.0.0.1:${actualPort}/?token=${token}`);
 
-    const pluginId = `agb-sidecar-plugin-${process.pid}-${actualPort}`;
-    let pluginDir;
-    let createdDir = false;
-    let wroteManifests = false;
-    try {
-      pluginDir = (!IS_BUNDLED && process.env.AGB_PLUGIN_DIR) || join(homedir(), '.gemini', pluginId);
-      if (!existsSync(pluginDir)) {
-        mkdirSync(pluginDir, { recursive: true, mode: 0o700 });
-        createdDir = true;
-      } else if (existsSync(join(pluginDir, 'plugin.json')) || existsSync(join(pluginDir, 'sidecars', 'agb.json'))) {
-        throw new Error(`AGB_PLUGIN_DIR (${pluginDir}) already contains plugin.json or sidecars/agb.json. To prevent data loss, agb will not overwrite an existing plugin manifest. Clear the directory or unset AGB_PLUGIN_DIR.`);
-      }
-      if (!existsSync(join(pluginDir, 'sidecars'))) {
-        mkdirSync(join(pluginDir, 'sidecars'), { recursive: true, mode: 0o700 });
-      }
-
-      const manifest = {
-        id: 'agb-dashboard',
-        name: 'AGB Dashboard',
-        url: `http://127.0.0.1:${actualPort}/?token=${token}`,
-        icon: 'activity',
-        description: 'Visualizes parallel build-outs orchestrated by Antigravity Booster.'
-      };
-
-      writeFileSync(join(pluginDir, 'sidecars', 'agb.json'), JSON.stringify(manifest, null, 2) + '\n', { mode: 0o600 });
-      writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({
-        id: pluginId,
-        name: pluginId,
-        version: '1.0.0',
-        sidecars: ['sidecars/agb.json']
-      }, null, 2) + '\n', { mode: 0o600 });
-      wroteManifests = true;
-
-      const agyBin = process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy';
-
-      let cleaned = false;
-      const onExitCleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
-        try {
-          server.close();
-          try { execFileSync(agyBin, ['plugin', 'uninstall', pluginId], { stdio: 'ignore' }); } catch {}
-          const dirBase = pluginDir ? basename(pluginDir) : '';
-          if (dirBase && dirBase !== pluginId) {
-            try { execFileSync(agyBin, ['plugin', 'uninstall', dirBase], { stdio: 'ignore' }); } catch {}
-          }
-          if (pluginDir) {
-            if (createdDir) {
-              rmSync(pluginDir, { recursive: true, force: true });
-            } else if (wroteManifests) {
-              rmSync(join(pluginDir, 'sidecars', 'agb.json'), { force: true });
-              rmSync(join(pluginDir, 'plugin.json'), { force: true });
-            }
-          }
-        } catch {}
-      };
-
-      const cleanup = (code) => {
-        onExitCleanup();
-        process.exit(code);
-      };
-
-      process.on('SIGINT', () => cleanup(130));
-      process.on('SIGTERM', () => cleanup(143));
-      process.on('exit', onExitCleanup);
-
-      execFileSync(agyBin, ['plugin', 'install', pluginDir], { stdio: 'inherit' });
-      console.log('Successfully registered the dynamic sidecar plugin with Antigravity.');
-    } catch (e) {
-      console.warn(`Warning: Could not automatically register the sidecar plugin with agy: ${e.message}`);
-      console.warn(`The dashboard will not appear. To register it manually, add this manifest to your Antigravity plugins: ${pluginDir}`);
-    }
+    let cleaned = false;
+    const cleanup = (code) => {
+      if (cleaned) return;
+      cleaned = true;
+      server.close(() => process.exit(code));
+      setTimeout(() => process.exit(code), 250).unref();
+    };
+    process.on('SIGINT', () => cleanup(130));
+    process.on('SIGTERM', () => cleanup(143));
   } else if (cmd === 'pool') {
     rejectUnknownFlags('pool', rest, new Set());
     const sub = rest[0];

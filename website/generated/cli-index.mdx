@@ -11,11 +11,13 @@
 | agb pool | drain [repo] | safely drain active leases and reset coordinator |
 | agb preflight | &lt;plan.json&gt; | plan-time gates: scope overlap + coldstart |
 | agb probe | [widths] [model] | measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-&lt;day&gt;.md |
+| agb rescue | &lt;ticket-id&gt; [repo] | launch an interactive clean-host agy rescue session for a failed ticket and verify/merge on exit |
 | agb review | [repo] [ref] | read-only lens fleet over a diff or plan spec, loop-until-dry |
 | agb run | &lt;plan.json&gt; | execute a ticket DAG (build → gate → prosecute → merge) |
 | agb shape | &lt;spec.md &#124; id&gt; [repo] | deterministically pre-analyze a structured spec or brain plan for DAG validity, scope overlaps, and import coupling before agb plan |
 | agb sidecar | [repo] | launch the HTTP server for the Antigravity Sidecar UI |
 | agb status | [repo] | render the live dashboard for a repo's current run |
+| agb statusline | [render&#124;title&#124;install&#124;uninstall] | render or configure the ambient agy CLI statusLine and terminal title HUD |
 | agb sweep | &lt;sweep.json&gt; | same operation × many targets, then run |
 | agb sync-models | — | audit live agy models output against lib/models.mjs |
 | agb tui | — | Removed. Use agb sidecar or agb watch instead. |

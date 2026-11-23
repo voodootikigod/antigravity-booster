@@ -90,6 +90,10 @@ const UNKNOWN_FLAG_CASES = [
   { cmd: 'sync-models', args: ['sync-models', '--bogus-flag'], label: 'sync-models' },
   { cmd: 'validate', args: ['validate', 'plan.json', '--bogus-flag'], label: 'validate' },
   { cmd: 'validate (flag first)', args: ['validate', '--bogus-flag'], label: 'validate' },
+  { cmd: 'run', args: ['run', 'plan.json', '--bogus-flag'], label: 'run' },
+  { cmd: 'statusline', args: ['statusline', 'render', '--bogus-flag'], label: 'statusline' },
+  { cmd: 'rescue', args: ['rescue', 'T-1', '--bogus-flag'], label: 'rescue' },
+  { cmd: 'sidecar', args: ['sidecar', '--bogus-flag'], label: 'sidecar' },
 ];
 
 for (const { cmd, args, label } of UNKNOWN_FLAG_CASES) {
@@ -97,6 +101,14 @@ for (const { cmd, args, label } of UNKNOWN_FLAG_CASES) {
     const res = runAgb(args);
     assert.equal(res.status, 1, `expected exit 1 for agb ${cmd}, got ${res.status} (stderr: ${res.stderr})`);
     assert.match(res.stderr, new RegExp(`unknown flag '--bogus-flag' for ${label}`));
+  });
+}
+
+for (const sub of ['run', 'statusline', 'rescue', 'sidecar']) {
+  test(`agb ${sub}: rejects unknown single-dash flag -z with exit code 1`, () => {
+    const res = runAgb([sub, '-z']);
+    assert.equal(res.status, 1, `expected exit 1 for agb ${sub} -z, got ${res.status} (stderr: ${res.stderr})`);
+    assert.match(res.stderr, new RegExp(`unknown flag '-z' for ${sub}`));
   });
 }
 

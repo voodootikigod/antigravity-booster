@@ -171,9 +171,9 @@
     {
       "name": "AGB_PLUGIN_DIR",
       "group": "plugin-resolution",
-      "default": "~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-<pid>-<port> (sidecar)",
+      "default": "~/.gemini/config/plugins/adlc-antigravity",
       "bundledIgnored": true,
-      "description": "Two readers (both ignored by the bundled build): the companion-plugin handshake manifest directory and the directory agb sidecar writes its plugin manifest into (honoured in unbundled source runs only)."
+      "description": "Override directory for the companion-plugin handshake manifest in lib/adlc-bridge.mjs (honoured in unbundled source runs only)."
     },
     {
       "name": "AGB_PLUGIN_ROOT",
@@ -504,6 +504,27 @@
       "default": "unset",
       "bundledIgnored": false,
       "description": "Set to 1 to use the built-in static model catalog instead of invoking agy models during doctor or sync-models."
+    },
+    {
+      "name": "AGB_SKIP_SESSION_BOOTSTRAP",
+      "group": "internal/test-only",
+      "default": "unset",
+      "bundledIgnored": true,
+      "description": "Set to 1 in unbundled test runs to skip automatic background bootstrap in hooks/session-start.mjs; ignored in bundled plugin builds."
+    },
+    {
+      "name": "AGB_STATUSLINE_QUOTA_FILE",
+      "group": "paths",
+      "default": "<pools_dir>/agb_statusline_quota.json",
+      "bundledIgnored": true,
+      "description": "Unbundled override path for the lock-free statusline quota cache written by lib/cli-statusline.mjs and read by PoolSet.refreshQuota; ignored in bundled plugin builds."
+    },
+    {
+      "name": "AGB_IGNORE_STATUS_QUOTA_CACHE",
+      "group": "pools-and-quota",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to force PoolSet.refreshQuota to bypass agb_statusline_quota.json and spawn agy -p /quota directly."
     }
   ],
   "ignore": [

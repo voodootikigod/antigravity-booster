@@ -32,7 +32,7 @@
 | ADLC_ANTIGRAVITY_PLUGIN_PATH | unset | Source checkout of the adlc-antigravity plugin to install from. Honoured by bootstrap only in unbundled runs and only together with AGB_DEV_ALLOW_UNVERIFIED_PLUGIN=1. | ignored |
 | ADLC_GEMINI_PLUGIN_NAME | adlc-gemini | Not read from the environment: a source constant in lib/plugin-paths.mjs naming the adlc-gemini companion plugin directory snapshotted for run integrity and checked when adlc-antigravity is absent. | honoured |
 | AGB_DEV_ALLOW_UNVERIFIED_PLUGIN | unset | Set to 1 (unbundled runs only) to let bootstrap install an unverified companion plugin from ADLC_ANTIGRAVITY_PLUGIN_PATH. | ignored |
-| AGB_PLUGIN_DIR | ~/.gemini/config/plugins/adlc-antigravity (handshake); ~/.gemini/agb-sidecar-plugin-&lt;pid&gt;-&lt;port&gt; (sidecar) | Two readers (both ignored by the bundled build): the companion-plugin handshake manifest directory and the directory agb sidecar writes its plugin manifest into (honoured in unbundled source runs only). | ignored |
+| AGB_PLUGIN_DIR | ~/.gemini/config/plugins/adlc-antigravity | Override directory for the companion-plugin handshake manifest in lib/adlc-bridge.mjs (honoured in unbundled source runs only). | ignored |
 | AGB_PLUGIN_ROOT | the booster plugin root | Plugin root holding vendor/adlc, used to find the vendored adlc CLI. Unbundled runs only. | ignored |
 | PLUGIN_ROOT | set by Antigravity | Plugin root directory exported by Antigravity (via $&#123;PLUGIN_ROOT&#125; in hooks.json and mcp_config.json) and resolved by bin/hook-runner.sh and bin/node-launcher.sh. | honoured |
 
@@ -57,6 +57,7 @@
 | AGB_BRAIN_REPAIR_MODEL | gemini-4-argon-high | Override the fallback model slug used when repairing invalid Stage A plan JSON. | honoured |
 | AGB_COLDSTART_MODEL | gemini-3.8-flash-low | Override the model slug used by the coldstart self-sufficiency gate. | honoured |
 | AGB_DISABLE_ORCHESTRATOR | unset | Set to 1 to disable routing frontier tickets to gemini-pro-orchestrator and gemini-pro-orchestrator-argon, falling back to FRONTIER_NO_ORCHESTRATOR. | honoured |
+| AGB_IGNORE_STATUS_QUOTA_CACHE | unset | Set to 1 to force PoolSet.refreshQuota to bypass agb_statusline_quota.json and spawn agy -p /quota directly. | honoured |
 | AGB_PARALLAX_JUDGE_MODEL | gemini-4-argon-high | Override the model slug used by the parallax contract judge. | honoured |
 | AGB_PARALLAX_READER_MODEL | gemini-3.8-flash-medium | Override the model slug used by the parallax edge reader. | honoured |
 | AGB_POOLS_DIR | unset | Directory for the shared pool state, v2 state and lock files. | honoured |
@@ -84,6 +85,7 @@
 | AGB_EXEC_LOCKS_DIR | under AGB_HOME_DIR | Directory for executable lock records; stale locks with a dead PID are recovered. | honoured |
 | AGB_GRAPH_COUPLING_FILE | .adlc/graph-coupling.json | Path to an optional static import-graph coupling JSON file consulted by applyMergeForecast and scanStaticImportCoupling. | honoured |
 | AGB_HOME_DIR | the OS home directory | Home directory override for agb's per-user state. Ignored in bundled plugin builds (IS_BUNDLED === true). | ignored |
+| AGB_STATUSLINE_QUOTA_FILE | &lt;pools_dir&gt;/agb_statusline_quota.json | Unbundled override path for the lock-free statusline quota cache written by lib/cli-statusline.mjs and read by PoolSet.refreshQuota; ignored in bundled plugin builds. | ignored |
 
 **ADLC toolkit**
 
