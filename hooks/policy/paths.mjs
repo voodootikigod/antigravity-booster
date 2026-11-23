@@ -228,20 +228,11 @@ function stripProcRoot(p) {
 
 const HEADLESS_BOOSTER_SUBPATH =
   /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$))/;
-const HEADLESS_BOOSTER_SAMPLES = [
+const HEADLESS_BOOSTER_CHILD_NAMES = [
   'control.json',
   'control.sock',
   'rescue-locks',
-  'rescue-locks/x',
   'rescue-latest',
-  'rescue-latest/x',
-];
-const HEADLESS_BOOSTER_TAIL_SAMPLES = [
-  '.booster',
-  '.booster/control.json',
-  '.booster/control.sock',
-  '.booster/rescue-locks',
-  '.booster/rescue-latest',
 ];
 
 export function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
@@ -252,30 +243,27 @@ export function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = pro
   if (HEADLESS_BOOSTER_SUBPATH.test(norm)) return true;
 
   const nocase = platform === 'darwin' || platform === 'win32';
-  const rawHasGlob = /[*?[\]{}!]/.test(normRaw);
-  if (rawHasGlob && normRaw.length > 1024) return true; // fail closed on oversized globs
-  const hasGlob = rawHasGlob;
+  const hasGlob = /[*?[\]{}!]/.test(normRaw);
+  if (hasGlob && normRaw.length > 1024) return true; // fail closed on oversized globs
   if (hasGlob) {
-    const boosterIdx = norm.lastIndexOf('/.booster/');
-    if (boosterIdx >= 0) {
-      const subPattern = normRaw.slice(boosterIdx + '/.booster/'.length);
-      const firstSub = subPattern.split('/')[0] ?? '';
-      const subMatcher = new Minimatch(subPattern, { dot: true, nocase });
-      const firstMatcher = new Minimatch(firstSub, { dot: true, nocase });
-      if (HEADLESS_BOOSTER_SAMPLES.some((s) => subMatcher.match(s) || firstMatcher.match(s))) {
+    const cleanSegs = normRaw.replace(/\/+$/, '').split('/').filter(Boolean);
+    for (let idx = 0; idx < cleanSegs.length; idx += 1) {
+      const seg = cleanSegs[idx];
+      const segFold = fold(seg, platform);
+      const isBoosterSeg =
+        segFold === '.booster' ||
+        (/[*?[\]{}!]/.test(seg) && new Minimatch(seg, { dot: false, nocase }).match('.booster'));
+      if (!isBoosterSeg) continue;
+
+      // Exact `.booster` (or `.booste*`) directory target
+      if (idx === cleanSegs.length - 1) return true;
+
+      // Child segment immediately under `.booster` (covers 2, 3, or N-segment globs like `.booste*/r*/t1.json`)
+      const childSeg = cleanSegs[idx + 1];
+      const childMatcher = new Minimatch(childSeg, { dot: true, nocase });
+      if (HEADLESS_BOOSTER_CHILD_NAMES.some((name) => childMatcher.match(name))) {
         return true;
       }
-    }
-    const cleanSegs = normRaw.replace(/\/+$/, '').split('/').filter(Boolean);
-    const tail1 = cleanSegs.at(-1) ?? '';
-    const tail2 = cleanSegs.slice(-2).join('/');
-    if (tail1 && /[*?[\]{}!]/.test(tail1)) {
-      const m1 = new Minimatch(tail1, { dot: true, nocase });
-      if (m1.match('.booster') || HEADLESS_BOOSTER_SAMPLES.some((s) => m1.match(s))) return true;
-    }
-    if (tail2 && /[*?[\]{}!]/.test(tail2)) {
-      const m2 = new Minimatch(tail2, { dot: true, nocase });
-      if (HEADLESS_BOOSTER_TAIL_SAMPLES.some((s) => m2.match(s))) return true;
     }
   }
 
@@ -374,7 +362,7 @@ export function isAllowedBrainArtifactTarget(
   token,
   resolved,
   verifiedBrainArtifact,
-  { allowExactDir = false, platform = process.platform } = {},
+  { allowExactDir = false, allowSystemGeneratedRead = false, platform = process.platform } = {},
 ) {
   if (!verifiedBrainArtifact || !resolved || resolved.unresolved) return false;
   const raw = String(token ?? '');
@@ -412,7 +400,15 @@ export function isAllowedBrainArtifactTarget(
   if (fold(relPhys, platform) !== fold(relLex, platform)) return false;
 
   const segments = relPhys.split('/');
-  if (segments.some((seg) => seg.length === 0 || seg === '.' || seg === '..' || seg.toLowerCase() === '.system_generated')) {
+  if (
+    segments.some(
+      (seg) =>
+        seg.length === 0 ||
+        seg === '.' ||
+        seg === '..' ||
+        (!allowSystemGeneratedRead && seg.toLowerCase() === '.system_generated'),
+    )
+  ) {
     return false;
   }
 

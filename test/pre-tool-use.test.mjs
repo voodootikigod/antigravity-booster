@@ -1093,14 +1093,16 @@ test('T-NG-1: interactive brain artifact carve-out permits verified active sessi
   assert.equal(evalBrain('run_command', { CommandLine: `rm -rf ${cliBrain}`, Cwd: fx.active }, validMeta).decision, 'deny');
   assert.equal(evalBrain('run_command', { CommandLine: `rm -f ${planFile}`, Cwd: fx.active }, validMeta).decision, 'deny');
 
-  // 4. Mismatched conversationId and invalid/missing conversationId or artifactDirectoryPath deny all interactive writes/edits
+  // 4. Mismatched conversationId and invalid conversationId/artifactDirectoryPath deny both interactive reads and writes
   const otherDir = join(cliBrain, otherConvId);
   mkdirSync(otherDir, { recursive: true });
   const otherPlan = join(otherDir, 'implementation_plan.md');
   writeFileSync(otherPlan, '# Other\n');
   assert.equal(evalBrain('write_file', { Path: otherPlan, Content: 'x' }, validMeta).decision, 'deny', 'target in different convId');
+  assert.equal(evalBrain('read_file', { Path: otherPlan }, validMeta).decision, 'deny', 'read in different convId denied when metadata present');
   assert.equal(evalBrain('edit_file', { Path: otherPlan, Target: '# Other', Replacement: 'x' }, validMeta).decision, 'deny');
   assert.equal(evalBrain('write_file', { Path: planFile, Content: 'x' }, { conversationId: otherConvId, artifactDirectoryPath: artifactDir }).decision, 'deny', 'convId != artifactDir leaf');
+  assert.equal(evalBrain('read_file', { Path: planFile }, { conversationId: otherConvId, artifactDirectoryPath: artifactDir }).decision, 'deny');
 
   for (const badMeta of [
     {},
@@ -1236,21 +1238,30 @@ test('T-NG-1: headless and readonly workers are denied on .booster IPC/rescue pa
       assert.equal(shell('rm -rf .booster', fx.plain, env).decision, 'deny');
       assert.equal(shell('cat .booster/*', fx.plain, env).decision, 'deny');
       assert.equal(shell('cat .booste*/control.json', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booster/r*/t*.json', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booste*/r*/t1.json', fx.plain, env).decision, 'deny');
       assert.equal(shell(`cat ${join(fx.plain, 'a'.repeat(1100), '.booster/control*')}`, fx.plain, env).decision, 'deny');
       assert.equal(shell('cat .booster/control*', fx.plain, env).decision, 'deny');
       assert.equal(shell('cat /tmp/agb-ctrl-*', fx.plain, env).decision, 'deny');
       assert.equal(shell('cat /tmp/agb-ctrl*', fx.plain, env).decision, 'deny');
+      assert.equal(shell('echo pwned > .booster/foo.json', fx.plain, env).decision, 'deny');
 
       // Public telemetry (.booster/run.json) remains readable
       assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'run.json') }, fx.active, env).decision, 'pass');
       assert.equal(shell('cat .booster/run.json', fx.active, env).decision, 'pass');
     }
 
-    // AGB_RESCUE_TICKET protects .booster/control.json and rescue-locks while keeping interactive prompts working
+    // Normal builder globs (`ls src/*`, `cat lib/*.mjs`) in WORKER mode must NOT false-positive as .booster paths
+    assert.equal(shell('ls src/*', fx.plain, WORKER).decision, 'pass');
+    assert.equal(shell('cat lib/*.mjs', fx.plain, WORKER).decision, 'pass');
+
+    // AGB_RESCUE_TICKET protects .booster/control.json, unparseable shell, and redirects while keeping interactive prompts working
     const RESCUE_ENV = { ...INTERACTIVE, AGB_RESCUE_TICKET: 'T1' };
     assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'control.json') }, fx.active, RESCUE_ENV).decision, 'deny');
     assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'rescue-locks', 'T1.json') }, fx.active, RESCUE_ENV).decision, 'deny');
     assert.equal(shell('cat .booster/control.json', fx.active, RESCUE_ENV).decision, 'deny');
+    assert.equal(shell('echo "unterminated', fx.plain, RESCUE_ENV).decision, 'deny');
+    assert.equal(shell('cat package.json > .booster/tamper.json', fx.plain, RESCUE_ENV).decision, 'deny');
     assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'run.json') }, fx.active, RESCUE_ENV).decision, 'pass');
 
     // Interactive sessions are not blocked from .booster/control.json or rescue-locks

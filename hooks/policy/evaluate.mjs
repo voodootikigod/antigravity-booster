@@ -492,6 +492,7 @@ function stepOne(name, args, ctx) {
     const wfCwdPhys = physicalResolve(wfCwdArg, ctx.workspacePaths[0] || '/', ctx.platform);
     if (wfCwdPhys) stepCtx = { ...ctx, anchors: unique([wfCwdPhys, ...ctx.anchors]) };
   }
+  const isListDir = name === 'list_dir' || name === 'list_directory';
   for (const token of candidates) {
     for (const r of resolveAll(token, stepCtx)) {
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
@@ -500,13 +501,24 @@ function stepOne(name, args, ctx) {
       if (r.unresolved && !(isRead && isBenignProcRead(token, r))) {
         return deny('Target path cannot be resolved (symlink loop or oversized path)');
       }
-      if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
-        if (
-          matchRoot(r, ctx.brainRoots, ctx.platform) &&
-          isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, platform: ctx.platform })
-        ) {
+      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
+        if (!isRead) {
+          if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, allowSystemGeneratedRead: false, platform: ctx.platform })) {
+            return deny('Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden');
+          }
           continue;
         }
+        // Interactive read: when session metadata is supplied, enforce active-conversation isolation + symlink safety while permitting own .system_generated transcripts
+        if (ctx.hasBrainMetadata) {
+          if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: isListDir, allowSystemGeneratedRead: true, platform: ctx.platform })) {
+            return deny('Access to another Antigravity conversation brain directory or symlinked brain target is forbidden');
+          }
+        } else if (r.lexical !== r.real) {
+          return deny('Access to symlinked Antigravity brain path is forbidden');
+        }
+        continue;
+      }
+      if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
         return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
       }
     }
@@ -1144,6 +1156,7 @@ export function buildContext(payload, options = {}) {
   }));
   const baseBoosterDataRoots = unique(homes.flatMap((h) => boosterDataRoots(h)));
   const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
+  const hasBrainMetadata = payload?.conversationId !== undefined || payload?.artifactDirectoryPath !== undefined;
   const verifiedBrainArtifact = verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform });
   return {
     home,
@@ -1161,6 +1174,7 @@ export function buildContext(payload, options = {}) {
     headless,
     tmpRoots,
     brainRoots: brainRootsList,
+    hasBrainMetadata,
     verifiedBrainArtifact,
     anchor: cwd ?? workspacePaths[0] ?? null,
     anchors: unique([...(cwd ? [cwd] : []), ...workspacePaths]),
@@ -1177,6 +1191,9 @@ export function buildContext(payload, options = {}) {
   };
 }
 
+const HEADLESS_DESTRUCTIVE_SHELL_CMDS = new Set([
+  'rm', 'mv', 'shred', 'unlink', 'rmdir', 'cp', 'tar', 'rsync', 'chmod', 'chown', 'chgrp', 'find',
+]);
 const HEADLESS_FORBIDDEN_SHELL_LITERAL =
   /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
 
@@ -1192,31 +1209,41 @@ function evaluateRunCommand(args, ctx) {
   }
   const lexed = lexCommandLine(line);
   if (!lexed.ok) {
-    return ctx.headless ? deny('Headless shell command could not be parsed') : verdict;
+    return deny('Shell command could not be parsed in protected worker/rescue session');
   }
   const cwdArg = norm.folded.cwd;
   const baseCwd = typeof cwdArg === 'string' && cwdArg.length > 0 ? resolve(cwdArg) : (ctx.workspacePaths[0] ?? '/');
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
     const cmd = basename(sub.argv[0] ?? '');
-    const isPureReader = PURE_READERS.has(cmd);
-    const tokens = [
-      ...sub.argv.slice(1).flatMap((t) => {
-        if (!t.startsWith('-')) return [t];
-        const eq = t.indexOf('=');
-        return eq > 0 && eq < t.length - 1 ? [t.slice(eq + 1)] : [];
-      }),
-      ...(sub.redirects ?? []).map((r) => r.target).filter(Boolean),
-    ];
-    for (const tok of tokens) {
+    const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);
+    const argvTokens = sub.argv.slice(1).flatMap((t) => {
+      if (!t.startsWith('-')) return [t];
+      const eq = t.indexOf('=');
+      return eq > 0 && eq < t.length - 1 ? [t.slice(eq + 1)] : [];
+    });
+    for (const tok of argvTokens) {
       const cand = resolveCandidate(tok, baseCwd, ctx.home, ctx.platform);
       if (ipcMatcher(cand.real, ctx.platform) || ipcMatcher(cand.lexical, ctx.platform)) {
         return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
       }
-      if (!isPureReader) {
-        const isBoosterTree = /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.real) || /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.lexical);
+      if (isDestructive) {
+        const isBoosterDir = /(?:^|[\\/])\.booster$/i.test(cand.real) || /(?:^|[\\/])\.booster$/i.test(cand.lexical);
         const containsTmp = (ctx.tmpRoots ?? []).some((t) => isWithin(t, cand.real, ctx.platform) || isWithin(t, cand.lexical, ctx.platform));
-        if (isBoosterTree || containsTmp) {
+        if (isBoosterDir || containsTmp) {
+          return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+        }
+      }
+    }
+    for (const redir of sub.redirects ?? []) {
+      if (!redir.target) continue;
+      const cand = resolveCandidate(redir.target, baseCwd, ctx.home, ctx.platform);
+      if (ipcMatcher(cand.real, ctx.platform) || ipcMatcher(cand.lexical, ctx.platform)) {
+        return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (String(redir.op ?? '').includes('>')) {
+        const inBooster = /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.real) || /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.lexical);
+        if (inBooster) {
           return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
         }
       }

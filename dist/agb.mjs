@@ -21432,23 +21432,36 @@ function restoreSavedSnapshotIntoWorktree(repo, worktreePath, ticket, { restored
     if (leafSt?.isSymbolicLink()) return null;
     return leaf;
   };
+  const validatedWrites = [];
   for (const entry of Array.isArray(snap.files) ? snap.files : []) {
     if (!entry || typeof entry.path !== "string" || typeof entry.contentBase64 !== "string") {
       continue;
     }
+    const targetPath = resolveContainedPath(entry.path, { createDirs: false }) ?? entry.path;
+    if (typeof targetPath === "string" && isAbsolute11(targetPath)) {
+      const existingSt = lstatOrNull2(targetPath);
+      if (existingSt && !existingSt.isFile()) continue;
+      if (!restoredAtSnapBase && entry.baseSha256 !== void 0) {
+        const currentSha = existingSt ? crypto6.createHash("sha256").update(readFileSync28(targetPath)).digest("hex") : null;
+        if (currentSha !== entry.baseSha256) {
+          throw new Error(
+            `cannot safely restore snapshot for '${entry.path}': base branch diverged since snapshot was taken`
+          );
+        }
+      }
+    } else if (!restoredAtSnapBase && entry.baseSha256 !== void 0 && entry.baseSha256 !== null) {
+      throw new Error(
+        `cannot safely restore snapshot for '${entry.path}': base branch diverged since snapshot was taken`
+      );
+    }
+    validatedWrites.push(entry);
+  }
+  for (const entry of validatedWrites) {
     const targetPath = resolveContainedPath(entry.path, { createDirs: true });
     if (!targetPath) continue;
     const buf = Buffer.from(entry.contentBase64, "base64");
     const existingSt = lstatOrNull2(targetPath);
     if (existingSt && !existingSt.isFile()) continue;
-    if (!restoredAtSnapBase && entry.baseSha256 !== void 0) {
-      const currentSha = existingSt ? crypto6.createHash("sha256").update(readFileSync28(targetPath)).digest("hex") : null;
-      if (currentSha !== entry.baseSha256) {
-        throw new Error(
-          `cannot safely restore snapshot for '${entry.path}': base branch diverged since snapshot was taken`
-        );
-      }
-    }
     const flags = constants5.O_WRONLY | constants5.O_CREAT | constants5.O_TRUNC | (constants5.O_NOFOLLOW || 0);
     const mode = typeof entry.mode === "number" ? entry.mode & 511 : 420;
     const fd = openSync11(targetPath, flags, mode || 420);
@@ -21553,6 +21566,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
   let lockA = null;
   let expectedWtGitDir = null;
   let refusedLiveRescue = false;
+  let createdFreshWorktree = false;
   try {
     lockA = acquireRepoLock(resolvedRepo, { runId });
     lockA.assertStillHeld();
@@ -21566,6 +21580,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
     const reuseExisting = existsSync35(worktreePath) && (Boolean(options.continueExisting) || priorLock?.state === "preserved" || priorLock?.state === "active");
     writeRescueWorktreeLock(resolvedRepo, ticketId, { state: "active", runId });
     if (!reuseExisting) {
+      createdFreshWorktree = true;
       const snapBaseSha = peekSavedSnapshotBaseSha(resolvedRepo, canonicalTicket.id);
       createWorktree(resolvedRepo, ticketId, snapBaseSha || baseBranch, { allowResetRescue: true });
       restoreSavedSnapshotIntoWorktree(resolvedRepo, worktreePath, canonicalTicket, {
@@ -21576,7 +21591,21 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
     configureRescueWorktreeGit(worktreePath);
     materializeWorktreeNodeModules(worktreePath, join38(resolvedRepo, "node_modules"));
   } catch (err) {
-    const wtPresent = !refusedLiveRescue && existsSync35(worktreePath);
+    if (createdFreshWorktree) {
+      try {
+        removeWorktree(resolvedRepo, worktreePath, { force: true });
+      } catch {
+        try {
+          rmSync15(worktreePath, { recursive: true, force: true });
+        } catch {
+        }
+      }
+      try {
+        clearRescueWorktreeLock(resolvedRepo, ticketId);
+      } catch {
+      }
+    }
+    const wtPresent = !refusedLiveRescue && !createdFreshWorktree && existsSync35(worktreePath);
     if (wtPresent) {
       try {
         writeRescueWorktreeLock(resolvedRepo, ticketId, { state: "preserved", runId });
@@ -21936,18 +21965,24 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
       }
     }
     try {
-      const boosterDir = join38(resolvedRepo, ".booster");
-      const bSt = lstatOrNull2(boosterDir);
-      if (bSt && !bSt.isSymbolicLink() && bSt.isDirectory()) {
+      const ticketHash2 = crypto6.createHash("sha256").update(JSON.stringify({ id: canonicalTicket.id ?? "", scope: [...canonicalTicket.scope ?? []].sort() })).digest("hex");
+      const boosterDir = ensureSafeBoosterSubdir(resolvedRepo, []);
+      if (boosterDir) {
         const runFile = join38(boosterDir, "run.json");
-        const existingRun = readJsonIfSafeFile(runFile);
+        const existingRun = readJsonIfSafeFile(runFile) ?? {
+          runId,
+          startedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          done: true,
+          tickets: {}
+        };
         if (existingRun && typeof existingRun === "object" && !Array.isArray(existingRun)) {
           const updatedTickets = { ...existingRun.tickets ?? {} };
           updatedTickets[canonicalTicket.id] = {
             ...updatedTickets[canonicalTicket.id] ?? {},
             phase: "merged",
             detail: "merged via agb rescue",
-            mergeSha: candidateSha
+            mergeSha: candidateSha,
+            ticketHash: ticketHash2
           };
           const updatedRun = { ...existingRun, tickets: updatedTickets };
           if (updatedRun.report && typeof updatedRun.report === "object") {
@@ -25609,10 +25644,10 @@ function isCommitAncestorAndUnreverted(repo, baseRef, commitSha, ticketId, gitEn
   }
   return true;
 }
-function verifyTicketLandedOnBase(repo, baseRef, ticketId, { mergeSha = null, rescueOnly = false } = {}) {
+function verifyTicketLandedOnBase(repo, baseRef, ticketId, { mergeSha = null } = {}) {
   if (!ticketId || typeof ticketId !== "string" || !TICKET_ID_RE.test(ticketId)) return false;
   const gitEnv = sanitizedGitEnv();
-  if (!rescueOnly && mergeSha && isCommitAncestorAndUnreverted(repo, baseRef, mergeSha, ticketId, gitEnv)) {
+  if (mergeSha && isCommitAncestorAndUnreverted(repo, baseRef, mergeSha, ticketId, gitEnv)) {
     return true;
   }
   try {
@@ -25638,11 +25673,7 @@ function verifyTicketLandedOnBase(repo, baseRef, ticketId, { mergeSha = null, re
       if (spaceIdx <= 0) continue;
       const sha = raw.slice(0, spaceIdx).trim();
       const subjLower = raw.slice(spaceIdx + 1).trim().toLowerCase();
-      if (rescueOnly) {
-        if (subjLower.startsWith(prefixLower) && subjLower.endsWith("(rescue)") && isCommitAncestorAndUnreverted(repo, baseRef, sha, ticketId, gitEnv)) {
-          return true;
-        }
-      } else if ((subjLower === mergeLower || subjLower.startsWith(prefixLower)) && isCommitAncestorAndUnreverted(repo, baseRef, sha, ticketId, gitEnv)) {
+      if ((subjLower === mergeLower || subjLower.startsWith(prefixLower)) && isCommitAncestorAndUnreverted(repo, baseRef, sha, ticketId, gitEnv)) {
         return true;
       }
     }
@@ -25933,15 +25964,6 @@ Fix: ${agyCheck.fix}`);
           merged.add(candId);
           started.add(candId);
           if (recordedSha) resumedMergeShas.set(candId, recordedSha);
-        }
-      }
-      for (const t of tickets) {
-        if (merged.has(t.id)) continue;
-        const priorEntry = priorRunJson?.tickets?.[t.id];
-        if (priorEntry?.ticketHash && priorEntry.ticketHash !== computeTicketResumeHash(t)) continue;
-        if (verifyTicketLandedOnBase(repo, base, t.id, { rescueOnly: true })) {
-          merged.add(t.id);
-          started.add(t.id);
         }
       }
     }

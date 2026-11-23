@@ -351,6 +351,20 @@ test('runPlan: saves pure-FS rescue snapshot on failure with root git integrity 
       'T1-rebuilt',
       'Reusing ticket ID T1 with a new scope must rebuild T1 rather than skipping from stale run.json'
     );
+
+    // Also verify that if T1's commit is reverted on main (`Revert "T1: ..."`), resume: true does NOT skip T1!
+    execFileSync('git', ['revert', '--no-edit', 'HEAD'], { cwd: repo, encoding: 'utf8' });
+    writeFileSync(join(stateDir, 'built-tickets.log'), '');
+    const report5 = await withEnv(
+      { AGB_AGY_BIN: customBinV2, AGB_SANDBOX_GATES: '0', FAKE_STATE_DIR: stateDir },
+      () => runPlan(newPlanReusingT1, { ...quiet, resume: true })
+    );
+    assert.deepEqual(report5.merged, ['T1']);
+    assert.equal(
+      readFileSync(join(stateDir, 'built-tickets.log'), 'utf8').trim(),
+      'T1-rebuilt',
+      'Reverted commit on base must not be treated as landed during --resume'
+    );
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(stateDir, { recursive: true, force: true });
