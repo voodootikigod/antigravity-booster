@@ -1912,3 +1912,93 @@ test('withLock + withLockSync: synchronous withLock callback releases lock in th
   }
 });
 
+test('probeQuota: isolates child in ephemeral readonly .agb_home with empty mcpServers and cleans up after success and failure', async () => {
+  const workDir = mkdtempSync(join(tmpdir(), 'agb-quota-iso-'));
+  const fakeUserHome = join(workDir, 'user-home');
+  const captureFile = join(workDir, 'capture.json');
+  const stubBin = join(workDir, 'quota-stub.mjs');
+  const savedEnv = {
+    AGB_HOME_DIR: process.env.AGB_HOME_DIR,
+    AGB_ALLOW_CODEGRAPH_MCP: process.env.AGB_ALLOW_CODEGRAPH_MCP,
+    AGB_WORKER_TICKET: process.env.AGB_WORKER_TICKET,
+    FAKE_QUOTA_FAIL: process.env.FAKE_QUOTA_FAIL,
+  };
+  try {
+    // Seed a host ~/.gemini with canary MCP servers that must never leak into probeQuota
+    mkdirSync(join(fakeUserHome, '.gemini', 'config'), { recursive: true });
+    const hostMcp = JSON.stringify({
+      mcpServers: {
+        codegraph: { command: 'codegraph', args: ['serve', '--mcp'] },
+        canary: { command: 'canary-mcp', args: [] },
+      },
+    });
+    writeFileSync(join(fakeUserHome, '.gemini', 'mcp_config.json'), hostMcp);
+    writeFileSync(join(fakeUserHome, '.gemini', 'config', 'mcp_config.json'), hostMcp);
+
+    const reset5h = futureIso(3600);
+    const resetWk = futureIso(86400 * 7);
+    writeFileSync(
+      stubBin,
+      `#!${process.execPath}
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const home = process.env.HOME;
+const geminiMcp = JSON.parse(readFileSync(join(home, '.gemini', 'mcp_config.json'), 'utf8'));
+const configMcp = JSON.parse(readFileSync(join(home, '.gemini', 'config', 'mcp_config.json'), 'utf8'));
+writeFileSync(${JSON.stringify(captureFile)}, JSON.stringify({
+  HOME: home,
+  XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+  AGB_USER_HOME: process.env.AGB_USER_HOME,
+  AGB_WORKER_MODE: process.env.AGB_WORKER_MODE,
+  AGB_WORKER_TICKET: process.env.AGB_WORKER_TICKET ?? null,
+  geminiMcp,
+  configMcp,
+}));
+if (process.env.FAKE_QUOTA_FAIL === '1') {
+  process.exit(1);
+}
+console.log(JSON.stringify({
+  pools: [
+    { name: 'Gemini Models', fiveHour: { remainingPercent: 90, resetTime: ${JSON.stringify(reset5h)} }, weekly: { remainingPercent: 95, resetTime: ${JSON.stringify(resetWk)} } },
+    { name: 'Claude and GPT models', fiveHour: { remainingPercent: 80, resetTime: ${JSON.stringify(reset5h)} }, weekly: { remainingPercent: 85, resetTime: ${JSON.stringify(resetWk)} } },
+  ],
+}));
+`,
+      { mode: 0o755 }
+    );
+
+    process.env.AGB_HOME_DIR = fakeUserHome;
+    process.env.AGB_ALLOW_CODEGRAPH_MCP = '1';
+    process.env.AGB_WORKER_TICKET = 'STALE-TICKET';
+    delete process.env.FAKE_QUOTA_FAIL;
+
+    const q = await probeQuota(stubBin);
+    assert.equal(q.gemini.fiveHourRemainingPercent, 90);
+    assert.equal(q.claude_gpt.fiveHourRemainingPercent, 80);
+
+    const seen = JSON.parse(readFileSync(captureFile, 'utf8'));
+    assert.notEqual(seen.HOME, fakeUserHome, 'probeQuota must not inherit host HOME');
+    assert.match(seen.HOME, /agb-ro-[^/\\]+[/\\]\.agb_home$/, 'probeQuota must stage ephemeral agb-ro-* .agb_home');
+    assert.equal(seen.XDG_CONFIG_HOME, join(seen.HOME, '.config'));
+    assert.equal(seen.AGB_USER_HOME, fakeUserHome);
+    assert.equal(seen.AGB_WORKER_MODE, 'readonly');
+    assert.equal(seen.AGB_WORKER_TICKET, null, 'probeQuota must scrub inherited AGB_WORKER_TICKET');
+    assert.deepEqual(seen.geminiMcp, { mcpServers: {} });
+    assert.deepEqual(seen.configMcp, { mcpServers: {} });
+    assert.equal(existsSync(seen.HOME), false, 'ephemeral .agb_home must be cleaned up after success');
+
+    // Also verify cleanup happens when the agy binary fails
+    process.env.FAKE_QUOTA_FAIL = '1';
+    await assert.rejects(probeQuota(stubBin), (e) => e.kind === 'quota_probe_failure');
+    const seenFail = JSON.parse(readFileSync(captureFile, 'utf8'));
+    assert.notEqual(seenFail.HOME, seen.HOME, 'each probeQuota invocation must use a fresh ephemeral dir');
+    assert.equal(existsSync(seenFail.HOME), false, 'ephemeral .agb_home must be cleaned up after failure');
+  } finally {
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+

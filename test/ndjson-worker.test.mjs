@@ -13,23 +13,30 @@ import { StreamWatchdog } from '../lib/stream-watchdog.mjs';
 
 const FAKE_AGY = join(process.cwd(), 'test', 'fixtures', 'fake-agy');
 
-test('buildRoleSettingsProfile strips MCP and tool calls for readonly roles and scopes builder roles', () => {
-  const prosecutorProfile = buildRoleSettingsProfile('prosecutor');
-  assert.equal(prosecutorProfile.mode, 'readonly');
-  assert.equal(prosecutorProfile.mcpServersDisabled, true);
-  assert.equal(prosecutorProfile.subagentsDisabled, true);
-  assert.equal(prosecutorProfile.swarmDisabled, true);
-  assert.equal(prosecutorProfile.modelFeatures.supportsToolCalls, false);
+test('buildRoleSettingsProfile emits agy 1.5.15 permissions.deny for readonly and builder roles with zero unknown keys', () => {
+  for (const role of ['prosecutor', 'review', 'review-plan', 'coldstart', 'parallax', 'premortem', 'brain', 'arbiter', 'readonly']) {
+    const profile = buildRoleSettingsProfile(role);
+    assert.deepEqual(Object.keys(profile), ['permissions'], `role ${role} must emit only verified top-level keys`);
+    assert.ok(Array.isArray(profile.permissions.deny));
+    for (const tool of ['write_file', 'edit_file', 'run_command', 'invoke_subagent', 'swarm', 'manage_task', 'call_mcp_tool']) {
+      assert.ok(profile.permissions.deny.includes(tool), `readonly role ${role} must deny ${tool}`);
+    }
+  }
 
   const builderNoCg = buildRoleSettingsProfile('builder', { hasCodegraph: false });
-  assert.equal(builderNoCg.mode, 'worker');
-  assert.equal(builderNoCg.mcpServersDisabled, true);
-  assert.deepEqual(builderNoCg.allowedMcpServers, []);
-  assert.equal(builderNoCg.modelFeatures.supportsToolCalls, true);
+  assert.deepEqual(Object.keys(builderNoCg), ['permissions']);
+  assert.ok(builderNoCg.permissions.deny.includes('invoke_subagent'));
+  assert.ok(builderNoCg.permissions.deny.includes('swarm'));
+  assert.ok(builderNoCg.permissions.deny.includes('call_mcp_tool'));
+  assert.equal(builderNoCg.permissions.deny.includes('write_file'), false);
+  assert.equal(builderNoCg.permissions.deny.includes('run_command'), false);
 
   const builderWithCg = buildRoleSettingsProfile('builder', { hasCodegraph: true });
-  assert.equal(builderWithCg.mcpServersDisabled, false);
-  assert.deepEqual(builderWithCg.allowedMcpServers, ['codegraph']);
+  assert.deepEqual(Object.keys(builderWithCg), ['permissions']);
+  assert.ok(builderWithCg.permissions.deny.includes('invoke_subagent'));
+  assert.ok(builderWithCg.permissions.deny.includes('swarm'));
+  assert.equal(builderWithCg.permissions.deny.includes('call_mcp_tool'), false);
+  assert.equal(builderWithCg.permissions.deny.includes('write_file'), false);
 });
 
 test('NdjsonWorkerDaemon executes multiple turns over persistent stream-json stdin and records --settings', async () => {
@@ -57,7 +64,9 @@ test('NdjsonWorkerDaemon executes multiple turns over persistent stream-json std
 
     assert.ok(existsSync(settingsFile));
     const parsedSettings = JSON.parse(readFileSync(settingsFile, 'utf8'));
-    assert.deepEqual(parsedSettings.allowedMcpServers, ['codegraph']);
+    assert.deepEqual(Object.keys(parsedSettings), ['permissions']);
+    assert.ok(parsedSettings.permissions.deny.includes('invoke_subagent'));
+    assert.equal(parsedSettings.permissions.deny.includes('call_mcp_tool'), false);
 
     const turn2 = await daemon.sendTurn('Strike 1 fix turn 2');
     assert.equal(turn2.ok, true);

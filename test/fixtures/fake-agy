@@ -178,6 +178,7 @@ input_format=""
 output_format=""
 json_schema=""
 conversation_arg=""
+settings_arg=""
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "--print" ]; then
@@ -213,6 +214,28 @@ fi
 if [ -n "$input_format" ] && [ "$input_format" != "text" ] && [ "$input_format" != "stream-json" ]; then
   echo "Error: invalid --input-format '$input_format' (expected text or stream-json)" >&2
   exit 2
+fi
+if [ -n "$settings_arg" ]; then
+  node -e '
+    const ALLOWED_SETTINGS_KEYS = new Set(["permissions"]);
+    let parsed;
+    try {
+      parsed = JSON.parse(process.argv[1]);
+    } catch (e) {
+      console.error(`Error: --settings: invalid JSON: ${e.message}`);
+      process.exit(1);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      console.error("Error: --settings: expected JSON object");
+      process.exit(1);
+    }
+    for (const key of Object.keys(parsed)) {
+      if (!ALLOWED_SETTINGS_KEYS.has(key)) {
+        console.error(`Error: --settings: unknown setting "${key}"`);
+        process.exit(1);
+      }
+    }
+  ' "$settings_arg" || exit 1
 fi
 if [ -n "$FAKE_SETTINGS_FILE" ] && [ -n "$settings_arg" ]; then
   printf '%s' "$settings_arg" > "$FAKE_SETTINGS_FILE"

@@ -224,7 +224,13 @@ test('runAgy: builder mode stages writable .agb_home/.gemini/antigravity-cli/plu
   process.env.AGB_HOME_DIR = fakeHome;
   try {
     const realGemini = join(fakeHome, '.gemini');
-    mkdirSync(join(realGemini, 'config', 'plugins'), { recursive: true });
+    mkdirSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'bin'), { recursive: true });
+    mkdirSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'dist', 'hooks'), { recursive: true });
+    mkdirSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'skills'), { recursive: true });
+    writeFileSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'plugin.json'), '{"name":"antigravity-booster"}');
+    writeFileSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'hooks.json'), '{}');
+    writeFileSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'mcp_config.json'), '{"mcpServers":{"agb":{}}}');
+    writeFileSync(join(realGemini, 'config', 'plugins', 'antigravity-booster', 'dist', 'mcp-server.mjs'), '// excluded');
     mkdirSync(join(realGemini, 'antigravity-cli', 'plugin_data'), { recursive: true });
     mkdirSync(join(realGemini, 'antigravity-cli', 'builtin'), { recursive: true });
     writeFileSync(join(realGemini, 'oauth_creds.json'), '{"token":"secret"}');
@@ -254,7 +260,17 @@ test('runAgy: builder mode stages writable .agb_home/.gemini/antigravity-cli/plu
       assert.equal(readFileSync(join(logsDir, 'hooks.log'), 'utf8'), 'probe\n');
       assert.equal(lstatSync(join(stagedGemini, 'oauth_creds.json')).isSymbolicLink(), true, 'oauth_creds.json should be symlinked on POSIX');
       assert.equal(lstatSync(join(stagedGemini, 'config')).isSymbolicLink(), false, 'config dir must be a real directory so config/projects is writable');
-      assert.equal(lstatSync(join(stagedGemini, 'config', 'plugins')).isSymbolicLink(), true, 'config/plugins should be symlinked on POSIX');
+      assert.equal(lstatSync(join(stagedGemini, 'config', 'plugins')).isSymbolicLink(), false, 'config/plugins must be a real directory with hooks-only antigravity-booster');
+      const stagedBooster = join(stagedGemini, 'config', 'plugins', 'antigravity-booster');
+      assert.equal(lstatSync(stagedBooster).isSymbolicLink(), false, 'antigravity-booster plugin projection must be a real directory');
+      assert.equal(existsSync(join(stagedBooster, 'plugin.json')), true);
+      assert.equal(existsSync(join(stagedBooster, 'hooks.json')), true);
+      assert.equal(lstatSync(join(stagedBooster, 'bin')).isSymbolicLink(), true, 'antigravity-booster/bin should be symlinked on POSIX');
+      assert.equal(lstatSync(join(stagedBooster, 'dist')).isSymbolicLink(), false, 'antigravity-booster/dist must be a real directory');
+      assert.equal(lstatSync(join(stagedBooster, 'dist', 'hooks')).isSymbolicLink(), true, 'antigravity-booster/dist/hooks should be symlinked on POSIX');
+      assert.equal(existsSync(join(stagedBooster, 'mcp_config.json')), false, 'antigravity-booster/mcp_config.json must be excluded');
+      assert.equal(existsSync(join(stagedBooster, 'dist', 'mcp-server.mjs')), false, 'antigravity-booster/dist/mcp-server.mjs must be excluded');
+      assert.equal(existsSync(join(stagedBooster, 'skills')), false, 'antigravity-booster/skills must be excluded');
       assert.equal(lstatSync(join(stagedGemini, 'config', 'projects')).isSymbolicLink(), false, 'config/projects must be a real writable directory');
       assert.equal(lstatSync(join(stagedGemini, 'antigravity-cli', 'antigravity-oauth-token')).isSymbolicLink(), true, 'antigravity-oauth-token should be symlinked inside antigravity-cli');
       assert.equal(lstatSync(join(stagedGemini, 'antigravity-cli', 'brain')).isSymbolicLink(), false, 'antigravity-cli/brain must be a real writable directory');

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, existsSync, rmSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, existsSync, rmSync, readFileSync, writeFileSync, symlinkSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runAgy } from '../lib/agy.mjs';
@@ -107,22 +107,43 @@ test('prosecute (behavioral): its agy child is marked readonly', async () => {
 
 // The remaining callers have no runAgy injection seam (runAgy is a direct ES
 // import), so these are static source checks of each call site: every
-// runAgy({...}) object literal must carry the intended worker option.
+// runAgy({...}) object literal must carry the intended worker option, explicit
+// role, and useRoleSettings: true.
+function stripComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
+}
+
 function runAgyBlocks(src) {
+  const clean = stripComments(src);
   const blocks = [];
-  let from = 0;
-  for (;;) {
-    const i = src.indexOf('runAgy({', from);
-    if (i < 0) break;
-    let depth = 0, j = i + 'runAgy('.length;
-    for (; j < src.length; j++) {
-      if (src[j] === '{') depth++;
-      else if (src[j] === '}' && --depth === 0) break;
+  const re = /\brunAgy\s*\(\s*\{/g;
+  let m;
+  while ((m = re.exec(clean)) !== null) {
+    const before = clean.slice(Math.max(0, m.index - 24), m.index);
+    if (/\bfunction\s+$/.test(before)) continue;
+    const openBrace = clean.indexOf('{', m.index);
+    let depth = 0;
+    let j = openBrace;
+    for (; j < clean.length; j++) {
+      if (clean[j] === '{') depth++;
+      else if (clean[j] === '}' && --depth === 0) break;
     }
-    blocks.push(src.slice(i, j + 1));
-    from = j;
+    blocks.push(clean.slice(m.index, j + 1));
+    re.lastIndex = j + 1;
   }
   return blocks;
+}
+
+function walkMjsFiles(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkMjsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith('.mjs')) out.push(full);
+  }
+  return out.sort();
 }
 
 for (const [file, count] of [['review.mjs', 3], ['prosecute.mjs', 1], ['preflight.mjs', 1], ['plan.mjs', 3], ['brain.mjs', 1]]) {
@@ -138,6 +159,66 @@ test('static: scheduler builder runAgy call passes worker ticket', () => {
   assert.equal(blocks.length, 1);
   assert.match(blocks[0], /worker:\s*\{\s*ticket:\s*ticketId \?\? t\.id,\s*buildCmd:\s*gate\?\.build\s*\}/);
   assert.doesNotMatch(blocks[0], /mode:\s*'readonly'/);
+});
+
+test('dynamic call-site guard: every production runAgy({...}) in lib/ and bin/ specifies explicit role, useRoleSettings: true, and worker', () => {
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const files = [
+    ...walkMjsFiles(join(repoRoot, 'bin')),
+    ...walkMjsFiles(join(repoRoot, 'lib')),
+  ];
+  let totalCalls = 0;
+  const filesWithCalls = new Set();
+
+  for (const absPath of files) {
+    const relPath = relative(repoRoot, absPath).replace(/\\/g, '/');
+    if (relPath === 'lib/agy.mjs') continue;
+    const src = readFileSync(absPath, 'utf8');
+    const clean = stripComments(src);
+    const allInvocations = [...clean.matchAll(/\brunAgy\s*\(/g)].filter((m) => {
+      const before = clean.slice(Math.max(0, m.index - 24), m.index);
+      return !/\bfunction\s+$/.test(before);
+    });
+    const blocks = runAgyBlocks(src);
+    assert.equal(
+      blocks.length,
+      allInvocations.length,
+      `${relPath}: found runAgy(...) call without object literal options`
+    );
+    for (let idx = 0; idx < blocks.length; idx++) {
+      const b = blocks[idx];
+      const label = `${relPath} call #${idx + 1}`;
+      const roleMatch = b.match(/\brole:\s*['"]([a-z0-9-]+)['"]/);
+      assert.ok(roleMatch, `${label} must specify an explicit string role`);
+      assert.match(b, /\buseRoleSettings:\s*true\b/, `${label} must specify useRoleSettings: true`);
+      assert.match(b, /\bworker:\s*\{/, `${label} must specify worker option`);
+      if (roleMatch[1] === 'builder') {
+        assert.match(b, /\bworker:\s*\{[^}]*\bticket:/, `${label} (builder) must pass worker.ticket`);
+        assert.doesNotMatch(b, /\bmode:\s*['"]readonly['"]/, `${label} (builder) must not set readonly worker mode`);
+      } else {
+        assert.match(
+          b,
+          /\bworker:\s*\{\s*mode:\s*['"]readonly['"]\s*\}/,
+          `${label} (role=${roleMatch[1]}) must pass worker: { mode: 'readonly' }`
+        );
+      }
+      totalCalls += 1;
+      filesWithCalls.add(relPath);
+    }
+  }
+
+  assert.ok(totalCalls >= 11, `expected at least 11 production runAgy call sites, found ${totalCalls}`);
+  for (const expected of [
+    'bin/agb.mjs',
+    'lib/brain.mjs',
+    'lib/plan.mjs',
+    'lib/preflight.mjs',
+    'lib/review.mjs',
+    'lib/prosecute.mjs',
+    'lib/scheduler.mjs',
+  ]) {
+    assert.ok(filesWithCalls.has(expected), `expected dynamic scan to cover ${expected}`);
+  }
 });
 
 test('worker buildCmd sets AGB_WORKER_BUILD_CMD only for valid npm run gate on ticketed workers and scrubs smuggled env', async () => {
