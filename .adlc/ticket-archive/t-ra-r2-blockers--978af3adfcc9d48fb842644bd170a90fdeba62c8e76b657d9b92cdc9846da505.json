@@ -1,5 +1,14 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-23T12:11:37.185Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "d0cb3f3e9a25998d306d2da97f94b8bc8cd0c1d11094dfaef99c6cff5d7b45b0",
+    "ticketHash": "7b002b220c75c064965f554932038e2841b3f69912c9a1b7c32642e8e22b20da",
+    "version": 1
+  },
   "body": "1. Add --no-optional-locks to git status in scheduler/worktrees. 2. Sandbox --test-cmd via wrapConsensusGateCommand in runHollowTest and post-merge hollow-test. 3. Require repo in MCP agb_shape and update agb-shape docs/bundles.",
+  "completed": true,
   "edges": [],
   "id": "T-RA-R2-BLOCKERS",
   "rails": [
