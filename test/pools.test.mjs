@@ -27,6 +27,9 @@ import {
   getStateFile,
   getV2StateFile,
   getLockFile,
+  getStatusLineQuotaFile,
+  writeStatusLineQuotaCache,
+  readFreshStatusLineQuotaCache,
   terminateWorkerTree,
   withLock,
   withLockSync,
@@ -34,7 +37,7 @@ import {
   LEASE_TTL_MS,
 } from '../lib/pools.mjs';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -1892,7 +1895,7 @@ test('probeQuota and refreshQuota default to defaultAgyBin() via resolveAgyBinar
   assert.match(src, /function defaultAgyBin\(\)/);
   assert.match(src, /resolveAgyBinary\(\)/);
   assert.match(src, /probeQuota\(agyBin = defaultAgyBin\(\)/);
-  assert.match(src, /refreshQuota\(agyBin = defaultAgyBin\(\)\)/);
+  assert.match(src, /refreshQuota\(agyBin = defaultAgyBin\(\)/);
 });
 
 test('withLock + withLockSync: synchronous withLock callback releases lock in the same tick without self-deadlocking concurrent withLockSync', async () => {
@@ -1999,6 +2002,310 @@ console.log(JSON.stringify({
       else process.env[k] = v;
     }
     rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+// --- T-NG-2: Lock-Free Live StatusLine Quota Cache & PoolSet.refreshQuota ---
+
+function sampleNormalizedQuota({
+  g5h = 80,
+  gWeekly = 90,
+  c5h = 60,
+  cWeekly = 75,
+  resetOffsetSec = 3600,
+  baseNowMs = Date.now(),
+} = {}) {
+  const reset = new Date(baseNowMs + resetOffsetSec * 1000).toISOString();
+  const claude = {
+    fiveHourRemainingPercent: c5h,
+    fiveHourResetTime: reset,
+    weeklyRemainingPercent: cWeekly,
+    weeklyResetTime: reset,
+  };
+  return {
+    gemini: {
+      fiveHourRemainingPercent: g5h,
+      fiveHourResetTime: reset,
+      weeklyRemainingPercent: gWeekly,
+      weeklyResetTime: reset,
+    },
+    claude_gpt: claude,
+    'claude-gpt': { ...claude },
+  };
+}
+
+test('writeStatusLineQuotaCache & readFreshStatusLineQuotaCache: atomic 0o600 write, 15s / <2% throttling, and validation', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-sl-quota-'));
+  const savedFile = process.env.AGB_STATUSLINE_QUOTA_FILE;
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = dir;
+    const cachePath = join(dir, 'custom_statusline_quota.json');
+    process.env.AGB_STATUSLINE_QUOTA_FILE = cachePath;
+    assert.equal(getStatusLineQuotaFile(), cachePath);
+
+    const t0 = Date.now();
+    const q1 = sampleNormalizedQuota({ g5h: 80, gWeekly: 90, c5h: 60, cWeekly: 75, baseNowMs: t0 });
+
+    // 1. Initial write succeeds with 0o600 permissions and zero lock file creation
+    assert.equal(writeStatusLineQuotaCache(q1, { nowMs: t0 }), true);
+    assert.equal(existsSync(cachePath), true);
+    assert.equal(existsSync(getLockFile()), false, 'writeStatusLineQuotaCache must never touch getLockFile()');
+    if (process.platform !== 'win32') {
+      assert.equal(statSync(cachePath).mode & 0o777, 0o600);
+    }
+
+    // 2. Within 15s and all 4 deltas < 2.0 -> throttled (returns false, updatedAt unchanged)
+    const qSmallDelta = sampleNormalizedQuota({
+      g5h: 78.5,
+      gWeekly: 88.2,
+      c5h: 61.9,
+      cWeekly: 73.1,
+      baseNowMs: t0 + 5_000,
+    });
+    assert.equal(writeStatusLineQuotaCache(qSmallDelta, { nowMs: t0 + 5_000 }), false);
+    assert.equal(readFreshStatusLineQuotaCache({ nowMs: t0 + 5_000 }).updatedAt, t0);
+
+    // 3. Within 15s but one window changes by >= 2.0 -> writes immediately
+    const qBigDelta = sampleNormalizedQuota({
+      g5h: 80,
+      gWeekly: 90,
+      c5h: 58.0, // delta == 2.0
+      cWeekly: 75,
+      baseNowMs: t0 + 7_000,
+    });
+    assert.equal(writeStatusLineQuotaCache(qBigDelta, { nowMs: t0 + 7_000 }), true);
+    const readBack = readFreshStatusLineQuotaCache({ nowMs: t0 + 8_000 });
+    assert.equal(readBack.updatedAt, t0 + 7_000);
+    assert.equal(readBack.quota.claude_gpt.fiveHourRemainingPercent, 58.0);
+    assert.equal(readBack.quota['claude-gpt'].fiveHourRemainingPercent, 58.0);
+
+    // 4. After >= 15s even with 0% delta -> writes fresh timestamp
+    assert.equal(writeStatusLineQuotaCache(qBigDelta, { nowMs: t0 + 22_000 }), true);
+    assert.equal(readFreshStatusLineQuotaCache({ nowMs: t0 + 22_500 }).updatedAt, t0 + 22_000);
+
+    // 5. Stale (> maxAgeMs) and future-skewed (> nowMs + 10_000) return null
+    assert.equal(readFreshStatusLineQuotaCache({ nowMs: t0 + 22_000 + 60_001, maxAgeMs: 60_000 }), null);
+    assert.equal(readFreshStatusLineQuotaCache({ nowMs: t0 + 22_000 - 15_000, maxAgeMs: 60_000 }), null);
+
+    // 6. Rejects out-of-range percentages and expired/non-UTC reset timestamps
+    const badPct = sampleNormalizedQuota({ g5h: 105, baseNowMs: t0 });
+    assert.equal(writeStatusLineQuotaCache(badPct, { nowMs: t0 + 40_000 }), false);
+    const badTs = sampleNormalizedQuota({ baseNowMs: t0 });
+    badTs.gemini.fiveHourResetTime = new Date(t0 - 20_000).toISOString();
+    assert.equal(writeStatusLineQuotaCache(badTs, { nowMs: t0 }), false);
+  } finally {
+    if (savedFile === undefined) delete process.env.AGB_STATUSLINE_QUOTA_FILE;
+    else process.env.AGB_STATUSLINE_QUOTA_FILE = savedFile;
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR;
+    else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeStatusLineQuotaCache & readFreshStatusLineQuotaCache: rejects symlinks and honors __AGB_BUNDLED__ env ignore', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-sl-symlink-'));
+  const extDir = mkdtempSync(join(tmpdir(), 'agb-sl-ext-'));
+  const savedFile = process.env.AGB_STATUSLINE_QUOTA_FILE;
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const prevBundled = globalThis.__AGB_BUNDLED__;
+  try {
+    const v2Path = join(dir, 'agb_pools_v2.json');
+    process.env.AGB_POOLS_V2 = v2Path;
+
+    // 1. Bundled mode ignores AGB_STATUSLINE_QUOTA_FILE override
+    process.env.AGB_STATUSLINE_QUOTA_FILE = join(extDir, 'spoofed.json');
+    globalThis.__AGB_BUNDLED__ = true;
+    assert.equal(getStatusLineQuotaFile(), join(dir, 'agb_statusline_quota.json'));
+    globalThis.__AGB_BUNDLED__ = false;
+    assert.equal(getStatusLineQuotaFile(), join(extDir, 'spoofed.json'));
+
+    // 2. Symlinked target file rejected on both write and read
+    const victim = join(extDir, 'victim.json');
+    writeFileSync(victim, '{"untouched":true}', 'utf8');
+    const symFile = join(dir, 'sym_quota.json');
+    symlinkSync(victim, symFile);
+    process.env.AGB_STATUSLINE_QUOTA_FILE = symFile;
+
+    const q = sampleNormalizedQuota();
+    assert.equal(writeStatusLineQuotaCache(q), false);
+    assert.equal(readFreshStatusLineQuotaCache(), null);
+    assert.equal(readFileSync(victim, 'utf8'), '{"untouched":true}');
+
+    // 3. Symlinked parent directory rejected
+    const symDir = join(dir, 'sym_parent');
+    symlinkSync(extDir, symDir, 'dir');
+    process.env.AGB_STATUSLINE_QUOTA_FILE = join(symDir, 'nested_quota.json');
+    assert.equal(writeStatusLineQuotaCache(q), false);
+    assert.equal(readFreshStatusLineQuotaCache(), null);
+  } finally {
+    if (prevBundled === undefined) delete globalThis.__AGB_BUNDLED__;
+    else globalThis.__AGB_BUNDLED__ = prevBundled;
+    if (savedFile === undefined) delete process.env.AGB_STATUSLINE_QUOTA_FILE;
+    else process.env.AGB_STATUSLINE_QUOTA_FILE = savedFile;
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2;
+    else process.env.AGB_POOLS_V2 = savedV2;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(extDir, { recursive: true, force: true });
+  }
+});
+
+test('PoolSet.refreshQuota({ allowStatusCache: true }): lock-free cache hit succeeds even when agb_pools_shared.lock is held by another live PID', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-sl-lockfree-'));
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  const savedQuota = process.env.AGB_QUOTA_STATE;
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
+  const savedSlFile = process.env.AGB_STATUSLINE_QUOTA_FILE;
+  const savedIgnore = process.env.AGB_IGNORE_STATUS_QUOTA_CACHE;
+
+  const lockHolder = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    stdio: 'ignore',
+  });
+
+  try {
+    delete process.env.AGB_QUOTA_STATE;
+    delete process.env.AGB_POOLS_V2;
+    delete process.env.AGB_POOLS_LOCK;
+    delete process.env.AGB_STATUSLINE_QUOTA_FILE;
+    delete process.env.AGB_IGNORE_STATUS_QUOTA_CACHE;
+    process.env.AGB_POOLS_DIR = dir;
+
+    // Hold agb_pools_shared.lock via live external process PID + verified startTime
+    const lockFile = getLockFile();
+    writeFileSync(
+      lockFile,
+      JSON.stringify({
+        pid: lockHolder.pid,
+        startTime: getProcessStartTime(lockHolder.pid),
+        token: 'foreign-live-holder',
+        ts: Date.now(),
+      }),
+      'utf8'
+    );
+
+    // Prove the lock is genuinely contested
+    assert.throws(
+      () => withLockSync(lockFile, () => 'unreachable', { timeoutMs: 40, retryMs: 10 }),
+      /Timeout acquiring lock/
+    );
+
+    // Populate statusline quota cache while lock is held (zero lock contention!)
+    const q = sampleNormalizedQuota({ g5h: 30, gWeekly: 80, c5h: 5, cWeekly: 60 });
+    assert.equal(writeStatusLineQuotaCache(q), true);
+
+    const pools = new PoolSet({ 'gemini-flash': 8, claude: 4 }, { repo: dir });
+    // Queue a waiter on claude (which will drop to cap 0 because c5h == 5%)
+    let abortedErr = null;
+    pools.waiters.claude.push({
+      resolve: () => {},
+      reject: (e) => { abortedErr = e; },
+    });
+
+    const t0 = Date.now();
+    const res = await pools.refreshQuota('/nonexistent/agy-must-not-run', { allowStatusCache: true });
+    const elapsedMs = Date.now() - t0;
+
+    assert.equal(res.ok, true);
+    assert.equal(res.fromStatusCache, true);
+    assert.ok(elapsedMs < 200, `refreshQuota from status cache must not wait on lock (took ${elapsedMs}ms)`);
+    assert.equal(pools.caps['gemini-flash'], 6); // 30% -> 50% of base 12 = 6
+    assert.equal(pools.caps.claude, 0); // 5% -> depleted -> 0
+    assert.equal(pools.quota.paused, true);
+    assert.equal(pools.quota.depletionCause, 'five_hour_depletion');
+    assert.ok(abortedErr && abortedErr.kind === 'quota_depleted', 'waiter must be aborted when cap drops to 0');
+    assert.equal(existsSync(getV2StateFile()), false, 'cache hit must not call writeV2State()');
+  } finally {
+    try { lockHolder.kill('SIGKILL'); } catch {}
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    if (savedQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = savedQuota;
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+    if (savedSlFile === undefined) delete process.env.AGB_STATUSLINE_QUOTA_FILE; else process.env.AGB_STATUSLINE_QUOTA_FILE = savedSlFile;
+    if (savedIgnore === undefined) delete process.env.AGB_IGNORE_STATUS_QUOTA_CACHE; else process.env.AGB_IGNORE_STATUS_QUOTA_CACHE = savedIgnore;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('PoolSet.refreshQuota({ allowStatusCache: true }): bypasses statusline cache on circuit breaker, quotaRefreshFailures > 0, stale cache, or AGB_IGNORE_STATUS_QUOTA_CACHE=1', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-sl-bypass-'));
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  const savedQuota = process.env.AGB_QUOTA_STATE;
+  const savedV2 = process.env.AGB_POOLS_V2;
+  const savedLock = process.env.AGB_POOLS_LOCK;
+  const savedSlFile = process.env.AGB_STATUSLINE_QUOTA_FILE;
+  const savedIgnore = process.env.AGB_IGNORE_STATUS_QUOTA_CACHE;
+
+  try {
+    delete process.env.AGB_QUOTA_STATE;
+    delete process.env.AGB_POOLS_V2;
+    delete process.env.AGB_POOLS_LOCK;
+    delete process.env.AGB_STATUSLINE_QUOTA_FILE;
+    delete process.env.AGB_IGNORE_STATUS_QUOTA_CACHE;
+    process.env.AGB_POOLS_DIR = dir;
+
+    // Seed fresh statusline cache with distinct 40% gemini
+    const qCached = sampleNormalizedQuota({ g5h: 40, gWeekly: 40, c5h: 80, cWeekly: 80 });
+    assert.equal(writeStatusLineQuotaCache(qCached), true);
+
+    // 1. In-memory circuitBreakerTripped bypasses cache and runs probe (failing probe keeps breaker tripped!)
+    const pMemCb = new PoolSet(undefined, { repo: dir });
+    pMemCb.circuitBreakerTripped = true;
+    const rMemCb = await pMemCb.refreshQuota('/nonexistent/failing-agy', { allowStatusCache: true });
+    assert.equal(rMemCb.ok, false);
+    assert.equal(pMemCb.circuitBreakerTripped, true);
+
+    // 2. On-disk v2.quotaState.circuitBreakerTripped === true bypasses cache even on fresh PoolSet
+    const pDiskCb = new PoolSet(undefined, { repo: dir });
+    const rDiskCb = await pDiskCb.refreshQuota(QUOTA_FAKE_AGY, { allowStatusCache: true });
+    assert.equal(rDiskCb.ok, true);
+    assert.equal(rDiskCb.fromStatusCache, undefined, 'must probe QUOTA_FAKE_AGY instead of using status cache');
+    assert.equal(pDiskCb.quota.gemini.fiveHourRemainingPercent, 100); // QUOTA_FAKE_AGY reports 100%, not cached 40%
+
+    // 3. On-disk v2.quotaState.quotaRefreshFailures > 0 (even if circuitBreakerTripped is false) bypasses cache
+    const v2 = readV2State();
+    v2.quotaState = { circuitBreakerTripped: false, quotaRefreshFailures: 1, updatedAt: Date.now() };
+    writeV2State(v2);
+
+    const pDiskFail = new PoolSet(undefined, { repo: dir });
+    const rDiskFail = await pDiskFail.refreshQuota(QUOTA_FAKE_AGY, { allowStatusCache: true });
+    assert.equal(rDiskFail.ok, true);
+    assert.equal(rDiskFail.fromStatusCache, undefined);
+    assert.equal(pDiskFail.quota.gemini.fiveHourRemainingPercent, 100);
+
+    // Now V2 state is clean again -> allowStatusCache hits cache (40%)
+    const pHealthy = new PoolSet(undefined, { repo: dir });
+    const rHit = await pHealthy.refreshQuota(QUOTA_FAKE_AGY, { allowStatusCache: true });
+    assert.equal(rHit.ok, true);
+    assert.equal(rHit.fromStatusCache, true);
+    assert.equal(pHealthy.quota.gemini.fiveHourRemainingPercent, 40);
+
+    // 4. AGB_IGNORE_STATUS_QUOTA_CACHE=1 forces live probe
+    process.env.AGB_IGNORE_STATUS_QUOTA_CACHE = '1';
+    const rIgnored = await pHealthy.refreshQuota(QUOTA_FAKE_AGY, { allowStatusCache: true });
+    assert.equal(rIgnored.ok, true);
+    assert.equal(rIgnored.fromStatusCache, undefined);
+    assert.equal(pHealthy.quota.gemini.fiveHourRemainingPercent, 100);
+    delete process.env.AGB_IGNORE_STATUS_QUOTA_CACHE;
+
+    // 5. Stale cache (> 60s old) falls through to probeQuota
+    const staleNow = Date.now() - 65_000;
+    writeFileSync(
+      getStatusLineQuotaFile(),
+      JSON.stringify({ updatedAt: staleNow, quota: qCached }),
+      'utf8'
+    );
+    const rStale = await pHealthy.refreshQuota(QUOTA_FAKE_AGY, { allowStatusCache: true });
+    assert.equal(rStale.ok, true);
+    assert.equal(rStale.fromStatusCache, undefined);
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR; else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    if (savedQuota === undefined) delete process.env.AGB_QUOTA_STATE; else process.env.AGB_QUOTA_STATE = savedQuota;
+    if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
+    if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
+    if (savedSlFile === undefined) delete process.env.AGB_STATUSLINE_QUOTA_FILE; else process.env.AGB_STATUSLINE_QUOTA_FILE = savedSlFile;
+    if (savedIgnore === undefined) delete process.env.AGB_IGNORE_STATUS_QUOTA_CACHE; else process.env.AGB_IGNORE_STATUS_QUOTA_CACHE = savedIgnore;
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

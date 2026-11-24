@@ -219,6 +219,7 @@ if (outputFormat === 'stream-json') {
   const boosterSrc = join(plugins, 'antigravity-booster');
   mkdirSync(join(boosterSrc, 'bin'), { recursive: true });
   mkdirSync(join(boosterSrc, 'dist', 'hooks'), { recursive: true });
+  mkdirSync(join(boosterSrc, 'hooks'), { recursive: true });
   mkdirSync(join(boosterSrc, 'rules'), { recursive: true });
   mkdirSync(join(boosterSrc, 'skills', 'agb'), { recursive: true });
   mkdirSync(join(boosterSrc, 'commands'), { recursive: true });
@@ -227,6 +228,7 @@ if (outputFormat === 'stream-json') {
   writeFileSync(join(boosterSrc, 'hooks.json'), '{"agb-policy-guard":{}}\n');
   writeFileSync(join(boosterSrc, 'bin', 'hook-runner.sh'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   writeFileSync(join(boosterSrc, 'dist', 'hooks', 'pre-tool-use.bundle.mjs'), '// hook bundle\n');
+  writeFileSync(join(boosterSrc, 'hooks', 'session-start.mjs'), '// session-start hook\n');
   writeFileSync(join(boosterSrc, 'dist', 'mcp-server.mjs'), '// forbidden mcp server\n');
   writeFileSync(join(boosterSrc, 'dist', 'agb.mjs'), '// forbidden cli bundle\n');
   writeFileSync(
@@ -392,6 +394,7 @@ test('builder runAgy (default) spawns 0 canary MCP servers, keeps hooks-only boo
     assert.equal(existsSync(join(stagedBooster, 'bin', 'hook-runner.sh')), true);
     assert.equal(lstatSync(join(stagedBooster, 'dist')).isSymbolicLink(), false);
     assert.equal(existsSync(join(stagedBooster, 'dist', 'hooks', 'pre-tool-use.bundle.mjs')), true);
+    assert.equal(existsSync(join(stagedBooster, 'hooks', 'session-start.mjs')), true);
     for (const forbidden of [
       'mcp_config.json',
       'mcp.json',

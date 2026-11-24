@@ -10,13 +10,14 @@
 | name | antigravity-booster |
 | repository | https://github.com/voodootikigod/antigravity-booster |
 | suggestedPrompts | ["Run /agb-shape to interview me on a new feature concept, validate the ticket DAG, and run the 5-lens Plan ARL.","Run /agb --yolo to autonomously shape, compile, execute, and review a feature end-to-end across Gemini and Claude quota pools.","Run /code-review on my current branch to audit the diff across Correctness, Security, Simplicity, Evidence, and Anti-Slop."] |
-| version | 1.3.0 |
+| version | 2.0.0 |
 
 **hooks.json**
 
 | Hook group | Event | Matcher | Command | Timeout (s) |
 | --- | --- | --- | --- | --- |
 | agb-policy-guard | PreToolUse | * | /bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs | 15 |
+| agb-policy-guard | SessionStart | — | /bin/sh bin/node-launcher.sh hooks/session-start.mjs | 10 |
 
 **mcp_config.json**
 

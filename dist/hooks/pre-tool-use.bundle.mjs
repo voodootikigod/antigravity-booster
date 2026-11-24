@@ -331,7 +331,7 @@ var require_brace_expansion = __commonJS({
 
 // hooks/policy/evaluate.mjs
 import { lstatSync as lstatSync9, readdirSync as readdirSync6, realpathSync as realpathSync2 } from "node:fs";
-import { homedir as homedir2, userInfo } from "node:os";
+import { homedir as homedir2, tmpdir as tmpdir2, userInfo } from "node:os";
 import { basename as basename5, isAbsolute as isAbsolute5, join as join12, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -2171,8 +2171,14 @@ var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
   "agb_doctor",
   "agb_init",
   "agb_review",
-  "agb_distill"
+  "agb_distill",
+  "agb_flight_deck",
+  "agb_mission_control",
+  "agb_plan_viewer",
+  "agb_control"
 ]);
+var READONLY_BOOSTER_CONTROL_ACTIONS = /* @__PURE__ */ new Set(["snapshot", "diff", "stream"]);
+var BRAIN_APPS = ["antigravity", "antigravity-cli", "antigravity-ide", "jetski"];
 var PATH_MUTATING_TOOLS = /* @__PURE__ */ new Set([
   "run_command",
   "write_to_file",
@@ -3771,16 +3777,161 @@ function boosterDataRoots(home) {
     join10(home, ".config", "antigravity-booster")
   ];
 }
+function brainRoots(home) {
+  return BRAIN_APPS.map((app) => join10(home, ".gemini", app, "brain"));
+}
 var PROC_ROOT_PREFIX = /^(?:\/proc\/(?:self|thread-self|\d+)\/root)+(?=\/|$)/;
 function stripProcRoot(p) {
   if (typeof p !== "string" || !PROC_ROOT_PREFIX.test(p)) return p;
   const stripped = p.replace(PROC_ROOT_PREFIX, "");
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
+var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$))/;
+var HEADLESS_BOOSTER_CHILD_NAMES = [
+  "control.json",
+  "control.sock",
+  "rescue-locks",
+  "rescue-latest"
+];
+function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
+  if (typeof absPath !== "string" || absPath.length === 0) return false;
+  const isWin = platform === "win32";
+  const normRaw = isWin ? absPath.replace(/\\/g, "/") : absPath;
+  const norm = fold(normRaw, platform);
+  if (HEADLESS_BOOSTER_SUBPATH.test(norm)) return true;
+  const nocase = platform === "darwin" || platform === "win32";
+  const hasGlob = /[*?[\]{}!]/.test(normRaw);
+  if (hasGlob && normRaw.length > 1024) return true;
+  if (hasGlob) {
+    const cleanSegs = normRaw.replace(/\/+$/, "").split("/").filter(Boolean);
+    for (let idx = 0; idx < cleanSegs.length; idx += 1) {
+      const seg = cleanSegs[idx];
+      const segFold = fold(seg, platform);
+      const isBoosterSeg = segFold === ".booster" || /[*?[\]{}!]/.test(seg) && new Minimatch(seg, { dot: false, nocase }).match(".booster");
+      if (!isBoosterSeg) continue;
+      if (idx === cleanSegs.length - 1) return true;
+      const childSeg = cleanSegs[idx + 1];
+      const childMatcher = new Minimatch(childSeg, { dot: true, nocase });
+      if (HEADLESS_BOOSTER_CHILD_NAMES.some((name) => childMatcher.match(name))) {
+        return true;
+      }
+    }
+  }
+  for (const tmpRoot of tmpRoots) {
+    if (typeof tmpRoot !== "string" || tmpRoot.length === 0) continue;
+    const normTmp = fold((isWin ? tmpRoot.replace(/\\/g, "/") : tmpRoot).replace(/\/+$/, ""), platform);
+    const prefix = normTmp === "" ? "/" : `${normTmp}/`;
+    if (!norm.startsWith(prefix)) continue;
+    const rest = norm.slice(prefix.length);
+    const firstSeg = rest.split("/")[0] ?? "";
+    if (firstSeg.startsWith("agb-ctrl-")) return true;
+    if (hasGlob && /[*?[\]{}!]/.test(firstSeg)) {
+      const rawRest = normRaw.slice(prefix.length);
+      const rawFirst = rawRest.split("/")[0] ?? "";
+      if (new Minimatch(rawFirst, { dot: true, nocase }).match("agb-ctrl-probe")) return true;
+    }
+  }
+  return false;
+}
+function headlessProtectedMatcher(tmpRoots) {
+  return (absPath, platform) => isHeadlessIpcOrRescuePath(absPath, tmpRoots, platform);
+}
+var VALID_CONVERSATION_ID = /^[A-Za-z0-9_-]{8,128}$/;
+function hasDotDotSegment(rawPath) {
+  return String(rawPath).split(/[\\/]/).includes("..");
+}
+function hasDotOrDotDotSegment(rawPath) {
+  return String(rawPath).split(/[\\/]/).some((seg) => seg === "." || seg === "..");
+}
+function verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform = process.platform }) {
+  if (headless) return null;
+  const convId = payload?.conversationId;
+  const rawDir = payload?.artifactDirectoryPath;
+  if (typeof convId !== "string" || !VALID_CONVERSATION_ID.test(convId)) return null;
+  if (typeof rawDir !== "string" || rawDir.trim().length === 0 || !isAbsolute3(rawDir)) return null;
+  if (PROC_ROOT_PREFIX.test(rawDir) || hasDotOrDotDotSegment(rawDir)) return null;
+  const lexDir = resolve6(rawDir);
+  const candidateHomes = home === realHome ? [home] : [home, realHome];
+  for (const candidateHome of candidateHomes) {
+    const homeStat = lstatOrNull(candidateHome);
+    if (homeStat?.isSymbolicLink()) continue;
+    if (homeStat && !homeStat.isDirectory()) continue;
+    let physHome = candidateHome;
+    try {
+      physHome = realpathSync(candidateHome);
+    } catch {
+      physHome = physicalResolve(candidateHome, "/", platform) ?? candidateHome;
+    }
+    for (const app of BRAIN_APPS) {
+      const expectedLex = join10(candidateHome, ".gemini", app, "brain", convId);
+      if (fold(lexDir, platform) !== fold(expectedLex, platform)) continue;
+      let cur = candidateHome;
+      let cleanChain = true;
+      for (const seg of [".gemini", app, "brain", convId]) {
+        cur = join10(cur, seg);
+        const st = lstatOrNull(cur);
+        if (st?.isSymbolicLink() || st && !st.isDirectory()) {
+          cleanChain = false;
+          break;
+        }
+      }
+      if (!cleanChain) return null;
+      const expectedPhys = join10(physHome, ".gemini", app, "brain", convId);
+      const resolvedPhys = physicalResolve(rawDir, "/", platform);
+      if (!resolvedPhys || fold(resolvedPhys, platform) !== fold(expectedPhys, platform)) {
+        return null;
+      }
+      return { lexDir: expectedLex, physDir: expectedPhys, convId };
+    }
+  }
+  return null;
+}
+function isAllowedBrainArtifactTarget(token, resolved, verifiedBrainArtifact, { allowExactDir = false, allowSystemGeneratedRead = false, platform = process.platform } = {}) {
+  if (!verifiedBrainArtifact || !resolved || resolved.unresolved) return false;
+  const raw = String(token ?? "");
+  if (raw.length === 0 || PROC_ROOT_PREFIX.test(raw) || PROC_ROOT_PREFIX.test(resolved.lexical) || PROC_ROOT_PREFIX.test(resolved.real) || hasDotDotSegment(raw)) {
+    return false;
+  }
+  const { lexDir, physDir } = verifiedBrainArtifact;
+  const inLex = isWithin(resolved.lexical, lexDir, platform) || isWithin(resolved.lexical, physDir, platform);
+  const inPhys = isWithin(resolved.real, physDir, platform);
+  if (!inLex || !inPhys) return false;
+  const isExactPhys = fold(resolved.real, platform) === fold(physDir, platform);
+  const isExactLex = fold(resolved.lexical, platform) === fold(lexDir, platform) || fold(resolved.lexical, platform) === fold(physDir, platform);
+  if (isExactPhys || isExactLex) {
+    return Boolean(allowExactDir && isExactPhys && isExactLex);
+  }
+  const relPhys = relative3(physDir, resolved.real).split(sep3).join("/");
+  if (!relPhys || relPhys.startsWith("..") || isAbsolute3(relPhys)) return false;
+  const matchedLexBase = isWithin(resolved.lexical, lexDir, platform) ? lexDir : physDir;
+  const relLex = relative3(matchedLexBase, resolved.lexical).split(sep3).join("/");
+  if (!relLex || relLex.startsWith("..") || isAbsolute3(relLex)) return false;
+  if (fold(relPhys, platform) !== fold(relLex, platform)) return false;
+  const segments = relPhys.split("/");
+  if (segments.some(
+    (seg) => seg.length === 0 || seg === "." || seg === ".." || !allowSystemGeneratedRead && seg.toLowerCase() === ".system_generated"
+  )) {
+    return false;
+  }
+  let cur = physDir;
+  for (let i = 0; i < segments.length; i += 1) {
+    cur = join10(cur, segments[i]);
+    const st = lstatOrNull(cur);
+    if (st?.isSymbolicLink()) return false;
+    if (i < segments.length - 1 && st && !st.isDirectory()) return false;
+  }
+  return true;
+}
 function matchRoot(resolved, roots, platform) {
   const lexStripped = stripProcRoot(resolved.lexical);
   const realStripped = stripProcRoot(resolved.real);
   for (const root of roots) {
+    if (typeof root === "function") {
+      if (root(resolved.lexical, platform) || root(resolved.real, platform) || lexStripped !== resolved.lexical && root(lexStripped, platform) || realStripped !== resolved.real && root(realStripped, platform)) {
+        return ".booster/control-or-rescue";
+      }
+      continue;
+    }
     if (isWithin(resolved.lexical, root, platform) || isWithin(resolved.real, root, platform) || lexStripped !== resolved.lexical && isWithin(lexStripped, root, platform) || realStripped !== resolved.real && isWithin(realStripped, root, platform)) {
       return root;
     }
@@ -4790,6 +4941,12 @@ function isExistingDirectory(p) {
   }
 }
 function containsProtected(r, ctx) {
+  if (ctx.headless) {
+    const isBoosterDir = (p) => /(?:^|[\\/])\.booster$/i.test(p);
+    if (isBoosterDir(r.real) || isBoosterDir(r.lexical) || (ctx.tmpRoots ?? []).some((t) => isWithin(t, r.real, ctx.platform) || isWithin(t, r.lexical, ctx.platform))) {
+      return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+    }
+  }
   if (ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
     return deny("Target path contains platform configuration, plugins, or Node runtimes");
   }
@@ -4924,6 +5081,7 @@ function stepOne(name, args, ctx) {
     const wfCwdPhys = physicalResolve(wfCwdArg, ctx.workspacePaths[0] || "/", ctx.platform);
     if (wfCwdPhys) stepCtx = { ...ctx, anchors: unique([wfCwdPhys, ...ctx.anchors]) };
   }
+  const isListDir = name === "list_dir" || name === "list_directory";
   for (const token of candidates) {
     for (const r of resolveAll(token, stepCtx)) {
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
@@ -4931,6 +5089,22 @@ function stepOne(name, args, ctx) {
       }
       if (r.unresolved && !(isRead && isBenignProcRead(token, r))) {
         return deny("Target path cannot be resolved (symlink loop or oversized path)");
+      }
+      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
+        if (!isRead) {
+          if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, allowSystemGeneratedRead: false, platform: ctx.platform })) {
+            return deny("Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden");
+          }
+          continue;
+        }
+        if (ctx.hasBrainMetadata) {
+          if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: isListDir, allowSystemGeneratedRead: true, platform: ctx.platform })) {
+            return deny("Access to another Antigravity conversation brain directory or symlinked brain target is forbidden");
+          }
+        } else if (r.lexical !== r.real) {
+          return deny("Access to symlinked Antigravity brain path is forbidden");
+        }
+        continue;
       }
       if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
         return deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden");
@@ -5098,6 +5272,18 @@ function evaluateFileTool(name, args, ctx) {
         verdicts.push(deny(`Target path '${token}' cannot be resolved (symlink loop or oversized path)`));
         continue;
       }
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        verdicts.push(deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden"));
+        continue;
+      }
+      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
+        if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, platform: ctx.platform })) {
+          verdicts.push(deny("Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden"));
+        } else {
+          verdicts.push(PASS);
+        }
+        continue;
+      }
       const contains = containsProtected(r, ctx);
       if (contains) {
         verdicts.push(contains);
@@ -5143,7 +5329,8 @@ function evaluateMcpTool(name, args, ctx) {
     const rawMcpArgs = name === "call_mcp_tool" ? norm.folded.arguments ?? norm.folded.toolargs ?? {} : args ?? {};
     const mcpNorm = normalizeArgsCaseInsensitive(rawMcpArgs);
     if (!mcpNorm.ok) return deny(mcpNorm.reason);
-    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
+    const isMutatingControl = tool === "agb_control" && (typeof mcpNorm.folded.action !== "string" || !READONLY_BOOSTER_CONTROL_ACTIONS.has(goFoldKey(mcpNorm.folded.action)));
+    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
     }
     return PASS;
@@ -5172,6 +5359,12 @@ function scanStdinPaths(rawArgs, ctx, inputText = "") {
     for (const r of resolved) {
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
         return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+      }
+      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
+        if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, platform: ctx.platform })) {
+          return deny("Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden");
+        }
+        continue;
       }
       if (matchRoot(r, ctx.protectedRoots, ctx.platform)) {
         return deny("Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden");
@@ -5460,6 +5653,7 @@ function buildContext(payload, options = {}) {
   const workspacePaths = (Array.isArray(payload?.workspacePaths) ? payload.workspacePaths : []).filter((p) => typeof p === "string" && isAbsolute5(p)).map((p) => resolve8(p));
   const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, "/", platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
+  const rescueTicket = env.AGB_RESCUE_TICKET ? String(env.AGB_RESCUE_TICKET) : null;
   const rawWorkerBuildCmd = typeof env.AGB_WORKER_BUILD_CMD === "string" ? env.AGB_WORKER_BUILD_CMD.trim() : "";
   const workerBuildCmd = /^npm run [a-zA-Z0-9_.:-]+$/.test(rawWorkerBuildCmd) ? rawWorkerBuildCmd : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
@@ -5494,6 +5688,16 @@ function buildContext(payload, options = {}) {
     }
   }
   const homes = unique([home, realHome, ...extraHomes]);
+  const headless = Boolean(workerTicket) || readonly;
+  const rawTmpCandidates = [tmpdir2(), "/tmp", "/private/tmp", env.TMPDIR, env.TMP, env.TEMP].filter((p) => typeof p === "string" && p.length > 0 && isAbsolute5(p));
+  const tmpRoots = unique(rawTmpCandidates.flatMap((p) => {
+    const resolvedTmp = resolve8(p);
+    return [resolvedTmp, realOr(resolvedTmp)];
+  }));
+  const baseBoosterDataRoots = unique(homes.flatMap((h) => boosterDataRoots(h)));
+  const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
+  const hasBrainMetadata = payload?.conversationId !== void 0 || payload?.artifactDirectoryPath !== void 0;
+  const verifiedBrainArtifact = verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform });
   return {
     home,
     realHome,
@@ -5502,20 +5706,94 @@ function buildContext(payload, options = {}) {
     workspacePaths,
     workspaceRealPaths,
     workerTicket,
+    rescueTicket,
     workerBuildCmd,
     readonly,
     allowCodegraphMcp: env.AGB_ALLOW_CODEGRAPH_MCP === "1",
     cdpath: Boolean(env.CDPATH),
-    headless: Boolean(workerTicket) || readonly,
+    headless,
+    tmpRoots,
+    brainRoots: brainRootsList,
+    hasBrainMetadata,
+    verifiedBrainArtifact,
     anchor: cwd ?? workspacePaths[0] ?? null,
     anchors: unique([...cwd ? [cwd] : [], ...workspacePaths]),
     // Roots for both the lexical and the physical home (P5 round 3 M4).
     protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
-    boosterDataRoots: unique(homes.flatMap((h) => boosterDataRoots(h))),
+    boosterDataRoots: headless ? [...baseBoosterDataRoots, ...brainRootsList, headlessProtectedMatcher(tmpRoots)] : rescueTicket ? [...baseBoosterDataRoots, headlessProtectedMatcher(tmpRoots)] : baseBoosterDataRoots,
     limits: { subtreeEntries: options.limits?.subtreeEntries ?? DEFAULT_SUBTREE_ENTRIES },
     storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === "string" && p.length > 0).map((p) => realOr(resolve8(p))),
     ...makeRepoCache(home, homes)
   };
+}
+var HEADLESS_DESTRUCTIVE_SHELL_CMDS = /* @__PURE__ */ new Set([
+  "rm",
+  "mv",
+  "shred",
+  "unlink",
+  "rmdir",
+  "cp",
+  "tar",
+  "rsync",
+  "chmod",
+  "chown",
+  "chgrp",
+  "find"
+]);
+var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
+function evaluateRunCommand(args, ctx) {
+  const verdict = classifyRunCommand(args, ctx);
+  if (verdict.decision === "deny" || !ctx.headless && !ctx.rescueTicket) return verdict;
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const line = norm.folded.commandline;
+  if (typeof line !== "string") return deny("run_command without a CommandLine string cannot be verified");
+  if (HEADLESS_FORBIDDEN_SHELL_LITERAL.test(line)) {
+    return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+  }
+  const lexed = lexCommandLine(line);
+  if (!lexed.ok) {
+    return deny("Shell command could not be parsed in protected worker/rescue session");
+  }
+  const cwdArg = norm.folded.cwd;
+  const baseCwd = typeof cwdArg === "string" && cwdArg.length > 0 ? resolve8(cwdArg) : ctx.workspacePaths[0] ?? "/";
+  const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
+  for (const sub of lexed.subcommands) {
+    const cmd = basename5(sub.argv[0] ?? "");
+    const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);
+    const argvTokens = sub.argv.slice(1).flatMap((t) => {
+      if (!t.startsWith("-")) return [t];
+      const eq = t.indexOf("=");
+      return eq > 0 && eq < t.length - 1 ? [t.slice(eq + 1)] : [];
+    });
+    for (const tok of argvTokens) {
+      const cand = resolveCandidate(tok, baseCwd, ctx.home, ctx.platform);
+      if (ipcMatcher(cand.real, ctx.platform) || ipcMatcher(cand.lexical, ctx.platform)) {
+        return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+      }
+      if (isDestructive) {
+        const isBoosterDir = /(?:^|[\\/])\.booster$/i.test(cand.real) || /(?:^|[\\/])\.booster$/i.test(cand.lexical);
+        const containsTmp = (ctx.tmpRoots ?? []).some((t) => isWithin(t, cand.real, ctx.platform) || isWithin(t, cand.lexical, ctx.platform));
+        if (isBoosterDir || containsTmp) {
+          return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+        }
+      }
+    }
+    for (const redir of sub.redirects ?? []) {
+      if (!redir.target) continue;
+      const cand = resolveCandidate(redir.target, baseCwd, ctx.home, ctx.platform);
+      if (ipcMatcher(cand.real, ctx.platform) || ipcMatcher(cand.lexical, ctx.platform)) {
+        return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+      }
+      if (String(redir.op ?? "").includes(">")) {
+        const inBooster = /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.real) || /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.lexical);
+        if (inBooster) {
+          return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
+        }
+      }
+    }
+  }
+  return verdict;
 }
 function evaluatePayload(payload, options = {}) {
   const name = payload?.toolCall?.name;
@@ -5533,7 +5811,7 @@ function evaluatePayload(payload, options = {}) {
   if (STDIN_TOOLS.has(name)) return evaluateSendCommandInput(args, ctx);
   if (ORCHESTRATION_TOOLS.has(name)) return evaluateOrchestrationTool(name, args, ctx);
   if (WORKFLOW_TOOLS.has(name)) return evaluateWorkflowTool(args, ctx);
-  if (name === "run_command") return classifyRunCommand(args, ctx);
+  if (name === "run_command") return evaluateRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
   if (name === "call_mcp_tool" || name.startsWith("mcp__") || name.startsWith("mcp_")) return evaluateMcpTool(name, args, ctx);
   return evaluateUnknownTool(args, ctx);

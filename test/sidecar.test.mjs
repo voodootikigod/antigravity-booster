@@ -194,26 +194,29 @@ test('sidecar: app.js escapes DOM nodes', () => {
 });
 
 import { spawn } from 'node:child_process';
-test('sidecar: CLI launches server on custom port', async () => {
+test('sidecar: CLI launches clean localhost server on custom port without dynamic plugin side-effects', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-sidecar-cli-'));
   const binPath = fileURLToPath(new URL('../bin/agb.mjs', import.meta.url));
-  const pluginDir = mkdtempSync(join(tmpdir(), 'agb-test-plugin-dir-'));
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agb-sidecar-home-'));
+  const fakeState = mkdtempSync(join(tmpdir(), 'agb-sidecar-state-'));
   const fakeAgy = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
   const child = spawn(process.execPath, [binPath, 'sidecar', repo, '--port', '0'], {
     stdio: 'pipe',
-    env: { ...process.env, AGB_PLUGIN_DIR: pluginDir, AGB_AGY_BIN: fakeAgy, FAKE_STATE_DIR: pluginDir }
+    env: { ...process.env, HOME: fakeHome, AGB_HOME_DIR: fakeHome, AGB_AGY_BIN: fakeAgy, FAKE_STATE_DIR: fakeState }
   });
   
   let timer;
   let boundPort;
+  let validToken;
   try {
     await new Promise((resolve, reject) => {
       let out = '';
       child.stdout.on('data', d => {
         out += d.toString();
-        const m = out.match(/http:\/\/127\.0\.0\.1:(\d+)/);
-        if (m && out.includes('Successfully registered the dynamic sidecar plugin')) {
+        const m = out.match(/http:\/\/127\.0\.0\.1:(\d+)\/\?token=([a-f0-9]{32})/);
+        if (m) {
           boundPort = m[1];
+          validToken = m[2];
           resolve();
         }
       });
@@ -224,22 +227,14 @@ test('sidecar: CLI launches server on custom port', async () => {
       timer = setTimeout(() => reject(new Error('CLI sidecar startup timed out')), 4000);
     });
     
-    
-    const installs = readFileSync(join(pluginDir, 'plugin-installs'), 'utf8');
-    assert.ok(installs.includes(pluginDir), 'Should invoke agy plugin install <pluginDir>');
+    const { existsSync, readdirSync } = await import('node:fs');
+    assert.equal(existsSync(join(fakeState, 'plugin-installs')), false, 'Should never invoke agy plugin install');
+    assert.equal(existsSync(join(fakeHome, '.gemini')), false, 'Should create zero agb-sidecar-plugin-* dirs under ~/.gemini');
+    assert.deepEqual(readdirSync(fakeHome), [], 'Should write zero files to HOME');
     
     const resAuth = await fetchP(`http://127.0.0.1:${boundPort}/?token=test_token`);
     assert.equal(resAuth.statusCode, 403, 'Should reject wrong token');
-    
-    const manifestPath = join(pluginDir, 'sidecars', 'agb.json');
-    const { statSync } = await import('node:fs');
-    const stat = statSync(manifestPath);
-    assert.equal(stat.mode & 0o777, 0o600, 'Manifest file should have restrictive 0o600 permissions');
-    
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    const tokenMatch = manifest.url.match(/token=([a-f0-9]+)/);
-    const validToken = tokenMatch ? tokenMatch[1] : '';
-    assert.ok(validToken, 'Should extract token from generated manifest');
+    assert.ok(validToken, 'Should extract valid 128-bit hex token from stdout URL');
     
     const resIndex = await fetchP(`http://127.0.0.1:${boundPort}/?token=${validToken}`);
     assert.equal(resIndex.statusCode, 200, 'Should allow authenticated index request');
@@ -264,7 +259,8 @@ test('sidecar: CLI launches server on custom port', async () => {
       setTimeout(r, 200);
     });
     const { rmSync } = await import('node:fs');
-    try { rmSync(pluginDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
+    try { rmSync(fakeHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
+    try { rmSync(fakeState, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
     try { rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); } catch {}
   }
 });

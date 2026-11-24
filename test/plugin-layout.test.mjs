@@ -74,6 +74,13 @@ test('layout: hooks.json is exactly the single agb-policy-guard registration (sp
           ],
         },
       ],
+      SessionStart: [
+        {
+          type: 'command',
+          command: '/bin/sh bin/node-launcher.sh hooks/session-start.mjs',
+          timeout: 10,
+        },
+      ],
     },
   });
 });

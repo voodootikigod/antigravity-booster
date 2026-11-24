@@ -345,7 +345,8 @@ function genLayout(repo) {
   for (const [group, events] of Object.entries(hooks).sort()) {
     for (const [event, entries] of Object.entries(events).sort()) {
       for (const e of entries) {
-        for (const h of e.hooks ?? []) hookRows.push([group, event, e.matcher ?? '', h.command ?? '', h.timeout ?? '']);
+        const handlers = Array.isArray(e.hooks) ? e.hooks : (e.command ? [e] : []);
+        for (const h of handlers) hookRows.push([group, event, e.matcher ?? '', h.command ?? '', h.timeout ?? '']);
       }
     }
   }

@@ -1029,3 +1029,314 @@ test('T-RA-1: protectedRoots protects default macOS fnm directory (~/Library/App
   assert.equal(v.decision, 'deny');
   assert.match(v.reason, /platform configuration/);
 });
+
+// ---------- T-NG-1: Brain Artifact Carve-Out, IPC/Rescue Guards, & 2.0 MCP Tools ----------
+
+test('T-NG-1: interactive brain artifact carve-out permits verified active session brain reads/writes while denying .system_generated, symlinks, mismatches, ancestors, and headless workers', () => {
+  const convId = '59f04450-bfa3-4157-a219-ccb1e501844d';
+  const otherConvId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  const brainApps = ['antigravity', 'antigravity-cli', 'antigravity-ide', 'jetski'];
+
+  const evalBrain = (toolName, args, extraPayload = {}, env = INTERACTIVE, ws = fx.active) =>
+    evaluatePayload(
+      { toolCall: { name: toolName, args }, workspacePaths: [ws], ...extraPayload },
+      { env, home: fx.home, platform: 'linux' },
+    );
+
+  // 1. All 4 brain app roots pass interactive reads & writes (including before <convId> dir exists, after creation, nested scratch/, and trailing slash on artifactDirectoryPath)
+  for (const app of brainApps) {
+    const artifactDir = join(fx.home, '.gemini', app, 'brain', convId);
+    const planFile = join(artifactDir, 'implementation_plan.md');
+    const scratchFile = join(artifactDir, 'scratch', 'notes.md');
+    const validMeta = { conversationId: convId, artifactDirectoryPath: artifactDir };
+    const trailingSlashMeta = { conversationId: convId, artifactDirectoryPath: `${artifactDir}/` };
+
+    // Before directory exists on disk (first artifact creation)
+    mkdirSync(join(fx.home, '.gemini', app, 'brain'), { recursive: true });
+    assert.equal(evalBrain('write_file', { Path: planFile, Content: '# Plan' }, validMeta).decision, 'pass', `${app} pre-mkdir write_file`);
+    assert.equal(evalBrain('write_file', { Path: planFile, Content: '# Plan' }, trailingSlashMeta).decision, 'pass', `${app} trailing slash write_file`);
+
+    // Create physical directories and verify reads, edits, list_dir
+    mkdirSync(join(artifactDir, 'scratch'), { recursive: true });
+    writeFileSync(planFile, '# Plan\n');
+    assert.equal(evalBrain('write_to_file', { TargetFile: planFile, CodeContent: '# Plan v2' }, validMeta).decision, 'pass', `${app} write_to_file`);
+    assert.equal(evalBrain('edit_file', { Path: planFile, Target: '# Plan', Replacement: '# Updated' }, validMeta).decision, 'pass', `${app} edit_file`);
+    assert.equal(evalBrain('sed_file', { target_file: planFile, expressions: ['s/Plan/Spec/g'] }, validMeta).decision, 'pass', `${app} sed_file`);
+    assert.equal(evalBrain('write_file', { Path: scratchFile, Content: 'scratch' }, validMeta).decision, 'pass', `${app} nested scratch write`);
+    assert.equal(evalBrain('read_file', { Path: planFile }, validMeta).decision, 'pass', `${app} read_file`);
+    assert.equal(evalBrain('view_file', { AbsolutePath: planFile }, validMeta).decision, 'pass', `${app} view_file`);
+    assert.equal(evalBrain('list_dir', { DirectoryPath: artifactDir }, validMeta).decision, 'pass', `${app} list_dir exact`);
+    assert.equal(evalBrain('list_directory', { DirAbsolutePath: `${artifactDir}/` }, validMeta).decision, 'pass', `${app} list_directory exact`);
+  }
+
+  const cliBrain = join(fx.home, '.gemini', 'antigravity-cli', 'brain');
+  const artifactDir = join(cliBrain, convId);
+  const planFile = join(artifactDir, 'implementation_plan.md');
+  const validMeta = { conversationId: convId, artifactDirectoryPath: artifactDir };
+
+  // 2. .system_generated and .system_generated/** are strictly denied for interactive writes/deletes while interactive transcript reads remain permitted
+  const sysGenDir = join(artifactDir, '.system_generated');
+  const sysGenLog = join(sysGenDir, 'logs', 'transcript.jsonl');
+  mkdirSync(join(sysGenDir, 'logs'), { recursive: true });
+  writeFileSync(sysGenLog, '{}\n');
+  assert.equal(evalBrain('write_file', { Path: sysGenLog, Content: 'x' }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('edit_file', { Path: sysGenLog, Target: '{}', Replacement: 'x' }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('delete_file', { TargetFile: sysGenLog }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('delete_directory', { directoryPath: sysGenDir }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('read_file', { Path: sysGenLog }, validMeta).decision, 'pass', 'interactive agent can read its own .system_generated transcript');
+  assert.equal(evalBrain('read_file', { Path: sysGenLog }, {}).decision, 'pass', 'interactive read passes even if host omits conversationId');
+
+  // 3. Ancestor / exact-root directory deletions and shell mutations remain denied
+  assert.equal(evalBrain('delete_directory', { directoryPath: artifactDir }, validMeta).decision, 'deny', 'cannot delete active brain root itself');
+  assert.equal(evalBrain('delete_directory', { directoryPath: cliBrain }, validMeta).decision, 'deny', 'cannot delete brain parent');
+  assert.equal(evalBrain('delete_directory', { directoryPath: join(fx.home, '.gemini') }, validMeta).decision, 'deny', 'cannot delete .gemini');
+  assert.equal(evalBrain('run_command', { CommandLine: `rm -rf ${cliBrain}`, Cwd: fx.active }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('run_command', { CommandLine: `rm -f ${planFile}`, Cwd: fx.active }, validMeta).decision, 'deny');
+
+  // 4. Mismatched conversationId and invalid conversationId/artifactDirectoryPath deny both interactive reads and writes
+  const otherDir = join(cliBrain, otherConvId);
+  mkdirSync(otherDir, { recursive: true });
+  const otherPlan = join(otherDir, 'implementation_plan.md');
+  writeFileSync(otherPlan, '# Other\n');
+  assert.equal(evalBrain('write_file', { Path: otherPlan, Content: 'x' }, validMeta).decision, 'deny', 'target in different convId');
+  assert.equal(evalBrain('read_file', { Path: otherPlan }, validMeta).decision, 'deny', 'read in different convId denied when metadata present');
+  assert.equal(evalBrain('edit_file', { Path: otherPlan, Target: '# Other', Replacement: 'x' }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('write_file', { Path: planFile, Content: 'x' }, { conversationId: otherConvId, artifactDirectoryPath: artifactDir }).decision, 'deny', 'convId != artifactDir leaf');
+  assert.equal(evalBrain('read_file', { Path: planFile }, { conversationId: otherConvId, artifactDirectoryPath: artifactDir }).decision, 'deny');
+
+  for (const badMeta of [
+    {},
+    { conversationId: 'short', artifactDirectoryPath: join(cliBrain, 'short') },
+    { conversationId: 'bad/conv/id', artifactDirectoryPath: artifactDir },
+    { conversationId: 'a'.repeat(129), artifactDirectoryPath: join(cliBrain, 'a'.repeat(129)) },
+    { conversationId: 12345678, artifactDirectoryPath: artifactDir },
+    { conversationId: convId },
+    { conversationId: convId, artifactDirectoryPath: '.gemini/antigravity-cli/brain/' + convId },
+    { conversationId: convId, artifactDirectoryPath: join(fx.plain, 'brain', convId) },
+    { conversationId: convId, artifactDirectoryPath: `${artifactDir}/../${convId}` },
+  ]) {
+    assert.equal(evalBrain('write_file', { Path: planFile, Content: 'x' }, badMeta).decision, 'deny', `write badMeta ${JSON.stringify(badMeta)}`);
+  }
+
+  // Traversal out of artifactDir (`<artifactDir>/../...`) is denied
+  assert.equal(evalBrain('write_file', { Path: `${artifactDir}/../../../settings.json`, Content: 'x' }, validMeta).decision, 'deny');
+  assert.equal(evalBrain('write_file', { Path: `${artifactDir}/sub/../implementation_plan.md`, Content: 'x' }, validMeta).decision, 'deny');
+
+  // 5. Symlink checks: symlinked file inside <convId>, symlinked subdir inside <convId>, workspace symlink into <convId>, and symlinked <convId> / brain dir
+  const fileSym = join(artifactDir, 'sym-plan.md');
+  const subSym = join(artifactDir, 'sym-sub');
+  const wsSym = join(fx.active, 'ws-brain-link.md');
+  const symConvId = 'symconv1-1111-2222-3333-444444444444';
+  const symConvDir = join(cliBrain, symConvId);
+  symlinkSync(planFile, fileSym);
+  symlinkSync(join(artifactDir, 'scratch'), subSym);
+  symlinkSync(planFile, wsSym);
+  symlinkSync(artifactDir, symConvDir);
+  try {
+    assert.equal(evalBrain('write_file', { Path: fileSym, Content: 'x' }, validMeta).decision, 'deny', 'symlinked file inside brain');
+    assert.equal(evalBrain('write_file', { Path: join(subSym, 'a.md'), Content: 'x' }, validMeta).decision, 'deny', 'symlinked subdir inside brain');
+    assert.equal(evalBrain('write_file', { Path: wsSym, Content: 'x' }, validMeta).decision, 'deny', 'write workspace symlink pointing into brain');
+    assert.equal(
+      evalBrain('write_file', { Path: join(symConvDir, 'implementation_plan.md'), Content: 'x' }, { conversationId: symConvId, artifactDirectoryPath: symConvDir }).decision,
+      'deny',
+      'symlinked <convId> dir',
+    );
+  } finally {
+    rmSync(fileSym, { force: true });
+    rmSync(subSym, { force: true });
+    rmSync(wsSym, { force: true });
+    rmSync(symConvDir, { force: true });
+  }
+
+  // Symlinked `brain` component itself in an isolated home
+  const symBrainHome = join(fx.base, 'sym-brain-home');
+  const externalBrainTarget = join(fx.base, 'ext-brain-target');
+  mkdirSync(join(symBrainHome, '.gemini', 'antigravity-cli'), { recursive: true });
+  mkdirSync(join(externalBrainTarget, convId), { recursive: true });
+  symlinkSync(externalBrainTarget, join(symBrainHome, '.gemini', 'antigravity-cli', 'brain'));
+  try {
+    const symArtDir = join(symBrainHome, '.gemini', 'antigravity-cli', 'brain', convId);
+    const vSymBrain = evaluatePayload(
+      {
+        toolCall: { name: 'write_file', args: { Path: join(symArtDir, 'implementation_plan.md'), Content: 'x' } },
+        workspacePaths: [fx.active],
+        conversationId: convId,
+        artifactDirectoryPath: symArtDir,
+      },
+      { env: INTERACTIVE, home: symBrainHome, platform: 'linux' },
+    );
+    assert.equal(vSymBrain.decision, 'deny', 'symlinked brain directory must be denied');
+  } finally {
+    rmSync(symBrainHome, { recursive: true, force: true });
+    rmSync(externalBrainTarget, { recursive: true, force: true });
+  }
+
+  // 6. Headless (AGB_WORKER_TICKET) and Readonly (AGB_WORKER_MODE=readonly) workers are 100% denied even with matching payload metadata
+  for (const workerEnv of [WORKER, READONLY]) {
+    assert.equal(evalBrain('write_file', { Path: planFile, Content: 'x' }, validMeta, workerEnv).decision, 'deny');
+    assert.equal(evalBrain('read_file', { Path: planFile }, validMeta, workerEnv).decision, 'deny');
+    assert.equal(evalBrain('view_file', { AbsolutePath: planFile }, validMeta, workerEnv).decision, 'deny');
+    assert.equal(evalBrain('list_dir', { DirectoryPath: artifactDir }, validMeta, workerEnv).decision, 'deny');
+    assert.equal(evalBrain('run_command', { CommandLine: `cat ${planFile}`, Cwd: fx.active }, validMeta, workerEnv).decision, 'deny');
+  }
+});
+
+test('T-NG-1: headless and readonly workers are denied on .booster IPC/rescue paths and <tmpdir>/agb-ctrl-* across reads, writes, MCP, and shell', () => {
+  const realTmp = realpathSync(tmpdir());
+  const tmpCtrlDir = join(tmpdir(), `agb-ctrl-test-${process.pid}`);
+  const realTmpCtrlFile = join(realTmp, `agb-ctrl-sock-${process.pid}.sock`);
+
+  for (const repoRoot of [fx.active, fx.plain]) {
+    mkdirSync(join(repoRoot, '.booster', 'rescue-locks'), { recursive: true });
+    mkdirSync(join(repoRoot, '.booster', 'rescue-latest', 'T1'), { recursive: true });
+    writeFileSync(join(repoRoot, '.booster', 'control.json'), '{"token":"secret"}\n');
+    writeFileSync(join(repoRoot, '.booster', 'run.json'), '{"status":"running"}\n');
+  }
+
+  const protectedTargets = [
+    join(fx.active, '.booster', 'control.json'),
+    join(fx.active, '.booster', 'control.sock'),
+    join(fx.active, '.booster', 'rescue-locks'),
+    join(fx.active, '.booster', 'rescue-locks', 'T1.json'),
+    join(fx.active, '.booster', 'rescue-latest'),
+    join(fx.active, '.booster', 'rescue-latest', 'T1', 'manifest.json'),
+    join(tmpCtrlDir, 'control.sock'),
+    realTmpCtrlFile,
+    '/tmp/agb-ctrl-fixed/control.sock',
+    '/private/tmp/agb-ctrl-priv/control.sock',
+  ];
+
+  const symControl = join(fx.active, 'lib', 'sneaky-control.json');
+  symlinkSync(join(fx.active, '.booster', 'control.json'), symControl);
+
+  try {
+    for (const env of [WORKER, READONLY]) {
+      for (const target of [...protectedTargets, symControl]) {
+        assert.equal(run('read_file', { Path: target }, fx.active, env).decision, 'deny', `read_file ${target}`);
+        assert.equal(run('view_file', { AbsolutePath: target }, fx.active, env).decision, 'deny', `view_file ${target}`);
+        assert.equal(run('list_dir', { DirectoryPath: target }, fx.active, env).decision, 'deny', `list_dir ${target}`);
+        assert.equal(run('grep_search', { SearchPath: target }, fx.active, env).decision, 'deny', `grep_search ${target}`);
+        assert.equal(run('write_file', { Path: target, Content: 'x' }, fx.plain, env).decision, 'deny', `write_file ${target}`);
+        assert.equal(run('write_to_file', { TargetFile: target, CodeContent: 'x' }, fx.plain, env).decision, 'deny', `write_to_file ${target}`);
+        assert.equal(run('edit_file', { Path: target, Target: 'a', Replacement: 'b' }, fx.plain, env).decision, 'deny', `edit_file ${target}`);
+        assert.equal(run('delete_file', { TargetFile: target }, fx.plain, env).decision, 'deny', `delete_file ${target}`);
+        assert.equal(run('sed_file', { target_file: target, expressions: ['1d'] }, fx.plain, env).decision, 'deny', `sed_file ${target}`);
+        assert.equal(run('mcp__agb__agb_status', { path: target }, fx.active, env).decision, 'deny', `mcp scan ${target}`);
+        assert.equal(shell(`cat ${target}`, fx.active, env).decision, 'deny', `shell cat ${target}`);
+        assert.equal(shell(`ls ${target}`, fx.active, env).decision, 'deny', `shell ls ${target}`);
+        assert.equal(shell(`rm -rf ${target}`, fx.plain, env).decision, 'deny', `shell rm ${target}`);
+      }
+
+      // Parent .booster directory-level reads, globs, oversized globs, and shell bypasses in headless mode (even in non-ADLC plain repo!)
+      assert.equal(run('list_dir', { DirectoryPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
+      assert.equal(run('grep_search', { SearchPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
+      assert.equal(run('find_by_name', { SearchPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
+      assert.equal(run('delete_directory', { directoryPath: join(fx.plain, '.booster') }, fx.plain, env).decision, 'deny');
+      assert.equal(shell('ls .booster', fx.plain, env).decision, 'deny');
+      assert.equal(shell('tar -cf /dev/null .booster', fx.plain, env).decision, 'deny');
+      assert.equal(shell('python3 -c "print(open(\'.booster/control.json\').read())"', fx.plain, env).decision, 'deny');
+      assert.equal(shell('rm -rf .booster', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booster/*', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booste*/control.json', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booster/r*/t*.json', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booste*/r*/t1.json', fx.plain, env).decision, 'deny');
+      assert.equal(shell(`cat ${join(fx.plain, 'a'.repeat(1100), '.booster/control*')}`, fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat .booster/control*', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat /tmp/agb-ctrl-*', fx.plain, env).decision, 'deny');
+      assert.equal(shell('cat /tmp/agb-ctrl*', fx.plain, env).decision, 'deny');
+      assert.equal(shell('echo pwned > .booster/foo.json', fx.plain, env).decision, 'deny');
+
+      // Public telemetry (.booster/run.json) remains readable
+      assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'run.json') }, fx.active, env).decision, 'pass');
+      assert.equal(shell('cat .booster/run.json', fx.active, env).decision, 'pass');
+    }
+
+    // Normal builder globs (`ls src/*`, `cat lib/*.mjs`) in WORKER mode must NOT false-positive as .booster paths
+    assert.equal(shell('ls src/*', fx.plain, WORKER).decision, 'pass');
+    assert.equal(shell('cat lib/*.mjs', fx.plain, WORKER).decision, 'pass');
+
+    // AGB_RESCUE_TICKET protects .booster/control.json, unparseable shell, and redirects while keeping interactive prompts working
+    const RESCUE_ENV = { ...INTERACTIVE, AGB_RESCUE_TICKET: 'T1' };
+    assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'control.json') }, fx.active, RESCUE_ENV).decision, 'deny');
+    assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'rescue-locks', 'T1.json') }, fx.active, RESCUE_ENV).decision, 'deny');
+    assert.equal(shell('cat .booster/control.json', fx.active, RESCUE_ENV).decision, 'deny');
+    assert.equal(shell('echo "unterminated', fx.plain, RESCUE_ENV).decision, 'deny');
+    assert.equal(shell('cat package.json > .booster/tamper.json', fx.plain, RESCUE_ENV).decision, 'deny');
+    assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'run.json') }, fx.active, RESCUE_ENV).decision, 'pass');
+
+    // Interactive sessions are not blocked from .booster/control.json or rescue-locks
+    assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'control.json') }, fx.active, INTERACTIVE).decision, 'pass');
+    assert.equal(run('write_file', { Path: join(fx.active, '.booster', 'control.json'), Content: '{}' }, fx.active, INTERACTIVE).decision, 'pass');
+  } finally {
+    rmSync(symControl, { force: true });
+  }
+});
+
+test('T-NG-1: BOOSTER_MCP_TOOLS enforces agb_flight_deck, agb_mission_control, agb_plan_viewer, and agb_control across interactive, readonly, and worker modes', () => {
+  const uiTools = ['agb_flight_deck', 'agb_mission_control', 'agb_plan_viewer'];
+  for (const tool of [...uiTools, 'agb_control']) {
+    assert.equal(isBoosterMcpTool(`mcp__agb__${tool}`, {}), true, `direct agb ${tool}`);
+    assert.equal(isBoosterMcpTool(`mcp__antigravity-booster_agb__${tool}`, {}), true, `direct qualified ${tool}`);
+    assert.equal(isBoosterMcpTool('call_mcp_tool', { ServerName: 'agb', ToolName: tool }), true, `call_mcp_tool ${tool}`);
+
+    // Ticket worker denies all Booster MCP tools
+    assert.equal(run(`mcp__agb__${tool}`, {}, fx.active, WORKER).decision, 'deny', `worker direct ${tool}`);
+    assert.equal(
+      run('call_mcp_tool', { ServerName: 'agb', ToolName: tool, Arguments: {} }, fx.active, WORKER).decision,
+      'deny',
+      `worker call_mcp_tool ${tool}`,
+    );
+  }
+
+  // UI view tools pass in interactive & readonly, unless referencing a frozen rail
+  for (const tool of uiTools) {
+    assert.equal(run(`mcp__agb__${tool}`, { repo: fx.active }, fx.active, INTERACTIVE).decision, 'pass', `interactive ${tool}`);
+    assert.equal(run(`mcp__agb__${tool}`, { repo: fx.active }, fx.active, READONLY).decision, 'pass', `readonly ${tool}`);
+    assert.equal(
+      run('call_mcp_tool', { ServerName: 'agb', ToolName: tool, Arguments: { repo: fx.active } }, fx.active, READONLY).decision,
+      'pass',
+      `readonly call_mcp_tool ${tool}`,
+    );
+    assert.equal(
+      run(`mcp__agb__${tool}`, { path: join(fx.active, 'lib', 'lock.mjs') }, fx.active, INTERACTIVE).decision,
+      'deny',
+      `rail scan ${tool}`,
+    );
+  }
+
+  // agb_control: interactive allows both read and control actions
+  for (const action of ['snapshot', 'diff', 'stream', 'pause', 'resume', 'abort']) {
+    assert.equal(run('mcp__agb__agb_control', { action }, fx.active, INTERACTIVE).decision, 'pass', `interactive control ${action}`);
+  }
+
+  // agb_control in readonly: allows snapshot, diff, stream (case-folded key & value)
+  for (const action of ['snapshot', 'diff', 'stream', 'SNAPSHOT', 'Diff', 'Stream']) {
+    assert.equal(run('mcp__agb__agb_control', { action }, fx.active, READONLY).decision, 'pass', `readonly direct ${action}`);
+    assert.equal(run('mcp__agb__agb_control', { Action: action }, fx.active, READONLY).decision, 'pass', `readonly direct Action ${action}`);
+    assert.equal(
+      run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_control', Arguments: { Action: action } }, fx.active, READONLY).decision,
+      'pass',
+      `readonly call_mcp_tool ${action}`,
+    );
+  }
+
+  // agb_control in readonly: denies pause, resume, abort, missing, empty, non-string, and unknown actions
+  for (const badArgs of [
+    { action: 'pause' },
+    { action: 'PAUSE' },
+    { Action: 'resume' },
+    { action: 'abort' },
+    { action: '' },
+    { action: 'unknown' },
+    { action: 123 },
+    {},
+  ]) {
+    const direct = run('mcp__agb__agb_control', badArgs, fx.active, READONLY);
+    assert.equal(direct.decision, 'deny', `readonly direct deny ${JSON.stringify(badArgs)}`);
+    assert.match(direct.reason, /mutating MCP tool: agb_control/);
+
+    const wrapped = run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_control', Arguments: badArgs }, fx.active, READONLY);
+    assert.equal(wrapped.decision, 'deny', `readonly wrapped deny ${JSON.stringify(badArgs)}`);
+    assert.match(wrapped.reason, /mutating MCP tool: agb_control/);
+  }
+});

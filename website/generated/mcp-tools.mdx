@@ -1,3 +1,12 @@
+**`agb_control`**: Send authenticated control IPC or snapshot/diff/stream telemetry queries to an AGB run
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| action | string | yes | Control or telemetry action |
+| lines | integer | no | Max stream lines to return (default 40) |
+| repo | string | no | Path to target repository (defaults to cwd) |
+| ticketId | string | no | Target ticket ID for abort, diff, or stream |
+
 **`agb_distill`**: Scan repository review and prosecution logs for recurring finding patterns and stage or apply learned ADLC defenses
 
 | Parameter | Type | Required | Description |
@@ -12,11 +21,23 @@
 | fix | boolean | no | Automatically repair missing .adlc store, .gitignore, or companion plugin |
 | repo | string | no | Optional path to target repository |
 
+**`agb_flight_deck`**: Open the live AGB Flight Deck auxiliary pane to monitor and control active fleet runs
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| repo | string | no | Path to target repository (defaults to cwd) |
+
 **`agb_init`**: Initialize a target repository for ADLC and Antigravity Booster (.adlc/config.json, specs/feature-template.md, .gitignore)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | repo | string | yes | Path to target repository |
+
+**`agb_mission_control`**: Open the global AGB Mission Control dashboard for 4-window quota gauges and model telemetry
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| repo | string | no | Optional path to target repository |
 
 **`agb_plan`**: Compile an Antigravity brain plan or spec file into plan.json
 
@@ -33,6 +54,13 @@
 | out | string | no | Custom output file path (default plan.json) |
 | repo | string | yes | Absolute path to the target repository |
 | spec | string | yes | Brain ID, prefix, or spec.md path to compile |
+
+**`agb_plan_viewer`**: Inspect, validate, and edit a .agbplan or plan.json ticket DAG file
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| path | string | yes | Path to .agbplan or plan.json file |
+| repo | string | no | Optional repository path |
 
 **`agb_preflight`**: Run plan-level coldstart probes and forecast scope overlaps
 
@@ -58,6 +86,8 @@
 | --- | --- | --- | --- |
 | concurrency | integer | no | Optional maximum concurrent workers cap (-c &lt;n&gt;) |
 | plan | string | yes | Path to plan.json file |
+| resetRescue | boolean | no | Clear active or preserved rescue locks before running |
+| resume | boolean | no | Resume from previously merged tickets |
 
 **`agb_shape`**: Pre-analyze a structured spec or brain plan for DAG validity, scope overlaps, rails, and static import coupling before agb plan
 

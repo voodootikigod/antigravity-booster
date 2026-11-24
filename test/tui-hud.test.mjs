@@ -257,3 +257,73 @@ test('watchStatus, cleanOldLogs, and symlink containment checks', async () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('tui v2 cockpit: renderTUIDashboard renders cursor, filter, Flight Deck tabs, stream/diff/prosecutor panes, and notice', () => {
+  const tickets = new Map([
+    ['T1', { id: 'T1', phase: 'building', model: 'gemini-4-neon-high', detail: 'Implementing cockpit', strikes: 0 }],
+    ['T2', { id: 'T2', phase: 'failed', model: 'claude-sonnet-5-5-high', strikes: 2, error: 'Gate test failed: expected 0 got 1' }],
+    ['T3', { id: 'T3', phase: 'merged', model: 'gemini-4-carbon-high', detail: 'resumed (already merged)', strikes: 0 }],
+  ]);
+
+  const state = {
+    runId: 'run-cockpit-v2',
+    startedAt: new Date(Date.now() - 45000).toISOString(),
+    repo: '/test/cockpit',
+    pools: {
+      inFlight: { gemini: 1 },
+      caps: { gemini: 4 },
+      requests: { gemini: 2 },
+    },
+    tickets,
+    merged: new Set(['T3']),
+    failed: new Set(['T2']),
+    blocked: new Set(),
+    done: false,
+    schedulerPaused: true,
+    report: null,
+    events: [
+      { ts: new Date().toISOString(), type: 'phase', ticket: 'T1', to: 'building', detail: 'Started' },
+    ],
+  };
+
+  // Stream tab + selected row cursor
+  const streamOut = renderTUIDashboard(state, {
+    cols: 110,
+    selectedTicketId: 'T1',
+    activeTab: 'stream',
+    streamLines: ['[12:00:01] edit_file: lib/tui.mjs', '[12:00:04] run_command: npm test'],
+    controlNotice: 'Scheduler paused — in-flight steps will finish',
+  });
+  assert.ok(Array.isArray(streamOut), 'renderTUIDashboard must return string[]');
+  const plainStream = stripAnsi(streamOut.join('\n'));
+  assert.ok(plainStream.includes('▸ T1'), 'selected ticket row must show ▸ cursor');
+  assert.ok(plainStream.includes('PAUSED'), 'paused scheduler badge must render');
+  assert.ok(plainStream.includes('[1] Activity  [2] Stream  [3] Diff  [4] Prosecutor'));
+  assert.ok(plainStream.includes('[12:00:01] edit_file: lib/tui.mjs'));
+  assert.ok(plainStream.includes('Scheduler paused — in-flight steps will finish'));
+  assert.ok(plainStream.includes('j/k select · 1-4 tabs · p pause · x abort · / filter · Enter rescue · q quit'));
+
+  // Diff tab + filterText
+  const diffOut = renderTUIDashboard(state, {
+    cols: 110,
+    selectedTicketId: 'T2',
+    activeTab: 'diff',
+    filterText: 'claude',
+    diffText: 'diff --git a/foo.js b/foo.js\n--- a/foo.js\n+++ b/foo.js\n+const x = 1;',
+  });
+  const plainDiff = stripAnsi(diffOut.join('\n'));
+  assert.ok(plainDiff.includes('▸ T2'));
+  assert.ok(!plainDiff.includes('  T1 '), 'filtered out ticket must not appear');
+  assert.ok(plainDiff.includes('+const x = 1;'));
+
+  // Prosecutor tab
+  const prosOut = renderTUIDashboard(state, {
+    cols: 110,
+    selectedTicketId: 'T2',
+    activeTab: 'prosecutor',
+    prosecutorFindings: [{ severity: 'high', file: 'lib/foo.mjs', claim: 'Missing null guard' }],
+  });
+  const plainPros = stripAnsi(prosOut.join('\n'));
+  assert.ok(plainPros.includes('[HIGH] lib/foo.mjs: Missing null guard'));
+});
+

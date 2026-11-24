@@ -7,22 +7,25 @@
 // path they name is resolved physically and judged against rails, the ADLC
 // trust root and the platform's protected roots, failing closed.
 import { lstatSync, readdirSync, realpathSync } from 'node:fs';
-import { homedir, userInfo } from 'node:os';
+import { homedir, tmpdir, userInfo } from 'node:os';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
-  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, CODEGRAPH_READ_TOOLS, EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS,
-  PATH_MUTATING_TOOLS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, STDIN_TOOLS,
+  AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, CODEGRAPH_READ_TOOLS,
+  EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS, PATH_MUTATING_TOOLS, PURE_READERS, READONLY_BOOSTER_CONTROL_ACTIONS,
+  READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, STDIN_TOOLS,
   SUBAGENT_PROSE_KEYS, SUBAGENT_TOOLS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
   TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS,
 } from './constants.mjs';
 import {
-  beginEvaluation, boosterDataRoots, hasHomePrefix, isBenignProcRead, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot,
-  matchesScope, physicalResolve, protectedRoots, repoRelative, resolveCandidate,
+  beginEvaluation, boosterDataRoots, brainRoots, hasHomePrefix, headlessProtectedMatcher, isAllowedBrainArtifactTarget,
+  isBenignProcRead, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot, matchesScope, physicalResolve,
+  protectedRoots, repoRelative, resolveCandidate, verifyBrainArtifactDirectory,
 } from './paths.mjs';
 import { classifyRunCommand } from './shell.mjs';
+import { lexCommandLine } from './shell-lexer.mjs';
 import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
 
 const UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
@@ -322,6 +325,16 @@ function isExistingDirectory(p) {
 
 /** A directory operation on a path that CONTAINS an ADLC repo or a protected root (P5 rounds 3–4). */
 function containsProtected(r, ctx) {
+  if (ctx.headless) {
+    const isBoosterDir = (p) => /(?:^|[\\/])\.booster$/i.test(p);
+    if (
+      isBoosterDir(r.real) ||
+      isBoosterDir(r.lexical) ||
+      (ctx.tmpRoots ?? []).some((t) => isWithin(t, r.real, ctx.platform) || isWithin(t, r.lexical, ctx.platform))
+    ) {
+      return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+    }
+  }
   if (ctx.protectedRoots.some((root) => isWithin(root, r.real, ctx.platform) || isWithin(root, r.lexical, ctx.platform))) {
     return deny('Target path contains platform configuration, plugins, or Node runtimes');
   }
@@ -479,6 +492,7 @@ function stepOne(name, args, ctx) {
     const wfCwdPhys = physicalResolve(wfCwdArg, ctx.workspacePaths[0] || '/', ctx.platform);
     if (wfCwdPhys) stepCtx = { ...ctx, anchors: unique([wfCwdPhys, ...ctx.anchors]) };
   }
+  const isListDir = name === 'list_dir' || name === 'list_directory';
   for (const token of candidates) {
     for (const r of resolveAll(token, stepCtx)) {
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
@@ -486,6 +500,23 @@ function stepOne(name, args, ctx) {
       }
       if (r.unresolved && !(isRead && isBenignProcRead(token, r))) {
         return deny('Target path cannot be resolved (symlink loop or oversized path)');
+      }
+      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
+        if (!isRead) {
+          if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, allowSystemGeneratedRead: false, platform: ctx.platform })) {
+            return deny('Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden');
+          }
+          continue;
+        }
+        // Interactive read: when session metadata is supplied, enforce active-conversation isolation + symlink safety while permitting own .system_generated transcripts
+        if (ctx.hasBrainMetadata) {
+          if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: isListDir, allowSystemGeneratedRead: true, platform: ctx.platform })) {
+            return deny('Access to another Antigravity conversation brain directory or symlinked brain target is forbidden');
+          }
+        } else if (r.lexical !== r.real) {
+          return deny('Access to symlinked Antigravity brain path is forbidden');
+        }
+        continue;
       }
       if (!isRead && matchRoot(r, ctx.protectedRoots, ctx.platform)) {
         return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
@@ -674,6 +705,18 @@ function evaluateFileTool(name, args, ctx) {
         verdicts.push(deny(`Target path '${token}' cannot be resolved (symlink loop or oversized path)`));
         continue;
       }
+      if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
+        verdicts.push(deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden'));
+        continue;
+      }
+      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
+        if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, platform: ctx.platform })) {
+          verdicts.push(deny('Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden'));
+        } else {
+          verdicts.push(PASS);
+        }
+        continue;
+      }
       const contains = containsProtected(r, ctx);
       if (contains) {
         verdicts.push(contains);
@@ -721,6 +764,9 @@ function evaluateMcpTool(name, args, ctx) {
     const rawMcpArgs = name === 'call_mcp_tool' ? (norm.folded.arguments ?? norm.folded.toolargs ?? {}) : (args ?? {});
     const mcpNorm = normalizeArgsCaseInsensitive(rawMcpArgs);
     if (!mcpNorm.ok) return deny(mcpNorm.reason);
+    const isMutatingControl =
+      tool === 'agb_control' &&
+      (typeof mcpNorm.folded.action !== 'string' || !READONLY_BOOSTER_CONTROL_ACTIONS.has(goFoldKey(mcpNorm.folded.action)));
     if (
       ctx.readonly &&
       (
@@ -728,6 +774,7 @@ function evaluateMcpTool(name, args, ctx) {
         tool === 'agb_plan' ||
         tool === 'agb_init' ||
         tool === 'agb_distill' ||
+        isMutatingControl ||
         (tool === 'agb_doctor' && Boolean(mcpNorm.folded.fix)) ||
         (tool === 'agb_shape' && Boolean(mcpNorm.folded.syncbrain))
       )
@@ -768,6 +815,12 @@ function scanStdinPaths(rawArgs, ctx, inputText = '') {
     for (const r of resolved) {
       if (matchRoot(r, ctx.boosterDataRoots, ctx.platform)) {
         return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (matchRoot(r, ctx.brainRoots, ctx.platform)) {
+        if (!isAllowedBrainArtifactTarget(token, r, ctx.verifiedBrainArtifact, { allowExactDir: false, platform: ctx.platform })) {
+          return deny('Access to Antigravity brain directory outside the active verified session artifact directory (or inside .system_generated) is forbidden');
+        }
+        continue;
       }
       if (matchRoot(r, ctx.protectedRoots, ctx.platform)) {
         return deny('Direct modification of platform configuration, plugins, or Node runtimes via tool calls is forbidden');
@@ -1061,6 +1114,7 @@ export function buildContext(payload, options = {}) {
     .map((p) => resolve(p));
   const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, '/', platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
+  const rescueTicket = env.AGB_RESCUE_TICKET ? String(env.AGB_RESCUE_TICKET) : null;
   const rawWorkerBuildCmd = typeof env.AGB_WORKER_BUILD_CMD === 'string' ? env.AGB_WORKER_BUILD_CMD.trim() : '';
   const workerBuildCmd = /^npm run [a-zA-Z0-9_.:-]+$/.test(rawWorkerBuildCmd) ? rawWorkerBuildCmd : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
@@ -1093,6 +1147,17 @@ export function buildContext(payload, options = {}) {
     } catch {}
   }
   const homes = unique([home, realHome, ...extraHomes]);
+  const headless = Boolean(workerTicket) || readonly;
+  const rawTmpCandidates = [tmpdir(), '/tmp', '/private/tmp', env.TMPDIR, env.TMP, env.TEMP]
+    .filter((p) => typeof p === 'string' && p.length > 0 && isAbsolute(p));
+  const tmpRoots = unique(rawTmpCandidates.flatMap((p) => {
+    const resolvedTmp = resolve(p);
+    return [resolvedTmp, realOr(resolvedTmp)];
+  }));
+  const baseBoosterDataRoots = unique(homes.flatMap((h) => boosterDataRoots(h)));
+  const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
+  const hasBrainMetadata = payload?.conversationId !== undefined || payload?.artifactDirectoryPath !== undefined;
+  const verifiedBrainArtifact = verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform });
   return {
     home,
     realHome,
@@ -1101,20 +1166,90 @@ export function buildContext(payload, options = {}) {
     workspacePaths,
     workspaceRealPaths,
     workerTicket,
+    rescueTicket,
     workerBuildCmd,
     readonly,
     allowCodegraphMcp: env.AGB_ALLOW_CODEGRAPH_MCP === '1',
     cdpath: Boolean(env.CDPATH),
-    headless: Boolean(workerTicket) || readonly,
+    headless,
+    tmpRoots,
+    brainRoots: brainRootsList,
+    hasBrainMetadata,
+    verifiedBrainArtifact,
     anchor: cwd ?? workspacePaths[0] ?? null,
     anchors: unique([...(cwd ? [cwd] : []), ...workspacePaths]),
     // Roots for both the lexical and the physical home (P5 round 3 M4).
     protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
-    boosterDataRoots: unique(homes.flatMap((h) => boosterDataRoots(h))),
+    boosterDataRoots: headless
+      ? [...baseBoosterDataRoots, ...brainRootsList, headlessProtectedMatcher(tmpRoots)]
+      : rescueTicket
+        ? [...baseBoosterDataRoots, headlessProtectedMatcher(tmpRoots)]
+        : baseBoosterDataRoots,
     limits: { subtreeEntries: options.limits?.subtreeEntries ?? DEFAULT_SUBTREE_ENTRIES },
     storeOverrides: [env.ADLC_TICKET_STORE, env.ADLC_TICKETS].filter((p) => typeof p === 'string' && p.length > 0).map((p) => realOr(resolve(p))),
     ...makeRepoCache(home, homes),
   };
+}
+
+const HEADLESS_DESTRUCTIVE_SHELL_CMDS = new Set([
+  'rm', 'mv', 'shred', 'unlink', 'rmdir', 'cp', 'tar', 'rsync', 'chmod', 'chown', 'chgrp', 'find',
+]);
+const HEADLESS_FORBIDDEN_SHELL_LITERAL =
+  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
+
+function evaluateRunCommand(args, ctx) {
+  const verdict = classifyRunCommand(args, ctx);
+  if (verdict.decision === 'deny' || (!ctx.headless && !ctx.rescueTicket)) return verdict;
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  const line = norm.folded.commandline;
+  if (typeof line !== 'string') return deny('run_command without a CommandLine string cannot be verified');
+  if (HEADLESS_FORBIDDEN_SHELL_LITERAL.test(line)) {
+    return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+  }
+  const lexed = lexCommandLine(line);
+  if (!lexed.ok) {
+    return deny('Shell command could not be parsed in protected worker/rescue session');
+  }
+  const cwdArg = norm.folded.cwd;
+  const baseCwd = typeof cwdArg === 'string' && cwdArg.length > 0 ? resolve(cwdArg) : (ctx.workspacePaths[0] ?? '/');
+  const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
+  for (const sub of lexed.subcommands) {
+    const cmd = basename(sub.argv[0] ?? '');
+    const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);
+    const argvTokens = sub.argv.slice(1).flatMap((t) => {
+      if (!t.startsWith('-')) return [t];
+      const eq = t.indexOf('=');
+      return eq > 0 && eq < t.length - 1 ? [t.slice(eq + 1)] : [];
+    });
+    for (const tok of argvTokens) {
+      const cand = resolveCandidate(tok, baseCwd, ctx.home, ctx.platform);
+      if (ipcMatcher(cand.real, ctx.platform) || ipcMatcher(cand.lexical, ctx.platform)) {
+        return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (isDestructive) {
+        const isBoosterDir = /(?:^|[\\/])\.booster$/i.test(cand.real) || /(?:^|[\\/])\.booster$/i.test(cand.lexical);
+        const containsTmp = (ctx.tmpRoots ?? []).some((t) => isWithin(t, cand.real, ctx.platform) || isWithin(t, cand.lexical, ctx.platform));
+        if (isBoosterDir || containsTmp) {
+          return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+        }
+      }
+    }
+    for (const redir of sub.redirects ?? []) {
+      if (!redir.target) continue;
+      const cand = resolveCandidate(redir.target, baseCwd, ctx.home, ctx.platform);
+      if (ipcMatcher(cand.real, ctx.platform) || ipcMatcher(cand.lexical, ctx.platform)) {
+        return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+      }
+      if (String(redir.op ?? '').includes('>')) {
+        const inBooster = /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.real) || /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.lexical);
+        if (inBooster) {
+          return deny('Inspection or modification of booster plugin data or credentials via tool calls is forbidden');
+        }
+      }
+    }
+  }
+  return verdict;
 }
 
 export function evaluatePayload(payload, options = {}) {
@@ -1136,7 +1271,7 @@ export function evaluatePayload(payload, options = {}) {
   if (STDIN_TOOLS.has(name)) return evaluateSendCommandInput(args, ctx);
   if (ORCHESTRATION_TOOLS.has(name)) return evaluateOrchestrationTool(name, args, ctx);
   if (WORKFLOW_TOOLS.has(name)) return evaluateWorkflowTool(args, ctx);
-  if (name === 'run_command') return classifyRunCommand(args, ctx);
+  if (name === 'run_command') return evaluateRunCommand(args, ctx);
   if (PATH_MUTATING_TOOLS.has(name)) return evaluateFileTool(name, args, ctx);
   if (name === 'call_mcp_tool' || name.startsWith('mcp__') || name.startsWith('mcp_')) return evaluateMcpTool(name, args, ctx);
   return evaluateUnknownTool(args, ctx);
