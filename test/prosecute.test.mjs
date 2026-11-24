@@ -495,5 +495,46 @@ test('runHollowTest: real vendored adlc hollow-test succeeds under real OS sandb
   }
 });
 
+test('prosecute forwards optional cryptographic seed for deterministic diff fencing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-prosecute-seed-'));
+  const promptOut = join(dir, 'prompt.txt');
+  const seedAgy = join(dir, 'agy-seed');
+  writeFileSync(
+    seedAgy,
+    [
+      '#!/usr/bin/env node',
+      "import { writeFileSync } from 'node:fs';",
+      'const idx = process.argv.indexOf("--print");',
+      `if (idx !== -1) writeFileSync(${JSON.stringify(promptOut)}, process.argv[idx + 1]);`,
+      'console.log(JSON.stringify({ verdict: "ship", findings: [] }));',
+    ].join('\n'),
+    { mode: 0o755 }
+  );
+  try {
+    const seed = '0123456789abcdef0123456789abcdef';
+    await withFakes({ AGB_AGY_BIN: seedAgy }, async () => {
+      const v1 = await prosecute({
+        ticket: { id: 'T-SEED', body: 'spec body', scope: ['lib/a.mjs'] },
+        diff: 'diff --git a/lib/a.mjs b/lib/a.mjs\n+export const s = 1;\n',
+        model: 'gpt-oss-120b-medium',
+        seed,
+      });
+      assert.equal(v1.verdict, 'ship');
+      const p1 = readFileSync(promptOut, 'utf8');
+
+      await prosecute({
+        ticket: { id: 'T-SEED', body: 'spec body', scope: ['lib/a.mjs'] },
+        diff: 'diff --git a/lib/a.mjs b/lib/a.mjs\n+export const s = 1;\n',
+        model: 'gpt-oss-120b-medium',
+        seed,
+      });
+      const p2 = readFileSync(promptOut, 'utf8');
+      assert.equal(p1, p2, 'same seed + diff must produce identical prosecution prompt');
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 

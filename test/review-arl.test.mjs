@@ -510,3 +510,30 @@ test('reviewPlan({ loop: true }): recomputes shapeReport on round > 1 after spec
     rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('exported lensPrompt and planLensPrompt share 100% byte-identical Layer-1/Layer-2 prefixes across all 5 lenses up to ## Active Lens', async () => {
+  const { CODE_LENSES, PLAN_LENSES, lensPrompt, planLensPrompt } = await import('../lib/review.mjs');
+  const seed = '0123456789abcdef0123456789abcdef0123456789abcdef';
+  const diff = 'diff --git a/lib/x.mjs b/lib/x.mjs\n+export const k = 1;\n';
+  const codePrompts = Object.entries(CODE_LENSES).map(([name, desc]) =>
+    lensPrompt(name, desc, diff, 'shared context', undefined, { seed })
+  );
+  assert.equal(codePrompts.length, 5);
+  const codePrefixes = codePrompts.map((p) => p.split('\n\n## Active Lens\n')[0]);
+  assert.ok(codePrefixes[0].length > 300);
+  for (let i = 1; i < codePrefixes.length; i++) {
+    assert.equal(codePrefixes[i], codePrefixes[0], `Code lens ${i} prefix must match lens 0 byte-for-byte`);
+  }
+
+  const specText = '# Feature Spec\n### Ticket 1: `T1`\n- **Scope**: `lib/x.mjs`\n';
+  const shapeJson = '{"ok":true,"readinessScore":100}';
+  const planPrompts = Object.entries(PLAN_LENSES).map(([name, desc]) =>
+    planLensPrompt(name, desc, specText, shapeJson, 'plan ctx', undefined, { seed })
+  );
+  assert.equal(planPrompts.length, 5);
+  const planPrefixes = planPrompts.map((p) => p.split('\n\n## Active Lens\n')[0]);
+  assert.ok(planPrefixes[0].includes(shapeJson));
+  for (let i = 1; i < planPrefixes.length; i++) {
+    assert.equal(planPrefixes[i], planPrefixes[0], `Plan lens ${i} prefix must match lens 0 byte-for-byte`);
+  }
+});
