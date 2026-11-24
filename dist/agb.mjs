@@ -10538,8 +10538,10 @@ function partitionRunwayWaves(tickets = []) {
 }
 function readEffectiveRemainingPct(poolObj) {
   if (!poolObj || typeof poolObj !== "object") return null;
-  const fh = Number(poolObj.fiveHourRemainingPercent);
-  const wk = Number(poolObj.weeklyRemainingPercent);
+  const rawFh = poolObj.fiveHourRemainingPercent;
+  const rawWk = poolObj.weeklyRemainingPercent;
+  const fh = typeof rawFh === "number" ? rawFh : NaN;
+  const wk = typeof rawWk === "number" ? rawWk : NaN;
   const vals = [fh, wk].filter((v) => Number.isFinite(v) && v >= 0 && v <= 100);
   return vals.length > 0 ? Math.min(...vals) : null;
 }
@@ -26751,8 +26753,8 @@ Fix: ${agyCheck.fix}`);
     if (!cached?.quota || !Number.isFinite(cached.updatedAt)) return null;
     const qObj = upPool === "gemini" ? cached.quota.gemini : cached.quota.claude_gpt ?? cached.quota["claude-gpt"];
     if (!qObj || typeof qObj !== "object") return null;
-    const fh = Number(qObj.fiveHourRemainingPercent);
-    const wk = Number(qObj.weeklyRemainingPercent);
+    const fh = typeof qObj.fiveHourRemainingPercent === "number" ? qObj.fiveHourRemainingPercent : NaN;
+    const wk = typeof qObj.weeklyRemainingPercent === "number" ? qObj.weeklyRemainingPercent : NaN;
     const vals = [fh, wk].filter((v) => Number.isFinite(v) && v >= 0 && v <= 100);
     if (vals.length === 0) return null;
     return { pct: Math.min(...vals), updatedAt: cached.updatedAt };

@@ -39,4 +39,15 @@ test('estimatePlanQuotaRunway computes topological wave burn with priors, empiri
   ];
   const emp = estimatePlanQuotaRunway(plan, { quota: tightQuota, records: empiricalRecords });
   assert.ok(emp.totals.claude_gpt < warn.totals.claude_gpt, 'empirical 2.0% frontier burn replaces 7.5% prior');
+
+  // 4. Null window field is ignored rather than coerced to 0% via Number(null)
+  const partialQuota = {
+    gemini: { fiveHourRemainingPercent: 75, weeklyRemainingPercent: null },
+    claude_gpt: { fiveHourRemainingPercent: null, weeklyRemainingPercent: 85 },
+  };
+  const partial = estimatePlanQuotaRunway(plan, { quota: partialQuota, records: [] });
+  assert.equal(partial.remaining.gemini, 75);
+  assert.equal(partial.remaining.claude_gpt, 85);
+  assert.equal(partial.willExhaust, false);
 });
+
