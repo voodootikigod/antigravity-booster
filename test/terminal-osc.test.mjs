@@ -90,4 +90,11 @@ test('formatOscAttentionAlert & AttentionTransitionTracker: sanitize notificatio
 
   // Tick 4 after completion: zero duplicate done alerts
   assert.deepEqual(tracker.evaluate(doneState), []);
+
+  // Tick 5: when T1 leaves failed (e.g. rescued/retried) and later fails again, or runId changes, re-alerts cleanly
+  assert.deepEqual(tracker.evaluate({ runId: 'run-1', done: false, failed: new Set() }), []);
+  const reFailed = tracker.evaluate({ runId: 'run-1', done: false, failed: new Set(['T1']) });
+  assert.deepEqual(reFailed.map((a) => a.kind), ['ticket_failed']);
+  const nextRun = tracker.evaluate({ runId: 'run-2', done: false, failed: new Set(['T1']) });
+  assert.deepEqual(nextRun.map((a) => a.kind), ['ticket_failed']);
 });

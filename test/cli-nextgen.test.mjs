@@ -585,7 +585,7 @@ test('agb accept [--base --json --markdown] and agb watch [--mux / --mux=zellij]
     join(repo, '.booster', 'run.json'),
     JSON.stringify({ runId: 'run-mux-done', startedAt: new Date().toISOString(), done: true, report: { merged: ['T1'], failed: {} } })
   );
-  const muxAutoRes = runAgb(['watch', '--mux', '--no-alerts', repo], {
+  const muxAutoRes = runAgb(['watch', '--mux', repo, '--no-alerts'], {
     env: { ...process.env, TMUX: '', HERDR_ENV: '', HERDR_PANE_ID: '', CMUX_WORKSPACE_ID: '', CMUX_SOCKET_PATH: '' },
   });
   assert.equal(muxAutoRes.status, 0, muxAutoRes.stderr);

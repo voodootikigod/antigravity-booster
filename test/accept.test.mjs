@@ -12,7 +12,7 @@ import {
   parseUnifiedDiffHunks,
   saveAcceptVerdicts,
 } from '../lib/accept.mjs';
-import { runInteractiveAcceptTui } from '../lib/accept-tui.mjs';
+import { renderAcceptTuiFrame, runInteractiveAcceptTui } from '../lib/accept-tui.mjs';
 import { stripOscAndAnsi } from '../lib/terminal-osc.mjs';
 
 function makeAcceptRepo() {
@@ -57,6 +57,33 @@ test('buildAcceptanceDossier, SHA-256 fingerprint invalidation, external callers
     assert.notEqual(fp1, fpModified);
     assert.equal(parseUnifiedDiffHunks('').length, 0);
 
+    // 1b. parseUnifiedDiffHunks handles newline-terminated diffs without trailing '' and treats '+++ b/...' inside hunks as added lines
+    const trickyDiff = [
+      'diff --git a/src/a.js b/src/a.js',
+      '--- a/src/a.js',
+      '+++ b/src/a.js',
+      '@@ -1,2 +1,3 @@',
+      ' const x = 1;',
+      '+++ b/spoofed.js',
+      ' export default x;',
+      '',
+    ].join('\n');
+    const trickyHunks = parseUnifiedDiffHunks(trickyDiff);
+    assert.equal(trickyHunks.length, 1);
+    assert.equal(trickyHunks[0].file, 'src/a.js');
+    assert.equal(trickyHunks[0].addedCount, 1);
+    assert.equal(trickyHunks[0].lines.includes('+++ b/spoofed.js'), true);
+    assert.equal(trickyHunks[0].lines.at(-1), ' export default x;');
+
+    // 1c. renderAcceptTuiFrame strips raw ESC/OSC injection sequences inside diff lines
+    const oscFrame = renderAcceptTuiFrame({
+      base: 'main\x1b]9;BAD\x07',
+      counts: { filesChanged: 1, totalHunks: 1, acceptedHunks: 0, flaggedHunks: 0, pendingHunks: 1 },
+      hunks: [{ id: 'H-001', file: 'src/a.js', newStart: 1, addedCount: 1, removedCount: 0, header: '@@ -1 +1 @@', lines: ['+safe\x1b]9;PWNED\x07line'] }],
+    }).join('\n');
+    assert.doesNotMatch(oscFrame, /PWNED|BAD/);
+    assert.match(stripOscAndAnsi(oscFrame), /\+safeline/);
+
     // 2. Build initial dossier: 1 pending hunk, detects external caller in src/caller.mjs, reads manifest.jsonl
     const d1 = buildAcceptanceDossier({ repo: fx.dir, base: fx.baseSha });
     assert.equal(d1.ok, true);
@@ -66,7 +93,14 @@ test('buildAcceptanceDossier, SHA-256 fingerprint invalidation, external callers
     assert.equal(d1.externalCallers.callers.some((c) => c.file === 'src/caller.mjs'), true);
     assert.equal(d1.gateManifest.totalEntries, 1);
 
-    // 3. Interactive TUI: 'a' accepts hunk, 'd' exports dossier, 'q' quits cleanly without mutating git HEAD
+    // 3. Interactive TUI multi-hunk navigation ('j'/'k'), flagging ('f' blocks sign-off), and accepting ('a' + 'd' + 'q')
+    writeFileSync(join(fx.dir, 'src', 'extra.mjs'), 'export const extra = 99;\n');
+    const dMulti = buildAcceptanceDossier({ repo: fx.dir, base: fx.baseSha });
+    // Note: git diff against committed baseSha sees tracked src/math.mjs; add a second tracked file edit so we have 2 hunks!
+    fx.g('add', 'src/extra.mjs');
+    const dTwo = buildAcceptanceDossier({ repo: fx.dir, base: fx.baseSha });
+    assert.equal(dTwo.counts.totalHunks, 2);
+
     let rendered = '';
     const fakeStdout = {
       isTTY: true,
@@ -75,32 +109,58 @@ test('buildAcceptanceDossier, SHA-256 fingerprint invalidation, external callers
         rendered += s;
       },
     };
-    const fakeStdin = Object.assign(new EventEmitter(), {
+    const fakeStdin1 = Object.assign(new EventEmitter(), {
       isTTY: true,
       setRawMode: () => {},
       resume: () => {},
       pause: () => {},
     });
 
-    const tuiPromise = runInteractiveAcceptTui(d1, {
+    // Session A: accept hunk 1 ('a' auto-advances to hunk 2), flag hunk 2 ('f'), quit ('q') -> readyForSignOff MUST be false!
+    const flagPromise = runInteractiveAcceptTui(dTwo, {
       repo: fx.dir,
-      stdin: fakeStdin,
+      stdin: fakeStdin1,
       stdout: fakeStdout,
       osc8: true,
     });
     setTimeout(() => {
-      fakeStdin.emit('data', 'adq');
+      fakeStdin1.emit('data', 'afq');
+    }, 15);
+    const flagRes = await flagPromise;
+    assert.equal(flagRes.readyForSignOff, false, 'flagged hunk must block P6 sign-off');
+    assert.equal(flagRes.counts.acceptedHunks, 1);
+    assert.equal(flagRes.counts.flaggedHunks, 1);
+
+    // Session B: navigate 'j' to hunk 2, 'k' back to hunk 1, 'j' to hunk 2, accept hunk 2 ('a'), export ('d'), quit ('q')
+    const dReloaded = buildAcceptanceDossier({ repo: fx.dir, base: fx.baseSha });
+    const fakeStdin2 = Object.assign(new EventEmitter(), {
+      isTTY: true,
+      setRawMode: () => {},
+      resume: () => {},
+      pause: () => {},
+    });
+    const tuiPromise = runInteractiveAcceptTui(dReloaded, {
+      repo: fx.dir,
+      stdin: fakeStdin2,
+      stdout: fakeStdout,
+      osc8: true,
+    });
+    setTimeout(() => {
+      fakeStdin2.emit('data', 'jkjadq');
     }, 15);
     const tuiRes = await tuiPromise;
     assert.equal(tuiRes.ok, true);
     assert.equal(tuiRes.readyForSignOff, true);
-    assert.equal(tuiRes.counts.acceptedHunks, 1);
+    assert.equal(tuiRes.counts.acceptedHunks, 2);
+    assert.equal(tuiRes.counts.flaggedHunks, 0);
     assert.ok(tuiRes.dossierPath && existsSync(tuiRes.dossierPath));
     assert.match(rendered, /\x1b\]8;;file:\/\//, 'expected OSC 8 clickable file link in TTY frame');
     assert.match(stripOscAndAnsi(rendered), /P6 SIGN-OFF READY/);
     assert.equal(fx.g('rev-parse', 'HEAD'), fx.candSha, 'git HEAD must never be mutated by agb accept');
+    fx.g('reset', '-q', 'HEAD', '--', 'src/extra.mjs');
+    rmSync(join(fx.dir, 'src', 'extra.mjs'), { force: true });
 
-    const md = formatAcceptanceDossierMarkdown(d1);
+    const md = formatAcceptanceDossierMarkdown(dReloaded);
     assert.match(md, /READY FOR P6 MERGE SIGN-OFF/);
     assert.match(md, /src\/caller\.mjs/);
 

@@ -688,7 +688,6 @@ try {
   } else if (cmd === 'watch') {
     let mux = null;
     const watchRest = [];
-    const KNOWN_MUX_VALUES = new Set(['auto', 'tmux', 'tmuxh', 'cmux', 'herdr']);
     for (let i = 0; i < rest.length; i++) {
       const tok = rest[i];
       if (tok.startsWith('--mux=')) {
@@ -699,13 +698,7 @@ try {
         }
         mux = normalizeMuxName(rawVal);
       } else if (tok === '--mux') {
-        const nextTok = rest[i + 1];
-        if (nextTok && !nextTok.startsWith('-') && KNOWN_MUX_VALUES.has(nextTok.toLowerCase()) && !existsSync(nextTok)) {
-          mux = normalizeMuxName(nextTok);
-          i += 1;
-        } else {
-          mux = 'auto';
-        }
+        mux = 'auto';
       } else {
         watchRest.push(tok);
       }

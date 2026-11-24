@@ -4,7 +4,7 @@ import { createRequire as __agbCreateRequire } from 'node:module'; const require
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { basename as basename3, dirname as dirname6, join as join7, relative as relative3, resolve as resolve7, isAbsolute as isAbsolute3, sep as sep2 } from "node:path";
+import { basename as basename3, dirname as dirname6, join as join7, relative as relative4, resolve as resolve7, isAbsolute as isAbsolute4, sep as sep3 } from "node:path";
 import {
   closeSync as closeSync2,
   constants as constants2,
@@ -960,6 +960,7 @@ function defaultFactoryLedgerPath({
 function computeRunEconomics({
   runId = null,
   repo = null,
+  repoName = null,
   totalTickets = 0,
   mergedCount = 0,
   failedCount = 0,
@@ -993,10 +994,11 @@ function computeRunEconomics({
       cleanRequests[k] = toNonNegInt(v);
     }
   }
+  const resolvedRepoName = typeof repoName === "string" && repoName.trim() ? repoName.trim() : typeof repo === "string" && repo.trim() ? basename(resolve2(repo)) : "workspace";
   return {
     ts: typeof ts === "string" && ts ? ts : (/* @__PURE__ */ new Date()).toISOString(),
     runId: typeof runId === "string" && runId ? runId : "run-unknown",
-    repoName: typeof repo === "string" && repo ? basename(resolve2(repo)) : "workspace",
+    repoName: resolvedRepoName,
     totalTickets: normTotal,
     mergedCount: normMerged,
     failedCount: normFailed,
@@ -1145,7 +1147,7 @@ import {
   rmSync as rmSync3,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { dirname as dirname4, join as join5, resolve as resolve5 } from "node:path";
+import { dirname as dirname4, isAbsolute as isAbsolute2, join as join5, relative as relative2, resolve as resolve5, sep as sep2 } from "node:path";
 
 // lib/context-slice.mjs
 import { existsSync as existsSync3, lstatSync as lstatSync3, readdirSync, readFileSync as readFileSync3 } from "node:fs";
@@ -1556,8 +1558,40 @@ function parseUnifiedDiffHunks(diffText = "") {
   };
   const headerRe = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$/;
   for (const line of rawLines) {
-    if (line.startsWith("diff --git ")) {
+    const hunkStillExpectsLines = currentHunk !== null && (currentHunk.oldRem > 0 || currentHunk.newRem > 0);
+    if (hunkStillExpectsLines) {
+      if (line.startsWith("+")) {
+        currentHunk.newRem = Math.max(0, currentHunk.newRem - 1);
+        currentHunk.addedCount += 1;
+        currentHunk.lines.push(line);
+        continue;
+      }
+      if (line.startsWith("-")) {
+        currentHunk.oldRem = Math.max(0, currentHunk.oldRem - 1);
+        currentHunk.removedCount += 1;
+        currentHunk.lines.push(line);
+        continue;
+      }
+      if (line.startsWith(" ")) {
+        currentHunk.oldRem = Math.max(0, currentHunk.oldRem - 1);
+        currentHunk.newRem = Math.max(0, currentHunk.newRem - 1);
+        currentHunk.lines.push(line);
+        continue;
+      }
+      if (line.startsWith("\\")) {
+        currentHunk.lines.push(line);
+        continue;
+      }
       flushHunk();
+    } else if (currentHunk !== null) {
+      if (line.startsWith("\\")) {
+        currentHunk.lines.push(line);
+        flushHunk();
+        continue;
+      }
+      flushHunk();
+    }
+    if (line.startsWith("diff --git ")) {
       const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
       currentFile = m ? m[2] : "unknown";
       continue;
@@ -1568,25 +1602,22 @@ function parseUnifiedDiffHunks(diffText = "") {
     }
     const hm = headerRe.exec(line);
     if (hm) {
-      flushHunk();
+      const oldLines = hm[2] !== void 0 ? Number(hm[2]) : 1;
+      const newLines = hm[4] !== void 0 ? Number(hm[4]) : 1;
       currentHunk = {
         file: currentFile || "unknown",
         oldStart: Number(hm[1]),
-        oldLines: hm[2] !== void 0 ? Number(hm[2]) : 1,
+        oldLines,
         newStart: Number(hm[3]),
-        newLines: hm[4] !== void 0 ? Number(hm[4]) : 1,
+        newLines,
+        oldRem: oldLines,
+        newRem: newLines,
         header: line,
         heading: (hm[5] || "").trim(),
         lines: [],
         addedCount: 0,
         removedCount: 0
       };
-      continue;
-    }
-    if (currentHunk) {
-      if (line.startsWith("+")) currentHunk.addedCount += 1;
-      else if (line.startsWith("-")) currentHunk.removedCount += 1;
-      currentHunk.lines.push(line);
     }
   }
   flushHunk();
@@ -1616,13 +1647,13 @@ function loadAcceptVerdicts(repo) {
     return {};
   }
 }
-function saveAcceptVerdicts(repo, verdictsMap = {}) {
+function saveAcceptVerdicts(repo, verdictsMap = {}, { merge = false } = {}) {
   const { boosterDir } = resolveSafeBoosterDir(repo);
   mkdirSync3(boosterDir, { recursive: true, mode: 448 });
   assertNotSymlink(boosterDir);
   const statePath = join5(boosterDir, "accept-state.json");
   assertNotSymlink(statePath);
-  const clean = {};
+  const clean = merge ? { ...loadAcceptVerdicts(repo) } : {};
   if (verdictsMap && typeof verdictsMap === "object" && !Array.isArray(verdictsMap)) {
     for (const [fp, v] of Object.entries(verdictsMap)) {
       if (!SHA256_HEX_RE.test(fp)) continue;
@@ -1631,6 +1662,8 @@ function saveAcceptVerdicts(repo, verdictsMap = {}) {
       }
       if (v === "accepted" || v === "flagged") {
         clean[fp] = v;
+      } else if (v === "pending") {
+        delete clean[fp];
       }
     }
   }
@@ -1699,6 +1732,28 @@ function readGateManifestSummary(canonRepo) {
     return { totalEntries: 0, gatesByType: {}, recent: [] };
   }
 }
+function resolveContainedRepoFile(canonRepo, relFile) {
+  if (typeof relFile !== "string" || !relFile || relFile.includes("\0") || isAbsolute2(relFile)) {
+    return null;
+  }
+  const fullCandidate = resolve5(canonRepo, relFile);
+  const lexRel = relative2(canonRepo, fullCandidate);
+  if (!lexRel || lexRel.startsWith("..") || isAbsolute2(lexRel)) {
+    return null;
+  }
+  let cur = canonRepo;
+  for (const seg of lexRel.split(sep2).filter(Boolean)) {
+    cur = join5(cur, seg);
+    const st = assertNotSymlink(cur);
+    if (!st) return null;
+  }
+  const realFull = realpathSync2(fullCandidate);
+  const realRel = relative2(canonRepo, realFull);
+  if (!realRel || realRel.startsWith("..") || isAbsolute2(realRel)) {
+    return null;
+  }
+  return realFull;
+}
 function readReportSummary(boosterDir, exists) {
   if (!exists) return null;
   const reportPath = join5(boosterDir, "report.json");
@@ -1746,9 +1801,9 @@ function buildAcceptanceDossier({
   });
   const touchedExportHints = [];
   for (const relFile of filesSet) {
-    if (relFile.startsWith("..") || relFile.includes("\0")) continue;
-    const fullFile = join5(canonRepo, relFile);
     try {
+      const fullFile = resolveContainedRepoFile(canonRepo, relFile);
+      if (!fullFile) continue;
       const fSt = assertNotSymlink(fullFile);
       if (!fSt || !fSt.isFile()) continue;
       const src = readFileSync4(fullFile, "utf8");
@@ -1861,7 +1916,7 @@ function formatAcceptanceDossierMarkdown(dossier = {}) {
 // lib/control-ipc.mjs
 import { execFileSync as execFileSync5 } from "node:child_process";
 import net from "node:net";
-import { dirname as dirname5, isAbsolute as isAbsolute2, join as join6, relative as relative2, resolve as resolve6 } from "node:path";
+import { dirname as dirname5, isAbsolute as isAbsolute3, join as join6, relative as relative3, resolve as resolve6 } from "node:path";
 import {
   chmodSync as chmodSync4,
   existsSync as existsSync5,
@@ -3471,6 +3526,8 @@ function buildAcceptWorkbenchHtml() {
     '    if (h && typeof h.fingerprint === "string" && HEX64_RE.test(h.fingerprint)) {',
     '      if (h.verdict === "accepted" || h.verdict === "flagged") {',
     "        localVerdicts[h.fingerprint] = h.verdict;",
+    "      } else {",
+    '        localVerdicts[h.fingerprint] = "pending";',
     "      }",
     "    }",
     "  }",
@@ -3489,9 +3546,12 @@ function buildAcceptWorkbenchHtml() {
     '    else if (v === "flagged") flagged += 1;',
     "    else pending += 1;",
     "  }",
-    "  const ready = flagged === 0 && pending === 0;",
-    '  badgeEl.className = "badge " + (ready ? "ok" : "warn");',
-    '  badgeEl.textContent = ready ? "P6 SIGN-OFF READY" : ("REVIEWING " + accepted + "/" + hunks.length);',
+    "  const compromised = Boolean(acceptState.report && acceptState.report.compromised);",
+    "  const truncated = Boolean(acceptState.truncated);",
+    '  const totalCount = (acceptState.counts && typeof acceptState.counts.totalHunks === "number") ? acceptState.counts.totalHunks : hunks.length;',
+    "  const ready = !compromised && !truncated && flagged === 0 && pending === 0 && accepted === totalCount;",
+    '  badgeEl.className = "badge " + (ready ? "ok" : (compromised ? "err" : "warn"));',
+    '  badgeEl.textContent = compromised ? "COMPROMISED" : (ready ? "P6 SIGN-OFF READY" : ("REVIEWING " + accepted + "/" + totalCount + (truncated ? " (truncated)" : "")));',
     '  const gateTotal = (acceptState.gateManifest && typeof acceptState.gateManifest.totalEntries === "number") ? acceptState.gateManifest.totalEntries : 0;',
     '  statusEl.textContent = "Base: " + String(acceptState.base || "HEAD") + " \xB7 Gate Manifest Entries: " + gateTotal + " \xB7 Human merges manually";',
     "",
@@ -3542,7 +3602,7 @@ function buildAcceptWorkbenchHtml() {
     '  const fp = btn.getAttribute("data-fp") || "";',
     '  const verdict = btn.getAttribute("data-verdict") || "";',
     "  if (!HEX64_RE.test(fp)) return;",
-    "  if (localVerdicts[fp] === verdict) delete localVerdicts[fp];",
+    '  if (localVerdicts[fp] === verdict) localVerdicts[fp] = "pending";',
     '  else if (verdict === "accepted" || verdict === "flagged") localVerdicts[fp] = verdict;',
     '  __bridge.updateModelContext({ p6Review: { base: acceptState.base || "HEAD", verdicts: localVerdicts } }).catch(() => {});',
     "  redrawHunks();",
@@ -4065,7 +4125,7 @@ function resolveSpecPath(rawSpec, targetCwd) {
   const specInAmbient = resolve7(rawSpec);
   if (existsSync6(specInTarget)) return specInTarget;
   if (existsSync6(specInAmbient)) return specInAmbient;
-  if (isAbsolute3(rawSpec) || rawSpec.includes("/") || rawSpec.includes("\\") || /\.(md|markdown|txt|json)$/i.test(rawSpec)) {
+  if (isAbsolute4(rawSpec) || rawSpec.includes("/") || rawSpec.includes("\\") || /\.(md|markdown|txt|json)$/i.test(rawSpec)) {
     return specInTarget;
   }
   return rawSpec;
@@ -4296,10 +4356,10 @@ function resolveOptionalRepoArg(args) {
   return { ok: true, repo: resolved };
 }
 function assertNoSymlinkSegments(baseDir, targetPath) {
-  const rel = relative3(baseDir, targetPath);
-  if (!rel.startsWith("..") && !isAbsolute3(rel)) {
+  const rel = relative4(baseDir, targetPath);
+  if (!rel.startsWith("..") && !isAbsolute4(rel)) {
     let cur = baseDir;
-    for (const seg of rel.split(sep2).filter(Boolean)) {
+    for (const seg of rel.split(sep3).filter(Boolean)) {
       cur = join7(cur, seg);
       const st = lstatOrNull(cur);
       if (st && st.isSymbolicLink()) {
@@ -4454,7 +4514,7 @@ async function handleInProcessUiTool(id, name, args) {
     try {
       inspectBoosterDir(repoRes.repo);
       if (args?.saveVerdicts === true) {
-        saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {});
+        saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {}, { merge: true });
       }
       const dossier = buildAcceptanceDossier({
         repo: repoRes.repo,

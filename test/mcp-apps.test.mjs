@@ -861,7 +861,16 @@ test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejec
     assert.equal(badKey.result.isError, true);
     assert.match(badKey.result.content[0].text, /64-char lowercase hex SHA-256/);
 
-    // Saving valid 64-hex verdict transitions readyForSignOff -> true
+    // Saving valid 64-hex verdict transitions readyForSignOff -> true, and partial merge preserves untouched fingerprints
+    const otherFp = 'b'.repeat(64);
+    await srv.send({
+      id: 40,
+      method: 'tools/call',
+      params: {
+        name: 'agb_accept',
+        arguments: { repo: acceptRepo, base: baseSha, verdicts: { [otherFp]: 'flagged' }, saveVerdicts: true },
+      },
+    });
     const saved = await srv.send({
       id: 4,
       method: 'tools/call',
@@ -873,6 +882,9 @@ test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejec
     assert.equal(Boolean(saved.result.isError), false);
     assert.equal(saved.result.structuredContent.readyForSignOff, true);
     assert.equal(saved.result.structuredContent.counts.acceptedHunks, 1);
+    const persisted = JSON.parse(readFileSync(join(acceptRepo, '.booster', 'accept-state.json'), 'utf8'));
+    assert.equal(persisted.verdicts[otherFp], 'flagged', 'partial saveVerdicts must preserve untouched hunk fingerprints');
+    assert.equal(persisted.verdicts[fp], 'accepted');
   } finally {
     await srv.close();
   }

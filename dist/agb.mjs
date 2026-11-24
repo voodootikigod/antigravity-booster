@@ -4065,22 +4065,22 @@ var init_git_tree = __esm({
         for (const entry of entries) {
           const { path: path5 } = entry;
           if (!path5.startsWith(expectedPrefix)) throw invalid2("UNSAFE_GIT_PATH", `unexpected Git tree path: ${path5}`);
-          const relative16 = path5.slice(expectedPrefix.length);
-          if (relative16 === ".store.json") {
+          const relative17 = path5.slice(expectedPrefix.length);
+          if (relative17 === ".store.json") {
             if (entry.type !== "blob" || entry.mode !== "100644") throw invalid2("UNSAFE_GIT_MODE", `${path5} must be a non-executable regular file`);
             continue;
           }
-          if (relative16.includes("/") || !relative16.endsWith(".json")) throw invalid2("UNRECOGNIZED_STORE_ENTRY", `invalid ticket tree entry: ${relative16}`);
+          if (relative17.includes("/") || !relative17.endsWith(".json")) throw invalid2("UNRECOGNIZED_STORE_ENTRY", `invalid ticket tree entry: ${relative17}`);
           if (entry.type !== "blob" || entry.mode !== "100644") throw invalid2("UNSAFE_GIT_MODE", `${path5} must be a non-executable regular file`);
-          if (seenLower.has(relative16.toLowerCase())) throw invalid2("CASE_COLLISION", `case-insensitive collision at ${relative16}`);
-          seenLower.add(relative16.toLowerCase());
+          if (seenLower.has(relative17.toLowerCase())) throw invalid2("CASE_COLLISION", `case-insensitive collision at ${relative17}`);
+          seenLower.add(relative17.toLowerCase());
           let ticket;
           try {
             ticket = JSON.parse(this.#show(path5));
           } catch (error) {
-            throw invalid2("INVALID_JSON", `invalid shard ${relative16}: ${error.message}`);
+            throw invalid2("INVALID_JSON", `invalid shard ${relative17}: ${error.message}`);
           }
-          if (!ticket || typeof ticket.id !== "string" || relative16 !== ticketFilename(ticket.id)) throw invalid2("FILENAME_MISMATCH", `${relative16} does not match its ticket id`);
+          if (!ticket || typeof ticket.id !== "string" || relative17 !== ticketFilename(ticket.id)) throw invalid2("FILENAME_MISMATCH", `${relative17} does not match its ticket id`);
           tickets.push(ticket);
         }
         validateTickets(tickets);
@@ -10007,8 +10007,8 @@ function writeLeaseHeartbeat(repo, leaseId, ownerToken, timestamp) {
   if (existsSync21(leasesDir)) {
     const realLeases = realpathSync6(leasesDir);
     const isWin = process.platform === "win32";
-    const sep10 = isWin ? "\\" : "/";
-    if (!realLeases.startsWith(realRepo + sep10) && realLeases !== realRepo) {
+    const sep11 = isWin ? "\\" : "/";
+    if (!realLeases.startsWith(realRepo + sep11) && realLeases !== realRepo) {
       throw new Error(`refusing to write lease heartbeat outside repository: ${realLeases}`);
     }
   }
@@ -10020,8 +10020,8 @@ function writeLeaseHeartbeat(repo, leaseId, ownerToken, timestamp) {
     }
     const realLeases = realpathSync6(leasesDir);
     const isWin = process.platform === "win32";
-    const sep10 = isWin ? "\\" : "/";
-    if (!realLeases.startsWith(realRepo + sep10) && realLeases !== realRepo) {
+    const sep11 = isWin ? "\\" : "/";
+    if (!realLeases.startsWith(realRepo + sep11) && realLeases !== realRepo) {
       throw new Error(`refusing to write lease heartbeat outside repository: ${realLeases}`);
     }
     safeWriteHeartbeatFile(primaryPath, { ownerToken, timestamp });
@@ -12311,8 +12311,8 @@ function buildSpawnEnv({
     spawnEnv.GIT_CONFIG_GLOBAL = isWin ? "NUL" : "/dev/null";
     try {
       const realNodeDir = dirname17(realpathSync7(process.execPath));
-      const sep10 = process.platform === "win32" ? ";" : ":";
-      const effectiveSep = platform3 === process.platform ? sep10 : isWin ? ";" : ":";
+      const sep11 = process.platform === "win32" ? ";" : ":";
+      const effectiveSep = platform3 === process.platform ? sep11 : isWin ? ";" : ":";
       if (isWin) {
         let mergedPath = "";
         for (const k of Object.keys(spawnEnv)) {
@@ -17930,6 +17930,7 @@ var init_terminal_osc = __esm({
   "lib/terminal-osc.mjs"() {
     AttentionTransitionTracker = class {
       constructor() {
+        this.lastRunId = null;
         this.alertedFailedIds = /* @__PURE__ */ new Set();
         this.alertedDoneRunIds = /* @__PURE__ */ new Set();
         this.wasRunwayWarning = false;
@@ -17938,6 +17939,12 @@ var init_terminal_osc = __esm({
       evaluate(state = {}) {
         const alerts = [];
         const runId = typeof state.runId === "string" && state.runId ? state.runId : "active";
+        if (this.lastRunId !== null && this.lastRunId !== runId) {
+          this.alertedFailedIds.clear();
+          this.wasRunwayWarning = false;
+          this.wasQuotaPaused = false;
+        }
+        this.lastRunId = runId;
         const failedIds = /* @__PURE__ */ new Set();
         if (state.failed instanceof Set) {
           for (const id of state.failed) failedIds.add(String(id));
@@ -17946,6 +17953,11 @@ var init_terminal_osc = __esm({
         for (const t of ticketsIter) {
           if (t && t.phase === "failed" && t.id) {
             failedIds.add(String(t.id));
+          }
+        }
+        for (const prevId of [...this.alertedFailedIds]) {
+          if (!failedIds.has(prevId)) {
+            this.alertedFailedIds.delete(prevId);
           }
         }
         for (const id of failedIds) {
@@ -19733,7 +19745,7 @@ async function watchStatus(repo, optionsOrInterval = 200) {
             enabled: true
           });
           if (oscSeq) stream.write(oscSeq);
-          if (opts.muxNotify) {
+          if (opts.muxNotify ?? Boolean(opts.mux)) {
             try {
               const muxNotif = buildMuxNotificationArgs({
                 mux: typeof opts.mux === "string" && opts.mux ? opts.mux : "auto",
@@ -24008,7 +24020,7 @@ import {
   statSync as statSync10,
   mkdtempSync as mkdtempSync11
 } from "node:fs";
-import { join as join50, dirname as dirname31, resolve as resolve34, sep as sep9, isAbsolute as isAbsolute14, delimiter as delimiter2 } from "node:path";
+import { join as join50, dirname as dirname31, resolve as resolve34, sep as sep10, isAbsolute as isAbsolute15, delimiter as delimiter2 } from "node:path";
 import { homedir as homedir14, tmpdir as tmpdir14 } from "node:os";
 import { execFileSync as execFileSync23, spawn as spawn5 } from "node:child_process";
 import { randomBytes as randomBytes5 } from "node:crypto";
@@ -24149,7 +24161,7 @@ function boosterCheckoutFor(target) {
   return null;
 }
 function isOwnedSkillLink(link, { skillsDir, home, npmRoot }) {
-  const raw = isAbsolute14(link.target) ? link.target : resolve34(skillsDir, link.target);
+  const raw = isAbsolute15(link.target) ? link.target : resolve34(skillsDir, link.target);
   const target = realOrResolved(raw);
   const roots = [
     join50(pluginsDirFor(home), BOOSTER_PLUGIN_NAME),
@@ -24157,7 +24169,7 @@ function isOwnedSkillLink(link, { skillsDir, home, npmRoot }) {
   ];
   if (npmRoot) roots.push(join50(npmRoot, BOOSTER_PLUGIN_NAME));
   if ([raw, target].some((t) => roots.some((r) => isUnder(t, realOrResolved(r)) || isUnder(t, r)))) return true;
-  if ([raw, target].some((t) => t.split(sep9).join("/").includes("/node_modules/@adlc/antigravity/") || t.split(sep9).join("/").endsWith("/node_modules/@adlc/antigravity"))) return true;
+  if ([raw, target].some((t) => t.split(sep10).join("/").includes("/node_modules/@adlc/antigravity/") || t.split(sep10).join("/").endsWith("/node_modules/@adlc/antigravity"))) return true;
   for (const t of [raw, target]) {
     const checkout = boosterCheckoutFor(t);
     if (checkout && isUnder(t, join50(checkout, "skills"))) return true;
@@ -24175,7 +24187,7 @@ function recreateSymlinks(p, links, log2) {
     } catch {
     }
     if (present) continue;
-    const resolved = isAbsolute14(target) ? target : resolve34(p.skills, target);
+    const resolved = isAbsolute15(target) ? target : resolve34(p.skills, target);
     if (!existsSync45(resolved)) {
       log2(`Notice: Symlink target ${target} missing; skipping dangling link`);
       continue;
@@ -24668,7 +24680,7 @@ var init_migrate2 = __esm({
     COMPLETION_NOTICE = "Migration successful. Global npm package may be uninstalled: npm uninstall -g antigravity-booster. CLI commands remain available via ~/.local/bin/agb and slash commands (/agb-doctor, /agb-bootstrap, /agb-migrate).";
     MigrateError = class extends Error {
     };
-    isUnder = (child, parent) => child === parent || child.startsWith(parent.endsWith(sep9) ? parent : parent + sep9);
+    isUnder = (child, parent) => child === parent || child.startsWith(parent.endsWith(sep10) ? parent : parent + sep10);
     sleep3 = (ms) => new Promise((r) => setTimeout(r, ms));
   }
 });
@@ -24692,7 +24704,7 @@ import {
   realpathSync as realpathSync20,
   constants as constants7
 } from "node:fs";
-import { join as join51, dirname as dirname32, resolve as resolve35, relative as relative15, isAbsolute as isAbsolute15 } from "node:path";
+import { join as join51, dirname as dirname32, resolve as resolve35, relative as relative16, isAbsolute as isAbsolute16 } from "node:path";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
 import { timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 function lstatOrNull3(targetPath) {
@@ -24798,8 +24810,8 @@ function resolveSafeEventsPath(repoPath) {
     }
     return { ok: false, code: "SYMLINK", error: `Refusing to read events path: ${err.message}` };
   }
-  const rel = relative15(realRepo, realEvents);
-  if (!rel || rel === "." || rel.startsWith("..") || isAbsolute15(rel)) {
+  const rel = relative16(realRepo, realEvents);
+  if (!rel || rel === "." || rel.startsWith("..") || isAbsolute16(rel)) {
     return { ok: false, code: "SYMLINK", error: "Refusing to read events path escaping repository root" };
   }
   return { ok: true, runId, eventsPath: realEvents };
@@ -25924,6 +25936,7 @@ function defaultFactoryLedgerPath({
 function computeRunEconomics({
   runId = null,
   repo = null,
+  repoName = null,
   totalTickets = 0,
   mergedCount = 0,
   failedCount = 0,
@@ -25957,10 +25970,11 @@ function computeRunEconomics({
       cleanRequests[k] = toNonNegInt2(v);
     }
   }
+  const resolvedRepoName = typeof repoName === "string" && repoName.trim() ? repoName.trim() : typeof repo === "string" && repo.trim() ? basename10(resolve27(repo)) : "workspace";
   return {
     ts: typeof ts === "string" && ts ? ts : (/* @__PURE__ */ new Date()).toISOString(),
     runId: typeof runId === "string" && runId ? runId : "run-unknown",
-    repoName: typeof repo === "string" && repo ? basename10(resolve27(repo)) : "workspace",
+    repoName: resolvedRepoName,
     totalTickets: normTotal,
     mergedCount: normMerged,
     failedCount: normFailed,
@@ -29297,7 +29311,7 @@ ${g?.output?.slice(0, 300)}`);
     const ledger = new FactoryLedger(
       plan.ledgerFile ? { ledgerFile: plan.ledgerFile, repo } : { repo }
     );
-    ledger.appendRunSummary(economics);
+    ledger.appendRunSummary({ ...economics, repo });
   } catch {
   }
   status.report(report);
@@ -31289,7 +31303,7 @@ import {
   rmSync as rmSync19,
   writeFileSync as writeFileSync26
 } from "node:fs";
-import { dirname as dirname29, join as join46, resolve as resolve33 } from "node:path";
+import { dirname as dirname29, isAbsolute as isAbsolute14, join as join46, relative as relative15, resolve as resolve33, sep as sep9 } from "node:path";
 var SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 var VALID_HUNK_VERDICTS = /* @__PURE__ */ new Set(["accepted", "flagged", "pending"]);
 function assertNotSymlink4(targetPath) {
@@ -31362,8 +31376,40 @@ function parseUnifiedDiffHunks(diffText = "") {
   };
   const headerRe = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$/;
   for (const line of rawLines) {
-    if (line.startsWith("diff --git ")) {
+    const hunkStillExpectsLines = currentHunk !== null && (currentHunk.oldRem > 0 || currentHunk.newRem > 0);
+    if (hunkStillExpectsLines) {
+      if (line.startsWith("+")) {
+        currentHunk.newRem = Math.max(0, currentHunk.newRem - 1);
+        currentHunk.addedCount += 1;
+        currentHunk.lines.push(line);
+        continue;
+      }
+      if (line.startsWith("-")) {
+        currentHunk.oldRem = Math.max(0, currentHunk.oldRem - 1);
+        currentHunk.removedCount += 1;
+        currentHunk.lines.push(line);
+        continue;
+      }
+      if (line.startsWith(" ")) {
+        currentHunk.oldRem = Math.max(0, currentHunk.oldRem - 1);
+        currentHunk.newRem = Math.max(0, currentHunk.newRem - 1);
+        currentHunk.lines.push(line);
+        continue;
+      }
+      if (line.startsWith("\\")) {
+        currentHunk.lines.push(line);
+        continue;
+      }
       flushHunk();
+    } else if (currentHunk !== null) {
+      if (line.startsWith("\\")) {
+        currentHunk.lines.push(line);
+        flushHunk();
+        continue;
+      }
+      flushHunk();
+    }
+    if (line.startsWith("diff --git ")) {
       const m = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
       currentFile = m ? m[2] : "unknown";
       continue;
@@ -31374,25 +31420,22 @@ function parseUnifiedDiffHunks(diffText = "") {
     }
     const hm = headerRe.exec(line);
     if (hm) {
-      flushHunk();
+      const oldLines = hm[2] !== void 0 ? Number(hm[2]) : 1;
+      const newLines = hm[4] !== void 0 ? Number(hm[4]) : 1;
       currentHunk = {
         file: currentFile || "unknown",
         oldStart: Number(hm[1]),
-        oldLines: hm[2] !== void 0 ? Number(hm[2]) : 1,
+        oldLines,
         newStart: Number(hm[3]),
-        newLines: hm[4] !== void 0 ? Number(hm[4]) : 1,
+        newLines,
+        oldRem: oldLines,
+        newRem: newLines,
         header: line,
         heading: (hm[5] || "").trim(),
         lines: [],
         addedCount: 0,
         removedCount: 0
       };
-      continue;
-    }
-    if (currentHunk) {
-      if (line.startsWith("+")) currentHunk.addedCount += 1;
-      else if (line.startsWith("-")) currentHunk.removedCount += 1;
-      currentHunk.lines.push(line);
     }
   }
   flushHunk();
@@ -31422,13 +31465,13 @@ function loadAcceptVerdicts(repo) {
     return {};
   }
 }
-function saveAcceptVerdicts(repo, verdictsMap = {}) {
+function saveAcceptVerdicts(repo, verdictsMap = {}, { merge = false } = {}) {
   const { boosterDir } = resolveSafeBoosterDir(repo);
   mkdirSync26(boosterDir, { recursive: true, mode: 448 });
   assertNotSymlink4(boosterDir);
   const statePath = join46(boosterDir, "accept-state.json");
   assertNotSymlink4(statePath);
-  const clean = {};
+  const clean = merge ? { ...loadAcceptVerdicts(repo) } : {};
   if (verdictsMap && typeof verdictsMap === "object" && !Array.isArray(verdictsMap)) {
     for (const [fp, v] of Object.entries(verdictsMap)) {
       if (!SHA256_HEX_RE.test(fp)) continue;
@@ -31437,6 +31480,8 @@ function saveAcceptVerdicts(repo, verdictsMap = {}) {
       }
       if (v === "accepted" || v === "flagged") {
         clean[fp] = v;
+      } else if (v === "pending") {
+        delete clean[fp];
       }
     }
   }
@@ -31540,6 +31585,28 @@ function readGateManifestSummary(canonRepo) {
     return { totalEntries: 0, gatesByType: {}, recent: [] };
   }
 }
+function resolveContainedRepoFile(canonRepo, relFile) {
+  if (typeof relFile !== "string" || !relFile || relFile.includes("\0") || isAbsolute14(relFile)) {
+    return null;
+  }
+  const fullCandidate = resolve33(canonRepo, relFile);
+  const lexRel = relative15(canonRepo, fullCandidate);
+  if (!lexRel || lexRel.startsWith("..") || isAbsolute14(lexRel)) {
+    return null;
+  }
+  let cur = canonRepo;
+  for (const seg of lexRel.split(sep9).filter(Boolean)) {
+    cur = join46(cur, seg);
+    const st = assertNotSymlink4(cur);
+    if (!st) return null;
+  }
+  const realFull = realpathSync17(fullCandidate);
+  const realRel = relative15(canonRepo, realFull);
+  if (!realRel || realRel.startsWith("..") || isAbsolute14(realRel)) {
+    return null;
+  }
+  return realFull;
+}
 function readReportSummary(boosterDir, exists) {
   if (!exists) return null;
   const reportPath = join46(boosterDir, "report.json");
@@ -31587,9 +31654,9 @@ function buildAcceptanceDossier({
   });
   const touchedExportHints = [];
   for (const relFile of filesSet) {
-    if (relFile.startsWith("..") || relFile.includes("\0")) continue;
-    const fullFile = join46(canonRepo, relFile);
     try {
+      const fullFile = resolveContainedRepoFile(canonRepo, relFile);
+      if (!fullFile) continue;
       const fSt = assertNotSymlink4(fullFile);
       if (!fSt || !fSt.isFile()) continue;
       const src = readFileSync37(fullFile, "utf8");
@@ -31734,12 +31801,13 @@ function renderAcceptTuiFrame(dossier, { selectedIndex = 0, repo = null, osc8 = 
     flaggedHunks: 0,
     pendingHunks: hunks.length
   };
+  const safeBase = sanitizeOscField(String(dossier?.base || "HEAD")) || "HEAD";
   const lines = [];
   const hLine = "\u2500".repeat(width - 2);
   lines.push(`${ANSI.cyan}\u256D${hLine}\u256E${ANSI.reset}`);
   const readyBadge = dossier?.readyForSignOff ? `${ANSI.brightGreen}${ANSI.bold}\u2713 P6 SIGN-OFF READY${ANSI.reset}` : `${ANSI.brightYellow}${ANSI.bold}\u2696 REVIEWING (${counts.acceptedHunks}/${counts.totalHunks} accepted, ${counts.flaggedHunks} flagged)${ANSI.reset}`;
   lines.push(
-    `  ${ANSI.brightCyan}${ANSI.bold}ADLC P6 SIGN-OFF WORKBENCH${ANSI.reset}  \u2502  Base: ${ANSI.bold}${dossier?.base || "HEAD"}${ANSI.reset}  \u2502  ${readyBadge}`
+    `  ${ANSI.brightCyan}${ANSI.bold}ADLC P6 SIGN-OFF WORKBENCH${ANSI.reset}  \u2502  Base: ${ANSI.bold}${safeBase}${ANSI.reset}  \u2502  ${readyBadge}`
   );
   const callerCount = dossier?.externalCallers?.callers?.length ?? 0;
   const gateCount = dossier?.gateManifest?.totalEntries ?? 0;
@@ -31749,21 +31817,25 @@ function renderAcceptTuiFrame(dossier, { selectedIndex = 0, repo = null, osc8 = 
   lines.push(`${ANSI.cyan}\u2570${hLine}\u256F${ANSI.reset}`);
   if (hunks.length === 0) {
     lines.push("");
-    lines.push(`  ${ANSI.dim}Empty diff against ${dossier?.base || "HEAD"} \u2014 nothing to sign off.${ANSI.reset}`);
+    lines.push(`  ${ANSI.dim}Empty diff against ${safeBase} \u2014 nothing to sign off.${ANSI.reset}`);
   } else {
     const idx = Math.max(0, Math.min(hunks.length - 1, selectedIndex));
     const sel = hunks[idx];
-    const locLabel = `${sel.file}:${sel.newStart}`;
-    const linkedLoc = osc8 && repo ? formatOsc8FileLink(join47(repo, sel.file), locLabel, { line: sel.newStart, enabled: true }) : locLabel;
+    const safeFile = sanitizeOscField(String(sel.file ?? ""));
+    const safeId = sanitizeOscField(String(sel.id ?? "H"));
+    const locLabel = `${safeFile}:${sel.newStart}`;
+    const linkedLoc = osc8 && repo && safeFile ? formatOsc8FileLink(join47(repo, safeFile), locLabel, { line: sel.newStart, enabled: true }) : locLabel;
     const verdictBadge = sel.verdict === "accepted" ? `${ANSI.brightGreen}[ACCEPTED]${ANSI.reset}` : sel.verdict === "flagged" ? `${ANSI.brightRed}[FLAGGED FOR RESCUE]${ANSI.reset}` : `${ANSI.yellow}[PENDING]${ANSI.reset}`;
     lines.push("");
     lines.push(
-      `  ${ANSI.bold}Hunk ${idx + 1}/${hunks.length} (${sel.id})${ANSI.reset}  ${verdictBadge}  ${ANSI.cyan}${linkedLoc}${ANSI.reset}  ${ANSI.dim}(+${sel.addedCount}/-${sel.removedCount})${ANSI.reset}`
+      `  ${ANSI.bold}Hunk ${idx + 1}/${hunks.length} (${safeId})${ANSI.reset}  ${verdictBadge}  ${ANSI.cyan}${linkedLoc}${ANSI.reset}  ${ANSI.dim}(+${sel.addedCount}/-${sel.removedCount})${ANSI.reset}`
     );
-    lines.push(`  ${ANSI.gray}${sel.header}${ANSI.reset}`);
+    lines.push(`  ${ANSI.gray}${sanitizeOscField(String(sel.header ?? ""))}${ANSI.reset}`);
     for (const dl of (sel.lines ?? []).slice(0, 18)) {
-      const color = dl.startsWith("+") ? ANSI.green : dl.startsWith("-") ? ANSI.red : ANSI.reset;
-      lines.push(`    ${color}${dl}${ANSI.reset}`);
+      const rawLine = String(dl ?? "");
+      const color = rawLine.startsWith("+") ? ANSI.green : rawLine.startsWith("-") ? ANSI.red : ANSI.reset;
+      const safeDl = sanitizeOscField(rawLine.replace(/\t/g, "  "));
+      lines.push(`    ${color}${safeDl}${ANSI.reset}`);
     }
     if ((sel.lines?.length ?? 0) > 18) {
       lines.push(`    ${ANSI.dim}\u2026 (${sel.lines.length - 18} more line(s))${ANSI.reset}`);
@@ -31771,7 +31843,7 @@ function renderAcceptTuiFrame(dossier, { selectedIndex = 0, repo = null, osc8 = 
   }
   if (notice) {
     lines.push("");
-    lines.push(`  ${ANSI.brightYellow}${ANSI.bold}\u26A1 ${notice}${ANSI.reset}`);
+    lines.push(`  ${ANSI.brightYellow}${ANSI.bold}\u26A1 ${sanitizeOscField(String(notice))}${ANSI.reset}`);
   }
   lines.push("");
   lines.push(
@@ -32555,7 +32627,6 @@ try {
   } else if (cmd === "watch") {
     let mux = null;
     const watchRest = [];
-    const KNOWN_MUX_VALUES = /* @__PURE__ */ new Set(["auto", "tmux", "tmuxh", "cmux", "herdr"]);
     for (let i = 0; i < rest.length; i++) {
       const tok = rest[i];
       if (tok.startsWith("--mux=")) {
@@ -32566,13 +32637,7 @@ try {
         }
         mux = normalizeMuxName(rawVal);
       } else if (tok === "--mux") {
-        const nextTok = rest[i + 1];
-        if (nextTok && !nextTok.startsWith("-") && KNOWN_MUX_VALUES.has(nextTok.toLowerCase()) && !existsSync47(nextTok)) {
-          mux = normalizeMuxName(nextTok);
-          i += 1;
-        } else {
-          mux = "auto";
-        }
+        mux = "auto";
       } else {
         watchRest.push(tok);
       }

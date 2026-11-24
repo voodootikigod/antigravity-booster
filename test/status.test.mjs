@@ -202,9 +202,11 @@ test('watchStatus Wave 3: emits deduplicated OSC 9 attention alerts, delegates o
     fakeStdin.emit('data', 'q');
     const code = await p;
     assert.equal(code, 0);
-    assert.equal(muxCalls.length, 1);
+    assert.equal(muxCalls.length, 2, 'expected split-window on startup + display-message on alert');
     assert.equal(muxCalls[0].bin, 'tmux');
     assert.ok(muxCalls[0].args.includes('split-window'));
+    assert.equal(muxCalls[1].bin, 'tmux');
+    assert.equal(muxCalls[1].args[0], 'display-message');
 
     const rescueAlerts = out.match(/\x1b\]9;AGB Needs Rescue: Ticket T1 failed verification/g) || [];
     assert.equal(rescueAlerts.length, 1, 'OSC 9 alert must fire strictly once across repeated ticks');

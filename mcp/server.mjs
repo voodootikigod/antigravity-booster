@@ -869,7 +869,7 @@ async function handleInProcessUiTool(id, name, args) {
     try {
       inspectBoosterDir(repoRes.repo);
       if (args?.saveVerdicts === true) {
-        saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {});
+        saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {}, { merge: true });
       }
       const dossier = buildAcceptanceDossier({
         repo: repoRes.repo,
