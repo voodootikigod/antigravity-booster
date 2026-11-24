@@ -574,6 +574,13 @@ test('agb accept [--base --json --markdown] and agb watch [--mux / --mux=zellij]
   assert.match(readFileSync(mdPath, 'utf8'), /# ADLC P6 Sign-Off Evidence Dossier/);
   assert.equal(execBin('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), candSha);
 
+  // Default non-TTY stdout renders Markdown dossier; invalid/missing flags exit 1
+  const defaultMdRes = runAgb(['accept', repo, '--base', baseSha]);
+  assert.equal(defaultMdRes.status, 0, defaultMdRes.stderr);
+  assert.match(defaultMdRes.stdout, /# ADLC P6 Sign-Off Evidence Dossier/);
+  assert.equal(runAgb(['accept', repo, '--base']).status, 1);
+  assert.equal(runAgb(['accept', repo, '--bogus-flag']).status, 1);
+
   // Unsupported mux (zellij) must exit 1 cleanly
   const zellijRes = runAgb(['watch', repo, '--mux=zellij']);
   assert.equal(zellijRes.status, 1);

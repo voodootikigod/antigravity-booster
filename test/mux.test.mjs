@@ -150,4 +150,41 @@ test('mux engine supports tmux (and tmuxh alias), cmux, and herdr, rejects zelli
     }),
     { mux: 'cmux', bin: 'cmux', args: ['--socket', '/tmp/cmux.sock', 'notify', '--title', 'Alert', '--body', 'Check T1'] }
   );
+  assert.deepEqual(
+    buildMuxNotificationArgs({
+      mux: 'tmux',
+      title: 'Alert',
+      body: 'Check T1',
+      env: { TMUX: '/tmp/tmux/0' },
+    }),
+    { mux: 'tmux', bin: 'tmux', args: ['display-message', 'Alert: Check T1'] }
+  );
+
+  // cmux launchMuxSplit success + binary error / non-zero exit status failure paths
+  const cmuxExec = launchMuxSplit({
+    mux: 'cmux',
+    cwd: '/tmp/wt',
+    command: 'agb watch /tmp/repo',
+    env: { CMUX_SOCKET_PATH: '/tmp/cmux.sock' },
+    spawnSyncFn: () => ({ status: 0, stdout: 'ok\n', stderr: '' }),
+  });
+  assert.deepEqual(cmuxExec, { ok: true, mux: 'cmux', paneId: null });
+
+  const nonZeroExec = launchMuxSplit({
+    mux: 'tmux',
+    cwd: '/tmp/wt',
+    env: { TMUX: '/tmp/tmux/0' },
+    spawnSyncFn: () => ({ status: 1, stdout: '', stderr: 'no server running' }),
+  });
+  assert.equal(nonZeroExec.ok, false);
+  assert.match(nonZeroExec.error, /no server running/);
+
+  const enoentExec = launchMuxSplit({
+    mux: 'cmux',
+    cwd: '/tmp/wt',
+    env: { CMUX_SOCKET_PATH: '/tmp/cmux.sock' },
+    spawnSyncFn: () => ({ error: new Error('spawn cmux ENOENT') }),
+  });
+  assert.equal(enoentExec.ok, false);
+  assert.match(enoentExec.error, /ENOENT/);
 });
