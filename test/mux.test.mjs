@@ -100,7 +100,7 @@ test('mux engine supports tmux (and tmuxh alias), cmux, and herdr, rejects zelli
     args: ['split-window', '-h', '-d', '-c', '/tmp/wt', 'agb', 'rescue', 'T1'],
   });
 
-  // Rejects newline injection in command
+  // Rejects newline or shell metacharacter injection in command, and POSIX-quotes commandArgs with spaces/metachars
   assert.equal(
     launchMuxSplit({
       mux: 'cmux',
@@ -109,6 +109,26 @@ test('mux engine supports tmux (and tmuxh alias), cmux, and herdr, rejects zelli
       env: { CMUX_SOCKET_PATH: '/tmp/cmux.sock' },
     }).ok,
     false
+  );
+  assert.equal(
+    launchMuxSplit({
+      mux: 'cmux',
+      cwd: '/tmp/wt',
+      command: 'agb watch; whoami',
+      env: { CMUX_SOCKET_PATH: '/tmp/cmux.sock' },
+    }).ok,
+    false
+  );
+  const quotedCmux = buildMuxSplitPlan({
+    mux: 'cmux',
+    cwd: '/tmp/wt',
+    commandArgs: ['agb', 'rescue', 'T1', '/tmp/dir with space;bad'],
+    env: { CMUX_SOCKET_PATH: '/tmp/cmux.sock' },
+  });
+  assert.equal(quotedCmux.ok, true);
+  assert.equal(
+    quotedCmux.splitCall.args.at(-1),
+    "agb rescue T1 '/tmp/dir with space;bad'"
   );
 
   // Notification argument builders

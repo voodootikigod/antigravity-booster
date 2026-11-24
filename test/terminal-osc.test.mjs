@@ -38,6 +38,12 @@ test('formatOsc8FileLink & stripOscAndAnsi: preserve exact visible column width 
   assert.doesNotMatch(evilLink, /PWNED|\r|\n/);
   assert.match(evilLink, /%3Bdir/);
   assert.equal(stripOscAndAnsi(evilLink), 'a.js');
+
+  // Nested escape reconstruction & inner CSI inside OSC payloads are neutralized in one pass
+  const spliced = stripOscAndAnsi('\x1b\x1bA]9;PWNED\x07');
+  assert.equal(spliced.includes('\x1b'), false, 'must never leave ESC byte in stripped output');
+  const oscWithInnerCsi = stripOscAndAnsi('\x1b]8;;file:///a\x1b[31mb\x07visible\x1b]8;;\x07');
+  assert.equal(oscWithInnerCsi, 'visible');
 });
 
 test('formatOscAttentionAlert & AttentionTransitionTracker: sanitize notifications and fire strictly once per edge transition', () => {

@@ -11,6 +11,7 @@ import {
   formatAcceptanceDossierMarkdown,
   parseUnifiedDiffHunks,
   saveAcceptVerdicts,
+  writeAcceptDossierFile,
 } from '../lib/accept.mjs';
 import { renderAcceptTuiFrame, runInteractiveAcceptTui } from '../lib/accept-tui.mjs';
 import { stripOscAndAnsi } from '../lib/terminal-osc.mjs';
@@ -131,7 +132,7 @@ test('buildAcceptanceDossier, SHA-256 fingerprint invalidation, external callers
     assert.equal(flagRes.counts.acceptedHunks, 1);
     assert.equal(flagRes.counts.flaggedHunks, 1);
 
-    // Session B: navigate 'j' to hunk 2, 'k' back to hunk 1, 'j' to hunk 2, accept hunk 2 ('a'), export ('d'), quit ('q')
+    // Session B: Left-Arrow ('\x1b[D') and End ('\x1b[F') must NOT export dossier or toggle flag; 'j' -> 'a' -> 'd' -> 'q' completes sign-off
     const dReloaded = buildAcceptanceDossier({ repo: fx.dir, base: fx.baseSha });
     const fakeStdin2 = Object.assign(new EventEmitter(), {
       isTTY: true,
@@ -146,7 +147,7 @@ test('buildAcceptanceDossier, SHA-256 fingerprint invalidation, external callers
       osc8: true,
     });
     setTimeout(() => {
-      fakeStdin2.emit('data', 'jkjadq');
+      fakeStdin2.emit('data', '\x1b[D\x1b[Fjkjadq');
     }, 15);
     const tuiRes = await tuiPromise;
     assert.equal(tuiRes.ok, true);
@@ -174,11 +175,21 @@ test('buildAcceptanceDossier, SHA-256 fingerprint invalidation, external callers
     assert.equal(dAfterEdit.counts.pendingHunks, 1);
     assert.equal(dAfterEdit.readyForSignOff, false);
 
-    // 5. Rejects invalid git ref starting with '-' and symlinked .booster
+    // 5. Empty diff against HEAD is never readyForSignOff; rejects '-' ref, intermediate symlink in writeAcceptDossierFile, and symlinked .booster
+    const emptyDossier = buildAcceptanceDossier({ repo: fx.dir, base: 'HEAD' });
+    // Reset math.mjs to HEAD first to verify zero-hunk empty diff
+    fx.g('checkout', '--', 'src/math.mjs');
+    const cleanHeadDossier = buildAcceptanceDossier({ repo: fx.dir, base: 'HEAD' });
+    assert.equal(cleanHeadDossier.emptyDiff, true);
+    assert.equal(cleanHeadDossier.readyForSignOff, false, 'empty diff must not report readyForSignOff');
+    assert.ok(emptyDossier);
     assert.throws(() => buildAcceptanceDossier({ repo: fx.dir, base: '--output=/tmp/pwn' }), /Invalid git base ref/);
     rmSync(join(fx.dir, '.booster'), { recursive: true, force: true });
     const outside = mkdtempSync(join(tmpdir(), 'agb-accept-outside-'));
     try {
+      symlinkSync(outside, join(fx.dir, 'sym-out'), 'dir');
+      assert.throws(() => writeAcceptDossierFile(fx.dir, '# md', 'sym-out/sub/dossier.md'), /symbolic link not allowed/i);
+      rmSync(join(fx.dir, 'sym-out'), { force: true });
       symlinkSync(outside, join(fx.dir, '.booster'), 'dir');
       assert.throws(() => saveAcceptVerdicts(fx.dir, {}), /symbolic link not allowed/i);
       assert.throws(() => buildAcceptanceDossier({ repo: fx.dir, base: fx.baseSha }), /symbolic link not allowed/i);

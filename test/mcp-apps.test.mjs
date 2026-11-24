@@ -825,7 +825,8 @@ test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejec
     }) + '\n'
   );
 
-  const srv = mcpSession(MCP_DIST, {
+  // Use MCP_SRC when testing AGB_FACTORY_LEDGER_FILE env override (MCP_DIST ignores unbundled env overrides per Decision 2)
+  const srv = mcpSession(MCP_SRC, {
     env: { ...process.env, AGB_FACTORY_LEDGER_FILE: ledgerFile },
   });
   try {

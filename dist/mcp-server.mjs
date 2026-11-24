@@ -920,6 +920,7 @@ import { homedir } from "node:os";
 import { basename, dirname as dirname2, join as join2, resolve as resolve2 } from "node:path";
 import { randomUUID as randomUUID2 } from "node:crypto";
 var MAX_FACTORY_LEDGER_ENTRIES = 1e3;
+var IS_BUNDLED2 = true;
 function toNonNegInt(v) {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
 }
@@ -940,12 +941,12 @@ function assertNotSymlinkPath(targetPath) {
 }
 function defaultFactoryLedgerPath({
   repo = null,
-  home = process.env.AGB_HOME_DIR || homedir()
+  home = !IS_BUNDLED2 && process.env.AGB_HOME_DIR || homedir()
 } = {}) {
-  if (process.env.AGB_FACTORY_LEDGER_FILE) {
+  if (!IS_BUNDLED2 && process.env.AGB_FACTORY_LEDGER_FILE) {
     return resolve2(process.env.AGB_FACTORY_LEDGER_FILE);
   }
-  if (!process.env.AGB_HOME_DIR && process.env.NODE_TEST_CONTEXT && repo) {
+  if ((IS_BUNDLED2 || !process.env.AGB_HOME_DIR) && process.env.NODE_TEST_CONTEXT && repo) {
     return join2(resolve2(repo), ".booster", "factory_ledger.jsonl");
   }
   return join2(
@@ -1062,8 +1063,10 @@ var FactoryLedger = class {
     mkdirSync2(dir, { recursive: true, mode: 448 });
     assertNotSymlinkPath(dir);
     assertNotSymlinkPath(this.ledgerFile);
+    assertNotSymlinkPath(this.lockFile);
     return withLockSync(this.lockFile, () => {
       assertNotSymlinkPath(this.ledgerFile);
+      assertNotSymlinkPath(this.lockFile);
       const existing = this.readRuns();
       existing.push(entry);
       const bounded = existing.length > this.maxEntries ? existing.slice(existing.length - this.maxEntries) : existing;
@@ -1776,12 +1779,25 @@ function buildAcceptanceDossier({
     throw new Error(`Invalid git base ref: ${ref}`);
   }
   const { canonRepo, boosterDir, exists } = resolveSafeBoosterDir(repo);
-  const diffText = execFileSync4("git", ["diff", "--end-of-options", ref], {
-    cwd: canonRepo,
-    encoding: "utf8",
-    env: sanitizedGitEnv(),
-    maxBuffer: 32 * 1024 * 1024
-  });
+  const diffText = execFileSync4(
+    "git",
+    [
+      "--no-pager",
+      "diff",
+      "--no-ext-diff",
+      "--no-color",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "--end-of-options",
+      ref
+    ],
+    {
+      cwd: canonRepo,
+      encoding: "utf8",
+      env: sanitizedGitEnv(),
+      maxBuffer: 32 * 1024 * 1024
+    }
+  );
   const savedVerdicts = verdictsOverride && typeof verdictsOverride === "object" ? verdictsOverride : loadAcceptVerdicts(canonRepo);
   const rawHunks = parseUnifiedDiffHunks(diffText);
   const filesSet = /* @__PURE__ */ new Set();
@@ -1840,7 +1856,8 @@ ${touchedExportHints.join("\n")}
     flaggedHunks,
     pendingHunks
   };
-  const readyForSignOff = flaggedHunks === 0 && pendingHunks === 0 && !lastReport?.compromised;
+  const reportFailedCount = lastReport?.failed && typeof lastReport.failed === "object" && !Array.isArray(lastReport.failed) ? Object.keys(lastReport.failed).length : 0;
+  const readyForSignOff = hunks.length > 0 && flaggedHunks === 0 && pendingHunks === 0 && !lastReport?.compromised && reportFailedCount === 0;
   return {
     ok: true,
     repo: canonRepo,
@@ -3432,7 +3449,19 @@ function buildPlanViewerHtml() {
     "  __bridge.scheduleSizeReport();",
     "});",
     "",
+    "function syncGateSettings() {",
+    '  if (!viewerState.plan || typeof viewerState.plan !== "object") return;',
+    "  viewerState.plan.gate = Object.assign({}, viewerState.plan.gate || {});",
+    "  const af = edAutofix.value.trim();",
+    "  if (af) viewerState.plan.gate.autofix = af; else delete viewerState.plan.gate.autofix;",
+    "}",
+    "",
+    'edAutofix.addEventListener("input", () => {',
+    "  syncGateSettings();",
+    "});",
+    "",
     'document.getElementById("btnApplyTicket").addEventListener("click", () => {',
+    "  syncGateSettings();",
     "  const tickets = (viewerState.plan && Array.isArray(viewerState.plan.tickets)) ? viewerState.plan.tickets : [];",
     "  const t = tickets.find((item) => item && String(item.id) === selectedId);",
     "  if (!t) return;",
@@ -3444,17 +3473,13 @@ function buildPlanViewerHtml() {
     "  t.scope = edScope.value.split(/\\r?\\n/).map((s) => s.trim()).filter(Boolean);",
     "  t.rails = edRails.value.split(/\\r?\\n/).map((s) => s.trim()).filter(Boolean);",
     "  t.body = edBody.value;",
-    "  if (viewerState.plan) {",
-    "    viewerState.plan.gate = Object.assign({}, viewerState.plan.gate || {});",
-    "    const af = edAutofix.value.trim();",
-    "    if (af) viewerState.plan.gate.autofix = af; else delete viewerState.plan.gate.autofix;",
-    "  }",
     "  __bridge.updateModelContext({ selectedTicket: t }).catch(() => {});",
     "  dagEl.innerHTML = renderDagSvg(tickets, selectedId);",
     '  pathEl.textContent = (viewerState.path || "Plan") + " (modified)";',
     "});",
     "",
     'document.getElementById("btnSavePlan").addEventListener("click", async () => {',
+    "  syncGateSettings();",
     '  const targetPath = viewerState.path || (__bridge.getToolInput() && __bridge.getToolInput().path) || "plan.agbplan";',
     '  const normPath = String(targetPath).replace(/\\\\/g, "/");',
     '  const uri = normPath.startsWith("file://") ? normPath : ("file://" + (normPath.startsWith("/") ? "" : "/") + normPath);',
@@ -3548,8 +3573,9 @@ function buildAcceptWorkbenchHtml() {
     "  }",
     "  const compromised = Boolean(acceptState.report && acceptState.report.compromised);",
     "  const truncated = Boolean(acceptState.truncated);",
+    '  const reportFailedCount = (acceptState.report && acceptState.report.failed && typeof acceptState.report.failed === "object" && !Array.isArray(acceptState.report.failed)) ? Object.keys(acceptState.report.failed).length : 0;',
     '  const totalCount = (acceptState.counts && typeof acceptState.counts.totalHunks === "number") ? acceptState.counts.totalHunks : hunks.length;',
-    "  const ready = !compromised && !truncated && flagged === 0 && pending === 0 && accepted === totalCount;",
+    "  const ready = !compromised && !truncated && reportFailedCount === 0 && totalCount > 0 && flagged === 0 && pending === 0 && accepted === totalCount;",
     '  badgeEl.className = "badge " + (ready ? "ok" : (compromised ? "err" : "warn"));',
     '  badgeEl.textContent = compromised ? "COMPROMISED" : (ready ? "P6 SIGN-OFF READY" : ("REVIEWING " + accepted + "/" + totalCount + (truncated ? " (truncated)" : "")));',
     '  const gateTotal = (acceptState.gateManifest && typeof acceptState.gateManifest.totalEntries === "number") ? acceptState.gateManifest.totalEntries : 0;',
@@ -3624,8 +3650,48 @@ function buildAcceptWorkbenchHtml() {
     "  }",
     "});",
     "",
+    "function buildLiveDossierMarkdown() {",
+    "  const hunks = Array.isArray(acceptState.hunks) ? acceptState.hunks : [];",
+    "  let accepted = 0;",
+    "  let flagged = 0;",
+    "  let pending = 0;",
+    "  for (const h of hunks) {",
+    '    const fp = h && typeof h.fingerprint === "string" ? h.fingerprint : "";',
+    '    const v = localVerdicts[fp] || "pending";',
+    '    if (v === "accepted") accepted += 1;',
+    '    else if (v === "flagged") flagged += 1;',
+    "    else pending += 1;",
+    "  }",
+    "  const compromised = Boolean(acceptState.report && acceptState.report.compromised);",
+    "  const truncated = Boolean(acceptState.truncated);",
+    '  const reportFailedCount = (acceptState.report && acceptState.report.failed && typeof acceptState.report.failed === "object" && !Array.isArray(acceptState.report.failed)) ? Object.keys(acceptState.report.failed).length : 0;',
+    '  const totalCount = (acceptState.counts && typeof acceptState.counts.totalHunks === "number") ? acceptState.counts.totalHunks : hunks.length;',
+    "  const ready = !compromised && !truncated && reportFailedCount === 0 && totalCount > 0 && flagged === 0 && pending === 0 && accepted === totalCount;",
+    "  const lines = [",
+    '    "# ADLC P6 Sign-Off Evidence Dossier",',
+    '    "",',
+    '    "- **Status:** " + (ready ? "READY FOR P6 MERGE SIGN-OFF" : "REVIEW IN PROGRESS"),',
+    '    "- **Base Ref:** `" + String(acceptState.base || "HEAD") + "`",',
+    '    "- **Hunks:** " + accepted + "/" + totalCount + " accepted (" + flagged + " flagged, " + pending + " pending)",',
+    '    "",',
+    '    "## Hunk Sign-Off Checklist",',
+    '    "",',
+    "  ];",
+    "  if (!hunks.length) {",
+    '    lines.push("_Empty diff \u2014 zero hunks against base._");',
+    "  } else {",
+    "    for (const h of hunks) {",
+    '      const fp = h && typeof h.fingerprint === "string" ? h.fingerprint : "";',
+    '      const v = localVerdicts[fp] || "pending";',
+    '      const box = v === "accepted" ? "[x]" : (v === "flagged" ? "[!]" : "[ ]");',
+    '      lines.push("- " + box + " **" + String((h && h.id) || "H") + "** `" + String((h && h.file) || "file") + ":" + String((h && h.newStart) || 1) + "` \u2014 _" + v + "_");',
+    "    }",
+    "  }",
+    '  return lines.join("\\n");',
+    "}",
+    "",
     'document.getElementById("btnSendDossier").addEventListener("click", async () => {',
-    '  const md = typeof acceptState.markdown === "string" && acceptState.markdown ? acceptState.markdown : "ADLC P6 Sign-Off Dossier ready for review.";',
+    "  const md = buildLiveDossierMarkdown();",
     "  try {",
     "    await __bridge.sendUiMessage(md);",
     '    statusEl.textContent = "Sent P6 PR Dossier to conversation.";',
@@ -3742,8 +3808,8 @@ function readPackageVersion() {
     return "unknown";
   }
 }
-var IS_BUNDLED2 = true;
-function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED2) {
+var IS_BUNDLED3 = true;
+function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED3) {
   const candidate = bundled ? join7(dir, "agb.mjs") : join7(dir, "..", "bin", "agb.mjs");
   if (bundled || existsSync6(candidate)) return { cmd: process.execPath, args: [candidate] };
   return { cmd: "agb", args: [] };
@@ -4513,13 +4579,21 @@ async function handleInProcessUiTool(id, name, args) {
     }
     try {
       inspectBoosterDir(repoRes.repo);
+      let effectiveOverride = null;
       if (args?.saveVerdicts === true) {
         saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {}, { merge: true });
+      } else if (cleanVerdicts) {
+        const merged = { ...loadAcceptVerdicts(repoRes.repo) };
+        for (const [fp, val] of Object.entries(cleanVerdicts)) {
+          if (val === "pending") delete merged[fp];
+          else merged[fp] = val;
+        }
+        effectiveOverride = merged;
       }
       const dossier = buildAcceptanceDossier({
         repo: repoRes.repo,
         base,
-        verdictsOverride: args?.saveVerdicts === true ? null : cleanVerdicts
+        verdictsOverride: effectiveOverride
       });
       const markdown = sliceUtf8(formatAcceptanceDossierMarkdown(dossier), 64 * 1024);
       const structuredContent = boundStructuredObject(

@@ -19,6 +19,7 @@ import { FactoryLedger } from '../lib/factory-ledger.mjs';
 import {
   buildAcceptanceDossier,
   formatAcceptanceDossierMarkdown,
+  loadAcceptVerdicts,
   saveAcceptVerdicts,
 } from '../lib/accept.mjs';
 import { sendControlCommand } from '../lib/control-ipc.mjs';
@@ -868,13 +869,21 @@ async function handleInProcessUiTool(id, name, args) {
     }
     try {
       inspectBoosterDir(repoRes.repo);
+      let effectiveOverride = null;
       if (args?.saveVerdicts === true) {
         saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {}, { merge: true });
+      } else if (cleanVerdicts) {
+        const merged = { ...loadAcceptVerdicts(repoRes.repo) };
+        for (const [fp, val] of Object.entries(cleanVerdicts)) {
+          if (val === 'pending') delete merged[fp];
+          else merged[fp] = val;
+        }
+        effectiveOverride = merged;
       }
       const dossier = buildAcceptanceDossier({
         repo: repoRes.repo,
         base,
-        verdictsOverride: args?.saveVerdicts === true ? null : cleanVerdicts,
+        verdictsOverride: effectiveOverride,
       });
       const markdown = sliceUtf8(formatAcceptanceDossierMarkdown(dossier), 64 * 1024);
       const structuredContent = boundStructuredObject(

@@ -116,8 +116,8 @@
       "name": "AGB_FACTORY_LEDGER_FILE",
       "group": "paths",
       "default": "<plugin_data>/factory_ledger.jsonl",
-      "bundledIgnored": false,
-      "description": "Override path for the append-only Factory Economics Ledger written by agb run and read by Mission Control."
+      "bundledIgnored": true,
+      "description": "Unbundled override path for the append-only Factory Economics Ledger written by agb run and read by Mission Control; ignored in bundled plugin builds."
     },
     {
       "name": "AGB_WORKER_BUILD_CMD",

@@ -17885,7 +17885,78 @@ import { isAbsolute as isAbsolute9, resolve as resolve21 } from "node:path";
 import { pathToFileURL } from "node:url";
 function stripOscAndAnsi(input) {
   if (typeof input !== "string" || input.length === 0) return "";
-  return input.replace(/(?:\x1b\]|\x9d)[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?/g, "").replace(/(?:\x1b[PX^_]|[\x90\x98\x9e\x9f])[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)?/g, "").replace(/(?:\x1b\[|\x9b)[0-9;?]*[ -/]*[@-~]/g, "").replace(/\x1b[@-_]/g, "");
+  let out = "";
+  let i = 0;
+  const len = input.length;
+  while (i < len) {
+    const code = input.charCodeAt(i);
+    if (code === 144 || code === 152 || code === 157 || code === 158 || code === 159) {
+      i += 1;
+      while (i < len) {
+        const c = input.charCodeAt(i);
+        if (c === 7 || c === 156) {
+          i += 1;
+          break;
+        }
+        if (c === 27 && input.charCodeAt(i + 1) === 92) {
+          i += 2;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (code === 155) {
+      i += 1;
+      while (i < len && input.charCodeAt(i) >= 32 && input.charCodeAt(i) <= 63) i += 1;
+      if (i < len && input.charCodeAt(i) >= 64 && input.charCodeAt(i) <= 126) i += 1;
+      continue;
+    }
+    if (code === 156) {
+      i += 1;
+      continue;
+    }
+    if (code === 27) {
+      const next = i + 1 < len ? input.charCodeAt(i + 1) : -1;
+      if (next === 93 || next === 80 || next === 88 || next === 94 || next === 95) {
+        i += 2;
+        while (i < len) {
+          const c = input.charCodeAt(i);
+          if (c === 7 || c === 156) {
+            i += 1;
+            break;
+          }
+          if (c === 27 && input.charCodeAt(i + 1) === 92) {
+            i += 2;
+            break;
+          }
+          i += 1;
+        }
+        continue;
+      }
+      if (next === 91) {
+        i += 2;
+        while (i < len && input.charCodeAt(i) >= 32 && input.charCodeAt(i) <= 63) i += 1;
+        if (i < len && input.charCodeAt(i) >= 64 && input.charCodeAt(i) <= 126) i += 1;
+        continue;
+      }
+      if (next >= 32 && next <= 47) {
+        i += 2;
+        while (i < len && input.charCodeAt(i) >= 32 && input.charCodeAt(i) <= 47) i += 1;
+        if (i < len && input.charCodeAt(i) >= 48 && input.charCodeAt(i) <= 126) i += 1;
+        continue;
+      }
+      if (next >= 48 && next <= 126) {
+        i += 2;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    out += input[i];
+    i += 1;
+  }
+  return out;
 }
 function sanitizeOscField(input) {
   if (typeof input !== "string" || input.length === 0) return "";
@@ -19003,6 +19074,18 @@ function assertCleanSingleLine(value, label) {
   }
   return str;
 }
+function assertSafeMuxCommand(value) {
+  const str = assertCleanSingleLine(value, "command");
+  if (/[;&|`$<>\\]/.test(str)) {
+    throw new Error("Unsafe shell metacharacter in multiplexer command");
+  }
+  return str;
+}
+function posixQuoteArg(arg) {
+  const s = assertCleanSingleLine(arg, "commandArgs");
+  if (s.length > 0 && /^[A-Za-z0-9_./:@=-]+$/.test(s)) return s;
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
 function buildMuxSplitPlan({
   mux = "auto",
   cwd = process.cwd(),
@@ -19023,11 +19106,12 @@ function buildMuxSplitPlan({
   assertCleanSingleLine(cwd, "cwd");
   const resolvedCwd = resolve23(cwd);
   if (command !== null && command !== void 0) {
-    assertCleanSingleLine(command, "command");
+    assertSafeMuxCommand(command);
   }
   if (Array.isArray(commandArgs)) {
     for (const arg of commandArgs) assertCleanSingleLine(arg, "commandArgs");
   }
+  const formattedShellCmd = typeof command === "string" && command.trim() ? command.trim() : Array.isArray(commandArgs) && commandArgs.length > 0 ? commandArgs.map(posixQuoteArg).join(" ") : null;
   if (resolvedMux === "herdr") {
     const inHerdr = env?.HERDR_ENV === "1" || Boolean(env?.HERDR_PANE_ID);
     if (!inHerdr && !allowOutsideSession) {
@@ -19038,7 +19122,7 @@ function buildMuxSplitPlan({
         error: "Refusing to control herdr from outside a HERDR_ENV=1 managed pane"
       };
     }
-    const cmdText = typeof command === "string" && command.trim() ? command.trim() : Array.isArray(commandArgs) && commandArgs.length > 0 ? commandArgs.join(" ") : null;
+    const cmdText = formattedShellCmd;
     return {
       ok: true,
       mux: "herdr",
@@ -19063,7 +19147,7 @@ function buildMuxSplitPlan({
       assertCleanSingleLine(env.CMUX_SOCKET_PATH, "CMUX_SOCKET_PATH");
       socketArgs.push("--socket", env.CMUX_SOCKET_PATH.trim());
     }
-    const cmdText = typeof command === "string" && command.trim() ? command.trim() : Array.isArray(commandArgs) && commandArgs.length > 0 ? commandArgs.join(" ") : null;
+    const cmdText = formattedShellCmd;
     return {
       ok: true,
       mux: "cmux",
@@ -25896,6 +25980,7 @@ import { homedir as homedir10 } from "node:os";
 import { basename as basename10, dirname as dirname25, join as join41, resolve as resolve27 } from "node:path";
 import { randomUUID as randomUUID13 } from "node:crypto";
 var MAX_FACTORY_LEDGER_ENTRIES = 1e3;
+var IS_BUNDLED3 = true;
 function toNonNegInt2(v) {
   return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
 }
@@ -25916,12 +26001,12 @@ function assertNotSymlinkPath(targetPath) {
 }
 function defaultFactoryLedgerPath({
   repo = null,
-  home = process.env.AGB_HOME_DIR || homedir10()
+  home = !IS_BUNDLED3 && process.env.AGB_HOME_DIR || homedir10()
 } = {}) {
-  if (process.env.AGB_FACTORY_LEDGER_FILE) {
+  if (!IS_BUNDLED3 && process.env.AGB_FACTORY_LEDGER_FILE) {
     return resolve27(process.env.AGB_FACTORY_LEDGER_FILE);
   }
-  if (!process.env.AGB_HOME_DIR && process.env.NODE_TEST_CONTEXT && repo) {
+  if ((IS_BUNDLED3 || !process.env.AGB_HOME_DIR) && process.env.NODE_TEST_CONTEXT && repo) {
     return join41(resolve27(repo), ".booster", "factory_ledger.jsonl");
   }
   return join41(
@@ -26038,8 +26123,10 @@ var FactoryLedger = class {
     mkdirSync21(dir, { recursive: true, mode: 448 });
     assertNotSymlinkPath(dir);
     assertNotSymlinkPath(this.ledgerFile);
+    assertNotSymlinkPath(this.lockFile);
     return withLockSync(this.lockFile, () => {
       assertNotSymlinkPath(this.ledgerFile);
+      assertNotSymlinkPath(this.lockFile);
       const existing = this.readRuns();
       existing.push(entry);
       const bounded = existing.length > this.maxEntries ? existing.slice(existing.length - this.maxEntries) : existing;
@@ -31512,16 +31599,36 @@ function saveAcceptVerdicts(repo, verdictsMap = {}, { merge = false } = {}) {
   }
   return { ok: true, path: statePath, verdicts: clean };
 }
+function assertNoSymlinkAncestors(rootAnchor, targetPath) {
+  const absRoot = resolve33(rootAnchor);
+  const absTarget = resolve33(targetPath);
+  const rel = relative15(absRoot, absTarget);
+  if (!rel.startsWith("..") && !isAbsolute14(rel)) {
+    let cur2 = absRoot;
+    assertNotSymlink4(cur2);
+    for (const seg of rel.split(sep9).filter(Boolean)) {
+      cur2 = join46(cur2, seg);
+      assertNotSymlink4(cur2);
+    }
+    return;
+  }
+  const parts = absTarget.split(sep9);
+  let cur = absTarget.startsWith(sep9) ? sep9 : parts[0];
+  for (let i = absTarget.startsWith(sep9) ? 1 : 1; i < parts.length; i += 1) {
+    if (!parts[i]) continue;
+    cur = join46(cur, parts[i]);
+    assertNotSymlink4(cur);
+  }
+}
 function writeAcceptDossierFile(repo, markdownText, customOutPath = null) {
   const { canonRepo, boosterDir } = resolveSafeBoosterDir(repo);
   let targetPath;
   if (customOutPath) {
     targetPath = resolve33(canonRepo, customOutPath);
+    assertNoSymlinkAncestors(canonRepo, targetPath);
     const parentDir = dirname29(targetPath);
-    assertNotSymlink4(parentDir);
     mkdirSync26(parentDir, { recursive: true });
-    assertNotSymlink4(parentDir);
-    assertNotSymlink4(targetPath);
+    assertNoSymlinkAncestors(canonRepo, targetPath);
   } else {
     mkdirSync26(boosterDir, { recursive: true, mode: 448 });
     assertNotSymlink4(boosterDir);
@@ -31629,12 +31736,25 @@ function buildAcceptanceDossier({
     throw new Error(`Invalid git base ref: ${ref}`);
   }
   const { canonRepo, boosterDir, exists } = resolveSafeBoosterDir(repo);
-  const diffText = execFileSync21("git", ["diff", "--end-of-options", ref], {
-    cwd: canonRepo,
-    encoding: "utf8",
-    env: sanitizedGitEnv(),
-    maxBuffer: 32 * 1024 * 1024
-  });
+  const diffText = execFileSync21(
+    "git",
+    [
+      "--no-pager",
+      "diff",
+      "--no-ext-diff",
+      "--no-color",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "--end-of-options",
+      ref
+    ],
+    {
+      cwd: canonRepo,
+      encoding: "utf8",
+      env: sanitizedGitEnv(),
+      maxBuffer: 32 * 1024 * 1024
+    }
+  );
   const savedVerdicts = verdictsOverride && typeof verdictsOverride === "object" ? verdictsOverride : loadAcceptVerdicts(canonRepo);
   const rawHunks = parseUnifiedDiffHunks(diffText);
   const filesSet = /* @__PURE__ */ new Set();
@@ -31693,7 +31813,8 @@ ${touchedExportHints.join("\n")}
     flaggedHunks,
     pendingHunks
   };
-  const readyForSignOff = flaggedHunks === 0 && pendingHunks === 0 && !lastReport?.compromised;
+  const reportFailedCount = lastReport?.failed && typeof lastReport.failed === "object" && !Array.isArray(lastReport.failed) ? Object.keys(lastReport.failed).length : 0;
+  const readyForSignOff = hunks.length > 0 && flaggedHunks === 0 && pendingHunks === 0 && !lastReport?.compromised && reportFailedCount === 0;
   return {
     ok: true,
     repo: canonRepo,
@@ -31789,7 +31910,57 @@ function recomputeCounts(dossier) {
     flaggedHunks,
     pendingHunks
   };
-  dossier.readyForSignOff = flaggedHunks === 0 && pendingHunks === 0 && !dossier.report?.compromised;
+  const reportFailedCount = dossier.report?.failed && typeof dossier.report.failed === "object" && !Array.isArray(dossier.report.failed) ? Object.keys(dossier.report.failed).length : 0;
+  dossier.readyForSignOff = hunks.length > 0 && flaggedHunks === 0 && pendingHunks === 0 && !dossier.report?.compromised && reportFailedCount === 0;
+}
+function tokenizeAcceptKeys(str) {
+  const tokens = [];
+  let i = 0;
+  while (i < str.length) {
+    if (str[i] === "\x1B") {
+      if (str.startsWith("\x1B[A", i) || str.startsWith("\x1BOA", i)) {
+        tokens.push("UP");
+        i += 3;
+        continue;
+      }
+      if (str.startsWith("\x1B[B", i) || str.startsWith("\x1BOB", i)) {
+        tokens.push("DOWN");
+        i += 3;
+        continue;
+      }
+      const next = str[i + 1];
+      if (next === "[") {
+        i += 2;
+        while (i < str.length && str.charCodeAt(i) >= 32 && str.charCodeAt(i) <= 63) i += 1;
+        if (i < str.length && str.charCodeAt(i) >= 64 && str.charCodeAt(i) <= 126) i += 1;
+        continue;
+      }
+      if (next === "O") {
+        i += Math.min(str.length - i, 3);
+        continue;
+      }
+      if (next === "]") {
+        i += 2;
+        while (i < str.length) {
+          if (str[i] === "\x07") {
+            i += 1;
+            break;
+          }
+          if (str[i] === "\x1B" && str[i + 1] === "\\") {
+            i += 2;
+            break;
+          }
+          i += 1;
+        }
+        continue;
+      }
+      i += next !== void 0 ? 2 : 1;
+      continue;
+    }
+    tokens.push(str[i]);
+    i += 1;
+  }
+  return tokens;
 }
 function renderAcceptTuiFrame(dossier, { selectedIndex = 0, repo = null, osc8 = false, cols = 100, notice = "" } = {}) {
   const width = Math.max(60, Math.min(cols || 100, 120));
@@ -31918,31 +32089,24 @@ async function runInteractiveAcceptTui(dossier, {
       if (cleaned) return;
       const str = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
       const hunks = dossier.hunks ?? [];
-      for (let i = 0; i < str.length; i++) {
-        if (str.startsWith("\x1B[B", i)) {
+      const tokens = tokenizeAcceptKeys(str);
+      for (const tok of tokens) {
+        if (tok === "DOWN" || tok === "j") {
           if (hunks.length > 0) selectedIndex = Math.min(hunks.length - 1, selectedIndex + 1);
-          i += 2;
           render();
           continue;
         }
-        if (str.startsWith("\x1B[A", i)) {
+        if (tok === "UP" || tok === "k") {
           if (hunks.length > 0) selectedIndex = Math.max(0, selectedIndex - 1);
-          i += 2;
           render();
           continue;
         }
-        const ch = str[i];
+        const ch = tok;
         if (ch === "q" || ch === "Q" || ch === "") {
           finish();
           return;
         }
-        if (ch === "j") {
-          if (hunks.length > 0) selectedIndex = Math.min(hunks.length - 1, selectedIndex + 1);
-          render();
-        } else if (ch === "k") {
-          if (hunks.length > 0) selectedIndex = Math.max(0, selectedIndex - 1);
-          render();
-        } else if ((ch === "a" || ch === "A") && hunks[selectedIndex]) {
+        if ((ch === "a" || ch === "A") && hunks[selectedIndex]) {
           const h = hunks[selectedIndex];
           h.verdict = h.verdict === "accepted" ? "pending" : "accepted";
           if (h.verdict === "pending") delete verdicts[h.fingerprint];
