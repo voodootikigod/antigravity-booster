@@ -655,6 +655,11 @@ if (/agb\\.mjs$/.test(entry)) {
     process.exit(0);
   }
   if (sub === 'plan') {
+    if (process.argv.includes('--estimate')) {
+      writeFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2)));
+      console.log(JSON.stringify({ ok: true, quotaEstimate: { ok: true, willExhaust: false, waves: [] }, tickets: [{ id: 'T-PLAN-1' }] }));
+      process.exit(0);
+    }
     const outIdx = process.argv.indexOf('--out');
     if (outIdx !== -1 && process.argv[outIdx + 1]) {
       writeFileSync(
@@ -738,6 +743,27 @@ if (/agb\\.mjs$/.test(entry)) {
     assert.equal(planRes.result.isError, false);
     assert.equal(planRes.result.structuredContent.fastPath, true);
     assert.equal(planRes.result.structuredContent.tickets[0].id, 'T-PLAN-1');
+
+    const estRes = await srv.send({
+      id: 50,
+      method: 'tools/call',
+      params: { name: 'agb_plan', arguments: { spec: specPath, repo: specDir, estimate: true } },
+    });
+    assert.equal(estRes.result.isError, false);
+    assert.deepEqual(JSON.parse(readFileSync(argvLog, 'utf8')), [
+      'plan',
+      specPath,
+      specDir,
+      '--estimate',
+      '--json',
+    ]);
+
+    const badEst = await srv.send({
+      id: 51,
+      method: 'tools/call',
+      params: { name: 'agb_plan', arguments: { spec: specPath, repo: specDir, estimate: 'yes' } },
+    });
+    assert.equal(badEst.error.code, -32602);
 
     const reviewRes = await srv.send({
       id: 6,

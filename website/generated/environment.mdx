@@ -6,14 +6,15 @@
 | AGB_ALLOW_DIRTY | unset | Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start). | honoured |
 | AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
 | AGB_BUILD_TIMEOUT | 15m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
+| AGB_DEFAULT_EFFORT | unset | Optional Strike-0 effort level override (low, medium, high, xhigh, max) passed as --effort to agy when ticket.effort is unset. | honoured |
 | AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
 | AGB_GATE_TIMEOUT_MS | 1800000 | Per-gate execution timeout in milliseconds for deterministic build/test gates in lib/scheduler.mjs. | honoured |
 | AGB_HUD | auto on TTY | Set to 0 to disable the inline ANSI status bar during agb run, or 1 to force-enable it. | honoured |
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
-| AGB_MODEL_STATS_FILE | &lt;plugin_data&gt;/model_stats.jsonl | Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): override path for the BanditModelRouter empirical model outcome ledger. | honoured |
+| AGB_MODEL_STATS_FILE | &lt;plugin_data&gt;/model_stats.jsonl | Override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan. | honoured |
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
 | AGB_RESCUE_TICKET | set by agb rescue | Set by agb rescue on interactive agy -i sessions to protect .booster IPC tokens and rescue locks via PreToolUse while preserving interactive operator prompts. | honoured |
-| AGB_ROUTER_STATIC | unset | Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order. | honoured |
+| AGB_ROUTER_STATIC | unset | Set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order. | honoured |
 | AGB_SESSION_ID | unset | Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes. | honoured |
 | AGB_SYNC_MODELS_OFFLINE | unset | Set to 1 to use the built-in static model catalog instead of invoking agy models during doctor or sync-models. | honoured |
 | AGB_TARGET_REPO | unset | Target repository path checked by bin/node-launcher.sh; any candidate Node binary whose realpath resolves inside AGB_TARGET_REPO (or the current working directory) is rejected to prevent repo-planted binary execution. | honoured |

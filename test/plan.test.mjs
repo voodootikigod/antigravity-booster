@@ -502,4 +502,82 @@ test('applyModelRouterTiers: ignores router tier assignments that have zero cand
   }
 });
 
+test('validatePlan accepts valid gate.autofix and ticket.effort, rejects invalid values, and compilePlan({ estimateOnly: true }) performs zero disk writes', async () => {
+  const { validatePlan, compilePlan } = await import('../lib/plan.mjs');
+  const { STREAM_EVENT_SCHEMA, BRAIN_PLAN_SCHEMA, validateJsonSchema } = await import('../lib/schemas.mjs');
+  const { existsSync, readdirSync } = await import('node:fs');
+
+  // STREAM_EVENT_SCHEMA accepts cached_tokens
+  assert.equal(
+    validateJsonSchema(
+      { type: 'result', status: 'SUCCESS', exit_code: 0, telemetry: { input_tokens: 100, cached_tokens: 80, output_tokens: 20 } },
+      STREAM_EVENT_SCHEMA
+    ).valid,
+    true
+  );
+
+  const validPlan = {
+    repo: '/tmp/repo',
+    gate: { autofix: 'npm run lint:fix', test: 'npm test' },
+    tickets: [
+      { id: 'T1', title: 'One', body: 'Do work', scope: ['lib/a.mjs'], edges: [], tier: 'mid', effort: 'high' },
+    ],
+  };
+  assert.deepEqual(validatePlan(validPlan), []);
+  assert.equal(validateJsonSchema(validPlan, BRAIN_PLAN_SCHEMA).valid, true);
+
+  assert.ok(
+    validatePlan({
+      repo: '/tmp/repo',
+      gate: { autofix: 'npm run lint:fix' },
+      tickets: [{ id: 'T1', title: 'One', body: 'Do work', scope: ['lib/a.mjs'], edges: [] }],
+    }).some((e) => e.includes('at least one of build/test'))
+  );
+  assert.ok(
+    validatePlan({
+      repo: '/tmp/repo',
+      gate: { autofix: 'rm -rf /', test: 'npm test' },
+      tickets: [{ id: 'T1', title: 'One', body: 'Do work', scope: ['lib/a.mjs'], edges: [] }],
+    }).some((e) => e.includes('plan.gate.autofix'))
+  );
+  assert.ok(
+    validatePlan({
+      repo: '/tmp/repo',
+      gate: { test: 'npm test' },
+      tickets: [{ id: 'T1', title: 'One', body: 'Do work', scope: ['lib/a.mjs'], edges: [], effort: 'turbo' }],
+    }).some((e) => e.includes("unknown effort 'turbo'"))
+  );
+
+  // Zero-write estimateOnly check
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'agb-est-zero-'));
+  try {
+    mkdirSync(join(tmpRepo, 'lib'), { recursive: true });
+    writeFileSync(join(tmpRepo, 'lib', 'a.mjs'), 'export const a = 1;\n');
+    const specFile = join(tmpRepo, 'spec.md');
+    writeFileSync(
+      specFile,
+      [
+        '# Est Spec',
+        '**Gate:** `{"autofix": "npm run lint:fix", "test": "npm test"}`',
+        '### Ticket 1: `T-EST-1` — Alpha',
+        '- **Scope**: `lib/a.mjs`',
+        '- **Effort**: `medium`',
+        '- **Acceptance Criteria**:',
+        '  - Works. Verify: `npm test`',
+      ].join('\n')
+    );
+
+    const est = await compilePlan(specFile, { repo: tmpRepo, estimateOnly: true });
+    assert.equal(est.ok, true);
+    assert.equal(est.quotaEstimate.ok, true);
+    assert.equal(est.quotaEstimate.waves.length, 1);
+    assert.equal(existsSync(join(tmpRepo, '.booster')), false, 'estimateOnly must not create .booster/');
+    assert.equal(existsSync(join(tmpRepo, '.adlc')), false, 'estimateOnly must not create .adlc/');
+    assert.equal(existsSync(join(tmpRepo, '.gitignore')), false, 'estimateOnly must not create .gitignore');
+    assert.deepEqual(readdirSync(tmpRepo).sort(), ['lib', 'spec.md']);
+  } finally {
+    rmSync(tmpRepo, { recursive: true, force: true });
+  }
+});
+
 

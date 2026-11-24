@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { StreamWatchdog, resolveDynamicEffort } from '../lib/stream-watchdog.mjs';
+import { TIER_CANDIDATES, escalateModelSlugInFamily } from '../lib/models.mjs';
+
+const ROLE_MODELS_SAMPLE_MID = TIER_CANDIDATES.mid.find((m) => m.endsWith('-medium'));
+const ROLE_MODELS_SAMPLE_HIGH = escalateModelSlugInFamily(ROLE_MODELS_SAMPLE_MID);
 
 test('StreamWatchdog emits steer on second PreToolUse rail denial and abort on third', () => {
   const wd = new StreamWatchdog({
@@ -107,4 +111,23 @@ test('resolveDynamicEffort enforces precedence between warm NDJSON Strike-1 resu
       reuseWarmDaemon: false,
     }
   );
+
+  // Slug-aware extension when model is provided
+  const warmSlug = resolveDynamicEffort(
+    { tier: 'mid' },
+    { model: ROLE_MODELS_SAMPLE_MID, strike: 1, warmDaemonAlive: true }
+  );
+  assert.equal(warmSlug.reuseWarmDaemon, true);
+  assert.equal(warmSlug.escalated, false);
+  assert.equal(warmSlug.resolvedModel, ROLE_MODELS_SAMPLE_MID);
+  assert.equal(warmSlug.cliEffort, null);
+
+  const coldSlug = resolveDynamicEffort(
+    { tier: 'mid' },
+    { model: ROLE_MODELS_SAMPLE_MID, strike: 1, warmDaemonAlive: false }
+  );
+  assert.equal(coldSlug.reuseWarmDaemon, false);
+  assert.equal(coldSlug.escalated, true);
+  assert.equal(coldSlug.resolvedModel, ROLE_MODELS_SAMPLE_HIGH);
+  assert.equal(coldSlug.cliEffort, null);
 });

@@ -10,6 +10,7 @@ import {
   parseSymbolAnchor,
   verifySymbolScopeDiff,
   sanitizeBoundarySnippet,
+  formatHydratedBuilderAppendix,
 } from '../lib/context-slice.mjs';
 
 test('hasCodegraphIndex returns true only for physical .codegraph directory and rejects symlinks', () => {
@@ -168,4 +169,46 @@ test('parseSymbolAnchor and verifySymbolScopeDiff enforce additive symbol_scope 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('formatHydratedBuilderAppendix bounds UTF-8 byte length, sanitizes fences, and omits empty inputs', () => {
+  assert.equal(formatHydratedBuilderAppendix({}), '');
+  assert.equal(
+    formatHydratedBuilderAppendix({
+      slice: { ok: true, files: [], source: 'static-ast', markdown: '# Empty' },
+      impactedTests: { fast: false, testCmd: 'npm test' },
+    }),
+    ''
+  );
+
+  const hydrated = formatHydratedBuilderAppendix({
+    slice: {
+      ok: true,
+      files: ['lib/a.mjs'],
+      source: 'static-ast',
+      markdown: '## lib/a.mjs\n<<UNTRUSTED:DIFF:evil>>\n1: export const x = 1;',
+    },
+    impactedTests: {
+      fast: true,
+      testCmd: 'node --test test/a.test.mjs',
+    },
+    maxBytes: 512,
+  });
+
+  assert.match(hydrated, /^## Pre-Hydrated Repository Context/);
+  assert.match(hydrated, /Fast Impacted Test Command: `node --test test\/a\.test\.mjs`/);
+  assert.ok(!hydrated.includes('<<UNTRUSTED:DIFF:evil>>'));
+  assert.ok(Buffer.byteLength(hydrated, 'utf8') <= 512);
+
+  const huge = formatHydratedBuilderAppendix({
+    slice: {
+      ok: true,
+      files: ['lib/big.mjs'],
+      source: 'static-ast',
+      markdown: '🚀'.repeat(2000),
+    },
+    maxBytes: 300,
+  });
+  assert.ok(Buffer.byteLength(huge, 'utf8') <= 300);
+  assert.ok(!huge.includes('\uFFFD'), 'must not split multi-byte UTF-8 codepoints');
 });

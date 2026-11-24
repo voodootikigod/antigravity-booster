@@ -463,3 +463,38 @@ test('installCliStatusLineSettings & uninstallCliStatusLineSettings: non-clobber
     rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('renderCliStatusLine: renders bright-yellow !RUNWAY badge only on active runs with runwayWarning === true', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'agb-sl-runway-'));
+  try {
+    const home = join(tmp, 'home');
+    const repo = join(home, 'proj');
+    mkdirSync(join(repo, '.adlc', 'tickets'), { recursive: true });
+    mkdirSync(join(repo, '.booster'), { recursive: true });
+
+    writeFileSync(
+      join(repo, '.booster', 'run.json'),
+      JSON.stringify({
+        done: false,
+        runwayWarning: true,
+        tickets: { T1: { phase: 'merged' }, T2: { phase: 'pending' } },
+      })
+    );
+    const activeWarn = renderCliStatusLine({ cwd: repo }, { home });
+    assert.match(activeWarn, /⚡1\/2\x1b\[93m\x1b\[1m !RUNWAY\x1b\[0m/);
+
+    writeFileSync(
+      join(repo, '.booster', 'run.json'),
+      JSON.stringify({
+        done: true,
+        runwayWarning: true,
+        tickets: { T1: { phase: 'merged' }, T2: { phase: 'merged' } },
+      })
+    );
+    const completedRun = renderCliStatusLine({ cwd: repo }, { home });
+    assert.doesNotMatch(completedRun, /!RUNWAY/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+

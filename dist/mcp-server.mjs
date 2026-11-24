@@ -209,6 +209,8 @@ function tierCandidates(tier = "mid", poolHint, options) {
     return fam === poolHint;
   });
 }
+var VALID_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
+var SLUG_EFFORT_LADDER = Object.freeze(["low", "medium", "high", "xhigh"]);
 
 // lib/plugin-paths.mjs
 var BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
@@ -561,6 +563,11 @@ function readFreshStatusLineQuotaCache({ maxAgeMs = 6e4, nowMs = Date.now() } = 
     return null;
   }
 }
+var TIER_QUOTA_PRIORS = Object.freeze({
+  cheap: 1,
+  mid: 3,
+  frontier: 7.5
+});
 
 // lib/control-ipc.mjs
 import { execFileSync as execFileSync4 } from "node:child_process";
@@ -870,16 +877,19 @@ function validatePlan(plan, { strictGates = true } = {}) {
   if (!plan.gate || typeof plan.gate !== "object" || Array.isArray(plan.gate) || !plan.gate.build && !plan.gate.test) {
     errors.push("plan.gate must declare at least one of build/test commands");
   } else {
-    const extraGateKeys = Object.keys(plan.gate).filter((k) => k !== "build" && k !== "test");
+    const extraGateKeys = Object.keys(plan.gate).filter((k) => k !== "build" && k !== "test" && k !== "autofix");
     if (extraGateKeys.length) {
-      errors.push(`plan.gate contains unsupported key(s): ${extraGateKeys.join(", ")} (only build and test are allowed)`);
+      errors.push(`plan.gate contains unsupported key(s): ${extraGateKeys.join(", ")} (only autofix, build, and test are allowed)`);
     }
-    for (const k of ["build", "test"]) {
+    for (const k of ["autofix", "build", "test"]) {
       if (plan.gate[k] !== void 0 && (typeof plan.gate[k] !== "string" || !plan.gate[k].trim())) {
         errors.push(`plan.gate.${k} must be a non-empty string`);
       }
     }
     if (strictGates) {
+      if (plan.gate.autofix && !NPM_GATE_RE.test(plan.gate.autofix)) {
+        errors.push(`plan.gate.autofix must match ${NPM_GATE_RE} (got '${plan.gate.autofix}')`);
+      }
       if (plan.gate.build && !NPM_GATE_RE.test(plan.gate.build)) {
         errors.push(`plan.gate.build must match ${NPM_GATE_RE} (got '${plan.gate.build}')`);
       }
@@ -945,6 +955,9 @@ function validatePlan(plan, { strictGates = true } = {}) {
     }
     if (t.tier !== void 0 && !TIER_CANDIDATES[t.tier]) {
       errors.push(`${t.id}: unknown tier '${t.tier}' (cheap|mid|frontier)`);
+    }
+    if (t.effort !== void 0 && !VALID_EFFORTS.includes(t.effort)) {
+      errors.push(`${t.id}: unknown effort '${t.effort}' (${VALID_EFFORTS.join("|")})`);
     }
     if (t.pool_hint !== void 0 && !["gemini", "claude", "claude-gpt", "gpt-oss", "auto"].includes(t.pool_hint)) {
       errors.push(`${t.id}: unknown pool_hint '${t.pool_hint}' (gemini|claude|claude-gpt|gpt-oss|auto)`);
@@ -2356,6 +2369,7 @@ var TOOLS = [
       properties: {
         spec: { type: "string", description: "Brain ID, prefix, or spec.md path to compile" },
         repo: { type: "string", description: "Absolute path to the target repository" },
+        estimate: { type: "boolean", description: "Forecast wave-by-wave quota burn without writing plan.json or running Stage B LLM gates" },
         out: { type: "string", description: "Custom output file path (default plan.json)" },
         force: { type: "boolean", description: "Force overwrite the output file if it exists" },
         decompose: { type: "boolean", description: "Automatically split wide tickets exceeding maxTicketScope" },
@@ -3255,9 +3269,15 @@ async function handleToolCall(id, name, args) {
       sendError(id, -32602, dirCheck.error);
       return;
     }
+    if (args.estimate !== void 0 && typeof args.estimate !== "boolean") {
+      sendError(id, -32602, "Invalid estimate: expected boolean");
+      return;
+    }
     const resolvedSpec = resolveSpecPath(specCheck.value, targetCwd);
     cliArgs.push("plan", resolvedSpec, targetCwd);
-    if (args.out !== void 0) {
+    if (args.estimate === true) {
+      cliArgs.push("--estimate", "--json");
+    } else if (args.out !== void 0) {
       const outCheck = requireNonFlagString(args, "out");
       if (!outCheck.ok) {
         sendError(id, -32602, outCheck.error);
