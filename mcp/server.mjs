@@ -99,6 +99,7 @@ const TOOLS = [
       properties: {
         spec: { type: 'string', description: 'Brain ID, prefix, or spec.md path to compile' },
         repo: { type: 'string', description: 'Absolute path to the target repository' },
+        estimate: { type: 'boolean', description: 'Forecast wave-by-wave quota burn without writing plan.json or running Stage B LLM gates' },
         out: { type: 'string', description: 'Custom output file path (default plan.json)' },
         force: { type: 'boolean', description: 'Force overwrite the output file if it exists' },
         decompose: { type: 'boolean', description: 'Automatically split wide tickets exceeding maxTicketScope' },
@@ -1033,9 +1034,15 @@ async function handleToolCall(id, name, args) {
     targetCwd = resolve(repoCheck.value);
     const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
+    if (args.estimate !== undefined && typeof args.estimate !== 'boolean') {
+      sendError(id, -32602, 'Invalid estimate: expected boolean');
+      return;
+    }
     const resolvedSpec = resolveSpecPath(specCheck.value, targetCwd);
     cliArgs.push('plan', resolvedSpec, targetCwd);
-    if (args.out !== undefined) {
+    if (args.estimate === true) {
+      cliArgs.push('--estimate', '--json');
+    } else if (args.out !== undefined) {
       const outCheck = requireNonFlagString(args, 'out');
       if (!outCheck.ok) { sendError(id, -32602, outCheck.error); return; }
       planOutPath = resolve(targetCwd, outCheck.value);

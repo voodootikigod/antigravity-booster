@@ -1294,3 +1294,105 @@ test('runPlan: runs reconcileIntegrationJournal() BEFORE ensureGitignore() commi
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('runPlan: hydrates AGENTS.md by default, runs post-guard gate.autofix ONLY on changed files (not in runConfiguredGates or post-merge), and updates pending runway', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-w2-sched-state-'));
+  try {
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    mkdirSync(join(repo, 'test'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'untouched.js'), 'export const untouched = "raw";\n');
+    writeFileSync(join(repo, 'src', 'target.js'), 'export function calc(x) { return x + 1; }\n');
+    writeFileSync(join(repo, 'T1.txt'), 'initial line\n');
+    writeFileSync(join(repo, 'test', 'target.test.mjs'), 'import assert from "node:assert/strict";\nimport { calc } from "../src/target.js";\nassert.equal(typeof calc, "function");\n');
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify({
+        name: 'w2-fixture',
+        type: 'module',
+        scripts: {
+          autofix: 'node -e "const fs = require(\'node:fs\'); if (fs.existsSync(\'AGENTS.md\')) { fs.writeFileSync(\'.autofix-ran\', \'bad\'); } if (fs.existsSync(\'T1.txt\')) { const cur = fs.readFileSync(\'T1.txt\', \'utf8\'); fs.writeFileSync(\'T1.txt\', cur + \'# autofixed\\n\'); fs.writeFileSync(\'src/generated.js\', \'export const gen = 1;\\n\'); } fs.writeFileSync(\'src/untouched.js\', \'export const untouched = \\\"clobbered\\\";\\n\'); fs.writeFileSync(\'.eslintcache\', \'noise\');"',
+          test: 'node --test test/target.test.mjs',
+        },
+      }, null, 2) + '\n'
+    );
+    // Simulate a local node_modules/.bin tool in root repo so materialized node_modules is exercised
+    mkdirSync(join(repo, 'node_modules', '.bin'), { recursive: true });
+    writeFileSync(join(repo, 'node_modules', '.bin', 'dummy-fmt'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    writeFileSync(join(repo, '.gitignore'), 'node_modules/\n');
+    execFileSync('git', ['add', 'src', 'test', 'T1.txt', 'package.json', '.gitignore'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'seed w2 repo'], { cwd: repo });
+
+    const statsFile = join(state, 'bandit-stats.jsonl');
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_BUILDER_MODE: 'echo-charter',
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+        AGB_MODEL_STATS_FILE: statsFile,
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: {
+              autofix: 'npm run autofix',
+              test: 'npm test',
+            },
+            tickets: [
+              {
+                id: 'T1',
+                title: 'edit T1 and hydrate target.js',
+                body: 'write T1.txt',
+                scope: ['src/target.js', 'src/generated.js', 'T1.txt'],
+                edges: [{ to: 'T2' }],
+              },
+              {
+                id: 'T2',
+                title: 'create T2.txt',
+                body: 'write T2.txt',
+                scope: ['src/target.js', 'T2.txt'],
+              },
+            ],
+          },
+          quiet
+        )
+    );
+
+    assert.deepEqual(report.merged, ['T1', 'T2'], `expected both merged, got: ${JSON.stringify(report.failed)}`);
+
+    // 1. Default-on AGENTS.md hydration included target.js exports & impacted tests
+    const capturedAgents = readFileSync(join(state, 'seen-agents.md'), 'utf8');
+    assert.match(capturedAgents, /## Pre-Hydrated Repository Context/);
+    assert.match(capturedAgents, /src\/target\.js/);
+    assert.match(capturedAgents, /test\/target\.test\.mjs/);
+
+    // 2. Autofix formatted builder-changed T1.txt ONCE (not re-run in runConfiguredGates or post-merge!)
+    //    and staged newly created in-scope src/generated.js
+    const mergedT1 = readFileSync(join(repo, 'T1.txt'), 'utf8');
+    const autofixCount = (mergedT1.match(/# autofixed/g) || []).length;
+    assert.equal(autofixCount, 1, `expected autofix to apply exactly once on T1, got:\n${mergedT1}`);
+    assert.equal(readFileSync(join(repo, 'src', 'generated.js'), 'utf8'), 'export const gen = 1;\n');
+
+    // 3. Untouched tracked file and gitignored/out-of-scope side-effects were NOT staged or leaked
+    assert.equal(readFileSync(join(repo, 'src', 'untouched.js'), 'utf8'), 'export const untouched = "raw";\n');
+    assert.equal(existsSync(join(repo, '.eslintcache')), false);
+    assert.equal(existsSync(join(repo, '.autofix-ran')), false);
+
+    // 4. Final run.json runway over 0 remaining pending tickets has willExhaust === false
+    const runJson = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(runJson.runwayWarning, false);
+    assert.deepEqual(runJson.runway.totals, { gemini: 0, claude_gpt: 0 });
+
+    // 5. BanditModelRouter recorded outcomes in statsFile
+    assert.ok(existsSync(statsFile));
+    const banditLines = readFileSync(statsFile, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(banditLines.length, 2);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+

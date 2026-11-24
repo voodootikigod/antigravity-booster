@@ -129,4 +129,34 @@ test('RunStatus constructor rejects dangling symlinks on .booster and .booster/r
   }
 });
 
+test('RunStatus.runway: persists runway forecast and runwayWarning boolean into .booster/run.json', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-status-runway-'));
+  try {
+    const s = new RunStatus(repo, 'run-runway-1');
+    s.flush();
+    const initial = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(initial.runway, null);
+    assert.equal(initial.runwayWarning, false);
+
+    s.runway({
+      ok: true,
+      willExhaust: true,
+      bottleneckPool: 'gemini',
+      exhaustingWave: 2,
+      totals: { gemini: 24, claude_gpt: 8 },
+    });
+    const warned = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(warned.runwayWarning, true);
+    assert.equal(warned.runway.bottleneckPool, 'gemini');
+    assert.equal(warned.runway.exhaustingWave, 2);
+
+    s.runway({ ok: true, willExhaust: false, totals: { gemini: 0, claude_gpt: 0 } });
+    const cleared = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(cleared.runwayWarning, false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+
 

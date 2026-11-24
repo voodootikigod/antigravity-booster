@@ -157,3 +157,68 @@ test('NdjsonWorkerDaemon aborts turn and kills daemon when StreamWatchdog trigge
   assert.equal(decision3.action, 'abort');
   await daemon.close();
 });
+
+test('NdjsonWorkerDaemon.sendTurn computes per-turn telemetry deltas when session counters are cumulative', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-ndjson-tel-'));
+  const customBin = join(dir, 'fake-cumulative-agy.mjs');
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(
+    customBin,
+    [
+      '#!/usr/bin/env node',
+      "import { createInterface } from 'node:readline';",
+      'const rl = createInterface({ input: process.stdin });',
+      'let turn = 0;',
+      'rl.on("line", () => {',
+      '  turn += 1;',
+      '  const tel = turn === 1',
+      '    ? { cumulative: true, input_tokens: 1000, cached_tokens: 600, output_tokens: 100 }',
+      '    : { cumulative: true, input_tokens: 2500, cached_tokens: 1800, output_tokens: 250 };',
+      '  console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "TICKET-DONE", conversation_id: "c-tel", telemetry: tel } }));',
+      '});',
+    ].join('\n'),
+    { mode: 0o755 }
+  );
+
+  const daemon = new NdjsonWorkerDaemon({
+    model: 'gemini-4-neon-medium',
+    cwd: dir,
+    bin: customBin,
+  });
+  try {
+    const t1 = await daemon.sendTurn('Turn 1');
+    assert.equal(t1.ok, true);
+    assert.deepEqual(t1.telemetry, {
+      uncachedInputTokens: 400,
+      cachedTokens: 600,
+      outputTokens: 100,
+      inputTokens: 1000,
+    });
+
+    const t2 = await daemon.sendTurn('Turn 2');
+    assert.equal(t2.ok, true);
+    assert.deepEqual(t2.telemetry, {
+      uncachedInputTokens: 300,
+      cachedTokens: 1200,
+      outputTokens: 150,
+      inputTokens: 1500,
+    });
+  } finally {
+    await daemon.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  const { extractNormalizedTokenTelemetry } = await import('../lib/ndjson-worker.mjs');
+  assert.deepEqual(
+    extractNormalizedTokenTelemetry({
+      usage: { input_tokens: 500, cache_creation_input_tokens: 1500, output_tokens: 80 },
+    }),
+    {
+      uncachedInputTokens: 2000,
+      cachedTokens: 0,
+      outputTokens: 80,
+      inputTokens: 2000,
+    }
+  );
+});
+

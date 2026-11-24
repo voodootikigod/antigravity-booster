@@ -325,5 +325,22 @@ test('tui v2 cockpit: renderTUIDashboard renders cursor, filter, Flight Deck tab
   });
   const plainPros = stripAnsi(prosOut.join('\n'));
   assert.ok(plainPros.includes('[HIGH] lib/foo.mjs: Missing null guard'));
+
+  // !RUNWAY warning banner when runwayWarning is active
+  const runwayOut = renderTUIDashboard(
+    {
+      ...state,
+      runwayWarning: true,
+      runway: {
+        willExhaust: true,
+        exhaustingWave: 2,
+        recommendation: 'Wave 2 is projected to exceed gemini remaining quota.',
+      },
+    },
+    { cols: 110 }
+  );
+  const plainRunway = stripAnsi(runwayOut.join('\n'));
+  assert.match(plainRunway, /!RUNWAY: Wave 2 is projected to exceed gemini remaining quota/);
 });
+
 

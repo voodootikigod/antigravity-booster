@@ -315,3 +315,31 @@ test('writeArtifactFileAtomically: allows symlinked ancestor of rootDir (macOS /
     rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('parseStructuredSpec parses gate.autofix and ticket Effort while rejecting autofix-only Gate JSON', () => {
+  const validSpec = [
+    '# Autofix Spec',
+    '**Gate:** `{"autofix": "npm run lint:fix", "test": "npm test"}`',
+    '### Ticket 1: `T-AF-1` — Worker',
+    '- **Scope**: `lib/shape.mjs`',
+    '- **Acceptance Criteria**:',
+    '  - Passes tests.',
+    '- **Effort**: `xhigh`',
+  ].join('\n');
+  const parsed = parseStructuredSpec(validSpec, { repo: REPO_ROOT });
+  assert.equal(parsed.structured, true);
+  assert.deepEqual(parsed.parseErrors, []);
+  assert.deepEqual(parsed.plan.gate, { autofix: 'npm run lint:fix', test: 'npm test' });
+  assert.equal(parsed.plan.tickets[0].effort, 'xhigh');
+
+  const autofixOnly = [
+    '# Bad Gate Spec',
+    '**Gate:** `{"autofix": "npm run lint:fix"}`',
+    '### Ticket 1: `T-AF-2` — Worker',
+    '- **Scope**: `lib/shape.mjs`',
+    '- **Acceptance Criteria**:',
+    '  - Passes.',
+  ].join('\n');
+  const badParsed = parseStructuredSpec(autofixOnly, { repo: REPO_ROOT });
+  assert.ok(badParsed.parseErrors.some((e) => e.includes('plan.gate')));
+});

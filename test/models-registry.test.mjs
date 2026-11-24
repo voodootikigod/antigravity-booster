@@ -13,12 +13,15 @@ import {
   PROSECUTORS,
   PROSECUTOR_CANDIDATES,
   ROLE_MODELS,
+  VALID_EFFORTS,
   modelFor,
   resolveModelSlug,
   poolOf,
   familyOf,
   upstreamPoolOf,
   tierCandidates,
+  escalateModelSlugInFamily,
+  selectCliEffortFlag,
 } from '../lib/models.mjs';
 
 import * as agyExports from '../lib/agy.mjs';
@@ -277,6 +280,24 @@ describe('models-registry: single source of truth', () => {
     }
 
     assert.deepEqual(violations, [], `Found raw model strings in lib: ${JSON.stringify(violations)}`);
+  });
+
+  it('escalateModelSlugInFamily and selectCliEffortFlag respect catalog ceilings and never downgrade suffixed slugs', () => {
+    assert.deepEqual([...VALID_EFFORTS], ['low', 'medium', 'high', 'xhigh', 'max']);
+    assert.equal(escalateModelSlugInFamily('claude-sonnet-5-5-low'), 'claude-sonnet-5-5-medium');
+    assert.equal(escalateModelSlugInFamily('claude-sonnet-5-5-medium'), 'claude-sonnet-5-5-high');
+    assert.equal(escalateModelSlugInFamily('claude-opus-5-5-high'), 'claude-opus-5-5-high');
+    assert.equal(escalateModelSlugInFamily('gemini-4-neon-high'), 'gemini-4-neon-xhigh');
+    assert.equal(escalateModelSlugInFamily('gemini-4-neon-xhigh'), 'gemini-4-neon-xhigh');
+    assert.equal(escalateModelSlugInFamily('gemini-pro-orchestrator'), 'gemini-pro-orchestrator');
+
+    assert.equal(selectCliEffortFlag({ model: 'claude-sonnet-5-5-medium', strike: 0, defaultEffort: null }), null);
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-argon-high', strike: 1, defaultEffort: null }), null);
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-argon-high', strike: 0, explicitEffort: 'xhigh' }), 'xhigh');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-argon-medium', strike: 0, defaultEffort: 'low' }), 'low');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator', strike: 0, defaultEffort: null }), 'high');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator-neon', strike: 1, defaultEffort: null }), 'xhigh');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator', strike: 1, allowMax: true, defaultEffort: null }), 'max');
   });
 });
 
