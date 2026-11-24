@@ -29,9 +29,9 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// node_modules/balanced-match/index.js
+// ../explore-advancements/node_modules/balanced-match/index.js
 var require_balanced_match = __commonJS({
-  "node_modules/balanced-match/index.js"(exports, module) {
+  "../explore-advancements/node_modules/balanced-match/index.js"(exports, module) {
     "use strict";
     module.exports = balanced;
     function balanced(a, b, str) {
@@ -87,9 +87,9 @@ var require_balanced_match = __commonJS({
   }
 });
 
-// node_modules/brace-expansion/index.js
+// ../explore-advancements/node_modules/brace-expansion/index.js
 var require_brace_expansion = __commonJS({
-  "node_modules/brace-expansion/index.js"(exports, module) {
+  "../explore-advancements/node_modules/brace-expansion/index.js"(exports, module) {
     var balanced = require_balanced_match();
     module.exports = expandTop;
     var escSlash = "\0SLASH" + Math.random() + "\0";
@@ -335,11 +335,11 @@ import { homedir as homedir2, tmpdir as tmpdir2, userInfo } from "node:os";
 import { basename as basename5, isAbsolute as isAbsolute5, join as join12, resolve as resolve8 } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// node_modules/@adlc/tickets/lib/pointer.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/pointer.mjs
 var MAX_POINTER_BYTES = 64 * 1024;
 var DEPRECATED_ID_KEYS = Object.freeze(["ticket", "ticketId"]);
 
-// node_modules/@adlc/tickets/lib/constants.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/constants.mjs
 var ACTIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-directory", version: 1 });
 var ARCHIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-archive", version: 1 });
 var ACTIVE_DIRECTORY = ".adlc/tickets";
@@ -351,7 +351,7 @@ var TRANSACTION_DIRECTORY = ".adlc/ticket-transactions";
 var TICKET_HASH_DOMAIN = "adlc:ticket:v1\0";
 var STORE_HASH_DOMAIN = "adlc:active-store:v1\0";
 
-// node_modules/@adlc/tickets/lib/errors.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/errors.mjs
 var TicketStoreError = class extends Error {
   constructor(kind, code, message, details) {
     super(message);
@@ -366,7 +366,7 @@ var conflict = (code, message, details) => new TicketStoreError("conflict", code
 var policy = (code, message, details) => new TicketStoreError("policy", code, message, details);
 var operational = (code, message, details) => new TicketStoreError("operational", code, message, details);
 
-// node_modules/@adlc/tickets/lib/canonical.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/canonical.mjs
 import { createHash } from "node:crypto";
 function compareTicketIds(left, right) {
   const a = Buffer.from(left, "utf8");
@@ -401,14 +401,14 @@ function storeHash(tickets) {
   return sha256(STORE_HASH_DOMAIN + canonicalJson(pairs));
 }
 
-// node_modules/@adlc/tickets/lib/filename.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/filename.mjs
 function ticketSlug(id) {
   const slug = id.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
   return slug || "ticket";
 }
 var ticketFilename = (id) => `${ticketSlug(id)}--${sha256(Buffer.from(id, "utf8"))}.json`;
 
-// node_modules/@adlc/tickets/lib/schema.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/schema.mjs
 function validateTicket(ticket, { archive = false } = {}) {
   const errors = [];
   if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) return ["ticket is not an object"];
@@ -478,7 +478,7 @@ function validateTickets(tickets, { archive = false, validateGraph = !archive } 
   return tickets;
 }
 
-// node_modules/@adlc/tickets/lib/help.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/help.mjs
 var SYNC_CATEGORIES = Object.freeze([
   "feature",
   "bug",
@@ -620,7 +620,7 @@ var INPUT_DOCUMENT = [
   "Unknown fields are preserved as-is; the store never strips them."
 ];
 
-// node_modules/@adlc/tickets/lib/snapshot.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/snapshot.mjs
 function deepClone(value) {
   const serialized = JSON.stringify(value, function reject(key, item) {
     if (typeof item === "number" && !Number.isFinite(item)) {
@@ -663,11 +663,11 @@ var TicketSnapshot = class {
   }
 };
 
-// node_modules/@adlc/tickets/lib/store.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/store.mjs
 import { existsSync as existsSync10, lstatSync as lstatSync5, readdirSync as readdirSync4 } from "node:fs";
 import { isAbsolute as isAbsolute2, join as join8, resolve as resolve4 } from "node:path";
 
-// node_modules/@adlc/tickets/lib/stores/directory.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/stores/directory.mjs
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 function assertRealDirectory(path2) {
@@ -741,16 +741,16 @@ var DirectoryTicketStore = class {
   }
 };
 
-// node_modules/@adlc/tickets/lib/stores/legacy.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/stores/legacy.mjs
 import { existsSync as existsSync9, lstatSync as lstatSync4, readFileSync as readFileSync8 } from "node:fs";
 import { basename as basename2, dirname as dirname8 } from "node:path";
 
-// node_modules/@adlc/tickets/lib/transaction.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/transaction.mjs
 import { existsSync as existsSync8, readFileSync as readFileSync7 } from "node:fs";
 import { basename, dirname as dirname7, isAbsolute, join as join7, relative as relative2, resolve as resolve3 } from "node:path";
 import { randomUUID as randomUUID2 } from "node:crypto";
 
-// node_modules/@adlc/tickets/lib/lock.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/lock.mjs
 import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync2, rmSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname as dirname2, join as join2 } from "node:path";
@@ -836,13 +836,13 @@ function releaseTicketLock(lock, { removeLock = rmSync } = {}) {
   return { released: true };
 }
 
-// node_modules/@adlc/tickets/lib/evidence.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/evidence.mjs
 import { closeSync as closeSync3, existsSync as existsSync6, fsyncSync as fsyncSync2, mkdirSync as mkdirSync4, openSync as openSync3, readFileSync as readFileSync5, unlinkSync as unlinkSync2, writeFileSync as writeFileSync4 } from "node:fs";
 import { createHmac as createHmac2, randomUUID } from "node:crypto";
 import { hostname as hostname2 } from "node:os";
 import { dirname as dirname6, join as join5 } from "node:path";
 
-// node_modules/@adlc/tickets/lib/durability.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/durability.mjs
 import {
   closeSync,
   copyFileSync,
@@ -920,11 +920,11 @@ function durableRemove(path2, options) {
   fsyncDirectory(parent);
 }
 
-// node_modules/@adlc/tickets/lib/manifest-segments.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/manifest-segments.mjs
 import { existsSync as existsSync5, readFileSync as readFileSync4 } from "node:fs";
 import { dirname as dirname5, join as join4 } from "node:path";
 
-// node_modules/@adlc/tickets/lib/manifest-primitives.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/manifest-primitives.mjs
 import {
   existsSync as existsSync4,
   lstatSync as lstatSync2,
@@ -1372,7 +1372,7 @@ function resolveOpenSegment(dir = ".adlc", { cwd = dir && dir !== ".adlc" ? dirn
   return { name, isNew: true, anchor, ...branch !== null ? { branch } : {} };
 }
 
-// node_modules/@adlc/tickets/lib/manifest-segments.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/manifest-segments.mjs
 function readRawLines(filePath) {
   if (!existsSync5(filePath)) return [];
   return readFileSync4(filePath, "utf8").split("\n").filter((line) => line.trim() !== "");
@@ -1425,7 +1425,7 @@ function readForestEntries(dir) {
   return [...root, ...segments];
 }
 
-// node_modules/@adlc/tickets/lib/key-contract.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/key-contract.mjs
 function validateKeyParam(key) {
   if (key === null) return null;
   if (typeof key === "string" && key.length > 0) return key;
@@ -1434,7 +1434,7 @@ function validateKeyParam(key) {
   );
 }
 
-// node_modules/@adlc/tickets/lib/evidence.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/evidence.mjs
 var sleep2 = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 function withManifestLock(path2, fn, { retries = 400, delayMs = 5 } = {}) {
   const lockPath = `${path2}.lock`;
@@ -1659,7 +1659,7 @@ function recordTicketEvidence(root, {
   });
 }
 
-// node_modules/@adlc/tickets/lib/trust-root.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/trust-root.mjs
 import { existsSync as existsSync7, lstatSync as lstatSync3, readFileSync as readFileSync6, readdirSync as readdirSync3 } from "node:fs";
 import { join as join6 } from "node:path";
 var STORE_MARKER = ".store.json";
@@ -1787,7 +1787,7 @@ function assertSignableTrustRootWrite(tickets, { key, allowUnsigned = false, roo
   return true;
 }
 
-// node_modules/@adlc/tickets/lib/transaction.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/transaction.mjs
 var fileHash = (path2) => sha256(readFileSync7(path2));
 function journalPath(root, path2) {
   const absolute = resolve3(path2);
@@ -1885,7 +1885,7 @@ function applyLegacyTransaction(store, tickets, { expectedSnapshotHash, operatio
   }
 }
 
-// node_modules/@adlc/tickets/lib/stores/legacy.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/stores/legacy.mjs
 function repositoryRootFor(path2, explicit) {
   if (explicit !== null && explicit !== void 0) return explicit;
   const parent = dirname8(path2);
@@ -1939,7 +1939,7 @@ var LegacyTicketStore = class {
   }
 };
 
-// node_modules/@adlc/tickets/lib/store.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/store.mjs
 var rooted = (root, path2) => isAbsolute2(path2) ? path2 : join8(root, path2);
 function pendingTransactions(root = ".") {
   const path2 = join8(root, TRANSACTION_DIRECTORY);
@@ -1977,19 +1977,19 @@ function detectTicketStore(options = {}) {
 }
 var loadTicketSnapshot = (options = {}) => detectTicketStore(options).load();
 
-// node_modules/@adlc/tickets/lib/generated-glob-match.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/generated-glob-match.mjs
 var SLASH = "/".charCodeAt(0);
 
-// node_modules/@adlc/tickets/lib/manifest-rails.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/manifest-rails.mjs
 var MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketplace.json"]);
 
-// node_modules/@adlc/tickets/lib/rail-existence.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/rail-existence.mjs
 var GIT_MAX_BUFFER = 256 * 1024 * 1024;
 
-// node_modules/@adlc/tickets/lib/prompt.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/prompt.mjs
 import { createInterface } from "node:readline/promises";
 
-// node_modules/@adlc/tickets/lib/stores/git-tree.mjs
+// ../explore-advancements/node_modules/@adlc/tickets/lib/stores/git-tree.mjs
 var MAX_BUFFER = 64 * 1024 * 1024;
 
 // lib/active-rails.mjs
@@ -2291,10 +2291,10 @@ var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls",
 import { existsSync as existsSync12, lstatSync as lstatSync7, readlinkSync, realpathSync } from "node:fs";
 import { dirname as dirname10, basename as basename3, isAbsolute as isAbsolute3, join as join10, relative as relative3, resolve as resolve6, sep as sep3 } from "node:path";
 
-// node_modules/minimatch/dist/esm/index.js
+// ../explore-advancements/node_modules/minimatch/dist/esm/index.js
 var import_brace_expansion = __toESM(require_brace_expansion(), 1);
 
-// node_modules/minimatch/dist/esm/assert-valid-pattern.js
+// ../explore-advancements/node_modules/minimatch/dist/esm/assert-valid-pattern.js
 var MAX_PATTERN_LENGTH = 1024 * 64;
 var assertValidPattern = (pattern) => {
   if (typeof pattern !== "string") {
@@ -2305,7 +2305,7 @@ var assertValidPattern = (pattern) => {
   }
 };
 
-// node_modules/minimatch/dist/esm/brace-expressions.js
+// ../explore-advancements/node_modules/minimatch/dist/esm/brace-expressions.js
 var posixClasses = {
   "[:alnum:]": ["\\p{L}\\p{Nl}\\p{Nd}", true],
   "[:alpha:]": ["\\p{L}\\p{Nl}", true],
@@ -2414,12 +2414,12 @@ var parseClass = (glob, position) => {
   return [comb, uflag, endPos - pos, true];
 };
 
-// node_modules/minimatch/dist/esm/unescape.js
+// ../explore-advancements/node_modules/minimatch/dist/esm/unescape.js
 var unescape = (s, { windowsPathsNoEscape = false } = {}) => {
   return windowsPathsNoEscape ? s.replace(/\[([^\/\\])\]/g, "$1") : s.replace(/((?!\\).|^)\[([^\/\\])\]/g, "$1$2").replace(/\\([^\/])/g, "$1");
 };
 
-// node_modules/minimatch/dist/esm/ast.js
+// ../explore-advancements/node_modules/minimatch/dist/esm/ast.js
 var types = /* @__PURE__ */ new Set(["!", "?", "+", "*", "@"]);
 var isExtglobType = (c) => types.has(c);
 var startNoTraversal = "(?!(?:^|/)\\.\\.?(?:$|/))";
@@ -2898,12 +2898,12 @@ var AST = class _AST {
   }
 };
 
-// node_modules/minimatch/dist/esm/escape.js
+// ../explore-advancements/node_modules/minimatch/dist/esm/escape.js
 var escape = (s, { windowsPathsNoEscape = false } = {}) => {
   return windowsPathsNoEscape ? s.replace(/[?*()[\]]/g, "[$&]") : s.replace(/[?*()[\]\\]/g, "\\$&");
 };
 
-// node_modules/minimatch/dist/esm/index.js
+// ../explore-advancements/node_modules/minimatch/dist/esm/index.js
 var minimatch = (p, pattern, options = {}) => {
   assertValidPattern(pattern);
   if (!options.nocomment && pattern.charAt(0) === "#") {

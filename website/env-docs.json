@@ -85,6 +85,13 @@
       "description": "Target repository path checked by bin/node-launcher.sh; any candidate Node binary whose realpath resolves inside AGB_TARGET_REPO (or the current working directory) is rejected to prevent repo-planted binary execution."
     },
     {
+      "name": "AGB_DEFAULT_EFFORT",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Optional Strike-0 effort level override (low, medium, high, xhigh, max) passed as --effort to agy when ticket.effort is unset."
+    },
+    {
       "name": "AGB_WARM_STRIKES",
       "group": "core",
       "default": "1",
@@ -96,14 +103,14 @@
       "group": "core",
       "default": "unset",
       "bundledIgnored": false,
-      "description": "Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order."
+      "description": "Set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order."
     },
     {
       "name": "AGB_MODEL_STATS_FILE",
       "group": "core",
       "default": "<plugin_data>/model_stats.jsonl",
       "bundledIgnored": false,
-      "description": "Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): override path for the BanditModelRouter empirical model outcome ledger."
+      "description": "Override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan."
     },
     {
       "name": "AGB_WORKER_BUILD_CMD",

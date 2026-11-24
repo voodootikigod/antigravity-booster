@@ -83,7 +83,7 @@ const COMMANDS = {
     args: '<id | spec.md> [repo]',
     desc: 'compile an Antigravity brain plan or spec file into plan.json',
     extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
-    flags: '[--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
+    flags: '[--estimate (forecast quota burn without writing files)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
   },
   distill: {
     args: '[repo]',
@@ -459,7 +459,7 @@ try {
     rejectUnknownFlags(
       'plan',
       rest,
-      new Set(['--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
+      new Set(['--estimate', '--json', '--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
       new Set(['--out', '--max-ticket-scope', '--emit-workflow'])
     );
     // The plan itself is authored in Antigravity (GUI plan mode or an agy
@@ -467,6 +467,8 @@ try {
     let out = 'plan.json';
     let emitWorkflow = null;
     let maxTicketScope;
+    const estimate = rest.includes('--estimate');
+    const jsonOut = rest.includes('--json');
     const decompose = rest.includes('--decompose');
     const noFastPath = rest.includes('--no-fast-path');
     for (let i = 0; i < rest.length; i++) {
@@ -499,12 +501,51 @@ try {
     const id = positional[0];
     const repo = positional[1] ?? '.';
     if (!id || !out) {
-      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
+      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--estimate] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
       process.exit(1);
     }
     const force = rest.includes('--force');
     const targetRepo = resolve(repo);
     const resolvedWorkflowPath = emitWorkflow ? resolve(targetRepo, emitWorkflow) : null;
+    if (estimate) {
+      const result = await compilePlan(id, {
+        repo: targetRepo,
+        pools: null,
+        estimateOnly: true,
+        log: (m) => { if (!jsonOut) console.error(m); },
+        fastPath: !noFastPath,
+        decompose,
+        maxTicketScope,
+        coldstart: false,
+        parallax: false,
+        premortem: false,
+        project,
+      });
+      if (jsonOut) {
+        console.log(JSON.stringify({
+          ok: result.ok,
+          quotaEstimate: result.quotaEstimate,
+          report: result.report,
+          tickets: result.plan?.tickets ?? [],
+        }, null, 2));
+      } else if (!result.ok) {
+        console.error(`plan --estimate: structural validation failed (${result.report.blocking.length} finding(s)):`);
+        for (const b of result.report.blocking) console.error(`  - ${b}`);
+      } else {
+        const qe = result.quotaEstimate;
+        console.log(`Quota Runway Forecast — ${result.brain.title} (${result.plan.tickets.length} ticket(s), ${qe.waves.length} wave(s))`);
+        for (const w of qe.waves) {
+          console.log(`  Wave ${w.wave} [${w.tickets.join(', ')}]: Gemini +${w.geminiPct}% (cum ${w.cumulativeGeminiPct}%) | Claude/GPT +${w.claudeGptPct}% (cum ${w.cumulativeClaudeGptPct}%)`);
+        }
+        const remGem = qe.remaining.gemini !== null ? `${qe.remaining.gemini}%` : 'unknown';
+        const remCl = qe.remaining.claude_gpt !== null ? `${qe.remaining.claude_gpt}%` : 'unknown';
+        console.log(`  Totals: Gemini ${qe.totals.gemini}% (rem: ${remGem}) | Claude/GPT ${qe.totals.claude_gpt}% (rem: ${remCl})`);
+        if (qe.willExhaust && qe.recommendation) {
+          console.log(`  !RUNWAY WARNING: ${qe.recommendation}`);
+        }
+      }
+      process.exit(result.ok ? 0 : 2);
+    }
     if (existsSync(out) && !force) {
       console.error(`plan: ${out} already exists — pass --force to overwrite ` +
         `(compiled plans are disposable, hand-written ones may not be)`);

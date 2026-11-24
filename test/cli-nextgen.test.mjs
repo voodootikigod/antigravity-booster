@@ -7,7 +7,7 @@
 //  - agb run --resume and --reset-rescue CLI flag forwarding
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync as execBin, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -489,3 +489,68 @@ exec "${copiedFakeAgy}" "$@"
   assert.deepEqual(invokedTickets, ['T2'], 'Should skip already-merged T1 and only build T2');
   assert.equal(readFileSync(join(repo, 'src', 't2.js'), 'utf8'), 'export const t2 = 2;\n');
 });
+
+test('agb plan --estimate [--json] forecasts wave-by-wave quota burn offline without --force and mutates zero files', () => {
+  const repo = makeGitRepo('repo-cli-estimate');
+  const existingPlan = '{"handwritten":true}\n';
+  writeFileSync(join(repo, 'plan.json'), existingPlan);
+  const specPath = join(repo, 'feature-spec.md');
+  writeFileSync(
+    specPath,
+    `# Estimate Spec
+
+- **Gates**: test=\`npm test\`
+
+### Ticket 1: \`T-EST-1\` — Core
+- **Scope**: \`src/a.js\`
+- **Rails**: \`src/base.js\`
+- **Edges**: \`T-EST-1 -> T-EST-2\`
+- **Tier**: \`frontier\`
+- **Pool Hint**: \`gemini\`
+- **Effort**: \`high\`
+- **Objectives**:
+  1. Build src/a.js.
+- **Acceptance Criteria**:
+  - Works. Verify: \`npm test\`
+
+### Ticket 2: \`T-EST-2\` — Followup
+- **Scope**: \`src/b.js\`
+- **Rails**: \`src/base.js\`
+- **Edges**: none
+- **Tier**: \`mid\`
+- **Pool Hint**: \`claude-gpt\`
+- **Objectives**:
+  1. Build src/b.js.
+- **Acceptance Criteria**:
+  - Works. Verify: \`npm test\`
+`
+  );
+
+  const poolsDir = join(TMP, 'estimate-empty-pools');
+  mkdirSync(poolsDir, { recursive: true });
+  const env = {
+    ...process.env,
+    AGB_AGY_BIN: '/nonexistent/agy-should-never-be-spawned',
+    AGB_POOLS_DIR: poolsDir,
+  };
+
+  // Run inside repo where plan.json ALREADY exists without passing --force
+  const jsonRes = runAgb(['plan', specPath, repo, '--estimate', '--json'], { cwd: repo, env });
+  assert.equal(jsonRes.status, 0, `expected exit 0, got ${jsonRes.status}: ${jsonRes.stderr}`);
+  const parsed = JSON.parse(jsonRes.stdout);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.quotaEstimate.waves.length, 2);
+  assert.equal(parsed.tickets.length, 2);
+  assert.equal(parsed.tickets[0].effort, 'high');
+
+  const textRes = runAgb(['plan', specPath, repo, '--estimate'], { cwd: repo, env });
+  assert.equal(textRes.status, 0);
+  assert.match(textRes.stdout, /Quota Runway Forecast/);
+  assert.match(textRes.stdout, /Wave 1 \[T-EST-1\]/);
+
+  // Zero side-effect writes: existing plan.json untouched, no ticket shards or pools state created
+  assert.equal(readFileSync(join(repo, 'plan.json'), 'utf8'), existingPlan);
+  assert.deepEqual(readdirSync(join(repo, '.adlc', 'tickets')), ['.store.json']);
+  assert.equal(existsSync(join(poolsDir, 'agb_pools_v2.json')), false);
+});
+
