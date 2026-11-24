@@ -4,7 +4,7 @@ import { createRequire as __agbCreateRequire } from 'node:module'; const require
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { basename as basename3, dirname as dirname5, join as join7, relative as relative3, resolve as resolve7, isAbsolute as isAbsolute3, sep as sep2 } from "node:path";
+import { basename as basename3, dirname as dirname6, join as join7, relative as relative3, resolve as resolve7, isAbsolute as isAbsolute3, sep as sep2 } from "node:path";
 import {
   closeSync as closeSync2,
   constants as constants2,
@@ -1145,7 +1145,7 @@ import {
   rmSync as rmSync3,
   writeFileSync as writeFileSync3
 } from "node:fs";
-import { join as join5, resolve as resolve5 } from "node:path";
+import { dirname as dirname4, join as join5, resolve as resolve5 } from "node:path";
 
 // lib/context-slice.mjs
 import { existsSync as existsSync3, lstatSync as lstatSync3, readdirSync, readFileSync as readFileSync3 } from "node:fs";
@@ -1861,7 +1861,7 @@ function formatAcceptanceDossierMarkdown(dossier = {}) {
 // lib/control-ipc.mjs
 import { execFileSync as execFileSync5 } from "node:child_process";
 import net from "node:net";
-import { dirname as dirname4, isAbsolute as isAbsolute2, join as join6, relative as relative2, resolve as resolve6 } from "node:path";
+import { dirname as dirname5, isAbsolute as isAbsolute2, join as join6, relative as relative2, resolve as resolve6 } from "node:path";
 import {
   chmodSync as chmodSync4,
   existsSync as existsSync5,
@@ -3666,7 +3666,7 @@ function renderUiResource(uri) {
 }
 
 // mcp/server.mjs
-var __dirname = dirname5(fileURLToPath(import.meta.url));
+var __dirname = dirname6(fileURLToPath(import.meta.url));
 var IS_MAIN = process.argv[1] && (resolve7(process.argv[1]) === fileURLToPath(import.meta.url) || process.argv[1].endsWith("/mcp/server.mjs") || process.argv[1].endsWith("/dist/mcp-server.mjs"));
 var activeProcesses = /* @__PURE__ */ new Map();
 var cancelledRequests = /* @__PURE__ */ new Set();
@@ -4826,7 +4826,7 @@ async function handleToolCall(id, name, args) {
       return;
     }
     const absPlan = resolve7(planCheck.value);
-    targetCwd = dirname5(absPlan);
+    targetCwd = dirname6(absPlan);
     const dirCheck = validateDirectory(targetCwd, "plan", planCheck.value);
     if (!dirCheck.ok) {
       sendError(id, -32602, dirCheck.error);
@@ -4849,7 +4849,7 @@ async function handleToolCall(id, name, args) {
       return;
     }
     const absPlan = resolve7(planCheck.value);
-    targetCwd = dirname5(absPlan);
+    targetCwd = dirname6(absPlan);
     const dirCheck = validateDirectory(targetCwd, "plan", planCheck.value);
     if (!dirCheck.ok) {
       sendError(id, -32602, dirCheck.error);

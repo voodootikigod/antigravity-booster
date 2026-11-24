@@ -28,6 +28,13 @@ import {
   installCliStatusLineSettings,
   uninstallCliStatusLineSettings,
 } from '../lib/cli-statusline.mjs';
+import {
+  buildAcceptanceDossier,
+  formatAcceptanceDossierMarkdown,
+  writeAcceptDossierFile,
+} from '../lib/accept.mjs';
+import { runInteractiveAcceptTui } from '../lib/accept-tui.mjs';
+import { normalizeMuxName } from '../lib/mux.mjs';
 
 const rawArgs = process.argv.slice(2);
 let project;
@@ -62,6 +69,11 @@ const COMMANDS = {
     args: '<ticket-id> [repo]',
     desc: 'launch an interactive clean-host agy rescue session for a failed ticket and verify/merge on exit',
     flags: '[--continue (reuse preserved worktree)] [--plan <plan.json> (explicit plan path)]'
+  },
+  accept: {
+    args: '[repo]',
+    desc: 'inspect candidate hunks, external-caller blast radius, and gate evidence for ADLC P6 sign-off',
+    flags: '[--base <ref> (git base ref)] [--json (emit JSON)] [--markdown <file> (write PR dossier)]'
   },
   statusline: {
     args: '[render|title|install|uninstall]',
@@ -102,7 +114,7 @@ const COMMANDS = {
   watch: {
     args: '[repo]',
     desc: 'launch the interactive live terminal TUI dashboard',
-    flags: '[--interval <ms> (refresh interval)] [--follow (keep watching after run completion)] [--compact (compact rows)]'
+    flags: '[--interval <ms> (refresh interval)] [--follow (keep watching after run completion)] [--compact (compact rows)] [--mux (open split pane in tmux/cmux/herdr)] [--mux=<tmux|cmux|herdr> (explicit mux)] [--no-alerts (disable OSC 9 attention alerts)]'
   },
   init: {
     args: '[repo]',
@@ -674,16 +686,41 @@ try {
       console.log(renderStatus(targetRepo, { tui: wantsTui, compact }));
     }
   } else if (cmd === 'watch') {
+    let mux = null;
+    const watchRest = [];
+    const KNOWN_MUX_VALUES = new Set(['auto', 'tmux', 'tmuxh', 'cmux', 'herdr']);
+    for (let i = 0; i < rest.length; i++) {
+      const tok = rest[i];
+      if (tok.startsWith('--mux=')) {
+        const rawVal = tok.slice('--mux='.length);
+        if (!rawVal) {
+          console.error('agb: missing value for --mux=');
+          process.exit(1);
+        }
+        mux = normalizeMuxName(rawVal);
+      } else if (tok === '--mux') {
+        const nextTok = rest[i + 1];
+        if (nextTok && !nextTok.startsWith('-') && KNOWN_MUX_VALUES.has(nextTok.toLowerCase()) && !existsSync(nextTok)) {
+          mux = normalizeMuxName(nextTok);
+          i += 1;
+        } else {
+          mux = 'auto';
+        }
+      } else {
+        watchRest.push(tok);
+      }
+    }
     rejectUnknownFlags(
       'watch',
-      rest,
-      new Set(['--follow', '--compact']),
+      watchRest,
+      new Set(['--follow', '--compact', '--no-alerts']),
       new Set(['--interval'])
     );
-    const follow = rest.includes('--follow');
-    const compact = rest.includes('--compact');
-    const intervalMs = parseIntervalFlag(rest, 200);
-    const positional = extractPositionalArgs(rest, new Set(['--interval']));
+    const follow = watchRest.includes('--follow');
+    const compact = watchRest.includes('--compact');
+    const noAlerts = watchRest.includes('--no-alerts');
+    const intervalMs = parseIntervalFlag(watchRest, 200);
+    const positional = extractPositionalArgs(watchRest, new Set(['--interval']));
     const targetRepo = resolve(positional[0] ?? '.');
     const { watchStatus } = await import('../lib/status.mjs');
     const { runInteractiveRescue } = await import('../lib/rescue.mjs');
@@ -692,9 +729,58 @@ try {
       interactive: Boolean(process.stdout.isTTY && !process.env.CI),
       follow,
       compact,
+      ...(mux ? { mux } : {}),
+      alerts: !noAlerts,
       onRescue: (ticketId, repoDir) => runInteractiveRescue(repoDir, ticketId, { continueExisting: true }),
     });
     process.exitCode = code;
+  } else if (cmd === 'accept') {
+    rejectUnknownFlags(
+      'accept',
+      rest,
+      new Set(['--json']),
+      new Set(['--base', '--markdown'])
+    );
+    let base = 'HEAD';
+    let markdownOut = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--base') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --base');
+          process.exit(1);
+        }
+        base = rest[++i];
+      } else if (rest[i] === '--markdown') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --markdown');
+          process.exit(1);
+        }
+        markdownOut = rest[++i];
+      }
+    }
+    const jsonOut = rest.includes('--json');
+    const positional = extractPositionalArgs(rest, new Set(['--base', '--markdown']));
+    const targetRepo = resolve(positional[0] ?? '.');
+    const dossier = buildAcceptanceDossier({ repo: targetRepo, base });
+    if (markdownOut) {
+      const mdText = formatAcceptanceDossierMarkdown(dossier);
+      const writtenPath = writeAcceptDossierFile(targetRepo, mdText, markdownOut);
+      if (!jsonOut) {
+        console.error(`accept: wrote P6 sign-off dossier → ${writtenPath}`);
+      }
+    }
+    if (jsonOut) {
+      console.log(JSON.stringify(dossier, null, 2));
+      process.exit(0);
+    }
+    if (markdownOut || !process.stdout.isTTY || !process.stdin.isTTY || process.env.CI) {
+      if (!markdownOut) {
+        process.stdout.write(formatAcceptanceDossierMarkdown(dossier));
+      }
+      process.exit(0);
+    }
+    const tuiRes = await runInteractiveAcceptTui(dossier, { repo: targetRepo });
+    process.exit(tuiRes.ok ? 0 : 1);
   } else if (cmd === 'init') {
     rejectUnknownFlags('init', rest, new Set());
     const positional = extractPositionalArgs(rest);

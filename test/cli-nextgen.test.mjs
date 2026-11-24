@@ -554,3 +554,40 @@ test('agb plan --estimate [--json] forecasts wave-by-wave quota burn offline wit
   assert.equal(existsSync(join(poolsDir, 'agb_pools_v2.json')), false);
 });
 
+test('agb accept [--base --json --markdown] and agb watch [--mux / --mux=zellij] operate offline without mutating git refs', () => {
+  const repo = makeGitRepo('repo-cli-accept-mux');
+  const baseSha = execBin('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  writeFileSync(join(repo, 'src', 'caller.js'), 'import { base } from "./base.js";\nexport const v = base + 1;\n');
+  writeFileSync(join(repo, 'src', 'base.js'), 'export const base = 2;\n');
+  execBin('git', ['-C', repo, 'add', 'src/caller.js', 'src/base.js']);
+  execBin('git', ['-C', repo, 'commit', '-q', '-m', 'candidate change']);
+  const candSha = execBin('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  const mdPath = join(repo, '.booster', 'pr-dossier.md');
+  const acceptRes = runAgb(['accept', repo, '--base', baseSha, '--json', '--markdown', mdPath]);
+  assert.equal(acceptRes.status, 0, acceptRes.stderr);
+  const dossier = JSON.parse(acceptRes.stdout);
+  assert.equal(dossier.ok, true);
+  assert.equal(dossier.counts.filesChanged, 2);
+  assert.equal(dossier.counts.totalHunks, 2);
+  assert.ok(existsSync(mdPath));
+  assert.match(readFileSync(mdPath, 'utf8'), /# ADLC P6 Sign-Off Evidence Dossier/);
+  assert.equal(execBin('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), candSha);
+
+  // Unsupported mux (zellij) must exit 1 cleanly
+  const zellijRes = runAgb(['watch', repo, '--mux=zellij']);
+  assert.equal(zellijRes.status, 1);
+  assert.match(zellijRes.stderr, /Unsupported multiplexer 'zellij'/);
+
+  // Bare --mux before [repo] must NOT consume [repo] as mux mode and must exit 0 on completed run.json
+  mkdirSync(join(repo, '.booster'), { recursive: true });
+  writeFileSync(
+    join(repo, '.booster', 'run.json'),
+    JSON.stringify({ runId: 'run-mux-done', startedAt: new Date().toISOString(), done: true, report: { merged: ['T1'], failed: {} } })
+  );
+  const muxAutoRes = runAgb(['watch', '--mux', '--no-alerts', repo], {
+    env: { ...process.env, TMUX: '', HERDR_ENV: '', HERDR_PANE_ID: '', CMUX_WORKSPACE_ID: '', CMUX_SOCKET_PATH: '' },
+  });
+  assert.equal(muxAutoRes.status, 0, muxAutoRes.stderr);
+});
+
