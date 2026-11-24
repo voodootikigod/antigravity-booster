@@ -536,4 +536,13 @@ test('exported lensPrompt and planLensPrompt share 100% byte-identical Layer-1/L
   for (let i = 1; i < planPrefixes.length; i++) {
     assert.equal(planPrefixes[i], planPrefixes[0], `Plan lens ${i} prefix must match lens 0 byte-for-byte`);
   }
+
+  // Oversized diff prioritizes source files ahead of dist/ bundles and preserves closing fence + ## Active Lens
+  const hugeDist = `diff --git a/dist/agb.mjs b/dist/agb.mjs\n+${'x'.repeat(220_000)}\n`;
+  const realSrc = `diff --git a/lib/core.mjs b/lib/core.mjs\n+export const keepMe = 42;\n`;
+  const boundedPrompt = lensPrompt('security', CODE_LENSES.security, `${hugeDist}${realSrc}`, '', undefined, { seed });
+  assert.match(boundedPrompt, /export const keepMe = 42/);
+  assert.match(boundedPrompt, /<<END:DIFF:[0-9a-f]{32}>>\n\n## Active Lens/);
+  assert.match(boundedPrompt, /Review strictly through exactly one lens: \*\*security\*\*/);
 });
+

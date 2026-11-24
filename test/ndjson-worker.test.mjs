@@ -207,4 +207,18 @@ test('NdjsonWorkerDaemon.sendTurn computes per-turn telemetry deltas when sessio
     await daemon.close();
     rmSync(dir, { recursive: true, force: true });
   }
+
+  const { extractNormalizedTokenTelemetry } = await import('../lib/ndjson-worker.mjs');
+  assert.deepEqual(
+    extractNormalizedTokenTelemetry({
+      usage: { input_tokens: 500, cache_creation_input_tokens: 1500, output_tokens: 80 },
+    }),
+    {
+      uncachedInputTokens: 2000,
+      cachedTokens: 0,
+      outputTokens: 80,
+      inputTokens: 2000,
+    }
+  );
 });
+

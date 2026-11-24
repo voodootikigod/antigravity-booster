@@ -230,15 +230,15 @@ var RE = new RegExp(
   `^${NUM}\\.${NUM}\\.${NUM}(?:-(${PRE_ID}(?:\\.${PRE_ID})*))?(?:\\+(${BUILD_ID}(?:\\.${BUILD_ID})*))?$`
 );
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/pointer.mjs
+// node_modules/@adlc/tickets/lib/pointer.mjs
 var MAX_POINTER_BYTES = 64 * 1024;
 var DEPRECATED_ID_KEYS = Object.freeze(["ticket", "ticketId"]);
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/constants.mjs
+// node_modules/@adlc/tickets/lib/constants.mjs
 var ACTIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-directory", version: 1 });
 var ARCHIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-archive", version: 1 });
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/schema.mjs
+// node_modules/@adlc/tickets/lib/schema.mjs
 function validateTicket(ticket, { archive = false } = {}) {
   const errors = [];
   if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) return ["ticket is not an object"];
@@ -270,7 +270,7 @@ function validateTicket(ticket, { archive = false } = {}) {
   return errors;
 }
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/help.mjs
+// node_modules/@adlc/tickets/lib/help.mjs
 var SYNC_CATEGORIES = Object.freeze([
   "feature",
   "bug",
@@ -412,19 +412,19 @@ var INPUT_DOCUMENT = [
   "Unknown fields are preserved as-is; the store never strips them."
 ];
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/generated-glob-match.mjs
+// node_modules/@adlc/tickets/lib/generated-glob-match.mjs
 var SLASH = "/".charCodeAt(0);
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/manifest-rails.mjs
+// node_modules/@adlc/tickets/lib/manifest-rails.mjs
 var MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketplace.json"]);
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/rail-existence.mjs
+// node_modules/@adlc/tickets/lib/rail-existence.mjs
 var GIT_MAX_BUFFER = 256 * 1024 * 1024;
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/prompt.mjs
+// node_modules/@adlc/tickets/lib/prompt.mjs
 import { createInterface } from "node:readline/promises";
 
-// ../explore-advancements/node_modules/@adlc/tickets/lib/stores/git-tree.mjs
+// node_modules/@adlc/tickets/lib/stores/git-tree.mjs
 var MAX_BUFFER = 64 * 1024 * 1024;
 
 // lib/adlc-bridge.mjs
@@ -806,10 +806,10 @@ async function sendControlCommand(repo, command, { timeoutMs = 3e3 } = {}) {
 // lib/plan-integrity.mjs
 import { basename, dirname as dirname3, isAbsolute as isAbsolute2, join as join3, posix, relative as relative2, resolve as resolve3, sep } from "node:path";
 
-// ../explore-advancements/node_modules/@adlc/core/lib/glob.mjs
+// node_modules/@adlc/core/lib/glob.mjs
 var SLASH2 = "/".charCodeAt(0);
 
-// ../explore-advancements/node_modules/@adlc/core/lib/tickets.mjs
+// node_modules/@adlc/core/lib/tickets.mjs
 var TICKET_TRUST_ROOT_RAILS = Object.freeze([
   ".adlc/tickets.json",
   ".adlc/tickets/.store.json",
