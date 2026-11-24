@@ -17,6 +17,7 @@ import {
   buildFlightDeckHtml,
   buildMissionControlHtml,
   buildPlanViewerHtml,
+  buildAcceptWorkbenchHtml,
 } from '../mcp/ui-views.mjs';
 import { findLiteralStart, parseLiteral } from '../website/scripts/lib/jslit.mjs';
 import { scanEnvTokens } from '../website/scripts/gen-reference.mjs';
@@ -100,7 +101,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
   assert.ok(start !== -1, 'const TOOLS literal must exist in mcp/server.mjs');
   const { value: tools } = parseLiteral(src, start);
   assert.equal(Array.isArray(tools), true);
-  assert.equal(tools.length, 13);
+  assert.equal(tools.length, 14);
 
   const expectedNames = [
     'agb_shape',
@@ -116,6 +117,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
     'agb_mission_control',
     'agb_plan_viewer',
     'agb_control',
+    'agb_accept',
   ];
   assert.deepEqual(tools.map((t) => t.name), expectedNames);
 
@@ -146,7 +148,7 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
 
       const listRes = await srv.send({ id: 3, method: 'tools/list', params: {} });
       const byName = new Map(listRes.result.tools.map((t) => [t.name, t]));
-      assert.equal(byName.size, 13);
+      assert.equal(byName.size, 14);
 
       assert.equal(byName.get('agb_shape')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
       assert.equal(byName.get('agb_plan')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
@@ -170,6 +172,10 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
         visibility: ['model', 'app'],
       });
       assert.deepEqual(byName.get('agb_control')._meta.ui, {
+        visibility: ['app'],
+      });
+      assert.deepEqual(byName.get('agb_accept')._meta.ui, {
+        resourceUri: 'ui://agb/accept-workbench.html',
         visibility: ['model', 'app'],
       });
 
@@ -184,13 +190,14 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
   }
 });
 
-test('resources/list & resources/read: serves all 5 deterministic ui:// MCP App views with default-deny CSP, zero external URLs, valid inline JS, and -32602 on unknown URI', async () => {
-  assert.equal(UI_RESOURCES.length, 5);
+test('resources/list & resources/read: serves all 6 deterministic ui:// MCP App views with default-deny CSP, zero external URLs, valid inline JS, and -32602 on unknown URI', async () => {
+  assert.equal(UI_RESOURCES.length, 6);
   assert.equal(buildPlanCardHtml(), buildPlanCardHtml());
   assert.equal(buildReviewCardHtml(), buildReviewCardHtml());
   assert.equal(buildFlightDeckHtml(), buildFlightDeckHtml());
   assert.equal(buildMissionControlHtml(), buildMissionControlHtml());
   assert.equal(buildPlanViewerHtml(), buildPlanViewerHtml());
+  assert.equal(buildAcceptWorkbenchHtml(), buildAcceptWorkbenchHtml());
   assert.equal(renderUiResource('ui://agb/nonexistent.html'), null);
 
   const srv = mcpSession(MCP_DIST);
@@ -203,6 +210,7 @@ test('resources/list & resources/read: serves all 5 deterministic ui:// MCP App 
       'ui://agb/flight-deck.html',
       'ui://agb/mission-control.html',
       'ui://agb/plan-viewer.html',
+      'ui://agb/accept-workbench.html',
     ]);
 
     for (let i = 0; i < uris.length; i++) {
@@ -283,6 +291,11 @@ test('resources/list & resources/read: serves all 5 deterministic ui:// MCP App 
               run: { runId: xss, done: false, tickets: { [xss]: { status: xss, model: xss } } },
               quotaCache: { quota: { gemini: { fiveHourRemainingPercent: 80, fiveHourResetTime: xss }, claude_gpt: { fiveHourRemainingPercent: 60, fiveHourResetTime: xss } } },
               modelStats: [{ model: xss, role: xss, ok: true, ms: 12 }],
+              economics: { runs: 1, avgStrike0YieldPct: 90, avgCacheHitPct: 80, totalAutofixSaves: 2, totalBillableTokens: 500 },
+              runwayEstimate: { willExhaust: true, recommendation: xss, totals: { gemini: 10, claude_gpt: 5 } },
+              base: xss,
+              hunks: [{ id: xss, file: xss, newStart: 1, lines: [xss], fingerprint: 'a'.repeat(64), verdict: xss }],
+              externalCallers: { callers: [{ file: xss, line: 1, symbol: xss, snippet: xss }] },
             },
           },
         },
@@ -569,6 +582,8 @@ test('agb_plan_viewer & symlink defenses: validates .agbplan, reports schema err
     assert.equal(okRes.result.structuredContent.ok, true);
     assert.deepEqual(okRes.result.structuredContent.validationErrors, []);
     assert.equal(okRes.result.structuredContent.plan.tickets[0].id, 'T-1');
+    assert.ok(okRes.result.structuredContent.runwayEstimate && typeof okRes.result.structuredContent.runwayEstimate === 'object');
+    assert.equal(Array.isArray(okRes.result.structuredContent.runwayEstimate.waves), true);
 
     const badJsonRes = await srv.send({
       id: 2,
@@ -774,6 +789,90 @@ if (/agb\\.mjs$/.test(entry)) {
     assert.equal(reviewRes.result.structuredContent.ok, true);
     assert.equal(reviewRes.result.structuredContent.exitCode, 0);
     assert.match(reviewRes.result.structuredContent.rawText, /empty diff/);
+  } finally {
+    await srv.close();
+  }
+});
+
+test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejects non-hex verdict keys, and surfaces economics in Mission Control', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const acceptRepo = join(TMP, 'accept-mcp-repo');
+  mkdirSync(join(acceptRepo, 'src'), { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'main', acceptRepo]);
+  execFileSync('git', ['-C', acceptRepo, 'config', 'user.email', 'test@example.com']);
+  execFileSync('git', ['-C', acceptRepo, 'config', 'user.name', 'Test']);
+  execFileSync('git', ['-C', acceptRepo, 'config', 'commit.gpgsign', 'false']);
+  writeFileSync(join(acceptRepo, 'src', 'app.mjs'), 'export function run() { return 1; }\n');
+  execFileSync('git', ['-C', acceptRepo, 'add', 'src/app.mjs']);
+  execFileSync('git', ['-C', acceptRepo, 'commit', '-qm', 'base']);
+  const baseSha = execFileSync('git', ['-C', acceptRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  writeFileSync(join(acceptRepo, 'src', 'app.mjs'), 'export function run() { return 2; }\n');
+
+  const ledgerFile = join(TMP, 'factory_ledger_mcp.jsonl');
+  writeFileSync(
+    ledgerFile,
+    JSON.stringify({
+      runId: 'run-econ-1',
+      totalTickets: 4,
+      mergedCount: 4,
+      failedCount: 0,
+      strike0MergedCount: 3,
+      autofixAppliedCount: 2,
+      uncachedInputTokens: 1000,
+      cachedTokens: 4000,
+      outputTokens: 200,
+      billableTokens: 2000,
+    }) + '\n'
+  );
+
+  const srv = mcpSession(MCP_DIST, {
+    env: { ...process.env, AGB_FACTORY_LEDGER_FILE: ledgerFile },
+  });
+  try {
+    const mcRes = await srv.send({
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'agb_mission_control', arguments: { repo: acceptRepo } },
+    });
+    assert.equal(mcRes.result.structuredContent.economics.runs, 1);
+    assert.equal(mcRes.result.structuredContent.economics.avgStrike0YieldPct, 75);
+    assert.equal(mcRes.result.structuredContent.economics.totalAutofixSaves, 2);
+
+    const d1 = await srv.send({
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'agb_accept', arguments: { repo: acceptRepo, base: baseSha } },
+    });
+    assert.equal(Boolean(d1.result.isError), false);
+    assert.equal(d1.result.structuredContent.counts.totalHunks, 1);
+    assert.equal(d1.result.structuredContent.readyForSignOff, false);
+    const fp = d1.result.structuredContent.hunks[0].fingerprint;
+    assert.match(fp, /^[0-9a-f]{64}$/);
+
+    // Non-64-hex verdict key must return isError: true
+    const badKey = await srv.send({
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'agb_accept',
+        arguments: { repo: acceptRepo, base: baseSha, verdicts: { 'src/app.mjs': 'accepted' } },
+      },
+    });
+    assert.equal(badKey.result.isError, true);
+    assert.match(badKey.result.content[0].text, /64-char lowercase hex SHA-256/);
+
+    // Saving valid 64-hex verdict transitions readyForSignOff -> true
+    const saved = await srv.send({
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'agb_accept',
+        arguments: { repo: acceptRepo, base: baseSha, verdicts: { [fp]: 'accepted' }, saveVerdicts: true },
+      },
+    });
+    assert.equal(Boolean(saved.result.isError), false);
+    assert.equal(saved.result.structuredContent.readyForSignOff, true);
+    assert.equal(saved.result.structuredContent.counts.acceptedHunks, 1);
   } finally {
     await srv.close();
   }
