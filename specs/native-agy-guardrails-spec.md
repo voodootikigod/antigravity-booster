@@ -60,8 +60,8 @@ graph TD
 -   **Scope**: `lib/doctor.mjs`, `lib/scheduler.mjs`, `test/fixtures/fake-agy`, `test/doctor.test.mjs`, `test/orchestrator-routing.test.mjs`, `evals/v13-enhancements-bench.mjs`
 -   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`
 -   **Edges**: `T-GUARD-0B -> T-GUARD-1A`, `T-GUARD-0B -> T-GUARD-4`, `T-GUARD-0B -> T-GUARD-5A`
--   **Tier**: `mid`
--   **Pool Hint**: `gemini`
+-   **Tier**: `frontier`
+-   **Pool Hint**: `claude-gpt`
 -   **Objectives**:
     1.  In `lib/doctor.mjs`: bump both `export const MIN_AGY_VERSION = '1.5.17'` and `export const RECOMMENDED_AGY_VERSION = '1.5.17'`. In `checkAgyBinary()`, update the `< MIN_AGY_VERSION` fail fix string to `'Upgrade agy to >= 1.5.17 for Antigravity Booster 2.0 native guardrails, PreToolUse force_ask, and Orchestrator support.'`, and remove the obsolete `belowOrchestrator = semverLt(versionStr, '1.5.9')` conditional inside the `semverLt(versionStr, RECOMMENDED_AGY_VERSION)` warn branch.
     2.  In `lib/scheduler.mjs` (`lines ~1527-1533`): remove the obsolete `agyBelowOrchestratorFloor` (`semverLt(agyVersion, '1.5.9')`) check and log notice so `const disableOrchestrator = Boolean(plan.disableOrchestrator);` (and remove unused `semverLt`/`semverParse` imports if no longer referenced in `lib/scheduler.mjs`).
