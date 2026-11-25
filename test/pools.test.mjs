@@ -174,13 +174,112 @@ test('parseQuotaProbeOutput & writeStatusLineQuotaCache: accept 1970-01-01T00:00
   assert.equal(parsed.claude_gpt.fiveHourResetTime, '1970-01-01T00:00:00Z');
   assert.equal(parsed.claude_gpt.weeklyResetTime, '1970-01-01T00:00:00Z');
 
-  // Statusline validator accepts 100% + epoch-zero, rejects 99% + epoch-zero
-  assert.equal(writeStatusLineQuotaCache(parsed, { nowMs: Date.now(), minWriteIntervalMs: 0 }), true);
-  const badStatusQuota = {
-    ...parsed,
-    claude_gpt: { ...parsed.claude_gpt, fiveHourRemainingPercent: 99 },
+  // Statusline validator accepts 100% + epoch-zero, rejects 99% + epoch-zero, NaN dates, and exact 10s boundary
+  const fixedNow = 1_795_000_000_000;
+  const exactBoundaryIso = new Date(fixedNow - 10_000).toISOString().replace('.000Z', 'Z');
+  const pastBoundaryIso = new Date(fixedNow - 10_001).toISOString().replace('.000Z', 'Z');
+  const boundaryQuota = {
+    gemini: {
+      fiveHourRemainingPercent: 80,
+      fiveHourResetTime: exactBoundaryIso,
+      weeklyRemainingPercent: 80,
+      weeklyResetTime: exactBoundaryIso,
+    },
+    claude_gpt: {
+      fiveHourRemainingPercent: 100,
+      fiveHourResetTime: '1970-01-01T00:00:00Z',
+      weeklyRemainingPercent: 100,
+      weeklyResetTime: '1970-01-01T00:00:00Z',
+    },
   };
-  assert.equal(writeStatusLineQuotaCache(badStatusQuota, { nowMs: Date.now(), minWriteIntervalMs: 0 }), false);
+  assert.equal(writeStatusLineQuotaCache(boundaryQuota, { nowMs: fixedNow, minWriteIntervalMs: 0 }), true);
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...boundaryQuota, gemini: { ...boundaryQuota.gemini, fiveHourResetTime: pastBoundaryIso } },
+      { nowMs: fixedNow, minWriteIntervalMs: 0 }
+    ),
+    false
+  );
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...boundaryQuota, gemini: { ...boundaryQuota.gemini, weeklyResetTime: pastBoundaryIso } },
+      { nowMs: fixedNow, minWriteIntervalMs: 0 }
+    ),
+    false
+  );
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...boundaryQuota, gemini: { ...boundaryQuota.gemini, fiveHourResetTime: '2026-99-99T00:00:00Z' } },
+      { nowMs: fixedNow, minWriteIntervalMs: 0 }
+    ),
+    false
+  );
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...boundaryQuota, gemini: { ...boundaryQuota.gemini, weeklyResetTime: '2026-99-99T00:00:00Z' } },
+      { nowMs: fixedNow, minWriteIntervalMs: 0 }
+    ),
+    false
+  );
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...boundaryQuota, claude_gpt: { ...boundaryQuota.claude_gpt, fiveHourRemainingPercent: 99 } },
+      { nowMs: fixedNow, minWriteIntervalMs: 0 }
+    ),
+    false
+  );
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...boundaryQuota, claude_gpt: { ...boundaryQuota.claude_gpt, weeklyRemainingPercent: 99 } },
+      { nowMs: fixedNow, minWriteIntervalMs: 0 }
+    ),
+    false
+  );
+
+  // Also test exact Date.now() - 10_000 boundary on parseQuotaProbeOutput
+  const origNow = Date.now;
+  Date.now = () => fixedNow;
+  try {
+    const okBoundary = parseQuotaProbeOutput(
+      JSON.stringify({
+        pools: [
+          {
+            name: 'Gemini Models',
+            fiveHour: { remainingPercent: 80, resetTime: exactBoundaryIso },
+            weekly: { remainingPercent: 80, resetTime: exactBoundaryIso },
+          },
+          {
+            name: 'Claude and GPT models',
+            fiveHour: { remainingPercent: 100, resetTime: '1970-01-01T00:00:00Z' },
+            weekly: { remainingPercent: 100, resetTime: '1970-01-01T00:00:00Z' },
+          },
+        ],
+      })
+    );
+    assert.equal(okBoundary.gemini.fiveHourResetTime, exactBoundaryIso);
+    assert.throws(
+      () =>
+        parseQuotaProbeOutput(
+          JSON.stringify({
+            pools: [
+              {
+                name: 'Gemini Models',
+                fiveHour: { remainingPercent: 80, resetTime: pastBoundaryIso },
+                weekly: { remainingPercent: 80, resetTime: exactBoundaryIso },
+              },
+              {
+                name: 'Claude and GPT models',
+                fiveHour: { remainingPercent: 100, resetTime: '1970-01-01T00:00:00Z' },
+                weekly: { remainingPercent: 100, resetTime: '1970-01-01T00:00:00Z' },
+              },
+            ],
+          })
+        ),
+      (err) => err.kind === 'invalid_quota_timestamp'
+    );
+  } finally {
+    Date.now = origNow;
+  }
 });
 
 test('parseQuotaProbeOutput: rejects invalid remainingPercent (invalid_quota_percentage)', () => {
