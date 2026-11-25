@@ -1,11 +1,15 @@
 # Specification: Native Antigravity Guardrails & Verification Hardening (v2.0)
 
 **Base:** `research/verification-and-guardrails` \
-**Gate:** `{"test": "npm test"}`
+**Gate:** `{"build": "npm run build:hooks", "test": "npm test"}`
 
 --------------------------------------------------------------------------------
 
 ## 1. Overview & Objectives
+
+> **IMPORTANT HEADLESS WORKER SANDBOX & SHELL RULE (READ FIRST):** In headless builder sessions, you run inside an outer Linux `bwrap` container where nested `bwrap` is blocked by the kernel (`EPERM` on `kernel.apparmor_restrict_unprivileged_userns=1`) and `PreToolUse` allows ONLY targeted `node --test <file>` (plus `npm run build:hooks` and read-only `git status`/`git diff`/`ls`/`cat`/`grep`). Therefore:
+> 1. Run `node --test` ONLY on unit test files that do not spawn nested `bwrap` (do **not** run `npm test`, `test/orchestrator-routing.test.mjs`, `test/evals.test.mjs`, or `test/security.test.mjs` inside `bwrap` — verify syntax on those via `read_file` inspection instead).
+> 2. **NEVER** emit `TICKET-BLOCKED` because `bwrap` is unusable inside your sandbox — the orchestrator automatically executes the full `npm test` suite outside nested `bwrap` immediately after you output `TICKET-DONE`.
 
 This specification aligns `antigravity-booster` (`v2.0.0`) with Google Antigravity's latest normative **Verification and Guardrails** contracts (`permissions`, `sandbox`, `hooks`, and `https://antigravity.google/schemas/v1/settings.json`), adopting an owner-approved forward-leaning `agy >= 1.5.17` baseline with zero legacy `agy` backwards-compatibility shims:
 
@@ -68,7 +72,7 @@ graph TD
     3.  In `test/fixtures/fake-agy`: update line `220` to `const ALLOWED_SETTINGS_KEYS = new Set(["permissions", "allowNonWorkspaceAccess"]);` and line `325` to `echo "agy version ${FAKE_AGY_VERSION:-1.5.17}"`.
     4.  Update `test/doctor.test.mjs` (`MIN_AGY_VERSION === '1.5.17'`, `RECOMMENDED_AGY_VERSION === '1.5.17'`, `'1.2.6'`/`'1.5.13'`/`'1.5.16'` -> `'fail'`, `'1.5.17'`/`'1.6.0'` -> `'pass'`), `test/orchestrator-routing.test.mjs` (`lines 311-330`: verify `runPlan` rejects `FAKE_AGY_VERSION: '1.5.16'` with `/required >= v1\.5\.17/` and resets `modelStats` when `FAKE_AGY_VERSION` advances from `'1.5.17'` to `'1.5.18'`), and `evals/v13-enhancements-bench.mjs` (`lines 56, 133, 549, 1212, 1363-1398`: count `decision === 'ask' || decision === 'force_ask'` in `headlessAskCount`, assert `MIN_AGY_VERSION === '1.5.17' && RECOMMENDED_AGY_VERSION === '1.5.17'`, and update `checks.versionAutoDisableOk` — preserving that property key — to verify `runPlan` rejects `FAKE_AGY_VERSION: '1.5.16'` while `disableOrchestrator: true` routes `T1` to `['gemini-4-argon-high']`).
 -   **Acceptance Criteria**:
-    -   `node --test test/doctor.test.mjs test/orchestrator-routing.test.mjs test/evals.test.mjs` and `npm test` exit `0`.
+    -   `node --test test/doctor.test.mjs` exits `0` inside the builder session (the orchestrator runs `test/orchestrator-routing.test.mjs`, `test/evals.test.mjs`, and full `npm test` outside nested `bwrap` immediately after `TICKET-DONE`).
 
 --------------------------------------------------------------------------------
 
@@ -235,28 +239,23 @@ graph TD
             -   In `close()`, set `this.closed = true` first, await any in-flight `this._spawnPromise` (`try { await this._spawnPromise; } catch {}`), kill the daemon process tree and wait for exit, and then invoke and clear `this._containmentCleanup()`.
     2.  Update `evals/runner.mjs` (`lines 230-235` `roleSettingsReadonly` check in `runLiveV14HyperHarnessBenchmark()` to assert `prof?.allowNonWorkspaceAccess === false && prof.permissions.deny.includes('write_file(*)') && prof.permissions.deny.includes('command(*)') && prof.permissions.deny.includes('mcp(*)') && Object.keys(prof).sort().join(',') === 'allowNonWorkspaceAccess,permissions'`, plus `lines 960, 968` table labels for `1.5.17`) and `test/ndjson-worker.test.mjs` (passing `containment: false, sandbox: false` on pure NDJSON protocol unit tests, testing `persistentWorkers: false` + EOF `singleShotFallback`, concurrent `sendTurn()` `_spawnPromise` deduplication, respawn cleanup without leaks, `MAX_BYPASS_RESPAWNS = 2` nonce expiry, `allowCodegraph: true` forwarding, and fail-closed containment without single-shot fallback).
 -   **Acceptance Criteria**:
-    -   `node --test test/ndjson-worker.test.mjs test/evals.test.mjs` and `npm test` exit `0`.
+    -   `node --test test/ndjson-worker.test.mjs` exits `0` inside the builder session (the orchestrator runs `test/evals.test.mjs` and full `npm test` outside nested `bwrap` immediately after `TICKET-DONE`).
 
 --------------------------------------------------------------------------------
 
-### Ticket 9: `T-GUARD-6` — Bundle Rebuild, v2.0 Docs / Reference Sync & End-to-End Guardrail Verification
+### Ticket 9: `T-GUARD-6` — v2.0 Docs Sync & End-to-End Guardrail Verification
 
--   **Scope**: `dist/agb.mjs`, `dist/mcp-server.mjs`, `website/generated/**`, `README.md`, `website/content/docs/getting-started/installation.mdx`, `website/content/docs/getting-started/verify.mdx`, `website/content/docs/reference/agy-integration.mdx`, `website/content/docs/reference/cli/doctor.mdx`, `test/guardrails-e2e.test.mjs`
+-   **Scope**: `README.md`, `website/content/docs/getting-started/installation.mdx`, `website/content/docs/getting-started/verify.mdx`, `website/content/docs/reference/agy-integration.mdx`, `website/content/docs/reference/cli/doctor.mdx`, `test/guardrails-e2e.test.mjs`
 -   **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `vendor/adlc/**`, `dist/hooks/pre-tool-use.bundle.mjs`, `scripts/rails-guard-ci.mjs`
 -   **Edges**: `(leaf — depends on T-GUARD-5B)`
 -   **Tier**: `mid`
 -   **Pool Hint**: `gemini`
 -   **Objectives**:
-    1.  Rebuild `dist/agb.mjs` and `dist/mcp-server.mjs` via `npm run build:agb && npm run build:mcp` (keeping `dist/hooks/pre-tool-use.bundle.mjs` and `vendor/adlc/**` frozen in `Rails`) and verify `node scripts/check-bundle-externals.mjs` exits `0`.
-    2.  Sync `website/generated/**` and v2.0 `agy >= 1.5.17` documentation:
-        -   Run `node website/scripts/gen-reference.mjs` to update `website/generated/**` (including `modules.mdx` for `lib/role-settings.mjs`, `lib/doctor-settings.mjs`, `prepareBuilderContainment`, and `MAX_BYPASS_RESPAWNS`).
-        -   Update `README.md` (`Requires agy >= 1.5.17 and Node >= 22.19.0.`), `website/content/docs/getting-started/installation.mdx`, `website/content/docs/getting-started/verify.mdx` (updating the `agy CLI` floor/fix text to `1.5.17` and adding the advisory `CLI settings` row), `website/content/docs/reference/agy-integration.mdx`, and `website/content/docs/reference/cli/doctor.mdx` to reflect the `1.5.17` runtime floor, **preserving** existing `[C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/...)` and `[C31](...)` evidence permalinks required by `website/scripts/check-evidence.mjs`.
-        -   Verify `node website/scripts/check-all.mjs` exits `0`.
-    3.  Create `test/guardrails-e2e.test.mjs` (<220 lines) testing end-to-end across shipped bundles and modules:
+    1.  Update `README.md` (`Requires agy >= 1.5.17 and Node >= 22.19.0.`), `website/content/docs/getting-started/installation.mdx`, `website/content/docs/getting-started/verify.mdx` (updating the `agy CLI` floor/fix text to `1.5.17` and adding the advisory `CLI settings` row), `website/content/docs/reference/agy-integration.mdx`, and `website/content/docs/reference/cli/doctor.mdx` to reflect the `1.5.17` runtime floor, **preserving** existing `[C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/...)` and `[C31](...)` evidence permalinks required by `website/scripts/check-evidence.mjs`.
+    2.  Create `test/guardrails-e2e.test.mjs` (<220 lines) testing end-to-end across shipped hook bundle and modules:
         -   `bin/hook-runner.sh` + `dist/hooks/pre-tool-use.bundle.mjs`: `force_ask` on active-rail `run_workflow` & degraded interactive ADLC `run_command`, `deny` in `AGB_WORKER_TICKET` mode, empty stdout on 0-arg `list_permissions({})`, and `deny` on `ask_permission` targeting `unsandboxed` or frozen rails.
         -   `buildRoleSettingsProfile` (`builder` with rails + `prosecutor`) written to `<tmpHome>/.gemini/antigravity-cli/settings.json` passes `checkCliSettings({ home: tmpHome })` with `level: 'pass'`.
-        -   `verifyRedPhaseTests` secret stripping and TAP verification.
-    4.  Run `npm run plugin:validate` and `npm test` to confirm full marketplace validation and suite greenness.
+        -   `verifyRedPhaseTests` (`AGB_SANDBOX_GATES: '0'`) secret stripping, worktree mutation rejection, and TAP verification.
 -   **Acceptance Criteria**:
     -   `node --test test/guardrails-e2e.test.mjs` exits `0`.
-    -   `node scripts/check-bundle-externals.mjs`, `node website/scripts/check-all.mjs`, `npm run plugin:validate`, and `npm test` all exit `0`.
+    -   Full `npm test` gate (run automatically by the orchestrator outside nested `bwrap`) exits `0`.

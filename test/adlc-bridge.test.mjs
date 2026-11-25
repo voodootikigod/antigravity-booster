@@ -46,7 +46,13 @@ function pluginValidationErrors(data) {
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const HOST_NODE_MODULES = (() => {
   let d = process.cwd();
-  while (d !== dirname(d) && !existsSync(join(d, 'node_modules'))) d = dirname(d);
+  while (d !== dirname(d)) {
+    const nm = join(d, 'node_modules');
+    if (existsSync(nm) && !lstatSync(nm).isSymbolicLink() && !existsSync(join(nm, '.agb-materialized'))) {
+      break;
+    }
+    d = dirname(d);
+  }
   return join(d, 'node_modules');
 })();
 
