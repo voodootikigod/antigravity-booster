@@ -16,8 +16,12 @@
 
 | Hook group | Event | Matcher | Command | Timeout (s) |
 | --- | --- | --- | --- | --- |
+| agb-policy-guard | PostInvocation | — | /bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostInvocation | 10 |
+| agb-policy-guard | PostToolUse | * | /bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostToolUse | 10 |
+| agb-policy-guard | PreInvocation | — | /bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PreInvocation | 10 |
 | agb-policy-guard | PreToolUse | * | /bin/sh bin/hook-runner.sh --timeout 9 dist/hooks/pre-tool-use.bundle.mjs | 15 |
 | agb-policy-guard | SessionStart | — | /bin/sh bin/node-launcher.sh hooks/session-start.mjs | 10 |
+| agb-policy-guard | Stop | — | /bin/sh bin/node-launcher.sh hooks/lifecycle.mjs Stop | 10 |
 
 **mcp_config.json**
 

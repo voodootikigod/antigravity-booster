@@ -146,7 +146,7 @@ function walkMjsFiles(dir) {
   return out.sort();
 }
 
-for (const [file, count] of [['review.mjs', 3], ['prosecute.mjs', 1], ['preflight.mjs', 1], ['plan.mjs', 3], ['brain.mjs', 1]]) {
+for (const [file, count] of [['review.mjs', 3], ['prosecute.mjs', 1], ['preflight.mjs', 1], ['plan.mjs', 3], ['brain.mjs', 1], ['holdout.mjs', 1]]) {
   test(`static: every runAgy call in ${file} passes worker readonly`, () => {
     const blocks = runAgyBlocks(libSrc(file));
     assert.equal(blocks.length, count);

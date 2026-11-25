@@ -1,6 +1,7 @@
 | Module | Exports |
 | --- | --- |
 | bin/agb.mjs | (no exports: entry point) |
+| hooks/lifecycle.mjs | evaluateLifecycleEvent, inspectActiveAdlcRepo, isLifecycleFastBypass, resolveLifecyclePluginData |
 | hooks/policy/constants.mjs | AGY_CONTROL_TOOLS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, BRAIN_APPS, CODEGRAPH_READ_TOOLS, DESTRUCTIVE_ROOT_VERBS, DIR_READ_TOOLS, EXCLUDED_CONTENT_KEYS, IMPLICIT_RAIL_DIRS, IMPLICIT_RAIL_FILES, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS, PATH_MUTATING_TOOLS, PURE_READERS, READONLY_BOOSTER_CONTROL_ACTIONS, READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, STDIN_TOOLS, SUBAGENT_PROSE_KEYS, SUBAGENT_TOOLS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES, TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS |
 | hooks/policy/evaluate.mjs | buildContext, evaluateNotebookExecution, evaluatePayload, evaluateSedFile, evaluateSendCommandInput, extractProbedPaths, extractReadToolPaths, goFoldKey, isBoosterMcpTool, normalizeArgsCaseInsensitive, validateSedCall |
 | hooks/policy/paths.mjs | beginEvaluation, boosterDataRoots, brainRoots, expandHome, hasHomePrefix, headlessProtectedMatcher, isAllowedBrainArtifactTarget, isBenignProcRead, isHeadlessIpcOrRescuePath, isImplicitAncestorOnly, isMagicPath, isRailAncestorOnly, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot, matchesScope, physicalResolve, protectedRoots, railStaticPrefix, repoRelative, resolveCandidate, resolveSafeTarget, verifyBrainArtifactDirectory |
@@ -23,11 +24,12 @@
 | lib/context-slice.mjs | buildContextSlice, discoverExternalCallers, extractFileSymbolSpans, formatHydratedBuilderAppendix, hasCodegraphIndex, parseSymbolAnchor, sanitizeBoundarySnippet, verifySymbolScopeDiff |
 | lib/control-ipc.mjs | resolveControlEndpoint, sendControlCommand, startControlServer |
 | lib/digest.mjs | computeDirectoryDigest |
-| lib/distill.mjs | DEFAULT_MAX_RULE_BYTES, distillRunDefenses |
+| lib/distill.mjs | DEFAULT_MAX_RULE_BYTES, distillRunDefenses, isSafeRegexPattern, runLearnedChecks, validateLearnedChecksSpec |
 | lib/doctor-models.mjs | agyModelsStdout, agyModelsStdoutSync, checkModelCatalog, compareModelCatalog, parseAgyModelRows, parseAgyModels |
 | lib/doctor.mjs | MIN_AGY_VERSION, MIN_NODE_VERSION, RECOMMENDED_AGY_VERSION, applyDoctorFixes, boosterDataDir, checkAdlcBinary, checkAgyAuth, checkAgyBinary, checkBrainDir, checkHookLogDir, checkKernelContainment, checkKillswitchUsage, checkModelCatalog, checkNodeVersion, checkPlugin, checkPolicyGuard, checkProbePlugins, checkSandbox, checkSecondaryInstall, checkTicketStore, compareModelCatalog, evaluateStagedAdlcPlugin, healthLogPath, isTestExecution, parseAgyModels, runDoctor, runInit, verifyWindowsSandboxActive, verifyWindowsSandboxAttestation |
 | lib/factory-ledger.mjs | FactoryLedger, MAX_FACTORY_LEDGER_ENTRIES, computeRunEconomics, defaultFactoryLedgerPath |
 | lib/gates.mjs | gateSandboxAvailable, gateSandboxEnabled, linuxBwrapArgs, runGate, runGates, sandboxProfile |
+| lib/holdout.mjs | buildHoldoutAuthorPrompt, cleanHoldoutScenarios, collectHoldoutMaskDirs, computeRepoHoldoutHash, extractHoldoutCodeBlock, extractStaticScenarioTitles, invokeHoldoutAuthor, listHoldoutScenarios, resolveHoldoutBaseRoot, resolveHoldoutDir, runHoldoutScenarios, runMaskedWorktreeGate, runMaskedWorktreeGates, sanitizeHoldoutFailureOutput, selectOppositeHoldoutPool, shouldRunHoldoutScenarios, stageHoldoutScenarios, verifyHoldoutRedPhase |
 | lib/hud.mjs | TerminalHUD |
 | lib/json.mjs | safeExtractJson |
 | lib/lock.mjs | acquireRepoLock |
@@ -47,7 +49,7 @@
 | lib/review.mjs | ARBITER_TRIAGE_SCHEMA, ARL_FINDING_SCHEMA, CODE_LENSES, LENSES, MAX_REVIEW_PAYLOAD_CHARS, PLAN_LENSES, REVIEW_FINDINGS_SCHEMA, arbiterPrompt, lensPrompt, normalizeSeverity, planLensPrompt, reviewCalibration, reviewDiff, reviewFleet, reviewPlan, selectLensModel, triageFindings |
 | lib/run-integrity.mjs | ABSENT, diffRunIntegrity, enforcementGate, hooksDirFor, isWellFormedRail, sanitizedGitEnv, snapshotRunIntegrity, verifyRunIntegrity |
 | lib/sandbox-probe-helper.mjs | runSandboxProbe |
-| lib/scheduler-verify.mjs | BanditModelRouter, bisectFailedBatch, buildContextSlice, buildSandboxCommandWrapper, checkEnforcementAvailable, checkFlailDetector, checkRailsGuard, deriveImpactedTests, executeSpeculativeMergeBatch, partitionTddScopes, planSpeculativeMergeBatches, prepareTicketContextAndTdd, promoteTestsToBuilderRails, recordGate, resolveTicketGateConfig, runConsensusFix, runDeterministicAutofixNode, runSymbolScopeVerification, sanitizeBuilderStreamOutputForFlail, shouldRunTddSplit, syncOverviewPaneState, verifyRedPhaseTests, verifyScopeAndAntiNoOp, verifySymbolScopeDiff, wrapConsensusGateCommand |
+| lib/scheduler-verify.mjs | BanditModelRouter, bisectFailedBatch, buildContextSlice, buildSandboxCommandWrapper, checkEnforcementAvailable, checkFlailDetector, checkRailsGuard, deriveImpactedTests, executePostGateDarkFactoryChecks, executeSpeculativeMergeBatch, partitionTddScopes, planSpeculativeMergeBatches, prepareTicketContextAndTdd, promoteTestsToBuilderRails, recordGate, resolveTicketGateConfig, runConsensusFix, runDeterministicAutofixNode, runSymbolScopeVerification, sanitizeBuilderStreamOutputForFlail, shouldRunTddSplit, syncOverviewPaneState, verifyRedPhaseTests, verifyScopeAndAntiNoOp, verifySymbolScopeDiff, wrapConsensusGateCommand |
 | lib/scheduler.mjs | BanditModelRouter, GIT_MAX_BUFFER, buildSandboxCommandWrapper, checkEnforcementAvailable, checkFlailDetector, checkRailsGuard, deriveImpactedTests, executeSpeculativeMergeBatch, getGitCommonDir, getGitIndexPath, hostMediatedFetch, prepareTicketContextAndTdd, reconcileIntegrationJournal, recordGate, resolveTicketGateConfig, runConsensusFix, runDeterministicAutofixNode, runPlan, runSymbolScopeVerification, safeWriteWorktreeFile, sanitizeBuilderStreamOutputForFlail, selectAlternateModel, setupAttemptGitDatabase, snapshotRootGit, syncOverviewPaneState, terminateProcessTree, verifyRootGitIntegrity, verifyScopeAndAntiNoOp, verifyWorktreeGitPointer, warmRegenPrompt, wrapConsensusGateCommand |
 | lib/schemas.mjs | ARBITER_TRIAGE_SCHEMA, ARL_FINDING_SCHEMA, BRAIN_PLAN_SCHEMA, COLDSTART_FINDINGS_SCHEMA, COLDSTART_SCHEMA, COLDSTART_VERDICT_SCHEMA, PARALLAX_VERDICT_SCHEMA, PROSECUTION_VERDICT_SCHEMA, QUOTA_RESPONSE_SCHEMA, REVIEW_FINDINGS_SCHEMA, STREAM_EVENT_SCHEMA, validateJsonSchema |
 | lib/semver.mjs | compare, eq, gt, gte, lt, parse |
@@ -59,6 +61,7 @@
 | lib/terminal-osc.mjs | AttentionTransitionTracker, formatOsc8FileLink, formatOscAttentionAlert, sanitizeOscField, stripOscAndAnsi |
 | lib/test-impact.mjs | bisectFailedBatch, deriveImpactedTests, planSpeculativeMergeBatches |
 | lib/tui.mjs | ANSI, PHASE_CONFIG, SPINNERS, formatDuration, padVisible, renderPoolGauge, renderProgressBar, renderTUIDashboard, stripAnsi, visibleLength |
+| lib/twins.mjs | buildTwinGateEnv, isAllowedTwinEnvVar, matchTwinRoute, startDigitalTwins, validateTwinsConfig, wrapTestCmdWithTwinEnv |
 | lib/workflow-emit.mjs | compilePlanToWorkflow, computeTopologicalWaves |
 | lib/worktrees.mjs | JOURNAL_PHASES, abortAnyMerge, assertSafeAdlcDir, branchDiff, changedFiles, cleanEmptyNodeModules, clearRescueWorktreeLock, commitAll, createIntegrationWorktree, createWorktree, currentBranch, deleteBranch, discardProjection, ensureGitignore, hasProtectedRescueWorktree, isDirty, isMidMerge, materializeWorktreeNodeModules, mergeWorktree, pruneWorktrees, quarantineIntegrationJournal, readIntegrationJournal, reapIntegrationWorktrees, removeMaterializedNodeModules, removeWorktree, resetToBase, unlinkIntegrationJournal, validateWorktreeRoot, writeIntegrationJournal, writeRescueWorktreeLock |
 | mcp/server.mjs | buildSnapshotPayload, resolveAgbEntry |

@@ -546,6 +546,27 @@
       "default": "unset",
       "bundledIgnored": false,
       "description": "Set to 1 to force PoolSet.refreshQuota to bypass agb_statusline_quota.json and spawn agy -p /quota directly."
+    },
+    {
+      "name": "AGB_HOLDOUT_DIR",
+      "group": "paths",
+      "default": "<plugin_data>/holdouts",
+      "bundledIgnored": true,
+      "description": "Unbundled override directory for sealed Dark-Factory holdout scenarios staged and executed during P5 verification; ignored in bundled plugin builds."
+    },
+    {
+      "name": "AGB_CANDIDATE_ROOT",
+      "group": "sandbox-and-gates",
+      "default": "set by agb on holdout runners",
+      "bundledIgnored": false,
+      "description": "Exported by lib/holdout.mjs to the isolated candidate worktree path during P5 holdout verification so out-of-tree holdout scenarios can dynamically import candidate modules."
+    },
+    {
+      "name": "AGB_LIFECYCLE_HOOKS",
+      "group": "sandbox-and-gates",
+      "default": "1",
+      "bundledIgnored": false,
+      "description": "Set to 0 to bypass the advisory in-session lifecycle hooks (PostToolUse, PreInvocation, PostInvocation, Stop) in hooks/lifecycle.mjs."
     }
   ],
   "ignore": [

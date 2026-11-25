@@ -152,7 +152,7 @@ test('Gate 1: schema violations and unknown mutating keys deny in active-rail re
 });
 
 test('Gate 1 / D1: trust-root implicit rails are denied even with no active rails; specs stay editable', () => {
-  for (const rel of ['.adlc/config.json', '.adlc/manifest.jsonl', '.adlc/sessions.json', '.adlc/ticket-archive/x.json', '.adlc/leases/l', '.git/config', '.git/hooks/pre-commit']) {
+  for (const rel of ['.adlc/config.json', '.adlc/manifest.jsonl', '.adlc/sessions.json', '.adlc/learned-checks.json', '.adlc/ticket-archive/x.json', '.adlc/leases/l', '.git/config', '.git/hooks/pre-commit']) {
     assert.equal(run('write_to_file', { TargetFile: join(fx.inactive, rel) }, fx.inactive).decision, 'deny', rel);
   }
   assert.equal(run('write_to_file', { TargetFile: join(fx.inactive, '.adlc/specs/new.md') }, fx.inactive).decision, 'pass');
@@ -1383,4 +1383,38 @@ test('T-NG-1: BOOSTER_MCP_TOOLS enforces agb_flight_deck, agb_mission_control, a
   assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'accept-dossier.md') }, fx.active, WORKER).decision, 'deny');
   assert.equal(shell('cat .booster/accept-state.json', fx.active, WORKER).decision, 'deny');
   assert.equal(shell('cat .booster/accept*', fx.active, WORKER).decision, 'deny');
+
+  // Wave 4 agb_holdout, custom AGB_HOLDOUT_DIR, and holdout shell literal protection
+  assert.equal(isBoosterMcpTool('mcp__agb__agb_holdout', {}), true);
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'list', repo: fx.active }, fx.active, WORKER).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'list', repo: fx.active }, fx.active, READONLY).decision, 'pass');
+  assert.equal(run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_holdout', Arguments: { Action: 'LIST', repo: fx.active } }, fx.active, READONLY).decision, 'pass');
+  assert.equal(run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_holdout', Arguments: { Action: 'CLEAN', repo: fx.active } }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('call_mcp_tool', { ServerName: 'agb', ToolName: 'agb_holdout', Arguments: { repo: fx.active } }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'clean', repo: fx.active }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'run', repo: fx.active }, fx.active, READONLY).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'run', repo: fx.active }, fx.active, INTERACTIVE).decision, 'pass');
+
+  const customHoldoutDir = join(fx.base, 'custom-holdouts');
+  assert.equal(
+    run('read_file', { Path: join(customHoldoutDir, '01-secret.holdout.test.mjs') }, fx.active, { ...WORKER, AGB_HOLDOUT_DIR: customHoldoutDir }).decision,
+    'deny'
+  );
+  assert.equal(shell('cat 01-secret.holdout.test.mjs', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('ls twins-runtime', fx.active, WORKER).decision, 'deny');
+
+  // SEC-W4-02, SEC-W4-07 & SEC-W4-R2-02: .booster/logs & .booster/runs blocked in headless/rescue, and rescue cannot clean holdouts via MCP or CLI
+  const RESCUE_ENV = { AGB_RESCUE_TICKET: 'T-RESCUE-1' };
+  assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'logs', 'run-1', 'T1.jsonl') }, fx.active, WORKER).decision, 'deny');
+  assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'runs', 'run-1-prosecution.json') }, fx.active, RESCUE_ENV).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'clean', repo: fx.active }, fx.active, RESCUE_ENV).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'run', repo: fx.active }, fx.active, RESCUE_ENV).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_holdout', { action: 'list', repo: fx.active }, fx.active, RESCUE_ENV).decision, 'pass');
+  assert.equal(run('mcp__agb__agb_distill', { repo: fx.active, compileChecks: true }, fx.active, RESCUE_ENV).decision, 'deny');
+  assert.equal(run('mcp__agb__agb_distill', { repo: fx.active, apply: true }, fx.active, RESCUE_ENV).decision, 'deny');
+  assert.equal(shell('agb holdout clean . --ticket T-RESCUE-1', fx.inactive, RESCUE_ENV).decision, 'deny');
+  assert.equal(shell('node bin/agb.mjs holdout clean .', fx.inactive, RESCUE_ENV).decision, 'deny');
+  assert.equal(shell('agb distill . --compile-checks', fx.inactive, RESCUE_ENV).decision, 'deny');
+  assert.equal(shell('agb holdout list .', fx.inactive, RESCUE_ENV).decision, 'pass');
+  assert.equal(shell('cat .booster/logs/run-1/T1.jsonl', fx.inactive, RESCUE_ENV).decision, 'deny');
 });

@@ -43,7 +43,9 @@
 | Name | Default | Description | Bundled |
 | --- | --- | --- | --- |
 | AGB_ALLOW_CODEGRAPH_MCP | unset | Set to 1 to allow CodeGraph MCP queries (codegraph_explore) in headless or read-only agb worker sessions (still restricted to paths inside the declared workspace and outside boosterDataRoots). | honoured |
+| AGB_CANDIDATE_ROOT | set by agb on holdout runners | Exported by lib/holdout.mjs to the isolated candidate worktree path during P5 holdout verification so out-of-tree holdout scenarios can dynamically import candidate modules. | honoured |
 | AGB_HOOK_DISABLE | unset | Any non-empty value bypasses the PreToolUse rails guard. Each bypass is logged to hooks.log and agb doctor warns about it. | honoured |
+| AGB_LIFECYCLE_HOOKS | 1 | Set to 0 to bypass the advisory in-session lifecycle hooks (PostToolUse, PreInvocation, PostInvocation, Stop) in hooks/lifecycle.mjs. | honoured |
 | AGB_REQUIRE_DRIVER_SIGNATURE | unset | Set to 1 to make the Windows doctor sandbox check require a signed driver attestation in the probe output. | honoured |
 | AGB_SANDBOX_GATES | on | Set to 0 to run gate commands without the OS sandbox (an explicit acknowledgement of host risk). | honoured |
 | AGB_SANDBOX_PROBE_CMD | unset | Doctor sandbox-probe command override. Restricted to test execution; otherwise the check fails. | honoured |
@@ -87,6 +89,7 @@
 | AGB_EXEC_LOCKS_DIR | under AGB_HOME_DIR | Directory for executable lock records; stale locks with a dead PID are recovered. | honoured |
 | AGB_FACTORY_LEDGER_FILE | &lt;plugin_data&gt;/factory_ledger.jsonl | Unbundled override path for the append-only Factory Economics Ledger written by agb run and read by Mission Control; ignored in bundled plugin builds. | ignored |
 | AGB_GRAPH_COUPLING_FILE | .adlc/graph-coupling.json | Path to an optional static import-graph coupling JSON file consulted by applyMergeForecast and scanStaticImportCoupling. | honoured |
+| AGB_HOLDOUT_DIR | &lt;plugin_data&gt;/holdouts | Unbundled override directory for sealed Dark-Factory holdout scenarios staged and executed during P5 verification; ignored in bundled plugin builds. | ignored |
 | AGB_HOME_DIR | the OS home directory | Home directory override for agb's per-user state. Ignored in bundled plugin builds (IS_BUNDLED === true). | ignored |
 | AGB_STATUSLINE_QUOTA_FILE | &lt;pools_dir&gt;/agb_statusline_quota.json | Unbundled override path for the lock-free statusline quota cache written by lib/cli-statusline.mjs and read by PoolSet.refreshQuota; ignored in bundled plugin builds. | ignored |
 

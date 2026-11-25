@@ -2176,7 +2176,8 @@ var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
   "agb_mission_control",
   "agb_plan_viewer",
   "agb_control",
-  "agb_accept"
+  "agb_accept",
+  "agb_holdout"
 ]);
 var READONLY_BOOSTER_CONTROL_ACTIONS = /* @__PURE__ */ new Set(["snapshot", "diff", "stream"]);
 var BRAIN_APPS = ["antigravity", "antigravity-cli", "antigravity-ide", "jetski"];
@@ -2284,7 +2285,7 @@ var EXCLUDED_CONTENT_KEYS = /* @__PURE__ */ new Set([
   "WaitMsBeforeAsync"
 ]);
 var IMPLICIT_RAIL_DIRS = [".git", ".adlc/ticket-archive", ".adlc/ticket-transactions", ".adlc/leases"];
-var IMPLICIT_RAIL_FILES = [".adlc/config.json", ".adlc/manifest.jsonl", ".adlc/sessions.json", ".adlc/tickets.json"];
+var IMPLICIT_RAIL_FILES = [".adlc/config.json", ".adlc/manifest.jsonl", ".adlc/sessions.json", ".adlc/tickets.json", ".adlc/learned-checks.json"];
 var TICKET_STORE_DIR = ".adlc/tickets";
 var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls", "wc"]);
 
@@ -3787,14 +3788,16 @@ function stripProcRoot(p) {
   const stripped = p.replace(PROC_ROOT_PREFIX, "");
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
-var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md)(?:\/|$))/;
+var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|logs|runs)(?:\/|$))/;
 var HEADLESS_BOOSTER_CHILD_NAMES = [
   "control.json",
   "control.sock",
   "rescue-locks",
   "rescue-latest",
   "accept-state.json",
-  "accept-dossier.md"
+  "accept-dossier.md",
+  "logs",
+  "runs"
 ];
 function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
   if (typeof absPath !== "string" || absPath.length === 0) return false;
@@ -5333,8 +5336,11 @@ function evaluateMcpTool(name, args, ctx) {
     const mcpNorm = normalizeArgsCaseInsensitive(rawMcpArgs);
     if (!mcpNorm.ok) return deny(mcpNorm.reason);
     const isMutatingControl = tool === "agb_control" && (typeof mcpNorm.folded.action !== "string" || !READONLY_BOOSTER_CONTROL_ACTIONS.has(goFoldKey(mcpNorm.folded.action)));
-    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_accept" && Boolean(mcpNorm.folded.saveverdicts) || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
+    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_accept" && Boolean(mcpNorm.folded.saveverdicts) || tool === "agb_holdout" && goFoldKey(mcpNorm.folded.action ?? "") !== "list" || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
+    }
+    if (ctx.rescueTicket && (tool === "agb_holdout" && goFoldKey(mcpNorm.folded.action ?? "") !== "list" || tool === "agb_distill" && (Boolean(mcpNorm.folded.apply) || Boolean(mcpNorm.folded.compilechecks)))) {
+      return deny(`Interactive rescue session cannot mutate sealed holdout or learned-check defenses via MCP tool: ${tool}`);
     }
     return PASS;
   }
@@ -5697,7 +5703,16 @@ function buildContext(payload, options = {}) {
     const resolvedTmp = resolve8(p);
     return [resolvedTmp, realOr(resolvedTmp)];
   }));
-  const baseBoosterDataRoots = unique(homes.flatMap((h) => boosterDataRoots(h)));
+  const unbundledEval = false;
+  const rawHoldoutEnv = unbundledEval && typeof env.AGB_HOLDOUT_DIR === "string" ? env.AGB_HOLDOUT_DIR.trim() : "";
+  const customHoldoutRoots = rawHoldoutEnv ? unique(
+    (isAbsolute5(rawHoldoutEnv) ? [resolve8(rawHoldoutEnv)] : [
+      resolve8(rawHoldoutEnv),
+      ...cwd ? [resolve8(cwd, rawHoldoutEnv)] : [],
+      ...workspacePaths.map((w) => resolve8(w, rawHoldoutEnv))
+    ]).flatMap((p) => [p, realOr(p)])
+  ) : [];
+  const baseBoosterDataRoots = unique([...homes.flatMap((h) => boosterDataRoots(h)), ...customHoldoutRoots]);
   const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
   const hasBrainMetadata = payload?.conversationId !== void 0 || payload?.artifactDirectoryPath !== void 0;
   const verifiedBrainArtifact = verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform });
@@ -5743,7 +5758,38 @@ var HEADLESS_DESTRUCTIVE_SHELL_CMDS = /* @__PURE__ */ new Set([
   "chgrp",
   "find"
 ]);
-var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-)/i;
+var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-|holdouts|twins-runtime|\.holdout\.test\.mjs|\.booster[\\/](?:logs|runs))/i;
+function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
+  if (!Array.isArray(argv) || argv.length === 0) return false;
+  let agbIdx = -1;
+  for (let i = 0; i < argv.length; i += 1) {
+    const base = basename5(String(argv[i] ?? ""));
+    if (base === "agb" || base === "agb.mjs") {
+      agbIdx = i;
+      break;
+    }
+  }
+  if (agbIdx === -1) return false;
+  const rest = argv.slice(agbIdx + 1);
+  const positionals = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    const tok = String(rest[i] ?? "");
+    if (tok === "--ticket" || tok === "--run-id" || tok === "--port" || tok === "--out") {
+      i += 1;
+      continue;
+    }
+    if (!tok.startsWith("-")) positionals.push(tok.toLowerCase());
+  }
+  const sub = positionals[0] ?? "";
+  if (sub === "holdout") {
+    const act = positionals[1] ?? "";
+    return headless || act !== "list";
+  }
+  if (sub === "distill") {
+    return headless || rest.some((t) => t === "--apply" || t === "--compile-checks");
+  }
+  return false;
+}
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);
   if (verdict.decision === "deny" || !ctx.headless && !ctx.rescueTicket) return verdict;
@@ -5762,6 +5808,9 @@ function evaluateRunCommand(args, ctx) {
   const baseCwd = typeof cwdArg === "string" && cwdArg.length > 0 ? resolve8(cwdArg) : ctx.workspacePaths[0] ?? "/";
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
+    if (isMutatingAgbCliSubcommand(sub.argv, { headless: ctx.headless })) {
+      return deny("Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands");
+    }
     const cmd = basename5(sub.argv[0] ?? "");
     const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);
     const argvTokens = sub.argv.slice(1).flatMap((t) => {

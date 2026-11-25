@@ -132,7 +132,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         repo: { type: 'string', description: 'Path to target repository' },
-        apply: { type: 'boolean', description: 'Write compacted defenses to .gemini/rules/adlc-learned.md' }
+        apply: { type: 'boolean', description: 'Write compacted defenses to .gemini/rules/adlc-learned.md' },
+        compileChecks: { type: 'boolean', description: 'Compile recurring findings into declarative .adlc/learned-checks.json invariants' }
       },
       required: ['repo']
     }
@@ -337,6 +338,24 @@ const TOOLS = [
         resourceUri: 'ui://agb/accept-workbench.html',
         visibility: ['model', 'app']
       }
+    }
+  },
+  {
+    name: 'agb_holdout',
+    description: 'List metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'run', 'clean'],
+          description: 'Holdout operation to perform'
+        },
+        repo: { type: 'string', description: 'Path to target repository' },
+        ticketId: { type: 'string', description: 'Optional ticket ID filter' },
+        runId: { type: 'string', description: 'Optional run ID filter' }
+      },
+      required: ['action', 'repo']
     }
   }
 ];
@@ -1217,6 +1236,39 @@ async function handleToolCall(id, name, args) {
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('distill', targetCwd, '--json');
     if (args.apply) cliArgs.push('--apply');
+    if (args.compileChecks) cliArgs.push('--compile-checks');
+  } else if (name === 'agb_holdout') {
+    const actionCheck = requireNonFlagString(args, 'action');
+    if (!actionCheck.ok) { sendError(id, -32602, actionCheck.error); return; }
+    const act = actionCheck.value.trim();
+    if (act !== 'list' && act !== 'run' && act !== 'clean') {
+      sendError(id, -32602, `Invalid holdout action '${act}': expected list, run, or clean`);
+      return;
+    }
+    const repoCheck = requireNonFlagString(args, 'repo');
+    if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
+    targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
+    if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
+    cliArgs.push('holdout', act, targetCwd, '--json');
+    if (args.ticketId !== undefined) {
+      const tCheck = requireNonFlagString(args, 'ticketId');
+      const tVal = tCheck.ok ? tCheck.value.trim() : '';
+      if (!tCheck.ok || tVal.includes('..') || tVal.length > 128 || !TICKET_ID_RE.test(tVal)) {
+        sendError(id, -32602, 'Invalid ticketId');
+        return;
+      }
+      cliArgs.push('--ticket', tVal);
+    }
+    if (args.runId !== undefined) {
+      const rCheck = requireNonFlagString(args, 'runId');
+      const rVal = rCheck.ok ? rCheck.value.trim() : '';
+      if (!rCheck.ok || rVal.includes('..') || rVal.length > 128 || !TICKET_ID_RE.test(rVal)) {
+        sendError(id, -32602, 'Invalid runId');
+        return;
+      }
+      cliArgs.push('--run-id', rVal);
+    }
   } else if (name === 'agb_run') {
     const planCheck = requireNonFlagString(args, 'plan');
     if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
