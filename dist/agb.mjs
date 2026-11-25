@@ -13322,7 +13322,7 @@ async function runAgy({
 (allow file-write* (subpath "/tmp"))
 (allow file-write* (subpath "/private/var/folders"))
 (allow file-write* (subpath "${escapedCanonicalTmp}"))
-(allow file-write* (regex #"^/dev/(null|zero|dtracehelper|tty)"))${extraReadPaths}${extraGitPaths}
+(allow file-write* (regex #"^/dev/(null|zero|dtracehelper|tty|ptmx|ttys[0-9]+)"))${extraReadPaths}${extraGitPaths}
 (deny file-write* (subpath "${escapedAllowedDir}/node_modules"))
 (deny file-write* (subpath "${escapedRealAllowedDir}/node_modules"))
 (deny file-write* (subpath "${escapedAllowedDir}/.adlc"))
