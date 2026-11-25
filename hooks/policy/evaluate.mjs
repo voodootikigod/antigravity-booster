@@ -776,6 +776,7 @@ function evaluateMcpTool(name, args, ctx) {
         tool === 'agb_distill' ||
         isMutatingControl ||
         (tool === 'agb_accept' && Boolean(mcpNorm.folded.saveverdicts)) ||
+        (tool === 'agb_holdout' && goFoldKey(mcpNorm.folded.action ?? '') !== 'list') ||
         (tool === 'agb_doctor' && Boolean(mcpNorm.folded.fix)) ||
         (tool === 'agb_shape' && Boolean(mcpNorm.folded.syncbrain))
       )
@@ -1155,7 +1156,12 @@ export function buildContext(payload, options = {}) {
     const resolvedTmp = resolve(p);
     return [resolvedTmp, realOr(resolvedTmp)];
   }));
-  const baseBoosterDataRoots = unique(homes.flatMap((h) => boosterDataRoots(h)));
+  const unbundledEval = typeof __AGB_BUNDLED__ === 'undefined' || !__AGB_BUNDLED__;
+  const customHoldoutRoots =
+    unbundledEval && typeof env.AGB_HOLDOUT_DIR === 'string' && env.AGB_HOLDOUT_DIR.trim() && isAbsolute(env.AGB_HOLDOUT_DIR.trim())
+      ? [resolve(env.AGB_HOLDOUT_DIR.trim()), realOr(resolve(env.AGB_HOLDOUT_DIR.trim()))]
+      : [];
+  const baseBoosterDataRoots = unique([...homes.flatMap((h) => boosterDataRoots(h)), ...customHoldoutRoots]);
   const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
   const hasBrainMetadata = payload?.conversationId !== undefined || payload?.artifactDirectoryPath !== undefined;
   const verifiedBrainArtifact = verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform });
@@ -1196,7 +1202,7 @@ const HEADLESS_DESTRUCTIVE_SHELL_CMDS = new Set([
   'rm', 'mv', 'shred', 'unlink', 'rmdir', 'cp', 'tar', 'rsync', 'chmod', 'chown', 'chgrp', 'find',
 ]);
 const HEADLESS_FORBIDDEN_SHELL_LITERAL =
-  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-)/i;
+  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-|holdouts|twins-runtime|\.holdout\.test\.mjs)/i;
 
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);

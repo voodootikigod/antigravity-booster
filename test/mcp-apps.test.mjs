@@ -101,7 +101,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
   assert.ok(start !== -1, 'const TOOLS literal must exist in mcp/server.mjs');
   const { value: tools } = parseLiteral(src, start);
   assert.equal(Array.isArray(tools), true);
-  assert.equal(tools.length, 14);
+  assert.equal(tools.length, 15);
 
   const expectedNames = [
     'agb_shape',
@@ -118,6 +118,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
     'agb_plan_viewer',
     'agb_control',
     'agb_accept',
+    'agb_holdout',
   ];
   assert.deepEqual(tools.map((t) => t.name), expectedNames);
 
@@ -148,7 +149,7 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
 
       const listRes = await srv.send({ id: 3, method: 'tools/list', params: {} });
       const byName = new Map(listRes.result.tools.map((t) => [t.name, t]));
-      assert.equal(byName.size, 14);
+      assert.equal(byName.size, 15);
 
       assert.equal(byName.get('agb_shape')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
       assert.equal(byName.get('agb_plan')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
@@ -886,6 +887,22 @@ test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejec
     const persisted = JSON.parse(readFileSync(join(acceptRepo, '.booster', 'accept-state.json'), 'utf8'));
     assert.equal(persisted.verdicts[otherFp], 'flagged', 'partial saveVerdicts must preserve untouched hunk fingerprints');
     assert.equal(persisted.verdicts[fp], 'accepted');
+
+    // Wave 4: agb_holdout list & validation over MCP
+    const holdoutList = await srv.send({
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'list', repo: acceptRepo } },
+    });
+    assert.equal(Boolean(holdoutList.result.isError), false);
+    assert.equal(JSON.parse(holdoutList.result.content[0].text).ok, true);
+
+    const holdoutBad = await srv.send({
+      id: 6,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'invalid', repo: acceptRepo } },
+    });
+    assert.ok(holdoutBad.error);
   } finally {
     await srv.close();
   }

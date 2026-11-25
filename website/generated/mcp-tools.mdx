@@ -21,6 +21,7 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | apply | boolean | no | Write compacted defenses to .gemini/rules/adlc-learned.md |
+| compileChecks | boolean | no | Compile recurring findings into declarative .adlc/learned-checks.json invariants |
 | repo | string | yes | Path to target repository |
 
 **`agb_doctor`**: Run diagnostic health check for tools, auth, and sandbox setup
@@ -35,6 +36,15 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | repo | string | no | Path to target repository (defaults to cwd) |
+
+**`agb_holdout`**: List metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| action | string | yes | Holdout operation to perform |
+| repo | string | yes | Path to target repository |
+| runId | string | no | Optional run ID filter |
+| ticketId | string | no | Optional ticket ID filter |
 
 **`agb_init`**: Initialize a target repository for ADLC and Antigravity Booster (.adlc/config.json, specs/feature-template.md, .gitignore)
 

@@ -1198,6 +1198,159 @@ function topoSort(tickets) {
   return { order, cycle: null };
 }
 
+// lib/twins.mjs
+var IS_BUNDLED3 = Boolean(true);
+var TWIN_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
+var ENV_VAR_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+var HEADER_NAME_RE = /^[A-Za-z0-9-]+$/;
+var ALLOWED_METHODS = /* @__PURE__ */ new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "*"]);
+var SENSITIVE_ENV_RE = /(?:KEY|TOKEN|SECRET|PASSWORD|AUTH|CREDENTIAL|PRIVATE|CERT)/i;
+var FORBIDDEN_ENV_EXACT = /* @__PURE__ */ new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "SHELL",
+  "TERM",
+  "LANG",
+  "PWD",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "NODE_ENV",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "BASH_ENV",
+  "ENV",
+  "PERL5OPT",
+  "PYTHONPATH",
+  "RUBYOPT",
+  "XDG_RUNTIME_DIR",
+  "DBUS_SESSION_BUS_ADDRESS",
+  "IFS",
+  "CDPATH"
+]);
+var FORBIDDEN_ENV_PREFIXES = [
+  "LD_",
+  "DYLD_",
+  "NODE_",
+  "NPM_",
+  "UV_",
+  "V8_",
+  "OPENSSL_",
+  "SSL_",
+  "AGB_",
+  "ADLC_",
+  "ANTIGRAVITY_",
+  "AGY_",
+  "GIT_"
+];
+var MAX_TWINS = 16;
+var MAX_ROUTES_PER_TWIN = 128;
+var MAX_TWINS_SPEC_BYTES = 256 * 1024;
+function isAllowedTwinEnvVar(name) {
+  if (typeof name !== "string" || !ENV_VAR_RE.test(name)) return false;
+  if (FORBIDDEN_ENV_EXACT.has(name)) return false;
+  if (FORBIDDEN_ENV_PREFIXES.some((pfx) => name.startsWith(pfx))) return false;
+  if (SENSITIVE_ENV_RE.test(name)) return false;
+  return true;
+}
+function validateTwinsConfig(twins) {
+  if (twins === void 0) return [];
+  const errors = [];
+  if (!Array.isArray(twins)) {
+    return ["plan.gate.twins must be an array when provided"];
+  }
+  if (twins.length === 0) {
+    return ["plan.gate.twins must not be empty when provided"];
+  }
+  if (twins.length > MAX_TWINS) {
+    errors.push(`plan.gate.twins exceeds maximum of ${MAX_TWINS} twins`);
+    return errors;
+  }
+  let serializedBytes = 0;
+  try {
+    serializedBytes = Buffer.byteLength(JSON.stringify(twins), "utf8");
+  } catch {
+    return ["plan.gate.twins must be JSON-serializable"];
+  }
+  if (serializedBytes > MAX_TWINS_SPEC_BYTES) {
+    return [`plan.gate.twins exceeds ${MAX_TWINS_SPEC_BYTES} bytes limit`];
+  }
+  const seenNames = /* @__PURE__ */ new Set();
+  const seenEnvVars = /* @__PURE__ */ new Set();
+  for (let i = 0; i < twins.length; i++) {
+    const t = twins[i];
+    const label = `plan.gate.twins[${i}]`;
+    if (!t || typeof t !== "object" || Array.isArray(t)) {
+      errors.push(`${label} must be an object`);
+      continue;
+    }
+    if (typeof t.name !== "string" || !TWIN_NAME_RE.test(t.name)) {
+      errors.push(`${label}.name must match ${TWIN_NAME_RE}`);
+    } else if (seenNames.has(t.name.toLowerCase())) {
+      errors.push(`${label}.name duplicates '${t.name}'`);
+    } else {
+      seenNames.add(t.name.toLowerCase());
+    }
+    if (typeof t.envVar !== "string" || !isAllowedTwinEnvVar(t.envVar)) {
+      errors.push(
+        `${label}.envVar '${String(t.envVar ?? "")}' is invalid or reserved (must match ${ENV_VAR_RE} and avoid system/AGB/ADLC/secret names)`
+      );
+    } else if (seenEnvVars.has(t.envVar)) {
+      errors.push(`${label}.envVar duplicates '${t.envVar}'`);
+    } else {
+      seenEnvVars.add(t.envVar);
+    }
+    if (!Array.isArray(t.routes) || t.routes.length === 0) {
+      errors.push(`${label}.routes must be a non-empty array`);
+      continue;
+    }
+    if (t.routes.length > MAX_ROUTES_PER_TWIN) {
+      errors.push(`${label}.routes exceeds maximum of ${MAX_ROUTES_PER_TWIN} routes`);
+      continue;
+    }
+    for (let rIdx = 0; rIdx < t.routes.length; rIdx++) {
+      const r = t.routes[rIdx];
+      const rLabel = `${label}.routes[${rIdx}]`;
+      if (!r || typeof r !== "object" || Array.isArray(r)) {
+        errors.push(`${rLabel} must be an object`);
+        continue;
+      }
+      const method = r.method === void 0 ? "GET" : String(r.method).toUpperCase();
+      if (!ALLOWED_METHODS.has(method)) {
+        errors.push(`${rLabel}.method '${String(r.method)}' must be one of ${[...ALLOWED_METHODS].join(", ")}`);
+      }
+      if (typeof r.path !== "string" || !r.path.startsWith("/") || /[\r\n\s]/.test(r.path)) {
+        errors.push(`${rLabel}.path must be a non-empty '/'-prefixed string without whitespace`);
+      }
+      if (r.status !== void 0) {
+        if (typeof r.status !== "number" || !Number.isInteger(r.status) || r.status < 100 || r.status > 599) {
+          errors.push(`${rLabel}.status must be an integer between 100 and 599`);
+        }
+      }
+      if (r.headers !== void 0) {
+        if (!r.headers || typeof r.headers !== "object" || Array.isArray(r.headers)) {
+          errors.push(`${rLabel}.headers must be a plain object`);
+        } else {
+          for (const [hk, hv] of Object.entries(r.headers)) {
+            if (!HEADER_NAME_RE.test(hk) || typeof hv !== "string" || /[\r\n]/.test(hv)) {
+              errors.push(`${rLabel}.headers['${hk}'] contains invalid header name or CR/LF characters`);
+            }
+          }
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 // lib/plan-integrity.mjs
 var TICKET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 var PATHSPEC_RE = /^(?:[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\.[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\*{1,2}(?:\.[a-zA-Z0-9_-]+)?|[a-zA-Z0-9_.-]*\*[a-zA-Z0-9_.-]*)(?:\/(?:[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\.[a-zA-Z0-9_][a-zA-Z0-9_.-]*|\*{1,2}(?:\.[a-zA-Z0-9_-]+)?|[a-zA-Z0-9_.-]*\*[a-zA-Z0-9_.-]*))*$/;
@@ -1227,18 +1380,26 @@ function validatePlan(plan, { strictGates = true } = {}) {
   if (plan.disableOrchestrator !== void 0 && typeof plan.disableOrchestrator !== "boolean") {
     errors.push("plan.disableOrchestrator must be a boolean when provided");
   }
+  if (plan.holdouts !== void 0 && typeof plan.holdouts !== "boolean") {
+    errors.push("plan.holdouts must be a boolean when provided");
+  }
   const NPM_GATE_RE = /^npm (test|run [a-zA-Z0-9_:-]+)$/;
   if (!plan.gate || typeof plan.gate !== "object" || Array.isArray(plan.gate) || !plan.gate.build && !plan.gate.test) {
     errors.push("plan.gate must declare at least one of build/test commands");
   } else {
-    const extraGateKeys = Object.keys(plan.gate).filter((k) => k !== "build" && k !== "test" && k !== "autofix");
+    const extraGateKeys = Object.keys(plan.gate).filter(
+      (k) => k !== "build" && k !== "test" && k !== "autofix" && k !== "twins"
+    );
     if (extraGateKeys.length) {
-      errors.push(`plan.gate contains unsupported key(s): ${extraGateKeys.join(", ")} (only autofix, build, and test are allowed)`);
+      errors.push(`plan.gate contains unsupported key(s): ${extraGateKeys.join(", ")} (only autofix, build, test, and twins are allowed)`);
     }
     for (const k of ["autofix", "build", "test"]) {
       if (plan.gate[k] !== void 0 && (typeof plan.gate[k] !== "string" || !plan.gate[k].trim())) {
         errors.push(`plan.gate.${k} must be a non-empty string`);
       }
+    }
+    if (plan.gate.twins !== void 0) {
+      errors.push(...validateTwinsConfig(plan.gate.twins));
     }
     if (strictGates) {
       if (plan.gate.autofix && !NPM_GATE_RE.test(plan.gate.autofix)) {
@@ -1312,6 +1473,17 @@ function validatePlan(plan, { strictGates = true } = {}) {
     }
     if (t.effort !== void 0 && !VALID_EFFORTS.includes(t.effort)) {
       errors.push(`${t.id}: unknown effort '${t.effort}' (${VALID_EFFORTS.join("|")})`);
+    }
+    if (t.holdout_scenarios !== void 0) {
+      const validBool = typeof t.holdout_scenarios === "boolean";
+      const validArr = Array.isArray(t.holdout_scenarios) && t.holdout_scenarios.length > 0 && t.holdout_scenarios.every(
+        (item) => typeof item === "string" && item.trim().length > 0 || item && typeof item === "object" && !Array.isArray(item) && typeof item.code === "string" && item.code.trim().length > 0
+      );
+      if (!validBool && !validArr) {
+        errors.push(
+          `${t.id}: holdout_scenarios must be a boolean or a non-empty array of scenario code strings/objects`
+        );
+      }
     }
     if (t.pool_hint !== void 0 && !["gemini", "claude", "claude-gpt", "gpt-oss", "auto"].includes(t.pool_hint)) {
       errors.push(`${t.id}: unknown pool_hint '${t.pool_hint}' (gemini|claude|claude-gpt|gpt-oss|auto)`);
@@ -3800,8 +3972,8 @@ function readPackageVersion() {
     return "unknown";
   }
 }
-var IS_BUNDLED3 = true;
-function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED3) {
+var IS_BUNDLED4 = true;
+function resolveAgbEntry(dir = __dirname, bundled = IS_BUNDLED4) {
   const candidate = bundled ? join7(dir, "agb.mjs") : join7(dir, "..", "bin", "agb.mjs");
   if (bundled || existsSync6(candidate)) return { cmd: process.execPath, args: [candidate] };
   return { cmd: "agb", args: [] };
@@ -3869,7 +4041,8 @@ var TOOLS = [
       type: "object",
       properties: {
         repo: { type: "string", description: "Path to target repository" },
-        apply: { type: "boolean", description: "Write compacted defenses to .gemini/rules/adlc-learned.md" }
+        apply: { type: "boolean", description: "Write compacted defenses to .gemini/rules/adlc-learned.md" },
+        compileChecks: { type: "boolean", description: "Compile recurring findings into declarative .adlc/learned-checks.json invariants" }
       },
       required: ["repo"]
     }
@@ -4074,6 +4247,24 @@ var TOOLS = [
         resourceUri: "ui://agb/accept-workbench.html",
         visibility: ["model", "app"]
       }
+    }
+  },
+  {
+    name: "agb_holdout",
+    description: "List metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["list", "run", "clean"],
+          description: "Holdout operation to perform"
+        },
+        repo: { type: "string", description: "Path to target repository" },
+        ticketId: { type: "string", description: "Optional ticket ID filter" },
+        runId: { type: "string", description: "Optional run ID filter" }
+      },
+      required: ["action", "repo"]
     }
   }
 ];
@@ -4929,6 +5120,46 @@ async function handleToolCall(id, name, args) {
     }
     cliArgs.push("distill", targetCwd, "--json");
     if (args.apply) cliArgs.push("--apply");
+    if (args.compileChecks) cliArgs.push("--compile-checks");
+  } else if (name === "agb_holdout") {
+    const actionCheck = requireNonFlagString(args, "action");
+    if (!actionCheck.ok) {
+      sendError(id, -32602, actionCheck.error);
+      return;
+    }
+    const act = actionCheck.value.trim();
+    if (act !== "list" && act !== "run" && act !== "clean") {
+      sendError(id, -32602, `Invalid holdout action '${act}': expected list, run, or clean`);
+      return;
+    }
+    const repoCheck = requireNonFlagString(args, "repo");
+    if (!repoCheck.ok) {
+      sendError(id, -32602, repoCheck.error);
+      return;
+    }
+    targetCwd = resolve7(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, "repo", repoCheck.value);
+    if (!dirCheck.ok) {
+      sendError(id, -32602, dirCheck.error);
+      return;
+    }
+    cliArgs.push("holdout", act, targetCwd, "--json");
+    if (args.ticketId !== void 0) {
+      const tCheck = requireNonFlagString(args, "ticketId");
+      if (!tCheck.ok || !TICKET_ID_RE.test(tCheck.value.trim())) {
+        sendError(id, -32602, "Invalid ticketId");
+        return;
+      }
+      cliArgs.push("--ticket", tCheck.value.trim());
+    }
+    if (args.runId !== void 0) {
+      const rCheck = requireNonFlagString(args, "runId");
+      if (!rCheck.ok || !TICKET_ID_RE.test(rCheck.value.trim())) {
+        sendError(id, -32602, "Invalid runId");
+        return;
+      }
+      cliArgs.push("--run-id", rCheck.value.trim());
+    }
   } else if (name === "agb_run") {
     const planCheck = requireNonFlagString(args, "plan");
     if (!planCheck.ok) {
