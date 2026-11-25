@@ -9,6 +9,8 @@
 | hooks/policy/verdict.mjs | PASS, ask, deny, mostRestrictive |
 | hooks/pre-tool-use.mjs | (no exports: entry point) |
 | hooks/session-start.mjs | (no exports: entry point) |
+| lib/accept-tui.mjs | renderAcceptTuiFrame, runInteractiveAcceptTui |
+| lib/accept.mjs | buildAcceptanceDossier, computeHunkFingerprint, formatAcceptanceDossierMarkdown, loadAcceptVerdicts, parseUnifiedDiffHunks, resolveSafeBoosterDir, saveAcceptVerdicts, writeAcceptDossierFile |
 | lib/active-rails.mjs | findAdlcRoot, findGitTop, isActiveTicket, loadActiveRails, resolveTicket, unionActiveRails |
 | lib/adlc-bridge.mjs | IS_BUNDLED, KNOWN_ADLC_DEPENDENCY_DIGESTS, KNOWN_ADLC_DIGESTS, KNOWN_VENDORED_ADLC, MIN_ADLC_CLI_VERSION, PLUGIN_CONTRACT_STATUSES, STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS, SUPPORTED_PLUGIN_CONTRACT, assertNoLegacyTicketStore, authenticateAdlcPackage, computePackageTreeDigest, detectTicketStoreBackend, execAuthenticatedAdlc, execFileAuthenticatedAdlc, getApprovedLocksDir, getApprovedPinnedBase, isTemporaryOrWorldWritablePath, parseSemver, pinExecutable, planTicketToAdlcTicket, planTicketToRailTicket, planToAdlcTickets, pluginManifestDir, preventExecutableReplacement, readPluginContract, recoverStaleExecutableLocks, resolveAdlcBinary, resolveExecutionCommand, resolveVendoredAdlc, revalidateAdlcBinary, semverGte, spawnAuthenticatedAdlc, writeAdlcTickets |
 | lib/adlc-tool.mjs | runAdlcTool |
@@ -24,6 +26,7 @@
 | lib/distill.mjs | DEFAULT_MAX_RULE_BYTES, distillRunDefenses |
 | lib/doctor-models.mjs | agyModelsStdout, agyModelsStdoutSync, checkModelCatalog, compareModelCatalog, parseAgyModelRows, parseAgyModels |
 | lib/doctor.mjs | MIN_AGY_VERSION, MIN_NODE_VERSION, RECOMMENDED_AGY_VERSION, applyDoctorFixes, boosterDataDir, checkAdlcBinary, checkAgyAuth, checkAgyBinary, checkBrainDir, checkHookLogDir, checkKernelContainment, checkKillswitchUsage, checkModelCatalog, checkNodeVersion, checkPlugin, checkPolicyGuard, checkProbePlugins, checkSandbox, checkSecondaryInstall, checkTicketStore, compareModelCatalog, evaluateStagedAdlcPlugin, healthLogPath, isTestExecution, parseAgyModels, runDoctor, runInit, verifyWindowsSandboxActive, verifyWindowsSandboxAttestation |
+| lib/factory-ledger.mjs | FactoryLedger, MAX_FACTORY_LEDGER_ENTRIES, computeRunEconomics, defaultFactoryLedgerPath |
 | lib/gates.mjs | gateSandboxAvailable, gateSandboxEnabled, linuxBwrapArgs, runGate, runGates, sandboxProfile |
 | lib/hud.mjs | TerminalHUD |
 | lib/json.mjs | safeExtractJson |
@@ -31,6 +34,7 @@
 | lib/migrate.mjs | HANDOVER_TIMEOUT_MS, SNAPSHOT_SIZE_CAP_BYTES, breakLock, finishUninstallCommand, isOwnedSkillLink, migrate, parseValidateOutput, scanSkillSymlinks, treeSize |
 | lib/migration-lock.mjs | MIGRATION_LOCK_DIRNAME, MIGRATION_STATE_FILENAME, MigrationLockError, UNINSTALLER_DIR_PREFIX, acquireMigrationLock, adoptMigrationLock, assertMigrationLockHeld, boosterDataDir, breakMigrationLock, clearMigrationState, finishUninstall, getProcessStartTime, invalidateMigrationLockToken, isAlive, migrationLockDir, migrationStatePath, parseProcStatStartTime, readLockMeta, readMigrationState, releaseMigrationLock, writeMigrationState |
 | lib/models.mjs | ALL_MODELS, ARL_LENS_MODELS, CODE_ARL_LENSES, FRONTIER_NO_ORCHESTRATOR, MODELS, MODEL_ALIASES, ORCHESTRATOR_MODELS, PLAN_ARL_LENSES, PROSECUTORS, PROSECUTOR_CANDIDATES, RETIRED_35_MAP, RETIRED_MODEL_MAP, ROLE_MODELS, TIER_CANDIDATES, VALID_EFFORTS, escalateModelSlugInFamily, familyOf, modelFor, poolOf, resetOrchestratorRoutingState, resolveModelSlug, runWithOrchestratorRoutingState, selectCliEffortFlag, setOrchestratorRoutingState, tierCandidates, upstreamPoolOf |
+| lib/mux.mjs | SUPPORTED_MUXES, buildMuxNotificationArgs, buildMuxSplitPlan, detectMultiplexer, launchMuxSplit, normalizeMuxName |
 | lib/ndjson-worker.mjs | NdjsonWorkerDaemon, buildRoleSettingsProfile, extractNormalizedTokenTelemetry, killDaemonProcessTree |
 | lib/overview-pane.mjs | syncOverviewPaneState |
 | lib/plan-integrity.mjs | PATHSPEC_RE, TICKET_ID_RE, computeReachability, decomposeTickets, extractPositionalArgs, formatStructuralDefects, isSafePathSegment, normalizePathspec, sanitizeRemoteUrl, validatePathspec, validatePlan, verifyDeclaredPaths, verifyGateScriptIntegrity, writeArtifactFileAtomically |
@@ -52,11 +56,12 @@
 | lib/stream-watchdog.mjs | StreamWatchdog, resolveDynamicEffort |
 | lib/sweep.mjs | expandTargets, sweepToPlan |
 | lib/tdd-split.mjs | partitionTddScopes, promoteTestsToBuilderRails, selectOppositePoolHint, shouldRunTddSplit, verifyRedPhaseTests |
+| lib/terminal-osc.mjs | AttentionTransitionTracker, formatOsc8FileLink, formatOscAttentionAlert, sanitizeOscField, stripOscAndAnsi |
 | lib/test-impact.mjs | bisectFailedBatch, deriveImpactedTests, planSpeculativeMergeBatches |
 | lib/tui.mjs | ANSI, PHASE_CONFIG, SPINNERS, formatDuration, padVisible, renderPoolGauge, renderProgressBar, renderTUIDashboard, stripAnsi, visibleLength |
 | lib/workflow-emit.mjs | compilePlanToWorkflow, computeTopologicalWaves |
 | lib/worktrees.mjs | JOURNAL_PHASES, abortAnyMerge, assertSafeAdlcDir, branchDiff, changedFiles, cleanEmptyNodeModules, clearRescueWorktreeLock, commitAll, createIntegrationWorktree, createWorktree, currentBranch, deleteBranch, discardProjection, ensureGitignore, hasProtectedRescueWorktree, isDirty, isMidMerge, materializeWorktreeNodeModules, mergeWorktree, pruneWorktrees, quarantineIntegrationJournal, readIntegrationJournal, reapIntegrationWorktrees, removeMaterializedNodeModules, removeWorktree, resetToBase, unlinkIntegrationJournal, validateWorktreeRoot, writeIntegrationJournal, writeRescueWorktreeLock |
 | mcp/server.mjs | buildSnapshotPayload, resolveAgbEntry |
-| mcp/ui-views.mjs | MCP_APP_MIME_TYPE, UI_RESOURCES, buildFlightDeckHtml, buildMissionControlHtml, buildPlanCardHtml, buildPlanViewerHtml, buildReviewCardHtml, renderUiResource |
+| mcp/ui-views.mjs | MCP_APP_MIME_TYPE, UI_RESOURCES, buildAcceptWorkbenchHtml, buildFlightDeckHtml, buildMissionControlHtml, buildPlanCardHtml, buildPlanViewerHtml, buildReviewCardHtml, renderUiResource |
 | sidecars/jetski-launcher.mjs | parseJetskiPort, readJetskiEvents, resolveRepoPath, start, writeTokenFile |
 | sidecars/server.mjs | resolveSafeEventsPath, serveSidecar |

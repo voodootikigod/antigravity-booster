@@ -1339,4 +1339,48 @@ test('T-NG-1: BOOSTER_MCP_TOOLS enforces agb_flight_deck, agb_mission_control, a
     assert.equal(wrapped.decision, 'deny', `readonly wrapped deny ${JSON.stringify(badArgs)}`);
     assert.match(wrapped.reason, /mutating MCP tool: agb_control/);
   }
+
+  // Wave 3 agb_accept & accept-state.json / accept-dossier.md headless protection
+  assert.equal(isBoosterMcpTool('mcp__agb__agb_accept', {}), true);
+  assert.equal(run('mcp__agb__agb_accept', { repo: fx.active }, fx.active, WORKER).decision, 'deny');
+  assert.equal(
+    run(
+      'mcp__agb__agb_accept',
+      { repo: fx.active, verdicts: { ['f'.repeat(64)]: 'accepted' } },
+      fx.active,
+      READONLY
+    ).decision,
+    'pass',
+    'readonly session allows non-saving agb_accept with 64-hex verdicts'
+  );
+  const saveDeny = run(
+    'mcp__agb__agb_accept',
+    { repo: fx.active, verdicts: { ['f'.repeat(64)]: 'accepted' }, saveVerdicts: true },
+    fx.active,
+    READONLY
+  );
+  assert.equal(saveDeny.decision, 'deny');
+  assert.match(saveDeny.reason, /mutating MCP tool: agb_accept/);
+  assert.equal(
+    run(
+      'call_mcp_tool',
+      { ServerName: 'agb', ToolName: 'agb_accept', Arguments: { SaveVerdicts: true } },
+      fx.active,
+      READONLY
+    ).decision,
+    'deny'
+  );
+  assert.equal(
+    run(
+      'mcp__agb__agb_accept',
+      { repo: fx.active, verdicts: { ['f'.repeat(64)]: 'accepted' }, saveVerdicts: true },
+      fx.active,
+      INTERACTIVE
+    ).decision,
+    'pass'
+  );
+  assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'accept-state.json') }, fx.active, WORKER).decision, 'deny');
+  assert.equal(run('read_file', { Path: join(fx.active, '.booster', 'accept-dossier.md') }, fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('cat .booster/accept-state.json', fx.active, WORKER).decision, 'deny');
+  assert.equal(shell('cat .booster/accept*', fx.active, WORKER).decision, 'deny');
 });
