@@ -101,7 +101,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
   assert.ok(start !== -1, 'const TOOLS literal must exist in mcp/server.mjs');
   const { value: tools } = parseLiteral(src, start);
   assert.equal(Array.isArray(tools), true);
-  assert.equal(tools.length, 14);
+  assert.equal(tools.length, 15);
 
   const expectedNames = [
     'agb_shape',
@@ -118,6 +118,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
     'agb_plan_viewer',
     'agb_control',
     'agb_accept',
+    'agb_holdout',
   ];
   assert.deepEqual(tools.map((t) => t.name), expectedNames);
 
@@ -148,7 +149,7 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
 
       const listRes = await srv.send({ id: 3, method: 'tools/list', params: {} });
       const byName = new Map(listRes.result.tools.map((t) => [t.name, t]));
-      assert.equal(byName.size, 14);
+      assert.equal(byName.size, 15);
 
       assert.equal(byName.get('agb_shape')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
       assert.equal(byName.get('agb_plan')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
@@ -825,9 +826,16 @@ test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejec
     }) + '\n'
   );
 
+  const holdoutTmp = mkdtempSync(join(tmpdir(), 'agb-mcp-holdout-'));
+  const homeTmp = mkdtempSync(join(tmpdir(), 'agb-mcp-home-'));
   // Use MCP_SRC when testing AGB_FACTORY_LEDGER_FILE env override (MCP_DIST ignores unbundled env overrides per Decision 2)
   const srv = mcpSession(MCP_SRC, {
-    env: { ...process.env, AGB_FACTORY_LEDGER_FILE: ledgerFile },
+    env: {
+      ...process.env,
+      AGB_FACTORY_LEDGER_FILE: ledgerFile,
+      AGB_HOLDOUT_DIR: holdoutTmp,
+      AGB_HOME_DIR: homeTmp,
+    },
   });
   try {
     const mcRes = await srv.send({
@@ -886,7 +894,58 @@ test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejec
     const persisted = JSON.parse(readFileSync(join(acceptRepo, '.booster', 'accept-state.json'), 'utf8'));
     assert.equal(persisted.verdicts[otherFp], 'flagged', 'partial saveVerdicts must preserve untouched hunk fingerprints');
     assert.equal(persisted.verdicts[fp], 'accepted');
+
+    // Wave 4: agb_holdout list & validation over MCP
+    const holdoutList = await srv.send({
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'list', repo: acceptRepo } },
+    });
+    assert.equal(Boolean(holdoutList.result.isError), false);
+    assert.equal(JSON.parse(holdoutList.result.content[0].text).ok, true);
+
+    const holdoutBad = await srv.send({
+      id: 6,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'invalid', repo: acceptRepo } },
+    });
+    assert.ok(holdoutBad.error);
+
+    const holdoutDotDot = await srv.send({
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'list', repo: acceptRepo, ticketId: 'T..1' } },
+    });
+    assert.equal(holdoutDotDot.error?.code, -32602);
+
+    const holdoutRunEmpty = await srv.send({
+      id: 8,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'run', repo: acceptRepo } },
+    });
+    assert.equal(Boolean(holdoutRunEmpty.result.isError), false);
+    assert.equal(JSON.parse(holdoutRunEmpty.result.content[0].text).skipped, true);
+
+    const holdoutClean = await srv.send({
+      id: 9,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'clean', repo: acceptRepo } },
+    });
+    assert.equal(Boolean(holdoutClean.result.isError), false);
+    assert.equal(JSON.parse(holdoutClean.result.content[0].text).ok, true);
+
+    const distillRes = await srv.send({
+      id: 10,
+      method: 'tools/call',
+      params: { name: 'agb_distill', arguments: { repo: acceptRepo, compileChecks: true } },
+    });
+    assert.equal(Boolean(distillRes.result.isError), false);
+    const parsedDistill = JSON.parse(distillRes.result.content[0].text);
+    assert.equal(parsedDistill.ok, true);
+    assert.equal(parsedDistill.compiledChecks, true);
   } finally {
     await srv.close();
+    rmSync(holdoutTmp, { recursive: true, force: true });
+    rmSync(homeTmp, { recursive: true, force: true });
   }
 });

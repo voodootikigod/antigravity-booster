@@ -1410,3 +1410,229 @@ test('runPlan: hydrates AGENTS.md by default, runs post-guard gate.autofix ONLY 
   }
 });
 
+test('runPlan (Wave 4): executes gate.twins, learned-checks, and sealed holdout scenarios with sanitized Strike-1 symptom feedback and Strike-2 merge', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-w4-sched-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-w4-sched-bin-'));
+  const holdoutDir = mkdtempSync(join(tmpdir(), 'agb-w4-holdouts-'));
+  const fakeHome = mkdtempSync(join(tmpdir(), 'agb-w4-home-'));
+  try {
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    mkdirSync(join(repo, 'test'), { recursive: true });
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'service.mjs'), 'export function computeDiscount(x) { return x; }\n');
+    writeFileSync(
+      join(repo, 'test', 'service.test.mjs'),
+      [
+        'import { test } from "node:test";',
+        'import assert from "node:assert/strict";',
+        'test("gate.twins mock endpoint responds during P5 test gate", async () => {',
+        '  const res = await fetch(process.env.PRICING_TWIN_URL + "/v1/rates");',
+        '  assert.equal(res.status, 200);',
+        '  const body = await res.json();',
+        '  assert.equal(body.tier, "gold");',
+        '});',
+      ].join('\n') + '\n'
+    );
+    writeFileSync(
+      join(repo, '.adlc', 'learned-checks.json'),
+      JSON.stringify(
+        {
+          version: 1,
+          checks: [
+            {
+              id: 'DEF-no-debug',
+              glob: 'src/**',
+              forbidLiteral: 'FORBIDDEN_DEBUG_TOKEN',
+              description: 'Do not leave debug tokens in src/**',
+            },
+          ],
+        },
+        null,
+        2
+      ) + '\n'
+    );
+    writeFileSync(
+      join(repo, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'w4-dark-factory-fixture',
+          type: 'module',
+          scripts: {
+            test: 'node --test test/service.test.mjs',
+          },
+        },
+        null,
+        2
+      ) + '\n'
+    );
+    writeFileSync(join(repo, '.gitignore'), '.adlc/*\n');
+    execFileSync('git', ['add', 'src', 'test', 'package.json', '.gitignore'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'seed w4 repo'], { cwd: repo });
+
+    // Custom builder script: Strike 1 passes unit test + learned-checks, but fails sealed holdout
+    // on negative input. Strike 2 receives ONLY sanitized holdout symptom (never magic literal -999)
+    // and fixes negative clamping to merge cleanly!
+    const strikeCounterFile = join(state, 'builder-strikes.count');
+    const seenPrompt2File = join(state, 'strike2-prompt.txt');
+    const customAgy = join(binDir, 'w4-agy.mjs');
+    writeFileSync(
+      customAgy,
+      [
+        `#!/usr/bin/env node`,
+        `import { readFileSync, writeFileSync, existsSync } from 'node:fs';`,
+        `import { spawnSync } from 'node:child_process';`,
+        `const args = process.argv.slice(2);`,
+        `if (process.env.AGB_WORKER_TICKET === 'T-DF-1' || process.env.AGB_WORKER_TICKET === 'T-DF-2') {`,
+        `  let promptText = '';`,
+        `  const pIdx = args.indexOf('--print');`,
+        `  if (pIdx !== -1 && args[pIdx + 1] && !args[pIdx + 1].startsWith('-')) promptText = args[pIdx + 1];`,
+        `  else { try { promptText = readFileSync(0, 'utf8'); } catch {} }`,
+        `  const n = existsSync(${JSON.stringify(strikeCounterFile)}) ? Number(readFileSync(${JSON.stringify(strikeCounterFile)}, 'utf8')) + 1 : 1;`,
+        `  writeFileSync(${JSON.stringify(strikeCounterFile)}, String(n));`,
+        `  if (n === 1) {`,
+        `    writeFileSync('src/service.mjs', '// FORBIDDEN_DEBUG_TOKEN\\nexport function computeDiscount(x) { return x * 2; }\\n');`,
+        `  } else {`,
+        `    writeFileSync(${JSON.stringify(seenPrompt2File)}, promptText);`,
+        `    writeFileSync('src/service.mjs', 'export function computeDiscount(x) { return x < 0 ? 0 : x * 2; }\\n');`,
+        `  }`,
+        `  console.log(JSON.stringify({ type: 'init', conversation_id: 'conv-w4-1' }));`,
+        `  console.log(JSON.stringify({ type: 'result', status: 'SUCCESS', exit_code: 0, response: 'Implemented service.mjs' }));`,
+        `  process.exit(0);`,
+        `}`,
+        `const res = spawnSync(${JSON.stringify(FAKE_AGY)}, args, { stdio: 'inherit', env: process.env });`,
+        `process.exit(res.status ?? 0);`,
+      ].join('\n') + '\n',
+      { mode: 0o755 }
+    );
+
+    const holdoutCode = [
+      'import { test } from "node:test";',
+      'import assert from "node:assert/strict";',
+      'import { join } from "node:path";',
+      'import { pathToFileURL } from "node:url";',
+      'test("Scenario: negative discount inputs clamp safely to zero", async () => {',
+      '  const mod = await import(pathToFileURL(join(process.env.AGB_CANDIDATE_ROOT, "src/service.mjs")).href);',
+      '  const secretProbe = -999888777;',
+      '  assert.equal(mod.computeDiscount(secretProbe), 0);',
+      '  assert.equal(mod.computeDiscount(5), 10);',
+      '});',
+    ].join('\n');
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: customAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_HOME_DIR: fakeHome,
+        AGB_SANDBOX_GATES: '0',
+        AGB_HOLDOUT_DIR: holdoutDir,
+        AGB_WARM_STRIKES: '0',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: {
+              test: 'npm test',
+              twins: [
+                {
+                  name: 'pricing-api',
+                  envVar: 'PRICING_TWIN_URL',
+                  routes: [
+                    { method: 'GET', path: '/v1/rates', status: 200, body: { tier: 'gold' } },
+                  ],
+                },
+              ],
+            },
+            tickets: [
+              {
+                id: 'T-DF-1',
+                title: 'Implement discount service',
+                body: 'Implement computeDiscount(x) in src/service.mjs.',
+                scope: ['src/service.mjs'],
+                tier: 'frontier',
+                holdout_scenarios: [{ name: 'clamp-negatives', code: holdoutCode }],
+                edges: [],
+              },
+            ],
+          },
+          quiet
+        )
+    );
+
+    assert.deepEqual(report.merged, ['T-DF-1'], `expected T-DF-1 merged on Strike 2, got: ${JSON.stringify(report.failed)}`);
+    assert.equal(Number(readFileSync(strikeCounterFile, 'utf8')), 2);
+    const strike2Prompt = readFileSync(seenPrompt2File, 'utf8');
+    assert.match(strike2Prompt, /learned-checks gate failed/);
+    assert.match(strike2Prompt, /\[DEF-no-debug\] src\/service\.mjs:1/);
+
+    // Now test sealed holdout Strike-1 failure -> sanitized symptom -> Strike-2 merge!
+    execFileSync('git', ['reset', '--hard', 'HEAD~1'], { cwd: repo });
+    writeFileSync(strikeCounterFile, '0');
+    writeFileSync(
+      customAgy,
+      readFileSync(customAgy, 'utf8').replace('// FORBIDDEN_DEBUG_TOKEN\\n', ''),
+      { mode: 0o755 }
+    );
+    const reportHoldout = await withEnv(
+      {
+        AGB_AGY_BIN: customAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_HOME_DIR: fakeHome,
+        AGB_SANDBOX_GATES: '0',
+        AGB_HOLDOUT_DIR: holdoutDir,
+        AGB_WARM_STRIKES: '0',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: {
+              test: 'npm test',
+              twins: [
+                {
+                  name: 'pricing-api',
+                  envVar: 'PRICING_TWIN_URL',
+                  routes: [
+                    { method: 'GET', path: '/v1/rates', status: 200, body: { tier: 'gold' } },
+                  ],
+                },
+              ],
+            },
+            tickets: [
+              {
+                id: 'T-DF-2',
+                title: 'Implement discount service v2',
+                body: 'Implement computeDiscount(x) in src/service.mjs.',
+                scope: ['src/service.mjs'],
+                tier: 'frontier',
+                holdout_scenarios: [
+                  {
+                    name: 'clamp-negatives-v2',
+                    code: holdoutCode,
+                  },
+                ],
+                edges: [],
+              },
+            ],
+          },
+          quiet
+        )
+    );
+    assert.deepEqual(reportHoldout.merged, ['T-DF-2'], `expected T-DF-2 merged, got: ${JSON.stringify(reportHoldout.failed)}`);
+    const holdoutStrike2Prompt = readFileSync(seenPrompt2File, 'utf8');
+    assert.match(holdoutStrike2Prompt, /Scenario: negative discount inputs clamp safely to zero/);
+    assert.equal(holdoutStrike2Prompt.includes('-999888777'), false, 'Strike 2 prompt must NEVER leak holdout assertion literals');
+    assert.equal(holdoutStrike2Prompt.includes('.holdout.test.mjs'), false, 'Strike 2 prompt must NEVER leak holdout file paths');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+    rmSync(holdoutDir, { recursive: true, force: true });
+    rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+

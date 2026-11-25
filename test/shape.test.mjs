@@ -342,4 +342,33 @@ test('parseStructuredSpec parses gate.autofix and ticket Effort while rejecting 
   ].join('\n');
   const badParsed = parseStructuredSpec(autofixOnly, { repo: REPO_ROOT });
   assert.ok(badParsed.parseErrors.some((e) => e.includes('plan.gate')));
+
+  // Wave 4: parseStructuredSpec supports Holdouts + gate.twins and rejects inline holdout code in Markdown
+  const w4Spec = [
+    '# Wave 4 Spec',
+    '- **Holdouts**: `true`',
+    '- **Gate**: `{"test":"npm test","twins":[{"name":"mock-api","envVar":"API_BASE_URL","routes":[{"method":"GET","path":"/health","status":200,"body":{"ok":true}}]}]}`',
+    '### Ticket 1: `T-DF-1` — Worker',
+    '- **Scope**: `lib/shape.mjs`',
+    '- **Holdouts**: `false`',
+    '- **Acceptance Criteria**:',
+    '  - Passes tests.',
+  ].join('\n');
+  const w4Parsed = parseStructuredSpec(w4Spec, { repo: REPO_ROOT });
+  assert.deepEqual(w4Parsed.parseErrors, []);
+  assert.equal(w4Parsed.plan.holdouts, true);
+  assert.equal(w4Parsed.plan.gate.twins.length, 1);
+  assert.equal(w4Parsed.plan.tickets[0].holdout_scenarios, false);
+  assert.equal(w4Parsed.plan.tickets[0].body.includes('**Holdouts**'), false);
+
+  const inlineHoldoutSpec = [
+    '# Leaky Spec',
+    '### Ticket 1: `T-DF-2` — Worker',
+    '- **Scope**: `lib/shape.mjs`',
+    '- **Holdouts**: `assert.equal(secret, 42)`',
+    '- **Acceptance Criteria**:',
+    '  - Passes.',
+  ].join('\n');
+  const badHoldout = parseStructuredSpec(inlineHoldoutSpec, { repo: REPO_ROOT });
+  assert.ok(badHoldout.parseErrors.some((e) => e.includes('**Holdouts** in Markdown spec must be')));
 });

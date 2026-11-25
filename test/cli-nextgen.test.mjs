@@ -598,3 +598,89 @@ test('agb accept [--base --json --markdown] and agb watch [--mux / --mux=zellij]
   assert.equal(muxAutoRes.status, 0, muxAutoRes.stderr);
 });
 
+test('agb distill --compile-checks and agb holdout <list|run|clean> operate offline with sanitized outputs', async () => {
+  const repo = makeGitRepo('repo-cli-w4');
+  const holdoutRoot = join(TMP, 'cli-w4-holdouts');
+  mkdirSync(holdoutRoot, { recursive: true });
+  mkdirSync(join(repo, '.booster'), { recursive: true });
+  writeFileSync(
+    join(repo, '.booster', 'review-findings.json'),
+    JSON.stringify({
+      findings: [
+        {
+          lens: 'security',
+          severity: 'high',
+          claim: 'Hook emitted decision: "allow" on line 10',
+        },
+        {
+          lens: 'security',
+          severity: 'high',
+          claim: 'Hook emitted decision: "allow" on line 22',
+        },
+      ],
+    })
+  );
+
+  const distillRes = runAgb(['distill', repo, '--compile-checks', '--json']);
+  assert.equal(distillRes.status, 0, distillRes.stderr);
+  const distillParsed = JSON.parse(distillRes.stdout);
+  assert.equal(distillParsed.ok, true);
+  assert.equal(distillParsed.compiledChecks, true);
+  assert.equal(distillParsed.compiledChecksCount, 1);
+  assert.ok(existsSync(join(repo, '.adlc', 'learned-checks.json')));
+
+  const { stageHoldoutScenarios } = await import('../lib/holdout.mjs');
+  writeFileSync(join(repo, 'src', 'math.mjs'), 'export const double = (x) => x * 2;\n');
+  const staged = stageHoldoutScenarios({
+    repo,
+    runId: 'run-cli',
+    ticketId: 'T-1',
+    scenarios: [
+      [
+        'import { test } from "node:test";',
+        'import assert from "node:assert/strict";',
+        'import { join } from "node:path";',
+        'import { pathToFileURL } from "node:url";',
+        'test("Scenario: doubles positive numbers", async () => {',
+        '  const m = await import(pathToFileURL(join(process.env.AGB_CANDIDATE_ROOT, "src/math.mjs")).href);',
+        '  assert.equal(m.double(6), 12);',
+        '});',
+      ].join('\n'),
+    ],
+    holdoutRoot,
+  });
+  assert.equal(staged.ok, true);
+
+  const env = { ...process.env, AGB_HOLDOUT_DIR: holdoutRoot, AGB_SANDBOX_GATES: '0' };
+  const listRes = runAgb(['holdout', 'list', repo, '--json'], { env });
+  assert.equal(listRes.status, 0, listRes.stderr);
+  const listJson = JSON.parse(listRes.stdout);
+  assert.equal(listJson.totalFiles, 1);
+  assert.equal(listRes.stdout.includes('m.double'), false, 'agb holdout list must never leak holdout source');
+
+  const runRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
+  assert.equal(runRes.status, 0, runRes.stderr);
+  assert.equal(JSON.parse(runRes.stdout).ok, true);
+
+  // Failing holdout exits with status 2 and leaks zero holdout paths or secret assertion literals
+  writeFileSync(join(repo, 'src', 'math.mjs'), 'export const double = (x) => x + 999;\n');
+  const failJsonRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
+  assert.equal(failJsonRes.status, 2);
+  const failParsed = JSON.parse(failJsonRes.stdout);
+  assert.equal(failParsed.ok, false);
+  assert.equal(failJsonRes.stdout.includes('.holdout.test.mjs'), false);
+  assert.equal(failJsonRes.stdout.includes('m.double(6)'), false);
+
+  const failTextRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1'], { env });
+  assert.equal(failTextRes.status, 2);
+  assert.match(failTextRes.stdout, /Scenario: doubles positive numbers/);
+  assert.equal(failTextRes.stdout.includes('.holdout.test.mjs'), false);
+
+  assert.equal(runAgb(['holdout', 'bogus', repo], { env }).status, 1);
+
+  const cleanRes = runAgb(['holdout', 'clean', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
+  assert.equal(cleanRes.status, 0, cleanRes.stderr);
+  assert.equal(JSON.parse(cleanRes.stdout).removed, true);
+});
+
+

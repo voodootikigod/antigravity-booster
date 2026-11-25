@@ -14,6 +14,12 @@ import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { validatePlan, compilePlan, compilePlanToWorkflow } from '../lib/plan.mjs';
 import { distillRunDefenses } from '../lib/distill.mjs';
+import {
+  resolveHoldoutDir,
+  listHoldoutScenarios,
+  cleanHoldoutScenarios,
+  runHoldoutScenarios,
+} from '../lib/holdout.mjs';
 import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor, runInit } from '../lib/doctor.mjs';
@@ -100,7 +106,12 @@ const COMMANDS = {
   distill: {
     args: '[repo]',
     desc: 'scan run/review findings for recurring patterns and stage or apply learned ADLC defenses',
-    flags: '[--apply (write compacted rules to .gemini/rules/adlc-learned.md)] [--json (emit JSON)]'
+    flags: '[--apply (write compacted rules to .gemini/rules/adlc-learned.md)] [--compile-checks (emit .adlc/learned-checks.json invariants)] [--json (emit JSON)]'
+  },
+  holdout: {
+    args: '<list|run|clean> [repo]',
+    desc: 'inspect metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios',
+    flags: '[--ticket <id> (scope to ticket)] [--run-id <id> (scope to run)] [--json (emit JSON)]'
   },
   preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart', flags: '--no-coldstart' },
   doctor: { args: '[repo]', desc: 'verify your environment and tools', flags: '[--fix (auto-repair setup)]' },
@@ -615,20 +626,98 @@ try {
     }
     console.error(`next: agb run ${out}`);
   } else if (cmd === 'distill') {
-    rejectUnknownFlags('distill', rest, new Set(['--apply', '--json']));
+    rejectUnknownFlags('distill', rest, new Set(['--apply', '--compile-checks', '--json']));
     const apply = rest.includes('--apply');
+    const compileChecks = rest.includes('--compile-checks');
     const json = rest.includes('--json');
     const positional = extractPositionalArgs(rest);
     const repo = resolve(positional[0] ?? '.');
-    const res = distillRunDefenses({ repo, apply });
+    const res = distillRunDefenses({ repo, apply, compileChecks });
     if (json) {
       console.log(JSON.stringify(res, null, 2));
     } else {
       console.log(
-        `distill: scanned=${res.scannedCount} recurring=${res.recurringCount} staged=${res.stagedPath || 'none'}${res.applied ? ` applied=${res.appliedPath} (${res.ruleBytes}B)` : ''}`
+        `distill: scanned=${res.scannedCount} recurring=${res.recurringCount} staged=${res.stagedPath || 'none'}${res.applied ? ` applied=${res.appliedPath} (${res.ruleBytes}B)` : ''}${res.compiledChecks ? ` checks=${res.compiledChecksPath} (${res.compiledChecksCount})` : ''}`
       );
     }
     process.exit(0);
+  } else if (cmd === 'holdout') {
+    rejectUnknownFlags(
+      'holdout',
+      rest,
+      new Set(['--json']),
+      new Set(['--ticket', '--run-id'])
+    );
+    let ticketId = null;
+    let runId = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--ticket') {
+        ticketId = rest[++i];
+      } else if (rest[i] === '--run-id') {
+        runId = rest[++i];
+      }
+    }
+    const jsonOut = rest.includes('--json');
+    const positional = extractPositionalArgs(rest, new Set(['--ticket', '--run-id']));
+    const sub = positional[0];
+    const targetRepo = resolve(positional[1] ?? '.');
+    if (sub !== 'list' && sub !== 'run' && sub !== 'clean') {
+      console.error('usage: agb holdout <list|run|clean> [repo] [--ticket <id>] [--run-id <id>] [--json]');
+      process.exit(1);
+    }
+    try {
+      if (sub === 'list') {
+        const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(listed, null, 2));
+        } else {
+          console.log(`holdout: suites=${listed.suites.length} files=${listed.totalFiles}`);
+          for (const s of listed.suites) {
+            console.log(`  ${s.runId}/${s.ticketId}: ${s.count} scenario file(s)`);
+          }
+        }
+        process.exit(0);
+      }
+      if (sub === 'clean') {
+        const cleaned = cleanHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(cleaned, null, 2));
+        } else {
+          console.log(`holdout: cleaned=${cleaned.removed} (${cleaned.targetDir})`);
+        }
+        process.exit(0);
+      }
+      // sub === 'run': collect sealed files and run against targetRepo (emitting sanitized symptoms ONLY)
+      const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+      const allFiles = [];
+      for (const suite of listed.suites) {
+        const sDir = resolveHoldoutDir({ repo: targetRepo, runId: suite.runId, ticketId: suite.ticketId });
+        for (const f of suite.files) allFiles.push(join(sDir, f.filename));
+      }
+      const execRes = await runHoldoutScenarios(allFiles, {
+        candidateWorktree: targetRepo,
+        sandbox: true,
+      });
+      if (jsonOut) {
+        console.log(JSON.stringify(execRes, null, 2));
+      } else {
+        console.log(execRes.summary);
+      }
+      process.exit(execRes.ok ? 0 : 2);
+    } catch (err) {
+      if (jsonOut) {
+        console.log(
+          JSON.stringify(
+            { ok: false, tampered: err?.code === 'ESYMLINK', error: err.message },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(`agb holdout: ${err.message}`);
+      }
+      process.exit(2);
+    }
   } else if (cmd === 'brains') {
     rejectUnknownFlags('brains', rest, new Set());
     for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);
