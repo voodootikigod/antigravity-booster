@@ -59,7 +59,7 @@ test('layout: root plugin.json is a minimal valid manifest named antigravity-boo
   }
 });
 
-test('layout: hooks.json is exactly the single agb-policy-guard registration (spec §4.1)', () => {
+test('layout: hooks.json registers the 6-event agb-policy-guard lifecycle suite (spec §4.1 + v2 Wave 4 D3)', () => {
   assert.deepEqual(readJson('hooks.json'), {
     'agb-policy-guard': {
       PreToolUse: [
@@ -74,10 +74,43 @@ test('layout: hooks.json is exactly the single agb-policy-guard registration (sp
           ],
         },
       ],
+      PostToolUse: [
+        {
+          matcher: '*',
+          hooks: [
+            {
+              type: 'command',
+              command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostToolUse',
+              timeout: 10,
+            },
+          ],
+        },
+      ],
       SessionStart: [
         {
           type: 'command',
           command: '/bin/sh bin/node-launcher.sh hooks/session-start.mjs',
+          timeout: 10,
+        },
+      ],
+      PreInvocation: [
+        {
+          type: 'command',
+          command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PreInvocation',
+          timeout: 10,
+        },
+      ],
+      PostInvocation: [
+        {
+          type: 'command',
+          command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostInvocation',
+          timeout: 10,
+        },
+      ],
+      Stop: [
+        {
+          type: 'command',
+          command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs Stop',
           timeout: 10,
         },
       ],
