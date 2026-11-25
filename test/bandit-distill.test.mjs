@@ -278,6 +278,7 @@ test('distillRunDefenses --compile-checks emits ReDoS-safe .adlc/learned-checks.
       join(dir, '.booster', 'runs', 'run-1-prosecution-t1.json'),
       JSON.stringify({ findings: [{ lens: 'sec', claim: 'eval( used in lib at line 1' }, { lens: 'sec', claim: 'eval( used in lib at line 9' }] })
     );
+    rmSync(join(dir, '.adlc', 'learned-checks.json'), { force: true });
     writeFileSync(join(dir, '.adlc', 'learned-checks.json'), '{"version":1,"checks":[]}\n');
     const nestedDistill = distillRunDefenses({ repo: dir, compileChecks: true });
     assert.equal(nestedDistill.compiledChecksCount, 1);
@@ -297,11 +298,29 @@ test('distillRunDefenses --compile-checks emits ReDoS-safe .adlc/learned-checks.
     );
     rmSync(outside, { recursive: true, force: true });
 
-    // Nested alternation ((a|a))+ and lookahead (?=a) and repeated quantified classes \w+\w+ rejected (SEC-W4-06)
+    // Nested alternation ((a|a))+ and lookahead (?=a) and repeated quantified classes \w+\w+ and \k<name> rejected (SEC-W4-06, SEC-W4-R2-04)
     assert.equal(isSafeRegexPattern('((a|a))+'), false);
     assert.equal(isSafeRegexPattern('(?=foo)bar'), false);
     assert.equal(isSafeRegexPattern('\\w+\\w+'), false);
     assert.equal(isSafeRegexPattern('[a-z]+[a-z]+'), false);
+    assert.equal(isSafeRegexPattern('(?<a>foo)\\k<a>'), false);
+
+    // .review/round-1/triaged.json non-dropped findings discovered (MEDIUM-1)
+    mkdirSync(join(dir, '.review', 'main', 'round-1'), { recursive: true });
+    writeFileSync(
+      join(dir, '.review', 'main', 'round-1', 'triaged.json'),
+      JSON.stringify({
+        triaged: [
+          { action: 'fix', lens: 'security', claim: 'process.exit( used in library module at line 4' },
+          { action: 'fix', lens: 'security', claim: 'process.exit( used in library module at line 19' },
+          { action: 'drop', lens: 'security', claim: 'dropped finding should be ignored' },
+        ],
+      })
+    );
+    rmSync(join(dir, '.adlc', 'learned-checks.json'), { force: true });
+    writeFileSync(join(dir, '.adlc', 'learned-checks.json'), '{"version":1,"checks":[]}\n');
+    const reviewDistill = distillRunDefenses({ repo: dir, compileChecks: true });
+    assert.equal(reviewDistill.recurringCount >= 2, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

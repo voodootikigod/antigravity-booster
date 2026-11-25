@@ -29,7 +29,7 @@
 | lib/doctor.mjs | MIN_AGY_VERSION, MIN_NODE_VERSION, RECOMMENDED_AGY_VERSION, applyDoctorFixes, boosterDataDir, checkAdlcBinary, checkAgyAuth, checkAgyBinary, checkBrainDir, checkHookLogDir, checkKernelContainment, checkKillswitchUsage, checkModelCatalog, checkNodeVersion, checkPlugin, checkPolicyGuard, checkProbePlugins, checkSandbox, checkSecondaryInstall, checkTicketStore, compareModelCatalog, evaluateStagedAdlcPlugin, healthLogPath, isTestExecution, parseAgyModels, runDoctor, runInit, verifyWindowsSandboxActive, verifyWindowsSandboxAttestation |
 | lib/factory-ledger.mjs | FactoryLedger, MAX_FACTORY_LEDGER_ENTRIES, computeRunEconomics, defaultFactoryLedgerPath |
 | lib/gates.mjs | gateSandboxAvailable, gateSandboxEnabled, linuxBwrapArgs, runGate, runGates, sandboxProfile |
-| lib/holdout.mjs | buildHoldoutAuthorPrompt, cleanHoldoutScenarios, computeRepoHoldoutHash, extractHoldoutCodeBlock, extractStaticScenarioTitles, invokeHoldoutAuthor, listHoldoutScenarios, resolveHoldoutBaseRoot, resolveHoldoutDir, runHoldoutScenarios, sanitizeHoldoutFailureOutput, selectOppositeHoldoutPool, shouldRunHoldoutScenarios, stageHoldoutScenarios, verifyHoldoutRedPhase |
+| lib/holdout.mjs | buildHoldoutAuthorPrompt, cleanHoldoutScenarios, collectHoldoutMaskDirs, computeRepoHoldoutHash, extractHoldoutCodeBlock, extractStaticScenarioTitles, invokeHoldoutAuthor, listHoldoutScenarios, resolveHoldoutBaseRoot, resolveHoldoutDir, runHoldoutScenarios, runMaskedWorktreeGate, runMaskedWorktreeGates, sanitizeHoldoutFailureOutput, selectOppositeHoldoutPool, shouldRunHoldoutScenarios, stageHoldoutScenarios, verifyHoldoutRedPhase |
 | lib/hud.mjs | TerminalHUD |
 | lib/json.mjs | safeExtractJson |
 | lib/lock.mjs | acquireRepoLock |

@@ -10,12 +10,14 @@ import {
   resolveHoldoutDir,
   buildHoldoutAuthorPrompt,
   extractHoldoutCodeBlock,
+  extractStaticScenarioTitles,
   stageHoldoutScenarios,
   listHoldoutScenarios,
   cleanHoldoutScenarios,
   sanitizeHoldoutFailureOutput,
   verifyHoldoutRedPhase,
   runHoldoutScenarios,
+  runMaskedWorktreeGate,
 } from '../lib/holdout.mjs';
 
 test('shouldRunHoldoutScenarios defaults to true on frontier tickets and respects opt-in / opt-out flags', () => {
@@ -361,6 +363,53 @@ test('verifyHoldoutRedPhase and runHoldoutScenarios enforce anti-tautology, run 
       env: envUnsandboxedInContainer,
     });
     assert.equal(patchRes.ok, false, 'frozen node:assert must reject monkey-patching');
+
+    // 8. extractStaticScenarioTitles ignores regex.test(...), comments, and ${} interpolated titles (HIGH-2)
+    const parsedTitles = extractStaticScenarioTitles(
+      [
+        '// test("Scenario: commented out", () => {})',
+        '/* it("Scenario: block commented", () => {}) */',
+        'const ok = /^\\d+$/.test("42");',
+        'test(`Scenario: dynamic ${ok}`, () => {});',
+        'test("Scenario: real static check", () => { assert.equal(ok, true); });',
+      ].join('\n')
+    );
+    assert.deepEqual([...parsedTitles], ['Scenario: real static check']);
+
+    // 9. verifyHoldoutRedPhase rejects broken module-import holdout files & silent exit(1) emits fallback symptom (HIGH-2, MEDIUM-3)
+    const brokenImportStaged = stageHoldoutScenarios({
+      repo: candWt,
+      runId: 'run-broken-import',
+      ticketId: 'T-BROKEN',
+      scenarios: [
+        [
+          'import { test } from "node:test";',
+          'import { nonexistent } from "node:nonexistent_wave4_pkg";',
+          'test("Scenario: never reached", () => { nonexistent(); });',
+        ].join('\n'),
+      ],
+      holdoutRoot,
+    });
+    assert.equal(brokenImportStaged.ok, true);
+    const brokenRed = await verifyHoldoutRedPhase(brokenImportStaged.files, {
+      baseWorktree: baseWt,
+      sandbox: false,
+      env: envUnsandboxedInContainer,
+    });
+    assert.equal(brokenRed.ok, false, 'broken ESM import crash must not pass verifyHoldoutRedPhase');
+
+    const silentFail = sanitizeHoldoutFailureOutput('', { assumeFailed: true });
+    assert.equal(silentFail.failedCount, 1);
+    assert.match(silentFail.summary, /Sealed holdout verification failed/);
+
+    // 10. runMaskedWorktreeGate strips AGB_HOLDOUT_DIR and masks holdouts inside OS sandbox (SEC-W4-R2-01)
+    const gateCheck = await runMaskedWorktreeGate(
+      'test',
+      `${JSON.stringify(process.execPath)} -e "if (process.env.AGB_HOLDOUT_DIR) process.exit(1)"`,
+      candWt,
+      { sandbox: false, repo: rootRepo, env: { ...envUnsandboxedInContainer, AGB_HOLDOUT_DIR: holdoutRoot } }
+    );
+    assert.equal(gateCheck.ok, true, 'AGB_HOLDOUT_DIR must be stripped from worktree gate env');
   } finally {
     rmSync(holdoutRoot, { recursive: true, force: true });
     rmSync(baseWt, { recursive: true, force: true });

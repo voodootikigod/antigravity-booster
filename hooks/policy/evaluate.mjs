@@ -1221,7 +1221,39 @@ const HEADLESS_DESTRUCTIVE_SHELL_CMDS = new Set([
   'rm', 'mv', 'shred', 'unlink', 'rmdir', 'cp', 'tar', 'rsync', 'chmod', 'chown', 'chgrp', 'find',
 ]);
 const HEADLESS_FORBIDDEN_SHELL_LITERAL =
-  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-|holdouts|twins-runtime|\.holdout\.test\.mjs)/i;
+  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-|holdouts|twins-runtime|\.holdout\.test\.mjs|\.booster[\\/](?:logs|runs))/i;
+
+function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
+  if (!Array.isArray(argv) || argv.length === 0) return false;
+  let agbIdx = -1;
+  for (let i = 0; i < argv.length; i += 1) {
+    const base = basename(String(argv[i] ?? ''));
+    if (base === 'agb' || base === 'agb.mjs') {
+      agbIdx = i;
+      break;
+    }
+  }
+  if (agbIdx === -1) return false;
+  const rest = argv.slice(agbIdx + 1);
+  const positionals = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    const tok = String(rest[i] ?? '');
+    if (tok === '--ticket' || tok === '--run-id' || tok === '--port' || tok === '--out') {
+      i += 1;
+      continue;
+    }
+    if (!tok.startsWith('-')) positionals.push(tok.toLowerCase());
+  }
+  const sub = positionals[0] ?? '';
+  if (sub === 'holdout') {
+    const act = positionals[1] ?? '';
+    return headless || act !== 'list';
+  }
+  if (sub === 'distill') {
+    return headless || rest.some((t) => t === '--apply' || t === '--compile-checks');
+  }
+  return false;
+}
 
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);
@@ -1241,6 +1273,9 @@ function evaluateRunCommand(args, ctx) {
   const baseCwd = typeof cwdArg === 'string' && cwdArg.length > 0 ? resolve(cwdArg) : (ctx.workspacePaths[0] ?? '/');
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
+    if (isMutatingAgbCliSubcommand(sub.argv, { headless: ctx.headless })) {
+      return deny('Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands');
+    }
     const cmd = basename(sub.argv[0] ?? '');
     const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);
     const argvTokens = sub.argv.slice(1).flatMap((t) => {

@@ -12951,22 +12951,28 @@ async function runAgy({
           const holdoutSubpath = join23("antigravity-cli", "plugin_data", "antigravity-booster", "holdouts");
           for (const gRoot of /* @__PURE__ */ new Set([geminiDir, realGeminiDir])) {
             const hDir = join23(gRoot, holdoutSubpath);
+            try {
+              if (!lstatSync11(gRoot).isSymbolicLink() && !existsSync22(hDir)) {
+                mkdirSync11(hDir, { recursive: true, mode: 448 });
+              }
+            } catch {
+            }
             if (existsSync22(hDir)) {
               launchArgs.push("--tmpfs", hDir);
             }
           }
-          const unbundledRun = false;
-          if (unbundledRun && typeof effectiveEnv?.AGB_HOLDOUT_DIR === "string" && effectiveEnv.AGB_HOLDOUT_DIR.trim()) {
-            const customHoldout = resolve12(effectiveEnv.AGB_HOLDOUT_DIR.trim());
-            const holdoutTargets = /* @__PURE__ */ new Set([customHoldout]);
-            try {
-              if (existsSync22(customHoldout)) holdoutTargets.add(realpathSync7(customHoldout));
-            } catch {
-            }
-            for (const hTarget of holdoutTargets) {
-              if (existsSync22(hTarget)) {
-                launchArgs.push("--tmpfs", hTarget);
-              }
+        }
+        const unbundledRun = false;
+        if (unbundledRun && typeof effectiveEnv?.AGB_HOLDOUT_DIR === "string" && effectiveEnv.AGB_HOLDOUT_DIR.trim()) {
+          const customHoldout = resolve12(effectiveEnv.AGB_HOLDOUT_DIR.trim());
+          const holdoutTargets = /* @__PURE__ */ new Set([customHoldout]);
+          try {
+            if (existsSync22(customHoldout)) holdoutTargets.add(realpathSync7(customHoldout));
+          } catch {
+          }
+          for (const hTarget of holdoutTargets) {
+            if (existsSync22(hTarget)) {
+              launchArgs.push("--tmpfs", hTarget);
             }
           }
         }
@@ -14385,7 +14391,7 @@ if (typeof origFetch === 'function') {
       const status = hit ? hit.status : 404;
       const headers = hit ? { ...hit.headers } : { 'content-type': 'application/json; charset=utf-8' };
       const bodyText = hit ? hit.bodyText : JSON.stringify({ error: 'twin_route_not_found', path: parsed.pathname });
-      const nullBody = status === 204 || status === 304 || String(reqMethod).toUpperCase() === 'HEAD';
+      const nullBody = status === 204 || status === 205 || status === 304 || String(reqMethod).toUpperCase() === 'HEAD';
       return new Response(nullBody ? null : bodyText, { status, headers });
     }
     return origFetch.call(this, input, init);
@@ -14427,6 +14433,7 @@ http.request = function twinHttpRequest(urlOrOpts, optsOrCb, maybeCb) {
   }
   const twin = origins.get(info.origin);
   const reqStream = new PassThrough();
+  reqStream.resume();
   const reqHeaders = new Map();
   reqStream.abort = () => reqStream.destroy();
   reqStream.setTimeout = () => reqStream;
@@ -14450,7 +14457,7 @@ http.request = function twinHttpRequest(urlOrOpts, optsOrCb, maybeCb) {
     const status = hit ? hit.status : 404;
     const headers = hit ? { ...hit.headers } : { 'content-type': 'application/json; charset=utf-8' };
     const bodyText = hit ? hit.bodyText : JSON.stringify({ error: 'twin_route_not_found', path: pathname });
-    const chunks = (status === 204 || status === 304 || info.method === 'HEAD') ? [] : [Buffer.from(bodyText, 'utf8')];
+    const chunks = (status === 204 || status === 205 || status === 304 || info.method === 'HEAD') ? [] : [Buffer.from(bodyText, 'utf8')];
     const resStream = Readable.from(chunks);
     resStream.statusCode = status;
     resStream.statusMessage = status >= 200 && status < 300 ? 'OK' : 'TwinResponse';
@@ -14544,7 +14551,7 @@ async function startDigitalTwins(twins = [], { runtimeRoot = null, env = process
             });
           }
           res.writeHead(status, headers);
-          if (status === 204 || status === 304 || String(req.method || "").toUpperCase() === "HEAD") {
+          if (status === 204 || status === 205 || status === 304 || String(req.method || "").toUpperCase() === "HEAD") {
             res.end();
           } else {
             res.end(bodyText);
@@ -15752,16 +15759,6 @@ ${err.stderr ?? ""}`.slice(-2e3);
     if (profileFile) rmSync10(join27(profileFile, ".."), { recursive: true, force: true });
     if (emptyRoDir) rmSync10(emptyRoDir, { recursive: true, force: true });
   }
-}
-async function runGates(gates, cwd, { sandbox = false, env = process.env } = {}) {
-  const results = [];
-  for (const [name, cmd2] of Object.entries(gates ?? {})) {
-    if (!cmd2) continue;
-    const r = await runGate(name, cmd2, cwd, { sandbox, env });
-    results.push(r);
-    if (!r.ok) return { ok: false, results };
-  }
-  return { ok: true, results };
 }
 var execFileP2;
 var init_gates = __esm({
@@ -17775,7 +17772,7 @@ function isSafeRegexPattern(pattern) {
   if (typeof pattern !== "string" || pattern.length === 0 || pattern.length > MAX_REGEX_LEN) {
     return false;
   }
-  if (/\\[1-9]/.test(pattern) || /\(\?(?:=|!|<=|<!)/.test(pattern)) {
+  if (/\\[1-9]|\\k</.test(pattern) || /\(\?(?:=|!|<=|<!)/.test(pattern)) {
     return false;
   }
   if (/(?:\.\*|\.\+)[^\r\n]{0,32}(?:\.\*|\.\+)/.test(pattern) || /(?:\\[dwsDWS]|\[[^\]]+\])[*+]\s*(?:\\[dwsDWS]|\.|\[[^\]]+\])[*+]/.test(pattern)) {
@@ -17966,28 +17963,43 @@ function normalizeClaimFingerprint(finding) {
     explicitCheck: finding?.check && typeof finding.check === "object" ? finding.check : null
   };
 }
-function collectJsonFindingsFromDir(dirPath, findings, maxFiles = 64) {
+function extractFindingsFromParsedJson(parsed) {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") return [];
+  if (Array.isArray(parsed.triaged)) {
+    return parsed.triaged.filter((item) => item && typeof item === "object" && item.action !== "drop");
+  }
+  if (Array.isArray(parsed.findings)) return parsed.findings;
+  if (Array.isArray(parsed.accepted_findings)) return parsed.accepted_findings;
+  return [];
+}
+function collectJsonFindingsFromDir(dirPath, findings, maxFiles = 64, { maxDepth = 3 } = {}) {
   if (!existsSync32(dirPath) || lstatOrNull3(dirPath)?.isSymbolicLink()) return;
   let count = 0;
   const walk = (curDir, depth) => {
-    if (depth > 3 || count >= maxFiles) return;
+    if (depth > maxDepth || count >= maxFiles) return;
     let entries = [];
     try {
       entries = readdirSync16(curDir, { withFileTypes: true });
     } catch {
       return;
     }
+    const hasTriagedJson = entries.some(
+      (e) => !e.isSymbolicLink() && e.isFile() && e.name === "triaged.json"
+    );
     for (const ent of entries) {
       if (count >= maxFiles || ent.isSymbolicLink()) continue;
       const full = join34(curDir, ent.name);
       if (ent.isDirectory()) {
         walk(full, depth + 1);
       } else if (ent.isFile() && ent.name.endsWith(".json")) {
+        if (hasTriagedJson && ent.name !== "triaged.json") continue;
         count += 1;
         try {
           const parsed = JSON.parse(readFileSync25(full, "utf8"));
-          const list = Array.isArray(parsed?.findings) ? parsed.findings : Array.isArray(parsed?.accepted_findings) ? parsed.accepted_findings : [];
-          for (const f of list) findings.push(f);
+          for (const f of extractFindingsFromParsedJson(parsed)) {
+            if (f && typeof f === "object") findings.push(f);
+          }
         } catch {
         }
       }
@@ -17997,8 +18009,9 @@ function collectJsonFindingsFromDir(dirPath, findings, maxFiles = 64) {
 }
 function collectBoosterFindings(repoRoot) {
   const findings = [];
-  collectJsonFindingsFromDir(join34(repoRoot, ".booster"), findings, 64);
-  collectJsonFindingsFromDir(join34(repoRoot, ".review"), findings, 64);
+  collectJsonFindingsFromDir(join34(repoRoot, ".booster"), findings, 32, { maxDepth: 0 });
+  collectJsonFindingsFromDir(join34(repoRoot, ".booster", "runs"), findings, 64, { maxDepth: 2 });
+  collectJsonFindingsFromDir(join34(repoRoot, ".review"), findings, 64, { maxDepth: 3 });
   const manifestPath = join34(repoRoot, ".adlc", "manifest.jsonl");
   if (existsSync32(manifestPath) && !lstatOrNull3(manifestPath)?.isSymbolicLink()) {
     try {
@@ -18577,6 +18590,7 @@ function stageHoldoutScenarios({
   runId = "default",
   ticketId,
   scenarios = [],
+  requireStaticTitles = false,
   env = process.env,
   bundled = IS_BUNDLED4,
   holdoutRoot = null
@@ -18636,11 +18650,25 @@ function stageHoldoutScenarios({
         error: `Holdout scenario '${rawName}' uses relative '../' parent imports; import candidate files via process.env.AGB_CANDIDATE_ROOT instead`
       };
     }
+    if (requireStaticTitles && extractStaticScenarioTitles(rawCode).size === 0) {
+      return {
+        ok: false,
+        dir: targetDir,
+        files: [],
+        error: `Holdout scenario '${rawName}' must declare at least one static test("Scenario: ...", ...) title`
+      };
+    }
     const filename = `${String(i + 1).padStart(2, "0")}-${safeStem}.holdout.test.mjs`;
     const destPath = join35(targetDir, filename);
     const existingSt = lstatOrNull4(destPath);
     if (existingSt?.isSymbolicLink()) {
-      return { ok: false, dir: targetDir, files: [], error: `Refusing to overwrite symlink: ${destPath}` };
+      return {
+        ok: false,
+        tampered: true,
+        dir: targetDir,
+        files: [],
+        error: `Refusing to overwrite symlink: ${destPath}`
+      };
     }
     if (existingSt) {
       try {
@@ -18776,13 +18804,69 @@ function cleanHoldoutScenarios({
 function scrubSensitiveTokens(label) {
   return String(label ?? "").replace(/file:\/\/[^\s)'"`]+/gi, "<redacted-path>").replace(/(?:\/[A-Za-z0-9_.-]+){2,}(?::\d+(?::\d+)?)?/g, "<redacted-path>").replace(/[A-Za-z]:\\[^\s)'"`]+/g, "<redacted-path>").replace(/\bline\s+\d+\b/gi, "line <redacted>").replace(/:\d+:\d+\b/g, "").replace(/\x1b\[[0-9;]*[A-Za-z]/g, "").replace(/\s+/g, " ").trim();
 }
+function stripJsCommentsPreservingStrings(source = "") {
+  const s = String(source ?? "");
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    const ch = s[i];
+    const next = s[i + 1];
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      out += ch;
+      i += 1;
+      while (i < s.length) {
+        const c = s[i];
+        out += c;
+        if (c === "\\" && i + 1 < s.length) {
+          out += s[i + 1];
+          i += 2;
+          continue;
+        }
+        i += 1;
+        if (c === quote) break;
+      }
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      out += "  ";
+      i += 2;
+      while (i < s.length && s[i] !== "\n") {
+        out += " ";
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      out += "  ";
+      i += 2;
+      while (i < s.length && !(s[i] === "*" && s[i + 1] === "/")) {
+        out += s[i] === "\n" ? "\n" : " ";
+        i += 1;
+      }
+      if (i < s.length) {
+        out += "  ";
+        i += 2;
+      }
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
 function extractStaticScenarioTitles(sourceCode = "") {
   const titles = /* @__PURE__ */ new Set();
-  const text = String(sourceCode ?? "");
-  const re = /\b(?:test|it)\s*\(\s*(['"`])((?:\\.|(?!\1)[^\r\n\\]){1,200})\1/g;
+  const stripped = stripJsCommentsPreservingStrings(sourceCode);
+  const re = /(?<![.\w$])(?:test|it)\s*\(\s*(['"`])((?:\\.|(?!\1)[^\r\n\\]){1,200})\1\s*,/g;
   let m;
-  while ((m = re.exec(text)) !== null) {
-    const raw = m[2].replace(/\\(['"`\\])/g, "$1").trim();
+  while ((m = re.exec(stripped)) !== null) {
+    const quote = m[1];
+    const rawCapture = m[2];
+    if (quote === "`" && /(?:^|[^\\])\$\{/.test(rawCapture)) {
+      continue;
+    }
+    const raw = rawCapture.replace(/\\(['"`\\])/g, "$1").trim();
     if (raw) titles.add(raw);
   }
   return titles;
@@ -18793,7 +18877,9 @@ function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null, as
   const failedTitles = [];
   let passedCount = 0;
   let failedCount = 0;
-  const hasAllowlist = allowedTitles instanceof Set;
+  let matchedScenarioFailures = 0;
+  let tapNotOkCount = 0;
+  const hasAllowlist = allowedTitles instanceof Set && allowedTitles.size > 0;
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (!line) continue;
@@ -18802,8 +18888,11 @@ function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null, as
       const candidateTitle = tapFail[1].trim();
       if (!/\.holdout\.test\.mjs\b/i.test(candidateTitle) && !candidateTitle.startsWith("/")) {
         failedCount += 1;
+        tapNotOkCount += 1;
+        const isAllowed = !hasAllowlist || allowedTitles.has(candidateTitle);
+        if (isAllowed) matchedScenarioFailures += 1;
         failedTitles.push(
-          !hasAllowlist || allowedTitles.has(candidateTitle) ? candidateTitle : `Holdout scenario #${failedCount}`
+          isAllowed ? candidateTitle : `Holdout scenario #${failedCount}`
         );
       }
       continue;
@@ -18823,8 +18912,10 @@ function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null, as
       const candidateTitle = specFail[1].trim();
       if (!/\.holdout\.test\.mjs\b/i.test(candidateTitle) && !candidateTitle.startsWith("/")) {
         failedCount += 1;
+        const isAllowed = !hasAllowlist || allowedTitles.has(candidateTitle);
+        if (isAllowed) matchedScenarioFailures += 1;
         failedTitles.push(
-          !hasAllowlist || allowedTitles.has(candidateTitle) ? candidateTitle : `Holdout scenario #${failedCount}`
+          isAllowed ? candidateTitle : `Holdout scenario #${failedCount}`
         );
       }
     }
@@ -18834,7 +18925,7 @@ function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null, as
     const clean = scrubSensitiveTokens(t).slice(0, MAX_SYMPTOM_LEN);
     return `${clean || "Unnamed scenario"} \u2014 behavioral check failed`;
   });
-  if (assumeFailed && behavioralSymptoms.length === 0 && text.trim()) {
+  if (assumeFailed && behavioralSymptoms.length === 0) {
     behavioralSymptoms.push("Sealed holdout suite failed behavioral verification (details redacted)");
     if (failedCount === 0) failedCount = 1;
   }
@@ -18843,6 +18934,8 @@ function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null, as
   return {
     passedCount,
     failedCount,
+    matchedScenarioFailures,
+    tapNotOkCount,
     behavioralSymptoms,
     summary
   };
@@ -18851,7 +18944,10 @@ function resetCandidateWorktreeScratch(worktreePath) {
   if (!worktreePath) return;
   const gitPointer = join35(worktreePath, ".git");
   const st = lstatOrNull4(gitPointer);
-  if (!st || st.isSymbolicLink() || !st.isFile()) return;
+  if (!st || st.isSymbolicLink()) return;
+  const isLinkedWorktree = st.isFile();
+  const isDisposableIntegrationClone = st.isDirectory() && /[\\/]\.worktrees[\\/]agb-integration-[^\\/]+$/.test(worktreePath) && existsSync33(join35(gitPointer, "objects", "info", "alternates"));
+  if (!isLinkedWorktree && !isDisposableIntegrationClone) return;
   try {
     execFileSync13(
       "git",
@@ -19146,10 +19242,14 @@ ${err?.stderr ?? ""}`;
     };
   }
   const sanitized = sanitizeHoldoutFailureOutput(rawCombined, { allowedTitles });
+  const genuineScenarioFailure = Boolean(
+    allowedTitles.size > 0 ? sanitized.matchedScenarioFailures >= 1 : sanitized.tapNotOkCount >= 1
+  );
   return {
     ok: false,
     passedCount: sanitized.passedCount,
     failedCount: Math.max(1, sanitized.failedCount),
+    genuineScenarioFailure,
     behavioralSymptoms: sanitized.behavioralSymptoms,
     summary: sanitized.summary,
     sandboxed: useSandbox,
@@ -19189,10 +19289,154 @@ async function verifyHoldoutRedPhase(holdoutFiles = [], {
       reason: "tautological holdout scenarios: passed on unimplemented baseline (red-phase failure required)"
     };
   }
+  if (!res.genuineScenarioFailure) {
+    return {
+      ok: false,
+      reason: "holdout scenarios crashed or exited before executing behavioral scenario assertions on baseline"
+    };
+  }
   return {
     ok: true,
     failedCount: res.failedCount
   };
+}
+function stripHoldoutEnvVars(env = process.env) {
+  const copy = { ...process.env, ...env || {} };
+  for (const k of Object.keys(copy)) {
+    if (k.toUpperCase() === "AGB_HOLDOUT_DIR") delete copy[k];
+  }
+  return copy;
+}
+function collectHoldoutMaskDirs({
+  cwd = null,
+  repo = null,
+  env = process.env,
+  bundled = IS_BUNDLED4
+} = {}) {
+  const dirs = /* @__PURE__ */ new Set();
+  const addWithReal = (p) => {
+    if (!p || typeof p !== "string" || /[\r\n\0]/.test(p)) return;
+    const abs = resolve21(p);
+    dirs.add(abs);
+    try {
+      if (existsSync33(abs)) dirs.add(realpathSync13(abs));
+    } catch {
+    }
+  };
+  const homes = /* @__PURE__ */ new Set([homedir10()]);
+  if (!bundled && typeof env?.AGB_HOME_DIR === "string" && env.AGB_HOME_DIR.trim()) {
+    homes.add(resolve21(env.AGB_HOME_DIR.trim()));
+  }
+  for (const h of homes) {
+    const geminiDir = join35(h, ".gemini");
+    const holdoutPath = join35(
+      geminiDir,
+      "antigravity-cli",
+      "plugin_data",
+      "antigravity-booster",
+      "holdouts"
+    );
+    if (existsSync33(geminiDir) && !lstatOrNull4(geminiDir)?.isSymbolicLink()) {
+      try {
+        if (!lstatOrNull4(holdoutPath)) {
+          mkdirSync17(holdoutPath, { recursive: true, mode: 448 });
+        }
+      } catch {
+      }
+    }
+    addWithReal(holdoutPath);
+  }
+  if (!bundled && typeof env?.AGB_HOLDOUT_DIR === "string" && env.AGB_HOLDOUT_DIR.trim()) {
+    addWithReal(env.AGB_HOLDOUT_DIR.trim());
+  }
+  if (cwd) addWithReal(join35(cwd, ".booster"));
+  if (repo) addWithReal(join35(repo, ".booster"));
+  return [...dirs];
+}
+async function runMaskedWorktreeGate(name, cmd2, cwd, { timeoutMs = 6e5, sandbox = false, repo = null, env = process.env, plat = platform2() } = {}) {
+  const sanitizedEnv = stripHoldoutEnvVars(env);
+  if (!sandbox || !gateSandboxEnabled(env)) {
+    return runGate(name, cmd2, cwd, { timeoutMs, sandbox, env: sanitizedEnv });
+  }
+  const maskDirs = collectHoldoutMaskDirs({ cwd, repo, env });
+  let profileDir = null;
+  let emptyRoDir = null;
+  let bin = "/bin/sh";
+  let args = ["-c", cmd2];
+  try {
+    if (plat === "darwin") {
+      profileDir = mkdtempSync7(join35(tmpdir9(), "agb-masked-sbpl-"));
+      const profileFile = join35(profileDir, "gate.sb");
+      const denyLines = maskDirs.map((d) => `(deny file-read* (subpath ${JSON.stringify(d)}))`).join("\n");
+      writeFileSync18(profileFile, `${sandboxProfile(cwd)}
+${denyLines}
+`, { mode: 384 });
+      bin = "sandbox-exec";
+      args = ["-f", profileFile, "/bin/sh", "-c", cmd2];
+    } else if (plat === "linux") {
+      emptyRoDir = mkdtempSync7(join35(tmpdir9(), "agb-masked-ro-"));
+      const baseArgs = linuxBwrapArgs(cwd, cmd2, emptyRoDir);
+      const dashIdx = baseArgs.lastIndexOf("--");
+      const maskArgs = [];
+      for (const d of maskDirs) {
+        try {
+          const st = lstatOrNull4(d);
+          if (st && !st.isSymbolicLink() && st.isDirectory()) {
+            maskArgs.push("--tmpfs", d);
+          }
+        } catch {
+        }
+      }
+      bin = "bwrap";
+      args = [...baseArgs.slice(0, dashIdx), ...maskArgs, ...baseArgs.slice(dashIdx)];
+    } else {
+      return runGate(name, cmd2, cwd, { timeoutMs, sandbox, env: sanitizedEnv });
+    }
+    const { stdout: stdout2 } = await execFileP3(bin, args, {
+      cwd,
+      encoding: "utf8",
+      timeout: timeoutMs,
+      maxBuffer: 16 * 1024 * 1024,
+      env: sanitizedEnv
+    });
+    return { name, cmd: cmd2, ok: true, output: stdout2.slice(-2e3), sandboxed: true };
+  } catch (err) {
+    if (plat === "linux" && err?.code === "ENOENT" && bin === "bwrap") {
+      return {
+        name,
+        cmd: cmd2,
+        ok: false,
+        sandboxed: true,
+        output: "bubblewrap not installed \u2014 apt install bubblewrap or set AGB_SANDBOX_GATES=0 to bypass."
+      };
+    }
+    const output = `${err?.stdout ?? ""}
+${err?.stderr ?? ""}`.slice(-2e3);
+    return { name, cmd: cmd2, ok: false, output, sandboxed: true };
+  } finally {
+    if (profileDir) {
+      try {
+        rmSync11(profileDir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+    if (emptyRoDir) {
+      try {
+        rmSync11(emptyRoDir, { recursive: true, force: true });
+      } catch {
+      }
+    }
+  }
+}
+async function runMaskedWorktreeGates(gates, cwd, { sandbox = false, repo = null, env = process.env, plat = platform2() } = {}) {
+  const results = [];
+  for (const [name, cmd2] of Object.entries(gates ?? {})) {
+    if (!cmd2) continue;
+    const r = await runMaskedWorktreeGate(name, cmd2, cwd, { sandbox, repo, env, plat });
+    results.push(r);
+    if (!r.ok) return { ok: false, results };
+  }
+  return { ok: true, results };
 }
 var execFileP3, IS_BUNDLED4, SAFE_SEGMENT_RE2, NULL_HOOKS_PATH2, MAX_SYMPTOM_LEN, MAX_SYMPTOMS, FREEZE_ASSERT_PRELOAD_URL;
 var init_holdout = __esm({
@@ -19442,12 +19686,28 @@ function wrapConsensusGateCommand(cmd2, worktree, { env = process.env, plat = pl
   }
   if (plat === "darwin") {
     const profileFile = join36(sandboxTmpDir, "gate.sb");
-    writeFileSync19(profileFile, sandboxProfile(worktree));
+    const denyHoldouts = collectHoldoutMaskDirs({ cwd: worktree, env }).map((d) => `(deny file-read* (subpath ${JSON.stringify(d)}))`).join("\n");
+    writeFileSync19(profileFile, `${sandboxProfile(worktree)}
+${denyHoldouts}
+`);
     return { ok: true, cmd: ["sandbox-exec", "-f", profileFile, "/bin/sh", "-c", cmd2].map(shellQuote).join(" ") };
   }
   const emptyRoDir = join36(sandboxTmpDir, "empty-ro");
   mkdirSync18(emptyRoDir, { recursive: true });
-  return { ok: true, cmd: ["bwrap", ...linuxBwrapArgs(worktree, cmd2, emptyRoDir)].map(shellQuote).join(" ") };
+  const baseBwrap = linuxBwrapArgs(worktree, cmd2, emptyRoDir);
+  const sepIdx = baseBwrap.lastIndexOf("--");
+  const tmpfsMasks = collectHoldoutMaskDirs({ cwd: worktree, env }).flatMap((d) => {
+    try {
+      const st = lstatSync18(d);
+      return !st.isSymbolicLink() && st.isDirectory() ? ["--tmpfs", d] : [];
+    } catch {
+      return [];
+    }
+  });
+  return {
+    ok: true,
+    cmd: ["bwrap", ...baseBwrap.slice(0, sepIdx), ...tmpfsMasks, ...baseBwrap.slice(sepIdx)].map(shellQuote).join(" ")
+  };
 }
 async function runConsensusFix({ worktree, testCmd, railsCmd, files, rails = [], adlcBin }) {
   if (!testCmd || !files.length) {
@@ -25444,6 +25704,27 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
   } finally {
     if (lockA) lockA();
   }
+  const preRescueHoldoutDigests = /* @__PURE__ */ new Map();
+  for (const candRunId of [runId, "default"]) {
+    try {
+      const listed = listHoldoutScenarios({
+        repo: resolvedRepo,
+        runId: candRunId,
+        ticketId: canonicalTicket.id
+      });
+      if (listed.ok && listed.suites.length > 0) {
+        const sDir = resolveHoldoutDir({
+          repo: resolvedRepo,
+          runId: candRunId,
+          ticketId: canonicalTicket.id
+        });
+        for (const f of listed.suites[0].files) {
+          preRescueHoldoutDigests.set(join43(sDir, f.filename), f.sha256);
+        }
+      }
+    } catch {
+    }
+  }
   const rescueBrief = buildRescueBrief(canonicalTicket, {
     lastError,
     gate: resolvedGate
@@ -25515,7 +25796,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
   const verifyScopeFn = options.verifyScopeFn ?? verifyScopeAndAntiNoOp;
   const verifySymbolsFn = options.verifySymbolsFn ?? runSymbolScopeVerification;
   const railsGuardFn = options.railsGuardFn ?? checkRailsGuard;
-  const runGatesFn = options.runGatesFn ?? runGates;
+  const runGatesFn = options.runGatesFn ?? ((g, wt, opts) => runMaskedWorktreeGates(g, wt, { ...opts, repo: resolvedRepo }));
   const runHollowTestFn = options.runHollowTestFn ?? runHollowTest;
   const prosecuteFn = options.prosecuteFn ?? prosecute;
   const recordGateFn = options.recordGateFn ?? recordGate;
@@ -25686,6 +25967,20 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
           failedGate ? `gate ${failedGate.name} failed:
 ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
         );
+      }
+      for (const [hPath, expectedSha] of preRescueHoldoutDigests.entries()) {
+        const hSt = lstatOrNull5(hPath);
+        if (!hSt || hSt.isSymbolicLink() || !hSt.isFile()) {
+          throw new Error(
+            "Security violation: sealed holdout scenario was deleted or symlinked during interactive rescue"
+          );
+        }
+        const currentSha = crypto6.createHash("sha256").update(readFileSync32(hPath)).digest("hex");
+        if (currentSha !== expectedSha) {
+          throw new Error(
+            "Security violation: sealed holdout scenario was modified during interactive rescue"
+          );
+        }
       }
       const darkRes = await executePostGateDarkFactoryChecks({
         repo: resolvedRepo,
@@ -25954,6 +26249,7 @@ var init_rescue = __esm({
     init_active_rails();
     init_adlc_bridge();
     init_gates();
+    init_holdout();
     init_twins();
     init_lock2();
     init_models();
@@ -30410,7 +30706,7 @@ Fix: ${agyCheck.fix}`);
         const results = [];
         for (const [name, cmd2] of Object.entries(gatesObj ?? {})) {
           if (!cmd2 || name !== "build" && name !== "test") continue;
-          const r = await runGate(name, cmd2, cwd, { timeoutMs, sandbox, env: gateEnv });
+          const r = await runMaskedWorktreeGate(name, cmd2, cwd, { timeoutMs, sandbox, repo, env: gateEnv });
           results.push(r);
           if (!r.ok) return { ok: false, results };
         }
@@ -30478,10 +30774,11 @@ Fix: ${agyCheck.fix}`);
           repo,
           runId: safeRunId,
           ticketId: t.id,
-          scenarios: [{ name: "authored", code }]
+          scenarios: [{ name: "authored", code }],
+          requireStaticTitles: true
         });
         if (!staged.ok) return { ok: false, reason: staged.error };
-        baseCheckWt = createIntegrationWorktree(repo, `holdout-red-${crypto7.randomUUID()}`, base);
+        baseCheckWt = createIntegrationWorktree(repo, crypto7.randomUUID(), base);
         const materialized = materializeWorktreeNodeModules(baseCheckWt, join45(repo, "node_modules"));
         let redRes;
         try {
@@ -30756,7 +31053,7 @@ Fix: ${agyCheck.fix}`);
           baselinePkg,
           ticket: ticketForAutofix,
           gate,
-          runSandboxedCmd: (cmd2, cwd) => runGate("autofix", cmd2, cwd, { timeoutMs, sandbox: true })
+          runSandboxedCmd: (cmd2, cwd) => runMaskedWorktreeGate("autofix", cmd2, cwd, { timeoutMs, sandbox: true, repo })
         });
       } finally {
         if (materialized) removeMaterializedNodeModules(worktree);

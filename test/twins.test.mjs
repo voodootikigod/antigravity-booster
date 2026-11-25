@@ -156,4 +156,51 @@ test('buildTwinGateEnv preload interceptor serves fetch and http.get in child pr
     await handle.stop();
     rmSync(runtimeRoot, { recursive: true, force: true });
   }
+
+  // Default runtimeRoot under NODE_TEST_CONTEXT lands in tmpdir() (never $HOME), and preload handles >32KiB POST bodies + HTTP 205 (MEDIUM-2, LOW-1)
+  const defaultHandle = await startDigitalTwins([
+    {
+      name: 'bulk-api',
+      envVar: 'BULK_API_URL',
+      routes: [
+        { method: 'POST', path: '/upload', status: 200, body: { uploaded: true } },
+        { method: 'DELETE', path: '/reset', status: 205, body: '' },
+      ],
+    },
+  ]);
+  try {
+    assert.equal(
+      defaultHandle.instanceDir.startsWith(tmpdir()),
+      true,
+      `expected default test instanceDir under tmpdir(), got ${defaultHandle.instanceDir}`
+    );
+    const bulkEnv = buildTwinGateEnv(process.env, defaultHandle, { sandboxed: true });
+    await new Promise((r) => defaultHandle.twins.length && r());
+    const bulkScript = [
+      'import assert from "node:assert/strict";',
+      'import http from "node:http";',
+      'const base = process.env.BULK_API_URL;',
+      'const resetRes = await fetch(`${base}/reset`, { method: "DELETE" });',
+      'assert.equal(resetRes.status, 205);',
+      'const status = await new Promise((resolveStatus, rejectErr) => {',
+      '  const req = http.request(`${base}/upload`, { method: "POST" }, (res) => {',
+      '    res.resume();',
+      '    res.on("end", () => resolveStatus(res.statusCode));',
+      '  });',
+      '  req.on("error", rejectErr);',
+      '  for (let i = 0; i < 8; i++) req.write(Buffer.alloc(8192, 0x61));',
+      '  req.end();',
+      '});',
+      'assert.equal(status, 200);',
+      'console.log("BULK_OK");',
+    ].join('\n');
+    const bulkOut = execFileSync(process.execPath, ['--input-type=module', '-e', bulkScript], {
+      env: bulkEnv,
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    assert.match(bulkOut, /BULK_OK/);
+  } finally {
+    await defaultHandle.stop();
+  }
 });
