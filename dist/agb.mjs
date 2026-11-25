@@ -12315,6 +12315,21 @@ function stageIsolatedGeminiHome(agbHome, userHome, { mode = "readonly", platfor
     }
   }
   stageFilteredMcpConfig(userHome, targetGemini, targetConfig, { allowCodegraph, repoRoot });
+  if (platform4 === "darwin" && userHome) {
+    const srcKeychains = join23(userHome, "Library", "Keychains");
+    if (existsSync22(srcKeychains)) {
+      const targetLibrary = join23(agbHome, "Library");
+      const targetKeychains = join23(targetLibrary, "Keychains");
+      unlinkIfSymlink(targetLibrary);
+      unlinkIfSymlink(targetKeychains);
+      try {
+        mkdirSync11(targetLibrary, { recursive: true, mode: 448 });
+        const st = lstatSync11(srcKeychains);
+        stageGeminiEntry(st, srcKeychains, targetKeychains, platform4);
+      } catch {
+      }
+    }
+  }
   return agbHome;
 }
 function stageBuilderGeminiHome(cwd, userHome, platform4 = process.platform, opts = {}) {

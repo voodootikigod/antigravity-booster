@@ -1,0 +1,26 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-25T21:21:56.089Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "a20a37fba4ec0e0fab9bddd5e6795bdef515aa9835b8ba7456f67926d174e220",
+    "ticketHash": "203a6edb43a885d6ea8120843d9e59aa105f67663ec72a47d5812b2c33fa89a0",
+    "version": 1
+  },
+  "body": "On macOS (platform === 'darwin'), agy 1.5.17 reads OAuth credentials from $HOME/Library/Keychains. When stageIsolatedGeminiHome() redirects HOME to .agb_home, missing Library/Keychains causes silent auth to fail and time out after 60s. Symlink only userHome/Library/Keychains into agbHome/Library/Keychains on darwin, add regression test in test/agy-no-mcp-storm.test.mjs, and rebuild dist/**.",
+  "completed": true,
+  "edges": [],
+  "id": "T-AGY-KEYCHAIN",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/agy.mjs",
+    "test/agy-no-mcp-storm.test.mjs",
+    "dist/**"
+  ],
+  "title": "Stage macOS Library/Keychains in isolated agb homes for agy 1.5.17 auth"
+}
