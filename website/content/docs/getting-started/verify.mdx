@@ -30,7 +30,7 @@ The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/ant
 | `Model catalog` | pass / warn | Drift: ``Update MODELS in lib/models.mjs to match `agy models`.`` Listing failed: ``Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor.`` Empty listing: ``Run `agy models`; if it prints models, report the output format change.`` Never fails the run. | `lib/doctor.mjs` |
 | `adlc-antigravity plugin` | pass / warn / fail | See [plugin states](#adlc-antigravity-plugin) | [L151-L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L166) |
 | `adlc CLI` | pass / warn / fail | See [adlc CLI](#adlc-cli) | [L315-L354](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L315-L354) |
-| `Sandbox` | pass / fail | See [Sandbox](#sandbox) | [L1086-L1146](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1086-L1146) |
+| `Sandbox` | pass / warn / fail | See [Sandbox](#sandbox) | `lib/doctor.mjs` |
 | `Brain Dir` | pass / warn | Default (`~/.gemini/antigravity-cli/brain`, `~/.gemini/antigravity/brain`, `~/.gemini/jetski/brain`): `Run an agy session to initialize the brain directory.` Custom (`AGB_BRAIN_DIR`): `Create directory <custom> or unset AGB_BRAIN_DIR.` | [L1150-L1154](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1150-L1154) |
 | `Ticket Store` | pass / warn / fail | See [Ticket store](#ticket-store) | [L1157-L1194](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1157-L1194) |
 | `Policy guard self-test` | pass / fail | ``Run `agb bootstrap --force-reinstall` and check hooks.log.`` | [L251](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L251) |
@@ -64,16 +64,16 @@ Doctor looks for `@adlc/cli` (`node_modules/.bin/adlc` in the current directory,
 | Situation | Level | Fix text |
 | --- | --- | --- |
 | Package manifest authentication failed | fail | ``Repair or reinstall @adlc/cli (>= <MIN_ADLC_CLI_VERSION>).`` |
-| Not found (detail `not found (will be installed by bootstrap)`) | warn | ``Run `npm install @adlc/cli` or `npx agb bootstrap`.`` |
+| Not found (detail `not found (project-local @adlc/cli absent)`) | warn | ``Install project-local @adlc/cli (`npm install --save-dev @adlc/cli`) or run from the bundled plugin runtime.`` |
 | Version below the minimum | fail | ``Upgrade @adlc/cli to >= <MIN_ADLC_CLI_VERSION>.`` |
 | Execution failed | fail | ``Ensure @adlc/cli executable at <bin> has execute permissions and a valid Node interpreter.`` |
 | Binary resolved but could not be probed, with no path to report | warn | `adlc CLI is optional but recommended. Install it if you want local ADLC gate execution.` |
 
-Install `@adlc/cli` locally (`npm install @adlc/cli`), not globally. Contributors to this repository get it through `npm ci`.
+Install `@adlc/cli` locally (`npm install --save-dev @adlc/cli`), not globally. Contributors to this repository get it through `npm ci`.
 
 ### Sandbox
 
-Gates run inside a kernel sandbox, and doctor checks the one for your platform ([`checkSandbox`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L1086)). `AGB_SANDBOX_GATES=0` bypasses it and reports `bypassed via env`.
+Gates run inside a kernel sandbox, and doctor checks the one for your platform (`checkSandbox`). `AGB_SANDBOX_GATES=0` bypasses it and reports `WARN` (`bypassed via env (AGB_SANDBOX_GATES=0)`) so unsandboxed execution is always visible.
 
 | Platform | Detail | Level | Fix text |
 | --- | --- | --- | --- |

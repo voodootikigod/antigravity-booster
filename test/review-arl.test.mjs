@@ -510,3 +510,90 @@ test('reviewPlan({ loop: true }): recomputes shapeReport on round > 1 after spec
     rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('exported lensPrompt and planLensPrompt share 100% byte-identical Layer-1/Layer-2 prefixes across all 5 lenses up to ## Active Lens', async () => {
+  const { CODE_LENSES, PLAN_LENSES, lensPrompt, planLensPrompt } = await import('../lib/review.mjs');
+  const seed = '0123456789abcdef0123456789abcdef0123456789abcdef';
+  const diff = 'diff --git a/lib/x.mjs b/lib/x.mjs\n+export const k = 1;\n';
+  const codePrompts = Object.entries(CODE_LENSES).map(([name, desc]) =>
+    lensPrompt(name, desc, diff, 'shared context', undefined, { seed })
+  );
+  assert.equal(codePrompts.length, 5);
+  const codePrefixes = codePrompts.map((p) => p.split('\n\n## Active Lens\n')[0]);
+  assert.ok(codePrefixes[0].length > 300);
+  for (let i = 1; i < codePrefixes.length; i++) {
+    assert.equal(codePrefixes[i], codePrefixes[0], `Code lens ${i} prefix must match lens 0 byte-for-byte`);
+  }
+
+  const specText = '# Feature Spec\n### Ticket 1: `T1`\n- **Scope**: `lib/x.mjs`\n';
+  const shapeJson = '{"ok":true,"readinessScore":100}';
+  const planPrompts = Object.entries(PLAN_LENSES).map(([name, desc]) =>
+    planLensPrompt(name, desc, specText, shapeJson, 'plan ctx', undefined, { seed })
+  );
+  assert.equal(planPrompts.length, 5);
+  const planPrefixes = planPrompts.map((p) => p.split('\n\n## Active Lens\n')[0]);
+  assert.ok(planPrefixes[0].includes(shapeJson));
+  for (let i = 1; i < planPrefixes.length; i++) {
+    assert.equal(planPrefixes[i], planPrefixes[0], `Plan lens ${i} prefix must match lens 0 byte-for-byte`);
+  }
+
+  // Oversized diff prioritizes source files ahead of dist/ bundles and preserves closing fence + ## Active Lens
+  const hugeDist = `diff --git a/dist/agb.mjs b/dist/agb.mjs\n+${'x'.repeat(220_000)}\n`;
+  const realSrc = `diff --git a/lib/core.mjs b/lib/core.mjs\n+export const keepMe = 42;\n`;
+  const boundedPrompt = lensPrompt('security', CODE_LENSES.security, `${hugeDist}${realSrc}`, '', undefined, { seed });
+  assert.match(boundedPrompt, /export const keepMe = 42/);
+  assert.match(boundedPrompt, /<<END:DIFF:[0-9a-f]{32}>>\n\n## Active Lens/);
+  assert.match(boundedPrompt, /Review strictly through exactly one lens: \*\*security\*\*/);
+});
+
+test('reviewFleet and reviewPlan fail closed (ITERATE + truncated: true + preserved finding) when payload > 180k chars', async () => {
+  const prevAgy = process.env.AGB_AGY_BIN;
+  const prevVerdict = process.env.FAKE_PROSECUTOR_VERDICT;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+  process.env.FAKE_PROSECUTOR_VERDICT = 'ship';
+  const tmpDir = mkdtempSync(join(tmpdir(), 'agb-trunc-plan-'));
+  try {
+    const oversizedDiff = `diff --git a/lib/big.mjs b/lib/big.mjs\n+${'a'.repeat(185_000)}\n`;
+    const fleetRes = await reviewFleet({
+      diff: oversizedDiff,
+      lenses: ['correctness'],
+      fiveLens: true,
+      arbiter: true,
+      dryRounds: 1,
+      maxRounds: 1,
+    });
+    assert.equal(fleetRes.truncated, true);
+    assert.equal(fleetRes.converged, false);
+    assert.equal(fleetRes.gateVerdict, 'ITERATE');
+    assert.ok(fleetRes.findings.some((f) => f.id === 'PAYLOAD-TRUNCATED' && f.severity === 'critical'));
+
+    const specPath = join(tmpDir, 'spec.md');
+    writeFileSync(specPath, [
+      '# Truncated Spec',
+      '### Ticket 1: `T1` — Sample',
+      '- **Scope**: `lib/a.mjs`',
+      '- **Rails**: `lib/lock.mjs`',
+      '- **Edges**: (none)',
+      '- **Body**: ' + 'x'.repeat(185_000),
+      '- **Acceptance Criteria**:\n  - Runs tests. Verify: `npm test`',
+      '## Acceptance Criteria',
+      '- [ ] Runs tests. Verify: `npm test`',
+    ].join('\n'));
+    const planRes = await reviewPlan({
+      specPath,
+      repo: tmpDir,
+      lenses: ['devils_advocate'],
+      arbiter: true,
+      loop: false,
+    });
+    assert.equal(planRes.ok, false);
+    assert.equal(planRes.truncated, true);
+    assert.equal(planRes.gateVerdict, 'ITERATE');
+    assert.ok(planRes.findings.some((f) => f.id === 'PAYLOAD-TRUNCATED' && f.severity === 'critical'));
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+    if (prevVerdict === undefined) delete process.env.FAKE_PROSECUTOR_VERDICT; else process.env.FAKE_PROSECUTOR_VERDICT = prevVerdict;
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+

@@ -40,18 +40,18 @@ scrutiny as a shell script you did not write.
 
 - **Gate sandboxing is platform-specific.** Gate commands can be rewritten by the
   builder inside its worktree, so they run sandboxed: Seatbelt (`sandbox-exec`)
-  on macOS and [Bubblewrap (`bwrap`) on Linux](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L56-L84). The
-  network is [denied](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L49), writes are limited to the worktree
+  on macOS and [Bubblewrap (`bwrap`) on Linux](lib/gates.mjs). The
+  network is denied, writes are limited to the worktree
   and temp, and `.git` and `node_modules` stay read-only. Gates
-  [fail closed](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L120-L135) only when no sandbox is usable:
-  rather than silently executing unsandboxed, they refuse to run. Windows has no
-  gate sandbox, so sandboxed gates there need `AGB_SANDBOX_GATES=0`, and a
-  builder without full containment is refused unless `.adlc/config.json` holds an
-  [HMAC-attested `sandboxBypassAttestation`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L276-L285). Set
-  `AGB_SANDBOX_GATES=0` only deliberately, inside a disposable container.
+  fail closed when no sandbox is usable:
+  rather than silently executing unsandboxed, they refuse to run. On Windows,
+  `AGB_SANDBOX_GATES=0` runs gate commands unsandboxed (use only deliberately inside
+  disposable containers); Windows builder containment requires active Windows
+  kernel sandbox verification or, when unavailable, an
+  [HMAC-attested `sandboxBypassAttestation`](lib/agy.mjs) in `.adlc/config.json`.
 - **Gate commands inherit your environment.** Builder `agy` processes are spawned
   with known secrets and sensitive-looking variable names
-  [scrubbed](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L22-L48), but gate commands receive the full
+  [scrubbed](lib/agy.mjs), but gate commands receive the full
   environment of the `agb` process. If your shell exports credentials
   (`NPM_TOKEN`, cloud keys), a gate script the builder rewrote can read them. Run
   `agb` from a shell that does not export secrets you would not hand to the model.
@@ -61,7 +61,7 @@ scrutiny as a shell script you did not write.
   plaintext on disk. Treat `.booster/` as sensitive; it is gitignored by default.
 - **`AGB_ALLOW_DIRTY=1` runs on a dirty checkout.** Post-merge gates run in a
   separate integration worktree and the base branch only advances by an atomic
-  [compare-and-swap `update-ref`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2283-L2285), but that
+  [compare-and-swap `update-ref`](lib/scheduler.mjs), but that
   still moves the checked-out branch underneath your uncommitted work. Off by
   default; the guard is worth honouring.
 

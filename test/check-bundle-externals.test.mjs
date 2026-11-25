@@ -132,6 +132,18 @@ test('main: verifies default bundles, normalizes ./ and absolute bundle paths, a
       () => execFileSync(process.execPath, ['scripts/check-bundle-externals.mjs', badBundle], { stdio: 'pipe' }),
       (err) => err.status === 1,
     );
+
+    const { maskAllowedOptionalProbeRegions } = await import('../scripts/check-bundle-externals.mjs');
+    const cleanMasked = maskAllowedOptionalProbeRegions(
+      'function inspectTypeScript(f){const r=require2("typescript");return r;}\nconst ok = 1;\n',
+      'vendor/adlc/dist/adlc.bundle.mjs',
+    );
+    assert.deepEqual(findExternalSpecifiers(cleanMasked), []);
+    const leakMasked = maskAllowedOptionalProbeRegions(
+      'function inspectTypeScript(f){const r=require2("typescript");}\nrequire("typescript");\n',
+      'vendor/adlc/dist/adlc.bundle.mjs',
+    );
+    assert.deepEqual(findExternalSpecifiers(leakMasked), ['typescript']);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

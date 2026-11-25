@@ -7,9 +7,10 @@ description: End-to-end autonomous software development orchestrator and umbrell
 
 Executes the complete Agentic Development Lifecycle (ADLC) 5-phase Factory
 workflow end-to-end for a requested feature, refactor, or architectural concept,
-or routes any specific subcommand (`shape`, `plan`, `preflight`, `run`, `review`,
-`distill`, `status`, `watch`, `sidecar`, `doctor`, `sync-models`, `init`,
-`bootstrap`, `migrate`, `pool`, `brains`, `sweep`).
+or routes any specific subcommand (`shape`, `plan`, `preflight`, `run`, `rescue`,
+`accept`, `holdout`, `statusline`, `review`, `distill`, `status`, `watch`,
+`sidecar`, `doctor`, `sync-models`, `init`, `bootstrap`, `migrate`, `pool`,
+`brains`, `sweep`).
 
 ## 5-Phase End-to-End Factory Pipeline
 
@@ -109,13 +110,17 @@ PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
 
 ```sh
 ~/.local/bin/agb shape <spec.md | id> [repo-path] [--analyze] [--strict] [--sync-brain] [--max-ticket-scope <n>] [--json]
-~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
+~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
 ~/.local/bin/agb preflight [plan.json]
-~/.local/bin/agb run <plan.json> [-c <n>]
+~/.local/bin/agb run <plan.json> [-c <n>] [--resume] [--reset-rescue]
+~/.local/bin/agb rescue <ticket-id> [repo-path] [--continue] [--plan <plan.json>]
+~/.local/bin/agb accept [repo-path] [--base <ref>] [--json] [--markdown <file>]
+~/.local/bin/agb holdout <list | run | clean> [repo-path] [--ticket <id>] [--run-id <id>] [--json]
+~/.local/bin/agb statusline <render | title | install | uninstall> [--force]
 ~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--loop] [--five-lens] [--no-arbiter]
-~/.local/bin/agb distill [repo-path] [--apply] [--json]
+~/.local/bin/agb distill [repo-path] [--apply] [--compile-checks] [--json]
 ~/.local/bin/agb status [repo-path] [--watch] [-w] [--interval <ms>] [--tui] [--follow] [--compact]
-~/.local/bin/agb watch [repo-path] [--interval <ms>] [--follow] [--compact]
+~/.local/bin/agb watch [repo-path] [--interval <ms>] [--follow] [--compact] [--mux] [--no-alerts]
 ~/.local/bin/agb sidecar [repo-path] [--port <port>]
 ~/.local/bin/agb doctor [repo-path] [--fix]
 ~/.local/bin/agb sync-models [--check] [--write] [--offline] [--json]

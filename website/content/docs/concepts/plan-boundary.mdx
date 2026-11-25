@@ -9,10 +9,10 @@ import { Step, Steps } from 'fumadocs-ui/components/steps';
 The plan boundary is the point where a plan stops being prose and becomes an executable `plan.json`. `agb` does not author plans. You plan in Antigravity (plan mode or a planning conversation writes `implementation_plan.md` into a brain), or you write a local `spec.md`. `agb plan` treats that artifact as source and `plan.json` as a compiled output ([lib/plan.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/plan.mjs#L3-L9)).
 
 ```
-agb plan <brain-id-or-prefix | spec.md> <repo-path> [--out plan.json] [--force] [--no-coldstart] [--no-parallax] [--no-premortem]
+agb plan <brain-id-or-prefix | spec.md> <repo-path> [--out plan.json] [--emit-workflow <file.py>] [--estimate] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
 ```
 
-[C13](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L196) The full flag set is `--out`, `--force`, `--no-coldstart`, `--no-parallax` and `--no-premortem`. Without `--force`, `agb plan` refuses to overwrite an existing output file, because a hand-written plan may be sitting there ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L199-L203)). Each `--no-*` flag switches off one gate ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L215-L217)). Compiling needs live quota telemetry from `agy`; without it the command exits 1 before converting anything ([bin/agb.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L206-L210)).
+See the [`agb plan` reference](/docs/reference/cli/plan) and [generated CLI reference](/docs/reference/cli/plan#synopsis) for the full flag set (`--out`, `--emit-workflow`, `--estimate`, `--json`, `--force`, `--decompose`, `--max-ticket-scope`, `--no-fast-path`, `--no-coldstart`, `--no-parallax`, `--no-premortem`). Without `--force`, `agb plan` refuses to overwrite an existing output file, because a hand-written plan may be sitting there. Each `--no-*` flag switches off one gate. Compiling (except static `--estimate`) needs live quota telemetry from `agy`; without it the command exits `1` before converting anything.
 
 ## The compile pipeline
 

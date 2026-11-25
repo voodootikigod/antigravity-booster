@@ -1,0 +1,25 @@
+---
+title: "agb holdout"
+description: "List, execute inside the OS sandbox, and clean sealed black-box holdout scenario tests."
+---
+
+`agb holdout` manages Sealed Holdout Scenarios stored strictly outside builder worktrees under `<plugin_data>/holdouts/`, running black-box acceptance tests inside the OS sandbox during P5 verification.
+
+## Synopsis
+
+<include>../../../../generated/cli-holdout.mdx</include>
+
+## Subcommands and flags
+
+- `list` lists staged holdout scenarios for a repository/run.
+- `run` executes sealed holdout scenarios inside the OS sandbox (`bwrap --unshare-net` on Linux / Seatbelt on macOS) and sanitizes failure symptoms.
+- `clean` removes holdout artifacts for the specified run or ticket.
+- `--run-id <id>`, `--ticket <id>`, and `--json` scope target selection and output format.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Subcommand succeeded (holdouts passed or listed/cleaned cleanly). |
+| `2` | Holdout verification failed. |
+| `1` | Usage error, unknown subcommand/flag, symlink rejection, missing OS sandbox, or internal error. |

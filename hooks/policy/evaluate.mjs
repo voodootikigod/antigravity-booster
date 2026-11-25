@@ -24,7 +24,7 @@ import {
   isBenignProcRead, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot, matchesScope, physicalResolve,
   protectedRoots, repoRelative, resolveCandidate, verifyBrainArtifactDirectory,
 } from './paths.mjs';
-import { classifyRunCommand } from './shell.mjs';
+import { classifyRunCommand, inlineScript, unwrap } from './shell.mjs';
 import { lexCommandLine } from './shell-lexer.mjs';
 import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
 
@@ -775,11 +775,22 @@ function evaluateMcpTool(name, args, ctx) {
         tool === 'agb_init' ||
         tool === 'agb_distill' ||
         isMutatingControl ||
+        (tool === 'agb_accept' && Boolean(mcpNorm.folded.saveverdicts)) ||
+        (tool === 'agb_holdout' && goFoldKey(mcpNorm.folded.action ?? '') !== 'list') ||
         (tool === 'agb_doctor' && Boolean(mcpNorm.folded.fix)) ||
         (tool === 'agb_shape' && Boolean(mcpNorm.folded.syncbrain))
       )
     ) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
+    }
+    if (
+      ctx.rescueTicket &&
+      (
+        (tool === 'agb_holdout' && goFoldKey(mcpNorm.folded.action ?? '') !== 'list') ||
+        (tool === 'agb_distill' && (Boolean(mcpNorm.folded.apply) || Boolean(mcpNorm.folded.compilechecks)))
+      )
+    ) {
+      return deny(`Interactive rescue session cannot mutate sealed holdout or learned-check defenses via MCP tool: ${tool}`);
     }
     return PASS;
   }
@@ -1124,11 +1135,11 @@ export function buildContext(payload, options = {}) {
   const cwd = typeof cwdArg === 'string' && isAbsolute(cwdArg) ? resolve(cwdArg) : null;
   const extraHomes = [];
   const homeMarker = /(^|[\/\\])\.agb_home$/;
-  if (typeof env.AGB_USER_HOME === 'string' && isAbsolute(env.AGB_USER_HOME)) {
-    const uh = resolve(env.AGB_USER_HOME);
-    extraHomes.push(uh, realOr(uh));
-  }
   if (homeMarker.test(home) || homeMarker.test(realHome)) {
+    if (typeof env.AGB_USER_HOME === 'string' && isAbsolute(env.AGB_USER_HOME)) {
+      const uh = resolve(env.AGB_USER_HOME);
+      extraHomes.push(uh, realOr(uh));
+    }
     try {
       const osHome = userInfo().homedir;
       if (typeof osHome === 'string' && isAbsolute(osHome)) {
@@ -1154,7 +1165,22 @@ export function buildContext(payload, options = {}) {
     const resolvedTmp = resolve(p);
     return [resolvedTmp, realOr(resolvedTmp)];
   }));
-  const baseBoosterDataRoots = unique(homes.flatMap((h) => boosterDataRoots(h)));
+  const unbundledEval = typeof __AGB_BUNDLED__ === 'undefined' || !__AGB_BUNDLED__;
+  const rawHoldoutEnv =
+    unbundledEval && typeof env.AGB_HOLDOUT_DIR === 'string' ? env.AGB_HOLDOUT_DIR.trim() : '';
+  const customHoldoutRoots = rawHoldoutEnv
+    ? unique(
+        (isAbsolute(rawHoldoutEnv)
+          ? [resolve(rawHoldoutEnv)]
+          : [
+              resolve(rawHoldoutEnv),
+              ...(cwd ? [resolve(cwd, rawHoldoutEnv)] : []),
+              ...workspacePaths.map((w) => resolve(w, rawHoldoutEnv)),
+            ]
+        ).flatMap((p) => [p, realOr(p)])
+      )
+    : [];
+  const baseBoosterDataRoots = unique([...homes.flatMap((h) => boosterDataRoots(h)), ...customHoldoutRoots]);
   const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
   const hasBrainMetadata = payload?.conversationId !== undefined || payload?.artifactDirectoryPath !== undefined;
   const verifiedBrainArtifact = verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform });
@@ -1195,7 +1221,62 @@ const HEADLESS_DESTRUCTIVE_SHELL_CMDS = new Set([
   'rm', 'mv', 'shred', 'unlink', 'rmdir', 'cp', 'tar', 'rsync', 'chmod', 'chown', 'chgrp', 'find',
 ]);
 const HEADLESS_FORBIDDEN_SHELL_LITERAL =
-  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
+  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-|holdouts|twins-runtime|\.holdout\.test\.mjs|\.booster[\\/](?:logs|runs))/i;
+
+function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
+  if (!Array.isArray(argv) || argv.length === 0) return false;
+  let agbIdx = -1;
+  for (let i = 0; i < argv.length; i += 1) {
+    const base = basename(String(argv[i] ?? ''));
+    if (base === 'agb' || base === 'agb.mjs') {
+      agbIdx = i;
+      break;
+    }
+  }
+  if (agbIdx === -1) return false;
+  const rest = argv.slice(agbIdx + 1);
+  const positionals = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    const tok = String(rest[i] ?? '');
+    if (tok === '--ticket' || tok === '--run-id' || tok === '--port' || tok === '--out' || tok === '--project') {
+      i += 1;
+      continue;
+    }
+    if (!tok.startsWith('-')) positionals.push(tok.toLowerCase());
+  }
+  const sub = positionals[0] ?? '';
+  if (sub === 'holdout') {
+    const act = positionals[1] ?? '';
+    return headless || act !== 'list';
+  }
+  if (sub === 'distill') {
+    return headless || rest.some((t) => t === '--apply' || t === '--compile-checks');
+  }
+  return false;
+}
+
+const MAX_INLINE_AGB_DEPTH = 3;
+
+function inspectSubcommandForMutatingAgb(rawSub, { headless = false } = {}, depth = 0) {
+  const { argv } = unwrap(rawSub.argv ?? []);
+  if (isMutatingAgbCliSubcommand(argv, { headless })) {
+    return 'Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands';
+  }
+  const inline = inlineScript(argv);
+  if (inline === null) return null;
+  if (depth >= MAX_INLINE_AGB_DEPTH) {
+    return 'Nested shell scripts too deep to verify';
+  }
+  const nestedLexed = lexCommandLine(inline);
+  if (!nestedLexed.ok) {
+    return 'Shell command could not be parsed in protected worker/rescue session';
+  }
+  for (const nestedSub of nestedLexed.subcommands) {
+    const err = inspectSubcommandForMutatingAgb(nestedSub, { headless }, depth + 1);
+    if (err) return err;
+  }
+  return null;
+}
 
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);
@@ -1215,6 +1296,10 @@ function evaluateRunCommand(args, ctx) {
   const baseCwd = typeof cwdArg === 'string' && cwdArg.length > 0 ? resolve(cwdArg) : (ctx.workspacePaths[0] ?? '/');
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
+    const mutatingReason = inspectSubcommandForMutatingAgb(sub, { headless: ctx.headless });
+    if (mutatingReason) {
+      return deny(mutatingReason);
+    }
     const cmd = basename(sub.argv[0] ?? '');
     const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);
     const argvTokens = sub.argv.slice(1).flatMap((t) => {

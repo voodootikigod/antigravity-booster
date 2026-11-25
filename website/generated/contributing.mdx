@@ -14,9 +14,8 @@ npm test          # fully offline: fake-agy + fake-adlc fixtures, no API keys
 suite require either, that is a bug in the change.
 
 To exercise the real CLI you also need Google Antigravity's `agy` on `PATH`.
-The ADLC toolkit comes in with `npm ci` (no global install); if it is missing,
-`agb doctor` reports it with the fix text
-[`npm install @adlc/cli` or `npx agb bootstrap`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L325).
+The ADLC toolkit comes in with `npm ci` (no global install); if it is missing
+in an unbundled checkout, `agb doctor` warns cleanly (see [`lib/doctor.mjs`](lib/doctor.mjs)).
 
 ## The bar for a change
 
@@ -74,11 +73,11 @@ it within a day, but the cheaper fix is not to do it.
 ## Platform notes
 
 Gate sandboxing uses Seatbelt (`sandbox-exec`) on macOS and
-[Bubblewrap (`bwrap`) on Linux](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L56-L84), with the
-network [denied](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/gates.mjs#L49) and writes limited to the worktree
-and temp. Gates fail closed only when no sandbox is usable. Windows has no gate
-sandbox (use `AGB_SANDBOX_GATES=0`), and its builder containment check can only
-be bypassed with an [HMAC-attested attestation](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L276-L285). Some sandbox tests are platform-specific, so CI runs a
+[Bubblewrap (`bwrap`) on Linux](lib/gates.mjs), with the
+network denied and writes limited to the worktree
+and temp. Gates fail closed when no sandbox is usable. On Windows, `AGB_SANDBOX_GATES=0` runs gate
+commands unsandboxed, and builder containment passes via active Windows
+kernel sandbox verification or, when unavailable, an [HMAC-attested `sandboxBypassAttestation`](lib/agy.mjs). Some sandbox tests are platform-specific, so CI runs a
 macOS leg — if you touch `lib/gates.mjs`, watch every leg.
 
 ## Skills & Marketplace Packaging

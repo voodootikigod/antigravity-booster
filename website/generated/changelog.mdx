@@ -7,6 +7,30 @@ rather than enumerate.
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-11-25
+
+### Breaking Changes
+
+- **`agb sidecar` pure-HTTP `?token=` URL**: Removed dynamic `agb-sidecar-plugin-*` manifest generation and automatic `agy plugin install`/`uninstall` registration. `agb sidecar` now runs an ephemeral `127.0.0.1` HTTP server and prints the authenticated `/?token=` URL to stdout (keep tool logs/transcripts protected).
+- **`agb watch` / `agb status --watch` TUI switch**: Switched from inline scrollback to alternate-screen buffer (`ANSI.altBufferEnter`/`ANSI.altBufferLeave`) with interactive Flight Deck navigation (`j`/`k`, `1`–`4`/`Tab`, `/`, `p` pause, `x` abort, `Enter` rescue).
+- **`agb run` rescue-lock refusal & `--reset-rescue`**: Re-running a plan while `.booster/rescue-<ticketId>.lock` holds an active or unresolved rescue session fails closed unless `--reset-rescue` is explicitly passed; `--resume` skips already-merged tickets cleanly.
+- **`runConfiguredGates()` strict key filtering**: `plan.gate` execution now runs strictly the `build` and `test` command keys rather than arbitrary keys.
+- **`agb bootstrap` `settings.json` wiring**: Bootstrap now configures Antigravity CLI `statusLine` and `title` commands (`agb statusline render` / `agb statusline title`) in `~/.gemini/antigravity-cli/settings.json` (reverted cleanly by `agb migrate --rollback`).
+- **Sealed Holdout Scenarios default-on for `frontier` tickets**: Frontier tickets (`tier === 'frontier'`) activate black-box holdout scenarios under `<plugin_data>/holdouts/` by default unless opted out via `ticket.holdout_scenarios === false` or `plan.holdouts === false`.
+- **Fail-closed audit & doctor hardening**: `agb doctor` reports `WARN` (instead of `PASS`) when `AGB_SANDBOX_GATES=0` disables sandboxing or when unbundled `adlc CLI` verification cannot run; `agb review` (`reviewFleet`/`reviewPlan`) fails closed (`ITERATE`, `truncated: true`) if a payload exceeds `180,000` chars; deprecated `reviewCalibration()` surfaces unvendored status cleanly.
+
+### Added
+
+- **New CLI commands & flags**: `agb rescue <ticket-id>` (`--continue`, `--plan`), `agb accept [repo]` (`--base`, `--markdown`, `--json`), `agb statusline <render|title|install|uninstall>` (`--force`), `agb holdout <list|run|clean>`, `agb run --resume`, `agb run --reset-rescue`, `agb plan --estimate`, `agb plan --json`, `agb distill --compile-checks`, `agb watch --mux`, and `agb watch --no-alerts`.
+- **Antigravity 2.0 Lifecycle & HUD**: Added `SessionStart` auto-bootstrap hook (`hooks/session-start.mjs`) and 4 lifecycle hooks (`PostToolUse`, `PreInvocation`, `PostInvocation`, `Stop` in `hooks/lifecycle.mjs`) with graceful `{}` fallback in `bin/node-launcher.sh`, real-time CLI `statusLine` & OSC 8 / OSC 9 attention cockpit (`lib/hud.mjs`, `lib/tui.mjs`, `lib/mux.mjs`, `lib/terminal-osc.mjs`), and `control.sock` IPC (`lib/control-ipc.mjs`).
+- **Cost & Quality Engines**: Added billable-token `BanditModelRouter` (`lib/bandit-router.mjs`), `!RUNWAY` / `agb plan --estimate` cost forecasting (`lib/factory-ledger.mjs`), 3-layer KV-cache-stable charters, Dual-Mode Ephemeral Digital Twin fixture sidecars (`lib/twins.mjs`), declarative `.adlc/learned-checks.json` invariants (`agb distill --compile-checks`), and `gate.autofix` post-guard repair.
+- **MCP Apps & Control Tools**: Expanded `agb` MCP server to 15 tools (adding `agb_control`, `agb_accept`, `agb_holdout`, `agb_flight_deck`, `agb_mission_control`, `agb_plan_viewer`) and 6 `ui://` interactive MCP App resources (`plan-card`, `review-card`, `flight-deck`, `mission-control`, `plan-viewer`, `accept-workbench`).
+
+### Security & Isolation
+
+- Sealed `IS_BUNDLED` runtime isolation across `lib/adlc-bridge.mjs`, `lib/ndjson-worker.mjs`, `lib/bandit-router.mjs`, `lib/bootstrap.mjs`, `lib/doctor.mjs`, and `hooks/session-start.mjs`.
+- Hardened `lib/pools.mjs` `durableWriteJson` (`O_EXCL`/`O_NOFOLLOW`, `randomUUID()`, symlink rejection, temp cleanup) and POSIX UID ownership verification on statusLine quota cache; tightened `hooks/policy/evaluate.mjs` recursive `sh -c`/`eval` inspection and ambient `AGB_USER_HOME` scoping.
+
 ## [1.3.0] — 2026-11-23
 
 **Autonomous factory parity (`agb shape`, `agb watch`, `agb init`, `agb sync-models`, `agb distill`), `agy 1.5.13+` / `@adlc/* 1.13.0` adaptation (27 live models & orchestrator routing), 7-pillar v1.4 harness accelerator, full release-audit hardening, and elimination of headless `agy` MCP/plugin process storms.**

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   buildRoleSettingsProfile,
@@ -157,3 +157,114 @@ test('NdjsonWorkerDaemon aborts turn and kills daemon when StreamWatchdog trigge
   assert.equal(decision3.action, 'abort');
   await daemon.close();
 });
+
+test('NdjsonWorkerDaemon.sendTurn computes per-turn telemetry deltas when session counters are cumulative', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-ndjson-tel-'));
+  const customBin = join(dir, 'fake-cumulative-agy.mjs');
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(
+    customBin,
+    [
+      '#!/usr/bin/env node',
+      "import { createInterface } from 'node:readline';",
+      'const rl = createInterface({ input: process.stdin });',
+      'let turn = 0;',
+      'rl.on("line", () => {',
+      '  turn += 1;',
+      '  const tel = turn === 1',
+      '    ? { cumulative: true, input_tokens: 1000, cached_tokens: 600, output_tokens: 100 }',
+      '    : { cumulative: true, input_tokens: 2500, cached_tokens: 1800, output_tokens: 250 };',
+      '  console.log(JSON.stringify({ event: "result", result: { status: "SUCCESS", response: "TICKET-DONE", conversation_id: "c-tel", telemetry: tel } }));',
+      '});',
+    ].join('\n'),
+    { mode: 0o755 }
+  );
+
+  const daemon = new NdjsonWorkerDaemon({
+    model: 'gemini-4-neon-medium',
+    cwd: dir,
+    bin: customBin,
+  });
+  try {
+    const t1 = await daemon.sendTurn('Turn 1');
+    assert.equal(t1.ok, true);
+    assert.deepEqual(t1.telemetry, {
+      uncachedInputTokens: 400,
+      cachedTokens: 600,
+      outputTokens: 100,
+      inputTokens: 1000,
+    });
+
+    const t2 = await daemon.sendTurn('Turn 2');
+    assert.equal(t2.ok, true);
+    assert.deepEqual(t2.telemetry, {
+      uncachedInputTokens: 300,
+      cachedTokens: 1200,
+      outputTokens: 150,
+      inputTokens: 1500,
+    });
+  } finally {
+    await daemon.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  const { extractNormalizedTokenTelemetry } = await import('../lib/ndjson-worker.mjs');
+  assert.deepEqual(
+    extractNormalizedTokenTelemetry({
+      usage: { input_tokens: 500, cache_creation_input_tokens: 1500, output_tokens: 80 },
+    }),
+    {
+      uncachedInputTokens: 2000,
+      cachedTokens: 0,
+      outputTokens: 80,
+      inputTokens: 2000,
+    }
+  );
+});
+
+test('NdjsonWorkerDaemon ignores AGB_HOME_DIR in constructor and _spawnDaemon when __AGB_BUNDLED__ is true', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-ndjson-bundled-'));
+  const prevBundled = globalThis.__AGB_BUNDLED__;
+  const prevHomeDir = process.env.AGB_HOME_DIR;
+  let daemon;
+  try {
+    const fakeHome = join(dir, 'spoof-home');
+    const fakeAgy = join(fakeHome, '.local', 'bin', 'agy');
+    mkdirSync(join(fakeHome, '.local', 'bin'), { recursive: true });
+    writeFileSync(fakeAgy, '#!/bin/sh\necho spoofed\n', { mode: 0o755 });
+    mkdirSync(join(dir, '.agb_home'), { recursive: true });
+
+    const envSpyBin = join(dir, 'spy-agy');
+    const outEnvFile = join(dir, 'spawned-env.json');
+    writeFileSync(envSpyBin, `#!/bin/sh
+node -e 'require("fs").writeFileSync(${JSON.stringify(outEnvFile)}, JSON.stringify(process.env))'
+exit 1
+`, { mode: 0o755 });
+
+    globalThis.__AGB_BUNDLED__ = true;
+    process.env.AGB_HOME_DIR = fakeHome;
+    const daemonBinCheck = new NdjsonWorkerDaemon({
+      model: 'gemini-4-neon-medium',
+      cwd: dir,
+      env: { AGB_HOME_DIR: fakeHome },
+    });
+    assert.notEqual(daemonBinCheck.bin, fakeAgy);
+
+    daemon = new NdjsonWorkerDaemon({
+      model: 'gemini-4-neon-medium',
+      cwd: dir,
+      bin: envSpyBin,
+      env: { AGB_WORKER_TICKET: 'T-1', AGB_HOME_DIR: fakeHome },
+    });
+    await daemon.sendTurn('probe').catch(() => {});
+    await new Promise((r) => setTimeout(r, 150));
+    const recorded = JSON.parse(readFileSync(outEnvFile, 'utf8'));
+    assert.notEqual(recorded.AGB_USER_HOME, fakeHome, '_spawnDaemon must ignore AGB_HOME_DIR when bundled');
+  } finally {
+    if (daemon) await daemon.close().catch(() => {});
+    if (prevBundled === undefined) delete globalThis.__AGB_BUNDLED__; else globalThis.__AGB_BUNDLED__ = prevBundled;
+    if (prevHomeDir === undefined) delete process.env.AGB_HOME_DIR; else process.env.AGB_HOME_DIR = prevHomeDir;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+

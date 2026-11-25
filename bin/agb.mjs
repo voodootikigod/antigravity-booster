@@ -14,6 +14,12 @@ import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { validatePlan, compilePlan, compilePlanToWorkflow } from '../lib/plan.mjs';
 import { distillRunDefenses } from '../lib/distill.mjs';
+import {
+  resolveHoldoutDir,
+  listHoldoutScenarios,
+  cleanHoldoutScenarios,
+  runHoldoutScenarios,
+} from '../lib/holdout.mjs';
 import { PoolSet, drainPools } from '../lib/pools.mjs';
 import { bootstrap } from '../lib/bootstrap.mjs';
 import { runDoctor, runInit } from '../lib/doctor.mjs';
@@ -28,6 +34,13 @@ import {
   installCliStatusLineSettings,
   uninstallCliStatusLineSettings,
 } from '../lib/cli-statusline.mjs';
+import {
+  buildAcceptanceDossier,
+  formatAcceptanceDossierMarkdown,
+  writeAcceptDossierFile,
+} from '../lib/accept.mjs';
+import { runInteractiveAcceptTui } from '../lib/accept-tui.mjs';
+import { normalizeMuxName } from '../lib/mux.mjs';
 
 const rawArgs = process.argv.slice(2);
 let project;
@@ -63,6 +76,11 @@ const COMMANDS = {
     desc: 'launch an interactive clean-host agy rescue session for a failed ticket and verify/merge on exit',
     flags: '[--continue (reuse preserved worktree)] [--plan <plan.json> (explicit plan path)]'
   },
+  accept: {
+    args: '[repo]',
+    desc: 'inspect candidate hunks, external-caller blast radius, and gate evidence for ADLC P6 sign-off',
+    flags: '[--base <ref> (git base ref)] [--json (emit JSON)] [--markdown <file> (write PR dossier)]'
+  },
   statusline: {
     args: '[render|title|install|uninstall]',
     desc: 'render or configure the ambient agy CLI statusLine and terminal title HUD',
@@ -83,12 +101,17 @@ const COMMANDS = {
     args: '<id | spec.md> [repo]',
     desc: 'compile an Antigravity brain plan or spec file into plan.json',
     extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
-    flags: '[--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
+    flags: '[--estimate (forecast quota burn without writing files)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
   },
   distill: {
     args: '[repo]',
     desc: 'scan run/review findings for recurring patterns and stage or apply learned ADLC defenses',
-    flags: '[--apply (write compacted rules to .gemini/rules/adlc-learned.md)] [--json (emit JSON)]'
+    flags: '[--apply (write compacted rules to .gemini/rules/adlc-learned.md)] [--compile-checks (emit .adlc/learned-checks.json invariants)] [--json (emit JSON)]'
+  },
+  holdout: {
+    args: '<list|run|clean> [repo]',
+    desc: 'inspect metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios',
+    flags: '[--ticket <id> (scope to ticket)] [--run-id <id> (scope to run)] [--json (emit JSON)]'
   },
   preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart', flags: '--no-coldstart' },
   doctor: { args: '[repo]', desc: 'verify your environment and tools', flags: '[--fix (auto-repair setup)]' },
@@ -102,7 +125,7 @@ const COMMANDS = {
   watch: {
     args: '[repo]',
     desc: 'launch the interactive live terminal TUI dashboard',
-    flags: '[--interval <ms> (refresh interval)] [--follow (keep watching after run completion)] [--compact (compact rows)]'
+    flags: '[--interval <ms> (refresh interval)] [--follow (keep watching after run completion)] [--compact (compact rows)] [--mux (open split pane in tmux/cmux/herdr)] [--mux=<tmux|cmux|herdr> (explicit mux)] [--no-alerts (disable OSC 9 attention alerts)]'
   },
   init: {
     args: '[repo]',
@@ -116,7 +139,7 @@ const COMMANDS = {
   sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
   probe: { args: '[widths] [model]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
-  bootstrap: { args: '[--force] [--force-reinstall]', desc: 'wire ADLC skills into ~/.gemini/skills (aliases: setup, install)' },
+  bootstrap: { args: '[--force] [--force-reinstall]', desc: 'install adlc-antigravity, ~/.local/bin/agb shim, booster skills, and CLI statusLine/title settings (aliases: setup, install)' },
   migrate: {
     args: '[--rollback]',
     desc: 'move an npm-global/checkout install onto the native agy plugin, or roll it back',
@@ -459,7 +482,7 @@ try {
     rejectUnknownFlags(
       'plan',
       rest,
-      new Set(['--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
+      new Set(['--estimate', '--json', '--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
       new Set(['--out', '--max-ticket-scope', '--emit-workflow'])
     );
     // The plan itself is authored in Antigravity (GUI plan mode or an agy
@@ -467,6 +490,8 @@ try {
     let out = 'plan.json';
     let emitWorkflow = null;
     let maxTicketScope;
+    const estimate = rest.includes('--estimate');
+    const jsonOut = rest.includes('--json');
     const decompose = rest.includes('--decompose');
     const noFastPath = rest.includes('--no-fast-path');
     for (let i = 0; i < rest.length; i++) {
@@ -499,12 +524,51 @@ try {
     const id = positional[0];
     const repo = positional[1] ?? '.';
     if (!id || !out) {
-      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
+      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--estimate] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
       process.exit(1);
     }
     const force = rest.includes('--force');
     const targetRepo = resolve(repo);
     const resolvedWorkflowPath = emitWorkflow ? resolve(targetRepo, emitWorkflow) : null;
+    if (estimate) {
+      const result = await compilePlan(id, {
+        repo: targetRepo,
+        pools: null,
+        estimateOnly: true,
+        log: (m) => { if (!jsonOut) console.error(m); },
+        fastPath: !noFastPath,
+        decompose,
+        maxTicketScope,
+        coldstart: false,
+        parallax: false,
+        premortem: false,
+        project,
+      });
+      if (jsonOut) {
+        console.log(JSON.stringify({
+          ok: result.ok,
+          quotaEstimate: result.quotaEstimate,
+          report: result.report,
+          tickets: result.plan?.tickets ?? [],
+        }, null, 2));
+      } else if (!result.ok) {
+        console.error(`plan --estimate: structural validation failed (${result.report.blocking.length} finding(s)):`);
+        for (const b of result.report.blocking) console.error(`  - ${b}`);
+      } else {
+        const qe = result.quotaEstimate;
+        console.log(`Quota Runway Forecast — ${result.brain.title} (${result.plan.tickets.length} ticket(s), ${qe.waves.length} wave(s))`);
+        for (const w of qe.waves) {
+          console.log(`  Wave ${w.wave} [${w.tickets.join(', ')}]: Gemini +${w.geminiPct}% (cum ${w.cumulativeGeminiPct}%) | Claude/GPT +${w.claudeGptPct}% (cum ${w.cumulativeClaudeGptPct}%)`);
+        }
+        const remGem = qe.remaining.gemini !== null ? `${qe.remaining.gemini}%` : 'unknown';
+        const remCl = qe.remaining.claude_gpt !== null ? `${qe.remaining.claude_gpt}%` : 'unknown';
+        console.log(`  Totals: Gemini ${qe.totals.gemini}% (rem: ${remGem}) | Claude/GPT ${qe.totals.claude_gpt}% (rem: ${remCl})`);
+        if (qe.willExhaust && qe.recommendation) {
+          console.log(`  !RUNWAY WARNING: ${qe.recommendation}`);
+        }
+      }
+      process.exit(result.ok ? 0 : 2);
+    }
     if (existsSync(out) && !force) {
       console.error(`plan: ${out} already exists — pass --force to overwrite ` +
         `(compiled plans are disposable, hand-written ones may not be)`);
@@ -562,20 +626,98 @@ try {
     }
     console.error(`next: agb run ${out}`);
   } else if (cmd === 'distill') {
-    rejectUnknownFlags('distill', rest, new Set(['--apply', '--json']));
+    rejectUnknownFlags('distill', rest, new Set(['--apply', '--compile-checks', '--json']));
     const apply = rest.includes('--apply');
+    const compileChecks = rest.includes('--compile-checks');
     const json = rest.includes('--json');
     const positional = extractPositionalArgs(rest);
     const repo = resolve(positional[0] ?? '.');
-    const res = distillRunDefenses({ repo, apply });
+    const res = distillRunDefenses({ repo, apply, compileChecks });
     if (json) {
       console.log(JSON.stringify(res, null, 2));
     } else {
       console.log(
-        `distill: scanned=${res.scannedCount} recurring=${res.recurringCount} staged=${res.stagedPath || 'none'}${res.applied ? ` applied=${res.appliedPath} (${res.ruleBytes}B)` : ''}`
+        `distill: scanned=${res.scannedCount} recurring=${res.recurringCount} staged=${res.stagedPath || 'none'}${res.applied ? ` applied=${res.appliedPath} (${res.ruleBytes}B)` : ''}${res.compiledChecks ? ` checks=${res.compiledChecksPath} (${res.compiledChecksCount})` : ''}`
       );
     }
     process.exit(0);
+  } else if (cmd === 'holdout') {
+    rejectUnknownFlags(
+      'holdout',
+      rest,
+      new Set(['--json']),
+      new Set(['--ticket', '--run-id'])
+    );
+    let ticketId = null;
+    let runId = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--ticket') {
+        ticketId = rest[++i];
+      } else if (rest[i] === '--run-id') {
+        runId = rest[++i];
+      }
+    }
+    const jsonOut = rest.includes('--json');
+    const positional = extractPositionalArgs(rest, new Set(['--ticket', '--run-id']));
+    const sub = positional[0];
+    const targetRepo = resolve(positional[1] ?? '.');
+    if (sub !== 'list' && sub !== 'run' && sub !== 'clean') {
+      console.error('usage: agb holdout <list|run|clean> [repo] [--ticket <id>] [--run-id <id>] [--json]');
+      process.exit(1);
+    }
+    try {
+      if (sub === 'list') {
+        const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(listed, null, 2));
+        } else {
+          console.log(`holdout: suites=${listed.suites.length} files=${listed.totalFiles}`);
+          for (const s of listed.suites) {
+            console.log(`  ${s.runId}/${s.ticketId}: ${s.count} scenario file(s)`);
+          }
+        }
+        process.exit(0);
+      }
+      if (sub === 'clean') {
+        const cleaned = cleanHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(cleaned, null, 2));
+        } else {
+          console.log(`holdout: cleaned=${cleaned.removed} (${cleaned.targetDir})`);
+        }
+        process.exit(0);
+      }
+      // sub === 'run': collect sealed files and run against targetRepo (emitting sanitized symptoms ONLY)
+      const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+      const allFiles = [];
+      for (const suite of listed.suites) {
+        const sDir = resolveHoldoutDir({ repo: targetRepo, runId: suite.runId, ticketId: suite.ticketId });
+        for (const f of suite.files) allFiles.push(join(sDir, f.filename));
+      }
+      const execRes = await runHoldoutScenarios(allFiles, {
+        candidateWorktree: targetRepo,
+        sandbox: true,
+      });
+      if (jsonOut) {
+        console.log(JSON.stringify(execRes, null, 2));
+      } else {
+        console.log(execRes.summary);
+      }
+      process.exit(execRes.ok ? 0 : 2);
+    } catch (err) {
+      if (jsonOut) {
+        console.log(
+          JSON.stringify(
+            { ok: false, tampered: err?.code === 'ESYMLINK', error: err.message },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(`agb holdout: ${err.message}`);
+      }
+      process.exit(2);
+    }
   } else if (cmd === 'brains') {
     rejectUnknownFlags('brains', rest, new Set());
     for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);
@@ -633,16 +775,34 @@ try {
       console.log(renderStatus(targetRepo, { tui: wantsTui, compact }));
     }
   } else if (cmd === 'watch') {
+    let mux = null;
+    const watchRest = [];
+    for (let i = 0; i < rest.length; i++) {
+      const tok = rest[i];
+      if (tok.startsWith('--mux=')) {
+        const rawVal = tok.slice('--mux='.length);
+        if (!rawVal) {
+          console.error('agb: missing value for --mux=');
+          process.exit(1);
+        }
+        mux = normalizeMuxName(rawVal);
+      } else if (tok === '--mux') {
+        mux = 'auto';
+      } else {
+        watchRest.push(tok);
+      }
+    }
     rejectUnknownFlags(
       'watch',
-      rest,
-      new Set(['--follow', '--compact']),
+      watchRest,
+      new Set(['--follow', '--compact', '--no-alerts']),
       new Set(['--interval'])
     );
-    const follow = rest.includes('--follow');
-    const compact = rest.includes('--compact');
-    const intervalMs = parseIntervalFlag(rest, 200);
-    const positional = extractPositionalArgs(rest, new Set(['--interval']));
+    const follow = watchRest.includes('--follow');
+    const compact = watchRest.includes('--compact');
+    const noAlerts = watchRest.includes('--no-alerts');
+    const intervalMs = parseIntervalFlag(watchRest, 200);
+    const positional = extractPositionalArgs(watchRest, new Set(['--interval']));
     const targetRepo = resolve(positional[0] ?? '.');
     const { watchStatus } = await import('../lib/status.mjs');
     const { runInteractiveRescue } = await import('../lib/rescue.mjs');
@@ -651,9 +811,58 @@ try {
       interactive: Boolean(process.stdout.isTTY && !process.env.CI),
       follow,
       compact,
+      ...(mux ? { mux } : {}),
+      alerts: !noAlerts,
       onRescue: (ticketId, repoDir) => runInteractiveRescue(repoDir, ticketId, { continueExisting: true }),
     });
     process.exitCode = code;
+  } else if (cmd === 'accept') {
+    rejectUnknownFlags(
+      'accept',
+      rest,
+      new Set(['--json']),
+      new Set(['--base', '--markdown'])
+    );
+    let base = 'HEAD';
+    let markdownOut = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--base') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --base');
+          process.exit(1);
+        }
+        base = rest[++i];
+      } else if (rest[i] === '--markdown') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --markdown');
+          process.exit(1);
+        }
+        markdownOut = rest[++i];
+      }
+    }
+    const jsonOut = rest.includes('--json');
+    const positional = extractPositionalArgs(rest, new Set(['--base', '--markdown']));
+    const targetRepo = resolve(positional[0] ?? '.');
+    const dossier = buildAcceptanceDossier({ repo: targetRepo, base });
+    if (markdownOut) {
+      const mdText = formatAcceptanceDossierMarkdown(dossier);
+      const writtenPath = writeAcceptDossierFile(targetRepo, mdText, markdownOut);
+      if (!jsonOut) {
+        console.error(`accept: wrote P6 sign-off dossier → ${writtenPath}`);
+      }
+    }
+    if (jsonOut) {
+      console.log(JSON.stringify(dossier, null, 2));
+      process.exit(0);
+    }
+    if (markdownOut || !process.stdout.isTTY || !process.stdin.isTTY || process.env.CI) {
+      if (!markdownOut) {
+        process.stdout.write(formatAcceptanceDossierMarkdown(dossier));
+      }
+      process.exit(0);
+    }
+    const tuiRes = await runInteractiveAcceptTui(dossier, { repo: targetRepo });
+    process.exit(tuiRes.ok ? 0 : 1);
   } else if (cmd === 'init') {
     rejectUnknownFlags('init', rest, new Set());
     const positional = extractPositionalArgs(rest);

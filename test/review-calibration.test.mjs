@@ -87,6 +87,27 @@ test('reviewCalibration: no reviewCmd short-circuits without invoking adlc at al
   }
 });
 
+test('reviewCalibration: vendored adlc returns deprecated: true when verb is not vendored (#175)', async () => {
+  const repo = makeRepoDir();
+  const prevBin = process.env.AGB_ADLC_BIN;
+  const prevCustom = process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
+  delete process.env.AGB_ADLC_BIN;
+  delete process.env.AGB_ALLOW_CUSTOM_ADLC_CLI;
+  try {
+    const result = await reviewCalibration({
+      repo,
+      reviewCmd: `agb review ${repo} {base}`,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.deprecated, true);
+    assert.match(result.error, /deprecated.*not vendored/i);
+  } finally {
+    if (prevBin === undefined) delete process.env.AGB_ADLC_BIN; else process.env.AGB_ADLC_BIN = prevBin;
+    if (prevCustom === undefined) delete process.env.AGB_ALLOW_CUSTOM_ADLC_CLI; else process.env.AGB_ALLOW_CUSTOM_ADLC_CLI = prevCustom;
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 function readInvocations(state) {
   return readFileSync(join(state, 'review-calibration-invocations'), 'utf8');
 }

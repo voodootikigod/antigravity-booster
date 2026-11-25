@@ -10,7 +10,7 @@ claims: [C5, C9, C10]
 
 <include>../../../../generated/cli-run.mdx</include>
 
-Besides the plan path and the global `--project` flag, `agb run` accepts `-c <n>` to cap concurrent workers at runtime (v1.0.0 had no concurrency flag: [C9](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L34), [run dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L123-L132)). Per-pool runtime concurrency is also bounded by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`). See [Plan schema](/docs/reference/plan-schema).
+Besides the plan path and the global `--project` flag, `agb run` accepts `-c <n>` to cap concurrent workers at runtime ([C9](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L34)), `--resume` to skip already-merged tickets cleanly across restarts, and `--reset-rescue` to clear `.booster/rescue-<ticketId>.lock` files after an interactive rescue (without `--reset-rescue`, unresolved rescue locks fail closed). Per-pool runtime concurrency is also bounded by the plan's `caps` field (while `concurrencyCap` is an advisory fan-out forecast written by `adlc merge-forecast`). See [Plan schema](/docs/reference/plan-schema).
 
 ## What it does
 

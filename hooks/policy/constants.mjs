@@ -55,7 +55,7 @@ export const BOOSTER_MCP_SERVER = 'agb';
 export const BOOSTER_MCP_SERVERS = new Set(['agb', 'antigravity-booster_agb']);
 export const BOOSTER_MCP_TOOLS = new Set([
   'agb_shape', 'agb_plan', 'agb_run', 'agb_preflight', 'agb_status', 'agb_doctor', 'agb_init', 'agb_review', 'agb_distill',
-  'agb_flight_deck', 'agb_mission_control', 'agb_plan_viewer', 'agb_control',
+  'agb_flight_deck', 'agb_mission_control', 'agb_plan_viewer', 'agb_control', 'agb_accept', 'agb_holdout',
 ]);
 export const READONLY_BOOSTER_CONTROL_ACTIONS = new Set(['snapshot', 'diff', 'stream']);
 export const BRAIN_APPS = ['antigravity', 'antigravity-cli', 'antigravity-ide', 'jetski'];
@@ -141,7 +141,7 @@ export const EXCLUDED_CONTENT_KEYS = new Set([
 // Appendix A D1: standing implicit rails (trust-root set), repo-relative.
 // Directory entries freeze everything beneath them.
 export const IMPLICIT_RAIL_DIRS = ['.git', '.adlc/ticket-archive', '.adlc/ticket-transactions', '.adlc/leases'];
-export const IMPLICIT_RAIL_FILES = ['.adlc/config.json', '.adlc/manifest.jsonl', '.adlc/sessions.json', '.adlc/tickets.json'];
+export const IMPLICIT_RAIL_FILES = ['.adlc/config.json', '.adlc/manifest.jsonl', '.adlc/sessions.json', '.adlc/tickets.json', '.adlc/learned-checks.json'];
 export const TICKET_STORE_DIR = '.adlc/tickets';
 
 // Appendix A.6 item 5: verbs for which `.`/`..`/repo-root tokens are destructive.

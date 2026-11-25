@@ -14,6 +14,8 @@ claims: [C13]
 
 - `--out <file>` sets the output path (default `plan.json`).
 - `--emit-workflow <file.py>` compiles the validated `plan.json` DAG into a deterministic Python script for Antigravity's native `run_workflow` tool (`phase()`, `parallel()`, `agent(..., workspace="share")`).
+- `--estimate` computes a zero-dispatch static quota, token, and `!RUNWAY` forecast without invoking builders.
+- `--json` prints the structured compile / estimate report as JSON to stdout.
 - `--force` overwrites an existing output file; without it the command exits 1 rather than replace a hand-written plan ([C13](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L197-L203)).
 - `--decompose` automatically splits wide tickets whose file scope exceeds `--max-ticket-scope`.
 - `--max-ticket-scope <n>` sets the maximum files per ticket when `--decompose` is enabled.

@@ -129,4 +129,91 @@ test('RunStatus constructor rejects dangling symlinks on .booster and .booster/r
   }
 });
 
+test('RunStatus.runway: persists runway forecast and runwayWarning boolean into .booster/run.json', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-status-runway-'));
+  try {
+    const s = new RunStatus(repo, 'run-runway-1');
+    s.flush();
+    const initial = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(initial.runway, null);
+    assert.equal(initial.runwayWarning, false);
+
+    s.runway({
+      ok: true,
+      willExhaust: true,
+      bottleneckPool: 'gemini',
+      exhaustingWave: 2,
+      totals: { gemini: 24, claude_gpt: 8 },
+    });
+    const warned = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(warned.runwayWarning, true);
+    assert.equal(warned.runway.bottleneckPool, 'gemini');
+    assert.equal(warned.runway.exhaustingWave, 2);
+
+    s.runway({ ok: true, willExhaust: false, totals: { gemini: 0, claude_gpt: 0 } });
+    const cleared = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(cleared.runwayWarning, false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('watchStatus Wave 3: emits deduplicated OSC 9 attention alerts, delegates opts.mux, and rejects zellij', async () => {
+  const { EventEmitter } = await import('node:events');
+  const repo = mkdtempSync(join(tmpdir(), 'agb-watch-w3-'));
+  try {
+    await assert.rejects(() => watchStatus(repo, { mux: 'zellij' }), /Unsupported multiplexer/i);
+
+    const s = new RunStatus(repo, 'run-w3-alerts');
+    s.ticket('T1', { phase: 'failed', error: 'gate failed' });
+    s.flush();
+
+    let out = '';
+    const muxCalls = [];
+    const fakeStdout = {
+      isTTY: true,
+      columns: 100,
+      write: (chunk) => {
+        out += chunk;
+      },
+    };
+    const fakeStdin = Object.assign(new EventEmitter(), {
+      isTTY: true,
+      setRawMode: () => {},
+      resume: () => {},
+      pause: () => {},
+    });
+
+    const p = watchStatus(repo, {
+      intervalMs: 25,
+      interactive: true,
+      stdout: fakeStdout,
+      stdin: fakeStdin,
+      mux: 'tmux',
+      env: { TMUX: '/tmp/tmux-1000/default,1,0' },
+      spawnSyncFn: (bin, args) => {
+        muxCalls.push({ bin, args });
+        return { status: 0, stdout: '', stderr: '' };
+      },
+    });
+
+    // Wait across multiple poll ticks so deduplication is tested, then quit
+    await new Promise((r) => setTimeout(r, 90));
+    fakeStdin.emit('data', 'q');
+    const code = await p;
+    assert.equal(code, 0);
+    assert.equal(muxCalls.length, 2, 'expected split-window on startup + display-message on alert');
+    assert.equal(muxCalls[0].bin, 'tmux');
+    assert.ok(muxCalls[0].args.includes('split-window'));
+    assert.equal(muxCalls[1].bin, 'tmux');
+    assert.equal(muxCalls[1].args[0], 'display-message');
+
+    const rescueAlerts = out.match(/\x1b\]9;AGB Needs Rescue: Ticket T1 failed verification/g) || [];
+    assert.equal(rescueAlerts.length, 1, 'OSC 9 alert must fire strictly once across repeated ticks');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+
 

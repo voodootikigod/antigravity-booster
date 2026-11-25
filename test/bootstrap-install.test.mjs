@@ -234,3 +234,15 @@ test('bootstrap --force-reinstall logs basename of plugin directory via path.bas
   } finally { ctx.cleanup(); }
 });
 
+test('resolvePluginPath throws cleanly when bundled=true to prevent ambient plugin overrides', async () => {
+  const { resolvePluginPath } = await import('../lib/bootstrap.mjs');
+  const prev = process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+  process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = '/tmp/spoof-plugin';
+  try {
+    assert.throws(() => resolvePluginPath({ bundled: true }), /disabled in bundled/i);
+  } finally {
+    if (prev === undefined) delete process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+    else process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH = prev;
+  }
+});
+
