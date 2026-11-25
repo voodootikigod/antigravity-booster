@@ -113,6 +113,13 @@
       "description": "Override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan."
     },
     {
+      "name": "AGB_FACTORY_LEDGER_FILE",
+      "group": "paths",
+      "default": "<plugin_data>/factory_ledger.jsonl",
+      "bundledIgnored": true,
+      "description": "Unbundled override path for the append-only Factory Economics Ledger written by agb run and read by Mission Control; ignored in bundled plugin builds."
+    },
+    {
       "name": "AGB_WORKER_BUILD_CMD",
       "group": "core",
       "default": "set by agb on builders",

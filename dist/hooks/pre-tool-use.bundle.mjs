@@ -2175,7 +2175,8 @@ var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
   "agb_flight_deck",
   "agb_mission_control",
   "agb_plan_viewer",
-  "agb_control"
+  "agb_control",
+  "agb_accept"
 ]);
 var READONLY_BOOSTER_CONTROL_ACTIONS = /* @__PURE__ */ new Set(["snapshot", "diff", "stream"]);
 var BRAIN_APPS = ["antigravity", "antigravity-cli", "antigravity-ide", "jetski"];
@@ -3786,12 +3787,14 @@ function stripProcRoot(p) {
   const stripped = p.replace(PROC_ROOT_PREFIX, "");
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
-var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$))/;
+var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md)(?:\/|$))/;
 var HEADLESS_BOOSTER_CHILD_NAMES = [
   "control.json",
   "control.sock",
   "rescue-locks",
-  "rescue-latest"
+  "rescue-latest",
+  "accept-state.json",
+  "accept-dossier.md"
 ];
 function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
   if (typeof absPath !== "string" || absPath.length === 0) return false;
@@ -5330,7 +5333,7 @@ function evaluateMcpTool(name, args, ctx) {
     const mcpNorm = normalizeArgsCaseInsensitive(rawMcpArgs);
     if (!mcpNorm.ok) return deny(mcpNorm.reason);
     const isMutatingControl = tool === "agb_control" && (typeof mcpNorm.folded.action !== "string" || !READONLY_BOOSTER_CONTROL_ACTIONS.has(goFoldKey(mcpNorm.folded.action)));
-    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
+    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_accept" && Boolean(mcpNorm.folded.saveverdicts) || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
     }
     return PASS;
@@ -5740,7 +5743,7 @@ var HEADLESS_DESTRUCTIVE_SHELL_CMDS = /* @__PURE__ */ new Set([
   "chgrp",
   "find"
 ]);
-var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
+var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-)/i;
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);
   if (verdict.decision === "deny" || !ctx.headless && !ctx.rescueTicket) return verdict;

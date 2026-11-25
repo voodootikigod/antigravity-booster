@@ -14,7 +14,14 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { readFreshStatusLineQuotaCache } from '../lib/pools.mjs';
+import { estimatePlanQuotaRunway, readFreshStatusLineQuotaCache } from '../lib/pools.mjs';
+import { FactoryLedger } from '../lib/factory-ledger.mjs';
+import {
+  buildAcceptanceDossier,
+  formatAcceptanceDossierMarkdown,
+  loadAcceptVerdicts,
+  saveAcceptVerdicts,
+} from '../lib/accept.mjs';
 import { sendControlCommand } from '../lib/control-ipc.mjs';
 import { TICKET_ID_RE, validatePlan } from '../lib/plan-integrity.mjs';
 import { UI_RESOURCES, renderUiResource } from './ui-views.mjs';
@@ -303,6 +310,31 @@ const TOOLS = [
     },
     _meta: {
       ui: {
+        visibility: ['app']
+      }
+    }
+  },
+  {
+    name: 'agb_accept',
+    description: 'Inspect candidate diff hunks, external-caller blast radius, and gate manifest evidence for ADLC P6 human sign-off',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Optional path to target repository (defaults to cwd)' },
+        base: { type: 'string', description: 'Optional git base ref (defaults to HEAD)' },
+        verdicts: {
+          type: 'object',
+          description: 'Optional map of 64-char SHA-256 hunk fingerprints to accepted, flagged, or pending'
+        },
+        saveVerdicts: {
+          type: 'boolean',
+          description: 'Persist hunk verdicts to .booster/accept-state.json'
+        }
+      }
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/accept-workbench.html',
         visibility: ['model', 'app']
       }
     }
@@ -577,7 +609,15 @@ function inspectBoosterDir(repo) {
   if (boosterSt.isSymbolicLink() || !boosterSt.isDirectory()) {
     throw symlinkSecurityError(boosterDir);
   }
-  for (const sub of ['run.json', 'report.json', 'model_stats.jsonl', 'rescue-latest']) {
+  for (const sub of [
+    'run.json',
+    'report.json',
+    'model_stats.jsonl',
+    'rescue-latest',
+    'factory_ledger.jsonl',
+    'accept-state.json',
+    'accept-dossier.md',
+  ]) {
     const p = join(boosterDir, sub);
     const st = lstatOrNull(p);
     if (st && st.isSymbolicLink()) {
@@ -607,6 +647,15 @@ export async function buildSnapshotPayload(repo) {
   const report = exists ? readJsonOrNull(join(boosterDir, 'report.json'), 192 * 1024) : null;
   const quotaCache = readFreshStatusLineQuotaCache();
   const modelStats = exists ? readTailJsonl(join(boosterDir, 'model_stats.jsonl'), { maxLines: 50 }) : [];
+  let economics = null;
+  try {
+    economics = new FactoryLedger({ repo: resolvedRepo }).summarizeEconomics({ recentLimit: 10 });
+  } catch (err) {
+    if (err?.code === 'ESYMLINK' || /symbolic link/i.test(String(err?.message ?? ''))) {
+      throw err;
+    }
+    economics = null;
+  }
 
   const rawControl = await sendControlCommand(resolvedRepo, { action: 'status' });
   if (rawControl?.error && /symbolic link/i.test(rawControl.error)) {
@@ -624,6 +673,7 @@ export async function buildSnapshotPayload(repo) {
     control,
     quotaCache,
     modelStats,
+    economics,
   };
 
   return boundStructuredObject(snapshot, () => ({
@@ -634,6 +684,7 @@ export async function buildSnapshotPayload(repo) {
     control,
     quotaCache,
     modelStats: modelStats.slice(-20),
+    economics: economics ? { ...economics, recentRuns: [] } : null,
     truncated: true,
   }));
 }
@@ -745,11 +796,22 @@ async function handleInProcessUiTool(id, name, args) {
       return;
     }
     const errors = validatePlan(parsed);
+    const quotaCache = readFreshStatusLineQuotaCache();
+    let runwayEstimate = null;
+    if (errors.length === 0) {
+      try {
+        runwayEstimate = estimatePlanQuotaRunway(parsed, { quota: quotaCache?.quota ?? null });
+      } catch {
+        runwayEstimate = null;
+      }
+    }
     const structuredContent = {
       ok: errors.length === 0,
       path: planFile,
       plan: parsed,
       validationErrors: errors,
+      quotaCache,
+      runwayEstimate,
     };
     if (Buffer.byteLength(JSON.stringify(structuredContent), 'utf8') >= MAX_STRUCTURED_BYTES) {
       sendToolError(id, `Plan payload exceeds 512 KiB limit: ${planFile}`);
@@ -764,6 +826,82 @@ async function handleInProcessUiTool(id, name, args) {
       ],
       structuredContent,
     });
+    return;
+  }
+
+  if (name === 'agb_accept') {
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    let base = 'HEAD';
+    if (args?.base !== undefined) {
+      const baseCheck = requireNonFlagString(args, 'base');
+      if (!baseCheck.ok) {
+        sendToolError(id, baseCheck.error);
+        return;
+      }
+      base = baseCheck.value.trim();
+    }
+    if (args?.saveVerdicts !== undefined && typeof args.saveVerdicts !== 'boolean') {
+      sendToolError(id, 'Invalid saveVerdicts: expected boolean');
+      return;
+    }
+    let cleanVerdicts = null;
+    if (args?.verdicts !== undefined) {
+      if (!args.verdicts || typeof args.verdicts !== 'object' || Array.isArray(args.verdicts)) {
+        sendToolError(id, 'Invalid verdicts: expected object mapping 64-hex SHA-256 fingerprints to accepted, flagged, or pending');
+        return;
+      }
+      cleanVerdicts = {};
+      for (const [fp, val] of Object.entries(args.verdicts)) {
+        if (!/^[0-9a-f]{64}$/.test(fp)) {
+          sendToolError(id, `Invalid hunk fingerprint key '${fp}': expected 64-char lowercase hex SHA-256`);
+          return;
+        }
+        if (val !== 'accepted' && val !== 'flagged' && val !== 'pending') {
+          sendToolError(id, `Invalid verdict '${String(val)}' for ${fp}`);
+          return;
+        }
+        cleanVerdicts[fp] = val;
+      }
+    }
+    try {
+      inspectBoosterDir(repoRes.repo);
+      let effectiveOverride = null;
+      if (args?.saveVerdicts === true) {
+        saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {}, { merge: true });
+      } else if (cleanVerdicts) {
+        const merged = { ...loadAcceptVerdicts(repoRes.repo) };
+        for (const [fp, val] of Object.entries(cleanVerdicts)) {
+          if (val === 'pending') delete merged[fp];
+          else merged[fp] = val;
+        }
+        effectiveOverride = merged;
+      }
+      const dossier = buildAcceptanceDossier({
+        repo: repoRes.repo,
+        base,
+        verdictsOverride: effectiveOverride,
+      });
+      const markdown = sliceUtf8(formatAcceptanceDossierMarkdown(dossier), 64 * 1024);
+      const structuredContent = boundStructuredObject(
+        { ...dossier, markdown },
+        () => ({
+          ...dossier,
+          hunks: dossier.hunks.slice(0, 40).map((h) => ({ ...h, lines: h.lines.slice(0, 20) })),
+          markdown,
+          truncated: true,
+        })
+      );
+      sendResult(id, {
+        content: [{ type: 'text', text: markdown }],
+        structuredContent,
+      });
+    } catch (err) {
+      sendToolError(id, err.message);
+    }
     return;
   }
 
@@ -996,7 +1134,8 @@ async function handleToolCall(id, name, args) {
     name === 'agb_flight_deck' ||
     name === 'agb_mission_control' ||
     name === 'agb_plan_viewer' ||
-    name === 'agb_control'
+    name === 'agb_control' ||
+    name === 'agb_accept'
   ) {
     await handleInProcessUiTool(id, name, args);
     return;

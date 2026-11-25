@@ -227,12 +227,14 @@ function stripProcRoot(p) {
 }
 
 const HEADLESS_BOOSTER_SUBPATH =
-  /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$))/;
+  /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md)(?:\/|$))/;
 const HEADLESS_BOOSTER_CHILD_NAMES = [
   'control.json',
   'control.sock',
   'rescue-locks',
   'rescue-latest',
+  'accept-state.json',
+  'accept-dossier.md',
 ];
 
 export function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {

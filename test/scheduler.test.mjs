@@ -1390,6 +1390,20 @@ test('runPlan: hydrates AGENTS.md by default, runs post-guard gate.autofix ONLY 
     assert.ok(existsSync(statsFile));
     const banditLines = readFileSync(statsFile, 'utf8').trim().split('\n').filter(Boolean);
     assert.equal(banditLines.length, 2);
+
+    // 6. Wave 3 Factory Economics attached to report and appended to FactoryLedger
+    assert.ok(report.economics && typeof report.economics === 'object');
+    assert.equal(report.economics.totalTickets, 2);
+    assert.equal(report.economics.mergedCount, 2);
+    assert.equal(report.economics.strike0MergedCount, 2);
+    assert.equal(report.economics.strike0YieldPct, 100);
+    assert.equal(report.economics.autofixAppliedCount, 1);
+    assert.ok(existsSync(join(repo, '.booster', 'factory_ledger.jsonl')));
+    const ledgerLines = readFileSync(join(repo, '.booster', 'factory_ledger.jsonl'), 'utf8').trim().split('\n');
+    assert.equal(ledgerLines.length, 1);
+    const ledgerEntry = JSON.parse(ledgerLines[0]);
+    assert.equal(ledgerEntry.runId, report.runId);
+    assert.notEqual(ledgerEntry.repoName, 'workspace', 'persisted FactoryLedger entry must retain actual repoName');
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });

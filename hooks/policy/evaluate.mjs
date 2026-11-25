@@ -775,6 +775,7 @@ function evaluateMcpTool(name, args, ctx) {
         tool === 'agb_init' ||
         tool === 'agb_distill' ||
         isMutatingControl ||
+        (tool === 'agb_accept' && Boolean(mcpNorm.folded.saveverdicts)) ||
         (tool === 'agb_doctor' && Boolean(mcpNorm.folded.fix)) ||
         (tool === 'agb_shape' && Boolean(mcpNorm.folded.syncbrain))
       )
@@ -1195,7 +1196,7 @@ const HEADLESS_DESTRUCTIVE_SHELL_CMDS = new Set([
   'rm', 'mv', 'shred', 'unlink', 'rmdir', 'cp', 'tar', 'rsync', 'chmod', 'chown', 'chgrp', 'find',
 ]);
 const HEADLESS_FORBIDDEN_SHELL_LITERAL =
-  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
+  /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-)/i;
 
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);

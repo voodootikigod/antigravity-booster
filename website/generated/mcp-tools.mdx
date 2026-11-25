@@ -1,3 +1,12 @@
+**`agb_accept`**: Inspect candidate diff hunks, external-caller blast radius, and gate manifest evidence for ADLC P6 human sign-off
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| base | string | no | Optional git base ref (defaults to HEAD) |
+| repo | string | no | Optional path to target repository (defaults to cwd) |
+| saveVerdicts | boolean | no | Persist hunk verdicts to .booster/accept-state.json |
+| verdicts | object | no | Optional map of 64-char SHA-256 hunk fingerprints to accepted, flagged, or pending |
+
 **`agb_control`**: Send authenticated control IPC or snapshot/diff/stream telemetry queries to an AGB run
 
 | Parameter | Type | Required | Description |
