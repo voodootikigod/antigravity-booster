@@ -308,25 +308,38 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
       rmSync(stateArgon, { recursive: true, force: true });
     }
 
-    // Run on agy 1.5.8 & 1.5.9-rc.1 -> logs notice, resets stats on version change, and routes to gemini-4-argon-high!
-    for (const oldVer of ['1.5.8', '1.5.9-rc.1']) {
-      const repoOld = makeRepo();
-      const stateOld = mkdtempSync(join(tmpdir(), 'agb-orch-old-'));
-      const oldLogs = [];
-      try {
-        await withEnv({ FAKE_AGY_VERSION: oldVer, FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateOld }, () =>
+    // agy below the 1.5.17 floor is rejected at startup.
+    const repoOld = makeRepo();
+    const stateOld = mkdtempSync(join(tmpdir(), 'agb-orch-old-'));
+    try {
+      await assert.rejects(
+        withEnv({ FAKE_AGY_VERSION: '1.5.16', FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateOld }, () =>
           runPlan({
             repo: repoOld,
             gate: { test: 'true' },
             tickets: [{ id: 'T1', title: 'T1', body: 'x', scope: ['T1.txt'], tier: 'frontier', pool_hint: 'gemini' }],
-          }, { log: (m) => oldLogs.push(m) }),
-        );
-        assert.ok(oldLogs.some((l) => l.includes(`agy ${oldVer} < 1.5.9; Orchestrator slugs auto-disabled`)), oldVer);
-        assert.deepEqual(builderModelsSeen(stateOld), ['gemini-4-argon-high']);
-      } finally {
-        rmSync(repoOld, { recursive: true, force: true });
-        rmSync(stateOld, { recursive: true, force: true });
-      }
+          }, { log: () => {} }),
+        ),
+        /required >= v1\.5\.17/,
+      );
+    } finally {
+      rmSync(repoOld, { recursive: true, force: true });
+      rmSync(stateOld, { recursive: true, force: true });
+    }
+
+    // A newer agy version resets stats and keeps Orchestrator slugs enabled.
+    const stateAdv = mkdtempSync(join(tmpdir(), 'agb-orch-adv-'));
+    try {
+      execFileSync('git', ['reset', '--hard', 'HEAD~2'], { cwd: repoBreaker });
+      await withEnv({ FAKE_AGY_VERSION: '1.5.18', FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateAdv }, () =>
+        runPlan({ repo: repoBreaker, gate: { test: 'true' }, tickets: planTickets }, { log: () => {} }),
+      );
+      const rjAdv = JSON.parse(readFileSync(join(repoBreaker, '.booster', 'run.json'), 'utf8'));
+      assert.equal(rjAdv.statsContext.agyVersion, '1.5.18');
+      assert.deepEqual(rjAdv.disabledModels, []);
+      assert.equal(rjAdv.modelStats['gemini-pro-orchestrator'].resolvedTickets, 2);
+    } finally {
+      rmSync(stateAdv, { recursive: true, force: true });
     }
 
     // plan.disableOrchestrator: true AND AGB_DISABLE_ORCHESTRATOR=1 AND rateLimits accounting
@@ -435,4 +448,10 @@ test('60-tool completeness canary against test/fixtures/agy-1.5.9-init-tools.jso
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('live agy version floor benchmarks pass (1.5.17 floor, version gate)', LINUX_ONLY, async () => {
+  const { runLiveAgy159PrintAndSandboxBenchmark, runLiveOrchestratorSchedulerBenchmark } = await import('../evals/v13-enhancements-bench.mjs');
+  assert.equal((await runLiveAgy159PrintAndSandboxBenchmark()).checks.planSchemaAndVersionConstantsOk, true);
+  assert.equal((await runLiveOrchestratorSchedulerBenchmark()).checks.versionAutoDisableOk, true);
 });
