@@ -12,4 +12,5 @@ description: "Scan repository review and prosecution logs for recurring finding 
 ## Flags
 
 - `--apply` writes compacted guidance to `<repo>/.gemini/rules/adlc-learned.md`, bounded strictly under `12,000` bytes (`agy 1.5.10` rule-size budget). Without `--apply`, proposals are only staged in `.booster/distilled-defenses.md`.
-- `--json` emits the distillation report as JSON (`scannedCount`, `recurringCount`, `recurring`, `stagedPath`, `applied`, `appliedPath`, `ruleBytes`).
+- `--compile-checks` synthesizes ReDoS-safe, declarative `.adlc/learned-checks.json` invariants (`forbidLiteral`, `requireLiteral`, `forbidRegex`) evaluated deterministically during P5 gates.
+- `--json` emits the distillation report as JSON (`scannedCount`, `recurringCount`, `recurring`, `stagedPath`, `applied`, `appliedPath`, `ruleBytes`, `compiledChecks`).

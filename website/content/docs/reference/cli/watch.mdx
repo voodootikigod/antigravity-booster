@@ -3,15 +3,29 @@ title: "agb watch"
 description: "Launch the interactive live terminal TUI dashboard for real-time build progress, quota pool meters, ticket state, and event activity."
 ---
 
-`agb watch` (or `agb status --watch`) launches the interactive Terminal User Interface (TUI) dashboard displaying real-time run status, quota pool gauges, per-ticket phase badges, and recent `events.jsonl` activity. Passing `agb status --tui` renders a single non-interactive TUI snapshot.
+`agb watch` (or `agb status --watch`) launches the interactive alternate-screen Terminal User Interface (TUI) Flight Deck displaying real-time run status, quota pool gauges, per-ticket phase badges, and recent `events.jsonl` activity. Passing `agb status --tui` renders a single non-interactive TUI snapshot.
 
 ## Synopsis
 
 <include>../../../../generated/cli-watch.mdx</include>
 
+## Flags
+
+- `--interval <ms>` sets the polling refresh interval.
+- `--follow` keeps watching after run completion.
+- `--compact` hides the recent activity panel by default.
+- `--mux` / `--mux=<tmux|cmux|herdr>` opens the watch dashboard in a split terminal multiplexer pane alongside the active run.
+- `--no-alerts` disables OSC 8 / OSC 9 terminal attention notifications.
+
 ## Interactive hotkeys
 
-- `[q]` or `Ctrl+C` — quit the dashboard and restore the terminal cursor.
+- `[j]` / `[k]` — select the next or previous ticket row.
+- `[1]`–`[4]` or `[Tab]` — switch Flight Deck focus panels.
+- `[/]` — filter displayed tickets and events.
+- `[Enter]` — launch interactive `agb rescue` for the selected failed ticket.
+- `[p]` — toggle fleet pause/resume via `control.sock`.
+- `[x]` — abort the selected active ticket gracefully via `control.sock`.
+- `[q]` or `Ctrl+C` — quit the dashboard and leave the alternate-screen buffer cleanly.
 - `[r]` — trigger an immediate refresh.
 - `[c]` — toggle compact mode (hides the recent activity panel).
 - `[space]` — pause or resume live polling.

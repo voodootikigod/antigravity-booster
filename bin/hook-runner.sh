@@ -390,10 +390,20 @@ emit_fallback() {
       [ -n "$_target" ] || continue
       _curr="$_target"
       while [ -n "$_curr" ] && [ "$_curr" != "/" ] && [ "$_curr" != "." ]; do
+        _skip_root=0
         case "$_curr" in
-          "${HOME%/}" | "${AGB_USER_HOME%/}" | "${TMPDIR%/}" | /tmp | /private/tmp | /var/tmp)
+          "${HOME%/}" | "${TMPDIR%/}" | /tmp | /private/tmp | /var/tmp)
+            _skip_root=1
             ;;
           *)
+            if [ -n "$AGB_USER_HOME" ] && [ "$_curr" = "${AGB_USER_HOME%/}" ]; then
+              case "$HOME" in
+                */.agb_home|*/.agb_home/*) _skip_root=1 ;;
+              esac
+            fi
+            ;;
+        esac
+        if [ "$_skip_root" -eq 0 ]; then
             if [ -d "$_curr/.adlc" ]; then
               touch "$TMP_DIR/has_adlc_dir"
             fi
@@ -409,8 +419,7 @@ emit_fallback() {
                 fi
               done
             fi
-            ;;
-        esac
+        fi
         _curr="$(dirname -- "$_curr")"
       done
     done
@@ -474,7 +483,7 @@ emit_fallback() {
     esac
 
     TARGETS_PROTECTED=0
-    if grep -Eq '\.migration\.lock|antigravity-booster|plugin_data|/\.\.(/|\"|$)|\\u00' "$TMP_IN" 2>/dev/null; then
+    if grep -Eq '\.migration\.lock|antigravity-booster|plugin_data|\.booster|agb-ctrl-|/\.gemini/|control\.sock|holdouts|twins-runtime|accept-state|/\.\.(/|\"|$)|\\u00' "$TMP_IN" 2>/dev/null; then
       TARGETS_PROTECTED=1
     fi
 

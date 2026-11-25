@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path';
+import { basename, dirname, join, parse, relative, resolve, isAbsolute, sep } from 'node:path';
 import {
   closeSync,
   constants,
@@ -727,6 +727,8 @@ function resolveOptionalRepoArg(args) {
   return { ok: true, repo: resolved };
 }
 
+const OS_ROOT_SYMLINK_DIRS = new Set(['/bin', '/lib', '/lib32', '/lib64', '/libx32', '/sbin', '/tmp', '/var', '/etc']);
+
 function assertNoSymlinkSegments(baseDir, targetPath) {
   const rel = relative(baseDir, targetPath);
   if (!rel.startsWith('..') && !isAbsolute(rel)) {
@@ -736,6 +738,22 @@ function assertNoSymlinkSegments(baseDir, targetPath) {
       const st = lstatOrNull(cur);
       if (st && st.isSymbolicLink()) {
         throw symlinkSecurityError(cur);
+      }
+    }
+  } else {
+    const parsed = parse(targetPath);
+    const tail = targetPath.slice(parsed.root.length);
+    let cur = parsed.root;
+    let depth = 0;
+    for (const seg of tail.split(sep).filter(Boolean)) {
+      depth += 1;
+      cur = join(cur, seg);
+      const st = lstatOrNull(cur);
+      if (st && st.isSymbolicLink()) {
+        const isOsRootLink = depth === 1 && st.uid === 0 && OS_ROOT_SYMLINK_DIRS.has(cur.replace(/\\/g, '/'));
+        if (!isOsRootLink) {
+          throw symlinkSecurityError(cur);
+        }
       }
     }
   }
@@ -791,6 +809,13 @@ async function handleInProcessUiTool(id, name, args) {
       return;
     }
     const planFile = resolve(repoRes.repo, pathCheck.value);
+    if (args?.repo !== undefined) {
+      const rel = relative(repoRes.repo, planFile);
+      if (rel.startsWith('..') || isAbsolute(rel)) {
+        sendToolError(id, `Plan path escapes repository root: ${pathCheck.value}`);
+        return;
+      }
+    }
     let fileData;
     try {
       assertNoSymlinkSegments(repoRes.repo, planFile);

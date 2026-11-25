@@ -1,0 +1,25 @@
+---
+title: "agb rescue"
+description: "Launch an interactive clean-host agy rescue session on a failed ticket worktree and run P5 gate verification on exit."
+---
+
+`agb rescue` acquires the rescue lock for `<ticket-id>`, attaches or spawns an interactive `agy` session inside the preserved ticket worktree, and runs the ticket's P5 build/test verification and merge flow upon exit.
+
+## Synopsis
+
+<include>../../../../generated/cli-rescue.mdx</include>
+
+## Arguments and flags
+
+- `<ticket-id>` names the failed ticket to rescue.
+- `[repo]` targets the repository directory (defaults to `.`).
+- `--continue` resumes an existing preserved rescue worktree instead of recreating it from base.
+- `--plan <plan.json>` explicitly locates the plan artifact when `.booster/plan.json` is absent.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Rescue completed and the ticket passed verification and merged cleanly. |
+| `2` | Rescue exited without passing gates, refused due to an active conflicting rescue lock, or failed to merge cleanly. |
+| `1` | Missing `<ticket-id>`, invalid flags, or internal error. |

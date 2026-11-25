@@ -546,3 +546,54 @@ test('exported lensPrompt and planLensPrompt share 100% byte-identical Layer-1/L
   assert.match(boundedPrompt, /Review strictly through exactly one lens: \*\*security\*\*/);
 });
 
+test('reviewFleet and reviewPlan fail closed (ITERATE + truncated: true + preserved finding) when payload > 180k chars', async () => {
+  const prevAgy = process.env.AGB_AGY_BIN;
+  const prevVerdict = process.env.FAKE_PROSECUTOR_VERDICT;
+  process.env.AGB_AGY_BIN = FAKE_AGY;
+  process.env.FAKE_PROSECUTOR_VERDICT = 'ship';
+  const tmpDir = mkdtempSync(join(tmpdir(), 'agb-trunc-plan-'));
+  try {
+    const oversizedDiff = `diff --git a/lib/big.mjs b/lib/big.mjs\n+${'a'.repeat(185_000)}\n`;
+    const fleetRes = await reviewFleet({
+      diff: oversizedDiff,
+      lenses: ['correctness'],
+      fiveLens: true,
+      arbiter: true,
+      dryRounds: 1,
+      maxRounds: 1,
+    });
+    assert.equal(fleetRes.truncated, true);
+    assert.equal(fleetRes.converged, false);
+    assert.equal(fleetRes.gateVerdict, 'ITERATE');
+    assert.ok(fleetRes.findings.some((f) => f.id === 'PAYLOAD-TRUNCATED' && f.severity === 'critical'));
+
+    const specPath = join(tmpDir, 'spec.md');
+    writeFileSync(specPath, [
+      '# Truncated Spec',
+      '### Ticket 1: `T1` — Sample',
+      '- **Scope**: `lib/a.mjs`',
+      '- **Rails**: `lib/lock.mjs`',
+      '- **Edges**: (none)',
+      '- **Body**: ' + 'x'.repeat(185_000),
+      '- **Acceptance Criteria**:\n  - Runs tests. Verify: `npm test`',
+      '## Acceptance Criteria',
+      '- [ ] Runs tests. Verify: `npm test`',
+    ].join('\n'));
+    const planRes = await reviewPlan({
+      specPath,
+      repo: tmpDir,
+      lenses: ['devils_advocate'],
+      arbiter: true,
+      loop: false,
+    });
+    assert.equal(planRes.ok, false);
+    assert.equal(planRes.truncated, true);
+    assert.equal(planRes.gateVerdict, 'ITERATE');
+    assert.ok(planRes.findings.some((f) => f.id === 'PAYLOAD-TRUNCATED' && f.severity === 'critical'));
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+    if (prevVerdict === undefined) delete process.env.FAKE_PROSECUTOR_VERDICT; else process.env.FAKE_PROSECUTOR_VERDICT = prevVerdict;
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+

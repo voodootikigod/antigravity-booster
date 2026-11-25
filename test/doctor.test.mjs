@@ -142,7 +142,8 @@ test('checkAdlcBinary: warns when missing', async () => {
 
 test('checkSandbox: bypassed via env', async () => {
   const res = await checkSandbox({ env: { AGB_SANDBOX_GATES: '0' }, platform: 'linux' });
-  assert.equal(res.level, 'pass');
+  assert.equal(res.level, 'warn');
+  assert.match(res.fix, /Unset AGB_SANDBOX_GATES/);
 });
 
 test('checkSandbox: fails on unsupported platform without bypass', async () => {
@@ -253,14 +254,14 @@ test('checkTicketStore: no store is a pass (created on first projection)', async
   }
 });
 
-test('checkTicketStore: reports the directory backend', async () => {
+test('checkTicketStore: reports the directory backend (warns when unverified)', async () => {
   const d = mkdtempSync(join(tmpdir(), 'agb-test-store-dir-'));
   try {
     mkdirSync(join(d, '.adlc', 'tickets'), { recursive: true });
     writeFileSync(join(d, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
     const res = await checkTicketStore({ cwd: d });
-    assert.equal(res.level, 'pass');
-    assert.match(res.detail, /directory/);
+    assert.equal(res.level, 'warn');
+    assert.match(res.detail, /directory.*unverified/i);
   } finally {
     rmSync(d, { recursive: true, force: true });
   }
@@ -490,6 +491,52 @@ test('checkKernelContainment: ignores mocks outside test mode when NODE_ENV is p
     env: { AGB_MOCK_CONTAINMENT_UNAVAILABLE: '1' },
   });
   assert.equal(resMocked.kind, 'mock_unavailable');
+});
+
+test('checkAdlcBinary & checkTicketStore: warn accurately when adlc CLI is unverified unbundled, and isTestExecution ignores NODE_ENV=test outside node --test / bundled', async () => {
+  const { checkAdlcBinary, isTestExecution } = await import('../lib/doctor.mjs');
+  const tmpPlugin = mkdtempSync(join(tmpdir(), 'agb-noadlc-plugin-'));
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'agb-noadlc-repo-'));
+  const prevPluginRoot = process.env.AGB_PLUGIN_ROOT;
+  const prevNodeEnv = process.env.NODE_ENV;
+  try {
+    mkdirSync(join(tmpRepo, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(tmpRepo, '.adlc', 'tickets', '.store.json'), '{"format":"adlc-ticket-directory","version":1}\n');
+    process.env.AGB_PLUGIN_ROOT = tmpPlugin;
+
+    const adlcRes = await checkAdlcBinary({ env: { PATH: '/usr/bin:/bin', AGB_PLUGIN_ROOT: tmpPlugin }, cwd: tmpRepo });
+    assert.equal(adlcRes.level, 'warn');
+    assert.doesNotMatch(adlcRes.detail, /will be installed by bootstrap/i);
+
+    const storeRes = await checkTicketStore({ cwd: tmpRepo, env: { PATH: '/usr/bin:/bin', AGB_PLUGIN_ROOT: tmpPlugin } });
+    assert.equal(storeRes.level, 'warn');
+    assert.match(storeRes.detail, /unverified/i);
+
+    // Running a plain Node process with NODE_ENV=test (without --test / NODE_TEST_CONTEXT) returns false
+    const plainCheck = spawnSync(
+      process.execPath,
+      ['-e', 'import("./lib/doctor.mjs").then(m => console.log(m.isTestExecution()))'],
+      { cwd: process.cwd(), env: { ...process.env, NODE_ENV: 'test', NODE_TEST_CONTEXT: '' }, encoding: 'utf8' },
+    );
+    assert.equal(plainCheck.status, 0, plainCheck.stderr);
+    assert.equal(plainCheck.stdout.trim(), 'false');
+    assert.equal(typeof isTestExecution(), 'boolean');
+
+    // __AGB_BUNDLED__ === true always short-circuits isTestExecution() to false
+    const prevBundled = globalThis.__AGB_BUNDLED__;
+    try {
+      globalThis.__AGB_BUNDLED__ = true;
+      assert.equal(isTestExecution(), false);
+    } finally {
+      if (prevBundled === undefined) delete globalThis.__AGB_BUNDLED__;
+      else globalThis.__AGB_BUNDLED__ = prevBundled;
+    }
+  } finally {
+    if (prevPluginRoot === undefined) delete process.env.AGB_PLUGIN_ROOT; else process.env.AGB_PLUGIN_ROOT = prevPluginRoot;
+    if (prevNodeEnv === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = prevNodeEnv;
+    rmSync(tmpPlugin, { recursive: true, force: true });
+    rmSync(tmpRepo, { recursive: true, force: true });
+  }
 });
 
 

@@ -439,3 +439,23 @@ test('resolve_full_path terminates cleanly on cyclic symlinks instead of looping
   const r = run(fx, ['dist/hello.mjs']);
   assert.equal(r.status, 0, r.stderr);
 });
+
+test('non-blocking SessionStart and lifecycle hooks emit {} and exit 0 when Node >= 22.19.0 is missing, while dist/agb.mjs still exits 86', () => {
+  const fx = fixture();
+  for (const script of ['hooks/session-start.mjs', 'hooks/lifecycle.mjs']) {
+    const r = run(fx, [script, 'PostToolUse']);
+    assert.equal(r.status, 0, `${script} should degrade gracefully: ${r.stderr}`);
+    assert.equal(r.stdout.trim(), '{}');
+  }
+  const rCli = run(fx, ['dist/hello.mjs']);
+  assert.equal(rCli.status, 86);
+});
+
+test('bin/node-launcher.sh unsets ambient AGB_USER_HOME outside .agb_home', () => {
+  const fx = fixture();
+  mockNode(fnmPath(fx.home, '22.19.0'), '22.19.0');
+  writeFileSync(join(fx.root, 'dist', 'env.mjs'), 'process.stdout.write(JSON.stringify({ userHome: process.env.AGB_USER_HOME ?? null }));\n');
+  const r = run(fx, ['dist/env.mjs'], { env: { AGB_USER_HOME: '/tmp/ambient-spoof' } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout).userHome, null);
+});

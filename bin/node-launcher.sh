@@ -269,6 +269,13 @@ if [ -z "$NODE_BIN" ] && [ -n "$PATH" ]; then
 fi
 
 if [ -z "$NODE_BIN" ]; then
+  case "$1" in
+    hooks/session-start.mjs|hooks/lifecycle.mjs|*/hooks/session-start.mjs|*/hooks/lifecycle.mjs)
+      cat >/dev/null 2>&1 || true
+      printf '{}\n'
+      exit 0
+      ;;
+  esac
   echo "error: No Node.js >= 22.19.0 found on PATH or standard installation prefixes." >&2
   # Dedicated exit code 86 allows hook-runner to distinguish missing Node from uncaught JS crashes
   exit 86
@@ -296,8 +303,17 @@ if [ ! -f "$TARGET_SCRIPT" ]; then
 fi
 
 if [ -n "$USER_HOME" ] && [ "$USER_HOME" != "$HOME" ]; then
-  AGB_USER_HOME="$USER_HOME"
-  export AGB_USER_HOME
+  case "$HOME" in
+    */.agb_home|*/.agb_home/*)
+      AGB_USER_HOME="$USER_HOME"
+      export AGB_USER_HOME
+      ;;
+    *)
+      unset AGB_USER_HOME 2>/dev/null || true
+      ;;
+  esac
+else
+  unset AGB_USER_HOME 2>/dev/null || true
 fi
 
 exec "$NODE_BIN" "$TARGET_SCRIPT" "$@"

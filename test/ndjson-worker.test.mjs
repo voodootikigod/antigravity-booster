@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   buildRoleSettingsProfile,
@@ -220,5 +220,51 @@ test('NdjsonWorkerDaemon.sendTurn computes per-turn telemetry deltas when sessio
       inputTokens: 2000,
     }
   );
+});
+
+test('NdjsonWorkerDaemon ignores AGB_HOME_DIR in constructor and _spawnDaemon when __AGB_BUNDLED__ is true', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-ndjson-bundled-'));
+  const prevBundled = globalThis.__AGB_BUNDLED__;
+  const prevHomeDir = process.env.AGB_HOME_DIR;
+  let daemon;
+  try {
+    const fakeHome = join(dir, 'spoof-home');
+    const fakeAgy = join(fakeHome, '.local', 'bin', 'agy');
+    mkdirSync(join(fakeHome, '.local', 'bin'), { recursive: true });
+    writeFileSync(fakeAgy, '#!/bin/sh\necho spoofed\n', { mode: 0o755 });
+    mkdirSync(join(dir, '.agb_home'), { recursive: true });
+
+    const envSpyBin = join(dir, 'spy-agy');
+    const outEnvFile = join(dir, 'spawned-env.json');
+    writeFileSync(envSpyBin, `#!/bin/sh
+node -e 'require("fs").writeFileSync(${JSON.stringify(outEnvFile)}, JSON.stringify(process.env))'
+exit 1
+`, { mode: 0o755 });
+
+    globalThis.__AGB_BUNDLED__ = true;
+    process.env.AGB_HOME_DIR = fakeHome;
+    const daemonBinCheck = new NdjsonWorkerDaemon({
+      model: 'gemini-4-neon-medium',
+      cwd: dir,
+      env: { AGB_HOME_DIR: fakeHome },
+    });
+    assert.notEqual(daemonBinCheck.bin, fakeAgy);
+
+    daemon = new NdjsonWorkerDaemon({
+      model: 'gemini-4-neon-medium',
+      cwd: dir,
+      bin: envSpyBin,
+      env: { AGB_WORKER_TICKET: 'T-1', AGB_HOME_DIR: fakeHome },
+    });
+    await daemon.sendTurn('probe').catch(() => {});
+    await new Promise((r) => setTimeout(r, 150));
+    const recorded = JSON.parse(readFileSync(outEnvFile, 'utf8'));
+    assert.notEqual(recorded.AGB_USER_HOME, fakeHome, '_spawnDaemon must ignore AGB_HOME_DIR when bundled');
+  } finally {
+    if (daemon) await daemon.close().catch(() => {});
+    if (prevBundled === undefined) delete globalThis.__AGB_BUNDLED__; else globalThis.__AGB_BUNDLED__ = prevBundled;
+    if (prevHomeDir === undefined) delete process.env.AGB_HOME_DIR; else process.env.AGB_HOME_DIR = prevHomeDir;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 

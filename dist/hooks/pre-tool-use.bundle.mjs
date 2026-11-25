@@ -4269,6 +4269,15 @@ var MAX_NESTING = 3;
 var MAX_PATTERN_LENGTH2 = 1024;
 var PREFIX_WORDS = /* @__PURE__ */ new Set(["builtin", "command", "exec", "time", "nohup", "nice", "!", "if", "then", "else", "elif", "do", "while", "until", "{", "sudo", "doas"]);
 var GLOB_CHARS2 = /[*?[{]/;
+var PREFIX_VALUE_FLAGS = /* @__PURE__ */ new Map([
+  ["command", /* @__PURE__ */ new Set()],
+  ["nice", /* @__PURE__ */ new Set(["-n", "--adjustment"])],
+  ["exec", /* @__PURE__ */ new Set(["-a"])],
+  ["time", /* @__PURE__ */ new Set()],
+  ["nohup", /* @__PURE__ */ new Set()],
+  ["sudo", /* @__PURE__ */ new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-U", "-r", "-t", "--user", "--group", "--host", "--prompt", "--close-from", "--command-timeout", "--other-user", "--role", "--type"])],
+  ["doas", /* @__PURE__ */ new Set(["-u", "-C"])]
+]);
 function unwrap(argv) {
   let i = 0;
   const assignments = [];
@@ -4276,11 +4285,37 @@ function unwrap(argv) {
     const word = argv[i];
     if (PREFIX_WORDS.has(word)) {
       i += 1;
+      if (word === "command") {
+        while (i < argv.length && (argv[i] === "--" || /^-[pvV]+$/.test(argv[i]))) {
+          const opt = argv[i];
+          i += 1;
+          if (opt === "--") break;
+        }
+      } else if (PREFIX_VALUE_FLAGS.has(word)) {
+        const valueFlags = PREFIX_VALUE_FLAGS.get(word);
+        while (i < argv.length && (argv[i].startsWith("-") || (word === "sudo" || word === "doas") && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) {
+          const opt = argv[i];
+          i += 1;
+          if (opt === "--") break;
+          if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(opt)) {
+            assignments.push(opt);
+            continue;
+          }
+          if (!opt.includes("=") && valueFlags.has(opt) && i < argv.length) {
+            i += 1;
+          }
+        }
+      }
     } else if (word === "env") {
       i += 1;
       while (i < argv.length && (argv[i].startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) {
-        assignments.push(argv[i]);
+        const tok = argv[i];
+        assignments.push(tok);
         i += 1;
+        if ((tok === "-u" || tok === "--unset" || tok === "-C" || tok === "--chdir" || tok === "-S" || tok === "--split-string") && i < argv.length) {
+          assignments.push(argv[i]);
+          i += 1;
+        }
       }
     } else {
       break;
@@ -4589,8 +4624,30 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
 function inlineScript(argv) {
   if (argv[0] === "eval") return argv.slice(1).join(" ");
   if (!SHELLS.has(basename4(argv[0] ?? ""))) return null;
-  const flag = argv.findIndex((t, i) => i > 0 && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(t));
-  return flag > 0 && typeof argv[flag + 1] === "string" ? argv[flag + 1] : null;
+  let idx = 1;
+  let sawC = false;
+  while (idx < argv.length) {
+    const tok = argv[idx];
+    if (tok === "--") {
+      idx += 1;
+      break;
+    }
+    if (!tok.startsWith("-") && !tok.startsWith("+")) break;
+    idx += 1;
+    if (sawC) {
+      if (/^[-+][a-zA-Z]*o$/.test(tok) && idx < argv.length) idx += 1;
+      continue;
+    }
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(tok)) {
+      sawC = true;
+      if (/^-[a-zA-Z]*o[a-zA-Z]*$/.test(tok) && idx < argv.length) idx += 1;
+      continue;
+    }
+    if ((/^[-+][a-zA-Z]*o$/.test(tok) || tok === "--rcfile" || tok === "--init-file") && idx < argv.length) {
+      idx += 1;
+    }
+  }
+  return sawC && typeof argv[idx] === "string" ? argv[idx] : null;
 }
 function classifySubcommand(rawSub, cwd, ctx, depth) {
   const unwrapped = unwrap(rawSub.argv);
@@ -5672,11 +5729,11 @@ function buildContext(payload, options = {}) {
   const cwd = typeof cwdArg === "string" && isAbsolute5(cwdArg) ? resolve8(cwdArg) : null;
   const extraHomes = [];
   const homeMarker = /(^|[\/\\])\.agb_home$/;
-  if (typeof env.AGB_USER_HOME === "string" && isAbsolute5(env.AGB_USER_HOME)) {
-    const uh = resolve8(env.AGB_USER_HOME);
-    extraHomes.push(uh, realOr(uh));
-  }
   if (homeMarker.test(home) || homeMarker.test(realHome)) {
+    if (typeof env.AGB_USER_HOME === "string" && isAbsolute5(env.AGB_USER_HOME)) {
+      const uh = resolve8(env.AGB_USER_HOME);
+      extraHomes.push(uh, realOr(uh));
+    }
     try {
       const osHome = userInfo().homedir;
       if (typeof osHome === "string" && isAbsolute5(osHome)) {
@@ -5774,7 +5831,7 @@ function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
   const positionals = [];
   for (let i = 0; i < rest.length; i += 1) {
     const tok = String(rest[i] ?? "");
-    if (tok === "--ticket" || tok === "--run-id" || tok === "--port" || tok === "--out") {
+    if (tok === "--ticket" || tok === "--run-id" || tok === "--port" || tok === "--out" || tok === "--project") {
       i += 1;
       continue;
     }
@@ -5789,6 +5846,27 @@ function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
     return headless || rest.some((t) => t === "--apply" || t === "--compile-checks");
   }
   return false;
+}
+var MAX_INLINE_AGB_DEPTH = 3;
+function inspectSubcommandForMutatingAgb(rawSub, { headless = false } = {}, depth = 0) {
+  const { argv } = unwrap(rawSub.argv ?? []);
+  if (isMutatingAgbCliSubcommand(argv, { headless })) {
+    return "Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands";
+  }
+  const inline = inlineScript(argv);
+  if (inline === null) return null;
+  if (depth >= MAX_INLINE_AGB_DEPTH) {
+    return "Nested shell scripts too deep to verify";
+  }
+  const nestedLexed = lexCommandLine(inline);
+  if (!nestedLexed.ok) {
+    return "Shell command could not be parsed in protected worker/rescue session";
+  }
+  for (const nestedSub of nestedLexed.subcommands) {
+    const err = inspectSubcommandForMutatingAgb(nestedSub, { headless }, depth + 1);
+    if (err) return err;
+  }
+  return null;
 }
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);
@@ -5808,8 +5886,9 @@ function evaluateRunCommand(args, ctx) {
   const baseCwd = typeof cwdArg === "string" && cwdArg.length > 0 ? resolve8(cwdArg) : ctx.workspacePaths[0] ?? "/";
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
-    if (isMutatingAgbCliSubcommand(sub.argv, { headless: ctx.headless })) {
-      return deny("Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands");
+    const mutatingReason = inspectSubcommandForMutatingAgb(sub, { headless: ctx.headless });
+    if (mutatingReason) {
+      return deny(mutatingReason);
     }
     const cmd = basename5(sub.argv[0] ?? "");
     const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);

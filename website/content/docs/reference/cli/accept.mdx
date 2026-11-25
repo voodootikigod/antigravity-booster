@@ -1,0 +1,24 @@
+---
+title: "agb accept"
+description: "Inspect candidate diffs vs base, detect external caller blast radius, and record interactive P6 hunk sign-off verdicts."
+---
+
+`agb accept` inspects repository changes relative to `<base>`, detects external caller blast radius across the workspace, and renders the interactive P6 hunk sign-off workflow (or writes a Markdown review dossier via `--markdown <file>`).
+
+## Synopsis
+
+<include>../../../../generated/cli-accept.mdx</include>
+
+## Arguments and flags
+
+- `[repo]` targets the repository directory (defaults to `.`).
+- `--base <ref>` specifies the base git ref to diff against (defaults to `HEAD`).
+- `--json` emits the structured hunk dossier, external caller list, and recorded verdicts to stdout.
+- `--markdown <file>` exports the P6 acceptance dossier as Markdown to the specified file.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Inspection completed (and verdicts saved cleanly if requested). |
+| `1` | Invalid flags, missing repository, or internal error. |

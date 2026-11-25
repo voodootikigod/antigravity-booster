@@ -771,3 +771,12 @@ test('collectMain narrows the audited units but still routes against every surfa
   assert.ok(a.issues.sweepBatches.flat().some((i) => i.number === 3 && i.routedVia === 'ambiguous-path'));
   assert.equal(a.units[0].files, undefined, 'the projection drops the inventory');
 });
+
+test('every lib/*.mjs module belongs to exactly one declared audit surface in UNITS', async () => {
+  const { readdirSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const owned = new Set(UNITS.flatMap((u) => u.paths));
+  const libs = readdirSync(join(process.cwd(), 'lib')).filter((f) => f.endsWith('.mjs')).map((f) => `lib/${f}`);
+  const missing = libs.filter((f) => !owned.has(f));
+  assert.deepEqual(missing, [], `uncovered lib modules: ${missing.join(', ')}`);
+});

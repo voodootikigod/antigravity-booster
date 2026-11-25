@@ -602,6 +602,24 @@ test('agb_plan_viewer & symlink defenses: validates .agbplan, reports schema err
     assert.equal(symPlanRes.result.isError, true);
     assert.match(symPlanRes.result.content[0].text, /symbolic link/i);
 
+    const outOfRepoSymParent = join(TMP, 'out-of-repo-sym-parent');
+    symlinkSync(repo, outOfRepoSymParent);
+    const outOfRepoSymRes = await srv.send({
+      id: 31,
+      method: 'tools/call',
+      params: { name: 'agb_plan_viewer', arguments: { path: join(outOfRepoSymParent, 'feature.agbplan') } },
+    });
+    assert.equal(outOfRepoSymRes.result.isError, true);
+    assert.match(outOfRepoSymRes.result.content[0].text, /symbolic link/i);
+
+    const escapePlanRes = await srv.send({
+      id: 32,
+      method: 'tools/call',
+      params: { name: 'agb_plan_viewer', arguments: { path: '../escape.agbplan', repo } },
+    });
+    assert.equal(escapePlanRes.result.isError, true);
+    assert.match(escapePlanRes.result.content[0].text, /escapes repository root/i);
+
     const symBoosterRes = await srv.send({
       id: 4,
       method: 'tools/call',
@@ -948,4 +966,136 @@ test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejec
     rmSync(holdoutTmp, { recursive: true, force: true });
     rmSync(homeTmp, { recursive: true, force: true });
   }
+});
+
+test('Plan Card and Plan Viewer resolve relative plan paths against repo, reject out-of-repo traversal, and check isError on CLI actions in vm runtime', async () => {
+  const calls = [];
+  const writes = [];
+  const statuses = [];
+  function runScriptInMockDom(html, { toolInput, viewerStateOverrides = {}, callToolImpl }) {
+    const scriptMatches = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    assert.ok(scriptMatches.length > 0);
+    const listeners = new Map();
+    const statusNode = { _text: '', get textContent() { return this._text; }, set textContent(v) { this._text = v; statuses.push(v); } };
+    const makeEl = (id) => ({
+      style: {},
+      value: '',
+      _text: '',
+      get textContent() { return this._text; },
+      set textContent(v) { this._text = v; if (id === 'statusLine' || id === 'viewerPath') statuses.push(v); },
+      innerHTML: '',
+      addEventListener(ev, fn) { listeners.set(`${id}:${ev}`, fn); },
+      closest() { return null; },
+    });
+    const els = new Map();
+    const windowObj = {
+      addEventListener() {},
+      parent: {
+        postMessage(msg) {
+          if (msg && msg.id !== undefined && msg.method === 'ui/initialize') {
+            queueMicrotask(() => {
+              const handler = windowObj._msgHandler;
+              if (handler) handler({ data: { jsonrpc: '2.0', id: msg.id, result: { toolInput } } });
+            });
+          } else if (msg && msg.id !== undefined && msg.method === 'tools/call') {
+            calls.push(msg.params);
+            Promise.resolve(callToolImpl(msg.params)).then((result) => {
+              if (windowObj._msgHandler) windowObj._msgHandler({ data: { jsonrpc: '2.0', id: msg.id, result } });
+            });
+          } else if (msg && msg.id !== undefined && msg.method === 'com.google.antigravity/resources/write') {
+            writes.push(msg.params);
+            Promise.resolve({ ok: true }).then((result) => {
+              if (windowObj._msgHandler) windowObj._msgHandler({ data: { jsonrpc: '2.0', id: msg.id, result } });
+            });
+          }
+        },
+      },
+    };
+    const origAdd = windowObj.addEventListener;
+    windowObj.addEventListener = (type, fn) => {
+      if (type === 'message') windowObj._msgHandler = fn;
+      return origAdd(type, fn);
+    };
+    const ctx = vm.createContext({
+      window: windowObj,
+      document: {
+        getElementById(id) {
+          if (!els.has(id)) els.set(id, id === 'statusLine' ? statusNode : makeEl(id));
+          return els.get(id);
+        },
+        documentElement: { scrollHeight: 100 },
+      },
+      setTimeout,
+      clearTimeout,
+      Promise,
+      JSON,
+      Map,
+      Set,
+      Error,
+      String,
+      Number,
+      Boolean,
+      Array,
+      encodeURIComponent,
+      RegExp,
+      URL,
+    });
+    vm.runInContext(scriptMatches[0][1], ctx);
+    if (viewerStateOverrides && ctx.viewerState) Object.assign(ctx.viewerState, viewerStateOverrides);
+    return { ctx, listeners, els };
+  }
+
+  // 1. Plan Card runtime exercise: relative path resolves against repo, no unknown repo key passed, isError surfaces error
+  const planHtml = buildPlanCardHtml();
+  assert.doesNotMatch(planHtml, /callTool\("agb_run",\s*\{\s*plan:\s*planPath,\s*repo:/);
+  const card = runScriptInMockDom(planHtml, {
+    toolInput: { repo: '/work/myrepo', out: './plans/out.json', spec: 'spec.md' },
+    callToolImpl: async (p) => {
+      if (p.name === 'agb_run') return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'gate failed in run' }) }] };
+      return { isError: true, content: [{ type: 'text', text: 'compile exploded' }] };
+    },
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  await card.listeners.get('btnCompile:click')();
+  assert.equal(card.els.get('statusLine').textContent, 'Compile failed: compile exploded');
+  await card.listeners.get('btnLaunch:click')();
+  const launchCall = calls.find((c) => c.name === 'agb_run');
+  assert.deepEqual(JSON.parse(JSON.stringify(launchCall.arguments)), { plan: '/work/myrepo/plans/out.json' });
+  assert.equal(card.els.get('statusLine').textContent, 'Launch failed: gate failed in run');
+
+  // 2. resolveRepoPath edge cases: Windows drive, empty-repo abs rejection, + traversal refusal
+  const cardBridge = vm.runInContext('__bridge', card.ctx);
+  assert.equal(cardBridge.resolveRepoPath('plan.json', 'C:\\repo'), 'C:\\repo\\plan.json');
+  assert.equal(cardBridge.resolveRepoPath('../secret.json', '/work/myrepo'), null);
+  assert.equal(cardBridge.resolveRepoPath('/etc/passwd', '/work/myrepo'), null);
+  assert.equal(cardBridge.resolveRepoPath('/etc/passwd', ''), null);
+  assert.equal(cardBridge.resolveRepoPath('/etc/passwd', '.'), null);
+
+  // btnSavePlan with empty repo refuses writing to root file:///plan.agbplan
+  const noRepoViewer = runScriptInMockDom(buildPlanViewerHtml(), {
+    toolInput: {},
+    callToolImpl: async () => ({ isError: false }),
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  await noRepoViewer.listeners.get('btnSavePlan:click')();
+  assert.match(noRepoViewer.els.get('viewerPath').textContent, /repository directory is required/i);
+
+  // 3. Plan Viewer runtime exercise: btnRunPlan + btnSavePlan refuse traversal and validate normalized file:// URIs
+  const viewerHtml = buildPlanViewerHtml();
+  const viewer = runScriptInMockDom(viewerHtml, {
+    toolInput: { repo: '/work/myrepo', path: './sub/plan.json' },
+    callToolImpl: async () => ({ isError: true, content: [{ type: 'text', text: 'runner error' }] }),
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  await viewer.listeners.get('btnRunPlan:click')();
+  assert.equal(viewer.els.get('viewerPath').textContent, 'Run failed: runner error');
+  await viewer.listeners.get('btnSavePlan:click')();
+  assert.equal(writes[writes.length - 1].uri, 'file:///work/myrepo/sub/plan.json');
+
+  // Rejects out-of-repo traversal in btnSavePlan & btnRunPlan cleanly
+  vm.runInContext('viewerState.path = "../../outside.json"', viewer.ctx);
+  await viewer.listeners.get('btnSavePlan:click')();
+  assert.match(viewer.els.get('viewerPath').textContent, /invalid or out-of-repo/i);
+  await viewer.listeners.get('btnRunPlan:click')();
+  assert.match(viewer.els.get('viewerPath').textContent, /invalid or out-of-repo/i);
 });

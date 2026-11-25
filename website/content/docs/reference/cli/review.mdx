@@ -25,8 +25,8 @@ An empty diff exits 0 with nothing to review. Quota telemetry must be available.
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Converged with no critical or high findings. |
-| 2 | Critical or high findings, or the review did not converge (split the diff). |
-| 1 | Quota telemetry unavailable, or an internal error. |
+| 0 | Empty diff (when not `--plan`), or converged with `gateVerdict === "SHIP"` and no `critical` / `high` / escalated findings. |
+| 2 | `critical` / `high` / escalated / `blast_radius` findings remain, `--plan` `ok` is `false`, `gateVerdict !== "SHIP"` (including `> 180k` payload truncation), or the fleet did not converge ([review exit](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L160-L163)). |
+| 1 | Quota telemetry unavailable, usage error (`missing --plan` argument), or an internal error. |
 
 Evidence: [review exit](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L160-L163). See the [Review guide](/docs/guides/review).

@@ -24,7 +24,7 @@ import {
   isBenignProcRead, isWithin, matchDeclaredRail, matchImplicitRail, matchRoot, matchesScope, physicalResolve,
   protectedRoots, repoRelative, resolveCandidate, verifyBrainArtifactDirectory,
 } from './paths.mjs';
-import { classifyRunCommand } from './shell.mjs';
+import { classifyRunCommand, inlineScript, unwrap } from './shell.mjs';
 import { lexCommandLine } from './shell-lexer.mjs';
 import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
 
@@ -1135,11 +1135,11 @@ export function buildContext(payload, options = {}) {
   const cwd = typeof cwdArg === 'string' && isAbsolute(cwdArg) ? resolve(cwdArg) : null;
   const extraHomes = [];
   const homeMarker = /(^|[\/\\])\.agb_home$/;
-  if (typeof env.AGB_USER_HOME === 'string' && isAbsolute(env.AGB_USER_HOME)) {
-    const uh = resolve(env.AGB_USER_HOME);
-    extraHomes.push(uh, realOr(uh));
-  }
   if (homeMarker.test(home) || homeMarker.test(realHome)) {
+    if (typeof env.AGB_USER_HOME === 'string' && isAbsolute(env.AGB_USER_HOME)) {
+      const uh = resolve(env.AGB_USER_HOME);
+      extraHomes.push(uh, realOr(uh));
+    }
     try {
       const osHome = userInfo().homedir;
       if (typeof osHome === 'string' && isAbsolute(osHome)) {
@@ -1238,7 +1238,7 @@ function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
   const positionals = [];
   for (let i = 0; i < rest.length; i += 1) {
     const tok = String(rest[i] ?? '');
-    if (tok === '--ticket' || tok === '--run-id' || tok === '--port' || tok === '--out') {
+    if (tok === '--ticket' || tok === '--run-id' || tok === '--port' || tok === '--out' || tok === '--project') {
       i += 1;
       continue;
     }
@@ -1253,6 +1253,29 @@ function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
     return headless || rest.some((t) => t === '--apply' || t === '--compile-checks');
   }
   return false;
+}
+
+const MAX_INLINE_AGB_DEPTH = 3;
+
+function inspectSubcommandForMutatingAgb(rawSub, { headless = false } = {}, depth = 0) {
+  const { argv } = unwrap(rawSub.argv ?? []);
+  if (isMutatingAgbCliSubcommand(argv, { headless })) {
+    return 'Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands';
+  }
+  const inline = inlineScript(argv);
+  if (inline === null) return null;
+  if (depth >= MAX_INLINE_AGB_DEPTH) {
+    return 'Nested shell scripts too deep to verify';
+  }
+  const nestedLexed = lexCommandLine(inline);
+  if (!nestedLexed.ok) {
+    return 'Shell command could not be parsed in protected worker/rescue session';
+  }
+  for (const nestedSub of nestedLexed.subcommands) {
+    const err = inspectSubcommandForMutatingAgb(nestedSub, { headless }, depth + 1);
+    if (err) return err;
+  }
+  return null;
 }
 
 function evaluateRunCommand(args, ctx) {
@@ -1273,8 +1296,9 @@ function evaluateRunCommand(args, ctx) {
   const baseCwd = typeof cwdArg === 'string' && cwdArg.length > 0 ? resolve(cwdArg) : (ctx.workspacePaths[0] ?? '/');
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
-    if (isMutatingAgbCliSubcommand(sub.argv, { headless: ctx.headless })) {
-      return deny('Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands');
+    const mutatingReason = inspectSubcommandForMutatingAgb(sub, { headless: ctx.headless });
+    if (mutatingReason) {
+      return deny(mutatingReason);
     }
     const cmd = basename(sub.argv[0] ?? '');
     const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);

@@ -30,6 +30,7 @@ import {
   getStatusLineQuotaFile,
   writeStatusLineQuotaCache,
   readFreshStatusLineQuotaCache,
+  durableWriteJson,
   terminateWorkerTree,
   withLock,
   withLockSync,
@@ -37,7 +38,7 @@ import {
   LEASE_TTL_MS,
 } from '../lib/pools.mjs';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync, symlinkSync, unlinkSync, statSync, openSync, constants } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -2113,12 +2114,14 @@ test('writeStatusLineQuotaCache & readFreshStatusLineQuotaCache: rejects symlink
     const v2Path = join(dir, 'agb_pools_v2.json');
     process.env.AGB_POOLS_V2 = v2Path;
 
-    // 1. Bundled mode ignores AGB_STATUSLINE_QUOTA_FILE override
+    // 1. Bundled mode ignores AGB_STATUSLINE_QUOTA_FILE and pool state env overrides
     process.env.AGB_STATUSLINE_QUOTA_FILE = join(extDir, 'spoofed.json');
     globalThis.__AGB_BUNDLED__ = true;
-    assert.equal(getStatusLineQuotaFile(), join(dir, 'agb_statusline_quota.json'));
+    assert.equal(getStatusLineQuotaFile(), join(tmpdir(), 'agb_statusline_quota.json'));
+    assert.equal(getV2StateFile(), join(tmpdir(), 'agb_pools_v2.json'));
     globalThis.__AGB_BUNDLED__ = false;
     assert.equal(getStatusLineQuotaFile(), join(extDir, 'spoofed.json'));
+    assert.equal(getV2StateFile(), v2Path);
 
     // 2. Symlinked target file rejected on both write and read
     const victim = join(extDir, 'victim.json');
@@ -2305,6 +2308,149 @@ test('PoolSet.refreshQuota({ allowStatusCache: true }): bypasses statusline cach
     if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
     if (savedSlFile === undefined) delete process.env.AGB_STATUSLINE_QUOTA_FILE; else process.env.AGB_STATUSLINE_QUOTA_FILE = savedSlFile;
     if (savedIgnore === undefined) delete process.env.AGB_IGNORE_STATUS_QUOTA_CACHE; else process.env.AGB_IGNORE_STATUS_QUOTA_CACHE = savedIgnore;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('durableWriteJson: rejects symlinks, uses O_EXCL/O_NOFOLLOW + UUID temp paths, and cleans up on error (#168)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-durable-write-'));
+  try {
+    const victim = join(dir, 'victim.json');
+    writeFileSync(victim, '{"untouched":true}', 'utf8');
+    const symTarget = join(dir, 'sym.json');
+    symlinkSync(victim, symTarget);
+    assert.throws(() => durableWriteJson(symTarget, { pwned: true }), /symlink/i);
+    assert.equal(readFileSync(victim, 'utf8'), '{"untouched":true}');
+
+    const symDir = join(dir, 'symdir');
+    symlinkSync(dir, symDir, 'dir');
+    assert.throws(() => durableWriteJson(join(symDir, 'nested.json'), { pwned: true }), /symlink/i);
+
+    // Captures O_EXCL | O_NOFOLLOW flags and UUID temp filename cleanly
+    const seenFlags = [];
+    const seenTemps = [];
+    const realTarget = join(dir, 'captured.json');
+    durableWriteJson(realTarget, { ok: 1 }, {
+      openSyncFn: (p, flags, mode) => {
+        if (String(p).includes('.tmp')) {
+          seenTemps.push(p);
+          seenFlags.push(flags);
+        }
+        return openSync(p, flags, mode);
+      },
+      fsyncSyncFn: () => {},
+      closeSyncFn: () => {},
+      writeFileSyncFn: () => {},
+      renameSyncFn: () => {},
+    });
+    assert.equal(seenFlags[0], constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW || 0));
+    assert.match(seenTemps[0], /\.[0-9a-f-]{36}\.tmp$/);
+
+    // writeFileSync failure unlinks temp file cleanly
+    const writeFailTarget = join(dir, 'writefail.json');
+    assert.throws(
+      () =>
+        durableWriteJson(writeFailTarget, { a: 1 }, {
+          writeFileSyncFn: () => {
+            throw new Error('simulated disk full');
+          },
+        }),
+      /simulated disk full/,
+    );
+    assert.deepEqual(readdirSync(dir).filter((f) => f.includes('writefail.json.') && f.endsWith('.tmp')), []);
+
+    // postDirStat TOCTOU symlink rejection
+    let callCount = 0;
+    assert.throws(
+      () =>
+        durableWriteJson(join(dir, 'toctou.json'), { a: 1 }, {
+          lstatSyncFn: (p) => {
+            const st = statSync(p);
+            callCount += 1;
+            const isSymDir = p === dir && callCount >= 2;
+            return Object.assign(Object.create(Object.getPrototypeOf(st)), st, {
+              isSymbolicLink: () => isSymDir,
+              isDirectory: () => p === dir && !isSymDir,
+              isFile: () => false,
+            });
+          },
+        }),
+      /symlink/i,
+    );
+
+    const failTarget = join(dir, 'fail.json');
+    assert.throws(
+      () =>
+        durableWriteJson(failTarget, { a: 1 }, {
+          renameSyncFn: () => {
+            throw new Error('simulated rename failure');
+          },
+        }),
+      /simulated rename failure/,
+    );
+    const leftoverTemps = readdirSync(dir).filter((f) => f.includes('fail.json.') && f.endsWith('.tmp'));
+    assert.deepEqual(leftoverTemps, [], 'temp file must be unlinked on rename failure');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('statusLine quota cache enforces POSIX uid and sticky-dir ownership on read and write', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-sl-uid-'));
+  const savedSl = process.env.AGB_STATUSLINE_QUOTA_FILE;
+  try {
+    const file = join(dir, 'quota.json');
+    process.env.AGB_STATUSLINE_QUOTA_FILE = file;
+    const now = Date.now();
+    const q = sampleNormalizedQuota();
+    assert.equal(writeStatusLineQuotaCache(q, { nowMs: now }), true);
+    assert.notEqual(readFreshStatusLineQuotaCache({ nowMs: now + 100 }), null);
+
+    // 1. Sticky /tmp-like directory (uid 0, mode 0o1777) with user-owned cache file (uid 1000) PASSES for non-root uid 1000
+    const stickyRootLstat = (p) => {
+      const real = statSync(p);
+      const isDir = p === dir;
+      return Object.assign(Object.create(Object.getPrototypeOf(real)), real, {
+        uid: isDir ? 0 : 1000,
+        mode: isDir ? 0o41777 : 0o100600,
+        isSymbolicLink: () => false,
+        isFile: () => p === file,
+        isDirectory: () => isDir,
+      });
+    };
+    assert.notEqual(readFreshStatusLineQuotaCache({ nowMs: now + 100, lstatSyncFn: stickyRootLstat, getuidFn: () => 1000 }), null);
+    assert.equal(writeStatusLineQuotaCache(q, { nowMs: now + 20_000, lstatSyncFn: stickyRootLstat, getuidFn: () => 1000 }), true);
+
+    // 2. Non-sticky foreign directory (uid 0, mode 0o755) is rejected even if file.uid === 1000
+    const nonStickyLstat = (p) => {
+      const real = statSync(p);
+      const isDir = p === dir;
+      return Object.assign(Object.create(Object.getPrototypeOf(real)), real, {
+        uid: isDir ? 0 : 1000,
+        mode: isDir ? 0o40755 : 0o100600,
+        isSymbolicLink: () => false,
+        isFile: () => p === file,
+        isDirectory: () => isDir,
+      });
+    };
+    assert.equal(readFreshStatusLineQuotaCache({ nowMs: now + 100, lstatSyncFn: nonStickyLstat, getuidFn: () => 1000 }), null);
+    assert.equal(writeStatusLineQuotaCache(q, { nowMs: now + 20_000, lstatSyncFn: nonStickyLstat, getuidFn: () => 1000 }), false);
+
+    // 3. Foreign-UID cache file in sticky dir rejects both read and overwrite
+    const foreignLstat = (p) => {
+      const real = statSync(p);
+      return Object.assign(Object.create(Object.getPrototypeOf(real)), real, {
+        uid: 99999,
+        mode: p === dir ? 0o41777 : 0o100600,
+        isSymbolicLink: () => false,
+        isFile: () => p === file,
+        isDirectory: () => p === dir,
+      });
+    };
+    assert.equal(readFreshStatusLineQuotaCache({ nowMs: now + 100, lstatSyncFn: foreignLstat, getuidFn: () => 1000 }), null);
+    assert.equal(writeStatusLineQuotaCache(q, { nowMs: now + 20_000, lstatSyncFn: foreignLstat, getuidFn: () => 1000 }), false);
+  } finally {
+    if (savedSl === undefined) delete process.env.AGB_STATUSLINE_QUOTA_FILE; else process.env.AGB_STATUSLINE_QUOTA_FILE = savedSl;
     rmSync(dir, { recursive: true, force: true });
   }
 });

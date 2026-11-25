@@ -4,7 +4,7 @@ import { createRequire as __agbCreateRequire } from 'node:module'; const require
 import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { basename as basename3, dirname as dirname6, join as join7, relative as relative4, resolve as resolve7, isAbsolute as isAbsolute4, sep as sep3 } from "node:path";
+import { basename as basename3, dirname as dirname6, join as join7, parse as parse2, relative as relative4, resolve as resolve7, isAbsolute as isAbsolute4, sep as sep3 } from "node:path";
 import {
   closeSync as closeSync2,
   constants as constants2,
@@ -517,25 +517,29 @@ import { promisify as promisify3 } from "node:util";
 import { randomUUID } from "node:crypto";
 var execFileP = promisify3(execFile3);
 var RFC3339_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+var IS_BUNDLED_POOLS = true;
+function isBundledPoolsRuntime() {
+  return IS_BUNDLED_POOLS || true;
+}
 function getV2StateFile() {
-  if (process.env.AGB_POOLS_V2) return process.env.AGB_POOLS_V2;
-  if (process.env.AGB_POOLS_DIR) return join(process.env.AGB_POOLS_DIR, "agb_pools_v2.json");
-  if (process.env.AGB_QUOTA_STATE) {
-    return process.env.AGB_QUOTA_STATE.endsWith(".json") ? process.env.AGB_QUOTA_STATE.slice(0, -5) + "_v2.json" : process.env.AGB_QUOTA_STATE + "_v2.json";
+  if (!isBundledPoolsRuntime()) {
+    if (process.env.AGB_POOLS_V2) return process.env.AGB_POOLS_V2;
+    if (process.env.AGB_POOLS_DIR) return join(process.env.AGB_POOLS_DIR, "agb_pools_v2.json");
+    if (process.env.AGB_QUOTA_STATE) {
+      return process.env.AGB_QUOTA_STATE.endsWith(".json") ? process.env.AGB_QUOTA_STATE.slice(0, -5) + "_v2.json" : process.env.AGB_QUOTA_STATE + "_v2.json";
+    }
   }
   return join(tmpdir(), "agb_pools_v2.json");
 }
 function getLockFile() {
-  if (process.env.AGB_POOLS_LOCK) return process.env.AGB_POOLS_LOCK;
-  if (process.env.AGB_POOLS_DIR) return join(process.env.AGB_POOLS_DIR, "agb_pools_shared.lock");
-  if (process.env.AGB_QUOTA_STATE) {
-    return process.env.AGB_QUOTA_STATE.endsWith(".json") ? process.env.AGB_QUOTA_STATE.slice(0, -5) + ".lock" : process.env.AGB_QUOTA_STATE + ".lock";
+  if (!isBundledPoolsRuntime()) {
+    if (process.env.AGB_POOLS_LOCK) return process.env.AGB_POOLS_LOCK;
+    if (process.env.AGB_POOLS_DIR) return join(process.env.AGB_POOLS_DIR, "agb_pools_shared.lock");
+    if (process.env.AGB_QUOTA_STATE) {
+      return process.env.AGB_QUOTA_STATE.endsWith(".json") ? process.env.AGB_QUOTA_STATE.slice(0, -5) + ".lock" : process.env.AGB_QUOTA_STATE + ".lock";
+    }
   }
   return join(tmpdir(), "agb_pools_shared.lock");
-}
-var IS_BUNDLED_POOLS = true;
-function isBundledPoolsRuntime() {
-  return IS_BUNDLED_POOLS || true;
 }
 function getStatusLineQuotaFile() {
   return !isBundledPoolsRuntime() && process.env.AGB_STATUSLINE_QUOTA_FILE ? process.env.AGB_STATUSLINE_QUOTA_FILE : join(dirname(getV2StateFile()), "agb_statusline_quota.json");
@@ -562,16 +566,40 @@ function isValidNormalizedQuotaPayload(normalizedQuota, nowMs) {
   if (!normalizedQuota || typeof normalizedQuota !== "object" || Array.isArray(normalizedQuota)) return false;
   return isValidStatusLinePoolWindow(normalizedQuota.gemini, nowMs) && isValidStatusLinePoolWindow(normalizedQuota.claude_gpt, nowMs);
 }
-function readFreshStatusLineQuotaCache({ maxAgeMs = 6e4, nowMs = Date.now() } = {}) {
+function hasTrustedStatusLineDir(dirStat, getuidFn = process.getuid) {
+  if (typeof getuidFn !== "function") return true;
+  const uid = getuidFn();
+  const isSticky = (dirStat.mode & 512) !== 0;
+  return isSticky || dirStat.uid === uid;
+}
+function hasTrustedStatusLineOwnership(fileStat, dirStat, getuidFn = process.getuid) {
+  if (!hasTrustedStatusLineDir(dirStat, getuidFn)) return false;
+  if (typeof getuidFn !== "function") return true;
+  return fileStat.uid === getuidFn();
+}
+function readFreshStatusLineQuotaCache({
+  maxAgeMs = 6e4,
+  nowMs = Date.now(),
+  lstatSyncFn = lstatSync,
+  getuidFn = process.getuid
+} = {}) {
   try {
     if (!Number.isFinite(nowMs) || !Number.isFinite(maxAgeMs)) return null;
     const file = getStatusLineQuotaFile();
     const dir = dirname(file);
-    const dirStat = lstatSync(dir);
+    const dirStat = lstatSyncFn(dir);
     if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) return null;
-    const fileStat = lstatSync(file);
+    const fileStat = lstatSyncFn(file);
     if (fileStat.isSymbolicLink() || !fileStat.isFile()) return null;
-    const data = JSON.parse(readFileSync(file, "utf8"));
+    if (!hasTrustedStatusLineOwnership(fileStat, dirStat, getuidFn)) return null;
+    let raw;
+    const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+    try {
+      raw = readFileSync(fd, "utf8");
+    } finally {
+      closeSync(fd);
+    }
+    const data = JSON.parse(raw);
     if (!data || typeof data !== "object" || Array.isArray(data)) return null;
     if (typeof data.updatedAt !== "number" || !Number.isFinite(data.updatedAt)) return null;
     if (nowMs - data.updatedAt > maxAgeMs) return null;
@@ -2589,6 +2617,53 @@ var SHARED_RUNTIME_JS = [
   "    return null;",
   "  }",
   "",
+  "  function normalizeRepoSegments(rawPath) {",
+  "    const parts = [];",
+  '    for (const seg of String(rawPath || "").replace(/\\\\/g, "/").split("/")) {',
+  '      if (!seg || seg === ".") continue;',
+  '      if (seg === "..") {',
+  "        if (parts.length === 0) return null;",
+  "        parts.pop();",
+  "      } else {",
+  "        parts.push(seg);",
+  "      }",
+  "    }",
+  "    return parts;",
+  "  }",
+  "",
+  "  function resolveRepoPath(target, repoDir) {",
+  '    const raw = String(target || "plan.json").trim();',
+  '    if (!raw || /[\\r\\n\\0?#]/.test(raw) || raw.startsWith("file:")) return null;',
+  '    const normTarget = raw.replace(/\\\\/g, "/");',
+  '    const normRepo = String(repoDir || "").trim().replace(/\\\\/g, "/").replace(/\\/+$/, "");',
+  '    const targetParts = normTarget.split("/").filter(Boolean);',
+  '    if (targetParts.includes("..")) return null;',
+  '    const isAbsTarget = normTarget.startsWith("/") || /^[A-Za-z]:\\//.test(normTarget);',
+  '    if (!normRepo || normRepo === ".") {',
+  "      if (isAbsTarget) return null;",
+  "      const relParts = normalizeRepoSegments(normTarget);",
+  '      return relParts && relParts.length ? relParts.join("/") : "plan.json";',
+  "    }",
+  "    if (isAbsTarget) {",
+  "      const lowT = normTarget.toLowerCase();",
+  "      const lowR = normRepo.toLowerCase();",
+  '      if (lowT !== lowR && !lowT.startsWith(lowR + "/")) return null;',
+  "      return raw;",
+  "    }",
+  "    const relParts = normalizeRepoSegments(normTarget);",
+  "    if (!relParts || !relParts.length) return null;",
+  '    const sep = String(repoDir).includes("\\\\") ? "\\\\" : "/";',
+  '    return String(repoDir).replace(/[\\\\/]+$/, "") + sep + relParts.join(sep);',
+  "  }",
+  "",
+  "  function extractToolError(res) {",
+  "    if (!res || !res.isError) return null;",
+  "    const s = extractStructured(res);",
+  '    if (s && typeof s.error === "string" && s.error) return s.error;',
+  '    if (s && typeof s.rawText === "string" && s.rawText) return s.rawText;',
+  '    return "Tool call returned error";',
+  "  }",
+  "",
   '  window.addEventListener("message", (ev) => {',
   "    const msg = ev && ev.data;",
   '    if (!msg || typeof msg !== "object" || msg.jsonrpc !== "2.0") return;',
@@ -2659,6 +2734,8 @@ var SHARED_RUNTIME_JS = [
   "    updateModelContext: updateModelContext,",
   "    toggleAuxPane: toggleAuxPane,",
   "    extractStructured: extractStructured,",
+  "    extractToolError: extractToolError,",
+  "    resolveRepoPath: resolveRepoPath,",
   "    getToolInput: () => lastToolInput,",
   "    onResult: (fn) => resultListeners.push(fn),",
   "    onInput: (fn) => inputListeners.push(fn),",
@@ -2908,6 +2985,11 @@ function buildPlanCardHtml() {
     '    const res = await __bridge.callTool("agb_plan", { spec: spec, repo: repo, force: true });',
     "    const next = __bridge.extractStructured(res);",
     "    if (next) renderPlanCard(next);",
+    "    const errText = __bridge.extractToolError(res);",
+    "    if (errText) {",
+    '      setStatus("Compile failed: " + errText);',
+    "      return;",
+    "    }",
     '    setStatus("Plan compiled.");',
     "  } catch (err) {",
     '    setStatus("Compile failed: " + err.message);',
@@ -2916,10 +2998,20 @@ function buildPlanCardHtml() {
     "",
     'document.getElementById("btnLaunch").addEventListener("click", async () => {',
     "  const inp = __bridge.getToolInput() || {};",
-    '  const planPath = inp.plan || inp.out || "plan.json";',
+    '  const repoDir = inp.repo || planState.repo || "";',
+    '  const planPath = __bridge.resolveRepoPath(inp.plan || inp.out || planState.planPath || "plan.json", repoDir);',
+    "  if (!planPath) {",
+    '    setStatus("Launch failed: invalid or out-of-repo plan path.");',
+    "    return;",
+    "  }",
     '  setStatus("Launching fleet run\u2026");',
     "  try {",
-    '    await __bridge.callTool("agb_run", { plan: planPath });',
+    '    const res = await __bridge.callTool("agb_run", { plan: planPath });',
+    "    const errText = __bridge.extractToolError(res);",
+    "    if (errText) {",
+    '      setStatus("Launch failed: " + errText);',
+    "      return;",
+    "    }",
     '    setStatus("Fleet run completed.");',
     "  } catch (err) {",
     '    setStatus("Launch failed: " + err.message);',
@@ -3655,22 +3747,47 @@ function buildPlanViewerHtml() {
     "",
     'document.getElementById("btnSavePlan").addEventListener("click", async () => {',
     "  syncGateSettings();",
-    '  const targetPath = viewerState.path || (__bridge.getToolInput() && __bridge.getToolInput().path) || "plan.agbplan";',
-    '  const normPath = String(targetPath).replace(/\\\\/g, "/");',
-    '  const uri = normPath.startsWith("file://") ? normPath : ("file://" + (normPath.startsWith("/") ? "" : "/") + normPath);',
+    "  const inp = __bridge.getToolInput() || {};",
+    '  const repoDir = viewerState.repo || inp.repo || "";',
+    '  const rawPath = viewerState.path || inp.path || "plan.agbplan";',
+    "  const safePath = __bridge.resolveRepoPath(rawPath, repoDir);",
+    "  if (!safePath) {",
+    '    pathEl.textContent = "Save failed: invalid or out-of-repo plan path.";',
+    "    return;",
+    "  }",
+    '  const normPath = String(safePath).replace(/\\\\/g, "/");',
+    '  const isAbsPath = normPath.startsWith("/") || /^[A-Za-z]:\\//.test(normPath);',
+    "  if (!repoDir || !isAbsPath) {",
+    '    pathEl.textContent = "Save failed: repository directory is required.";',
+    "    return;",
+    "  }",
+    '  const encoded = normPath.split("/").map((seg, i) => (i === 0 && /^[A-Za-z]:$/.test(seg) ? seg : encodeURIComponent(seg))).join("/");',
+    '  const uri = "file://" + (encoded.startsWith("/") ? "" : "/") + encoded;',
     "  try {",
     '    await __bridge.writeResource(uri, JSON.stringify(viewerState.plan || {}, null, 2) + "\\n");',
-    '    pathEl.textContent = "Saved " + targetPath;',
+    '    pathEl.textContent = "Saved " + safePath;',
     "  } catch (err) {",
     '    pathEl.textContent = "Save failed: " + err.message;',
     "  }",
     "});",
     "",
     'document.getElementById("btnRunPlan").addEventListener("click", async () => {',
-    '  const targetPath = viewerState.path || (__bridge.getToolInput() && __bridge.getToolInput().path) || "plan.json";',
+    "  const inp = __bridge.getToolInput() || {};",
+    '  const repoDir = viewerState.repo || inp.repo || "";',
+    '  const rawPath = viewerState.path || inp.path || "plan.json";',
+    "  const targetPath = __bridge.resolveRepoPath(rawPath, repoDir);",
+    "  if (!targetPath) {",
+    '    pathEl.textContent = "Run failed: invalid or out-of-repo plan path.";',
+    "    return;",
+    "  }",
     '  pathEl.textContent = "Running " + targetPath + "\u2026";',
     "  try {",
-    '    await __bridge.callTool("agb_run", { plan: targetPath });',
+    '    const res = await __bridge.callTool("agb_run", { plan: targetPath });',
+    "    const errText = __bridge.extractToolError(res);",
+    "    if (errText) {",
+    '      pathEl.textContent = "Run failed: " + errText;',
+    "      return;",
+    "    }",
     '    pathEl.textContent = "Completed run for " + targetPath;',
     "  } catch (err) {",
     '    pathEl.textContent = "Run failed: " + err.message;',
@@ -4607,6 +4724,7 @@ function resolveOptionalRepoArg(args) {
   if (!dirCheck.ok) return dirCheck;
   return { ok: true, repo: resolved };
 }
+var OS_ROOT_SYMLINK_DIRS = /* @__PURE__ */ new Set(["/bin", "/lib", "/lib32", "/lib64", "/libx32", "/sbin", "/tmp", "/var", "/etc"]);
 function assertNoSymlinkSegments(baseDir, targetPath) {
   const rel = relative4(baseDir, targetPath);
   if (!rel.startsWith("..") && !isAbsolute4(rel)) {
@@ -4616,6 +4734,22 @@ function assertNoSymlinkSegments(baseDir, targetPath) {
       const st = lstatOrNull(cur);
       if (st && st.isSymbolicLink()) {
         throw symlinkSecurityError(cur);
+      }
+    }
+  } else {
+    const parsed = parse2(targetPath);
+    const tail = targetPath.slice(parsed.root.length);
+    let cur = parsed.root;
+    let depth = 0;
+    for (const seg of tail.split(sep3).filter(Boolean)) {
+      depth += 1;
+      cur = join7(cur, seg);
+      const st = lstatOrNull(cur);
+      if (st && st.isSymbolicLink()) {
+        const isOsRootLink = depth === 1 && st.uid === 0 && OS_ROOT_SYMLINK_DIRS.has(cur.replace(/\\/g, "/"));
+        if (!isOsRootLink) {
+          throw symlinkSecurityError(cur);
+        }
       }
     }
   }
@@ -4669,6 +4803,13 @@ async function handleInProcessUiTool(id, name, args) {
       return;
     }
     const planFile = resolve7(repoRes.repo, pathCheck.value);
+    if (args?.repo !== void 0) {
+      const rel = relative4(repoRes.repo, planFile);
+      if (rel.startsWith("..") || isAbsolute4(rel)) {
+        sendToolError(id, `Plan path escapes repository root: ${pathCheck.value}`);
+        return;
+      }
+    }
     let fileData;
     try {
       assertNoSymlinkSegments(repoRes.repo, planFile);

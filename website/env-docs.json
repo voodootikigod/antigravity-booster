@@ -109,8 +109,8 @@
       "name": "AGB_MODEL_STATS_FILE",
       "group": "core",
       "default": "<plugin_data>/model_stats.jsonl",
-      "bundledIgnored": false,
-      "description": "Override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan."
+      "bundledIgnored": true,
+      "description": "Unbundled override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan; ignored in bundled plugin builds."
     },
     {
       "name": "AGB_FACTORY_LEDGER_FILE",

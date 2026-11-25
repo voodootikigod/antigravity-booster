@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, existsSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { BanditModelRouter, computeBillableTokenCostFactor } from '../lib/bandit-router.mjs';
+import { BanditModelRouter, computeBillableTokenCostFactor, defaultStatsFilePath } from '../lib/bandit-router.mjs';
 import {
   distillRunDefenses,
   isSafeRegexPattern,
@@ -322,6 +322,48 @@ test('distillRunDefenses --compile-checks emits ReDoS-safe .adlc/learned-checks.
     const reviewDistill = distillRunDefenses({ repo: dir, compileChecks: true });
     assert.equal(reviewDistill.recurringCount >= 2, true);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('BanditModelRouter ignores AGB_HOME_DIR/AGB_MODEL_STATS_FILE when bundled and rejects symlinked statsFile', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-bandit-sec-'));
+  const prevHome = process.env.AGB_HOME_DIR;
+  const prevStats = process.env.AGB_MODEL_STATS_FILE;
+  try {
+    const evilHome = join(dir, 'evil-home');
+    const evilStats = join(dir, 'evil-stats.jsonl');
+    process.env.AGB_HOME_DIR = evilHome;
+    process.env.AGB_MODEL_STATS_FILE = evilStats;
+
+    assert.equal(defaultStatsFilePath(undefined, { bundled: false }), evilStats);
+    const bundledPath = defaultStatsFilePath(undefined, { bundled: true });
+    assert.notEqual(bundledPath, evilStats);
+    assert.ok(!bundledPath.startsWith(evilHome));
+    const bundledRouter = new BanditModelRouter({ bundled: true });
+    assert.equal(bundledRouter.statsFile, bundledPath);
+
+    // Symlinked parent directory is rejected on recordOutcome and readRecords
+    const realParent = join(dir, 'real-parent');
+    mkdirSync(realParent, { recursive: true });
+    const symParent = join(dir, 'sym-parent');
+    symlinkSync(realParent, symParent, 'dir');
+    const symParentRouter = new BanditModelRouter({ statsFile: join(symParent, 'model_stats.jsonl') });
+    assert.deepEqual(symParentRouter.readRecords(), []);
+    assert.equal(symParentRouter.recordOutcome({ model: 'gemini-4-neon-high' }).ok, false);
+
+    const victim = join(dir, 'victim.jsonl');
+    writeFileSync(victim, '{"model":"orig"}\n');
+    const symStats = join(dir, 'sym-stats.jsonl');
+    symlinkSync(victim, symStats);
+    const router = new BanditModelRouter({ statsFile: symStats });
+    assert.deepEqual(router.readRecords(), []);
+    const res = router.recordOutcome({ model: 'gemini-4-neon-high' });
+    assert.equal(res.ok, false);
+    assert.equal(readFileSync(victim, 'utf8'), '{"model":"orig"}\n');
+  } finally {
+    if (prevHome === undefined) delete process.env.AGB_HOME_DIR; else process.env.AGB_HOME_DIR = prevHome;
+    if (prevStats === undefined) delete process.env.AGB_MODEL_STATS_FILE; else process.env.AGB_MODEL_STATS_FILE = prevStats;
     rmSync(dir, { recursive: true, force: true });
   }
 });

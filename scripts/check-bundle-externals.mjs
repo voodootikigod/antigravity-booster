@@ -50,7 +50,7 @@ function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function findMatchingParen(source, openIdx) {
+function findMatchingDelimiter(source, openIdx, openCh = '(', closeCh = ')') {
   let depth = 0;
   let quote = null;
   for (let i = openIdx; i < source.length; i += 1) {
@@ -65,14 +65,18 @@ function findMatchingParen(source, openIdx) {
     }
     if (ch === "'" || ch === '"' || ch === '`') {
       quote = ch;
-    } else if (ch === '(') {
+    } else if (ch === openCh) {
       depth += 1;
-    } else if (ch === ')') {
+    } else if (ch === closeCh) {
       depth -= 1;
       if (depth === 0) return i;
     }
   }
   return -1;
+}
+
+function findMatchingParen(source, openIdx) {
+  return findMatchingDelimiter(source, openIdx, '(', ')');
 }
 
 function extractFirstCallArg(rawArgs) {
@@ -206,6 +210,26 @@ export function findExternalSpecifiers(source) {
   return [...found].sort();
 }
 
+export function maskAllowedOptionalProbeRegions(source, bundleKey) {
+  if (!BUNDLE_ALLOWED_OPTIONAL_PROBES[bundleKey]) return source;
+  let masked = source;
+  const fnRe = /\bfunction\s+inspectTypeScript\s*\([^)]*\)\s*\{/g;
+  for (const m of source.matchAll(fnRe)) {
+    const openIdx = m.index + m[0].length - 1;
+    const closeIdx = findMatchingDelimiter(source, openIdx, '{', '}');
+    if (closeIdx !== -1) {
+      const start = m.index;
+      const end = closeIdx + 1;
+      masked = masked.slice(0, start) + ' '.repeat(end - start) + masked.slice(end);
+    }
+  }
+  if (bundleKey === 'vendor/adlc/dist/syntax-check-typescript.mjs') {
+    const callRe = /\bcreateRequire2\s*\(\s*import\s*\.\s*meta\s*\.\s*url\s*\)\s*\(\s*resolved\.path\s*\)/g;
+    masked = masked.replace(callRe, (match) => ' '.repeat(match.length));
+  }
+  return masked;
+}
+
 function normalizeBundleKey(file) {
   return relative(ROOT, resolve(file)).replaceAll('\\', '/');
 }
@@ -222,8 +246,11 @@ export function main(argv) {
       failed = true;
       continue;
     }
-    const allowed = BUNDLE_ALLOWED_OPTIONAL_PROBES[normalizeBundleKey(file)];
-    const externals = findExternalSpecifiers(source).filter((spec) => !allowed?.has(spec));
+    const bundleKey = normalizeBundleKey(file);
+    const allowed = BUNDLE_ALLOWED_OPTIONAL_PROBES[bundleKey];
+    const outerExternals = allowed ? findExternalSpecifiers(maskAllowedOptionalProbeRegions(source, bundleKey)) : [];
+    const unexpectedExternals = findExternalSpecifiers(source).filter((spec) => !allowed?.has(spec));
+    const externals = [...new Set([...outerExternals, ...unexpectedExternals])].sort();
     if (externals.length > 0) {
       process.stderr.write(`check-bundle-externals: ${file} imports non-builtin modules: ${externals.join(', ')}\n`);
       failed = true;

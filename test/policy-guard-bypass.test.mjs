@@ -683,4 +683,51 @@ test('Run 3 Finding 8 & Antigravity 2.0 schemas: buildContext protects host user
     ).decision,
     'deny'
   );
+
+  // Ambient AGB_USER_HOME pointing at repo root in non-.agb_home session must NOT suppress ADLC rail protection
+  assert.equal(
+    evaluatePayload(
+      { toolCall: { name: 'write_file', args: { Path: join(A, 'lib', 'lock.mjs'), Content: 'x' } }, workspacePaths: [A] },
+      { env: { AGB_USER_HOME: A }, home, platform: 'linux' }
+    ).decision,
+    'deny'
+  );
+
+  // Nested sh -c / bash -lc / eval / --project / sh -c -- / env -u / command -p / shell -o / +e / prefix option flags / depth limit / unparseable nested cannot bypass isMutatingAgbCliSubcommand in rescue/headless sessions
+  for (const cmd of [
+    `agb --project demo holdout verify`,
+    `sh -c "agb holdout create foo"`,
+    `sh -c -- "agb holdout run ."`,
+    `sh -c -e "agb holdout clean ."`,
+    `sh -c +e "agb holdout clean ."`,
+    `sh -c -o errexit "agb holdout clean ."`,
+    `sh -o errexit -c "agb holdout clean ."`,
+    `nice -n 10 sh -c "rm -rf .adlc"`,
+    `exec -a foo sh -c "agb holdout clean ."`,
+    `sudo -u root sh -c "agb holdout clean ."`,
+    `doas -u root sh -c "agb holdout clean ."`,
+    `time -p sh -c "agb holdout clean ."`,
+    `env -u HOME bash -lc "agb distill --apply"`,
+    `command -p sh -c "agb holdout run ."`,
+    `eval "agb distill --compile-checks"`,
+    `sh -c "sh -c 'sh -c \\"sh -c echo\\"' '"`,
+    `sh -c "unclosed ' quote"`,
+  ]) {
+    assert.equal(
+      evaluatePayload(
+        { toolCall: { name: 'run_command', args: { CommandLine: cmd } }, workspacePaths: [A] },
+        { env: { AGB_RESCUE_TICKET: 'T1' }, home, platform: 'linux' }
+      ).decision,
+      'deny',
+      `expected rescue session to deny mutating/unparseable wrapper: ${cmd}`
+    );
+  }
+  // Read-only agb holdout list remains allowed (ask/pass in rescue without headless worker)
+  assert.notEqual(
+    evaluatePayload(
+      { toolCall: { name: 'run_command', args: { CommandLine: `agb holdout list` } }, workspacePaths: [A] },
+      { env: { AGB_RESCUE_TICKET: 'T1' }, home, platform: 'linux' }
+    ).decision,
+    'deny'
+  );
 });
