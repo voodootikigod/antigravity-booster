@@ -138,6 +138,49 @@ test('parseQuotaProbeOutput: rejects non-UTC, offset, or space-separated timesta
   assert.throws(() => parseQuotaProbeOutput(makePayload('2026-09-22T17:00:00')), (err) => err.kind === 'invalid_quota_timestamp');
   // Timestamp > 10s in past
   assert.throws(() => parseQuotaProbeOutput(makePayload('2020-01-01T00:00:00Z')), (err) => err.kind === 'invalid_quota_timestamp');
+  // Epoch zero with <100% remaining is still rejected as invalid_quota_timestamp
+  assert.throws(() => parseQuotaProbeOutput(makePayload('1970-01-01T00:00:00Z')), (err) => err.kind === 'invalid_quota_timestamp');
+});
+
+test('parseQuotaProbeOutput & writeStatusLineQuotaCache: accept 1970-01-01T00:00:00Z strictly when remainingPercent === 100 (unstarted rolling window)', async () => {
+  const { writeStatusLineQuotaCache } = await import('../lib/pools.mjs');
+  const envelope = JSON.stringify({
+    status: 'SUCCESS',
+    command: {
+      name: 'usage',
+      data: {
+        groups: [
+          {
+            name: 'Gemini Models',
+            buckets: [
+              { window: 'weekly', remaining_fraction: 0.82, reset_time: futureIso(86400) },
+              { window: '5h', remaining_fraction: 0.93, reset_time: futureIso(3600) },
+            ],
+          },
+          {
+            name: 'Claude and GPT models',
+            buckets: [
+              { window: 'weekly', remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
+              { window: '5h', remaining_fraction: 1, reset_time: '1970-01-01T00:00:00Z' },
+            ],
+          },
+        ],
+      },
+    },
+  });
+  const parsed = parseQuotaProbeOutput(envelope);
+  assert.equal(parsed.claude_gpt.fiveHourRemainingPercent, 100);
+  assert.equal(parsed.claude_gpt.weeklyRemainingPercent, 100);
+  assert.equal(parsed.claude_gpt.fiveHourResetTime, '1970-01-01T00:00:00Z');
+  assert.equal(parsed.claude_gpt.weeklyResetTime, '1970-01-01T00:00:00Z');
+
+  // Statusline validator accepts 100% + epoch-zero, rejects 99% + epoch-zero
+  assert.equal(writeStatusLineQuotaCache(parsed, { nowMs: Date.now(), minWriteIntervalMs: 0 }), true);
+  const badStatusQuota = {
+    ...parsed,
+    claude_gpt: { ...parsed.claude_gpt, fiveHourRemainingPercent: 99 },
+  };
+  assert.equal(writeStatusLineQuotaCache(badStatusQuota, { nowMs: Date.now(), minWriteIntervalMs: 0 }), false);
 });
 
 test('parseQuotaProbeOutput: rejects invalid remainingPercent (invalid_quota_percentage)', () => {
