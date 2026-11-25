@@ -185,6 +185,9 @@ test('distillRunDefenses --compile-checks emits ReDoS-safe .adlc/learned-checks.
   assert.equal(isSafeRegexPattern('(a+)+'), false, 'nested quantifier ReDoS must be rejected');
   assert.equal(isSafeRegexPattern('([a-z]*)*'), false, 'nested star quantifier ReDoS must be rejected');
   assert.equal(isSafeRegexPattern('(foo|bar)+'), false, 'quantified alternation group must be rejected');
+  assert.equal(isSafeRegexPattern('(a)\\1'), false, 'backreference must be rejected');
+  assert.equal(isSafeRegexPattern('(?<=a)b'), false, 'lookbehind must be rejected');
+  assert.equal(isSafeRegexPattern('.*foo.*'), false, 'adjacent unbounded wildcards must be rejected');
 
   assert.ok(
     validateLearnedChecksSpec({
@@ -253,6 +256,32 @@ test('distillRunDefenses --compile-checks emits ReDoS-safe .adlc/learned-checks.
     assert.equal(fullRun.violations.length, 2);
     assert.equal(fullRun.violations[0].line, 1);
 
+    // Test requireLiteral pass/fail and .booster/runs/ discovery + corrupt JSON fail-closed
+    writeFileSync(
+      join(dir, '.adlc', 'learned-checks.json'),
+      JSON.stringify({
+        version: 1,
+        checks: [{ id: 'DEF-req-header', glob: 'src/**', requireLiteral: '// COPYRIGHT' }],
+      }) + '\n'
+    );
+    assert.equal(runLearnedChecks(dir, { changedFiles: ['src/clean.mjs'] }).ok, false);
+    writeFileSync(join(dir, 'src', 'clean.mjs'), '// COPYRIGHT\nexport const x = 1;\n');
+    assert.equal(runLearnedChecks(dir, { changedFiles: ['src/clean.mjs'] }).ok, true);
+
+    writeFileSync(join(dir, '.adlc', 'learned-checks.json'), '{not-valid-json');
+    const corruptRes = runLearnedChecks(dir, { changedFiles: ['src/clean.mjs'] });
+    assert.equal(corruptRes.ok, false);
+    assert.match(corruptRes.error, /Malformed JSON/);
+
+    mkdirSync(join(dir, '.booster', 'runs'), { recursive: true });
+    writeFileSync(
+      join(dir, '.booster', 'runs', 'run-1-prosecution-t1.json'),
+      JSON.stringify({ findings: [{ lens: 'sec', claim: 'eval( used in lib at line 1' }, { lens: 'sec', claim: 'eval( used in lib at line 9' }] })
+    );
+    writeFileSync(join(dir, '.adlc', 'learned-checks.json'), '{"version":1,"checks":[]}\n');
+    const nestedDistill = distillRunDefenses({ repo: dir, compileChecks: true });
+    assert.equal(nestedDistill.compiledChecksCount, 1);
+
     // Symlinked learned-checks.json fails closed
     const outside = mkdtempSync(join(tmpdir(), 'agb-outside-'));
     const realJson = join(outside, 'evil.json');
@@ -267,6 +296,12 @@ test('distillRunDefenses --compile-checks emits ReDoS-safe .adlc/learned-checks.
       (err) => err.code === 'ESYMLINK'
     );
     rmSync(outside, { recursive: true, force: true });
+
+    // Nested alternation ((a|a))+ and lookahead (?=a) and repeated quantified classes \w+\w+ rejected (SEC-W4-06)
+    assert.equal(isSafeRegexPattern('((a|a))+'), false);
+    assert.equal(isSafeRegexPattern('(?=foo)bar'), false);
+    assert.equal(isSafeRegexPattern('\\w+\\w+'), false);
+    assert.equal(isSafeRegexPattern('[a-z]+[a-z]+'), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

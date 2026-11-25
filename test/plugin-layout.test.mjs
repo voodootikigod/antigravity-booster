@@ -311,3 +311,18 @@ test('layout: committed dist/hooks/pre-tool-use.bundle.mjs matches fresh non-mut
     rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test('layout: hooks/lifecycle.mjs and hooks/session-start.mjs use strictly Node built-in modules (zero external/relative imports)', async () => {
+  const { findExternalSpecifiers } = await import('../scripts/check-bundle-externals.mjs');
+  for (const relHook of ['hooks/lifecycle.mjs', 'hooks/session-start.mjs']) {
+    const absHook = join(ROOT, relHook);
+    const src = readFileSync(absHook, 'utf8');
+    const externals = findExternalSpecifiers(src);
+    assert.deepEqual(externals, [], `${relHook} must not import external npm packages: ${externals.join(', ')}`);
+    assert.equal(
+      /(?:from|import|require\s*\()\s*['"]\.\.?\//.test(src),
+      false,
+      `${relHook} must be self-contained without relative '../' or './' imports`
+    );
+  }
+});

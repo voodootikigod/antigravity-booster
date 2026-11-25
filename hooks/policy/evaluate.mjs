@@ -783,6 +783,15 @@ function evaluateMcpTool(name, args, ctx) {
     ) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
     }
+    if (
+      ctx.rescueTicket &&
+      (
+        (tool === 'agb_holdout' && goFoldKey(mcpNorm.folded.action ?? '') !== 'list') ||
+        (tool === 'agb_distill' && (Boolean(mcpNorm.folded.apply) || Boolean(mcpNorm.folded.compilechecks)))
+      )
+    ) {
+      return deny(`Interactive rescue session cannot mutate sealed holdout or learned-check defenses via MCP tool: ${tool}`);
+    }
     return PASS;
   }
   if (ctx.readonly) return deny('Third-party MCP tool call cannot prompt operator in a read-only agb worker session');
@@ -1157,10 +1166,20 @@ export function buildContext(payload, options = {}) {
     return [resolvedTmp, realOr(resolvedTmp)];
   }));
   const unbundledEval = typeof __AGB_BUNDLED__ === 'undefined' || !__AGB_BUNDLED__;
-  const customHoldoutRoots =
-    unbundledEval && typeof env.AGB_HOLDOUT_DIR === 'string' && env.AGB_HOLDOUT_DIR.trim() && isAbsolute(env.AGB_HOLDOUT_DIR.trim())
-      ? [resolve(env.AGB_HOLDOUT_DIR.trim()), realOr(resolve(env.AGB_HOLDOUT_DIR.trim()))]
-      : [];
+  const rawHoldoutEnv =
+    unbundledEval && typeof env.AGB_HOLDOUT_DIR === 'string' ? env.AGB_HOLDOUT_DIR.trim() : '';
+  const customHoldoutRoots = rawHoldoutEnv
+    ? unique(
+        (isAbsolute(rawHoldoutEnv)
+          ? [resolve(rawHoldoutEnv)]
+          : [
+              resolve(rawHoldoutEnv),
+              ...(cwd ? [resolve(cwd, rawHoldoutEnv)] : []),
+              ...workspacePaths.map((w) => resolve(w, rawHoldoutEnv)),
+            ]
+        ).flatMap((p) => [p, realOr(p)])
+      )
+    : [];
   const baseBoosterDataRoots = unique([...homes.flatMap((h) => boosterDataRoots(h)), ...customHoldoutRoots]);
   const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
   const hasBrainMetadata = payload?.conversationId !== undefined || payload?.artifactDirectoryPath !== undefined;

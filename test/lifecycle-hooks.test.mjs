@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -184,7 +184,40 @@ test('evaluateLifecycleEvent emits 0-token PreInvocation badges, tracks PostTool
       'stopContinuationCount cap prevents repeated Stop continuation on the same edit batch'
     );
 
-    // 7. Passing test run clears dirtySinceGate
+    // 7. Failing test run (error present) MUST keep dirtySinceGate === true; passing test clears it
+    evaluateLifecycleEvent(
+      {
+        hookEventName: 'PostToolUse',
+        conversationId: convId,
+        cwd: adlcRepo,
+        toolCall: { name: 'edit_file', args: { Path: join(adlcRepo, 'lib', 'widget.mjs') } },
+      },
+      { pluginDataDir: dataDir, env: {} }
+    );
+    evaluateLifecycleEvent(
+      {
+        hookEventName: 'PostToolUse',
+        conversationId: convId,
+        cwd: adlcRepo,
+        error: 'exit status 1',
+        toolCall: { name: 'run_command', args: { CommandLine: 'npm test' } },
+      },
+      { pluginDataDir: dataDir, env: {} }
+    );
+    const stopAfterFailedTest = evaluateLifecycleEvent(
+      {
+        hookEventName: 'Stop',
+        conversationId: convId,
+        cwd: adlcRepo,
+        terminationReason: 'NO_TOOL_CALL',
+        continuationActive: false,
+        fullyIdle: true,
+      },
+      { pluginDataDir: dataDir, env: {} }
+    );
+    assert.equal(stopAfterFailedTest.decision, 'continue', 'failed npm test must NOT clear dirtySinceGate');
+
+    // Re-dirty and verify passing npm test clears dirtySinceGate
     evaluateLifecycleEvent(
       {
         hookEventName: 'PostToolUse',
@@ -219,6 +252,56 @@ test('evaluateLifecycleEvent emits 0-token PreInvocation badges, tracks PostTool
       'passing npm test must clear dirtySinceGate'
     );
 
+    // 7b. Turn-25 context-rot badge fires once at turn 25 and is silent on turn 26
+    let turn25Out = null;
+    for (let t = 3; t <= 25; t++) {
+      turn25Out = evaluateLifecycleEvent(
+        { hookEventName: 'PreInvocation', conversationId: convId, cwd: adlcRepo },
+        { pluginDataDir: dataDir, env: {} }
+      );
+    }
+    assert.equal(turn25Out.injectSteps?.length, 1);
+    assert.equal(turn25Out.injectSteps[0].systemMessage.systemMessage, '');
+    assert.match(turn25Out.injectSteps[0].systemMessage.metadata.user_markdown, /\/compact/);
+    assert.deepEqual(
+      evaluateLifecycleEvent(
+        { hookEventName: 'PreInvocation', conversationId: convId, cwd: adlcRepo },
+        { pluginDataDir: dataDir, env: {} }
+      ),
+      {}
+    );
+
+    // 7c. Read-only session-state directory on Stop fails open to {} instead of looping
+    if (process.getuid?.() !== 0) {
+      evaluateLifecycleEvent(
+        {
+          hookEventName: 'PostToolUse',
+          conversationId: convId,
+          cwd: adlcRepo,
+          toolCall: { name: 'edit_file', args: { Path: join(adlcRepo, 'lib', 'widget.mjs') } },
+        },
+        { pluginDataDir: dataDir, env: {} }
+      );
+      const stateDir = join(dataDir, 'session-state');
+      chmodSync(stateDir, 0o500);
+      try {
+        const roStop = evaluateLifecycleEvent(
+          {
+            hookEventName: 'Stop',
+            conversationId: convId,
+            cwd: adlcRepo,
+            terminationReason: 'NO_TOOL_CALL',
+            continuationActive: false,
+            fullyIdle: true,
+          },
+          { pluginDataDir: dataDir, env: {} }
+        );
+        assert.deepEqual(roStop, {}, 'read-only state dir must fail open to {} to prevent Stop loop');
+      } finally {
+        chmodSync(stateDir, 0o700);
+      }
+    }
+
     // 8. Symlinked session-state directory degrades safely to {} without writing through link
     const outside = join(base, 'outside');
     mkdirSync(outside, { recursive: true });
@@ -232,6 +315,36 @@ test('evaluateLifecycleEvent emits 0-token PreInvocation badges, tracks PostTool
       {}
     );
     assert.equal(existsSync(join(outside, 'session-state')), false);
+
+    // 9. Cumulative totalStopContinuations cap (<= 2) stops edit->Stop->edit->Stop->edit->Stop loops
+    const loopConv = 'conv-loop-cap-99999999';
+    for (let round = 1; round <= 3; round++) {
+      evaluateLifecycleEvent(
+        {
+          hookEventName: 'PostToolUse',
+          conversationId: loopConv,
+          cwd: adlcRepo,
+          toolCall: { name: 'edit_file', args: { Path: join(adlcRepo, 'lib', 'widget.mjs') } },
+        },
+        { pluginDataDir: dataDir, env: {} }
+      );
+      const stopRes = evaluateLifecycleEvent(
+        {
+          hookEventName: 'Stop',
+          conversationId: loopConv,
+          cwd: adlcRepo,
+          terminationReason: 'NO_TOOL_CALL',
+          continuationActive: false,
+          fullyIdle: true,
+        },
+        { pluginDataDir: dataDir, env: {} }
+      );
+      if (round <= 2) {
+        assert.equal(stopRes.decision, 'continue', `round ${round} should continue`);
+      } else {
+        assert.deepEqual(stopRes, {}, '3rd cumulative Stop without user turn must cap at {}');
+      }
+    }
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

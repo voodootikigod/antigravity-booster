@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -10,6 +10,7 @@ import {
   isAllowedTwinEnvVar,
   startDigitalTwins,
   buildTwinGateEnv,
+  wrapTestCmdWithTwinEnv,
 } from '../lib/twins.mjs';
 
 test('validateTwinsConfig enforces safe envVar names, valid HTTP routes, and CRLF-free headers', () => {
@@ -93,8 +94,30 @@ test('buildTwinGateEnv preload interceptor serves fetch and http.get in child pr
     { runtimeRoot }
   );
   try {
-    const gateEnv = buildTwinGateEnv(process.env, handle, { sandboxed: true });
+    const gateEnv = buildTwinGateEnv({ ...process.env, NODE_OPTIONS: '--no-warnings' }, handle, { sandboxed: true });
+    assert.match(gateEnv.NODE_OPTIONS, /--no-warnings/);
     assert.match(gateEnv.NODE_OPTIONS, /--import=file:\/\//);
+
+    // Exercise wrapTestCmdWithTwinEnv in both unsandboxed and sandboxed modes via /bin/sh -c
+    const unsandboxedWrapped = wrapTestCmdWithTwinEnv('node -e "process.exit(process.env.CATALOG_URL ? 0 : 1)"', handle, { sandboxed: false });
+    assert.match(unsandboxedWrapped, /^env CATALOG_URL='http:\/\/127\.0\.0\.1:\d+'/);
+    assert.equal(unsandboxedWrapped.includes('NODE_OPTIONS='), false);
+    execFileSync('/bin/sh', ['-c', unsandboxedWrapped], { stdio: 'pipe' });
+
+    const sandboxedWrapped = wrapTestCmdWithTwinEnv('node -e "process.exit(process.env.NODE_OPTIONS.includes(\'--import=\') ? 0 : 1)"', handle, {
+      sandboxed: true,
+      baseEnv: { NODE_OPTIONS: '--no-warnings' },
+    });
+    assert.match(sandboxedWrapped, /NODE_OPTIONS=/);
+    execFileSync('/bin/sh', ['-c', sandboxedWrapped], { stdio: 'pipe' });
+
+    // Symlinked runtimeRoot is rejected with ESYMLINK
+    const symLinkPath = join(runtimeRoot, 'sym-rt');
+    symlinkSync(tmpdir(), symLinkPath);
+    await assert.rejects(
+      () => startDigitalTwins([{ name: 'x', envVar: 'X_URL', routes: [{ path: '/a' }] }], { runtimeRoot: symLinkPath }),
+      (err) => err.code === 'ESYMLINK'
+    );
 
     // Close ONLY the underlying TCP server socket first? Even better: verify child process gets twin response
     // AND non-twin closed port (127.0.0.1:1) is NOT intercepted and fails closed!

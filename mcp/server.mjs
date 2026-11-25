@@ -1253,19 +1253,21 @@ async function handleToolCall(id, name, args) {
     cliArgs.push('holdout', act, targetCwd, '--json');
     if (args.ticketId !== undefined) {
       const tCheck = requireNonFlagString(args, 'ticketId');
-      if (!tCheck.ok || !TICKET_ID_RE.test(tCheck.value.trim())) {
+      const tVal = tCheck.ok ? tCheck.value.trim() : '';
+      if (!tCheck.ok || tVal.includes('..') || tVal.length > 128 || !TICKET_ID_RE.test(tVal)) {
         sendError(id, -32602, 'Invalid ticketId');
         return;
       }
-      cliArgs.push('--ticket', tCheck.value.trim());
+      cliArgs.push('--ticket', tVal);
     }
     if (args.runId !== undefined) {
       const rCheck = requireNonFlagString(args, 'runId');
-      if (!rCheck.ok || !TICKET_ID_RE.test(rCheck.value.trim())) {
+      const rVal = rCheck.ok ? rCheck.value.trim() : '';
+      if (!rCheck.ok || rVal.includes('..') || rVal.length > 128 || !TICKET_ID_RE.test(rVal)) {
         sendError(id, -32602, 'Invalid runId');
         return;
       }
-      cliArgs.push('--run-id', rCheck.value.trim());
+      cliArgs.push('--run-id', rVal);
     }
   } else if (name === 'agb_run') {
     const planCheck = requireNonFlagString(args, 'plan');

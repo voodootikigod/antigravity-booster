@@ -662,6 +662,22 @@ test('agb distill --compile-checks and agb holdout <list|run|clean> operate offl
   assert.equal(runRes.status, 0, runRes.stderr);
   assert.equal(JSON.parse(runRes.stdout).ok, true);
 
+  // Failing holdout exits with status 2 and leaks zero holdout paths or secret assertion literals
+  writeFileSync(join(repo, 'src', 'math.mjs'), 'export const double = (x) => x + 999;\n');
+  const failJsonRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
+  assert.equal(failJsonRes.status, 2);
+  const failParsed = JSON.parse(failJsonRes.stdout);
+  assert.equal(failParsed.ok, false);
+  assert.equal(failJsonRes.stdout.includes('.holdout.test.mjs'), false);
+  assert.equal(failJsonRes.stdout.includes('m.double(6)'), false);
+
+  const failTextRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1'], { env });
+  assert.equal(failTextRes.status, 2);
+  assert.match(failTextRes.stdout, /Scenario: doubles positive numbers/);
+  assert.equal(failTextRes.stdout.includes('.holdout.test.mjs'), false);
+
+  assert.equal(runAgb(['holdout', 'bogus', repo], { env }).status, 1);
+
   const cleanRes = runAgb(['holdout', 'clean', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
   assert.equal(cleanRes.status, 0, cleanRes.stderr);
   assert.equal(JSON.parse(cleanRes.stdout).removed, true);

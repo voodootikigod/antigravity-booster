@@ -665,44 +665,59 @@ try {
       console.error('usage: agb holdout <list|run|clean> [repo] [--ticket <id>] [--run-id <id>] [--json]');
       process.exit(1);
     }
-    if (sub === 'list') {
-      const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
-      if (jsonOut) {
-        console.log(JSON.stringify(listed, null, 2));
-      } else {
-        console.log(`holdout: suites=${listed.suites.length} files=${listed.totalFiles}`);
-        for (const s of listed.suites) {
-          console.log(`  ${s.runId}/${s.ticketId}: ${s.count} scenario file(s)`);
+    try {
+      if (sub === 'list') {
+        const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(listed, null, 2));
+        } else {
+          console.log(`holdout: suites=${listed.suites.length} files=${listed.totalFiles}`);
+          for (const s of listed.suites) {
+            console.log(`  ${s.runId}/${s.ticketId}: ${s.count} scenario file(s)`);
+          }
         }
+        process.exit(0);
       }
-      process.exit(0);
-    }
-    if (sub === 'clean') {
-      const cleaned = cleanHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+      if (sub === 'clean') {
+        const cleaned = cleanHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(cleaned, null, 2));
+        } else {
+          console.log(`holdout: cleaned=${cleaned.removed} (${cleaned.targetDir})`);
+        }
+        process.exit(0);
+      }
+      // sub === 'run': collect sealed files and run against targetRepo (emitting sanitized symptoms ONLY)
+      const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+      const allFiles = [];
+      for (const suite of listed.suites) {
+        const sDir = resolveHoldoutDir({ repo: targetRepo, runId: suite.runId, ticketId: suite.ticketId });
+        for (const f of suite.files) allFiles.push(join(sDir, f.filename));
+      }
+      const execRes = await runHoldoutScenarios(allFiles, {
+        candidateWorktree: targetRepo,
+        sandbox: true,
+      });
       if (jsonOut) {
-        console.log(JSON.stringify(cleaned, null, 2));
+        console.log(JSON.stringify(execRes, null, 2));
       } else {
-        console.log(`holdout: cleaned=${cleaned.removed} (${cleaned.targetDir})`);
+        console.log(execRes.summary);
       }
-      process.exit(0);
+      process.exit(execRes.ok ? 0 : 2);
+    } catch (err) {
+      if (jsonOut) {
+        console.log(
+          JSON.stringify(
+            { ok: false, tampered: err?.code === 'ESYMLINK', error: err.message },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(`agb holdout: ${err.message}`);
+      }
+      process.exit(2);
     }
-    // sub === 'run': collect sealed files and run against targetRepo (emitting sanitized symptoms ONLY)
-    const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
-    const allFiles = [];
-    for (const suite of listed.suites) {
-      const sDir = resolveHoldoutDir({ repo: targetRepo, runId: suite.runId, ticketId: suite.ticketId });
-      for (const f of suite.files) allFiles.push(join(sDir, f.filename));
-    }
-    const execRes = await runHoldoutScenarios(allFiles, {
-      candidateWorktree: targetRepo,
-      sandbox: true,
-    });
-    if (jsonOut) {
-      console.log(JSON.stringify(execRes, null, 2));
-    } else {
-      console.log(execRes.summary);
-    }
-    process.exit(execRes.ok ? 0 : 2);
   } else if (cmd === 'brains') {
     rejectUnknownFlags('brains', rest, new Set());
     for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);

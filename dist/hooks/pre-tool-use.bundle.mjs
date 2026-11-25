@@ -3788,14 +3788,16 @@ function stripProcRoot(p) {
   const stripped = p.replace(PROC_ROOT_PREFIX, "");
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
-var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md)(?:\/|$))/;
+var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|logs|runs)(?:\/|$))/;
 var HEADLESS_BOOSTER_CHILD_NAMES = [
   "control.json",
   "control.sock",
   "rescue-locks",
   "rescue-latest",
   "accept-state.json",
-  "accept-dossier.md"
+  "accept-dossier.md",
+  "logs",
+  "runs"
 ];
 function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
   if (typeof absPath !== "string" || absPath.length === 0) return false;
@@ -5337,6 +5339,9 @@ function evaluateMcpTool(name, args, ctx) {
     if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_accept" && Boolean(mcpNorm.folded.saveverdicts) || tool === "agb_holdout" && goFoldKey(mcpNorm.folded.action ?? "") !== "list" || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
     }
+    if (ctx.rescueTicket && (tool === "agb_holdout" && goFoldKey(mcpNorm.folded.action ?? "") !== "list" || tool === "agb_distill" && (Boolean(mcpNorm.folded.apply) || Boolean(mcpNorm.folded.compilechecks)))) {
+      return deny(`Interactive rescue session cannot mutate sealed holdout or learned-check defenses via MCP tool: ${tool}`);
+    }
     return PASS;
   }
   if (ctx.readonly) return deny("Third-party MCP tool call cannot prompt operator in a read-only agb worker session");
@@ -5699,7 +5704,14 @@ function buildContext(payload, options = {}) {
     return [resolvedTmp, realOr(resolvedTmp)];
   }));
   const unbundledEval = false;
-  const customHoldoutRoots = unbundledEval && typeof env.AGB_HOLDOUT_DIR === "string" && env.AGB_HOLDOUT_DIR.trim() && isAbsolute5(env.AGB_HOLDOUT_DIR.trim()) ? [resolve8(env.AGB_HOLDOUT_DIR.trim()), realOr(resolve8(env.AGB_HOLDOUT_DIR.trim()))] : [];
+  const rawHoldoutEnv = unbundledEval && typeof env.AGB_HOLDOUT_DIR === "string" ? env.AGB_HOLDOUT_DIR.trim() : "";
+  const customHoldoutRoots = rawHoldoutEnv ? unique(
+    (isAbsolute5(rawHoldoutEnv) ? [resolve8(rawHoldoutEnv)] : [
+      resolve8(rawHoldoutEnv),
+      ...cwd ? [resolve8(cwd, rawHoldoutEnv)] : [],
+      ...workspacePaths.map((w) => resolve8(w, rawHoldoutEnv))
+    ]).flatMap((p) => [p, realOr(p)])
+  ) : [];
   const baseBoosterDataRoots = unique([...homes.flatMap((h) => boosterDataRoots(h)), ...customHoldoutRoots]);
   const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
   const hasBrainMetadata = payload?.conversationId !== void 0 || payload?.artifactDirectoryPath !== void 0;

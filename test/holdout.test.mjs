@@ -59,6 +59,17 @@ test('stageHoldoutScenarios, listHoldoutScenarios, and cleanHoldoutScenarios val
     assert.equal(badSyntax.ok, false);
     assert.match(badSyntax.error, /syntax check failed/i);
 
+    // Relative parent '../' imports rejected cleanly
+    const relImport = stageHoldoutScenarios({
+      repo,
+      runId: 'run-1',
+      ticketId: 'T-1',
+      scenarios: ['import { foo } from "../src/foo.mjs";'],
+      holdoutRoot: root,
+    });
+    assert.equal(relImport.ok, false);
+    assert.match(relImport.error, /AGB_CANDIDATE_ROOT/);
+
     // Valid scenario staged, listed (metadata only, no source leakage), and cleaned
     const validCode = [
       'import { test } from "node:test";',
@@ -147,21 +158,18 @@ test('sanitizeHoldoutFailureOutput strips holdout paths, line numbers, stack fra
 test('verifyHoldoutRedPhase and runHoldoutScenarios enforce anti-tautology, run against AGB_CANDIDATE_ROOT, and clean candidate scratch writes', async () => {
   const holdoutRoot = mkdtempSync(join(tmpdir(), 'agb-holdout-exec-'));
   const baseWt = mkdtempSync(join(tmpdir(), 'agb-holdout-base-'));
-  const candWt = mkdtempSync(join(tmpdir(), 'agb-holdout-cand-'));
+  const rootRepo = mkdtempSync(join(tmpdir(), 'agb-holdout-root-'));
+  const candParent = mkdtempSync(join(tmpdir(), 'agb-holdout-cand-'));
+  const candWt = join(candParent, 'wt');
   try {
-    // Initialize git in candidate worktree so scratch cleanup is exercised
-    execFileSync('git', ['init', '-q'], { cwd: candWt });
-    execFileSync('git', ['config', 'user.email', 'test@local'], { cwd: candWt });
-    execFileSync('git', ['config', 'user.name', 'test'], { cwd: candWt });
-    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: candWt });
-
-    mkdirSync(join(baseWt, 'src'), { recursive: true });
-    writeFileSync(join(baseWt, 'src', 'calc.mjs'), 'export function clampPositive(n) { return n; }\n');
-
-    mkdirSync(join(candWt, 'src'), { recursive: true });
-    // Candidate implementation also attempts to write a scratch leak file during import
+    // Initialize rootRepo and create an isolated linked git worktree `candWt` (where `.git` is a file pointer)
+    execFileSync('git', ['init', '-q'], { cwd: rootRepo });
+    execFileSync('git', ['config', 'user.email', 'test@local'], { cwd: rootRepo });
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: rootRepo });
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: rootRepo });
+    mkdirSync(join(rootRepo, 'src'), { recursive: true });
     writeFileSync(
-      join(candWt, 'src', 'calc.mjs'),
+      join(rootRepo, 'src', 'calc.mjs'),
       [
         'import { writeFileSync } from "node:fs";',
         'import { join } from "node:path";',
@@ -169,8 +177,12 @@ test('verifyHoldoutRedPhase and runHoldoutScenarios enforce anti-tautology, run 
         'export function clampPositive(n) { return Math.max(0, Number(n)); }',
       ].join('\n') + '\n'
     );
-    execFileSync('git', ['add', '.'], { cwd: candWt });
-    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: candWt });
+    execFileSync('git', ['add', '.'], { cwd: rootRepo });
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: rootRepo });
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'cand-branch', candWt], { cwd: rootRepo });
+
+    mkdirSync(join(baseWt, 'src'), { recursive: true });
+    writeFileSync(join(baseWt, 'src', 'calc.mjs'), 'export function clampPositive(n) { return n; }\n');
 
     const prompt = buildHoldoutAuthorPrompt({
       id: 'T-CALC',
@@ -223,18 +235,136 @@ test('verifyHoldoutRedPhase and runHoldoutScenarios enforce anti-tautology, run 
     assert.equal(tautology.ok, false);
     assert.match(tautology.reason, /tautological/i);
 
-    // 3. Green phase against candWt passes AND cleans smuggled-leak.txt!
+    // 3. Green phase against linked worktree candWt (cleanScratch: true) passes AND cleans smuggled-leak.txt!
     const green = await runHoldoutScenarios(staged.files, {
       candidateWorktree: candWt,
       sandbox: false,
+      cleanScratch: true,
       env: envUnsandboxedInContainer,
     });
     assert.equal(green.ok, true);
     assert.equal(green.passedCount, 1);
     assert.equal(existsSync(join(candWt, 'smuggled-leak.txt')), false, 'scratch writes during P5 holdout must be wiped');
+
+    // 3b. Root repository safety (CR-W4-01): even if cleanScratch: true is passed on a root git repo (.git dir),
+    // uncommitted operator files are NEVER wiped!
+    writeFileSync(join(rootRepo, 'operator-wip.txt'), 'keep-me\n');
+    const rootRun = await runHoldoutScenarios(staged.files, {
+      candidateWorktree: rootRepo,
+      sandbox: false,
+      cleanScratch: true,
+      env: envUnsandboxedInContainer,
+    });
+    assert.equal(rootRun.ok, true);
+    assert.equal(existsSync(join(rootRepo, 'operator-wip.txt')), true, 'root repo uncommitted files must never be wiped');
+
+    // 4. Fail-closed sandbox refusal when sandbox=true, AGB_SANDBOX_GATES is unset, and OS sandbox is unavailable
+    if (process.platform === 'linux') {
+      const refused = await runHoldoutScenarios(staged.files, {
+        candidateWorktree: candWt,
+        sandbox: true,
+        env: { PATH: '/nonexistent' },
+      });
+      assert.equal(refused.ok, false);
+      assert.equal(refused.sandboxRefused, true);
+    }
+
+    // 5. Timeout anti-tautology guard in verifyHoldoutRedPhase
+    const hangStaged = stageHoldoutScenarios({
+      repo: candWt,
+      runId: 'run-hang',
+      ticketId: 'T-HANG',
+      scenarios: ['import { test } from "node:test"; test("Scenario: hangs", async () => { await new Promise(() => {}); });'],
+      holdoutRoot,
+    });
+    assert.equal(hangStaged.ok, true);
+    const hangRed = await verifyHoldoutRedPhase(hangStaged.files, {
+      baseWorktree: baseWt,
+      timeoutMs: 80,
+      sandbox: false,
+      env: envUnsandboxedInContainer,
+    });
+    assert.equal(hangRed.ok, false);
+    assert.match(hangRed.reason, /timed out/i);
+
+    // 6. Post-execution SHA-256 tamper detection when an unsandboxed script mutates its own holdout file
+    const selfMutateStaged = stageHoldoutScenarios({
+      repo: candWt,
+      runId: 'run-tamper',
+      ticketId: 'T-TAMPER',
+      scenarios: [
+        [
+          'import { test } from "node:test";',
+          'import { chmodSync, writeFileSync } from "node:fs";',
+          'import { fileURLToPath } from "node:url";',
+          'test("Scenario: mutates holdout file", () => {',
+          '  const me = fileURLToPath(import.meta.url);',
+          '  chmodSync(me, 0o600);',
+          '  writeFileSync(me, "// tampered\\n");',
+          '});',
+        ].join('\n'),
+      ],
+      holdoutRoot,
+    });
+    assert.equal(selfMutateStaged.ok, true);
+    const tamperRes = await runHoldoutScenarios(selfMutateStaged.files, {
+      candidateWorktree: candWt,
+      sandbox: false,
+      env: envUnsandboxedInContainer,
+    });
+    assert.equal(tamperRes.ok, false);
+    assert.equal(tamperRes.tampered, true);
+
+    // 7. Pass-spoofing via process.exit(0) and node:assert monkey-patching fail closed (SEC-W4-03)
+    const exitSpoofStaged = stageHoldoutScenarios({
+      repo: candWt,
+      runId: 'run-spoof',
+      ticketId: 'T-SPOOF',
+      scenarios: [
+        [
+          'import { test } from "node:test";',
+          'test("Scenario: candidate calls process.exit(0)", () => {',
+          '  process.exit(0);',
+          '});',
+        ].join('\n'),
+      ],
+      holdoutRoot,
+    });
+    assert.equal(exitSpoofStaged.ok, true);
+    const spoofRes = await runHoldoutScenarios(exitSpoofStaged.files, {
+      candidateWorktree: candWt,
+      sandbox: false,
+      env: envUnsandboxedInContainer,
+    });
+    assert.equal(spoofRes.ok, false, 'process.exit(0) mid-scenario must fail closed');
+
+    const assertPatchStaged = stageHoldoutScenarios({
+      repo: candWt,
+      runId: 'run-assert-freeze',
+      ticketId: 'T-FREEZE',
+      scenarios: [
+        [
+          'import { test } from "node:test";',
+          'import assert from "node:assert/strict";',
+          'test("Scenario: candidate attempts to monkey-patch assert.equal", () => {',
+          '  assert.equal = () => {};',
+          '  assert.equal(1, 2);',
+          '});',
+        ].join('\n'),
+      ],
+      holdoutRoot,
+    });
+    assert.equal(assertPatchStaged.ok, true);
+    const patchRes = await runHoldoutScenarios(assertPatchStaged.files, {
+      candidateWorktree: candWt,
+      sandbox: false,
+      env: envUnsandboxedInContainer,
+    });
+    assert.equal(patchRes.ok, false, 'frozen node:assert must reject monkey-patching');
   } finally {
     rmSync(holdoutRoot, { recursive: true, force: true });
     rmSync(baseWt, { recursive: true, force: true });
-    rmSync(candWt, { recursive: true, force: true });
+    rmSync(candParent, { recursive: true, force: true });
+    rmSync(rootRepo, { recursive: true, force: true });
   }
 });

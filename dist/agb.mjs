@@ -11531,6 +11531,9 @@ function validateJsonSchema(data, schema, path5 = "$") {
     if (schema.minItems !== void 0 && data.length < schema.minItems) {
       errors.push(`${path5}: items count ${data.length} < minItems ${schema.minItems}`);
     }
+    if (schema.maxItems !== void 0 && data.length > schema.maxItems) {
+      errors.push(`${path5}: items count ${data.length} > maxItems ${schema.maxItems}`);
+    }
     if (schema.items) {
       for (let i = 0; i < data.length; i++) {
         const itemRes = validateJsonSchema(data[i], schema.items, `${path5}[${i}]`);
@@ -11844,6 +11847,7 @@ function isAllowedEnvVar(key2, env = process.env, platform4 = process.platform) 
   const lookupKey = isWin ? key2.toUpperCase() : key2;
   if (FORBIDDEN_SECRETS.includes(lookupKey) || SENSITIVE_KEY_PATTERN.test(key2)) return false;
   if (DANGEROUS_RUNTIME_ENV_VARS.includes(lookupKey)) return false;
+  if (lookupKey.toUpperCase() === "AGB_HOLDOUT_DIR") return false;
   if (lookupKey.startsWith("FAKE_")) {
     return isTestExecution(env);
   }
@@ -12321,7 +12325,7 @@ function buildSpawnEnv({
     spawnEnv = { ...processEnv, ...env || {} };
   }
   for (const k of Object.keys(spawnEnv)) {
-    if (/^(?:agb_worker_ticket|agb_worker_mode|agb_worker_build_cmd|init_cwd)$/i.test(k)) delete spawnEnv[k];
+    if (/^(?:agb_worker_ticket|agb_worker_mode|agb_worker_build_cmd|agb_holdout_dir|init_cwd)$/i.test(k)) delete spawnEnv[k];
   }
   if (cwd) {
     spawnEnv.PWD = cwd;
@@ -12640,6 +12644,15 @@ async function runAgy({
             } catch {
             }
           }
+          const boosterDir = join23(realAllowedDir, ".booster");
+          if (existsSync22(boosterDir)) {
+            try {
+              if (lstatSync11(boosterDir).isDirectory()) {
+                launchArgs.push("--tmpfs", boosterDir);
+              }
+            } catch {
+            }
+          }
           let targetGitDir = null;
           const altDirs = [];
           const gitFile = join23(realAllowedDir, ".git");
@@ -12945,8 +12958,15 @@ async function runAgy({
           const unbundledRun = false;
           if (unbundledRun && typeof effectiveEnv?.AGB_HOLDOUT_DIR === "string" && effectiveEnv.AGB_HOLDOUT_DIR.trim()) {
             const customHoldout = resolve12(effectiveEnv.AGB_HOLDOUT_DIR.trim());
-            if (existsSync22(customHoldout)) {
-              launchArgs.push("--tmpfs", customHoldout);
+            const holdoutTargets = /* @__PURE__ */ new Set([customHoldout]);
+            try {
+              if (existsSync22(customHoldout)) holdoutTargets.add(realpathSync7(customHoldout));
+            } catch {
+            }
+            for (const hTarget of holdoutTargets) {
+              if (existsSync22(hTarget)) {
+                launchArgs.push("--tmpfs", hTarget);
+              }
             }
           }
         }
@@ -13124,13 +13144,46 @@ async function runAgy({
         })();
         const escapedCanonicalTmp = canonicalTmp.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
         const unbundledSeatbelt = false;
-        let extraHoldoutDenies = `
-(deny file-read* (subpath "${escapedHome}/.gemini/antigravity-cli/plugin_data/antigravity-booster/holdouts"))`;
-        if (unbundledSeatbelt && typeof effectiveEnv?.AGB_HOLDOUT_DIR === "string" && effectiveEnv.AGB_HOLDOUT_DIR.trim() && !/[\r\n\0]/.test(effectiveEnv.AGB_HOLDOUT_DIR)) {
-          const escapedCustomHoldout = resolve12(effectiveEnv.AGB_HOLDOUT_DIR.trim()).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-          extraHoldoutDenies += `
-(deny file-read* (subpath "${escapedCustomHoldout}"))`;
+        const escSbpl = (p) => p.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+        const holdoutHomes = /* @__PURE__ */ new Set([homeDir, userHome]);
+        for (const h of [...holdoutHomes]) {
+          try {
+            if (existsSync22(h)) holdoutHomes.add(realpathSync7(h));
+          } catch {
+          }
         }
+        const seatbeltHoldoutDenyPaths = /* @__PURE__ */ new Set();
+        for (const h of holdoutHomes) {
+          if (h && !/[\r\n\0]/.test(h)) {
+            const hp = join23(h, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster", "holdouts");
+            seatbeltHoldoutDenyPaths.add(hp);
+            try {
+              if (existsSync22(hp)) seatbeltHoldoutDenyPaths.add(realpathSync7(hp));
+            } catch {
+            }
+          }
+        }
+        seatbeltHoldoutDenyPaths.add(join23(allowedDir, ".booster"));
+        seatbeltHoldoutDenyPaths.add(join23(realAllowedDir, ".booster"));
+        if (effectiveRepoRoot && !/[\r\n\0]/.test(effectiveRepoRoot)) {
+          seatbeltHoldoutDenyPaths.add(join23(resolve12(effectiveRepoRoot), ".booster"));
+          try {
+            if (existsSync22(effectiveRepoRoot)) {
+              seatbeltHoldoutDenyPaths.add(join23(realpathSync7(effectiveRepoRoot), ".booster"));
+            }
+          } catch {
+          }
+        }
+        if (unbundledSeatbelt && typeof effectiveEnv?.AGB_HOLDOUT_DIR === "string" && effectiveEnv.AGB_HOLDOUT_DIR.trim() && !/[\r\n\0]/.test(effectiveEnv.AGB_HOLDOUT_DIR)) {
+          const ch = resolve12(effectiveEnv.AGB_HOLDOUT_DIR.trim());
+          seatbeltHoldoutDenyPaths.add(ch);
+          try {
+            if (existsSync22(ch)) seatbeltHoldoutDenyPaths.add(realpathSync7(ch));
+          } catch {
+          }
+        }
+        const extraHoldoutDenies = [...seatbeltHoldoutDenyPaths].filter((p) => !/[\r\n\0]/.test(p)).map((p) => `
+(deny file-read* (subpath "${escSbpl(p)}"))`).join("");
         const seatbeltProfile = `(version 1)
 (allow default)
 (deny file-write*)
@@ -14103,7 +14156,7 @@ import {
   rmSync as rmSync9,
   writeFileSync as writeFileSync13
 } from "node:fs";
-import { homedir as homedir7 } from "node:os";
+import { homedir as homedir7, tmpdir as tmpdir7 } from "node:os";
 import { isAbsolute as isAbsolute8, join as join24, relative as relative9, resolve as resolve13, sep as sep5 } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID as randomUUID6 } from "node:crypto";
@@ -14192,8 +14245,8 @@ function validateTwinsConfig(twins) {
       if (!ALLOWED_METHODS.has(method)) {
         errors.push(`${rLabel}.method '${String(r.method)}' must be one of ${[...ALLOWED_METHODS].join(", ")}`);
       }
-      if (typeof r.path !== "string" || !r.path.startsWith("/") || /[\r\n\s]/.test(r.path)) {
-        errors.push(`${rLabel}.path must be a non-empty '/'-prefixed string without whitespace`);
+      if (typeof r.path !== "string" || !r.path.startsWith("/") || /[\x00-\x1f\x7f\s]/.test(r.path)) {
+        errors.push(`${rLabel}.path must be a non-empty '/'-prefixed string without whitespace or control characters`);
       }
       if (r.status !== void 0) {
         if (typeof r.status !== "number" || !Number.isInteger(r.status) || r.status < 100 || r.status > 599) {
@@ -14205,8 +14258,11 @@ function validateTwinsConfig(twins) {
           errors.push(`${rLabel}.headers must be a plain object`);
         } else {
           for (const [hk, hv] of Object.entries(r.headers)) {
-            if (!HEADER_NAME_RE.test(hk) || typeof hv !== "string" || /[\r\n]/.test(hv)) {
-              errors.push(`${rLabel}.headers['${hk}'] contains invalid header name or CR/LF characters`);
+            const lowerHk = hk.toLowerCase();
+            if (lowerHk === "transfer-encoding" || lowerHk === "content-length") {
+              errors.push(`${rLabel}.headers['${hk}'] cannot override framing header '${lowerHk}'`);
+            } else if (!HEADER_NAME_RE.test(hk) || typeof hv !== "string" || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\r\n]/.test(hv)) {
+              errors.push(`${rLabel}.headers['${hk}'] contains invalid header name or control/CR/LF characters`);
             }
           }
         }
@@ -14262,6 +14318,11 @@ function resolveTwinRuntimeBase({ runtimeRoot = null, env = process.env, bundled
     if (lstatOrNull2(abs)?.isSymbolicLink()) throw symlinkError(abs);
     return abs;
   }
+  if (!bundled && env?.NODE_TEST_CONTEXT && !env?.AGB_HOME_DIR) {
+    const testBase = join24(tmpdir7(), `agb-twins-test-${process.pid}`);
+    if (lstatOrNull2(testBase)?.isSymbolicLink()) throw symlinkError(testBase);
+    return testBase;
+  }
   const userHome = !bundled && env?.AGB_HOME_DIR ? resolve13(env.AGB_HOME_DIR) : homedir7();
   const pluginData = join24(userHome, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster");
   if (lstatOrNull2(pluginData)?.isSymbolicLink()) throw symlinkError(pluginData);
@@ -14280,13 +14341,14 @@ function assertNoSymlinksUnder(baseDir, targetDir) {
     if (lstatOrNull2(cur)?.isSymbolicLink()) throw symlinkError(cur);
   }
 }
-function buildPreloadSource() {
+function buildPreloadSource(routesPath) {
   return `// Auto-generated read-only Digital Twin preload interceptor (v2.0 Wave 4 D2).
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
+import { syncBuiltinESMExports } from 'node:module';
 import { PassThrough, Readable } from 'node:stream';
 
-const manifest = JSON.parse(readFileSync(new URL('./routes.json', import.meta.url), 'utf8'));
+const manifest = JSON.parse(readFileSync(${JSON.stringify(routesPath)}, 'utf8'));
 const origins = new Map(Object.entries(manifest.origins || {}));
 
 function findRoute(routes, method, pathname) {
@@ -14365,10 +14427,17 @@ http.request = function twinHttpRequest(urlOrOpts, optsOrCb, maybeCb) {
   }
   const twin = origins.get(info.origin);
   const reqStream = new PassThrough();
+  const reqHeaders = new Map();
   reqStream.abort = () => reqStream.destroy();
   reqStream.setTimeout = () => reqStream;
   reqStream.setNoDelay = () => reqStream;
   reqStream.setSocketKeepAlive = () => reqStream;
+  reqStream.setHeader = (k, v) => { reqHeaders.set(String(k).toLowerCase(), v); return reqStream; };
+  reqStream.getHeader = (k) => reqHeaders.get(String(k).toLowerCase());
+  reqStream.getHeaders = () => Object.fromEntries(reqHeaders.entries());
+  reqStream.hasHeader = (k) => reqHeaders.has(String(k).toLowerCase());
+  reqStream.removeHeader = (k) => { reqHeaders.delete(String(k).toLowerCase()); };
+  reqStream.flushHeaders = () => {};
   if (info.cb) reqStream.once('response', info.cb);
 
   let dispatched = false;
@@ -14398,6 +14467,7 @@ http.get = function twinHttpGet(urlOrOpts, optsOrCb, maybeCb) {
   req.end();
   return req;
 };
+try { syncBuiltinESMExports(); } catch {}
 `;
 }
 function makeWritableAndRemove(dirPath) {
@@ -14458,25 +14528,33 @@ async function startDigitalTwins(twins = [], { runtimeRoot = null, env = process
       const normalizedRoutes = twin.routes.map(normalizeRoute);
       const sockets = /* @__PURE__ */ new Set();
       const server = http.createServer((req, res) => {
-        req.resume();
-        const hit = matchTwinRoute(normalizedRoutes, req.method, req.url);
-        const status = hit ? hit.status : 404;
-        const headers = hit ? hit.headers : { "content-type": "application/json; charset=utf-8" };
-        const bodyText = hit ? hit.bodyText : JSON.stringify({ error: "twin_route_not_found", path: req.url || "/" });
-        if (requests.length < MAX_CAPTURED_REQUESTS) {
-          requests.push({
-            twin: twin.name,
-            method: String(req.method || "GET").toUpperCase(),
-            url: String(req.url || "/"),
-            status,
-            ts: Date.now()
-          });
-        }
-        res.writeHead(status, headers);
-        if (status === 204 || status === 304 || String(req.method || "").toUpperCase() === "HEAD") {
-          res.end();
-        } else {
-          res.end(bodyText);
+        try {
+          req.resume();
+          const hit = matchTwinRoute(normalizedRoutes, req.method, req.url);
+          const status = hit ? hit.status : 404;
+          const headers = hit ? hit.headers : { "content-type": "application/json; charset=utf-8" };
+          const bodyText = hit ? hit.bodyText : JSON.stringify({ error: "twin_route_not_found", path: req.url || "/" });
+          if (requests.length < MAX_CAPTURED_REQUESTS) {
+            requests.push({
+              twin: twin.name,
+              method: String(req.method || "GET").toUpperCase(),
+              url: String(req.url || "/"),
+              status,
+              ts: Date.now()
+            });
+          }
+          res.writeHead(status, headers);
+          if (status === 204 || status === 304 || String(req.method || "").toUpperCase() === "HEAD") {
+            res.end();
+          } else {
+            res.end(bodyText);
+          }
+        } catch {
+          try {
+            if (!res.headersSent) res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+            res.end("twin_internal_error");
+          } catch {
+          }
         }
       });
       server.keepAliveTimeout = 1e3;
@@ -14510,7 +14588,7 @@ async function startDigitalTwins(twins = [], { runtimeRoot = null, env = process
       mode: 292,
       flag: "wx"
     });
-    writeFileSync13(preloadPath, buildPreloadSource(), { mode: 292, flag: "wx" });
+    writeFileSync13(preloadPath, buildPreloadSource(routesPath), { mode: 292, flag: "wx" });
     try {
       chmodSync5(routesPath, 292);
       chmodSync5(preloadPath, 292);
@@ -14547,7 +14625,7 @@ function buildTwinGateEnv(baseEnv = process.env, handle = null, { sandboxed = fa
     merged[k] = v;
   }
   if (sandboxed && handle.preloadPath && existsSync23(handle.preloadPath)) {
-    const preloadHref = pathToFileURL(handle.preloadPath).href;
+    const preloadHref = pathToFileURL(handle.preloadPath).href.replace(/'/g, "%27");
     if (!/[\s"']/.test(preloadHref)) {
       const importFlag = `--import=${preloadHref}`;
       const existingOpts = typeof merged.NODE_OPTIONS === "string" ? merged.NODE_OPTIONS.trim() : "";
@@ -15552,7 +15630,7 @@ var init_context_slice = __esm({
 import { execFile as execFile5, spawnSync as spawnSync5 } from "node:child_process";
 import { promisify as promisify4 } from "node:util";
 import { writeFileSync as writeFileSync15, mkdtempSync as mkdtempSync6, rmSync as rmSync10, realpathSync as realpathSync9, existsSync as existsSync26, mkdirSync as mkdirSync14 } from "node:fs";
-import { tmpdir as tmpdir7, platform } from "node:os";
+import { tmpdir as tmpdir8, platform } from "node:os";
 import { join as join27 } from "node:path";
 function canonical(p) {
   try {
@@ -15563,7 +15641,7 @@ function canonical(p) {
 }
 function sandboxProfile(cwd) {
   const realCwd = canonical(cwd);
-  const writable = [realCwd, "/private/tmp", "/tmp", canonical(tmpdir7()), "/dev/null", "/dev/stdout", "/dev/stderr", "/private/var/folders"];
+  const writable = [realCwd, "/private/tmp", "/tmp", canonical(tmpdir8()), "/dev/null", "/dev/stdout", "/dev/stderr", "/private/var/folders"];
   const subpaths = writable.map((p) => `(subpath ${JSON.stringify(p)})`).join(" ");
   const denied = [join27(realCwd, ".git"), join27(realCwd, "node_modules")].map((p) => `(deny file-write* (subpath ${JSON.stringify(p)}))`).join("\n");
   return `(version 1)
@@ -15575,7 +15653,7 @@ ${denied}`;
 }
 function linuxBwrapArgs(cwd, cmd2, emptyRo) {
   const realCwd = canonical(cwd);
-  const temp = canonical(tmpdir7());
+  const temp = canonical(tmpdir8());
   const args = [
     "--unshare-net",
     "--die-with-parent",
@@ -15635,12 +15713,12 @@ async function runGate(name, cmd2, cwd, { timeoutMs = 6e5, sandbox = false, env 
   const sandboxed = sandbox && gateSandboxEnabled(env);
   if (sandboxed) {
     if (platform() === "darwin") {
-      const dir = mkdtempSync6(join27(tmpdir7(), "agb-sbpl-"));
+      const dir = mkdtempSync6(join27(tmpdir8(), "agb-sbpl-"));
       profileFile = join27(dir, "gate.sb");
       writeFileSync15(profileFile, sandboxProfile(cwd));
       argv = ["sandbox-exec", ["-f", profileFile, "/bin/sh", "-c", cmd2]];
     } else if (platform() === "linux") {
-      emptyRoDir = mkdtempSync6(join27(tmpdir7(), "agb-empty-ro-"));
+      emptyRoDir = mkdtempSync6(join27(tmpdir8(), "agb-empty-ro-"));
       argv = ["bwrap", linuxBwrapArgs(cwd, cmd2, emptyRoDir)];
     }
   }
@@ -17697,10 +17775,10 @@ function isSafeRegexPattern(pattern) {
   if (typeof pattern !== "string" || pattern.length === 0 || pattern.length > MAX_REGEX_LEN) {
     return false;
   }
-  if (/\\[1-9]/.test(pattern) || /\(\?<[=!]/.test(pattern)) {
+  if (/\\[1-9]/.test(pattern) || /\(\?(?:=|!|<=|<!)/.test(pattern)) {
     return false;
   }
-  if (/(?:\.\*|\.\+|\\s\+|\[\^[^\]]+\]\+)[^\r\n]{0,16}(?:\.\*|\.\+|\\s\+)/.test(pattern)) {
+  if (/(?:\.\*|\.\+)[^\r\n]{0,32}(?:\.\*|\.\+)/.test(pattern) || /(?:\\[dwsDWS]|\[[^\]]+\])[*+]\s*(?:\\[dwsDWS]|\.|\[[^\]]+\])[*+]/.test(pattern)) {
     return false;
   }
   const groupStack = [];
@@ -17736,18 +17814,33 @@ function isSafeRegexPattern(pattern) {
       for (const g of groupStack) g.hasInnerQuantifier = true;
       continue;
     }
+    if (ch === "?") {
+      const prev = i > 0 ? pattern[i - 1] : "";
+      const prevEscaped = i > 1 && pattern[i - 2] === "\\";
+      if (!(prev === "(" && !prevEscaped)) {
+        for (const g of groupStack) g.hasInnerQuantifier = true;
+      }
+      continue;
+    }
     if (ch === ")") {
+      if (groupStack.length === 0) return false;
       const closed = groupStack.pop();
       const next = pattern[i + 1] || "";
       const isQuantifiedGroup = next === "+" || next === "*" || next === "?" || next === "{";
       if (closed && isQuantifiedGroup && (closed.hasInnerQuantifier || closed.hasAlternation)) {
         return false;
       }
-      if (closed?.hasInnerQuantifier && groupStack.length > 0) {
-        groupStack[groupStack.length - 1].hasInnerQuantifier = true;
+      if (groupStack.length > 0) {
+        if (closed?.hasInnerQuantifier) {
+          groupStack[groupStack.length - 1].hasInnerQuantifier = true;
+        }
+        if (closed?.hasAlternation) {
+          groupStack[groupStack.length - 1].hasAlternation = true;
+        }
       }
     }
   }
+  if (inCharClass || escaped || groupStack.length !== 0) return false;
   try {
     new RegExp(pattern);
     return true;
@@ -18129,6 +18222,15 @@ function runLearnedChecks(repo = process.cwd(), { changedFiles: changedFiles2 = 
     };
   }
   const targetFile = checksPath ? resolve20(checksPath) : join34(adlcDir, "learned-checks.json");
+  if (lstatOrNull3(join34(targetFile, ".."))?.isSymbolicLink()) {
+    return {
+      ok: false,
+      exists: true,
+      checkedFiles: 0,
+      violations: [],
+      error: `Refusing to read learned-checks.json inside symlinked parent directory: ${targetFile}`
+    };
+  }
   const st = lstatOrNull3(targetFile);
   if (!st) {
     return { ok: true, exists: false, checkedFiles: 0, violations: [] };
@@ -18277,7 +18379,7 @@ import {
   rmSync as rmSync11,
   writeFileSync as writeFileSync18
 } from "node:fs";
-import { homedir as homedir10, platform as platform2, tmpdir as tmpdir8 } from "node:os";
+import { homedir as homedir10, platform as platform2, tmpdir as tmpdir9 } from "node:os";
 import { basename as basename10, dirname as dirname20, isAbsolute as isAbsolute11, join as join35, relative as relative14, resolve as resolve21, sep as sep8 } from "node:path";
 import { createHash as createHash8, randomUUID as randomUUID13 } from "node:crypto";
 function symlinkError2(targetPath) {
@@ -18335,7 +18437,11 @@ function resolveHoldoutBaseRoot({
     return abs;
   }
   if (!bundled && typeof env?.AGB_HOLDOUT_DIR === "string" && env.AGB_HOLDOUT_DIR.trim()) {
-    const abs = resolve21(env.AGB_HOLDOUT_DIR.trim());
+    const trimmed2 = env.AGB_HOLDOUT_DIR.trim();
+    if (!isAbsolute11(trimmed2)) {
+      throw new Error(`AGB_HOLDOUT_DIR must be an absolute path: ${trimmed2}`);
+    }
+    const abs = resolve21(trimmed2);
     if (lstatOrNull4(abs)?.isSymbolicLink()) throw symlinkError2(abs);
     return abs;
   }
@@ -18439,6 +18545,33 @@ function extractHoldoutCodeBlock(rawText = "") {
   }
   return "";
 }
+async function invokeHoldoutAuthor({
+  ticket,
+  model,
+  cwd,
+  logFile,
+  project: project2,
+  repo,
+  seed,
+  onSpawn
+} = {}) {
+  const prompt = buildHoldoutAuthorPrompt(ticket, { seed });
+  return runAgy({
+    model,
+    prompt,
+    cwd,
+    sandbox: true,
+    timeout: "5m",
+    logFile,
+    project: project2,
+    role: "readonly",
+    useRoleSettings: true,
+    worker: { mode: "readonly" },
+    repo,
+    ticketId: ticket?.id,
+    onSpawn
+  });
+}
 function stageHoldoutScenarios({
   repo = process.cwd(),
   runId = "default",
@@ -18465,7 +18598,26 @@ function stageHoldoutScenarios({
     } catch {
     }
   } catch (err) {
-    return { ok: false, dir: null, files: [], error: err.message };
+    return {
+      ok: false,
+      dir: null,
+      files: [],
+      tampered: err?.code === "ESYMLINK",
+      error: err.message
+    };
+  }
+  try {
+    for (const ent of readdirSync17(targetDir, { withFileTypes: true })) {
+      if (!ent.isSymbolicLink() && ent.isFile() && ent.name.endsWith(".holdout.test.mjs")) {
+        const oldPath = join35(targetDir, ent.name);
+        try {
+          chmodSync7(oldPath, 384);
+          rmSync11(oldPath, { force: true });
+        } catch {
+        }
+      }
+    }
+  } catch {
   }
   const writtenFiles = [];
   for (let i = 0; i < scenarios.length; i++) {
@@ -18635,7 +18787,7 @@ function extractStaticScenarioTitles(sourceCode = "") {
   }
   return titles;
 }
-function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null } = {}) {
+function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null, assumeFailed = true } = {}) {
   const text = String(rawOutput ?? "");
   const lines = text.split(/\r?\n/);
   const failedTitles = [];
@@ -18682,7 +18834,7 @@ function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null } =
     const clean = scrubSensitiveTokens(t).slice(0, MAX_SYMPTOM_LEN);
     return `${clean || "Unnamed scenario"} \u2014 behavioral check failed`;
   });
-  if (behavioralSymptoms.length === 0 && text.trim()) {
+  if (assumeFailed && behavioralSymptoms.length === 0 && text.trim()) {
     behavioralSymptoms.push("Sealed holdout suite failed behavioral verification (details redacted)");
     if (failedCount === 0) failedCount = 1;
   }
@@ -18696,7 +18848,10 @@ function sanitizeHoldoutFailureOutput(rawOutput = "", { allowedTitles = null } =
   };
 }
 function resetCandidateWorktreeScratch(worktreePath) {
-  if (!worktreePath || !existsSync33(join35(worktreePath, ".git"))) return;
+  if (!worktreePath) return;
+  const gitPointer = join35(worktreePath, ".git");
+  const st = lstatOrNull4(gitPointer);
+  if (!st || st.isSymbolicLink() || !st.isFile()) return;
   try {
     execFileSync13(
       "git",
@@ -18731,7 +18886,7 @@ function buildMinimalHoldoutEnv(candidateRoot, env = process.env) {
     PATH: env.PATH || process.env.PATH || "/usr/bin:/bin",
     HOME: env.HOME || process.env.HOME || homedir10(),
     LANG: env.LANG || "C.UTF-8",
-    TMPDIR: env.TMPDIR || tmpdir8(),
+    TMPDIR: env.TMPDIR || tmpdir9(),
     AGB_CANDIDATE_ROOT: candidateRoot
   };
   return out;
@@ -18740,6 +18895,8 @@ async function runHoldoutScenarios(holdoutFiles = [], {
   candidateWorktree = process.cwd(),
   timeoutMs = 6e4,
   sandbox = true,
+  cleanScratch = false,
+  twinHandle = null,
   env = process.env,
   plat = platform2()
 } = {}) {
@@ -18795,45 +18952,105 @@ async function runHoldoutScenarios(holdoutFiles = [], {
   } catch {
   }
   const useSandbox = Boolean(sandbox && gateSandboxEnabled(env));
-  const nodeArgs = ["--test", "--test-reporter=tap", ...resolvedFiles];
+  const nodeArgs = [
+    `--import=${FREEZE_ASSERT_PRELOAD_URL}`,
+    "--test",
+    "--test-reporter=tap",
+    ...resolvedFiles
+  ];
   let cmdBin = process.execPath;
   let cmdArgs = nodeArgs;
   let sandboxTmp = null;
-  if (useSandbox) {
-    sandboxTmp = mkdtempSync7(join35(tmpdir8(), "agb-holdout-sbx-"));
-    const scratchWritable = join35(sandboxTmp, "scratch");
-    mkdirSync17(scratchWritable, { recursive: true });
-    const holdoutDirs = [...new Set(resolvedFiles.map((f) => {
-      try {
-        return realpathSync13(dirname20(f));
-      } catch {
-        return dirname20(f);
-      }
-    }))];
-    if (plat === "darwin") {
-      const profileFile = join35(sandboxTmp, "holdout.sb");
-      const holdoutDenyRules = holdoutDirs.map((d) => `(deny file-write* (subpath ${JSON.stringify(d)}))`).join("\n");
-      writeFileSync18(profileFile, `${sandboxProfile(scratchWritable)}
-${holdoutDenyRules}
-`, { mode: 384 });
-      cmdBin = "sandbox-exec";
-      cmdArgs = ["-f", profileFile, process.execPath, ...nodeArgs];
-    } else if (plat === "linux") {
-      const emptyRo = join35(sandboxTmp, "empty-ro");
-      mkdirSync17(emptyRo, { recursive: true });
-      const bwrapBase = linuxBwrapArgs(scratchWritable, "", emptyRo);
-      const dashIdx = bwrapBase.lastIndexOf("--");
-      const prefix = bwrapBase.slice(0, dashIdx);
-      const roHoldoutArgs = holdoutDirs.flatMap((d) => ["--ro-bind", d, d]);
-      cmdBin = "bwrap";
-      cmdArgs = [...prefix, ...roHoldoutArgs, "--", process.execPath, ...nodeArgs];
-    }
-  }
-  const childEnv2 = buildMinimalHoldoutEnv(realCandidate, env);
   let rawCombined = "";
   let exitOk = false;
   let timedOut = false;
   try {
+    let isolatedTmpDir = null;
+    if (useSandbox) {
+      sandboxTmp = mkdtempSync7(join35(tmpdir9(), "agb-holdout-sbx-"));
+      const scratchWritable = join35(sandboxTmp, "scratch");
+      mkdirSync17(scratchWritable, { recursive: true, mode: 448 });
+      const realScratch = (() => {
+        try {
+          return realpathSync13(scratchWritable);
+        } catch {
+          return scratchWritable;
+        }
+      })();
+      isolatedTmpDir = realScratch;
+      const twinDirs = twinHandle?.instanceDir ? [(() => {
+        try {
+          return realpathSync13(twinHandle.instanceDir);
+        } catch {
+          return twinHandle.instanceDir;
+        }
+      })()] : [];
+      const roProtectedDirs = [.../* @__PURE__ */ new Set([
+        realCandidate,
+        ...twinDirs,
+        ...resolvedFiles.map((f) => {
+          try {
+            return realpathSync13(dirname20(f));
+          } catch {
+            return dirname20(f);
+          }
+        })
+      ])];
+      if (plat === "darwin") {
+        const profileFile = join35(sandboxTmp, "holdout.sb");
+        const holdoutDenyRules = roProtectedDirs.map((d) => `(deny file-write* (subpath ${JSON.stringify(d)}))`).join("\n");
+        const darwinProfile = [
+          "(version 1)",
+          "(allow default)",
+          "(deny network*)",
+          "(deny file-write*)",
+          `(allow file-write* (subpath ${JSON.stringify(realScratch)}) (subpath "/dev/null") (subpath "/dev/stdout") (subpath "/dev/stderr") (regex #"^/dev/(null|zero|dtracehelper|tty)"))`,
+          holdoutDenyRules
+        ].join("\n") + "\n";
+        writeFileSync18(profileFile, darwinProfile, { mode: 384 });
+        cmdBin = "sandbox-exec";
+        cmdArgs = ["-f", profileFile, process.execPath, ...nodeArgs];
+      } else if (plat === "linux") {
+        const hostTmp = (() => {
+          try {
+            return realpathSync13(tmpdir9());
+          } catch {
+            return tmpdir9();
+          }
+        })();
+        const bwrapArgs = [
+          "--unshare-net",
+          "--die-with-parent",
+          "--unshare-pid",
+          "--ro-bind",
+          "/",
+          "/",
+          "--dev",
+          "/dev",
+          "--proc",
+          "/proc",
+          "--bind",
+          realScratch,
+          "/tmp"
+        ];
+        if (hostTmp !== "/tmp" && hostTmp !== "/private/tmp") {
+          bwrapArgs.push("--bind", realScratch, hostTmp);
+        }
+        bwrapArgs.push("--bind", realScratch, realScratch);
+        for (const d of roProtectedDirs) {
+          if (existsSync33(d)) {
+            bwrapArgs.push("--ro-bind", d, d);
+          }
+        }
+        cmdBin = "bwrap";
+        cmdArgs = [...bwrapArgs, "--", process.execPath, ...nodeArgs];
+      }
+    }
+    const baseChildEnv = buildMinimalHoldoutEnv(realCandidate, env);
+    if (isolatedTmpDir) {
+      baseChildEnv.TMPDIR = isolatedTmpDir;
+    }
+    const childEnv2 = twinHandle ? buildTwinGateEnv(baseChildEnv, twinHandle, { sandboxed: useSandbox }) : baseChildEnv;
     const { stdout: stdout2, stderr } = await execFileP3(cmdBin, cmdArgs, {
       cwd: realCandidate,
       env: childEnv2,
@@ -18856,7 +19073,9 @@ ${err?.stderr ?? ""}`;
       } catch {
       }
     }
-    resetCandidateWorktreeScratch(realCandidate);
+    if (cleanScratch) {
+      resetCandidateWorktreeScratch(realCandidate);
+    }
   }
   for (const [f, expectedSha] of preDigests.entries()) {
     try {
@@ -18897,13 +19116,31 @@ ${err?.stderr ?? ""}`;
     };
   }
   if (exitOk) {
-    const parsed = sanitizeHoldoutFailureOutput(rawCombined, { allowedTitles });
+    const parsed = sanitizeHoldoutFailureOutput(rawCombined, {
+      allowedTitles,
+      assumeFailed: false
+    });
+    const minRequiredPasses = Math.max(1, allowedTitles.size);
+    const hasTapZeroFailFooter = /^#\s*fail\s+0\s*$/m.test(rawCombined) && !/^#\s*cancelled\s+[1-9]/m.test(rawCombined);
+    if (parsed.failedCount === 0 && parsed.passedCount >= minRequiredPasses && hasTapZeroFailFooter) {
+      return {
+        ok: true,
+        passedCount: parsed.passedCount,
+        failedCount: 0,
+        behavioralSymptoms: [],
+        summary: "All sealed holdout scenarios passed.",
+        sandboxed: useSandbox,
+        tampered: false
+      };
+    }
+    const spoofSymptoms = parsed.failedCount > 0 && parsed.behavioralSymptoms.length > 0 ? parsed.behavioralSymptoms : ["Sealed holdout suite exited prematurely before completing all behavioral scenarios"];
     return {
-      ok: true,
+      ok: false,
       passedCount: parsed.passedCount,
-      failedCount: 0,
-      behavioralSymptoms: [],
-      summary: "All sealed holdout scenarios passed.",
+      failedCount: Math.max(1, parsed.failedCount || minRequiredPasses - parsed.passedCount),
+      behavioralSymptoms: spoofSymptoms,
+      summary: `Sealed holdout verification failed (${Math.max(1, parsed.failedCount)} scenario(s)):
+` + spoofSymptoms.map((s) => `  - ${s}`).join("\n"),
       sandboxed: useSandbox,
       tampered: false
     };
@@ -18923,6 +19160,7 @@ async function verifyHoldoutRedPhase(holdoutFiles = [], {
   baseWorktree = process.cwd(),
   timeoutMs = 3e4,
   sandbox = true,
+  twinHandle = null,
   env = process.env
 } = {}) {
   if (!Array.isArray(holdoutFiles) || holdoutFiles.length === 0) {
@@ -18932,6 +19170,8 @@ async function verifyHoldoutRedPhase(holdoutFiles = [], {
     candidateWorktree: baseWorktree,
     timeoutMs,
     sandbox,
+    cleanScratch: true,
+    twinHandle,
     env
   });
   if (res.tampered) {
@@ -18954,24 +19194,29 @@ async function verifyHoldoutRedPhase(holdoutFiles = [], {
     failedCount: res.failedCount
   };
 }
-var execFileP3, IS_BUNDLED4, SAFE_SEGMENT_RE2, NULL_HOOKS_PATH2, MAX_SYMPTOM_LEN, MAX_SYMPTOMS;
+var execFileP3, IS_BUNDLED4, SAFE_SEGMENT_RE2, NULL_HOOKS_PATH2, MAX_SYMPTOM_LEN, MAX_SYMPTOMS, FREEZE_ASSERT_PRELOAD_URL;
 var init_holdout = __esm({
   "lib/holdout.mjs"() {
     init_models();
+    init_agy();
     init_gates();
+    init_twins();
     execFileP3 = promisify5(execFile6);
     IS_BUNDLED4 = Boolean(true);
     SAFE_SEGMENT_RE2 = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
     NULL_HOOKS_PATH2 = process.platform === "win32" ? "NUL" : "/dev/null";
     MAX_SYMPTOM_LEN = 160;
     MAX_SYMPTOMS = 12;
+    FREEZE_ASSERT_PRELOAD_URL = "data:text/javascript," + encodeURIComponent(
+      'import a from "node:assert";import s from "node:assert/strict";Object.freeze(a);Object.freeze(s);'
+    );
   }
 });
 
 // lib/scheduler-verify.mjs
 import { existsSync as existsSync34, lstatSync as lstatSync18, mkdirSync as mkdirSync18, mkdtempSync as mkdtempSync8, readFileSync as readFileSync27, readlinkSync as readlinkSync3, realpathSync as realpathSync14, rmSync as rmSync12, writeFileSync as writeFileSync19 } from "node:fs";
 import { execFileSync as execFileSync14 } from "node:child_process";
-import { homedir as homedir11, platform as platform3, tmpdir as tmpdir9 } from "node:os";
+import { homedir as homedir11, platform as platform3, tmpdir as tmpdir10 } from "node:os";
 import path2, { join as join36, resolve as resolve22 } from "node:path";
 function verifyScopeAndAntiNoOp(repo, worktreePath, baseRefSha, ticket) {
   const g = (cwd, ...args) => execFileSync14("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH3}`, ...args], { cwd, encoding: "utf8" }).trim();
@@ -19138,12 +19383,12 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   let targetFile = logFile;
   if (logFile.endsWith(".jsonl")) {
     const { readFileSync: readFileSync44, writeFileSync: writeFileSync33 } = await import("node:fs");
-    const { tmpdir: tmpdir16 } = await import("node:os");
+    const { tmpdir: tmpdir17 } = await import("node:os");
     const { join: join55 } = await import("node:path");
     const { randomUUID: randomUUID20 } = await import("node:crypto");
     try {
       const lines = readFileSync44(logFile, "utf8").trim().split("\n").filter(Boolean);
-      targetFile = join55(tmpdir16(), `flail-${randomUUID20()}.log`);
+      targetFile = join55(tmpdir17(), `flail-${randomUUID20()}.log`);
       tmpDirToClean = targetFile;
       let legacyContent = "";
       for (const line of lines) {
@@ -19208,7 +19453,7 @@ async function runConsensusFix({ worktree, testCmd, railsCmd, files, rails = [],
   if (!testCmd || !files.length) {
     return { ok: false, applied: false, error: "no gate test command or no changed files to fix" };
   }
-  const sandboxTmpDir = mkdtempSync8(join36(tmpdir9(), "agb-cf-sbx-"));
+  const sandboxTmpDir = mkdtempSync8(join36(tmpdir10(), "agb-cf-sbx-"));
   try {
     const wrappedTest = wrapConsensusGateCommand(testCmd, worktree, { sandboxTmpDir });
     if (!wrappedTest.ok) return { ok: false, applied: false, error: wrappedTest.error };
@@ -19388,6 +19633,7 @@ ${detail}`
         return {
           ok: false,
           kind: "holdout_staging_failed",
+          tampered: Boolean(st.tampered),
           error: `sealed holdout staging failed: ${st.error}`
         };
       }
@@ -19413,7 +19659,15 @@ ${detail}`
             existingFiles = listed.suites[0].files.map((f) => join36(suiteDir, f.filename));
             break;
           }
-        } catch {
+        } catch (err) {
+          if (err?.code === "ESYMLINK") {
+            return {
+              ok: false,
+              kind: "holdout_failed",
+              tampered: true,
+              error: `Holdout store integrity violation: ${err.message}`
+            };
+          }
         }
       }
       if (existingFiles.length > 0) {
@@ -19444,15 +19698,24 @@ ${detail}`
     return { ok: true };
   }
   const materialized = worktree !== repo ? materializeWorktreeNodeModules(worktree, join36(repo, "node_modules")) : false;
+  let ownedTwinHandle = null;
   let holdoutRes;
   try {
-    const execEnv = twinHandle ? buildTwinGateEnv(env, twinHandle, { sandboxed: sandbox && gateSandboxEnabled(env) }) : env;
+    const activeTwinHandle = twinHandle ?? (Array.isArray(plan?.gate?.twins) && plan.gate.twins.length > 0 ? ownedTwinHandle = await startDigitalTwins(plan.gate.twins) : null);
     holdoutRes = await runHoldoutScenarios(cached.files, {
       candidateWorktree: worktree,
       sandbox,
-      env: execEnv
+      cleanScratch: worktree !== repo,
+      twinHandle: activeTwinHandle,
+      env
     });
   } finally {
+    if (ownedTwinHandle) {
+      try {
+        await ownedTwinHandle.stop();
+      } catch {
+      }
+    }
     if (materialized) removeMaterializedNodeModules(worktree);
   }
   await recordGate({
@@ -19793,7 +20056,6 @@ var init_scheduler_verify = __esm({
     init_bandit_router();
     init_overview_pane();
     init_plan_integrity();
-    init_gates();
     init_worktrees();
     init_distill();
     init_holdout();
@@ -19821,7 +20083,7 @@ var init_scheduler_verify = __esm({
 // lib/prosecute.mjs
 import { execFile as execFile7 } from "node:child_process";
 import { mkdtempSync as mkdtempSync9, rmSync as rmSync13 } from "node:fs";
-import { tmpdir as tmpdir10 } from "node:os";
+import { tmpdir as tmpdir11 } from "node:os";
 import { join as join37 } from "node:path";
 import { promisify as promisify6 } from "node:util";
 function isCompatibleNodeTestCmd(testCmd) {
@@ -19864,7 +20126,7 @@ async function runHollowTest({ worktree, testCmd, base = "main", adlcBin, change
     }
   }
   const useSandbox = process.env.AGB_SANDBOX_GATES !== "0";
-  const hollowSandboxDir = useSandbox ? mkdtempSync9(join37(tmpdir10(), "agb-prosecute-ht-sbx-")) : null;
+  const hollowSandboxDir = useSandbox ? mkdtempSync9(join37(tmpdir11(), "agb-prosecute-ht-sbx-")) : null;
   try {
     let hollowTestCmd = effectiveTestCmd;
     if (useSandbox) {
@@ -20660,7 +20922,7 @@ var init_tui = __esm({
 import { execFileSync as execFileSync16 } from "node:child_process";
 import net2 from "node:net";
 import crypto5 from "node:crypto";
-import { tmpdir as tmpdir11 } from "node:os";
+import { tmpdir as tmpdir12 } from "node:os";
 import { dirname as dirname22, isAbsolute as isAbsolute13, join as join39, relative as relative15, resolve as resolve25 } from "node:path";
 import {
   chmodSync as chmodSync8,
@@ -20871,7 +21133,7 @@ function resolveControlEndpoint(repo) {
     return primary;
   }
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
-  return join39(tmpdir11(), `agb-ctrl-${uid}-${hash}.sock`);
+  return join39(tmpdir12(), `agb-ctrl-${uid}-${hash}.sock`);
 }
 async function startControlServer(repo, handlers = {}, { runId = null } = {}) {
   const { canonicalRepo, boosterDir } = ensureSafeBoosterDir(repo);
@@ -24382,7 +24644,7 @@ import {
   writeFileSync as writeFileSync24,
   writeSync as writeSync5
 } from "node:fs";
-import { tmpdir as tmpdir12 } from "node:os";
+import { tmpdir as tmpdir13 } from "node:os";
 import { dirname as dirname25, isAbsolute as isAbsolute15, join as join43, relative as relative17, resolve as resolve29, sep as sep10 } from "node:path";
 import { pathToFileURL as pathToFileURL3 } from "node:url";
 function getMatcher(pattern, nocase) {
@@ -24918,7 +25180,7 @@ function resolveRescueTicketAndGate(repo, ticketId, options = {}) {
     }
   }
   const resolvedGate = options.gate ?? planObj?.gate ?? { test: "npm test" };
-  return { resolvedTicket, resolvedGate, planBase: planObj?.base ?? null };
+  return { resolvedTicket, resolvedGate, planBase: planObj?.base ?? null, planObj };
 }
 function readRunJsonSafe(repo) {
   const boosterSt = lstatOrNull5(join43(repo, ".booster"));
@@ -25097,7 +25359,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
     };
   }
   const resolvedRepo = resolve29(repo);
-  const { resolvedTicket, resolvedGate, planBase } = resolveRescueTicketAndGate(
+  const { resolvedTicket, resolvedGate, planBase, planObj } = resolveRescueTicketAndGate(
     resolvedRepo,
     ticketId,
     options
@@ -25315,7 +25577,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
           }
           const basePkg = JSON.parse(readFileSync32(basePkgPath, "utf8"));
           const candPkg = JSON.parse(readFileSync32(candPkgPath, "utf8"));
-          for (const cmd2 of [resolvedGate?.build, resolvedGate?.test].filter(Boolean)) {
+          for (const cmd2 of [resolvedGate?.autofix, resolvedGate?.build, resolvedGate?.test].filter(Boolean)) {
             verifyGateIntegrityFn(candPkg, basePkg, cmd2);
           }
         }
@@ -25335,7 +25597,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
       }
       const basePkg = JSON.parse(readFileSync32(basePkgPath, "utf8"));
       const candPkg = JSON.parse(readFileSync32(candPkgPath, "utf8"));
-      for (const cmd2 of [resolvedGate?.build, resolvedGate?.test].filter(Boolean)) {
+      for (const cmd2 of [resolvedGate?.autofix, resolvedGate?.build, resolvedGate?.test].filter(Boolean)) {
         verifyGateScriptIntegrity(candPkg, basePkg, cmd2);
       }
     }
@@ -25395,6 +25657,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
     let gateRes;
     let hollowRes = null;
     let rescueTwinHandle = null;
+    let verdict = null;
     try {
       const stringOnlyGates = {};
       if (typeof resolvedGate?.build === "string" && resolvedGate.build.trim()) {
@@ -25424,6 +25687,21 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
 ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
         );
       }
+      const darkRes = await executePostGateDarkFactoryChecks({
+        repo: resolvedRepo,
+        worktree: integWorktree,
+        ticket: canonicalTicket,
+        plan: planObj ?? { gate: resolvedGate },
+        runId,
+        changedFiles: changed,
+        runAdlcBin,
+        twinHandle: rescueTwinHandle,
+        authorHoldoutFn: null,
+        sandbox: true
+      });
+      if (!darkRes?.ok) {
+        throw new Error(darkRes?.error || "dark-factory verification failed");
+      }
       if (hollowTestEnabled && changed.some((f) => f.startsWith("lib/"))) {
         hollowRes = await runHollowTestFn({
           worktree: integWorktree,
@@ -25443,6 +25721,26 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
           );
         }
       }
+      const diffText = branchDiff(integWorktree, baseHeadSha);
+      let prosecutorModel = PROSECUTOR_CANDIDATES[0];
+      try {
+        const pools = new PoolSet(void 0, { repo: resolvedRepo });
+        const referenceBuilder = tierCandidates(canonicalTicket.tier ?? "mid", canonicalTicket.pool_hint)[0];
+        prosecutorModel = pools.prosecutorFor(referenceBuilder);
+      } catch {
+      }
+      prosecuteScratch = mkdtempSync10(join43(tmpdir13(), "agb-rescue-prosecute-"));
+      verdict = await prosecuteFn({
+        ticket: canonicalTicket,
+        diff: diffText,
+        model: prosecutorModel,
+        cwd: prosecuteScratch,
+        worktree: options.prosecuteFn ? integWorktree : hollowRes ? null : integWorktree,
+        testCmd: effectiveHollowTestCmd,
+        base: baseHeadSha,
+        adlcBin: runAdlcBin,
+        hollowTest: hollowRes
+      });
     } finally {
       if (rescueTwinHandle) {
         try {
@@ -25453,26 +25751,6 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
       if (materialized) removeMaterializedNodeModules(integWorktree);
       cleanEmptyNodeModules(integWorktree);
     }
-    const diffText = branchDiff(integWorktree, baseHeadSha);
-    let prosecutorModel = PROSECUTOR_CANDIDATES[0];
-    try {
-      const pools = new PoolSet(void 0, { repo: resolvedRepo });
-      const referenceBuilder = tierCandidates(canonicalTicket.tier ?? "mid", canonicalTicket.pool_hint)[0];
-      prosecutorModel = pools.prosecutorFor(referenceBuilder);
-    } catch {
-    }
-    prosecuteScratch = mkdtempSync10(join43(tmpdir12(), "agb-rescue-prosecute-"));
-    const verdict = await prosecuteFn({
-      ticket: canonicalTicket,
-      diff: diffText,
-      model: prosecutorModel,
-      cwd: prosecuteScratch,
-      worktree: options.prosecuteFn ? integWorktree : hollowRes ? null : integWorktree,
-      testCmd: resolvedGate?.test,
-      base: baseHeadSha,
-      adlcBin: runAdlcBin,
-      hollowTest: hollowRes
-    });
     const blocking = blockingFindings(verdict?.findings);
     if (!verdict || verdict.verdict !== "ship" || blocking.length > 0) {
       const reason = verdict?.error || (blocking.length > 0 ? JSON.stringify(blocking) : `verdict=${verdict?.verdict ?? "none"}`);
@@ -26274,7 +26552,7 @@ import {
   mkdtempSync as mkdtempSync12
 } from "node:fs";
 import { join as join52, dirname as dirname32, resolve as resolve36, sep as sep12, isAbsolute as isAbsolute18, delimiter as delimiter2 } from "node:path";
-import { homedir as homedir16, tmpdir as tmpdir15 } from "node:os";
+import { homedir as homedir16, tmpdir as tmpdir16 } from "node:os";
 import { execFileSync as execFileSync24, spawn as spawn5 } from "node:child_process";
 import { randomBytes as randomBytes5 } from "node:crypto";
 function paths(home) {
@@ -26584,7 +26862,7 @@ function defaultUninstallerArgv(home) {
 }
 async function handOverUninstall(ctx) {
   const { home, lock, agyBin, log: log2, err } = ctx;
-  const dir = mkdtempSync12(join52(ctx.tmpParent ?? tmpdir15(), UNINSTALLER_DIR_PREFIX));
+  const dir = mkdtempSync12(join52(ctx.tmpParent ?? tmpdir16(), UNINSTALLER_DIR_PREFIX));
   chmodSync14(dir, 448);
   const rawLauncher = ctx.uninstaller ?? defaultUninstallerArgv(home);
   const isWin = process.platform === "win32";
@@ -27331,7 +27609,7 @@ init_gates();
 init_prosecute();
 import { writeFileSync as writeFileSync26, mkdtempSync as mkdtempSync11, rmSync as rmSync19, existsSync as existsSync41, readFileSync as readFileSync34, readdirSync as readdirSync20, realpathSync as realpathSync18, mkdirSync as mkdirSync25, lstatSync as lstatSync24, openSync as openSync12, closeSync as closeSync12, writeSync as writeSync6, fsyncSync as fsyncSync7, unlinkSync as unlinkSync9, constants as constants6 } from "node:fs";
 import { execFileSync as execFileSync18 } from "node:child_process";
-import { tmpdir as tmpdir13 } from "node:os";
+import { tmpdir as tmpdir14 } from "node:os";
 import path4, { join as join45, resolve as resolve31, isAbsolute as isAbsolute16, dirname as dirname27, basename as basename12 } from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 import crypto7 from "node:crypto";
@@ -28367,6 +28645,8 @@ var FactoryLedger = class {
 
 // lib/scheduler.mjs
 init_scheduler_verify();
+init_holdout();
+init_twins();
 var NULL_HOOKS_PATH5 = process.platform === "win32" ? "NUL" : "/dev/null";
 function terminateProcessTree(child, sig = "SIGKILL") {
   if (!child) return;
@@ -30118,7 +30398,7 @@ Fix: ${agyCheck.fix}`);
         }
       }
     }
-    async function runConfiguredGates(gatesObj, cwd, { sandbox = false, twinHandle: callerTwinHandle = null } = {}) {
+    async function runConfiguredGates(gatesObj, cwd, { sandbox = false, twinHandle: callerTwinHandle = null, ticketId = "run-gate" } = {}) {
       const rawTimeout = Number(process.env.AGB_GATE_TIMEOUT_MS);
       const timeoutMs = Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 18e5;
       const materialized = cwd !== repo ? materializeWorktreeNodeModules(cwd, join45(repo, "node_modules")) : false;
@@ -30138,7 +30418,7 @@ Fix: ${agyCheck.fix}`);
           await recordGate({
             repo,
             gateName: "twins",
-            ticketId: "run-gate",
+            ticketId,
             data: { twins: ownedTwinHandle.twins.map((tw) => tw.name), requests: ownedTwinHandle.requests.length },
             adlcBin: runAdlcBin
           });
@@ -30166,6 +30446,7 @@ Fix: ${agyCheck.fix}`);
       let release = null;
       let scratch = null;
       let baseCheckWt = null;
+      let redTwinHandle = null;
       try {
         const acq = await acquireWithQuotaHandling(initialAuthorModel, {
           role: "prosecutor",
@@ -30175,22 +30456,14 @@ Fix: ${agyCheck.fix}`);
         });
         release = acq.release;
         status.pools(pools.snapshot());
-        scratch = mkdtempSync11(join45(tmpdir13(), "agb-holdout-author-"));
-        const safeId = t.id.replace(/[\/\\]/g, "_");
-        const authorPrompt = buildHoldoutAuthorPrompt(t, { seed: runSeed });
-        const res = await runAgy({
+        scratch = mkdtempSync11(join45(tmpdir14(), "agb-holdout-author-"));
+        const res = await invokeHoldoutAuthor({
+          ticket: t,
           model: acq.model,
-          prompt: authorPrompt,
           cwd: scratch,
-          sandbox: true,
-          timeout: "5m",
-          logFile: join45(logDir, `${safeId}.jsonl`),
           project: finalProject,
-          role: "readonly",
-          useRoleSettings: true,
-          worker: { mode: "readonly" },
           repo,
-          ticketId: t.id,
+          seed: runSeed,
           onSpawn: (child) => {
             if (child) {
               activeChildren.add(child);
@@ -30212,11 +30485,22 @@ Fix: ${agyCheck.fix}`);
         const materialized = materializeWorktreeNodeModules(baseCheckWt, join45(repo, "node_modules"));
         let redRes;
         try {
+          if (Array.isArray(gate?.twins) && gate.twins.length > 0) {
+            redTwinHandle = await startDigitalTwins(gate.twins);
+          }
           redRes = await verifyHoldoutRedPhase(staged.files, {
             baseWorktree: baseCheckWt,
-            sandbox: true
+            sandbox: true,
+            twinHandle: redTwinHandle
           });
         } finally {
+          if (redTwinHandle) {
+            try {
+              await redTwinHandle.stop();
+            } catch {
+            }
+            redTwinHandle = null;
+          }
           if (materialized) removeMaterializedNodeModules(baseCheckWt);
         }
         if (!redRes.ok) {
@@ -30377,7 +30661,7 @@ Fix: ${agyCheck.fix}`);
         ticketId: t.id
       });
       status.pools(pools.snapshot());
-      const scratch = mkdtempSync11(join45(tmpdir13(), "agb-prosecute-"));
+      const scratch = mkdtempSync11(join45(tmpdir14(), "agb-prosecute-"));
       const safeId = t.id.replace(/[\/\\]/g, "_");
       if (release.isActive && !release.isActive()) {
         rmSync19(scratch, { recursive: true, force: true });
@@ -31078,7 +31362,7 @@ Fix: ${agyCheck.fix}`);
                     }
                   }
                   status.ticket(t.id, { phase: "gating" });
-                  const gates = await runConfiguredGates(gate, worktree, { sandbox: true });
+                  const gates = await runConfiguredGates(gate, worktree, { sandbox: true, ticketId: t.id });
                   cleanEmptyNodeModules(worktree);
                   await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: gates.ok, strikes }, adlcBin: runAdlcBin });
                   if (!gates.ok) {
@@ -31088,33 +31372,18 @@ Fix: ${agyCheck.fix}`);
 ${g.output}`;
                     safeResetToBase();
                   } else {
-                    let p5TwinHandle = null;
-                    let darkFactoryCheck;
-                    try {
-                      if (Array.isArray(gate?.twins) && gate.twins.length > 0) {
-                        p5TwinHandle = await startDigitalTwins(gate.twins);
-                      }
-                      darkFactoryCheck = await executePostGateDarkFactoryChecks({
-                        repo,
-                        worktree,
-                        ticket: t,
-                        plan,
-                        runId: safeRunId,
-                        changedFiles: changed,
-                        runAdlcBin,
-                        twinHandle: p5TwinHandle,
-                        authoredHoldoutCache,
-                        authorHoldoutFn: (tk) => authorHoldoutForTicket(tk, model),
-                        sandbox: true
-                      });
-                    } finally {
-                      if (p5TwinHandle) {
-                        try {
-                          await p5TwinHandle.stop();
-                        } catch {
-                        }
-                      }
-                    }
+                    const darkFactoryCheck = await executePostGateDarkFactoryChecks({
+                      repo,
+                      worktree,
+                      ticket: t,
+                      plan,
+                      runId: safeRunId,
+                      changedFiles: changed,
+                      runAdlcBin,
+                      authoredHoldoutCache,
+                      authorHoldoutFn: (tk) => authorHoldoutForTicket(tk, model),
+                      sandbox: true
+                    });
                     if (!darkFactoryCheck.ok) {
                       ticketFaultModels.add(model);
                       if (darkFactoryCheck.tampered) {
@@ -31273,39 +31542,31 @@ ${JSON.stringify(blocking, null, 2)}`;
                                       }
                                       if (!cfAutofixTampered) {
                                         status.ticket(t.id, { phase: "gating" });
-                                        const cfGates = await runConfiguredGates(gate, worktree, { sandbox: true });
+                                        const cfGates = await runConfiguredGates(gate, worktree, { sandbox: true, ticketId: t.id });
                                         cleanEmptyNodeModules(worktree);
                                         await recordGate({ repo, gateName: "build", ticketId: t.id, data: { ok: cfGates.ok, strikes, consensusFix: true }, adlcBin: runAdlcBin });
                                         if (cfGates.ok) {
-                                          let cfDfTwin = null;
-                                          let cfDarkCheck;
-                                          try {
-                                            if (Array.isArray(gate?.twins) && gate.twins.length > 0) {
-                                              cfDfTwin = await startDigitalTwins(gate.twins);
-                                            }
-                                            cfDarkCheck = await executePostGateDarkFactoryChecks({
-                                              repo,
-                                              worktree,
-                                              ticket: t,
-                                              plan,
-                                              runId: safeRunId,
-                                              changedFiles: cfScope.changedFiles,
-                                              runAdlcBin,
-                                              twinHandle: cfDfTwin,
-                                              authoredHoldoutCache,
-                                              authorHoldoutFn: (tk) => authorHoldoutForTicket(tk, model),
-                                              sandbox: true
-                                            });
-                                          } finally {
-                                            if (cfDfTwin) {
-                                              try {
-                                                await cfDfTwin.stop();
-                                              } catch {
-                                              }
-                                            }
-                                          }
+                                          const cfDarkCheck = await executePostGateDarkFactoryChecks({
+                                            repo,
+                                            worktree,
+                                            ticket: t,
+                                            plan,
+                                            runId: safeRunId,
+                                            changedFiles: cfScope.changedFiles,
+                                            runAdlcBin,
+                                            authoredHoldoutCache,
+                                            authorHoldoutFn: (tk) => authorHoldoutForTicket(tk, model),
+                                            sandbox: true
+                                          });
                                           if (!cfDarkCheck.ok) {
                                             safeResetToBase();
+                                            if (cfDarkCheck.tampered) {
+                                              strikes = 2;
+                                              strikeError = compromiseRun(cfDarkCheck.error);
+                                              lastFailure = strikeError;
+                                              status.strike(t.id, { model, error: strikeError, strikes });
+                                              throw new Error(strikeError);
+                                            }
                                             cfFailureReason = `consensus-fix applied a candidate but it failed dark-factory checks: ${cfDarkCheck.error}`;
                                           } else {
                                             let cfDry = 0;
@@ -31545,7 +31806,7 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           }
           if (hasBaselineTests && gate?.test) {
             execFileSync18("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH5}`, "checkout", headBefore, "--", "test"], { cwd: integrationPath, env: gitEnv });
-            const pass1 = await runConfiguredGates({ test: gate.test }, integrationPath, { sandbox: true });
+            const pass1 = await runConfiguredGates({ test: gate.test }, integrationPath, { sandbox: true, ticketId: t.id });
             if (!pass1.ok) {
               const g = pass1.results.at(-1);
               const pass1Err = new Error(`Pass 1 (baseline regression) failed: gate ${g?.name ?? "test"} failed:
@@ -31555,7 +31816,7 @@ ${g?.output?.slice(0, 300)}`);
             }
             execFileSync18("git", ["-c", `core.hooksPath=${NULL_HOOKS_PATH5}`, "reset", "--hard", rebasedSha], { cwd: integrationPath, env: gitEnv });
           }
-          const post = await runConfiguredGates(gate, integrationPath, { sandbox: true });
+          const post = await runConfiguredGates(gate, integrationPath, { sandbox: true, ticketId: t.id });
           await recordGate({ repo, gateName: "post-merge-build", ticketId: t.id, data: { ok: post.ok }, adlcBin: runAdlcBin });
           if (!post.ok) {
             const g = post.results.at(-1);
@@ -31565,9 +31826,30 @@ ${g?.output?.slice(0, 300)}`);
             throw postErr;
           }
           const diffFiles = execFileSync18("git", ["diff-tree", "-r", "--name-only", "-z", headBefore, rebasedSha], { cwd: repo, env: gitEnv }).toString("utf8").split("\0").filter(Boolean);
+          const postDarkCheck = await executePostGateDarkFactoryChecks({
+            repo,
+            worktree: integrationPath,
+            ticket: t,
+            plan,
+            runId: safeRunId,
+            changedFiles: diffFiles,
+            runAdlcBin,
+            authoredHoldoutCache,
+            authorHoldoutFn: null,
+            sandbox: true
+          });
+          if (!postDarkCheck.ok) {
+            if (postDarkCheck.tampered) {
+              throw new Error(compromiseRun(postDarkCheck.error));
+            }
+            const darkErr = new Error(`post-merge dark-factory gate failed:
+${postDarkCheck.error}`);
+            darkErr.kind = "post_merge_gate_failure";
+            throw darkErr;
+          }
           const modifiedTests = diffFiles.filter((p) => p.startsWith("test/"));
           if (modifiedTests.length > 0 && gate?.test) {
-            const hollowSandboxDir = process.env.AGB_SANDBOX_GATES !== "0" ? mkdtempSync11(join45(tmpdir13(), "agb-ht-sbx-")) : null;
+            const hollowSandboxDir = process.env.AGB_SANDBOX_GATES !== "0" ? mkdtempSync11(join45(tmpdir14(), "agb-ht-sbx-")) : null;
             let htTwinHandle = null;
             try {
               let baseTestCmd = gate.test;
@@ -32793,7 +33075,7 @@ import {
   chmodSync as chmodSync12
 } from "node:fs";
 import { join as join46, dirname as dirname28, resolve as resolve33, basename as basename13 } from "node:path";
-import { homedir as homedir13, tmpdir as tmpdir14 } from "node:os";
+import { homedir as homedir13, tmpdir as tmpdir15 } from "node:os";
 import { randomUUID as randomUUID18 } from "node:crypto";
 var IS_BUNDLED_STATUSLINE = true;
 function isBundledRuntime() {
@@ -32994,7 +33276,7 @@ function findAdlcRoot(targetDir, resolvedHome) {
   const stopHome = resolvedHome ? resolve33(resolvedHome) : null;
   let stopTmp = null;
   try {
-    stopTmp = resolve33(tmpdir14());
+    stopTmp = resolve33(tmpdir15());
   } catch {
   }
   while (true) {
@@ -35050,43 +35332,58 @@ try {
       console.error("usage: agb holdout <list|run|clean> [repo] [--ticket <id>] [--run-id <id>] [--json]");
       process.exit(1);
     }
-    if (sub === "list") {
-      const listed2 = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
-      if (jsonOut) {
-        console.log(JSON.stringify(listed2, null, 2));
-      } else {
-        console.log(`holdout: suites=${listed2.suites.length} files=${listed2.totalFiles}`);
-        for (const s of listed2.suites) {
-          console.log(`  ${s.runId}/${s.ticketId}: ${s.count} scenario file(s)`);
+    try {
+      if (sub === "list") {
+        const listed2 = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(listed2, null, 2));
+        } else {
+          console.log(`holdout: suites=${listed2.suites.length} files=${listed2.totalFiles}`);
+          for (const s of listed2.suites) {
+            console.log(`  ${s.runId}/${s.ticketId}: ${s.count} scenario file(s)`);
+          }
         }
+        process.exit(0);
       }
-      process.exit(0);
-    }
-    if (sub === "clean") {
-      const cleaned = cleanHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+      if (sub === "clean") {
+        const cleaned = cleanHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+        if (jsonOut) {
+          console.log(JSON.stringify(cleaned, null, 2));
+        } else {
+          console.log(`holdout: cleaned=${cleaned.removed} (${cleaned.targetDir})`);
+        }
+        process.exit(0);
+      }
+      const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
+      const allFiles = [];
+      for (const suite of listed.suites) {
+        const sDir = resolveHoldoutDir({ repo: targetRepo, runId: suite.runId, ticketId: suite.ticketId });
+        for (const f of suite.files) allFiles.push(join54(sDir, f.filename));
+      }
+      const execRes = await runHoldoutScenarios(allFiles, {
+        candidateWorktree: targetRepo,
+        sandbox: true
+      });
       if (jsonOut) {
-        console.log(JSON.stringify(cleaned, null, 2));
+        console.log(JSON.stringify(execRes, null, 2));
       } else {
-        console.log(`holdout: cleaned=${cleaned.removed} (${cleaned.targetDir})`);
+        console.log(execRes.summary);
       }
-      process.exit(0);
+      process.exit(execRes.ok ? 0 : 2);
+    } catch (err) {
+      if (jsonOut) {
+        console.log(
+          JSON.stringify(
+            { ok: false, tampered: err?.code === "ESYMLINK", error: err.message },
+            null,
+            2
+          )
+        );
+      } else {
+        console.error(`agb holdout: ${err.message}`);
+      }
+      process.exit(2);
     }
-    const listed = listHoldoutScenarios({ repo: targetRepo, runId, ticketId });
-    const allFiles = [];
-    for (const suite of listed.suites) {
-      const sDir = resolveHoldoutDir({ repo: targetRepo, runId: suite.runId, ticketId: suite.ticketId });
-      for (const f of suite.files) allFiles.push(join54(sDir, f.filename));
-    }
-    const execRes = await runHoldoutScenarios(allFiles, {
-      candidateWorktree: targetRepo,
-      sandbox: true
-    });
-    if (jsonOut) {
-      console.log(JSON.stringify(execRes, null, 2));
-    } else {
-      console.log(execRes.summary);
-    }
-    process.exit(execRes.ok ? 0 : 2);
   } else if (cmd === "brains") {
     rejectUnknownFlags("brains", rest, /* @__PURE__ */ new Set());
     for (const b of listBrains()) console.log(`${b.id}  ${new Date(b.mtime).toISOString().slice(0, 10)}  ${b.title}`);

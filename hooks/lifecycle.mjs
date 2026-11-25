@@ -47,7 +47,9 @@ const IS_BUNDLED =
   (typeof __AGB_BUNDLED__ !== 'undefined' && Boolean(__AGB_BUNDLED__)) ||
   detectInstalledPluginPath();
 const VALID_CONVERSATION_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+const SAFE_TICKET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const CONTEXT_ROT_TURN_THRESHOLD = 25;
+const MAX_TOTAL_STOP_CONTINUATIONS = 2;
 const STDIN_CEILING_MS = 3_000;
 const MAX_STDIN_BYTES = 2 * 1024 * 1024;
 const MAX_STATE_FILES = 200;
@@ -62,12 +64,17 @@ const MUTATING_FILE_TOOLS = new Set([
   'create_file',
   'save_file',
   'delete_file',
+  'delete_directory',
   'move',
   'sed_file',
+  'edit_notebook',
+  'notebook_edit',
+  'write_blob',
 ]);
 
 const GATE_PASS_CMD_RE =
-  /\b(?:npm\s+test|npm\s+run\s+(?:test|check|coverage|coverage:check|build)|node\s+(?:[^\n;&|]*\s+)?--test|npx\s+adlc\s+(?:rails-guard|hollow-test))\b/;
+  /(?:^|&&|;)\s*(?:npm\s+test|npm\s+run\s+(?:test|check|coverage|coverage:check|build)\b|node\s+(?:[^\n;&|]*\s+)?--test\b|npx\s+adlc\s+(?:rails-guard|hollow-test)\b)/;
+const MASKED_EXIT_RE = /\|\|\s*(?:true\b|:)/;
 
 function lstatOrNull(p) {
   try {
@@ -155,7 +162,7 @@ export function inspectActiveAdlcRepo(cwd, workspacePaths = [], homeDir = homedi
       if (parsed.completed === true) continue;
       const status = String(parsed.status || 'open').toLowerCase();
       if (status === 'completed' || status === 'closed' || status === 'archived' || status === 'done') continue;
-      if (typeof parsed.id === 'string' && parsed.id.trim()) {
+      if (typeof parsed.id === 'string' && SAFE_TICKET_ID_RE.test(parsed.id.trim())) {
         ticketIds.push(parsed.id.trim());
       }
       if (Array.isArray(parsed.rails)) {
@@ -187,6 +194,7 @@ function defaultSessionState(conversationId) {
     lastEditedPath: null,
     lastGatePassAt: null,
     stopContinuationCount: 0,
+    totalStopContinuations: 0,
     updatedAt: Date.now(),
   };
 }
@@ -288,14 +296,41 @@ function isIgnoredEditTarget(rawTarget, repoRoot) {
   return false;
 }
 
-function extractEditedTarget(args) {
-  if (!args || typeof args !== 'object') return '';
-  for (const key of ['Path', 'TargetFile', 'destination', 'target_file', 'targetFile', 'filePath']) {
+function extractEditedTargets(args) {
+  if (!args || typeof args !== 'object') return [];
+  const found = [];
+  for (const key of [
+    'Path',
+    'TargetFile',
+    'source',
+    'destination',
+    'directoryPath',
+    'notebookPath',
+    'NotebookPath',
+    'targetPath',
+    'target_file',
+    'targetFile',
+    'filePath',
+  ]) {
     if (typeof args[key] === 'string' && args[key].trim()) {
-      return args[key].trim();
+      found.push(args[key].trim());
     }
   }
-  return '';
+  return found;
+}
+
+function didToolCallFail(payload) {
+  if (payload?.error) return true;
+  for (const container of [payload, payload?.toolResponse, payload?.result]) {
+    if (!container || typeof container !== 'object') continue;
+    if (container.isError === true) return true;
+    for (const codeKey of ['exitCode', 'exit_code']) {
+      if (typeof container[codeKey] === 'number' && container[codeKey] !== 0) return true;
+    }
+    const outText = typeof container.output === 'string' ? container.output : '';
+    if (/Command exited with code [1-9]\d*/.test(outText)) return true;
+  }
+  return false;
 }
 
 function buildZeroTokenUserMarkdown(markdown) {
@@ -333,6 +368,9 @@ export function evaluateLifecycleEvent(
   }
 
   const eventName = String(eventOverride || payload.hookEventName || '').trim();
+  if (eventName === 'PostInvocation') {
+    return {};
+  }
   const conversationId = typeof payload.conversationId === 'string' ? payload.conversationId.trim() : '';
   const dataDir = resolveLifecyclePluginData({ env, bundled, pluginDataDir });
   const userHome = (!bundled && env?.AGB_HOME_DIR) ? resolve(env.AGB_HOME_DIR) : homedir();
@@ -343,22 +381,27 @@ export function evaluateLifecycleEvent(
     if (!state) return {};
     const toolName = String(payload.toolCall?.name || '').trim().toLowerCase();
     const args = payload.toolCall?.args ?? {};
-    const hadError = Boolean(payload.error);
+    const hadError = didToolCallFail(payload);
 
     if (!hadError && MUTATING_FILE_TOOLS.has(toolName) && adlcInfo.hasActiveTicket) {
-      const rawTarget = extractEditedTarget(args);
-      if (!isIgnoredEditTarget(rawTarget, adlcInfo.repoRoot)) {
+      const targets = extractEditedTargets(args);
+      const repoRelevant =
+        targets.length === 0
+          ? ['']
+          : targets.filter((t) => !isIgnoredEditTarget(t, adlcInfo.repoRoot));
+      if (repoRelevant.length > 0) {
         state.dirtySinceGate = true;
         state.editCount = (Number(state.editCount) || 0) + 1;
-        state.lastEditedPath = rawTarget ? basename(rawTarget) : null;
+        state.lastEditedPath = repoRelevant[0] ? basename(repoRelevant[0]) : null;
         state.stopContinuationCount = 0;
         saveSessionState(dataDir, state);
       }
     } else if (!hadError && toolName === 'run_command') {
       const cmd = String(args.CommandLine ?? args.command ?? '');
-      if (GATE_PASS_CMD_RE.test(cmd)) {
+      if (GATE_PASS_CMD_RE.test(cmd) && !MASKED_EXIT_RE.test(cmd)) {
         state.dirtySinceGate = false;
         state.stopContinuationCount = 0;
+        state.totalStopContinuations = 0;
         state.lastGatePassAt = Date.now();
         saveSessionState(dataDir, state);
       }
@@ -369,6 +412,9 @@ export function evaluateLifecycleEvent(
   if (eventName === 'PreInvocation') {
     if (!state) return {};
     state.turnCount = (Number(state.turnCount) || 0) + 1;
+    if (payload.continuationActive !== true) {
+      state.totalStopContinuations = 0;
+    }
 
     if (adlcInfo.hasActiveTicket && !state.readinessShown) {
       state.readinessShown = true;
@@ -392,13 +438,6 @@ export function evaluateLifecycleEvent(
     return {};
   }
 
-  if (eventName === 'PostInvocation') {
-    if (state) {
-      saveSessionState(dataDir, state);
-    }
-    return {};
-  }
-
   if (eventName === 'Stop') {
     if (!state) return {};
     const canContinue =
@@ -408,13 +447,15 @@ export function evaluateLifecycleEvent(
       payload.fullyIdle !== false &&
       adlcInfo.hasActiveTicket &&
       state.dirtySinceGate === true &&
-      (Number(state.stopContinuationCount) || 0) < 1;
+      (Number(state.stopContinuationCount) || 0) < 1 &&
+      (Number(state.totalStopContinuations) || 0) < MAX_TOTAL_STOP_CONTINUATIONS;
 
     if (!canContinue) {
       return {};
     }
 
     state.stopContinuationCount = (Number(state.stopContinuationCount) || 0) + 1;
+    state.totalStopContinuations = (Number(state.totalStopContinuations) || 0) + 1;
     if (!saveSessionState(dataDir, state)) {
       // Never emit decision: "continue" if state persistence failed (prevents infinite loops on read-only fs)
       return {};
