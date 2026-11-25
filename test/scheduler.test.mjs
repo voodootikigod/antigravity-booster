@@ -1358,3 +1358,43 @@ test('runPlan: fails over prosecutor on transient 503 capacity error and cleans 
     rmSync(binDir, { recursive: true, force: true });
   }
 });
+
+test('runPlan: multi-ticket run syncs root working tree across sequential merges when .adlc/tickets has untracked projections', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-advisory-sync-state-'));
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ version: 1 }) + '\n');
+    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n.adlc/leases/\n.adlc/manifest.jsonl\n.adlc/sessions.json\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'setup adlc config with unignored .adlc/tickets'], { cwd: repo });
+    initializeDirectoryStore(join(repo, '.adlc', 'tickets'));
+    writeFileSync(
+      join(repo, '.adlc', 'tickets', ticketFilename('T1')),
+      JSON.stringify({ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], rails: [], edges: [] }) + '\n',
+    );
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [
+          { id: 'T1', title: 'first', body: 'write T1.txt', scope: ['T1.txt'] },
+          { id: 'T2', title: 'second', body: 'write T2.txt', scope: ['T2.txt'], edges: [{ to: undefined }].filter((e) => e.to) },
+        ],
+      }, { ...quiet, concurrency: 1 }),
+    );
+
+    assert.deepEqual(report.merged.sort(), ['T1', 'T2'], `second ticket must not fail with repo became dirty mid-run: ${JSON.stringify(report.failed)}`);
+    assert.equal(existsSync(join(repo, 'T1.txt')), true);
+    assert.equal(existsSync(join(repo, 'T2.txt')), true);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
