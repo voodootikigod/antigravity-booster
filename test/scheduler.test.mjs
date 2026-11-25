@@ -1294,3 +1294,67 @@ test('runPlan: runs reconcileIntegrationJournal() BEFORE ensureGitignore() commi
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('runPlan: fails over prosecutor on transient 503 capacity error and cleans gate-dirtied tracked files before rebase', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-prosecute-503-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-503-bin-'));
+  try {
+    writeFileSync(join(repo, 'bundle.txt'), 'clean-baseline\n');
+    execFileSync('git', ['add', 'bundle.txt'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add tracked bundle'], { cwd: repo });
+
+    const localFakeAgy = join(binDir, 'fake-agy');
+    writeFileSync(localFakeAgy, readFileSync(FAKE_AGY), { mode: 0o755 });
+    const wrapperAgy = join(binDir, 'agy');
+    writeFileSync(
+      wrapperAgy,
+      [
+        '#!/bin/sh',
+        'for prev in "$@"; do',
+        '  if [ "$last" = "--model" ] && [ "$prev" = "gpt-oss-120b-medium" ]; then',
+        `    printf '%s\\n' "gpt-oss-503" >> ${JSON.stringify(join(state, 'prosecutor-503.log'))}`,
+        '    printf \'%s\\n\' \'{"status":"ERROR","response":"UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"}\'',
+        '    exit 0',
+        '  fi',
+        '  last="$prev"',
+        'done',
+        'exec "$(dirname "$0")/fake-agy" "$@"',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: wrapperAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: {
+          build: 'sh -c "echo dirtied-by-gate > bundle.txt"',
+          test: 'true',
+        },
+        tickets: [{
+          id: 'T1',
+          title: 'gemini build with 503 primary prosecutor and dirtying build gate',
+          body: 'write T1.txt',
+          scope: ['T1.txt'],
+          tier: 'cheap',
+          pool_hint: 'gemini',
+        }],
+      }, quiet),
+    );
+
+    assert.deepEqual(report.merged, ['T1'], `expected T1 to merge via prosecutor failover and clean rebase, got: ${JSON.stringify(report.failed)}`);
+    const seen503 = readFileSync(join(state, 'prosecutor-503.log'), 'utf8').trim().split('\n');
+    assert.deepEqual(seen503, ['gpt-oss-503'], 'primary prosecutor gpt-oss-120b-medium hit 503 once before failing over to claude');
+    assert.equal(readFileSync(join(repo, 'bundle.txt'), 'utf8'), 'clean-baseline\n', 'gate-dirtied tracked file must not block rebase or leak into commit');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});

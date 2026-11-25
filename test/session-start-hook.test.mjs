@@ -290,6 +290,16 @@ test('session-start: --worker lock contention, stale/dead lock recovery, exit-0-
     const lines = readFileSync(join(fx.pluginRoot, logFile), 'utf8').trim().split('\n');
     assert.deepEqual(lines, ['failed', 'ok'], '4 concurrent workers must run bootstrap only once');
 
+    // 3b. Late worker arriving after stamp is already written skips bootstrap immediately
+    const lateWorker = spawnSync(
+      process.execPath,
+      [fx.hookFile, '--worker', fx.pluginRoot, fx.pluginData, '2.0.0'],
+      { encoding: 'utf8', env: cleanHookEnv(fx), timeout: 5_000 },
+    );
+    assert.equal(lateWorker.status, 0);
+    const linesAfterLate = readFileSync(join(fx.pluginRoot, logFile), 'utf8').trim().split('\n');
+    assert.deepEqual(linesAfterLate, ['failed', 'ok'], 'late worker must skip bootstrap when stamp exists');
+
     // 4. Symlinked targetDataDir is rejected without writing through symlink
     const realTarget = join(fx.base, 'real-sym-target');
     const symDataDir = join(fx.base, 'sym-plugin-data');

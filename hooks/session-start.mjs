@@ -77,6 +77,26 @@ function hasBootstrapStamp(stampPath) {
   return existsSync(stampPath);
 }
 
+function getStaleLockInode(lockPath) {
+  try {
+    const st = lstatSync(lockPath);
+    if (st.isSymbolicLink() || !st.isFile()) return null;
+    const raw = readFileSync(lockPath, 'utf8');
+    if (raw.trim() === '') {
+      return Date.now() - st.mtimeMs < 5_000 ? null : st.ino;
+    }
+    const parsed = JSON.parse(raw);
+    const pid = Number(parsed?.pid);
+    const ts = Number(parsed?.ts ?? parsed?.startTime);
+    if (!Number.isFinite(ts)) return st.ino;
+    const age = Date.now() - ts;
+    if (age < 0 || age >= LOCK_TTL_MS) return st.ino;
+    return isPidAlive(pid) ? null : st.ino;
+  } catch {
+    return null;
+  }
+}
+
 function acquireWorkerLock(lockPath) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -84,8 +104,11 @@ function acquireWorkerLock(lockPath) {
       return openSync(lockPath, 'wx', 0o600);
     } catch (err) {
       if (err?.code !== 'EEXIST') return null;
-      if (attempt === 1 || hasLiveBootstrapLock(lockPath)) return null;
+      if (attempt === 1) return null;
+      const staleIno = getStaleLockInode(lockPath);
+      if (staleIno === null) return null;
       try {
+        if (lstatOrNull(lockPath)?.ino !== staleIno) return null;
         unlinkSync(lockPath);
       } catch {
         return null;
@@ -113,6 +136,9 @@ function runDetachedWorker(workerArgs) {
   const dirStat = lstatOrNull(targetDataDir);
   if (!dirStat || !dirStat.isDirectory() || dirStat.isSymbolicLink()) return;
 
+  const stampPath = join(targetDataDir, `bootstrapped-${targetVersion}.json`);
+  if (hasBootstrapStamp(stampPath)) return;
+
   const lockPath = join(targetDataDir, 'session-bootstrap.lock');
   let fd = acquireWorkerLock(lockPath);
   if (fd === null) return;
@@ -124,12 +150,13 @@ function runDetachedWorker(workerArgs) {
     closeSync(fd);
     fd = null;
 
+    if (hasBootstrapStamp(stampPath)) return;
+
     execFileSync(process.execPath, [join(targetPluginRoot, 'dist', 'agb.mjs'), 'bootstrap'], {
       stdio: 'ignore',
       timeout: BOOTSTRAP_TIMEOUT_MS,
     });
 
-    const stampPath = join(targetDataDir, `bootstrapped-${targetVersion}.json`);
     if (lstatOrNull(stampPath)?.isSymbolicLink()) return;
     const tmpPath = join(targetDataDir, `.bootstrapped-${targetVersion}.${process.pid}.${Date.now()}.tmp`);
     const stampBody = JSON.stringify(
