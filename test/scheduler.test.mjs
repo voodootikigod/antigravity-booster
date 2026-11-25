@@ -1373,6 +1373,9 @@ test('runPlan: multi-ticket run syncs root working tree across sequential merges
       join(repo, '.adlc', 'tickets', ticketFilename('T1')),
       JSON.stringify({ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], rails: [], edges: [] }) + '\n',
     );
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    const staleRebasedSha = execFileSync('git', ['commit-tree', `${headSha}^{tree}`, '-m', 'stale rebased ref'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/namespaces/attempts/t2/rebased', staleRebasedSha], { cwd: repo });
     const report = await withEnv(
       {
         AGB_AGY_BIN: FAKE_AGY,
