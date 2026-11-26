@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T16:15:35.368Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "3f16489bfd81b95785ea77ff0c629a366dee97cd2cd963d9472712f107de36a0",
+    "ticketHash": "792ec44dd4325072b87ec3da74d65989e377fa26aea67919730078510bd0e02c",
+    "version": 1
+  },
   "body": "Fix live agy 1.5.17 quota probe rejection in lib/pools.mjs where untouched rolling quota buckets (remaining_fraction === 1 / remainingPercent === 100) emit reset_time '1970-01-01T00:00:00Z' (Date.parse === 0). Update parseQuotaProbeOutput (parseWindow) and isValidStatusLinePoolWindow in lib/pools.mjs to permit resetTimeMs === 0 strictly and only when remainingPercent === 100, while continuing to reject resetTimeMs === 0 when remainingPercent < 100 and continuing to reject all other past timestamps (< now - 10s). Add unit tests in test/pools.test.mjs covering 1970-01-01T00:00:00Z with 100% (accepted in both parseQuotaProbeOutput and writeStatusLineQuotaCache) vs <100% (rejected with invalid_quota_timestamp).",
   "completed": true,
   "edges": [],
