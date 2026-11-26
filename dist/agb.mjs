@@ -30225,6 +30225,13 @@ function verifyRootGitIntegrity(repo, pre, {
   const postRefMap = parseRefs(postRefsRaw);
   const currentTicketId = ticketId || (attemptNamespace ? attemptNamespace.split("/")[1] : null);
   const currentTicketNorm = currentTicketId ? currentTicketId.toLowerCase() : null;
+  const attemptNamespaceNorm = attemptNamespace ? attemptNamespace.toLowerCase() : null;
+  const knownAttemptNamespacesNorm = new Set(
+    [...knownAttemptNamespaces].filter(Boolean).map((s) => s.toLowerCase())
+  );
+  const activeAttemptNamespacesNorm = new Set(
+    [...activeAttemptNamespaces].filter(Boolean).map((s) => s.toLowerCase())
+  );
   const isSchedulerOwnedRef = (name) => {
     return name.startsWith("refs/namespaces/attempts/") || name.startsWith("refs/heads/agb/") || name.startsWith("refs/transactions/") || name.startsWith("refs/quarantine/");
   };
@@ -30237,7 +30244,7 @@ function verifyRootGitIntegrity(repo, pre, {
       }
       continue;
     }
-    if (attemptNamespace && name.startsWith(`refs/namespaces/${attemptNamespace}/`)) {
+    if (attemptNamespace && (name.startsWith(`refs/namespaces/${attemptNamespace}/`) || name.toLowerCase().startsWith(`refs/namespaces/${attemptNamespaceNorm}/`))) {
       continue;
     }
     if (isSchedulerOwnedRef(name)) {
@@ -30327,7 +30334,8 @@ function verifyRootGitIntegrity(repo, pre, {
           const match2 = name.match(/^refs\/namespaces\/(attempts\/[^\/]+\/[^\/]+\/[^\/]+)/);
           if (match2) {
             const slug = match2[1];
-            if (slug !== attemptNamespace && !knownAttemptNamespaces.has(slug) && !activeAttemptNamespaces.has(slug)) {
+            const slugNorm = slug.toLowerCase();
+            if (slug !== attemptNamespace && slugNorm !== attemptNamespaceNorm && !knownAttemptNamespaces.has(slug) && !knownAttemptNamespacesNorm.has(slugNorm) && !activeAttemptNamespaces.has(slug) && !activeAttemptNamespacesNorm.has(slugNorm)) {
               return { ok: false, error: `Unauthorized or unregistered attempt namespace modified: ${slug}` };
             }
             refTicket = slug.split("/")[1];
@@ -32208,7 +32216,7 @@ Fix: ${agyCheck.fix}`);
           attempts += 1;
           const strikeNum = strikes + 1;
           const ownerToken = crypto7.randomUUID();
-          const attemptSlug = `attempts/${t.id}/${attempts}/${ownerToken.slice(0, 8)}`;
+          const attemptSlug = `attempts/${t.id.toLowerCase()}/${attempts}/${ownerToken.slice(0, 8)}`;
           const attemptRef = `refs/namespaces/${attemptSlug}/refs/heads/candidate`;
           activeAttemptNamespaces.add(attemptSlug);
           knownAttemptNamespaces.add(attemptSlug);
