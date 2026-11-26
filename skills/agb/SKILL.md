@@ -81,8 +81,10 @@ DAG:
 Validate the compiled DAG before parallel execution:
 
 ```sh
-~/.local/bin/agb preflight plan.json
+~/.local/bin/agb preflight plan.json [--force-coldstart]
 ```
+
+-   Preflight uses provenance-cached coldstart hashes (`plan.gateProvenance.coldstartHashes`) to skip duplicate coldstart LLM probes on unchanged tickets; pass `--force-coldstart` to re-probe every ticket.
 
 ### Phase 4: Parallel Execution & Prosecution (`agb run`)
 
@@ -96,35 +98,41 @@ PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
 
 -   Builder agents execute each ticket in isolated git worktrees (`.worktrees/agb-<ticketId>`).
 -   Sandboxed gates run build and test suites (`bwrap` on Linux / `sandbox-exec` on macOS).
--   Cross-model prosecutors audit diffs against acceptance criteria and mutation tests (`adlc hollow-test`).
+-   Cross-model prosecutors audit diffs against acceptance criteria and mutation tests (`adlc hollow-test`, short-circuiting before pool lease acquisition when mutants survive).
 -   Passing tickets are rebased and merged sequentially onto `main`.
 
 ### Phase 5: Final Review & Delivery
 
 1.  **Verify Combined Test Suite**: Run the project's test gate (e.g. `npm test`) on `main` to confirm the merged tree passes cleanly.
-2.  **5-Lens Code Adversarial Review Loop**: Run `/code-review` against the captured `<pre-run-base-sha>` (`~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop`) — not `main`, because after merging onto `main`, diffing against `main` produces an empty diff and false-greens — to audit the combined diff across `correctness_redteam`, `security`, `simplicity`, `evidence_runner`, and `anti_slop` with neutral arbiter triage.
+2.  **Post-Run Review (`--seams-only` or 5-Lens Single-Pass + `--delta`)**:
+    -   When every merged commit in `<pre-run-base-sha>..HEAD` passed per-ticket System-2 prosecution in Phase 4 (`fastShipped !== 'system1'`), run the targeted cross-ticket seam audit:
+        `~/.local/bin/agb review . <pre-run-base-sha> --seams-only --plan-file plan.json`
+        (automatically fails closed / refuses `--seams-only` if any commit was unprosecuted or System-1 fast-shipped).
+    -   Otherwise (or for a full 5-lens audit), run single-pass 5-lens review against `<pre-run-base-sha>` — not `main`, because after merging onto `main`, diffing against `main` produces an empty diff and false-greens:
+        `~/.local/bin/agb review . <pre-run-base-sha> --five-lens`
+        For fix rounds after edits, re-verify only the delta and prior findings via `--delta <fix-base-ref> --prior-findings .review/last-findings.json` (pass `--thorough` or `--dry-rounds <n>` only when stochastic multi-dry convergence is explicitly desired).
 3.  **Distill Learned Defenses (Optional)**: Run `~/.local/bin/agb distill . [--apply]` (or `mcp__agb__agb_distill`) to scan run/review findings for recurring patterns and stage or apply learned ADLC rules to `.gemini/rules/adlc-learned.md`.
-4.  **Report to User**: Present a concise summary of the implemented components, test results, merged tickets, and gate evidence.
+4.  **Report to User**: Present a concise summary of the implemented components, test results, merged tickets, split token telemetry (`Build / Prosecute / Review / System-1`), and gate evidence.
 
 ## Subcommand Routing Reference
 
 ```sh
 ~/.local/bin/agb shape <spec.md | id> [repo-path] [--analyze] [--strict] [--sync-brain] [--max-ticket-scope <n>] [--json]
 ~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
-~/.local/bin/agb preflight [plan.json]
+~/.local/bin/agb preflight [plan.json] [--no-coldstart] [--force-coldstart]
 ~/.local/bin/agb run <plan.json> [-c <n>] [--resume] [--reset-rescue]
 ~/.local/bin/agb rescue <ticket-id> [repo-path] [--continue] [--plan <plan.json>]
 ~/.local/bin/agb accept [repo-path] [--base <ref>] [--json] [--markdown <file>]
 ~/.local/bin/agb holdout <list | run | clean> [repo-path] [--ticket <id>] [--run-id <id>] [--json]
 ~/.local/bin/agb statusline <render | title | install | uninstall> [--force]
-~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--loop] [--five-lens] [--no-arbiter]
+~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--loop] [--five-lens] [--no-arbiter] [--thorough] [--dry-rounds <n>] [--seams-only] [--plan-file <plan.json>] [--delta <base-ref>] [--prior-findings <path>] [--no-codegraph] [--no-decision-engine]
 ~/.local/bin/agb distill [repo-path] [--apply] [--compile-checks] [--json]
 ~/.local/bin/agb status [repo-path] [--watch] [-w] [--interval <ms>] [--tui] [--follow] [--compact]
 ~/.local/bin/agb watch [repo-path] [--interval <ms>] [--follow] [--compact] [--mux] [--no-alerts]
 ~/.local/bin/agb sidecar [repo-path] [--port <port>]
 ~/.local/bin/agb doctor [repo-path] [--fix]
 ~/.local/bin/agb sync-models [--check] [--write] [--offline] [--json]
-~/.local/bin/agb init [repo-path]
+~/.local/bin/agb init [repo-path] [--with-codegraph] [--decision-provider <jev|gemini-decisions|kev>]
 ~/.local/bin/agb bootstrap [--force] [--force-reinstall]
 ~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```

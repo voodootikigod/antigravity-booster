@@ -3,16 +3,18 @@ name: agb-preflight
 description: Run plan-time coldstart probes and forecast scope overlaps between parallel tickets in a plan.json DAG before launching builders.
 ---
 
-# /agb-preflight [plan.json] [--no-coldstart] [--project <name>]
+# /agb-preflight [plan.json] [--no-coldstart] [--force-coldstart] [--project <name>]
 
 Validates ticket self-sufficiency and detects potential concurrent file-scope overlaps before running a parallel build fleet.
+
+Preflight automatically skips duplicate coldstart LLM probes for any ticket whose deterministic SHA-256 hash matches `plan.gateProvenance.coldstartHashes` from `agb plan`; pass `--force-coldstart` (or `forceColdstart: true` in `mcp__agb__agb_preflight`) to re-probe every ticket.
 
 ## How to run it
 
 Use your shell tool (`run_command`) to run the antigravity-booster terminal shim (or `mcp__agb__agb_preflight` when the `agb` MCP server is connected):
 
 ```sh
-~/.local/bin/agb preflight [plan.json] [--no-coldstart] [--project <name>]
+~/.local/bin/agb preflight [plan.json] [--no-coldstart] [--force-coldstart] [--project <name>]
 ```
 
 ## If the shim is missing

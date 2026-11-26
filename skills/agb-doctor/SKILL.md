@@ -5,7 +5,7 @@ description: Run comprehensive environment and health diagnostics for Antigravit
 
 # /agb-doctor [repo-path] [--fix]
 
-Runs comprehensive environment diagnostics: Node runtime, the `agy` CLI and its authentication, sandboxing, the ADLC toolkit, and the staged plugin installation. Pass `--fix` to automatically repair recoverable setup issues (missing `.adlc/config.json`, missing `.adlc/tickets` directory store, missing `.gitignore` stanzas, and missing `adlc-antigravity` companion plugin). Report every failing or warning check to the user with its suggested fix.
+Runs comprehensive environment diagnostics: Node runtime, the `agy` CLI and its authentication, sandboxing, the ADLC toolkit, and the staged plugin installation, plus **advisory accelerator readiness checks** for `.codegraph/` index presence/staleness (`codegraph status`) and any configured System-1 decision engine provider (`jev`, `gemini-decisions`, or `kev` env/endpoint readiness — advisory only, never failing `doctor` on unconfigured repos). Pass `--fix` to automatically repair recoverable setup issues (missing `.adlc/config.json`, missing `.adlc/tickets` directory store, missing `.gitignore` stanzas, and missing `adlc-antigravity` companion plugin). Report every failing or warning check to the user with its suggested fix.
 
 ## How to run it
 

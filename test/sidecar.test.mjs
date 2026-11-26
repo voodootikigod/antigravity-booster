@@ -193,6 +193,85 @@ test('sidecar: app.js escapes DOM nodes', () => {
   assert.equal(els['ticketsGrid'].innerHTML, '', 'ticketsGrid must be cleared when state.tickets is empty');
 });
 
+test('sidecar: index.html and app.js render split telemetry SSE events safely', () => {
+  const sidecarsDir = join(dirname(fileURLToPath(import.meta.url)), '../sidecars');
+  const indexHtml = readFileSync(join(sidecarsDir, 'index.html'), 'utf8');
+  assert.ok(indexHtml.includes('id="telemetryStrip"'), 'index.html must include telemetryStrip container');
+
+  const appJs = readFileSync(join(sidecarsDir, 'app.js'), 'utf8');
+  const els = {};
+  const globalDoc = {
+    createElement(tag) { return { tag, className: '', innerHTML: '', remove() {} }; },
+    getElementById(id) {
+      els[id] = els[id] || {
+        innerHTML: '',
+        style: {},
+        children: [],
+        prepend(el) { this.children.unshift(el); },
+        remove() {},
+        get lastChild() { return this.children[this.children.length - 1]; },
+      };
+      return els[id];
+    },
+  };
+  const globalWindow = { location: { search: '?token=test' } };
+  const sandbox = new Function(
+    'document',
+    'window',
+    'setTimeout',
+    'fetch',
+    'console',
+    appJs + '\nreturn { processEvent, render, state };'
+  );
+  const { processEvent, render, state } = sandbox(globalDoc, globalWindow, () => {}, () => {}, { error() {}, warn() {}, log() {} });
+
+  processEvent({
+    ts: Date.now(),
+    type: 'telemetry',
+    telemetry: {
+      buildTokens: 900,
+      prosecutionTokens: 250,
+      reviewTokens: 150,
+      system1Calls: 3,
+      hollowShortCircuits: 1,
+      skippedLenses: ['simplicity'],
+    },
+  });
+  render();
+
+  const stripHtml = els['telemetryStrip'].innerHTML;
+  assert.ok(stripHtml.includes('Build') && stripHtml.includes('900 tok'));
+  assert.ok(stripHtml.includes('Prosecute') && stripHtml.includes('250 tok'));
+  assert.ok(stripHtml.includes('Review') && stripHtml.includes('150 tok'));
+  assert.ok(stripHtml.includes('Sys1') && stripHtml.includes('3 calls'));
+  assert.ok(stripHtml.includes('Hollow-SC') && stripHtml.includes('1'));
+  assert.ok(stripHtml.includes('Skip-Lens') && stripHtml.includes('1'));
+  assert.equal(els['telemetryStrip'].style.display, 'flex');
+
+  const logHtml = els['eventsLog'].children[0].innerHTML;
+  assert.ok(logHtml.includes('Telemetry: Build'));
+
+  // XSS escaping in telemetry payload
+  processEvent({
+    ts: Date.now(),
+    type: 'telemetry',
+    telemetry: {
+      buildTokens: '<script>x</script>',
+      prosecutionTokens: 0,
+      reviewTokens: 0,
+      system1Calls: 0,
+    },
+  });
+  render();
+  assert.equal(els['telemetryStrip'].innerHTML.includes('<script>'), false);
+
+  // Clearing telemetry hides strip
+  state.telemetry = null;
+  render();
+  assert.equal(els['telemetryStrip'].innerHTML, '');
+  assert.equal(els['telemetryStrip'].style.display, 'none');
+});
+
 import { spawn } from 'node:child_process';
 test('sidecar: CLI launches clean localhost server on custom port without dynamic plugin side-effects', async () => {
   const repo = mkdtempSync(join(tmpdir(), 'agb-sidecar-cli-'));
