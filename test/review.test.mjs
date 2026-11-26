@@ -13,6 +13,10 @@ import {
 } from '../lib/review.mjs';
 import { FactoryLedger } from '../lib/factory-ledger.mjs';
 
+// Keep offline unit tests isolated from host GEMINI_API_KEY auto-detection;
+// tests that explicitly pass a mock decisionEngine still exercise System-1 paths.
+process.env.AGB_DECISION_ENGINE = '0';
+
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 
 test('reviewDiff: rejects ref values starting with a dash to prevent git flag injection', () => {
@@ -483,6 +487,7 @@ process.stdin.on('end', () => {
       diff: `${lockNoise}${smallSrc}`,
       repo: dir,
       lenses: ['correctness', 'security'],
+      decisionEngine: false,
     });
     assert.equal(res.truncated, false);
     assert.equal(res.converged, true);

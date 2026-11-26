@@ -971,6 +971,18 @@ test('T-TE-7a: checkDecisionEngine reports advisory readiness and never leaks se
     });
     assert.strictEqual(rKevBadUrl.level, 'warn');
     assert.match(rKevBadUrl.detail, /invalid endpoint URL/);
+
+    // 6. Auto-detected Gemini Decisions API when GEMINI_API_KEY is set (no config needed)
+    const emptyRepo = mkdtempSync(join(tmpdir(), 'agb-doctor-de-gemini-'));
+    try {
+      const geminiSecret = 'AIzaSyFakeGeminiKeyForDoctorTest12345';
+      const rGeminiAuto = await checkDecisionEngine({ cwd: emptyRepo, env: { GEMINI_API_KEY: geminiSecret } });
+      assert.strictEqual(rGeminiAuto.level, 'pass');
+      assert.match(rGeminiAuto.detail, /gemini-decisions \(gemini-decision-1, auto-detected via GEMINI_API_KEY\)/);
+      assert.strictEqual(JSON.stringify(rGeminiAuto).includes(geminiSecret), false, 'must never leak GEMINI_API_KEY');
+    } finally {
+      rmSync(emptyRepo, { recursive: true, force: true });
+    }
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

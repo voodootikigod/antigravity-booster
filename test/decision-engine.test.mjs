@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DECISION_PROVIDERS,
   DecisionEngine,
   MAX_DECISION_DIFF_CHARS,
   resolveDecisionConfig,
@@ -29,6 +30,27 @@ function answerFor(primitive, n, { p = 0.01, c = 0.99, choice = 'accept', score 
 function mock(opts = {}) {
   return async (url, init) => {
     const body = JSON.parse(init.body);
+    if (body.questions && typeof body.questions === 'object') {
+      const { p = 0.01, c = 0.99, choice = 'accept', score = 0.1 } = opts;
+      const answers = {};
+      for (const [id, q] of Object.entries(body.questions)) {
+        answers[id] =
+          q.type === 'noul'
+            ? { type: 'noul', noul: p, confidence: c }
+            : q.type === 'score'
+              ? { type: 'score', score, confidence: c }
+              : { type: 'choice', choice, confidence: c };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          model: body.model,
+          usage: { total_input_tokens: 42, total_output_tokens: 0 },
+          answers,
+        }),
+      };
+    }
     const items = body.items ?? body.requests;
     return { ok: true, status: 200, json: async () => ({ answers: answerFor(body.primitive, items.length, opts) }) };
   };
@@ -204,7 +226,7 @@ test('F-014: resolveDecisionConfig pins jev/gemini-decisions endpoints and never
     );
     const gemCfg = resolveDecisionConfig({ repo, env: { GEMINI_API_KEY: KEY } });
     assert.equal(gemCfg.enabled, true);
-    assert.equal(gemCfg.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/decisions:evaluate');
+    assert.equal(gemCfg.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/decisions');
     assert.equal(gemCfg.apiKey, KEY);
 
     // 3. kev ignores non-loopback repo-configured baseUrl
@@ -345,4 +367,109 @@ test('F-004: normalizeAnswer rejects out-of-range percentage/negative/non-finite
   });
   assert.equal((await boundEngine.noul([{ prompt: 'x' }])).ok, true);
   assert.equal((await boundEngine.score([{ prompt: 'x' }])).ok, true);
+});
+
+test('Gemini Decisions API is prioritized first and auto-detected when GEMINI_API_KEY is set', () => {
+  assert.equal(DECISION_PROVIDERS[0], 'gemini-decisions');
+
+  const repo = mkdtempSync(join(tmpdir(), 'de-gemini-auto-'));
+  try {
+    // 1. Auto-detects gemini-decisions with only GEMINI_API_KEY (no .adlc/config.json, no AGB_DECISION_PROVIDER)
+    const autoCfg = resolveDecisionConfig({ repo, env: { GEMINI_API_KEY: KEY } });
+    assert.equal(autoCfg.enabled, true);
+    assert.equal(autoCfg.provider, 'gemini-decisions');
+    assert.equal(autoCfg.model, 'gemini-decision-1');
+    assert.equal(autoCfg.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/decisions');
+    assert.equal(autoCfg.apiKey, KEY);
+    assert.equal(autoCfg.autoDetected, true);
+
+    // 2. Prioritizes gemini-decisions when both GEMINI_API_KEY and TYPESAFE_API_KEY are set without explicit provider
+    const bothKeys = resolveDecisionConfig({ repo, env: { GEMINI_API_KEY: KEY, TYPESAFE_API_KEY: 'ts-other-key' } });
+    assert.equal(bothKeys.enabled, true);
+    assert.equal(bothKeys.provider, 'gemini-decisions');
+    assert.equal(bothKeys.autoDetected, true);
+
+    // 3. Explicit opt-out via AGB_DECISION_ENGINE=0 disables auto-detection
+    assert.deepEqual(
+      resolveDecisionConfig({ repo, env: { GEMINI_API_KEY: KEY, AGB_DECISION_ENGINE: '0' } }),
+      { enabled: false },
+    );
+
+    // 4. Explicit opt-out via .adlc/config.json enabled: false disables auto-detection
+    mkdirSync(join(repo, '.adlc'));
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ accelerators: { decision: { enabled: false } } }));
+    assert.deepEqual(resolveDecisionConfig({ repo, env: { GEMINI_API_KEY: KEY } }), { enabled: false });
+
+    // 5. Explicit AGB_DECISION_PROVIDER override still wins over auto-detection
+    const explicitJev = resolveDecisionConfig({
+      repo,
+      env: { GEMINI_API_KEY: KEY, TYPESAFE_API_KEY: 'ts-key-1234', AGB_DECISION_PROVIDER: 'jev' },
+    });
+    assert.equal(explicitJev.enabled, true);
+    assert.equal(explicitJev.provider, 'jev');
+    assert.equal(explicitJev.autoDetected, undefined);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('Gemini Decisions API uses real v1beta/decisions wire format (shared input, keyed questions/answers, noul field, x-goog-api-key)', async () => {
+  const captured = [];
+  const engine = new DecisionEngine({
+    provider: 'gemini-decisions',
+    apiKey: KEY,
+    transport: async (url, init) => {
+      const body = JSON.parse(init.body);
+      captured.push({ url, headers: init.headers, body });
+      const answers = {};
+      for (const [id, q] of Object.entries(body.questions)) {
+        if (q.type === 'noul') answers[id] = { type: 'noul', noul: id === 'security' ? 0.04 : 0.88, confidence: 0.96 };
+        else if (q.type === 'choice') answers[id] = { type: 'choice', choice: 'accept', probabilities: { accept: 0.97, reject: 0.02, escalate: 0.01 }, confidence: 0.97 };
+        else if (q.type === 'score') answers[id] = { type: 'score', score: 0.82, confidence: 0.93 };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          model: 'gemini-decision-1',
+          usage: { total_input_tokens: 128, total_output_tokens: 0 },
+          answers,
+        }),
+      };
+    },
+  });
+
+  // 1. gateReviewLenses sends diff ONCE in shared input and evaluates multiple lenses as keyed noul questions
+  const lensRes = await gateReviewLenses(engine, {
+    diff: '+export const ok = true;\n',
+    contextSummary: 'tiny export',
+    lenses: { security: 'security lens', correctness: 'correctness lens' },
+  });
+  assert.deepEqual(lensRes.skipped, ['security']);
+  assert.deepEqual(lensRes.run, ['correctness']);
+  assert.equal(captured.length, 1);
+  assert.equal(captured[0].url, 'https://generativelanguage.googleapis.com/v1beta/decisions');
+  assert.equal(captured[0].headers['x-goog-api-key'], KEY);
+  assert.equal(captured[0].headers.authorization, undefined);
+  assert.equal(captured[0].body.model, 'gemini-decision-1');
+  assert.ok(captured[0].body.input.includes('+export const ok = true;'));
+  assert.equal(captured[0].body.questions.security.type, 'noul');
+  assert.equal(captured[0].body.questions.correctness.type, 'noul');
+  // Diff is NOT repeated inside each question's instructions when sent via shared input
+  assert.equal(captured[0].body.questions.security.instructions.includes('+export const ok = true;'), false);
+
+  // 2. choice and score primitives send criteria maps and parse keyed responses with total_input_tokens & 0 output tokens
+  const choiceRes = await engine.choice([{ id: 'v-0', prompt: 'Pick verdict', choices: ['accept', 'reject', 'escalate'] }]);
+  assert.equal(choiceRes.ok, true);
+  assert.equal(choiceRes.inputTokens, 128);
+  assert.equal(choiceRes.outputTokens, 0);
+  assert.deepEqual(choiceRes.answers, [{ choice: 'accept', confidence: 0.97 }]);
+  assert.deepEqual(captured[1].body.questions['v-0'].criteria, { accept: 'accept', reject: 'reject', escalate: 'escalate' });
+
+  const scoreRes = await engine.score([{ id: 's-0', prompt: 'Rate severity' }]);
+  assert.equal(scoreRes.ok, true);
+  assert.equal(scoreRes.outputTokens, 0);
+  assert.deepEqual(scoreRes.answers, [{ score: 0.82, confidence: 0.93 }]);
+  assert.equal(captured[2].body.questions['s-0'].type, 'score');
+  assert.ok(captured[2].body.questions['s-0'].criteria);
 });

@@ -7867,7 +7867,7 @@ function scrubSecrets(text, secrets = []) {
   return out;
 }
 function resolveDecisionConfig({ repo, env = process.env, enabled } = {}) {
-  if (env.AGB_DECISION_ENGINE === "0") return { enabled: false };
+  if (env.AGB_DECISION_ENGINE === "0" || enabled === false) return { enabled: false };
   let cfg = {};
   if (repo) {
     const p = join21(repo, ".adlc", "config.json");
@@ -7880,8 +7880,14 @@ function resolveDecisionConfig({ repo, env = process.env, enabled } = {}) {
     }
   }
   if (cfg === null || typeof cfg !== "object") cfg = {};
-  const provider = env.AGB_DECISION_PROVIDER || cfg.provider;
-  const wanted = typeof enabled === "boolean" ? enabled : cfg.enabled === true || Boolean(env.AGB_DECISION_PROVIDER);
+  if (cfg.enabled === false && !env.AGB_DECISION_PROVIDER && enabled !== true) {
+    return { enabled: false };
+  }
+  const hasGeminiKey = typeof env.GEMINI_API_KEY === "string" && env.GEMINI_API_KEY.trim().length > 0;
+  const explicitProvider = env.AGB_DECISION_PROVIDER || cfg.provider;
+  const autoDetected = !explicitProvider && hasGeminiKey;
+  const provider = explicitProvider || (hasGeminiKey ? "gemini-decisions" : void 0);
+  const wanted = typeof enabled === "boolean" ? enabled : cfg.enabled === true || Boolean(env.AGB_DECISION_PROVIDER) || autoDetected;
   if (!wanted || !provider || !PROVIDERS[provider]) return { enabled: false };
   const spec = PROVIDERS[provider];
   let baseUrl;
@@ -7910,29 +7916,57 @@ function resolveDecisionConfig({ repo, env = process.env, enabled } = {}) {
     model: cfg.model || spec.model,
     baseUrl,
     apiKey,
-    timeoutMs: num(cfg.timeoutMs) ?? DEFAULT_TIMEOUT_MS
+    timeoutMs: num(cfg.timeoutMs) ?? DEFAULT_TIMEOUT_MS,
+    ...autoDetected ? { autoDetected: true } : {}
   };
 }
-function buildRequest(provider, { primitive, queries, model, apiKey }) {
+function buildRequest(provider, { primitive, queries, model, apiKey, input }) {
   const headers = { "content-type": "application/json" };
   const items = queries.map((q, i) => ({
-    id: q.id ?? String(i),
+    id: String(q.id ?? i),
     prompt: q.prompt,
-    ...primitive === "choice" ? { choices: q.choices ?? [] } : {}
+    ...primitive === "choice" ? { choices: q.choices ?? [] } : {},
+    ...q.criteria ? { criteria: q.criteria } : {}
   }));
   if (provider === "gemini-decisions") {
     if (apiKey) headers["x-goog-api-key"] = apiKey;
-    return { headers, body: { model, primitive, outputTokens: 0, requests: items } };
+    const questions = {};
+    for (const item of items) {
+      const qSpec = { type: primitive, instructions: item.prompt };
+      if (primitive === "choice") {
+        qSpec.criteria = item.criteria ?? Object.fromEntries((item.choices ?? []).map((c) => [String(c), String(c)]));
+      } else if (primitive === "score") {
+        qSpec.criteria = item.criteria ?? DEFAULT_SCORE_CRITERIA;
+      }
+      questions[item.id] = qSpec;
+    }
+    const sharedInput = typeof input === "string" && input.length > 0 ? input : items.length === 1 ? items[0].prompt : items.map((it) => `[${it.id}]
+${it.prompt}`).join("\n\n");
+    return {
+      headers,
+      body: {
+        model,
+        input: sharedInput,
+        questions
+      },
+      questionIds: items.map((it) => it.id)
+    };
   }
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
-  return { headers, body: { model, primitive, items } };
+  const fullItems = typeof input === "string" && input.length > 0 ? items.map((it) => ({ ...it, prompt: `${it.prompt}
+${input}` })) : items;
+  return {
+    headers,
+    body: { model, primitive, items: fullItems },
+    questionIds: items.map((it) => it.id)
+  };
 }
 function normalizeAnswer(primitive, a) {
   if (!a || typeof a !== "object") return null;
   const confidence = unitNum(a.confidence);
   if (confidence === null) return null;
   if (primitive === "noul") {
-    const probability = unitNum(a.probability ?? a.p);
+    const probability = unitNum(a.probability ?? a.p ?? a.noul);
     return probability === null ? null : { probability, confidence };
   }
   if (primitive === "score") {
@@ -7953,16 +7987,16 @@ async function gateReviewLenses(engine, { diff, contextSummary, lenses } = {}) {
   if (!isEngine(engine) || names.length === 0) return runAll("engine unavailable");
   const diffStr = String(diff ?? "");
   if (diffStr.length > MAX_DECISION_DIFF_CHARS) return runAll("diff_truncated");
+  const sharedInput = `Context: ${clip(contextSummary, 1e3)}
+Diff:
+${diffStr}`;
   const queries = names.map((n) => ({
     id: n,
-    prompt: `Does this change contain a defect in the "${n}" lens (${descr[n] ?? n})?
-Context: ${clip(contextSummary, 1e3)}
-Diff:
-${diffStr}`
+    prompt: `Does this change contain a defect in the "${n}" lens (${descr[n] ?? n})?`
   }));
   let r;
   try {
-    r = await engine.noul(queries);
+    r = await engine.noul(queries, { input: sharedInput });
   } catch {
     return runAll("engine error");
   }
@@ -7992,23 +8026,21 @@ async function screenTicketFastShip(engine, { ticket, diff, blastRadius, hollowT
   const charges = Array.isArray(ticket.charges ?? ticket.prosecutionCharges) ? ticket.charges ?? ticket.prosecutionCharges : [];
   if (acs.length === 0) return no("no extracted acceptance criteria");
   const text = (x) => typeof x === "string" ? x : x?.text ?? x?.claim ?? JSON.stringify(x);
+  const sharedInput = `Diff:
+${diffStr}`;
   const acQ = acs.map((ac, i) => ({
     id: `ac-${i}`,
     prompt: `Is this acceptance criterion fully satisfied by the diff?
-AC: ${text(ac)}
-Diff:
-${diffStr}`
+AC: ${text(ac)}`
   }));
   const chQ = charges.map((c, i) => ({
     id: `charge-${i}`,
     prompt: `Is this prosecution charge a real defect in the diff?
-Charge: ${text(c)}
-Diff:
-${diffStr}`
+Charge: ${text(c)}`
   }));
   let r;
   try {
-    r = await engine.noul([...acQ, ...chQ]);
+    r = await engine.noul([...acQ, ...chQ], { input: sharedInput });
   } catch {
     return no("engine error");
   }
@@ -8110,7 +8142,7 @@ ${body(t)}` })))
   });
   return { ok: true, scores };
 }
-var PRIMITIVES, DEFAULT_TIMEOUT_MS, MAX_DECISION_DIFF_CHARS, MIN_CONFIDENCE, LOOPBACK_HOSTS, PROVIDERS, DECISION_PROVIDERS, num, unitNum, DecisionEngine, good, isEngine, clip, VERDICTS, ROUTES, SEV_RANK, SEV_BANDS;
+var PRIMITIVES, DEFAULT_TIMEOUT_MS, MAX_DECISION_DIFF_CHARS, MIN_CONFIDENCE, LOOPBACK_HOSTS, PROVIDERS, DECISION_PROVIDERS, num, unitNum, DEFAULT_SCORE_CRITERIA, DecisionEngine, good, isEngine, clip, VERDICTS, ROUTES, SEV_RANK, SEV_BANDS;
 var init_decision_engine = __esm({
   "lib/decision-engine.mjs"() {
     PRIMITIVES = ["noul", "choice", "score"];
@@ -8119,21 +8151,25 @@ var init_decision_engine = __esm({
     MIN_CONFIDENCE = 0.85;
     LOOPBACK_HOSTS = /* @__PURE__ */ new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
     PROVIDERS = {
+      "gemini-decisions": {
+        model: "gemini-decision-1",
+        url: "https://generativelanguage.googleapis.com/v1beta/decisions",
+        keyEnv: "GEMINI_API_KEY"
+      },
       jev: {
         model: "jev-latest",
         url: "https://api.typesafe.ai/v1/systemOne",
         keyEnv: "TYPESAFE_API_KEY"
-      },
-      "gemini-decisions": {
-        model: "gemini-decision-1",
-        url: "https://generativelanguage.googleapis.com/v1beta/decisions:evaluate",
-        keyEnv: "GEMINI_API_KEY"
       },
       kev: { model: "kev-latest", url: null, keyEnv: "AGB_KEV_API_KEY" }
     };
     DECISION_PROVIDERS = Object.keys(PROVIDERS);
     num = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
     unitNum = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1 ? v : null;
+    DEFAULT_SCORE_CRITERIA = {
+      0: "0.0 (Lowest / None)",
+      1: "1.0 (Highest / Critical)"
+    };
     DecisionEngine = class _DecisionEngine {
       constructor({ provider, model, baseUrl, apiKey, transport, timeoutMs } = {}) {
         if (!PROVIDERS[provider]) throw new Error(`unknown decision provider: ${provider}`);
@@ -8160,16 +8196,17 @@ var init_decision_engine = __esm({
           error: scrubSecrets(err?.message ?? err, [this.apiKey])
         };
       }
-      async evaluate(primitive, queries) {
+      async evaluate(primitive, queries, { input } = {}) {
         const started = Date.now();
         try {
           if (!PRIMITIVES.includes(primitive)) throw new Error(`unknown primitive: ${primitive}`);
           if (!Array.isArray(queries) || queries.length === 0) throw new Error("no queries");
-          const { headers, body } = buildRequest(this.provider, {
+          const { headers, body, questionIds } = buildRequest(this.provider, {
             primitive,
             queries,
             model: this.model,
-            apiKey: this.apiKey
+            apiKey: this.apiKey,
+            input
           });
           const res = await this.transport(this.url, {
             method: "POST",
@@ -8179,7 +8216,14 @@ var init_decision_engine = __esm({
           });
           if (!res || res.ok === false) throw new Error(`HTTP ${res?.status ?? "error"}`);
           const json = await res.json();
-          const raw = json?.answers ?? json?.results;
+          let raw;
+          if (Array.isArray(json?.answers)) {
+            raw = json.answers;
+          } else if (json?.answers && typeof json.answers === "object") {
+            raw = questionIds.map((id) => json.answers[id]);
+          } else if (Array.isArray(json?.results)) {
+            raw = json.results;
+          }
           if (!Array.isArray(raw) || raw.length !== queries.length) throw new Error("malformed response");
           const answers = raw.map((a) => normalizeAnswer(primitive, a));
           if (answers.some((a) => a === null)) throw new Error("malformed answer");
@@ -8188,7 +8232,9 @@ var init_decision_engine = __esm({
             provider: this.provider,
             model: json.model ?? this.model,
             latencyMs: Date.now() - started,
-            inputTokens: num(json.usage?.inputTokens ?? json.inputTokens) ?? 0,
+            inputTokens: num(
+              json.usage?.total_input_tokens ?? json.usage?.totalInputTokens ?? json.usage?.inputTokens ?? json.inputTokens
+            ) ?? 0,
             outputTokens: 0,
             answers
           };
@@ -8196,14 +8242,14 @@ var init_decision_engine = __esm({
           return this.fail(started, err?.name === "TimeoutError" ? new Error("request timed out") : err);
         }
       }
-      noul(queries) {
-        return this.evaluate("noul", queries);
+      noul(queries, opts) {
+        return this.evaluate("noul", queries, opts);
       }
-      choice(queries) {
-        return this.evaluate("choice", queries);
+      choice(queries, opts) {
+        return this.evaluate("choice", queries, opts);
       }
-      score(queries) {
-        return this.evaluate("score", queries);
+      score(queries, opts) {
+        return this.evaluate("score", queries, opts);
       }
     };
     good = (r, n) => r?.ok === true && Array.isArray(r.answers) && r.answers.length === n;
@@ -9646,6 +9692,16 @@ async function checkDecisionEngine({ cwd = process.cwd(), repo = cwd, env = proc
     } catch {
     }
   }
+  const resolved = resolveDecisionConfig({ repo: targetRepo, env });
+  if (resolved.enabled) {
+    const suffix = resolved.autoDetected ? ", auto-detected via GEMINI_API_KEY" : "";
+    return {
+      name,
+      level: "pass",
+      detail: `${resolved.provider} (${resolved.model}${suffix})`,
+      fix: null
+    };
+  }
   const envProvider = env.AGB_DECISION_PROVIDER;
   const isConfigured = rawCfg.enabled === true || Boolean(envProvider);
   if (!isConfigured) {
@@ -9653,16 +9709,7 @@ async function checkDecisionEngine({ cwd = process.cwd(), repo = cwd, env = proc
       name,
       level: "info",
       detail: "opt-in, not configured",
-      fix: "Run `agb init --decision-provider <jev|gemini-decisions|kev>` to enable System-1 gating."
-    };
-  }
-  const resolved = resolveDecisionConfig({ repo: targetRepo, env });
-  if (resolved.enabled) {
-    return {
-      name,
-      level: "pass",
-      detail: `${resolved.provider} (${resolved.model})`,
-      fix: null
+      fix: "Set GEMINI_API_KEY (auto-detected for Gemini Decisions API) or run `agb init --decision-provider <gemini-decisions|jev|kev>` to enable System-1 gating."
     };
   }
   const provider = envProvider || rawCfg.provider;
@@ -9993,8 +10040,8 @@ var init_doctor2 = __esm({
     HOOK_TIMEOUT_MS = 15e3;
     sha256File2 = (p) => crypto3.createHash("sha256").update(readFileSync18(p)).digest("hex");
     DECISION_KEY_ENV = {
-      jev: "TYPESAFE_API_KEY",
       "gemini-decisions": "GEMINI_API_KEY",
+      jev: "TYPESAFE_API_KEY",
       kev: "AGB_KEV_API_KEY"
     };
   }
@@ -22435,13 +22482,13 @@ async function prepareProsecutionPrecheck({
     const engine = resolvePrecheckDecisionEngine(decisionEngine, rootRepo ?? worktree);
     if (engine) {
       const trackedEngine = {
-        evaluate: (primitive, queries) => {
+        evaluate: (primitive, queries, opts) => {
           system1Calls += 1;
-          return engine.evaluate(primitive, queries);
+          return engine.evaluate(primitive, queries, opts);
         },
-        noul: (queries) => {
+        noul: (queries, opts) => {
           system1Calls += 1;
-          return typeof engine.noul === "function" ? engine.noul(queries) : engine.evaluate("noul", queries);
+          return typeof engine.noul === "function" ? engine.noul(queries, opts) : engine.evaluate("noul", queries, opts);
         }
       };
       decisionRes = await screenTicketFastShip(trackedEngine, {
@@ -35974,10 +36021,10 @@ function createMeteredDecisionEngine(engine, tel) {
     return res;
   };
   return {
-    evaluate: (primitive, queries) => track(() => engine.evaluate(primitive, queries)),
-    noul: (queries) => typeof engine.noul === "function" ? track(() => engine.noul(queries)) : track(() => engine.evaluate("noul", queries)),
-    choice: (queries) => typeof engine.choice === "function" ? track(() => engine.choice(queries)) : track(() => engine.evaluate("choice", queries)),
-    score: (queries) => typeof engine.score === "function" ? track(() => engine.score(queries)) : track(() => engine.evaluate("score", queries))
+    evaluate: (primitive, queries, opts) => track(() => engine.evaluate(primitive, queries, opts)),
+    noul: (queries, opts) => typeof engine.noul === "function" ? track(() => engine.noul(queries, opts)) : track(() => engine.evaluate("noul", queries, opts)),
+    choice: (queries, opts) => typeof engine.choice === "function" ? track(() => engine.choice(queries, opts)) : track(() => engine.evaluate("choice", queries, opts)),
+    score: (queries, opts) => typeof engine.score === "function" ? track(() => engine.score(queries, opts)) : track(() => engine.evaluate("score", queries, opts))
   };
 }
 function recordReviewTelemetryToLedger({ repo, runId, telemetry, requestsByPool, durationMs, recordLedger }) {

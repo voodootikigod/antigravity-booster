@@ -474,15 +474,15 @@ var NULL_HOOKS_PATH = process.platform === "win32" ? "NUL" : "/dev/null";
 
 // lib/decision-engine.mjs
 var PROVIDERS = {
+  "gemini-decisions": {
+    model: "gemini-decision-1",
+    url: "https://generativelanguage.googleapis.com/v1beta/decisions",
+    keyEnv: "GEMINI_API_KEY"
+  },
   jev: {
     model: "jev-latest",
     url: "https://api.typesafe.ai/v1/systemOne",
     keyEnv: "TYPESAFE_API_KEY"
-  },
-  "gemini-decisions": {
-    model: "gemini-decision-1",
-    url: "https://generativelanguage.googleapis.com/v1beta/decisions:evaluate",
-    keyEnv: "GEMINI_API_KEY"
   },
   kev: { model: "kev-latest", url: null, keyEnv: "AGB_KEV_API_KEY" }
 };

@@ -18,6 +18,10 @@ import {
   reviewFleet,
   canUsePostRunSeams,
 } from '../lib/review.mjs';
+
+// Keep offline unit tests isolated from host GEMINI_API_KEY auto-detection;
+// tests that explicitly pass a mock decisionEngine still exercise System-1 paths.
+process.env.AGB_DECISION_ENGINE = '0';
 import { ARL_LENS_MODELS, CODE_ARL_LENSES, PLAN_ARL_LENSES, ALL_MODELS } from '../lib/models.mjs';
 import { DecisionEngine } from '../lib/decision-engine.mjs';
 
@@ -971,7 +975,7 @@ test('triageFindings: 3-tier Arbiter cascade (Tier 1 System-1, Tier 2 determinis
     assert.equal(t1.telemetry.uncachedInputTokens, 200);
 
     // Tier 2: <=4 unique non-blast_radius findings without decisionEngine -> deterministic fast-path (0 LLM calls)
-    const t2 = await triageFindings({ findings: cleanTwo, arbiter: true });
+    const t2 = await triageFindings({ findings: cleanTwo, arbiter: true, decisionEngine: false });
     assert.equal(t2.arbiterMode, 'deterministic');
     assert.equal(t2.gateVerdict, 'ITERATE');
     assert.equal(t2.surviving.length, 1);

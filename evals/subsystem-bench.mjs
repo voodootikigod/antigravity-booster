@@ -1506,6 +1506,9 @@ if (printArg) {
     'AGB_CODEGRAPH',
     'AGB_DECISION_ENGINE',
     'AGB_DECISION_PROVIDER',
+    'GEMINI_API_KEY',
+    'TYPESAFE_API_KEY',
+    'AGB_KEV_BASE_URL',
     'FAKE_HOLLOW_TEST_MODE',
     'FAKE_STATE_DIR',
   ];
@@ -1521,6 +1524,9 @@ if (printArg) {
   delete process.env.AGB_CODEGRAPH;
   delete process.env.AGB_DECISION_ENGINE;
   delete process.env.AGB_DECISION_PROVIDER;
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.TYPESAFE_API_KEY;
+  delete process.env.AGB_KEV_BASE_URL;
 
   async function runConfig(name, opts) {
     const logPath = join(stateDir, `${name}-agy.jsonl`);

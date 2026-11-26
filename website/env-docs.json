@@ -578,16 +578,16 @@
     {
       "name": "AGB_DECISION_ENGINE",
       "group": "core",
-      "default": "unset",
+      "default": "auto when GEMINI_API_KEY is set",
       "bundledIgnored": false,
-      "description": "Set to 0 to disable the opt-in System-1 Decision Engine (lens gating, typed Arbiter triage, coldstart screening, and low-risk fast-ship) even when configured in .adlc/config.json."
+      "description": "Set to 0 to disable the System-1 Decision Engine (lens gating, typed Arbiter triage, coldstart screening, and low-risk fast-ship), including GEMINI_API_KEY auto-detection and .adlc/config.json settings."
     },
     {
       "name": "AGB_DECISION_PROVIDER",
       "group": "core",
-      "default": "unset",
+      "default": "gemini-decisions (auto-detected via GEMINI_API_KEY)",
       "bundledIgnored": false,
-      "description": "Selects the System-1 Decision Engine provider (jev, gemini-decisions, or kev) used by lib/decision-engine.mjs."
+      "description": "Explicitly selects the System-1 Decision Engine provider (gemini-decisions, jev, or kev) used by lib/decision-engine.mjs, overriding GEMINI_API_KEY auto-detection."
     },
     {
       "name": "TYPESAFE_API_KEY",
@@ -601,7 +601,7 @@
       "group": "core",
       "default": "unset",
       "bundledIgnored": false,
-      "description": "API key for the Google Gemini Decisions API System-1 provider (gemini-decision-1, zero output tokens). Treated as a secret and scrubbed from error output."
+      "description": "API key for the Google Gemini Decisions API System-1 provider (gemini-decision-1 at v1beta/decisions, zero output tokens). Auto-detected and prioritized by default unless AGB_DECISION_ENGINE=0 or another provider is explicitly configured. Treated as a secret and scrubbed from error output."
     },
     {
       "name": "AGB_KEV_BASE_URL",

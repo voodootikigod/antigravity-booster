@@ -8,8 +8,8 @@
 | AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
 | AGB_BUILD_TIMEOUT | 15m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
 | AGB_CODEGRAPH | auto when .codegraph/ exists | Set to 0 to disable opt-in CodeGraph (.codegraph/) context slicing, blast-radius scoring, and impacted-test resolution, falling back to zero-dependency static-AST mode. | honoured |
-| AGB_DECISION_ENGINE | unset | Set to 0 to disable the opt-in System-1 Decision Engine (lens gating, typed Arbiter triage, coldstart screening, and low-risk fast-ship) even when configured in .adlc/config.json. | honoured |
-| AGB_DECISION_PROVIDER | unset | Selects the System-1 Decision Engine provider (jev, gemini-decisions, or kev) used by lib/decision-engine.mjs. | honoured |
+| AGB_DECISION_ENGINE | auto when GEMINI_API_KEY is set | Set to 0 to disable the System-1 Decision Engine (lens gating, typed Arbiter triage, coldstart screening, and low-risk fast-ship), including GEMINI_API_KEY auto-detection and .adlc/config.json settings. | honoured |
+| AGB_DECISION_PROVIDER | gemini-decisions (auto-detected via GEMINI_API_KEY) | Explicitly selects the System-1 Decision Engine provider (gemini-decisions, jev, or kev) used by lib/decision-engine.mjs, overriding GEMINI_API_KEY auto-detection. | honoured |
 | AGB_DEFAULT_EFFORT | unset | Optional Strike-0 effort level override (low, medium, high, xhigh, max) passed as --effort to agy when ticket.effort is unset. | honoured |
 | AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
 | AGB_GATE_TIMEOUT_MS | 1800000 | Per-gate execution timeout in milliseconds for deterministic build/test gates in lib/scheduler.mjs. | honoured |
@@ -31,7 +31,7 @@
 | AGY_BIN | agy | Override path for the agy CLI executable used by scripts/stage-marketplace-plugin.mjs when validating staged plugin bundles. | honoured |
 | ANTIGRAVITY_CONVERSATION_ID | set by Antigravity | Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes. | honoured |
 | ANTIGRAVITY_WORKSPACE | set by agb on builders | Set by agb on builder agy processes (alongside AGY_WORKSPACE and PWD) to the isolated ticket worktree path so headless companion hooks always resolve the worktree root. | honoured |
-| GEMINI_API_KEY | unset | API key for the Google Gemini Decisions API System-1 provider (gemini-decision-1, zero output tokens). Treated as a secret and scrubbed from error output. | honoured |
+| GEMINI_API_KEY | unset | API key for the Google Gemini Decisions API System-1 provider (gemini-decision-1 at v1beta/decisions, zero output tokens). Auto-detected and prioritized by default unless AGB_DECISION_ENGINE=0 or another provider is explicitly configured. Treated as a secret and scrubbed from error output. | honoured |
 | TYPESAFE_API_KEY | unset | API key for the TypeSafe Jev System-1 Decision Engine provider (jev-latest). Treated as a secret and scrubbed from error output. | honoured |
 
 **Plugin resolution**
