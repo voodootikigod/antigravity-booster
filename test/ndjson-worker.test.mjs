@@ -6,9 +6,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync
 import { tmpdir } from 'node:os';
 import {
   buildRoleSettingsProfile,
+  READONLY_FILE_READ_TOOLS,
   NdjsonWorkerDaemon,
   killDaemonProcessTree,
 } from '../lib/ndjson-worker.mjs';
+import { runAgy } from '../lib/agy.mjs';
 import { StreamWatchdog } from '../lib/stream-watchdog.mjs';
 
 const FAKE_AGY = join(process.cwd(), 'test', 'fixtures', 'fake-agy');
@@ -21,6 +23,18 @@ test('buildRoleSettingsProfile emits agy 1.5.15 permissions.deny for readonly an
     for (const tool of ['write_file', 'edit_file', 'run_command', 'invoke_subagent', 'swarm', 'manage_task', 'call_mcp_tool']) {
       assert.ok(profile.permissions.deny.includes(tool), `readonly role ${role} must deny ${tool}`);
     }
+    for (const readTool of READONLY_FILE_READ_TOOLS) {
+      assert.ok(profile.permissions.deny.includes(readTool), `readonly role ${role} must deny ${readTool} by default`);
+    }
+
+    const withReads = buildRoleSettingsProfile(role, { allowReadTools: true });
+    assert.deepEqual(Object.keys(withReads), ['permissions']);
+    for (const tool of ['write_file', 'edit_file', 'run_command', 'call_mcp_tool']) {
+      assert.ok(withReads.permissions.deny.includes(tool), `readonly role ${role} with allowReadTools must still deny ${tool}`);
+    }
+    for (const readTool of READONLY_FILE_READ_TOOLS) {
+      assert.equal(withReads.permissions.deny.includes(readTool), false, `readonly role ${role} with allowReadTools must allow ${readTool}`);
+    }
   }
 
   const builderNoCg = buildRoleSettingsProfile('builder', { hasCodegraph: false });
@@ -30,6 +44,7 @@ test('buildRoleSettingsProfile emits agy 1.5.15 permissions.deny for readonly an
   assert.ok(builderNoCg.permissions.deny.includes('call_mcp_tool'));
   assert.equal(builderNoCg.permissions.deny.includes('write_file'), false);
   assert.equal(builderNoCg.permissions.deny.includes('run_command'), false);
+  assert.equal(builderNoCg.permissions.deny.includes('read_file'), false);
 
   const builderWithCg = buildRoleSettingsProfile('builder', { hasCodegraph: true });
   assert.deepEqual(Object.keys(builderWithCg), ['permissions']);
@@ -37,6 +52,44 @@ test('buildRoleSettingsProfile emits agy 1.5.15 permissions.deny for readonly an
   assert.ok(builderWithCg.permissions.deny.includes('swarm'));
   assert.equal(builderWithCg.permissions.deny.includes('call_mcp_tool'), false);
   assert.equal(builderWithCg.permissions.deny.includes('write_file'), false);
+});
+
+test('runAgy forwards allowReadTools into buildRoleSettingsProfile when useRoleSettings is true', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-runagy-ro-'));
+  const defaultSettingsFile = join(dir, 'default-settings.json');
+  const allowReadsSettingsFile = join(dir, 'allow-reads-settings.json');
+  try {
+    const resDefault = await runAgy({
+      model: 'gemini-3.8-flash-low',
+      prompt: 'audit diff',
+      bin: FAKE_AGY,
+      role: 'prosecutor',
+      useRoleSettings: true,
+      env: { FAKE_SETTINGS_FILE: defaultSettingsFile },
+    });
+    assert.equal(resDefault.ok, true);
+    const defaultParsed = JSON.parse(readFileSync(defaultSettingsFile, 'utf8'));
+    assert.ok(defaultParsed.permissions.deny.includes('read_file'));
+    assert.ok(defaultParsed.permissions.deny.includes('grep_search'));
+    assert.ok(defaultParsed.permissions.deny.includes('write_file'));
+
+    const resAllow = await runAgy({
+      model: 'gemini-3.8-flash-low',
+      prompt: 'audit diff with reads',
+      bin: FAKE_AGY,
+      role: 'prosecutor',
+      useRoleSettings: true,
+      allowReadTools: true,
+      env: { FAKE_SETTINGS_FILE: allowReadsSettingsFile },
+    });
+    assert.equal(resAllow.ok, true);
+    const allowParsed = JSON.parse(readFileSync(allowReadsSettingsFile, 'utf8'));
+    assert.equal(allowParsed.permissions.deny.includes('read_file'), false);
+    assert.equal(allowParsed.permissions.deny.includes('grep_search'), false);
+    assert.ok(allowParsed.permissions.deny.includes('write_file'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('NdjsonWorkerDaemon executes multiple turns over persistent stream-json stdin and records --settings', async () => {
