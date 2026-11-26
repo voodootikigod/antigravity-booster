@@ -356,22 +356,22 @@ test('runAgy: pipes oversized prompts (> MAX_ARGV_PROMPT_BYTES) via --input-form
   try {
     const shortRes = await runAgy({
       bin: mock.bin,
-      model: 'gemini-4-argon-high',
+      model: 'gemini-4-neon-high',
       prompt: 'short-check',
       sandbox: false,
     });
     assert.equal(shortRes.ok, true, shortRes.error);
-    assert.match(shortRes.output, /ARGS:--print short-check --print-timeout \S+ --model gemini-4-argon-high/);
+    assert.match(shortRes.output, /ARGS:--print short-check --print-timeout \S+ --model gemini-4-neon-high/);
 
     const bigPrompt = 'DIFF-HEADER\n' + 'x'.repeat(140_000);
     const res = await runAgy({
       bin: mock.bin,
-      model: 'gemini-4-argon-high',
+      model: 'gemini-4-neon-high',
       prompt: bigPrompt,
       sandbox: false,
     });
     assert.equal(res.ok, true, res.error);
-    assert.match(res.output, /ARGS:--input-format text --print-timeout \S+ --model gemini-4-argon-high/);
+    assert.match(res.output, /ARGS:--input-format text --print-timeout \S+ --model gemini-4-neon-high/);
     assert.doesNotMatch(res.output, /--print DIFF-HEADER/);
     assert.match(res.output, new RegExp(`BYTES:\\s*${Buffer.byteLength(bigPrompt, 'utf8')}`));
 

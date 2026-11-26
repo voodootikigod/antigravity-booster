@@ -11,11 +11,11 @@ Every model call agb makes goes through one function, [`runAgy`](https://github.
 ```text
 agy --print <prompt> --print-timeout <timeout> --model <slug>
     [--output-format json|stream-json] [--json-schema <schema>]
-    [--disable-slash-commands] [--effort <low|medium|high|max>]
+    [--disable-slash-commands] [--effort <low|medium|high|xhigh|max>]
     [--project <name> --add-dir <cwd>] [--conversation <id>] [--sandbox]
 ```
 
-The arguments are built as an array and spawned without a shell, so nothing in a prompt is shell-interpreted; `--disable-slash-commands` is enabled by default in `lib/agy.mjs` to eliminate slash-command scanning overhead on automated workers. Display names such as `Gemini 3.8 Flash (Low)` are mapped to agy model slugs first. The agy binary is `AGB_AGY_BIN` if set, else `agy` on `PATH`.
+The arguments are built as an array and spawned without a shell, so nothing in a prompt is shell-interpreted; `--disable-slash-commands` is enabled by default in `lib/agy.mjs` to eliminate slash-command scanning overhead on automated workers. Display names such as `Gemini 4 Hydrogen (Low)` are mapped to agy model slugs first (and `--effort` is omitted for Orchestrator models, which use a fixed reasoning budget in the CLI). The agy binary is `AGB_AGY_BIN` if set, else `agy` on `PATH`.
 
 ```mermaid
 sequenceDiagram

@@ -570,6 +570,8 @@ test('runInteractiveRescue: releases repo lock during spawnInteractive, preserve
 
     // Attempt 2: continue existing preserved worktree, pass all P3/P5 gates -> merge & clear lock
     let hollowCalled = false;
+    let prosecuteArgs = null;
+    let recordedRescueGate = null;
     const passRes = await runInteractiveRescue(repo, 'T-RES-1', {
       ticket,
       gate,
@@ -590,11 +592,27 @@ test('runInteractiveRescue: releases repo lock during spawnInteractive, preserve
         hollowCalled = true;
         return { ok: true, total: 3, killed: 3, survived: 0, mutants: [] };
       },
-      prosecuteFn: async () => ({ verdict: 'ship', findings: [] }),
-      recordGateFn: async () => ({ ok: true }),
+      prosecuteFn: async (args) => {
+        prosecuteArgs = args;
+        return { verdict: 'ship', model: args.model, prosecutionMode: 'same-family-fallback', findings: [] };
+      },
+      recordGateFn: async (args) => {
+        recordedRescueGate = args;
+        return { ok: true };
+      },
     });
 
+    const { tierCandidates } = await import('../lib/models.mjs');
     assert.equal(hollowCalled, true, 'hollow-test must run when lib/ files changed');
+    assert.equal(
+      prosecuteArgs?.builderModel,
+      tierCandidates(ticket.tier ?? 'mid', ticket.pool_hint)[0],
+      'runInteractiveRescue must pass primary tier candidate as builderModel',
+    );
+    assert.ok(prosecuteArgs?.model, 'runInteractiveRescue must pass a non-empty prosecutor model');
+    assert.equal(recordedRescueGate?.data?.ok, true);
+    assert.equal(recordedRescueGate?.data?.prosecutorModel, prosecuteArgs.model);
+    assert.equal(recordedRescueGate?.data?.prosecutionMode, 'same-family-fallback');
     assert.deepEqual(passRes, { ok: true, merged: true, ticketId: 'T-RES-1' });
     assert.equal(hasProtectedRescueWorktree(repo, 'T-RES-1'), false, 'rescue lock must be cleared on merge');
     assert.equal(

@@ -17,7 +17,7 @@ test('parseAgyModels and parseAgyModelsOutput parse cached agy models table clea
   assert.equal(slugs.length, ALL_MODELS.length);
   const parsed = parseAgyModelsOutput(CACHED_MODELS_OUTPUT);
   assert.equal(parsed.length, ALL_MODELS.length);
-  assert.ok(parsed.some((m) => m.slug === 'gemini-4-argon-high' && m.displayName === 'Gemini 4 Argon (High)'));
+  assert.ok(parsed.some((m) => m.slug === 'gemini-4-neon-high' && m.displayName === 'Gemini 4 Neon (High)'));
 });
 
 test('auditModels and compareModelCatalog report zero unmapped models on current catalog', () => {

@@ -6419,6 +6419,24 @@ var init_adlc_bridge = __esm({
 
 // lib/models.mjs
 import { AsyncLocalStorage } from "node:async_hooks";
+function sameFamilyProsecutorsFor(builderModel) {
+  const slug = resolveModelSlug(builderModel);
+  const fam = familyOf(slug);
+  const norm = String(slug ?? "").toLowerCase();
+  if (fam === "gemini") {
+    if (norm.includes("neon")) {
+      return ["gemini-4-carbon-high", "gemini-4-hydrogen-high"];
+    }
+    if (norm.includes("hydrogen")) {
+      return ["gemini-4-neon-high", "gemini-4-carbon-high"];
+    }
+    return ["gemini-4-neon-high", "gemini-4-hydrogen-high"];
+  }
+  if (fam === "claude") {
+    return norm.includes("opus") ? ["claude-sonnet-5-5-high"] : ["claude-opus-5-5-high"];
+  }
+  return [];
+}
 function resolveModelSlug(model) {
   if (typeof model !== "string") return model;
   const normalized = model.trim().toLowerCase();
@@ -6428,6 +6446,7 @@ function resolveModelSlug(model) {
     return resolved;
   }
   if (Object.hasOwn(MODEL_ALIASES, normalized)) return MODEL_ALIASES[normalized];
+  if (Object.hasOwn(ENTERPRISE_MODEL_ALIASES, normalized)) return ENTERPRISE_MODEL_ALIASES[normalized];
   for (const list of Object.values(MODELS)) {
     for (const slug of list) {
       if (slug.toLowerCase() === normalized) return slug;
@@ -6442,8 +6461,8 @@ function poolOf(model) {
   }
   if (typeof slug !== "string") throw new Error(`unknown model: ${slug}`);
   const normalized = slug.toLowerCase();
-  if (normalized.includes("flash")) return "gemini-flash";
-  if (normalized.includes("gemini") || normalized.includes("hydrogen")) return "gemini-pro";
+  if (normalized.includes("flash") || normalized.includes("hydrogen")) return "gemini-flash";
+  if (normalized.includes("gemini")) return "gemini-pro";
   if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus")) return "claude";
   if (normalized.includes("gpt")) return "gpt-oss";
   throw new Error(`unknown model: ${slug}`);
@@ -6501,41 +6520,44 @@ function selectCliEffortFlag({
   defaultEffort = process.env.AGB_DEFAULT_EFFORT || null,
   allowMax = false
 } = {}) {
-  void tier;
+  const slug = resolveModelSlug(model);
+  if (typeof slug === "string" && ORCHESTRATOR_MODELS.has(slug)) {
+    return null;
+  }
   const normExplicit = typeof explicitEffort === "string" ? explicitEffort.trim().toLowerCase() : "";
   if (VALID_EFFORTS.includes(normExplicit)) return normExplicit;
   const normDefault = typeof defaultEffort === "string" ? defaultEffort.trim().toLowerCase() : "";
   if (strike === 0 && VALID_EFFORTS.includes(normDefault)) return normDefault;
-  const slug = resolveModelSlug(model);
-  if (typeof slug === "string" && ORCHESTRATOR_MODELS.has(slug)) {
-    if (strike <= 0) return "high";
+  if (typeof slug === "string" && DYNAMIC_EFFORT_BASE_MODELS.has(slug.trim().toLowerCase())) {
+    if (strike <= 0) {
+      if (tier === "frontier") return "high";
+      if (tier === "cheap") return "low";
+      return "medium";
+    }
     return allowMax ? "max" : "xhigh";
   }
   return null;
 }
-var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, ORCHESTRATOR_MODELS, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, CODE_ARL_LENSES, PLAN_ARL_LENSES, ARL_LENS_MODELS, ROLE_MODELS, runtimeState, routingAls, VALID_EFFORTS, SLUG_EFFORT_LADDER;
+var MODELS, ALL_MODELS, MODEL_ALIASES, EFFORTS, ENTERPRISE_MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, retiredEntries, RETIRED_MODEL_MAP, ORCHESTRATOR_MODELS, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, CODE_ARL_LENSES, PLAN_ARL_LENSES, ARL_LENS_MODELS, ROLE_MODELS, runtimeState, routingAls, VALID_EFFORTS, SLUG_EFFORT_LADDER, DYNAMIC_EFFORT_BASE_MODELS;
 var init_models = __esm({
   "lib/models.mjs"() {
     MODELS = {
-      "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
-      "gemini-pro": [
-        "gemini-4-argon-low",
-        "gemini-4-argon-medium",
-        "gemini-4-argon-high",
-        "gemini-4-carbon-low",
-        "gemini-4-carbon-medium",
-        "gemini-4-carbon-high",
+      "gemini-flash": [
         "gemini-4-hydrogen-low",
         "gemini-4-hydrogen-medium",
         "gemini-4-hydrogen-high",
-        "gemini-4-hydrogen-xhigh",
+        "gemini-4-hydrogen-xhigh"
+      ],
+      "gemini-pro": [
         "gemini-4-neon-low",
         "gemini-4-neon-medium",
         "gemini-4-neon-high",
         "gemini-4-neon-xhigh",
-        "gemini-pro-orchestrator",
-        "gemini-pro-orchestrator-argon",
-        "gemini-pro-orchestrator-neon"
+        "gemini-4-carbon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-carbon-high",
+        "gemini-pro-orchestrator-neon",
+        "gemini-pro-orchestrator"
       ],
       claude: [
         "claude-sonnet-5-5-low",
@@ -6545,19 +6567,10 @@ var init_models = __esm({
         "claude-opus-5-5-medium",
         "claude-opus-5-5-high"
       ],
-      "gpt-oss": ["gpt-oss-120b-medium"]
+      "gpt-oss": []
     };
     ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
     MODEL_ALIASES = {
-      "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
-      "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
-      "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
-      "gemini 4 argon (low)": "gemini-4-argon-low",
-      "gemini 4 argon (medium)": "gemini-4-argon-medium",
-      "gemini 4 argon (high)": "gemini-4-argon-high",
-      "gemini 4 carbon (low)": "gemini-4-carbon-low",
-      "gemini 4 carbon (medium)": "gemini-4-carbon-medium",
-      "gemini 4 carbon (high)": "gemini-4-carbon-high",
       "gemini 4 hydrogen (low)": "gemini-4-hydrogen-low",
       "gemini 4 hydrogen (medium)": "gemini-4-hydrogen-medium",
       "gemini 4 hydrogen (high)": "gemini-4-hydrogen-high",
@@ -6566,30 +6579,49 @@ var init_models = __esm({
       "gemini 4 neon (medium)": "gemini-4-neon-medium",
       "gemini 4 neon (high)": "gemini-4-neon-high",
       "gemini 4 neon (xhigh)": "gemini-4-neon-xhigh",
-      "orchestrator (carbon)": "gemini-pro-orchestrator",
-      "orchestrator (argon)": "gemini-pro-orchestrator-argon",
+      "gemini 4 carbon (low)": "gemini-4-carbon-low",
+      "gemini 4 carbon (medium)": "gemini-4-carbon-medium",
+      "gemini 4 carbon (high)": "gemini-4-carbon-high",
       "orchestrator (neon)": "gemini-pro-orchestrator-neon",
+      "orchestrator (carbon)": "gemini-pro-orchestrator",
       "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
       "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
       "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
       "claude opus 5.5 (low)": "claude-opus-5-5-low",
       "claude opus 5.5 (medium)": "claude-opus-5-5-medium",
-      "claude opus 5.5 (high)": "claude-opus-5-5-high",
-      "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
+      "claude opus 5.5 (high)": "claude-opus-5-5-high"
     };
-    RETIRED_FLASH_GENERATIONS = ["3.5", "3.6", "3.7"];
     EFFORTS = ["low", "medium", "high"];
+    ENTERPRISE_MODEL_ALIASES = Object.freeze(
+      Object.fromEntries([
+        ...["3.6", "3.7"].flatMap(
+          (gen) => EFFORTS.flatMap((e) => [
+            [`gemini-${gen}-flash-${e}`, `gemini-${gen}-flash-${e}`],
+            [`gemini ${gen} flash (${e})`, `gemini-${gen}-flash-${e}`]
+          ])
+        ),
+        ...["low", "high"].flatMap((e) => [
+          [`gemini-3.1-pro-${e}`, `gemini-3.1-pro-${e}`],
+          [`gemini 3.1 pro (${e})`, `gemini-3.1-pro-${e}`]
+        ])
+      ])
+    );
+    RETIRED_FLASH_GENERATIONS = ["3.5", "3.8"];
     retiredEntries = [
       ...RETIRED_FLASH_GENERATIONS.flatMap(
         (gen) => EFFORTS.flatMap((e) => [
-          [`gemini-${gen}-flash-${e}`, `gemini-3.8-flash-${e}`],
-          [`gemini ${gen} flash (${e})`, `gemini-3.8-flash-${e}`]
+          [`gemini-${gen}-flash-${e}`, `gemini-4-hydrogen-${e}`],
+          [`gemini ${gen} flash (${e})`, `gemini-4-hydrogen-${e}`]
         ])
       ),
-      ...["low", "high"].flatMap((e) => [
-        [`gemini-3.1-pro-${e}`, `gemini-4-argon-${e}`],
-        [`gemini 3.1 pro (${e})`, `gemini-4-argon-${e}`]
+      ...EFFORTS.flatMap((e) => [
+        [`gemini-4-argon-${e}`, `gemini-4-neon-${e}`],
+        [`gemini 4 argon (${e})`, `gemini-4-neon-${e}`]
       ]),
+      ["gemini-pro-orchestrator-argon", "gemini-pro-orchestrator-neon"],
+      ["orchestrator (argon)", "gemini-pro-orchestrator-neon"],
+      ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
+      ["gpt-oss 120b (medium)", "claude-sonnet-5-5-medium"],
       ["claude-sonnet-4-6", "claude-sonnet-5-5-medium"],
       ["claude sonnet 4.6 (thinking)", "claude-sonnet-5-5-medium"],
       ["claude-opus-4-6-thinking", "claude-opus-5-5-high"],
@@ -6597,47 +6629,42 @@ var init_models = __esm({
     ];
     RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
     ORCHESTRATOR_MODELS = /* @__PURE__ */ new Set([
-      "gemini-pro-orchestrator",
-      "gemini-pro-orchestrator-argon",
-      "gemini-pro-orchestrator-neon"
+      "gemini-pro-orchestrator-neon",
+      "gemini-pro-orchestrator"
     ]);
     FRONTIER_NO_ORCHESTRATOR = Object.freeze([
-      "gemini-4-argon-high",
+      "gemini-4-neon-high",
       "claude-sonnet-5-5-high",
       "gemini-4-carbon-high",
-      "gemini-4-neon-high",
       "claude-opus-5-5-high"
     ]);
     TIER_CANDIDATES = {
-      cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
+      cheap: ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium"],
       mid: [
-        "gemini-3.8-flash-high",
-        "gemini-4-argon-low",
-        "gemini-4-carbon-medium",
-        "gemini-4-hydrogen-medium",
+        "gemini-4-hydrogen-high",
+        "gemini-4-neon-low",
         "gemini-4-neon-medium",
+        "gemini-4-carbon-medium",
         "claude-sonnet-5-5-medium"
       ],
       frontier: Object.freeze([
-        "gemini-pro-orchestrator",
-        "claude-sonnet-5-5-high",
-        "gemini-pro-orchestrator-argon",
         "gemini-pro-orchestrator-neon",
-        "gemini-4-argon-high",
-        "gemini-4-carbon-high",
+        "claude-sonnet-5-5-high",
+        "gemini-pro-orchestrator",
         "gemini-4-neon-high",
+        "gemini-4-carbon-high",
         "claude-opus-5-5-high"
       ])
     };
     PROSECUTORS = {
-      gemini: "gpt-oss-120b-medium",
-      claude: "gemini-4-argon-high",
-      "gpt-oss": "gemini-4-argon-high"
+      gemini: "claude-sonnet-5-5-high",
+      claude: "gemini-4-neon-high",
+      "gpt-oss": "gemini-4-neon-high"
     };
     PROSECUTOR_CANDIDATES = {
-      gemini: ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
-      claude: ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-4-neon-high", "gemini-3.8-flash-high", "gpt-oss-120b-medium"],
-      "gpt-oss": ["gemini-4-argon-high", "gemini-4-carbon-high", "gemini-4-neon-high", "gemini-3.8-flash-high", "claude-sonnet-5-5-medium"]
+      gemini: ["claude-sonnet-5-5-medium", "claude-sonnet-5-5-high", "claude-opus-5-5-high"],
+      claude: ["gemini-4-neon-high", "gemini-4-carbon-high", "gemini-4-hydrogen-high"],
+      "gpt-oss": ["gemini-4-neon-high", "gemini-4-carbon-high", "gemini-4-hydrogen-high", "claude-sonnet-5-5-medium"]
     };
     CODE_ARL_LENSES = Object.freeze([
       "correctness_redteam",
@@ -6654,27 +6681,27 @@ var init_models = __esm({
       "dag_topology"
     ]);
     ARL_LENS_MODELS = Object.freeze({
-      correctness_redteam: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
-      security: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
-      simplicity: { primary: "claude-sonnet-5-5-medium", fallback: "gemini-3.8-flash-medium" },
-      evidence_runner: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
-      anti_slop: { primary: "claude-sonnet-5-5-high", fallback: "gemini-3.8-flash-high" },
-      devils_advocate: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
-      requirements_fidelity: { primary: "gemini-4-argon-medium", fallback: "claude-sonnet-5-5-high" },
-      evidence_strategy: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
-      dag_topology: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
-      arbiter: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" }
+      correctness_redteam: { primary: "claude-opus-5-5-high", fallback: "gemini-4-neon-high" },
+      security: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" },
+      simplicity: { primary: "claude-sonnet-5-5-medium", fallback: "gemini-4-hydrogen-medium" },
+      evidence_runner: { primary: "gemini-4-hydrogen-medium", fallback: "claude-sonnet-5-5-medium" },
+      anti_slop: { primary: "claude-sonnet-5-5-high", fallback: "gemini-4-hydrogen-high" },
+      devils_advocate: { primary: "claude-opus-5-5-high", fallback: "gemini-4-neon-high" },
+      requirements_fidelity: { primary: "gemini-4-neon-medium", fallback: "claude-sonnet-5-5-high" },
+      evidence_strategy: { primary: "gemini-4-hydrogen-medium", fallback: "claude-sonnet-5-5-medium" },
+      dag_topology: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" },
+      arbiter: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" }
     });
     ROLE_MODELS = {
-      coldstart: "gemini-3.8-flash-low",
-      premortem: "gemini-4-argon-high",
-      parallaxReader: "gemini-3.8-flash-medium",
-      parallaxJudge: "gemini-4-argon-high",
-      brainConvert: "gemini-4-argon-high",
-      brainRepair: "gemini-4-argon-high",
-      arbiter: "gemini-4-argon-high",
-      probeDefault: "Gemini 3.8 Flash (Low)",
-      reviewFleetAlternates: ["gemini-3.8-flash-high", "gemini-4-argon-high"]
+      coldstart: "gemini-4-hydrogen-low",
+      premortem: "gemini-4-neon-high",
+      parallaxReader: "gemini-4-hydrogen-medium",
+      parallaxJudge: "gemini-4-neon-high",
+      brainConvert: "gemini-4-neon-high",
+      brainRepair: "gemini-4-neon-high",
+      arbiter: "gemini-4-neon-high",
+      probeDefault: "Gemini 4 Hydrogen (Low)",
+      reviewFleetAlternates: ["gemini-4-hydrogen-high", "gemini-4-neon-high"]
     };
     runtimeState = {
       disableOrchestrator: false,
@@ -6683,6 +6710,11 @@ var init_models = __esm({
     routingAls = new AsyncLocalStorage();
     VALID_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
     SLUG_EFFORT_LADDER = Object.freeze(["low", "medium", "high", "xhigh"]);
+    DYNAMIC_EFFORT_BASE_MODELS = /* @__PURE__ */ new Set([
+      "gemini-4-neon",
+      "gemini-4-hydrogen",
+      "gemini-4-carbon"
+    ]);
   }
 });
 
@@ -9498,6 +9530,8 @@ function isValidStatusLinePoolWindow(poolObj, nowMs) {
   if (typeof rWeekly !== "string" || !RFC3339_UTC_RE.test(rWeekly)) return false;
   const t5h = Date.parse(r5h);
   const tWeekly = Date.parse(rWeekly);
+  const isUnavailableZero = poolObj.unavailable === true && p5h === 0 && pWeekly === 0 && t5h === 0 && tWeekly === 0;
+  if (isUnavailableZero) return true;
   if (!Number.isFinite(t5h) || t5h < nowMs - 1e4 && !(t5h === 0 && p5h === 100)) return false;
   if (!Number.isFinite(tWeekly) || tWeekly < nowMs - 1e4 && !(tWeekly === 0 && pWeekly === 100)) return false;
   return true;
@@ -10146,25 +10180,11 @@ function parseQuotaProbeOutput(stdout2) {
     err.kind = "quota_parse_failure";
     throw err;
   }
-  const pools = "command" in data || "status" in data ? poolsFromAgyEnvelope(data) : data.pools;
+  const isAgyEnvelope = "command" in data || "status" in data;
+  const pools = isAgyEnvelope ? poolsFromAgyEnvelope(data) : data.pools;
   if (!Array.isArray(pools)) {
     const err = new Error("Quota probe output missing pools array");
     err.kind = "quota_parse_failure";
-    throw err;
-  }
-  if (pools.length !== 2) {
-    const err = new Error(`Expected exactly 2 pools in quota telemetry, got ${pools.length}`);
-    err.kind = "ambiguous_quota_pools";
-    throw err;
-  }
-  const foundNames = pools.map((p) => p?.name);
-  if (!foundNames.includes("Gemini Models") || !foundNames.includes("Claude and GPT models") || foundNames.filter((n) => n === "Gemini Models").length !== 1 || foundNames.filter((n) => n === "Claude and GPT models").length !== 1) {
-    const err = new Error(
-      `Quota pools must contain exactly one 'Gemini Models' and one 'Claude and GPT models', found: ${JSON.stringify(
-        foundNames
-      )}`
-    );
-    err.kind = "ambiguous_quota_pools";
     throw err;
   }
   const parseWindow = (winObj, winName, poolName) => {
@@ -10215,12 +10235,51 @@ function parseQuotaProbeOutput(stdout2) {
     }
     return { remainingPercent: val, resetTime: rawResetTime, resetTimeMs };
   };
-  const geminiRaw = pools.find((p) => p.name === "Gemini Models");
-  const claudeGptRaw = pools.find((p) => p.name === "Claude and GPT models");
-  const gemini5h = parseWindow(geminiRaw.fiveHour, "fiveHour", "Gemini Models");
-  const geminiWeekly = parseWindow(geminiRaw.weekly, "weekly", "Gemini Models");
-  const claude5h = parseWindow(claudeGptRaw.fiveHour, "fiveHour", "Claude and GPT models");
-  const claudeWeekly = parseWindow(claudeGptRaw.weekly, "weekly", "Claude and GPT models");
+  if (isAgyEnvelope && pools.length === 1 && GEMINI_QUOTA_GROUP_RE.test(String(pools[0]?.name ?? ""))) {
+    const geminiRaw2 = pools[0];
+    const gemini5h2 = parseWindow(geminiRaw2.fiveHour, "fiveHour", geminiRaw2.name);
+    const geminiWeekly2 = parseWindow(geminiRaw2.weekly, "weekly", geminiRaw2.name);
+    const res2 = {
+      gemini: {
+        fiveHourRemainingPercent: gemini5h2.remainingPercent,
+        fiveHourResetTime: gemini5h2.resetTime,
+        weeklyRemainingPercent: geminiWeekly2.remainingPercent,
+        weeklyResetTime: geminiWeekly2.resetTime
+      },
+      claude_gpt: {
+        fiveHourRemainingPercent: 0,
+        fiveHourResetTime: "1970-01-01T00:00:00Z",
+        weeklyRemainingPercent: 0,
+        weeklyResetTime: "1970-01-01T00:00:00Z",
+        unavailable: true
+      }
+    };
+    res2["claude-gpt"] = res2.claude_gpt;
+    return res2;
+  }
+  if (pools.length !== 2) {
+    const err = new Error(`Expected 2 pools in quota telemetry (or 1 Gemini-only envelope), got ${pools.length}`);
+    err.kind = "ambiguous_quota_pools";
+    throw err;
+  }
+  const geminiMatches = pools.filter((p) => GEMINI_QUOTA_GROUP_RE.test(String(p?.name ?? "")));
+  const claudeMatches = pools.filter((p) => CLAUDE_QUOTA_GROUP_RE.test(String(p?.name ?? "")));
+  if (geminiMatches.length !== 1 || claudeMatches.length !== 1) {
+    const foundNames = pools.map((p) => p?.name);
+    const err = new Error(
+      `Quota pools must contain exactly one Gemini group and one Claude/3P group, found: ${JSON.stringify(
+        foundNames
+      )}`
+    );
+    err.kind = "ambiguous_quota_pools";
+    throw err;
+  }
+  const geminiRaw = geminiMatches[0];
+  const claudeGptRaw = claudeMatches[0];
+  const gemini5h = parseWindow(geminiRaw.fiveHour, "fiveHour", geminiRaw.name);
+  const geminiWeekly = parseWindow(geminiRaw.weekly, "weekly", geminiRaw.name);
+  const claude5h = parseWindow(claudeGptRaw.fiveHour, "fiveHour", claudeGptRaw.name);
+  const claudeWeekly = parseWindow(claudeGptRaw.weekly, "weekly", claudeGptRaw.name);
   const res = {
     gemini: {
       fiveHourRemainingPercent: gemini5h.remainingPercent,
@@ -10984,7 +11043,7 @@ function estimatePlanQuotaRunway(plan = {}, { quota = null, records = [] } = {})
     recommendation
   };
 }
-var execFileP, LegacyFleetActiveError, RFC3339_UTC_RE, HEARTBEAT_INTERVAL_MS, LEASE_TTL_MS, BASE_CAPS, DEFAULT_CAPS, IS_BUNDLED_POOLS, AGY_QUOTA_WINDOWS, QUOTA_PROBE_TIMEOUT_MS, PoolSet, TIER_QUOTA_PRIORS;
+var execFileP, LegacyFleetActiveError, RFC3339_UTC_RE, HEARTBEAT_INTERVAL_MS, LEASE_TTL_MS, BASE_CAPS, DEFAULT_CAPS, IS_BUNDLED_POOLS, AGY_QUOTA_WINDOWS, GEMINI_QUOTA_GROUP_RE, CLAUDE_QUOTA_GROUP_RE, QUOTA_PROBE_TIMEOUT_MS, PoolSet, TIER_QUOTA_PRIORS;
 var init_pools = __esm({
   "lib/pools.mjs"() {
     init_models();
@@ -11014,6 +11073,8 @@ var init_pools = __esm({
     };
     IS_BUNDLED_POOLS = true;
     AGY_QUOTA_WINDOWS = { "5h": "fiveHour", weekly: "weekly" };
+    GEMINI_QUOTA_GROUP_RE = /^gemini\s+models$/i;
+    CLAUDE_QUOTA_GROUP_RE = /^(?:claude(?:\s+and\s+gpt)?|anthropic)\s+models$/i;
     QUOTA_PROBE_TIMEOUT_MS = 3e4;
     PoolSet = class {
       constructor(caps = DEFAULT_CAPS, { repo = process.cwd() } = {}) {
@@ -11269,6 +11330,9 @@ var init_pools = __esm({
         }
         return BASE_CAPS[upstreamPool] ?? (upstreamPool === "gemini" ? 12 : 4);
       }
+      isPoolViable(model) {
+        return this.caps[poolOf(model)] > 0 && this.familyCap(upstreamPoolOf(model)) > 0;
+      }
       hasCapacity(model) {
         if (this.isCircuitBreakerTripped()) return false;
         const pool = poolOf(model);
@@ -11450,25 +11514,33 @@ var init_pools = __esm({
         const pool = poolOf(model);
         if (this.reserved[pool] > 0) this.reserved[pool] -= 1;
       }
-      /** Candidate cross-family prosecutors for a builder model in preference order. */
-      prosecutorsFor(builderModel) {
+      /** Candidate cross-family prosecutors for a builder model in preference order (optionally including same-family fallback). */
+      prosecutorsFor(builderModel, { includeSameFamilyFallback = false } = {}) {
         const fam = familyOf(builderModel);
-        if (PROSECUTOR_CANDIDATES[fam]) {
-          return [...PROSECUTOR_CANDIDATES[fam]];
-        }
-        return [PROSECUTORS[fam] || PROSECUTORS.claude];
+        const cross = PROSECUTOR_CANDIDATES[fam] ? [...PROSECUTOR_CANDIDATES[fam]] : [PROSECUTORS[fam] || PROSECUTORS.claude];
+        if (!includeSameFamilyFallback) return cross;
+        const sameFam = sameFamilyProsecutorsFor(builderModel);
+        return [...cross, ...sameFam.filter((m) => !cross.includes(m))];
       }
-      /** Cross-family prosecutor for a builder model. Prefers candidate with available capacity. */
+      /** Prosecutor for a builder model. Prefers cross-family candidate with capacity, then distinct same-family fallback when cross-family capacity is 0. */
       prosecutorFor(builderModel) {
-        const candidates = this.prosecutorsFor(builderModel);
-        for (const m of candidates) {
+        const crossCandidates = this.prosecutorsFor(builderModel);
+        for (const m of crossCandidates) {
           const pool = poolOf(m);
           const upstream = upstreamPoolOf(m);
           if ((this.caps[pool] ?? 0) > 0 && this.familyCap(upstream) > 0) {
             return m;
           }
         }
-        return candidates[0];
+        const sameFamily = sameFamilyProsecutorsFor(builderModel);
+        for (const m of sameFamily) {
+          const pool = poolOf(m);
+          const upstream = upstreamPoolOf(m);
+          if ((this.caps[pool] ?? 0) > 0 && this.familyCap(upstream) > 0) {
+            return m;
+          }
+        }
+        return crossCandidates[0];
       }
       snapshot() {
         return {
@@ -16000,6 +16072,145 @@ var init_gates = __esm({
   }
 });
 
+// lib/adlc-tool.mjs
+async function runAdlcTool({
+  tool,
+  args = [],
+  cwd,
+  timeoutMs = 3e4,
+  maxBuffer = 10 * 1024 * 1024,
+  adlcBin,
+  repo,
+  wrapCommand = null
+} = {}) {
+  let res;
+  try {
+    res = await execFileAuthenticatedAdlc(
+      adlcBin,
+      [tool, ...args],
+      { cwd, timeout: timeoutMs, maxBuffer },
+      { repo: repo ?? cwd, wrapCommand }
+    );
+  } catch (err) {
+    if (err?.stdout && !err.killed && !err.signal && Number.isInteger(err.code)) {
+      try {
+        const parsed = JSON.parse(err.stdout);
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return {
+            ok: true,
+            exitCode: err.code ?? 2,
+            parsed,
+            stdout: err.stdout
+          };
+        }
+      } catch {
+      }
+    }
+    return {
+      ok: false,
+      exitCode: err?.code ?? 1,
+      error: err?.message ?? String(err),
+      unparseable: Boolean(err?.stdout),
+      stdout: err?.stdout ?? ""
+    };
+  }
+  const stdout2 = res?.stdout ?? "";
+  try {
+    const parsed = JSON.parse(stdout2);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("expected JSON object");
+    }
+    return {
+      ok: true,
+      exitCode: 0,
+      parsed,
+      stdout: stdout2
+    };
+  } catch (parseErr) {
+    return {
+      ok: false,
+      exitCode: 0,
+      error: "unparseable " + tool + " output: " + parseErr.message,
+      unparseable: true,
+      stdout: stdout2
+    };
+  }
+}
+var init_adlc_tool = __esm({
+  "lib/adlc-tool.mjs"() {
+    init_adlc_bridge();
+  }
+});
+
+// lib/tdd-split.mjs
+function isTestPathspec(pathspec) {
+  const norm = String(pathspec || "").replace(/\\/g, "/").trim();
+  return norm === "test" || norm.startsWith("test/") || norm.endsWith(".test.mjs") || norm.endsWith(".test.js") || norm.endsWith(".test.ts");
+}
+function shouldRunTddSplit(ticket = {}, plan = {}) {
+  if (!ticket || typeof ticket !== "object") return false;
+  if (ticket.tdd_split === false || plan?.tddSplit === false) return false;
+  const tier = String(ticket.tier || "mid").trim().toLowerCase();
+  const enabled = ticket.tdd_split === true || tier === "frontier";
+  if (!enabled) return false;
+  const scope = Array.isArray(ticket.scope) ? ticket.scope : [];
+  const hasTest = scope.some(isTestPathspec);
+  const hasImpl = scope.some((p) => !isTestPathspec(p));
+  return hasTest && hasImpl;
+}
+function selectOppositePoolHint(poolHint = "auto", builderModelSlug = "") {
+  if (builderModelSlug && typeof builderModelSlug === "string") {
+    try {
+      const fam = familyOf(builderModelSlug);
+      return fam === "gemini" ? "claude-gpt" : "gemini";
+    } catch {
+    }
+  }
+  const normalizedHint = String(poolHint || "auto").trim().toLowerCase();
+  if (normalizedHint === "gemini") return "claude-gpt";
+  if (normalizedHint === "claude" || normalizedHint === "claude-gpt" || normalizedHint === "gpt-oss") {
+    return "gemini";
+  }
+  return "claude-gpt";
+}
+function partitionTddScopes(ticket = {}, { builderModel = "" } = {}) {
+  const scope = Array.isArray(ticket.scope) ? ticket.scope : [];
+  const baseRails = Array.isArray(ticket.rails) ? ticket.rails : [];
+  const testScope = scope.filter(isTestPathspec);
+  const implScope = scope.filter((p) => !isTestPathspec(p));
+  const specPoolHint = selectOppositePoolHint(ticket.pool_hint, builderModel);
+  const specAuthorSubTicket = {
+    ...ticket,
+    id: `${ticket.id}--spec-tests`,
+    title: `[Spec-Test Author] ${ticket.title || ticket.id}`,
+    scope: testScope,
+    rails: [.../* @__PURE__ */ new Set([...baseRails, ...implScope])],
+    pool_hint: specPoolHint,
+    body: [
+      `## Adversarial TDD Phase 1: Black-Box Spec-Test Author (${ticket.id})`,
+      "Write deterministic black-box contract tests in `test/**` encoding every acceptance criterion below.",
+      "Implementation paths are FROZEN RAILS during this phase \u2014 do NOT create or edit implementation files.",
+      "Your tests MUST parse cleanly (`node --check`) and fail against the unimplemented baseline.",
+      "",
+      ticket.body || ""
+    ].join("\n")
+  };
+  return {
+    testScope,
+    implScope,
+    specPoolHint,
+    specAuthorSubTicket
+  };
+}
+var MAX_BUFFER2;
+var init_tdd_split = __esm({
+  "lib/tdd-split.mjs"() {
+    init_gates();
+    init_models();
+    MAX_BUFFER2 = 8 * 1024 * 1024;
+  }
+});
+
 // node_modules/@adlc/core/lib/llm.mjs
 import { spawn as spawn3 } from "node:child_process";
 function isAgyTimeout2(out) {
@@ -16200,145 +16411,6 @@ var init_llm = __esm({
       }
     ];
     PROVIDER_NAMES = PROVIDERS.map((p) => p.name);
-  }
-});
-
-// lib/adlc-tool.mjs
-async function runAdlcTool({
-  tool,
-  args = [],
-  cwd,
-  timeoutMs = 3e4,
-  maxBuffer = 10 * 1024 * 1024,
-  adlcBin,
-  repo,
-  wrapCommand = null
-} = {}) {
-  let res;
-  try {
-    res = await execFileAuthenticatedAdlc(
-      adlcBin,
-      [tool, ...args],
-      { cwd, timeout: timeoutMs, maxBuffer },
-      { repo: repo ?? cwd, wrapCommand }
-    );
-  } catch (err) {
-    if (err?.stdout && !err.killed && !err.signal && Number.isInteger(err.code)) {
-      try {
-        const parsed = JSON.parse(err.stdout);
-        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
-          return {
-            ok: true,
-            exitCode: err.code ?? 2,
-            parsed,
-            stdout: err.stdout
-          };
-        }
-      } catch {
-      }
-    }
-    return {
-      ok: false,
-      exitCode: err?.code ?? 1,
-      error: err?.message ?? String(err),
-      unparseable: Boolean(err?.stdout),
-      stdout: err?.stdout ?? ""
-    };
-  }
-  const stdout2 = res?.stdout ?? "";
-  try {
-    const parsed = JSON.parse(stdout2);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      throw new Error("expected JSON object");
-    }
-    return {
-      ok: true,
-      exitCode: 0,
-      parsed,
-      stdout: stdout2
-    };
-  } catch (parseErr) {
-    return {
-      ok: false,
-      exitCode: 0,
-      error: "unparseable " + tool + " output: " + parseErr.message,
-      unparseable: true,
-      stdout: stdout2
-    };
-  }
-}
-var init_adlc_tool = __esm({
-  "lib/adlc-tool.mjs"() {
-    init_adlc_bridge();
-  }
-});
-
-// lib/tdd-split.mjs
-function isTestPathspec(pathspec) {
-  const norm = String(pathspec || "").replace(/\\/g, "/").trim();
-  return norm === "test" || norm.startsWith("test/") || norm.endsWith(".test.mjs") || norm.endsWith(".test.js") || norm.endsWith(".test.ts");
-}
-function shouldRunTddSplit(ticket = {}, plan = {}) {
-  if (!ticket || typeof ticket !== "object") return false;
-  if (ticket.tdd_split === false || plan?.tddSplit === false) return false;
-  const tier = String(ticket.tier || "mid").trim().toLowerCase();
-  const enabled = ticket.tdd_split === true || tier === "frontier";
-  if (!enabled) return false;
-  const scope = Array.isArray(ticket.scope) ? ticket.scope : [];
-  const hasTest = scope.some(isTestPathspec);
-  const hasImpl = scope.some((p) => !isTestPathspec(p));
-  return hasTest && hasImpl;
-}
-function selectOppositePoolHint(poolHint = "auto", builderModelSlug = "") {
-  if (builderModelSlug && typeof builderModelSlug === "string") {
-    try {
-      const fam = familyOf(builderModelSlug);
-      return fam === "gemini" ? "claude-gpt" : "gemini";
-    } catch {
-    }
-  }
-  const normalizedHint = String(poolHint || "auto").trim().toLowerCase();
-  if (normalizedHint === "gemini") return "claude-gpt";
-  if (normalizedHint === "claude" || normalizedHint === "claude-gpt" || normalizedHint === "gpt-oss") {
-    return "gemini";
-  }
-  return "claude-gpt";
-}
-function partitionTddScopes(ticket = {}, { builderModel = "" } = {}) {
-  const scope = Array.isArray(ticket.scope) ? ticket.scope : [];
-  const baseRails = Array.isArray(ticket.rails) ? ticket.rails : [];
-  const testScope = scope.filter(isTestPathspec);
-  const implScope = scope.filter((p) => !isTestPathspec(p));
-  const specPoolHint = selectOppositePoolHint(ticket.pool_hint, builderModel);
-  const specAuthorSubTicket = {
-    ...ticket,
-    id: `${ticket.id}--spec-tests`,
-    title: `[Spec-Test Author] ${ticket.title || ticket.id}`,
-    scope: testScope,
-    rails: [.../* @__PURE__ */ new Set([...baseRails, ...implScope])],
-    pool_hint: specPoolHint,
-    body: [
-      `## Adversarial TDD Phase 1: Black-Box Spec-Test Author (${ticket.id})`,
-      "Write deterministic black-box contract tests in `test/**` encoding every acceptance criterion below.",
-      "Implementation paths are FROZEN RAILS during this phase \u2014 do NOT create or edit implementation files.",
-      "Your tests MUST parse cleanly (`node --check`) and fail against the unimplemented baseline.",
-      "",
-      ticket.body || ""
-    ].join("\n")
-  };
-  return {
-    testScope,
-    implScope,
-    specPoolHint,
-    specAuthorSubTicket
-  };
-}
-var MAX_BUFFER2;
-var init_tdd_split = __esm({
-  "lib/tdd-split.mjs"() {
-    init_gates();
-    init_models();
-    MAX_BUFFER2 = 8 * 1024 * 1024;
   }
 });
 
@@ -20761,14 +20833,23 @@ async function runHollowTest({ worktree, testCmd, base = "main", adlcBin, change
     }
   }
 }
-async function prosecute({ ticket, diff, model, cwd, logFile, worktree, testCmd, base, project: project2, onSpawn, adlcBin, seed }) {
+function resolveProsecutionMode(prosecutorModel, builderModel) {
+  try {
+    return familyOf(prosecutorModel) === familyOf(builderModel) ? "same-family-fallback" : "cross-family";
+  } catch {
+    return "cross-family";
+  }
+}
+async function prosecute({ ticket, diff, model, builderModel = null, cwd, logFile, worktree, testCmd, base, project: project2, onSpawn, adlcBin, seed }) {
+  const prosecutionMode = resolveProsecutionMode(model, builderModel);
   if (!diff.trim()) {
-    return { verdict: "block", model, findings: [{ severity: "critical", charge: "spec", claim: "empty diff \u2014 ticket produced no committed change" }] };
+    return { verdict: "block", model, prosecutionMode, findings: [{ severity: "critical", charge: "spec", claim: "empty diff \u2014 ticket produced no committed change" }] };
   }
   if (diff.length > MAX_DIFF_CHARS) {
     return {
       verdict: "block",
       model,
+      prosecutionMode,
       findings: [{
         severity: "critical",
         charge: "scope",
@@ -20806,24 +20887,18 @@ ${externalCallers.promptBlock}` : basePrompt;
     worker: { mode: "readonly" },
     onSpawn
   });
-  let parsed = res.ok ? res.data : tryRecoverMixedCaseSeverity(res);
+  const parsed = res.ok ? res.data : tryRecoverMixedCaseSeverity(res);
   if (!res.ok && !parsed) {
     return {
       verdict: "error",
       model,
+      prosecutionMode,
       findings: [],
       error: res.error,
       hollowTest,
       kind: res.kind,
       rateLimited: Boolean(res.rateLimited)
     };
-  }
-  if (!parsed) {
-    try {
-      parsed = extractJson(res.output);
-    } catch {
-      return { verdict: "error", model, findings: [], error: "unparseable prosecution output", raw: res.output.slice(-500), hollowTest };
-    }
   }
   const findings = Array.isArray(parsed.findings) ? parsed.findings.filter((f) => f && f.claim).map((f) => ({ ...f, severity: normalizeFindingSeverity(f) })) : [];
   const modelBlocking = findings.some((f) => {
@@ -20843,6 +20918,7 @@ ${externalCallers.promptBlock}` : basePrompt;
     return {
       verdict: "error",
       model,
+      prosecutionMode,
       findings: [],
       error: "Verdict block issued with empty findings array",
       kind: "schema_violation",
@@ -20853,6 +20929,7 @@ ${externalCallers.promptBlock}` : basePrompt;
     return {
       verdict: "error",
       model,
+      prosecutionMode,
       findings: [],
       error: `invalid or missing prosecution verdict: ${parsed.verdict}`,
       kind: "schema_violation",
@@ -20861,7 +20938,7 @@ ${externalCallers.promptBlock}` : basePrompt;
   }
   const blocking = modelBlocking || hollowBlocking;
   const verdict = blocking ? "block" : "ship";
-  return { verdict, model, findings, hollowTest };
+  return { verdict, model, prosecutionMode, findings, hollowTest };
 }
 function blockingFindings(findings) {
   return (Array.isArray(findings) ? findings : []).filter((f) => {
@@ -20872,7 +20949,6 @@ function blockingFindings(findings) {
 var execFileP4, MAX_DIFF_CHARS, HOLLOW_TEST_TIMEOUT_MS, SLOW_HOLLOW_TESTS;
 var init_prosecute = __esm({
   "lib/prosecute.mjs"() {
-    init_llm();
     init_agy();
     init_charters();
     init_adlc_tool();
@@ -26364,10 +26440,11 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
         }
       }
       const diffText = branchDiff(integWorktree, baseHeadSha);
-      let prosecutorModel = PROSECUTOR_CANDIDATES[0];
+      let prosecutorModel = PROSECUTORS.gemini;
+      let referenceBuilder = null;
       try {
         const pools = new PoolSet(void 0, { repo: resolvedRepo });
-        const referenceBuilder = tierCandidates(canonicalTicket.tier ?? "mid", canonicalTicket.pool_hint)[0];
+        referenceBuilder = tierCandidates(canonicalTicket.tier ?? "mid", canonicalTicket.pool_hint)[0];
         prosecutorModel = pools.prosecutorFor(referenceBuilder);
       } catch {
       }
@@ -26376,6 +26453,7 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
         ticket: canonicalTicket,
         diff: diffText,
         model: prosecutorModel,
+        builderModel: referenceBuilder,
         cwd: prosecuteScratch,
         worktree: options.prosecuteFn ? integWorktree : hollowRes ? null : integWorktree,
         testCmd: effectiveHollowTestCmd,
@@ -26402,7 +26480,13 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
       repo: resolvedRepo,
       gateName: "rescue",
       ticketId,
-      data: { ok: true, verdict: verdict.verdict, changedFiles: changed },
+      data: {
+        ok: true,
+        verdict: verdict.verdict,
+        prosecutorModel: verdict.model ?? null,
+        prosecutionMode: verdict.prosecutionMode ?? "cross-family",
+        changedFiles: changed
+      },
       adlcBin: runAdlcBin
     });
     lockB.assertStillHeld();
@@ -31632,7 +31716,7 @@ Fix: ${agyCheck.fix}`);
                   altCandidates = tierCandidates(tier ?? "mid", null).filter((m) => m !== currentModel);
                 }
               } else if (role === "prosecutor") {
-                altCandidates = pools.prosecutorsFor(builderModel).filter((m) => m !== currentModel);
+                altCandidates = pools.prosecutorsFor(builderModel, { includeSameFamilyFallback: true }).filter((m) => m !== currentModel);
               }
               const viable = altCandidates.find((m) => {
                 const p = poolOf(m);
@@ -31946,8 +32030,9 @@ Fix: ${agyCheck.fix}`);
     }
     async function prosecuteBranch(t, worktree, builderModel, baseRef = base) {
       const primary = pools.prosecutorFor(builderModel);
-      const allCandidates = pools.prosecutorsFor(builderModel);
-      const candidates = [primary, ...allCandidates.filter((m) => m !== primary)];
+      const allCandidates = pools.prosecutorsFor(builderModel, { includeSameFamilyFallback: true });
+      const viableCandidates = allCandidates.filter((m) => pools.isPoolViable(m) && m !== primary);
+      const candidates = [primary, ...viableCandidates];
       const tried = /* @__PURE__ */ new Set();
       let lastVerdict = null;
       for (let idx = 0; idx < candidates.length; idx += 1) {
@@ -31992,6 +32077,7 @@ Fix: ${agyCheck.fix}`);
             ticket: t,
             diff: branchDiff(worktree, baseRef),
             model: activeProsecutor,
+            builderModel,
             cwd: scratch,
             logFile: join46(logDir, `${safeId}.jsonl`),
             worktree,
@@ -32719,7 +32805,13 @@ ${g.output}`;
                         repo,
                         gateName: "prosecution",
                         ticketId: t.id,
-                        data: { verdict: verdict.verdict, findings: verdict.findings?.length ?? 0, dryPasses: dry },
+                        data: {
+                          verdict: verdict.verdict,
+                          prosecutorModel: verdict.model,
+                          prosecutionMode: verdict.prosecutionMode ?? "cross-family",
+                          findings: verdict.findings.length,
+                          dryPasses: dry
+                        },
                         adlcBin: runAdlcBin
                       });
                       if (dry >= dryNeeded) {
@@ -32891,7 +32983,14 @@ ${JSON.stringify(blocking, null, 2)}`;
                                               repo,
                                               gateName: "prosecution",
                                               ticketId: t.id,
-                                              data: { verdict: cfVerdict.verdict, findings: cfVerdict.findings?.length ?? 0, dryPasses: cfDry, consensusFix: true },
+                                              data: {
+                                                verdict: cfVerdict.verdict,
+                                                prosecutorModel: cfVerdict.model,
+                                                prosecutionMode: cfVerdict.prosecutionMode ?? "cross-family",
+                                                findings: cfVerdict.findings.length,
+                                                dryPasses: cfDry,
+                                                consensusFix: true
+                                              },
                                               adlcBin: runAdlcBin
                                             });
                                             if (cfDry >= dryNeeded) {

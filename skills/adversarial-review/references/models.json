@@ -2,15 +2,36 @@
   "schema_version": "1.0",
   "catalog": [
     {
-      "slug": "gemini-4-neon-high",
-      "display_name": "Gemini 4 Neon (High)",
-      "pool": "gemini-pro",
+      "slug": "gemini-4-hydrogen-low",
+      "display_name": "Gemini 4 Hydrogen (Low)",
+      "pool": "gemini-flash",
       "family": "gemini",
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-neon-xhigh",
-      "display_name": "Gemini 4 Neon (XHigh)",
+      "slug": "gemini-4-hydrogen-medium",
+      "display_name": "Gemini 4 Hydrogen (Medium)",
+      "pool": "gemini-flash",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-high",
+      "display_name": "Gemini 4 Hydrogen (High)",
+      "pool": "gemini-flash",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-hydrogen-xhigh",
+      "display_name": "Gemini 4 Hydrogen (Xhigh)",
+      "pool": "gemini-flash",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-neon-low",
+      "display_name": "Gemini 4 Neon (Low)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
@@ -23,8 +44,22 @@
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-neon-low",
-      "display_name": "Gemini 4 Neon (Low)",
+      "slug": "gemini-4-neon-high",
+      "display_name": "Gemini 4 Neon (High)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-neon-xhigh",
+      "display_name": "Gemini 4 Neon (Xhigh)",
+      "pool": "gemini-pro",
+      "family": "gemini",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "gemini-4-carbon-low",
+      "display_name": "Gemini 4 Carbon (Low)",
       "pool": "gemini-pro",
       "family": "gemini",
       "status": "MAPPED"
@@ -44,62 +79,6 @@
       "status": "MAPPED"
     },
     {
-      "slug": "gemini-4-carbon-low",
-      "display_name": "Gemini 4 Carbon (Low)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-argon-medium",
-      "display_name": "Gemini 4 Argon (Medium)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-argon-high",
-      "display_name": "Gemini 4 Argon (High)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-argon-low",
-      "display_name": "Gemini 4 Argon (Low)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-hydrogen-high",
-      "display_name": "Gemini 4 Hydrogen (High)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-hydrogen-xhigh",
-      "display_name": "Gemini 4 Hydrogen (XHigh)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-hydrogen-medium",
-      "display_name": "Gemini 4 Hydrogen (Medium)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-4-hydrogen-low",
-      "display_name": "Gemini 4 Hydrogen (Low)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
       "slug": "gemini-pro-orchestrator-neon",
       "display_name": "Orchestrator (Neon)",
       "pool": "gemini-pro",
@@ -111,55 +90,6 @@
       "display_name": "Orchestrator (Carbon)",
       "pool": "gemini-pro",
       "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-pro-orchestrator-argon",
-      "display_name": "Orchestrator (Argon)",
-      "pool": "gemini-pro",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-3.8-flash-high",
-      "display_name": "Gemini 3.8 Flash (High)",
-      "pool": "gemini-flash",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-3.8-flash-medium",
-      "display_name": "Gemini 3.8 Flash (Medium)",
-      "pool": "gemini-flash",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "gemini-3.8-flash-low",
-      "display_name": "Gemini 3.8 Flash (Low)",
-      "pool": "gemini-flash",
-      "family": "gemini",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "claude-opus-5-5-low",
-      "display_name": "Claude Opus 5.5 (Low)",
-      "pool": "claude",
-      "family": "claude",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "claude-opus-5-5-medium",
-      "display_name": "Claude Opus 5.5 (Medium)",
-      "pool": "claude",
-      "family": "claude",
-      "status": "MAPPED"
-    },
-    {
-      "slug": "claude-opus-5-5-high",
-      "display_name": "Claude Opus 5.5 (High)",
-      "pool": "claude",
-      "family": "claude",
       "status": "MAPPED"
     },
     {
@@ -184,73 +114,87 @@
       "status": "MAPPED"
     },
     {
-      "slug": "gpt-oss-120b-medium",
-      "display_name": "GPT-OSS 120B (Medium)",
-      "pool": "gpt-oss",
-      "family": "gpt-oss",
+      "slug": "claude-opus-5-5-low",
+      "display_name": "Claude Opus 5.5 (Low)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-medium",
+      "display_name": "Claude Opus 5.5 (Medium)",
+      "pool": "claude",
+      "family": "claude",
+      "status": "MAPPED"
+    },
+    {
+      "slug": "claude-opus-5-5-high",
+      "display_name": "Claude Opus 5.5 (High)",
+      "pool": "claude",
+      "family": "claude",
       "status": "MAPPED"
     }
   ],
   "code_lenses": {
     "correctness_redteam": {
       "primary": "claude-opus-5-5-high",
-      "fallback": "gemini-4-argon-high"
+      "fallback": "gemini-4-neon-high"
     },
     "security": {
-      "primary": "gemini-4-argon-high",
+      "primary": "gemini-4-neon-high",
       "fallback": "claude-opus-5-5-high"
     },
     "simplicity": {
       "primary": "claude-sonnet-5-5-medium",
-      "fallback": "gemini-3.8-flash-medium"
+      "fallback": "gemini-4-hydrogen-medium"
     },
     "evidence_runner": {
-      "primary": "gemini-3.8-flash-medium",
+      "primary": "gemini-4-hydrogen-medium",
       "fallback": "claude-sonnet-5-5-medium"
     },
     "anti_slop": {
       "primary": "claude-sonnet-5-5-high",
-      "fallback": "gemini-3.8-flash-high"
+      "fallback": "gemini-4-hydrogen-high"
     }
   },
   "plan_lenses": {
     "devils_advocate": {
       "primary": "claude-opus-5-5-high",
-      "fallback": "gemini-4-argon-high"
+      "fallback": "gemini-4-neon-high"
     },
     "requirements_fidelity": {
-      "primary": "gemini-4-argon-medium",
+      "primary": "gemini-4-neon-medium",
       "fallback": "claude-sonnet-5-5-high"
     },
     "simplicity": {
       "primary": "claude-sonnet-5-5-medium",
-      "fallback": "gemini-3.8-flash-medium"
+      "fallback": "gemini-4-hydrogen-medium"
     },
     "evidence_strategy": {
-      "primary": "gemini-3.8-flash-medium",
+      "primary": "gemini-4-hydrogen-medium",
       "fallback": "claude-sonnet-5-5-medium"
     },
     "dag_topology": {
-      "primary": "gemini-4-argon-high",
+      "primary": "gemini-4-neon-high",
       "fallback": "claude-opus-5-5-high"
     }
   },
   "arbiter": {
-    "primary": "gemini-4-argon-high",
+    "primary": "gemini-4-neon-high",
     "fallback": "claude-opus-5-5-high"
   },
   "roles": {
-    "coldstart": "gemini-3.8-flash-low",
-    "premortem": "gemini-4-argon-high",
-    "parallaxReader": "gemini-3.8-flash-medium",
-    "parallaxJudge": "gemini-4-argon-high",
-    "brainConvert": "gemini-4-argon-high",
-    "brainRepair": "gemini-4-argon-high",
-    "arbiter": "gemini-4-argon-high",
-    "probeDefault": "Gemini 3.8 Flash (Low)",
+    "coldstart": "gemini-4-hydrogen-low",
+    "premortem": "gemini-4-neon-high",
+    "parallaxReader": "gemini-4-hydrogen-medium",
+    "parallaxJudge": "gemini-4-neon-high",
+    "brainConvert": "gemini-4-neon-high",
+    "brainRepair": "gemini-4-neon-high",
+    "arbiter": "gemini-4-neon-high",
+    "probeDefault": "Gemini 4 Hydrogen (Low)",
     "reviewFleetAlternates": [
-      "gemini-3.8-flash-high",
-      "gemini-4-argon-high"
+      "gemini-4-hydrogen-high",
+      "gemini-4-neon-high"
     ]
   }
 }

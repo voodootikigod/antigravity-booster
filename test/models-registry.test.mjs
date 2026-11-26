@@ -110,32 +110,39 @@ describe('models-registry: single source of truth', () => {
     assert.equal(resolveModelSlug(123), 123);
 
     // Exact matches
-    assert.equal(resolveModelSlug('gemini-3.8-flash-low'), 'gemini-3.8-flash-low');
-    assert.equal(resolveModelSlug('  GEMINI-3.8-FLASH-LOW  '), 'gemini-3.8-flash-low');
+    assert.equal(resolveModelSlug('gemini-4-hydrogen-low'), 'gemini-4-hydrogen-low');
+    assert.equal(resolveModelSlug('  GEMINI-4-HYDROGEN-LOW  '), 'gemini-4-hydrogen-low');
 
     // Retired mappings
-    assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-3.8-flash-low');
-    assert.equal(resolveModelSlug('gemini 3.5 flash (high)'), 'gemini-3.8-flash-high');
+    const origWarn = console.warn;
+    console.warn = () => {};
+    try {
+      assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-4-hydrogen-low');
+      assert.equal(resolveModelSlug('gemini 3.5 flash (high)'), 'gemini-4-hydrogen-high');
+      assert.equal(resolveModelSlug('gemini-3.8-flash-low'), 'gemini-4-hydrogen-low');
+      assert.equal(resolveModelSlug('gemini-4-argon-high'), 'gemini-4-neon-high');
+      assert.equal(resolveModelSlug('gpt-oss 120b (medium)'), 'claude-sonnet-5-5-medium');
+    } finally {
+      console.warn = origWarn;
+    }
 
     // Model aliases
-    assert.equal(resolveModelSlug('gemini 3.8 flash (low)'), 'gemini-3.8-flash-low');
+    assert.equal(resolveModelSlug('gemini 4 hydrogen (low)'), 'gemini-4-hydrogen-low');
     assert.equal(resolveModelSlug('claude sonnet 5.5 (medium)'), 'claude-sonnet-5-5-medium');
-    assert.equal(resolveModelSlug('gpt-oss 120b (medium)'), 'gpt-oss-120b-medium');
 
     // Unknown string
     assert.equal(resolveModelSlug('custom-fine-tuned-model'), 'custom-fine-tuned-model');
   });
 
   it('poolOf resolves pools and prefix fallbacks or throws on unknown', () => {
-    assert.equal(poolOf('gemini-3.8-flash-low'), 'gemini-flash');
-    assert.equal(poolOf('gemini-4-argon-high'), 'gemini-pro');
+    assert.equal(poolOf('gemini-4-hydrogen-low'), 'gemini-flash');
+    assert.equal(poolOf('gemini-4-neon-high'), 'gemini-pro');
     assert.equal(poolOf('claude-sonnet-5-5-medium'), 'claude');
-    assert.equal(poolOf('gpt-oss-120b-medium'), 'gpt-oss');
 
     // Fallback prefixes
     assert.equal(poolOf('custom-flash-experimental'), 'gemini-flash');
+    assert.equal(poolOf('hydrogen-custom'), 'gemini-flash');
     assert.equal(poolOf('custom-gemini-ultra'), 'gemini-pro');
-    assert.equal(poolOf('hydrogen-custom'), 'gemini-pro');
     assert.equal(poolOf('claude-next-gen'), 'claude');
     assert.equal(poolOf('sonnet-future'), 'claude');
     assert.equal(poolOf('opus-future'), 'claude');
@@ -147,15 +154,15 @@ describe('models-registry: single source of truth', () => {
   });
 
   it('familyOf and upstreamPoolOf group pools properly', () => {
-    assert.equal(familyOf('gemini-3.8-flash-low'), 'gemini');
-    assert.equal(familyOf('gemini-4-argon-high'), 'gemini');
+    assert.equal(familyOf('gemini-4-hydrogen-low'), 'gemini');
+    assert.equal(familyOf('gemini-4-neon-high'), 'gemini');
     assert.equal(familyOf('claude-sonnet-5-5-medium'), 'claude');
-    assert.equal(familyOf('gpt-oss-120b-medium'), 'gpt-oss');
+    assert.equal(familyOf('gpt-future-oss'), 'gpt-oss');
 
-    assert.equal(upstreamPoolOf('gemini-3.8-flash-low'), 'gemini');
-    assert.equal(upstreamPoolOf('gemini-4-argon-high'), 'gemini');
+    assert.equal(upstreamPoolOf('gemini-4-hydrogen-low'), 'gemini');
+    assert.equal(upstreamPoolOf('gemini-4-neon-high'), 'gemini');
     assert.equal(upstreamPoolOf('claude-sonnet-5-5-medium'), 'claude_gpt');
-    assert.equal(upstreamPoolOf('gpt-oss-120b-medium'), 'claude_gpt');
+    assert.equal(upstreamPoolOf('gpt-future-oss'), 'claude_gpt');
   });
 
   it('tierCandidates filters models by pool hint', () => {
@@ -184,29 +191,27 @@ describe('models-registry: single source of truth', () => {
 
   it('PoolSet.prosecutorsFor returns candidates in preference order across families and falls back cleanly', () => {
     const pools = new PoolSet();
-    assert.deepEqual(pools.prosecutorsFor('gemini-3.8-flash-low'), [
-      'gpt-oss-120b-medium',
+    assert.deepEqual(pools.prosecutorsFor('gemini-4-hydrogen-low'), [
       'claude-sonnet-5-5-medium',
+      'claude-sonnet-5-5-high',
+      'claude-opus-5-5-high',
     ]);
     assert.deepEqual(pools.prosecutorsFor('claude-sonnet-5-5-medium'), [
-      'gemini-4-argon-high',
-      'gemini-4-carbon-high',
       'gemini-4-neon-high',
-      'gemini-3.8-flash-high',
-      'gpt-oss-120b-medium',
+      'gemini-4-carbon-high',
+      'gemini-4-hydrogen-high',
     ]);
-    assert.deepEqual(pools.prosecutorsFor('gpt-oss-120b-medium'), [
-      'gemini-4-argon-high',
-      'gemini-4-carbon-high',
+    assert.deepEqual(pools.prosecutorsFor('gpt-future-oss'), [
       'gemini-4-neon-high',
-      'gemini-3.8-flash-high',
+      'gemini-4-carbon-high',
+      'gemini-4-hydrogen-high',
       'claude-sonnet-5-5-medium',
     ]);
 
     const saved = PROSECUTOR_CANDIDATES.gemini;
     try {
       delete PROSECUTOR_CANDIDATES.gemini;
-      assert.deepEqual(pools.prosecutorsFor('gemini-3.8-flash-low'), [PROSECUTORS.gemini]);
+      assert.deepEqual(pools.prosecutorsFor('gemini-4-hydrogen-low'), [PROSECUTORS.gemini]);
     } finally {
       PROSECUTOR_CANDIDATES.gemini = saved;
     }
@@ -282,22 +287,43 @@ describe('models-registry: single source of truth', () => {
     assert.deepEqual(violations, [], `Found raw model strings in lib: ${JSON.stringify(violations)}`);
   });
 
-  it('escalateModelSlugInFamily and selectCliEffortFlag respect catalog ceilings and never downgrade suffixed slugs', () => {
+  it('escalateModelSlugInFamily and selectCliEffortFlag respect catalog ceilings, never pass --effort to Orchestrator, and support dynamic base slugs', async () => {
+    const { sameFamilyProsecutorsFor } = await import('../lib/models.mjs');
     assert.deepEqual([...VALID_EFFORTS], ['low', 'medium', 'high', 'xhigh', 'max']);
     assert.equal(escalateModelSlugInFamily('claude-sonnet-5-5-low'), 'claude-sonnet-5-5-medium');
     assert.equal(escalateModelSlugInFamily('claude-sonnet-5-5-medium'), 'claude-sonnet-5-5-high');
     assert.equal(escalateModelSlugInFamily('claude-opus-5-5-high'), 'claude-opus-5-5-high');
     assert.equal(escalateModelSlugInFamily('gemini-4-neon-high'), 'gemini-4-neon-xhigh');
     assert.equal(escalateModelSlugInFamily('gemini-4-neon-xhigh'), 'gemini-4-neon-xhigh');
-    assert.equal(escalateModelSlugInFamily('gemini-pro-orchestrator'), 'gemini-pro-orchestrator');
+    assert.equal(escalateModelSlugInFamily('gemini-4-hydrogen-high'), 'gemini-4-hydrogen-xhigh');
+    assert.equal(escalateModelSlugInFamily('gemini-pro-orchestrator-neon'), 'gemini-pro-orchestrator-neon');
 
+    // Fixed-effort catalog slugs return null unless explicitEffort or Strike-0 defaultEffort
     assert.equal(selectCliEffortFlag({ model: 'claude-sonnet-5-5-medium', strike: 0, defaultEffort: null }), null);
-    assert.equal(selectCliEffortFlag({ model: 'gemini-4-argon-high', strike: 1, defaultEffort: null }), null);
-    assert.equal(selectCliEffortFlag({ model: 'gemini-4-argon-high', strike: 0, explicitEffort: 'xhigh' }), 'xhigh');
-    assert.equal(selectCliEffortFlag({ model: 'gemini-4-argon-medium', strike: 0, defaultEffort: 'low' }), 'low');
-    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator', strike: 0, defaultEffort: null }), 'high');
-    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator-neon', strike: 1, defaultEffort: null }), 'xhigh');
-    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator', strike: 1, allowMax: true, defaultEffort: null }), 'max');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-neon-high', strike: 1, defaultEffort: 'low' }), null);
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-neon-high', strike: 0, explicitEffort: 'xhigh' }), 'xhigh');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-neon-medium', strike: 0, defaultEffort: 'low' }), 'low');
+
+    // Orchestrator models NEVER emit --effort (fixed reasoning budget in CLI per docs/models/)
+    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator', strike: 0, defaultEffort: 'high' }), null);
+    assert.equal(selectCliEffortFlag({ model: 'gemini-pro-orchestrator-neon', strike: 1, explicitEffort: 'xhigh' }), null);
+    assert.equal(selectCliEffortFlag({ model: 'Orchestrator (Neon)', strike: 1, allowMax: true, defaultEffort: null }), null);
+
+    // Unsuffixed dynamic-effort base slugs emit tier-scaled Strike-0 effort and xhigh/max on Strike >= 1
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-neon', tier: 'frontier', strike: 0, defaultEffort: null }), 'high');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-neon', tier: 'mid', strike: 0, defaultEffort: null }), 'medium');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-hydrogen', tier: 'cheap', strike: 0, defaultEffort: null }), 'low');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-neon', tier: 'frontier', strike: 1, defaultEffort: null }), 'xhigh');
+    assert.equal(selectCliEffortFlag({ model: 'gemini-4-hydrogen', tier: 'mid', strike: 1, allowMax: true, defaultEffort: null }), 'max');
+
+    // Same-family prosecutor fallbacks
+    assert.deepEqual(sameFamilyProsecutorsFor('gemini-4-neon-high'), ['gemini-4-carbon-high', 'gemini-4-hydrogen-high']);
+    assert.deepEqual(sameFamilyProsecutorsFor('gemini-pro-orchestrator-neon'), ['gemini-4-carbon-high', 'gemini-4-hydrogen-high']);
+    assert.deepEqual(sameFamilyProsecutorsFor('gemini-4-hydrogen-medium'), ['gemini-4-neon-high', 'gemini-4-carbon-high']);
+    assert.deepEqual(sameFamilyProsecutorsFor('gemini-4-carbon-high'), ['gemini-4-neon-high', 'gemini-4-hydrogen-high']);
+    assert.deepEqual(sameFamilyProsecutorsFor('claude-opus-5-5-high'), ['claude-sonnet-5-5-high']);
+    assert.deepEqual(sameFamilyProsecutorsFor('claude-sonnet-5-5-medium'), ['claude-opus-5-5-high']);
+    assert.deepEqual(sameFamilyProsecutorsFor('gpt-future-oss'), []);
   });
 });
 
