@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "Prerequisites (agy >= 1.2.6, Node >= 22.19.0), agy plugin install and the ~/.local/bin/agb shim"
+description: "Prerequisites (agy >= 1.5.17, Node >= 22.19.0), agy plugin install and the ~/.local/bin/agb shim"
 claims: [C1]
 ---
 
@@ -14,11 +14,11 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 | Requirement | Minimum | Where it is enforced |
 | --- | --- | --- |
 | Node.js | `>= 22.19.0` | `engines.node` in [package.json](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/package.json#L48-L50) |
-| Antigravity CLI (`agy`) | `>= 1.2.6`, authenticated, on your `PATH` | `MIN_AGY_VERSION` in lib/doctor.mjs ([C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26)) |
+| Antigravity CLI (`agy`) | `>= 1.5.17`, authenticated, on your `PATH` | `MIN_AGY_VERSION` in lib/doctor.mjs ([C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26)) |
 | git | any recent version | the target repository must be a git repo |
 | Sandbox | macOS `sandbox-exec`, or Linux `bwrap` (bubblewrap) | checked by [`agb doctor`](/docs/getting-started/verify) |
 
-The `agy` minimum exists because `agb` drives workers with `--output-format stream-json`. Older versions fail the doctor check with `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L47)).
+The `agy` minimum exists because `agb` requires native guardrails, PreToolUse `force_ask`, and Orchestrator support. Older versions fail the doctor check with `Upgrade agy to >= 1.5.17 for Antigravity Booster 2.0 native guardrails, PreToolUse force_ask, and Orchestrator support.` ([lib/doctor.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L47)).
 
 ## Install
 

@@ -25,7 +25,7 @@ The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/ant
 | Name | Levels | Fix text | Source |
 | --- | --- | --- | --- |
 | `Node.js` | pass / fail | `Upgrade Node.js to v22.19.0 or newer.` | [L20-L24](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L20-L24) |
-| `agy CLI` | pass / warn / fail | Too old (`< 1.2.6`): `Upgrade agy to >= 1.2.6 to support --output-format stream-json.` Below recommended (`< 1.5.13`, `warn`; `< 1.5.9` also auto-disables Orchestrator slugs): `Upgrade agy to >= 1.5.13 for Gemini 4 Neon, Orchestrator (Neon/Carbon/Argon), and stream-json fixes.` Unparseable version: `Ensure agy outputs standard SemVer version string.` Missing: `Install Google Antigravity CLI and ensure it is on PATH.` | [C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26), [L35-L54](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L35-L54) |
+| `agy CLI` | pass / fail | Too old (`< 1.5.17`): `Upgrade agy to >= 1.5.17 for Antigravity Booster 2.0 native guardrails, PreToolUse force_ask, and Orchestrator support.` Unparseable version: `Ensure agy outputs standard SemVer version string.` Missing: `Install Google Antigravity CLI and ensure it is on PATH.` | [C1](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26), [L35-L54](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L35-L54) |
 | `agy Auth` | pass / fail | ``Run `agy login` to authenticate.`` | [L71-L75](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L71-L75) |
 | `Model catalog` | pass / warn | Drift: ``Update MODELS in lib/models.mjs to match `agy models`.`` Listing failed: ``Fix `agy models` (see agy CLI/agy Auth rows), then re-run doctor.`` Empty listing: ``Run `agy models`; if it prints models, report the output format change.`` Never fails the run. | `lib/doctor.mjs` |
 | `adlc-antigravity plugin` | pass / warn / fail | See [plugin states](#adlc-antigravity-plugin) | [L151-L166](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L151-L166) |
@@ -38,6 +38,7 @@ The checks run in this order ([`runDoctor`](https://github.com/voodootikigod/ant
 | `agb install` | pass / warn | `prefer ~/.local/bin/agb (npm is a secondary channel)` | [L281-L282](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L281-L282) |
 | `Hook killswitch` | pass / warn | `Unset AGB_HOOK_DISABLE; the rails guard is bypassed while it is set.` | [L291-L292](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L291-L292) |
 | `Probe plugins` | pass / warn | ``Run `agy plugin uninstall <first probe>` for each probe plugin.`` | [L300-L301](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L300-L301) |
+| `CLI settings` | pass / warn | Invalid JSON, unsafe options (`toolPermission: 'always-proceed'` or `allowNonWorkspaceAccess: true`), or invalid `action(target)` rules: see `~/.gemini/antigravity-cli/settings.json`. Advisory only: never fails the run. | `lib/doctor-settings.mjs` |
 
 <Callout type="info" title="Node version">
   `agb` and `agb doctor` require Node.js `>= 22.19.0` (`engines.node`, see [Installation](/docs/getting-started/installation#prerequisites)).
