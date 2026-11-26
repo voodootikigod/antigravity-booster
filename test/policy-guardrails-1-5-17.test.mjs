@@ -102,6 +102,9 @@ test('ask_permission escalates in active-rail repos and denies rails', () => {
   assert.equal(run('ask_permission', { Action: 'read_file', Target: join(inactive, 'safe.txt') }, inactive).decision, 'pass');
   assert.equal(run('ask_permission', { Action: 'write_file', Target: lock }, active).decision, 'deny');
   assert.equal(run('ask_permission', { Action: 'read_file', Target: join(active, '*.txt') }, active).decision, 'deny');
+  assert.equal(run('ask_permission', { Action: 'read_file', Target: join(active, '*.txt') }, plain).decision, 'deny');
+  assert.equal(run('ask_permission', { Action: 'read_file', Target: join(active, 'safe?.txt') }, plain).decision, 'deny');
+  assert.equal(run('ask_permission', { Action: 'read_file', Target: join(home, '.gemini', 'antigravity-cli', 'plugin_data') }, plain).decision, 'deny');
   assert.equal(run('ask_permission', { Action: 'read_file', Target: join(plain, '*.txt') }).decision, 'pass');
   assert.equal(run('ask_permission', { Action: 'write_file', Target: join(active, '.adlc', 'config.json') }, active).decision, 'deny');
 });

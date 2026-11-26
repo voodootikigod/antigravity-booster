@@ -66,6 +66,7 @@ test('readonly roles unconditionally deny mcp(*)', () => {
       assert.deepEqual(p, { allowNonWorkspaceAccess: false, permissions: { deny: expected } }, role);
     }
   }
+  assert.deepEqual(buildRoleSettingsProfile('  Prosecutor ', { hasCodegraph: true }).permissions.deny, expected);
 });
 
 test('builder profile denies rails, destructive commands, and mcp(*) by default', () => {

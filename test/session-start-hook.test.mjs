@@ -300,6 +300,21 @@ test('session-start: --worker lock contention, stale/dead lock recovery, exit-0-
     const linesAfterLate = readFileSync(join(fx.pluginRoot, logFile), 'utf8').trim().split('\n');
     assert.deepEqual(linesAfterLate, ['failed', 'ok'], 'late worker must skip bootstrap when stamp exists');
 
+    // 3c. Truncated/corrupt non-empty lock file older than 5s is reclaimed rather than wedging bootstrap forever
+    rmSync(stampPath, { force: true });
+    writeFileSync(lockPath, '{"pid":123');
+    const oldSec = Math.floor((Date.now() - 10_000) / 1000);
+    const { utimesSync } = await import('node:fs');
+    utimesSync(lockPath, oldSec, oldSec);
+    const corruptReclaim = spawnSync(
+      process.execPath,
+      [fx.hookFile, '--worker', fx.pluginRoot, fx.pluginData, '2.0.0'],
+      { encoding: 'utf8', env: cleanHookEnv(fx), timeout: 5_000 },
+    );
+    assert.equal(corruptReclaim.status, 0);
+    assert.equal(existsSync(stampPath), true, 'corrupt stale lock must be reclaimed');
+    assert.equal(existsSync(lockPath), false);
+
     // 4. Symlinked targetDataDir is rejected without writing through symlink
     const realTarget = join(fx.base, 'real-sym-target');
     const symDataDir = join(fx.base, 'sym-plugin-data');

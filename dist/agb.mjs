@@ -6777,8 +6777,9 @@ function mergeRules(base, extra) {
   return dedupe([...base, ...valid]);
 }
 function buildRoleSettingsProfile(role = "builder", { hasCodegraph = false, rails = [], extraSettings = {} } = {}) {
+  const normalizedRole = String(role || "builder").trim().toLowerCase();
   let deny;
-  if (READONLY_ROLES.includes(role)) {
+  if (READONLY_ROLES.includes(normalizedRole)) {
     deny = ["write_file(*)", "command(*)", "read_url(*)", "execute_url(*)", "mcp(*)"];
   } else {
     deny = [
@@ -16944,9 +16945,18 @@ function resolveHollowTestCommand(changedFiles2, { repo, fallbackTestCmd }) {
   const targetFiles = nonFixture.length > 0 ? nonFixture : changedFiles2;
   const impact = deriveImpactedTests(targetFiles, { repo, fallbackTestCmd });
   if (impact.fast && Array.isArray(impact.testFiles) && impact.testFiles.length > 0 && impact.testCmd) {
-    const fastUnitFiles = impact.testFiles.filter((tf) => !SLOW_HOLLOW_TESTS.has(tf));
-    if (fastUnitFiles.length > 0) {
-      return `node --test ${fastUnitFiles.join(" ")}`;
+    const kept = new Set(impact.testFiles.filter((tf) => !SLOW_HOLLOW_TESTS.has(tf)));
+    if (kept.size > 0) {
+      const mutableChanged = targetFiles.filter(
+        (p) => !p.startsWith("test/") && /\.(?:mjs|cjs|js|mts|cts|ts|tsx|jsx)$/i.test(p) && !/\.d\.[mc]?ts$/i.test(p)
+      );
+      for (const f of mutableChanged) {
+        const single = deriveImpactedTests([f], { repo, fallbackTestCmd, maxSliceFiles: 12 });
+        if (single.fast && Array.isArray(single.testFiles) && single.testFiles.length > 0 && single.testFiles.every((tf) => SLOW_HOLLOW_TESTS.has(tf))) {
+          for (const tf of single.testFiles) kept.add(tf);
+        }
+      }
+      return `node --test ${[...kept].sort().join(" ")}`;
     }
     return impact.testCmd;
   }
@@ -22873,7 +22883,7 @@ import {
   chmodSync as chmodSync10,
   copyFileSync as copyFileSync7,
   realpathSync as realpathSync18,
-  statSync as statSync10,
+  statSync as statSync11,
   mkdtempSync as mkdtempSync11
 } from "node:fs";
 import { join as join46, dirname as dirname28, resolve as resolve29, sep as sep9, isAbsolute as isAbsolute13, delimiter as delimiter2 } from "node:path";
@@ -22916,7 +22926,7 @@ function treeSize(dir) {
     if (STAGE_COPY_EXCLUSIONS.includes(e.name)) continue;
     const full = join46(dir, e.name);
     if (e.isDirectory()) total += treeSize(full);
-    else if (e.isFile()) total += statSync10(full).size;
+    else if (e.isFile()) total += statSync11(full).size;
   }
   return total;
 }
@@ -23929,7 +23939,7 @@ init_charters();
 init_doctor2();
 init_gates();
 init_prosecute();
-import { writeFileSync as writeFileSync21, mkdtempSync as mkdtempSync10, rmSync as rmSync16, existsSync as existsSync37, readFileSync as readFileSync31, readdirSync as readdirSync17, realpathSync as realpathSync16, mkdirSync as mkdirSync20, lstatSync as lstatSync21, openSync as openSync12, closeSync as closeSync12, writeSync as writeSync6, fsyncSync as fsyncSync7, unlinkSync as unlinkSync9, constants as constants6 } from "node:fs";
+import { writeFileSync as writeFileSync21, mkdtempSync as mkdtempSync10, rmSync as rmSync16, existsSync as existsSync37, readFileSync as readFileSync31, readdirSync as readdirSync17, realpathSync as realpathSync16, mkdirSync as mkdirSync20, lstatSync as lstatSync21, statSync as statSync10, openSync as openSync12, closeSync as closeSync12, writeSync as writeSync6, fsyncSync as fsyncSync7, unlinkSync as unlinkSync9, constants as constants6 } from "node:fs";
 import { execFileSync as execFileSync17 } from "node:child_process";
 import { tmpdir as tmpdir12 } from "node:os";
 import path4, { join as join40, resolve as resolve24, isAbsolute as isAbsolute12, dirname as dirname24, basename as basename10 } from "node:path";
@@ -26063,17 +26073,30 @@ Fix: ${agyCheck.fix}`);
       wakeDrainLoop();
     }, findNearestNodeModules = function(startDir) {
       let dir = resolve24(startDir);
+      let stopDir = dir;
+      try {
+        const commonGit = execFileSync17(
+          "git",
+          ["-c", `core.hooksPath=${NULL_HOOKS_PATH4}`, "rev-parse", "--git-common-dir"],
+          { cwd: dir, encoding: "utf8", env: sanitizedGitEnv(), stdio: ["ignore", "pipe", "ignore"] }
+        ).trim();
+        if (commonGit) stopDir = dirname24(resolve24(dir, commonGit));
+      } catch {
+      }
       while (true) {
         const cand = join40(dir, "node_modules");
         try {
-          const st = lstatSync21(cand);
+          const st = statSync10(cand);
           if (st.isDirectory() && !existsSync37(join40(cand, ".agb-materialized"))) {
             return cand;
           }
         } catch {
         }
+        if (dir === stopDir) return join40(startDir, "node_modules");
         const parent = dirname24(dir);
-        if (parent === dir) return join40(startDir, "node_modules");
+        if (parent === dir || parent !== stopDir && !parent.startsWith(stopDir + path4.sep)) {
+          return join40(startDir, "node_modules");
+        }
         dir = parent;
       }
     }, restoreWorktreeCommittedState = function(wt) {

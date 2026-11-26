@@ -85,7 +85,12 @@ function getStaleLockInode(lockPath) {
     if (raw.trim() === '') {
       return Date.now() - st.mtimeMs < 5_000 ? null : st.ino;
     }
-    const parsed = JSON.parse(raw);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return Date.now() - st.mtimeMs < 5_000 ? null : st.ino;
+    }
     const pid = Number(parsed?.pid);
     const ts = Number(parsed?.ts ?? parsed?.startTime);
     if (!Number.isFinite(ts)) return st.ino;

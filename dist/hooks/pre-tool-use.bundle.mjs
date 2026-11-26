@@ -5623,13 +5623,17 @@ function evaluateAskPermission(rawArgs, ctx) {
     if (isInteractivePrompt(cmdVerdict)) return forceAsk(cmdVerdict.reason);
   } else if (act === "read_file" || act === "write_file") {
     const write = act === "write_file";
-    if (target.includes("*") && repos.some((r) => r.adlc)) return deny("Wildcard ask_permission target cannot be verified in an ADLC repository");
-    const resolved = resolveAll(toPath(target), ctx);
+    const hasWildcard = /[*?[\]{}]/.test(target);
+    const staticTarget = hasWildcard ? target.replace(/[\\/][^\\/]*[*?[\]{}].*$/, "") || "/" : target;
+    const resolved = resolveAll(toPath(staticTarget), ctx);
     if (resolved.length === 0) return deny("Relative ask_permission target has no workspace to anchor it");
     for (const r of resolved) {
       const forms = r.lexical !== r.real ? [r, { ...r, real: r.lexical }] : [r];
       for (const form of forms) {
         if (matchRoot(form, ctx.boosterDataRoots, ctx.platform)) return deny("ask_permission target is protected booster data");
+        if (ctx.boosterDataRoots.some((root) => typeof root === "string" && isWithin(root, form.real, ctx.platform))) {
+          return deny("ask_permission target contains protected booster data");
+        }
         if (write) {
           if (matchRoot(form, ctx.protectedRoots, ctx.platform)) return deny("ask_permission write target is protected platform configuration");
           const c = containsProtected(form, ctx);
@@ -5640,6 +5644,9 @@ function evaluateAskPermission(rawArgs, ctx) {
         if (g.verdict.decision === "deny") return g.verdict;
         if (isInteractivePrompt(g.verdict)) return forceAsk(g.verdict.reason);
       }
+    }
+    if (hasWildcard && repos.some((r) => r.adlc)) {
+      return deny("Wildcard ask_permission target cannot be verified in an ADLC repository");
     }
   }
   if (repos.some((r) => r.adlc && !r.store.ok)) return deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified");
@@ -5897,17 +5904,17 @@ function evaluateRunCommand(args, ctx) {
   return verdict;
 }
 function evaluatePayload(payload, options = {}) {
-  const verdict = evaluatePayloadInner(payload, options);
-  if (isInteractivePrompt(verdict) && buildContext(payload, options).headless) return deny(verdict.reason);
-  return verdict;
-}
-function evaluatePayloadInner(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== "string" || name.length === 0) return deny("Malformed PreToolUse payload: missing tool name");
   const args = payload.toolCall.args === void 0 ? {} : payload.toolCall.args;
   if (AGY_CONTROL_TOOLS.has(name)) return PASS;
   beginEvaluation();
   const ctx = buildContext(payload, options);
+  const verdict = evaluatePayloadWithContext(name, args, ctx);
+  if (isInteractivePrompt(verdict) && ctx.headless) return deny(verdict.reason);
+  return verdict;
+}
+function evaluatePayloadWithContext(name, args, ctx) {
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;
   if (name === "ask_permission") return evaluateAskPermission(args, ctx);
