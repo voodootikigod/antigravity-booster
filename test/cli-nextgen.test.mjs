@@ -7,7 +7,7 @@
 //  - agb run --resume and --reset-rescue CLI flag forwarding
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync as execBin, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -489,3 +489,198 @@ exec "${copiedFakeAgy}" "$@"
   assert.deepEqual(invokedTickets, ['T2'], 'Should skip already-merged T1 and only build T2');
   assert.equal(readFileSync(join(repo, 'src', 't2.js'), 'utf8'), 'export const t2 = 2;\n');
 });
+
+test('agb plan --estimate [--json] forecasts wave-by-wave quota burn offline without --force and mutates zero files', () => {
+  const repo = makeGitRepo('repo-cli-estimate');
+  const existingPlan = '{"handwritten":true}\n';
+  writeFileSync(join(repo, 'plan.json'), existingPlan);
+  const specPath = join(repo, 'feature-spec.md');
+  writeFileSync(
+    specPath,
+    `# Estimate Spec
+
+- **Gates**: test=\`npm test\`
+
+### Ticket 1: \`T-EST-1\` — Core
+- **Scope**: \`src/a.js\`
+- **Rails**: \`src/base.js\`
+- **Edges**: \`T-EST-1 -> T-EST-2\`
+- **Tier**: \`frontier\`
+- **Pool Hint**: \`gemini\`
+- **Effort**: \`high\`
+- **Objectives**:
+  1. Build src/a.js.
+- **Acceptance Criteria**:
+  - Works. Verify: \`npm test\`
+
+### Ticket 2: \`T-EST-2\` — Followup
+- **Scope**: \`src/b.js\`
+- **Rails**: \`src/base.js\`
+- **Edges**: none
+- **Tier**: \`mid\`
+- **Pool Hint**: \`claude-gpt\`
+- **Objectives**:
+  1. Build src/b.js.
+- **Acceptance Criteria**:
+  - Works. Verify: \`npm test\`
+`
+  );
+
+  const poolsDir = join(TMP, 'estimate-empty-pools');
+  mkdirSync(poolsDir, { recursive: true });
+  const env = {
+    ...process.env,
+    AGB_AGY_BIN: '/nonexistent/agy-should-never-be-spawned',
+    AGB_POOLS_DIR: poolsDir,
+  };
+
+  // Run inside repo where plan.json ALREADY exists without passing --force
+  const jsonRes = runAgb(['plan', specPath, repo, '--estimate', '--json'], { cwd: repo, env });
+  assert.equal(jsonRes.status, 0, `expected exit 0, got ${jsonRes.status}: ${jsonRes.stderr}`);
+  const parsed = JSON.parse(jsonRes.stdout);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.quotaEstimate.waves.length, 2);
+  assert.equal(parsed.tickets.length, 2);
+  assert.equal(parsed.tickets[0].effort, 'high');
+
+  const textRes = runAgb(['plan', specPath, repo, '--estimate'], { cwd: repo, env });
+  assert.equal(textRes.status, 0);
+  assert.match(textRes.stdout, /Quota Runway Forecast/);
+  assert.match(textRes.stdout, /Wave 1 \[T-EST-1\]/);
+
+  // Zero side-effect writes: existing plan.json untouched, no ticket shards or pools state created
+  assert.equal(readFileSync(join(repo, 'plan.json'), 'utf8'), existingPlan);
+  assert.deepEqual(readdirSync(join(repo, '.adlc', 'tickets')), ['.store.json']);
+  assert.equal(existsSync(join(poolsDir, 'agb_pools_v2.json')), false);
+});
+
+test('agb accept [--base --json --markdown] and agb watch [--mux / --mux=zellij] operate offline without mutating git refs', () => {
+  const repo = makeGitRepo('repo-cli-accept-mux');
+  const baseSha = execBin('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  writeFileSync(join(repo, 'src', 'caller.js'), 'import { base } from "./base.js";\nexport const v = base + 1;\n');
+  writeFileSync(join(repo, 'src', 'base.js'), 'export const base = 2;\n');
+  execBin('git', ['-C', repo, 'add', 'src/caller.js', 'src/base.js']);
+  execBin('git', ['-C', repo, 'commit', '-q', '-m', 'candidate change']);
+  const candSha = execBin('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+
+  const mdPath = join(repo, '.booster', 'pr-dossier.md');
+  const acceptRes = runAgb(['accept', repo, '--base', baseSha, '--json', '--markdown', mdPath]);
+  assert.equal(acceptRes.status, 0, acceptRes.stderr);
+  const dossier = JSON.parse(acceptRes.stdout);
+  assert.equal(dossier.ok, true);
+  assert.equal(dossier.counts.filesChanged, 2);
+  assert.equal(dossier.counts.totalHunks, 2);
+  assert.ok(existsSync(mdPath));
+  assert.match(readFileSync(mdPath, 'utf8'), /# ADLC P6 Sign-Off Evidence Dossier/);
+  assert.equal(execBin('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), candSha);
+
+  // Default non-TTY stdout renders Markdown dossier; invalid/missing flags exit 1
+  const defaultMdRes = runAgb(['accept', repo, '--base', baseSha]);
+  assert.equal(defaultMdRes.status, 0, defaultMdRes.stderr);
+  assert.match(defaultMdRes.stdout, /# ADLC P6 Sign-Off Evidence Dossier/);
+  assert.equal(runAgb(['accept', repo, '--base']).status, 1);
+  assert.equal(runAgb(['accept', repo, '--bogus-flag']).status, 1);
+
+  // Unsupported mux (zellij) must exit 1 cleanly
+  const zellijRes = runAgb(['watch', repo, '--mux=zellij']);
+  assert.equal(zellijRes.status, 1);
+  assert.match(zellijRes.stderr, /Unsupported multiplexer 'zellij'/);
+
+  // Bare --mux before [repo] must NOT consume [repo] as mux mode and must exit 0 on completed run.json
+  mkdirSync(join(repo, '.booster'), { recursive: true });
+  writeFileSync(
+    join(repo, '.booster', 'run.json'),
+    JSON.stringify({ runId: 'run-mux-done', startedAt: new Date().toISOString(), done: true, report: { merged: ['T1'], failed: {} } })
+  );
+  const muxAutoRes = runAgb(['watch', '--mux', repo, '--no-alerts'], {
+    env: { ...process.env, TMUX: '', HERDR_ENV: '', HERDR_PANE_ID: '', CMUX_WORKSPACE_ID: '', CMUX_SOCKET_PATH: '' },
+  });
+  assert.equal(muxAutoRes.status, 0, muxAutoRes.stderr);
+});
+
+test('agb distill --compile-checks and agb holdout <list|run|clean> operate offline with sanitized outputs', async () => {
+  const repo = makeGitRepo('repo-cli-w4');
+  const holdoutRoot = join(TMP, 'cli-w4-holdouts');
+  mkdirSync(holdoutRoot, { recursive: true });
+  mkdirSync(join(repo, '.booster'), { recursive: true });
+  writeFileSync(
+    join(repo, '.booster', 'review-findings.json'),
+    JSON.stringify({
+      findings: [
+        {
+          lens: 'security',
+          severity: 'high',
+          claim: 'Hook emitted decision: "allow" on line 10',
+        },
+        {
+          lens: 'security',
+          severity: 'high',
+          claim: 'Hook emitted decision: "allow" on line 22',
+        },
+      ],
+    })
+  );
+
+  const distillRes = runAgb(['distill', repo, '--compile-checks', '--json']);
+  assert.equal(distillRes.status, 0, distillRes.stderr);
+  const distillParsed = JSON.parse(distillRes.stdout);
+  assert.equal(distillParsed.ok, true);
+  assert.equal(distillParsed.compiledChecks, true);
+  assert.equal(distillParsed.compiledChecksCount, 1);
+  assert.ok(existsSync(join(repo, '.adlc', 'learned-checks.json')));
+
+  const { stageHoldoutScenarios } = await import('../lib/holdout.mjs');
+  writeFileSync(join(repo, 'src', 'math.mjs'), 'export const double = (x) => x * 2;\n');
+  const staged = stageHoldoutScenarios({
+    repo,
+    runId: 'run-cli',
+    ticketId: 'T-1',
+    scenarios: [
+      [
+        'import { test } from "node:test";',
+        'import assert from "node:assert/strict";',
+        'import { join } from "node:path";',
+        'import { pathToFileURL } from "node:url";',
+        'test("Scenario: doubles positive numbers", async () => {',
+        '  const m = await import(pathToFileURL(join(process.env.AGB_CANDIDATE_ROOT, "src/math.mjs")).href);',
+        '  assert.equal(m.double(6), 12);',
+        '});',
+      ].join('\n'),
+    ],
+    holdoutRoot,
+  });
+  assert.equal(staged.ok, true);
+
+  const env = { ...process.env, AGB_HOLDOUT_DIR: holdoutRoot, AGB_SANDBOX_GATES: '0' };
+  const listRes = runAgb(['holdout', 'list', repo, '--json'], { env });
+  assert.equal(listRes.status, 0, listRes.stderr);
+  const listJson = JSON.parse(listRes.stdout);
+  assert.equal(listJson.totalFiles, 1);
+  assert.equal(listRes.stdout.includes('m.double'), false, 'agb holdout list must never leak holdout source');
+
+  const runRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
+  assert.equal(runRes.status, 0, runRes.stderr);
+  assert.equal(JSON.parse(runRes.stdout).ok, true);
+
+  // Failing holdout exits with status 2 and leaks zero holdout paths or secret assertion literals
+  writeFileSync(join(repo, 'src', 'math.mjs'), 'export const double = (x) => x + 999;\n');
+  const failJsonRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
+  assert.equal(failJsonRes.status, 2);
+  const failParsed = JSON.parse(failJsonRes.stdout);
+  assert.equal(failParsed.ok, false);
+  assert.equal(failJsonRes.stdout.includes('.holdout.test.mjs'), false);
+  assert.equal(failJsonRes.stdout.includes('m.double(6)'), false);
+
+  const failTextRes = runAgb(['holdout', 'run', repo, '--run-id', 'run-cli', '--ticket', 'T-1'], { env });
+  assert.equal(failTextRes.status, 2);
+  assert.match(failTextRes.stdout, /Scenario: doubles positive numbers/);
+  assert.equal(failTextRes.stdout.includes('.holdout.test.mjs'), false);
+
+  assert.equal(runAgb(['holdout', 'bogus', repo], { env }).status, 1);
+
+  const cleanRes = runAgb(['holdout', 'clean', repo, '--run-id', 'run-cli', '--ticket', 'T-1', '--json'], { env });
+  assert.equal(cleanRes.status, 0, cleanRes.stderr);
+  assert.equal(JSON.parse(cleanRes.stdout).removed, true);
+});
+
+

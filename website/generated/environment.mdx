@@ -6,14 +6,15 @@
 | AGB_ALLOW_DIRTY | unset | Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start). | honoured |
 | AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
 | AGB_BUILD_TIMEOUT | 15m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
+| AGB_DEFAULT_EFFORT | unset | Optional Strike-0 effort level override (low, medium, high, xhigh, max) passed as --effort to agy when ticket.effort is unset. | honoured |
 | AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
 | AGB_GATE_TIMEOUT_MS | 1800000 | Per-gate execution timeout in milliseconds for deterministic build/test gates in lib/scheduler.mjs. | honoured |
 | AGB_HUD | auto on TTY | Set to 0 to disable the inline ANSI status bar during agb run, or 1 to force-enable it. | honoured |
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
-| AGB_MODEL_STATS_FILE | &lt;plugin_data&gt;/model_stats.jsonl | Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): override path for the BanditModelRouter empirical model outcome ledger. | honoured |
+| AGB_MODEL_STATS_FILE | &lt;plugin_data&gt;/model_stats.jsonl | Unbundled override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan; ignored in bundled plugin builds. | ignored |
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
 | AGB_RESCUE_TICKET | set by agb rescue | Set by agb rescue on interactive agy -i sessions to protect .booster IPC tokens and rescue locks via PreToolUse while preserving interactive operator prompts. | honoured |
-| AGB_ROUTER_STATIC | unset | Opt-in library env var (used by BanditModelRouter / programmatic APIs; not invoked automatically by agb run): set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order. | honoured |
+| AGB_ROUTER_STATIC | unset | Set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order. | honoured |
 | AGB_SESSION_ID | unset | Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes. | honoured |
 | AGB_SYNC_MODELS_OFFLINE | unset | Set to 1 to use the built-in static model catalog instead of invoking agy models during doctor or sync-models. | honoured |
 | AGB_TARGET_REPO | unset | Target repository path checked by bin/node-launcher.sh; any candidate Node binary whose realpath resolves inside AGB_TARGET_REPO (or the current working directory) is rejected to prevent repo-planted binary execution. | honoured |
@@ -42,7 +43,9 @@
 | Name | Default | Description | Bundled |
 | --- | --- | --- | --- |
 | AGB_ALLOW_CODEGRAPH_MCP | unset | Set to 1 to allow CodeGraph MCP queries (codegraph_explore) in headless or read-only agb worker sessions (still restricted to paths inside the declared workspace and outside boosterDataRoots). | honoured |
+| AGB_CANDIDATE_ROOT | set by agb on holdout runners | Exported by lib/holdout.mjs to the isolated candidate worktree path during P5 holdout verification so out-of-tree holdout scenarios can dynamically import candidate modules. | honoured |
 | AGB_HOOK_DISABLE | unset | Any non-empty value bypasses the PreToolUse rails guard. Each bypass is logged to hooks.log and agb doctor warns about it. | honoured |
+| AGB_LIFECYCLE_HOOKS | 1 | Set to 0 to bypass the advisory in-session lifecycle hooks (PostToolUse, PreInvocation, PostInvocation, Stop) in hooks/lifecycle.mjs. | honoured |
 | AGB_REQUIRE_DRIVER_SIGNATURE | unset | Set to 1 to make the Windows doctor sandbox check require a signed driver attestation in the probe output. | honoured |
 | AGB_SANDBOX_GATES | on | Set to 0 to run gate commands without the OS sandbox (an explicit acknowledgement of host risk). | honoured |
 | AGB_SANDBOX_PROBE_CMD | unset | Doctor sandbox-probe command override. Restricted to test execution; otherwise the check fails. | honoured |
@@ -84,7 +87,9 @@
 | AGB_CALIBRATION_DIR | docs/calibration under cwd | Where agb probe appends its probes-&lt;day&gt;.md calibration file. | honoured |
 | AGB_EXEC_CACHE_DIR | under AGB_HOME_DIR | Cache directory for authenticated executables. | honoured |
 | AGB_EXEC_LOCKS_DIR | under AGB_HOME_DIR | Directory for executable lock records; stale locks with a dead PID are recovered. | honoured |
+| AGB_FACTORY_LEDGER_FILE | &lt;plugin_data&gt;/factory_ledger.jsonl | Unbundled override path for the append-only Factory Economics Ledger written by agb run and read by Mission Control; ignored in bundled plugin builds. | ignored |
 | AGB_GRAPH_COUPLING_FILE | .adlc/graph-coupling.json | Path to an optional static import-graph coupling JSON file consulted by applyMergeForecast and scanStaticImportCoupling. | honoured |
+| AGB_HOLDOUT_DIR | &lt;plugin_data&gt;/holdouts | Unbundled override directory for sealed Dark-Factory holdout scenarios staged and executed during P5 verification; ignored in bundled plugin builds. | ignored |
 | AGB_HOME_DIR | the OS home directory | Home directory override for agb's per-user state. Ignored in bundled plugin builds (IS_BUNDLED === true). | ignored |
 | AGB_STATUSLINE_QUOTA_FILE | &lt;pools_dir&gt;/agb_statusline_quota.json | Unbundled override path for the lock-free statusline quota cache written by lib/cli-statusline.mjs and read by PoolSet.refreshQuota; ignored in bundled plugin builds. | ignored |
 

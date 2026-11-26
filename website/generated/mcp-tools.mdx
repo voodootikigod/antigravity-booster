@@ -1,3 +1,12 @@
+**`agb_accept`**: Inspect candidate diff hunks, external-caller blast radius, and gate manifest evidence for ADLC P6 human sign-off
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| base | string | no | Optional git base ref (defaults to HEAD) |
+| repo | string | no | Optional path to target repository (defaults to cwd) |
+| saveVerdicts | boolean | no | Persist hunk verdicts to .booster/accept-state.json |
+| verdicts | object | no | Optional map of 64-char SHA-256 hunk fingerprints to accepted, flagged, or pending |
+
 **`agb_control`**: Send authenticated control IPC or snapshot/diff/stream telemetry queries to an AGB run
 
 | Parameter | Type | Required | Description |
@@ -12,6 +21,7 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | apply | boolean | no | Write compacted defenses to .gemini/rules/adlc-learned.md |
+| compileChecks | boolean | no | Compile recurring findings into declarative .adlc/learned-checks.json invariants |
 | repo | string | yes | Path to target repository |
 
 **`agb_doctor`**: Run diagnostic health check for tools, auth, and sandbox setup
@@ -26,6 +36,15 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | repo | string | no | Path to target repository (defaults to cwd) |
+
+**`agb_holdout`**: List metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| action | string | yes | Holdout operation to perform |
+| repo | string | yes | Path to target repository |
+| runId | string | no | Optional run ID filter |
+| ticketId | string | no | Optional ticket ID filter |
 
 **`agb_init`**: Initialize a target repository for ADLC and Antigravity Booster (.adlc/config.json, specs/feature-template.md, .gitignore)
 
@@ -45,6 +64,7 @@
 | --- | --- | --- | --- |
 | decompose | boolean | no | Automatically split wide tickets exceeding maxTicketScope |
 | emitWorkflow | string | no | Optional output path for compiled run_workflow Python script |
+| estimate | boolean | no | Forecast wave-by-wave quota burn without writing plan.json or running Stage B LLM gates |
 | force | boolean | no | Force overwrite the output file if it exists |
 | maxTicketScope | number | no | Maximum files per ticket when decompose is enabled (default 3) |
 | noColdstart | boolean | no | Skip coldstart plan gate |

@@ -7,12 +7,14 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
+  rmdirSync,
   unlinkSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -59,7 +61,12 @@ function hasLiveBootstrapLock(lockPath) {
     if (raw.trim() === '') {
       return Date.now() - st.mtimeMs < 5_000;
     }
-    const parsed = JSON.parse(raw);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return Date.now() - st.mtimeMs < 5_000;
+    }
     const pid = Number(parsed?.pid);
     const ts = Number(parsed?.ts ?? parsed?.startTime);
     if (!Number.isFinite(ts)) return false;
@@ -77,50 +84,63 @@ function hasBootstrapStamp(stampPath) {
   return existsSync(stampPath);
 }
 
-function getStaleLockInode(lockPath) {
+function acquireLockUnderReclaimMutex(lockPath) {
+  const reclaimDir = `${lockPath}.reclaim`;
+  if (lstatOrNull(reclaimDir)?.isSymbolicLink()) return null;
   try {
-    const st = lstatSync(lockPath);
-    if (st.isSymbolicLink() || !st.isFile()) return null;
-    const raw = readFileSync(lockPath, 'utf8');
-    if (raw.trim() === '') {
-      return Date.now() - st.mtimeMs < 5_000 ? null : st.ino;
+    mkdirSync(reclaimDir, { mode: 0o700 });
+  } catch (err) {
+    if (err?.code !== 'EEXIST') return null;
+    const reclaimStat = lstatOrNull(reclaimDir);
+    if (!reclaimStat || reclaimStat.isSymbolicLink() || Date.now() - reclaimStat.mtimeMs <= 30_000) {
+      return null;
     }
-    let parsed;
+    const orphanDir = `${reclaimDir}.orphan.${process.pid}`;
     try {
-      parsed = JSON.parse(raw);
+      renameSync(reclaimDir, orphanDir);
+      try {
+        rmdirSync(orphanDir);
+      } catch {
+        // Best-effort cleanup of abandoned reclaim directory.
+      }
+      mkdirSync(reclaimDir, { mode: 0o700 });
     } catch {
-      return Date.now() - st.mtimeMs < 5_000 ? null : st.ino;
+      return null;
     }
-    const pid = Number(parsed?.pid);
-    const ts = Number(parsed?.ts ?? parsed?.startTime);
-    if (!Number.isFinite(ts)) return st.ino;
-    const age = Date.now() - ts;
-    if (age < 0 || age >= LOCK_TTL_MS) return st.ino;
-    return isPidAlive(pid) ? null : st.ino;
-  } catch {
-    return null;
+  }
+  try {
+    if (lstatOrNull(lockPath)?.isSymbolicLink() || hasLiveBootstrapLock(lockPath)) {
+      return null;
+    }
+    try {
+      unlinkSync(lockPath);
+    } catch (err) {
+      if (err?.code !== 'ENOENT') return null;
+    }
+    if (lstatOrNull(lockPath)?.isSymbolicLink()) return null;
+    try {
+      return openSync(lockPath, 'wx', 0o600);
+    } catch {
+      return null;
+    }
+  } finally {
+    try {
+      rmdirSync(reclaimDir);
+    } catch {
+      // Best-effort cleanup of reclamation lock directory.
+    }
   }
 }
 
 function acquireWorkerLock(lockPath) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      if (lstatOrNull(lockPath)?.isSymbolicLink()) return null;
-      return openSync(lockPath, 'wx', 0o600);
-    } catch (err) {
-      if (err?.code !== 'EEXIST') return null;
-      if (attempt === 1) return null;
-      const staleIno = getStaleLockInode(lockPath);
-      if (staleIno === null) return null;
-      try {
-        if (lstatOrNull(lockPath)?.ino !== staleIno) return null;
-        unlinkSync(lockPath);
-      } catch {
-        return null;
-      }
-    }
+  try {
+    if (lstatOrNull(lockPath)?.isSymbolicLink()) return null;
+    return openSync(lockPath, 'wx', 0o600);
+  } catch (err) {
+    if (err?.code !== 'EEXIST') return null;
+    if (hasLiveBootstrapLock(lockPath)) return null;
+    return acquireLockUnderReclaimMutex(lockPath);
   }
-  return null;
 }
 
 function runDetachedWorker(workerArgs) {
@@ -149,6 +169,7 @@ function runDetachedWorker(workerArgs) {
   if (fd === null) return;
 
   try {
+    if (hasBootstrapStamp(stampPath)) return;
     const now = Date.now();
     const lockPayload = JSON.stringify({ pid: process.pid, ts: now, startTime: now }) + '\n';
     writeFileSync(fd, lockPayload, { encoding: 'utf8' });
@@ -163,7 +184,10 @@ function runDetachedWorker(workerArgs) {
     });
 
     if (lstatOrNull(stampPath)?.isSymbolicLink()) return;
-    const tmpPath = join(targetDataDir, `.bootstrapped-${targetVersion}.${process.pid}.${Date.now()}.tmp`);
+    const tmpPath = join(
+      targetDataDir,
+      `.bootstrapped-${targetVersion}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 10)}.tmp`,
+    );
     const stampBody = JSON.stringify(
       {
         version: targetVersion,
@@ -173,8 +197,13 @@ function runDetachedWorker(workerArgs) {
       null,
       2,
     ) + '\n';
-    writeFileSync(tmpPath, stampBody, { encoding: 'utf8', mode: 0o600 });
-    renameSync(tmpPath, stampPath);
+    try {
+      writeFileSync(tmpPath, stampBody, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      renameSync(tmpPath, stampPath);
+    } catch (stampErr) {
+      try { unlinkSync(tmpPath); } catch {}
+      throw stampErr;
+    }
   } catch {
     // Exit 0 silently without writing stamp when bootstrap fails.
   } finally {
@@ -204,19 +233,79 @@ function drainStdinNonBlocking() {
   }
 }
 
+function detectInstalledPluginPath(selfPath) {
+  try {
+    const paths = [selfPath];
+    try { paths.push(realpathSync(selfPath)); } catch {}
+    for (const p of paths) {
+      if (p.replace(/\\/g, '/').includes('/.gemini/config/plugins/')) return true;
+    }
+  } catch {}
+  return false;
+}
+
+function resolveExistingAncestorRealpath(targetPath) {
+  const abs = resolve(targetPath);
+  let curr = abs;
+  const suffix = [];
+  while (curr && !existsSync(curr)) {
+    const parent = dirname(curr);
+    if (parent === curr) break;
+    suffix.unshift(basename(curr));
+    curr = parent;
+  }
+  try {
+    const real = realpathSync(curr);
+    return suffix.length > 0 ? join(real, ...suffix) : real;
+  } catch {
+    return abs;
+  }
+}
+
+function isWithinDir(parentDir, childPath) {
+  const rel = relative(parentDir, childPath);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel) && !rel.startsWith(`..${sep}`));
+}
+
 function runSessionStartHook() {
   drainStdinNonBlocking();
 
   const selfPath = fileURLToPath(import.meta.url);
-  const pluginRoot = process.env.PLUGIN_ROOT
-    ? resolve(process.env.PLUGIN_ROOT)
-    : resolve(dirname(selfPath), '..');
+  const derivedRoot = resolve(dirname(selfPath), '..');
+  let realDerivedRoot;
+  try {
+    realDerivedRoot = realpathSync(derivedRoot);
+  } catch {
+    realDerivedRoot = derivedRoot;
+  }
+  if (process.env.PLUGIN_ROOT) {
+    const envRootReal = resolveExistingAncestorRealpath(process.env.PLUGIN_ROOT);
+    if (envRootReal !== realDerivedRoot) {
+      writeSync(1, '{}\n');
+      return;
+    }
+  }
+  const pluginRoot = realDerivedRoot;
   const pkgVersion = readPackageVersion(pluginRoot);
-  const pluginDataDir = process.env.PLUGIN_DATA
-    ? resolve(process.env.PLUGIN_DATA)
-    : join(homedir(), '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster');
+  const expectedDataDir = join(homedir(), '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster');
+  const isBundled =
+    (typeof __AGB_BUNDLED__ !== 'undefined' && Boolean(__AGB_BUNDLED__)) ||
+    detectInstalledPluginPath(selfPath);
+  let pluginDataDir = expectedDataDir;
+  if (process.env.PLUGIN_DATA) {
+    const rawDataDir = resolve(process.env.PLUGIN_DATA);
+    if (!isBundled) {
+      pluginDataDir = rawDataDir;
+    } else {
+      const realCandidateData = resolveExistingAncestorRealpath(rawDataDir);
+      const realExpectedData = resolveExistingAncestorRealpath(expectedDataDir);
+      if (isWithinDir(realExpectedData, realCandidateData)) {
+        pluginDataDir = realCandidateData;
+      }
+    }
+  }
 
-  const unbundled = typeof __AGB_BUNDLED__ === 'undefined' || !__AGB_BUNDLED__;
+  const unbundled = !isBundled;
   const stampPath = join(pluginDataDir, `bootstrapped-${pkgVersion}.json`);
   const lockPath = join(pluginDataDir, 'session-bootstrap.lock');
 

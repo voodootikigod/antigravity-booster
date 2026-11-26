@@ -56,6 +56,9 @@ The scheduler also reads these optional top-level fields ([`plan.base`](https://
 | `disableOrchestrator` | boolean | `false` | Disables routing `frontier`-tier tickets to `gemini-pro-orchestrator*` models, falling back to `FRONTIER_NO_ORCHESTRATOR` (equivalent to `AGB_DISABLE_ORCHESTRATOR=1`). Validated as a boolean by `validatePlan`. |
 | `contextSlice` | boolean | `false` | Enables pre-baked `.booster/context-slice.md` context injection (via `.codegraph/` or static AST fallback) on every ticket's builder charter even when `symbol_scope` or `symbol_rails` are not declared. |
 | `overviewPane` | boolean | `false` | Emits native Antigravity Overview Panel (`swarm_pane`) telemetry snapshots to `.booster/overview_pane.json` and `.booster/overview_pane.md` (mirrored to the active brain session directory when available). |
+| `holdouts` | boolean | `true` for `frontier` | Controls Sealed Holdout Scenarios execution (`false` opts out across all tickets in the plan). |
+| `gate.autofix` | `string` | unset | Optional post-guard deterministic autofix npm command (matching `^npm (test\|run [a-zA-Z0-9_:-]+)$`) run inside the ticket worktree after builder edits. |
+| `gate.twins` | `TwinSpec[]` | unset | Declarative zero-network Ephemeral Digital Twin HTTP fixture definitions (`{ name, envVar, routes: [{ method, path, status, headers, body }] }`) started on loopback `127.0.0.1` / intercepted via read-only `NODE_OPTIONS` preload inside sandboxes. |
 
 ## Ticket fields
 
@@ -105,6 +108,8 @@ Tickets may also declare these optional v1.4 context-slicing and symbol-constrai
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `contextSlice` | boolean | `false` | Enables pre-baked `.booster/context-slice.md` context injection for this ticket's builder charter (also enabled automatically when `plan.contextSlice` is `true` or when `symbol_scope` / `symbol_rails` are non-empty). |
+| `effort` | `'low' \| 'medium' \| 'high' \| 'max'` | unset | Optional Antigravity reasoning effort budget hint (`--effort`) passed when dispatching the ticket builder. |
+| `holdout_scenarios` | `boolean \| HoldoutScenario[]` | `true` for `frontier` | Enables or opts out (`false`) of black-box Sealed Holdout Scenarios stored under `<plugin_data>/holdouts/`. |
 | `symbol_scope` | string[] | unset | Additive symbol-level scope constraints in `path/to/file.mjs#SymbolName` form. File-glob `scope` remains enforced by `PreToolUse` and `adlc rails-guard`, while `verifySymbolScopeDiff()` verifies post-turn and `consensus-fix` diffs stay within the declared symbol spans. |
 | `symbol_rails` | string[] | unset | Additive symbol-level rails in `path/to/file.mjs#SymbolName` form. File-glob `rails` remains enforced by `PreToolUse` and `adlc rails-guard`, while `verifySymbolScopeDiff()` rejects any builder or `consensus-fix` diff that modifies a railed symbol span. |
 

@@ -4,7 +4,7 @@ description: "Launch the local HTTP server behind the Antigravity Sidecar dashbo
 claims: [C11]
 ---
 
-`agb sidecar` starts the dashboard server for a repository and registers it with Antigravity.
+`agb sidecar` starts the local `127.0.0.1` HTTP dashboard server for a repository and prints the authenticated `?token=` URL to stdout.
 
 ## Synopsis
 
@@ -13,10 +13,10 @@ claims: [C11]
 ## Arguments and flags
 
 - `repo` is optional and defaults to the current directory ([C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L386-L387)).
-- `--port <port>` sets the port; `AGB_SIDECAR_PORT` is the default source and `3333` the fallback. Any other flag, or `--port` without a value, exits 1 ([flag parsing](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L369-L384), [port default](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L394-L398)).
+- `--port <port>` sets the port; `AGB_SIDECAR_PORT` is the default source and `3333` the fallback. Any other flag, or `--port` without a value, exits `1`.
 
 ## Behavior
 
-The server is started with a random 16-byte hex token ([token](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L399-L400)). It writes a sidecar plugin manifest into `AGB_PLUGIN_DIR` (in unbundled source runs; ignored in the bundled plugin build), or into `~/.gemini/agb-sidecar-plugin-<pid>-<port>` when that is unset, and refuses to overwrite an existing manifest ([manifest directory](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L408-L414)).
+The server generates a fresh random hex session token on each launch (`http://127.0.0.1:<port>/?token=<token>`) and prints that URL directly to stdout (v2.0.0 removed dynamic `agb-sidecar-plugin-*` manifest generation and automatic `agy plugin install`/`uninstall`). Treat captured terminal or tool-call transcripts carefully so the live session token is not exposed.
 
-Security, the token URL and the `ANTIGRAVITY_SIDECAR_WEB_PORT` caveat are covered in the [Sidecar dashboard guide](/docs/guides/sidecar-dashboard) and [Security](/docs/reference/security).
+Security and the `ANTIGRAVITY_SIDECAR_WEB_PORT` caveat are covered in the [Sidecar dashboard guide](/docs/guides/sidecar-dashboard) and [Security](/docs/reference/security).

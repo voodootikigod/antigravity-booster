@@ -615,5 +615,48 @@ test('buildSpawnEnv: win32 builder normalizes Path/PATH without collision, prese
   }
 });
 
+test('runAgy extracts normalized token telemetry from stream-json result and Anthropic-style usage envelopes', async () => {
+  const streamMock = makeMockScript([
+    'echo \'{"type":"result","status":"SUCCESS","exit_code":0,"telemetry":{"input_tokens":1000,"cached_tokens":700,"output_tokens":150}}\'',
+  ]);
+  const jsonMock = makeMockScript([
+    'echo \'{"status":"SUCCESS","response":"ok","usage":{"input_tokens":200,"cache_read_input_tokens":5000,"output_tokens":80}}\'',
+  ]);
+  try {
+    const sRes = await runAgy({
+      bin: streamMock.bin,
+      model: 'gemini-4-argon-medium',
+      prompt: 'telemetry stream',
+      outputFormat: 'stream-json',
+      sandbox: false,
+    });
+    assert.equal(sRes.ok, true, sRes.error);
+    assert.deepEqual(sRes.telemetry, {
+      uncachedInputTokens: 300,
+      cachedTokens: 700,
+      outputTokens: 150,
+      inputTokens: 1000,
+    });
+
+    const jRes = await runAgy({
+      bin: jsonMock.bin,
+      model: 'claude-sonnet-5-5-medium',
+      prompt: 'telemetry json',
+      outputFormat: 'json',
+      sandbox: false,
+    });
+    assert.equal(jRes.ok, true, jRes.error);
+    assert.deepEqual(jRes.telemetry, {
+      uncachedInputTokens: 200,
+      cachedTokens: 5000,
+      outputTokens: 80,
+      inputTokens: 5200,
+    });
+  } finally {
+    streamMock.cleanup();
+    jsonMock.cleanup();
+  }
+});
+
 
 

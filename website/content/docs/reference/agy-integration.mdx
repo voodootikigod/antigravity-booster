@@ -11,10 +11,11 @@ Every model call agb makes goes through one function, [`runAgy`](https://github.
 ```text
 agy --print <prompt> --print-timeout <timeout> --model <slug>
     [--output-format json|stream-json] [--json-schema <schema>]
+    [--disable-slash-commands] [--effort <low|medium|high|max>]
     [--project <name> --add-dir <cwd>] [--conversation <id>] [--sandbox]
 ```
 
-The arguments are built as an array and spawned without a shell, so nothing in a prompt is shell-interpreted ([argument list](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L249-L260)). Display names such as `Gemini 3.8 Flash (Low)` are mapped to agy model slugs first. The agy binary is `AGB_AGY_BIN` if set, else `agy` on `PATH`.
+The arguments are built as an array and spawned without a shell, so nothing in a prompt is shell-interpreted; `--disable-slash-commands` is enabled by default in `lib/agy.mjs` to eliminate slash-command scanning overhead on automated workers. Display names such as `Gemini 3.8 Flash (Low)` are mapped to agy model slugs first. The agy binary is `AGB_AGY_BIN` if set, else `agy` on `PATH`.
 
 ```mermaid
 sequenceDiagram
@@ -82,11 +83,24 @@ Builders must run sandboxed. On macOS and Linux, agb wraps the `agy` process in 
 
 ## Failure kinds
 
+`ALL_AGY_ERROR_KINDS` classifies outcomes into 17 canonical error kinds:
+
 | `kind` | Cause |
 |---|---|
-| `timeout` | One of the timers above fired. |
-| `server` | agy reported an error, or a terminal `result` with status `ERROR` or a non-zero `exit_code`. |
-| `spawn` | agy could not start. |
-| `containment_unavailable` | The required sandbox could not be set up, or a bypass was denied. |
-| `envelope_error` | The json envelope reported an error status. |
-| `schema_violation` | Structured output did not match `--json-schema`. |
+| `containment_unavailable` | The required kernel sandbox could not be set up, or a Windows bypass attestation was denied. |
+| `stream_overflow` | Streamed line (> 1 MB) or total output (> 50 MB) exceeded hard bounds. |
+| `stream_corruption` | Consecutive unparseable stream bytes exceeded the 5 MB corruption limit. |
+| `timeout` | Per-call, wall-clock ceiling, or no-progress watchdog timer fired. |
+| `spawn` | `agy` binary failed to spawn (`ENOENT`, `EACCES`, etc.). |
+| `signal` | Child terminated abnormally due to an OS signal. |
+| `interrupted` | Run was interrupted or cancelled externally. |
+| `model_unavailable` | Configured model slug was unknown or unavailable on the host account. |
+| `envelope_error` | JSON envelope reported an explicit `error` / `failed` status. |
+| `server` | `agy` reported an error or terminal `result` with status `ERROR` / non-zero `exit_code`. |
+| `server_shutdown_error` | Process exited non-zero despite reporting an intermediate `SUCCESS`. |
+| `cli` | `agy` CLI invocation exited non-zero without a structured envelope error. |
+| `missing_terminal_result` | `stream-json` closed without emitting a terminal `result` event. |
+| `missing_structured_output` | JSON/schema invocation completed without parseable structured output. |
+| `schema_violation` | Structured output failed validation against `--json-schema`. |
+| `empty` | Child produced empty stdout on a mode requiring output. |
+| `unclassified` | Non-zero / unexpected failure not matched by the rows above. |

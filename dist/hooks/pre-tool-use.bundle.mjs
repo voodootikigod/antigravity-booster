@@ -2175,7 +2175,9 @@ var BOOSTER_MCP_TOOLS = /* @__PURE__ */ new Set([
   "agb_flight_deck",
   "agb_mission_control",
   "agb_plan_viewer",
-  "agb_control"
+  "agb_control",
+  "agb_accept",
+  "agb_holdout"
 ]);
 var READONLY_BOOSTER_CONTROL_ACTIONS = /* @__PURE__ */ new Set(["snapshot", "diff", "stream"]);
 var BRAIN_APPS = ["antigravity", "antigravity-cli", "antigravity-ide", "jetski"];
@@ -2285,7 +2287,7 @@ var EXCLUDED_CONTENT_KEYS = /* @__PURE__ */ new Set([
   "WaitMsBeforeAsync"
 ]);
 var IMPLICIT_RAIL_DIRS = [".git", ".adlc/ticket-archive", ".adlc/ticket-transactions", ".adlc/leases"];
-var IMPLICIT_RAIL_FILES = [".adlc/config.json", ".adlc/manifest.jsonl", ".adlc/sessions.json", ".adlc/tickets.json"];
+var IMPLICIT_RAIL_FILES = [".adlc/config.json", ".adlc/manifest.jsonl", ".adlc/sessions.json", ".adlc/tickets.json", ".adlc/learned-checks.json"];
 var TICKET_STORE_DIR = ".adlc/tickets";
 var PURE_READERS = /* @__PURE__ */ new Set(["cat", "head", "tail", "grep", "ls", "wc"]);
 
@@ -3788,12 +3790,16 @@ function stripProcRoot(p) {
   const stripped = p.replace(PROC_ROOT_PREFIX, "");
   return stripped.startsWith("/") ? stripped : `/${stripped}`;
 }
-var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest)(?:\/|$))/;
+var HEADLESS_BOOSTER_SUBPATH = /(?:^|\/)\.booster(?:\/?$|\/(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|logs|runs)(?:\/|$))/;
 var HEADLESS_BOOSTER_CHILD_NAMES = [
   "control.json",
   "control.sock",
   "rescue-locks",
-  "rescue-latest"
+  "rescue-latest",
+  "accept-state.json",
+  "accept-dossier.md",
+  "logs",
+  "runs"
 ];
 function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.platform) {
   if (typeof absPath !== "string" || absPath.length === 0) return false;
@@ -4267,6 +4273,15 @@ var MAX_NESTING = 3;
 var MAX_PATTERN_LENGTH2 = 1024;
 var PREFIX_WORDS = /* @__PURE__ */ new Set(["builtin", "command", "exec", "time", "nohup", "nice", "!", "if", "then", "else", "elif", "do", "while", "until", "{", "sudo", "doas"]);
 var GLOB_CHARS2 = /[*?[{]/;
+var PREFIX_VALUE_FLAGS = /* @__PURE__ */ new Map([
+  ["command", /* @__PURE__ */ new Set()],
+  ["nice", /* @__PURE__ */ new Set(["-n", "--adjustment"])],
+  ["exec", /* @__PURE__ */ new Set(["-a"])],
+  ["time", /* @__PURE__ */ new Set()],
+  ["nohup", /* @__PURE__ */ new Set()],
+  ["sudo", /* @__PURE__ */ new Set(["-u", "-g", "-h", "-p", "-C", "-T", "-U", "-r", "-t", "--user", "--group", "--host", "--prompt", "--close-from", "--command-timeout", "--other-user", "--role", "--type"])],
+  ["doas", /* @__PURE__ */ new Set(["-u", "-C"])]
+]);
 function unwrap(argv) {
   let i = 0;
   const assignments = [];
@@ -4274,11 +4289,37 @@ function unwrap(argv) {
     const word = argv[i];
     if (PREFIX_WORDS.has(word)) {
       i += 1;
+      if (word === "command") {
+        while (i < argv.length && (argv[i] === "--" || /^-[pvV]+$/.test(argv[i]))) {
+          const opt = argv[i];
+          i += 1;
+          if (opt === "--") break;
+        }
+      } else if (PREFIX_VALUE_FLAGS.has(word)) {
+        const valueFlags = PREFIX_VALUE_FLAGS.get(word);
+        while (i < argv.length && (argv[i].startsWith("-") || (word === "sudo" || word === "doas") && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) {
+          const opt = argv[i];
+          i += 1;
+          if (opt === "--") break;
+          if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(opt)) {
+            assignments.push(opt);
+            continue;
+          }
+          if (!opt.includes("=") && valueFlags.has(opt) && i < argv.length) {
+            i += 1;
+          }
+        }
+      }
     } else if (word === "env") {
       i += 1;
       while (i < argv.length && (argv[i].startsWith("-") || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) {
-        assignments.push(argv[i]);
+        const tok = argv[i];
+        assignments.push(tok);
         i += 1;
+        if ((tok === "-u" || tok === "--unset" || tok === "-C" || tok === "--chdir" || tok === "-S" || tok === "--split-string") && i < argv.length) {
+          assignments.push(argv[i]);
+          i += 1;
+        }
       }
     } else {
       break;
@@ -4587,8 +4628,30 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
 function inlineScript(argv) {
   if (argv[0] === "eval") return argv.slice(1).join(" ");
   if (!SHELLS.has(basename4(argv[0] ?? ""))) return null;
-  const flag = argv.findIndex((t, i) => i > 0 && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(t));
-  return flag > 0 && typeof argv[flag + 1] === "string" ? argv[flag + 1] : null;
+  let idx = 1;
+  let sawC = false;
+  while (idx < argv.length) {
+    const tok = argv[idx];
+    if (tok === "--") {
+      idx += 1;
+      break;
+    }
+    if (!tok.startsWith("-") && !tok.startsWith("+")) break;
+    idx += 1;
+    if (sawC) {
+      if (/^[-+][a-zA-Z]*o$/.test(tok) && idx < argv.length) idx += 1;
+      continue;
+    }
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(tok)) {
+      sawC = true;
+      if (/^-[a-zA-Z]*o[a-zA-Z]*$/.test(tok) && idx < argv.length) idx += 1;
+      continue;
+    }
+    if ((/^[-+][a-zA-Z]*o$/.test(tok) || tok === "--rcfile" || tok === "--init-file") && idx < argv.length) {
+      idx += 1;
+    }
+  }
+  return sawC && typeof argv[idx] === "string" ? argv[idx] : null;
 }
 function classifySubcommand(rawSub, cwd, ctx, depth) {
   const unwrapped = unwrap(rawSub.argv);
@@ -5348,8 +5411,11 @@ function evaluateMcpTool(name, args, ctx) {
     const mcpNorm = normalizeArgsCaseInsensitive(rawMcpArgs);
     if (!mcpNorm.ok) return deny(mcpNorm.reason);
     const isMutatingControl = tool === "agb_control" && (typeof mcpNorm.folded.action !== "string" || !READONLY_BOOSTER_CONTROL_ACTIONS.has(goFoldKey(mcpNorm.folded.action)));
-    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
+    if (ctx.readonly && (tool === "agb_run" || tool === "agb_plan" || tool === "agb_init" || tool === "agb_distill" || isMutatingControl || tool === "agb_accept" && Boolean(mcpNorm.folded.saveverdicts) || tool === "agb_holdout" && goFoldKey(mcpNorm.folded.action ?? "") !== "list" || tool === "agb_doctor" && Boolean(mcpNorm.folded.fix) || tool === "agb_shape" && Boolean(mcpNorm.folded.syncbrain))) {
       return deny(`Read-only agb worker session cannot invoke mutating MCP tool: ${tool}`);
+    }
+    if (ctx.rescueTicket && (tool === "agb_holdout" && goFoldKey(mcpNorm.folded.action ?? "") !== "list" || tool === "agb_distill" && (Boolean(mcpNorm.folded.apply) || Boolean(mcpNorm.folded.compilechecks)))) {
+      return deny(`Interactive rescue session cannot mutate sealed holdout or learned-check defenses via MCP tool: ${tool}`);
     }
     return PASS;
   }
@@ -5771,11 +5837,11 @@ function buildContext(payload, options = {}) {
   const cwd = typeof cwdArg === "string" && isAbsolute5(cwdArg) ? resolve8(cwdArg) : null;
   const extraHomes = [];
   const homeMarker = /(^|[\/\\])\.agb_home$/;
-  if (typeof env.AGB_USER_HOME === "string" && isAbsolute5(env.AGB_USER_HOME)) {
-    const uh = resolve8(env.AGB_USER_HOME);
-    extraHomes.push(uh, realOr(uh));
-  }
   if (homeMarker.test(home) || homeMarker.test(realHome)) {
+    if (typeof env.AGB_USER_HOME === "string" && isAbsolute5(env.AGB_USER_HOME)) {
+      const uh = resolve8(env.AGB_USER_HOME);
+      extraHomes.push(uh, realOr(uh));
+    }
     try {
       const osHome = userInfo().homedir;
       if (typeof osHome === "string" && isAbsolute5(osHome)) {
@@ -5802,7 +5868,16 @@ function buildContext(payload, options = {}) {
     const resolvedTmp = resolve8(p);
     return [resolvedTmp, realOr(resolvedTmp)];
   }));
-  const baseBoosterDataRoots = unique(homes.flatMap((h) => boosterDataRoots(h)));
+  const unbundledEval = false;
+  const rawHoldoutEnv = unbundledEval && typeof env.AGB_HOLDOUT_DIR === "string" ? env.AGB_HOLDOUT_DIR.trim() : "";
+  const customHoldoutRoots = rawHoldoutEnv ? unique(
+    (isAbsolute5(rawHoldoutEnv) ? [resolve8(rawHoldoutEnv)] : [
+      resolve8(rawHoldoutEnv),
+      ...cwd ? [resolve8(cwd, rawHoldoutEnv)] : [],
+      ...workspacePaths.map((w) => resolve8(w, rawHoldoutEnv))
+    ]).flatMap((p) => [p, realOr(p)])
+  ) : [];
+  const baseBoosterDataRoots = unique([...homes.flatMap((h) => boosterDataRoots(h)), ...customHoldoutRoots]);
   const brainRootsList = unique(homes.flatMap((h) => brainRoots(h)));
   const hasBrainMetadata = payload?.conversationId !== void 0 || payload?.artifactDirectoryPath !== void 0;
   const verifiedBrainArtifact = verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform });
@@ -5848,7 +5923,59 @@ var HEADLESS_DESTRUCTIVE_SHELL_CMDS = /* @__PURE__ */ new Set([
   "chgrp",
   "find"
 ]);
-var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|agb-ctrl-)/i;
+var HEADLESS_FORBIDDEN_SHELL_LITERAL = /(?:control\.json|control\.sock|rescue-locks|rescue-latest|accept-state\.json|accept-dossier\.md|agb-ctrl-|holdouts|twins-runtime|\.holdout\.test\.mjs|\.booster[\\/](?:logs|runs))/i;
+function isMutatingAgbCliSubcommand(argv = [], { headless = false } = {}) {
+  if (!Array.isArray(argv) || argv.length === 0) return false;
+  let agbIdx = -1;
+  for (let i = 0; i < argv.length; i += 1) {
+    const base = basename5(String(argv[i] ?? ""));
+    if (base === "agb" || base === "agb.mjs") {
+      agbIdx = i;
+      break;
+    }
+  }
+  if (agbIdx === -1) return false;
+  const rest = argv.slice(agbIdx + 1);
+  const positionals = [];
+  for (let i = 0; i < rest.length; i += 1) {
+    const tok = String(rest[i] ?? "");
+    if (tok === "--ticket" || tok === "--run-id" || tok === "--port" || tok === "--out" || tok === "--project") {
+      i += 1;
+      continue;
+    }
+    if (!tok.startsWith("-")) positionals.push(tok.toLowerCase());
+  }
+  const sub = positionals[0] ?? "";
+  if (sub === "holdout") {
+    const act = positionals[1] ?? "";
+    return headless || act !== "list";
+  }
+  if (sub === "distill") {
+    return headless || rest.some((t) => t === "--apply" || t === "--compile-checks");
+  }
+  return false;
+}
+var MAX_INLINE_AGB_DEPTH = 3;
+function inspectSubcommandForMutatingAgb(rawSub, { headless = false } = {}, depth = 0) {
+  const { argv } = unwrap(rawSub.argv ?? []);
+  if (isMutatingAgbCliSubcommand(argv, { headless })) {
+    return "Headless or interactive rescue session cannot invoke mutating agb holdout/distill CLI commands";
+  }
+  const inline = inlineScript(argv);
+  if (inline === null) return null;
+  if (depth >= MAX_INLINE_AGB_DEPTH) {
+    return "Nested shell scripts too deep to verify";
+  }
+  const nestedLexed = lexCommandLine(inline);
+  if (!nestedLexed.ok) {
+    return "Shell command could not be parsed in protected worker/rescue session";
+  }
+  for (const nestedSub of nestedLexed.subcommands) {
+    const err = inspectSubcommandForMutatingAgb(nestedSub, { headless }, depth + 1);
+    if (err) return err;
+  }
+  return null;
+}
 function evaluateRunCommand(args, ctx) {
   const verdict = classifyRunCommand(args, ctx);
   if (verdict.decision === "deny" || !ctx.headless && !ctx.rescueTicket) return verdict;
@@ -5867,6 +5994,10 @@ function evaluateRunCommand(args, ctx) {
   const baseCwd = typeof cwdArg === "string" && cwdArg.length > 0 ? resolve8(cwdArg) : ctx.workspacePaths[0] ?? "/";
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
+    const mutatingReason = inspectSubcommandForMutatingAgb(sub, { headless: ctx.headless });
+    if (mutatingReason) {
+      return deny(mutatingReason);
+    }
     const cmd = basename5(sub.argv[0] ?? "");
     const isDestructive = HEADLESS_DESTRUCTIVE_SHELL_CMDS.has(cmd);
     const argvTokens = sub.argv.slice(1).flatMap((t) => {

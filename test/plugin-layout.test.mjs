@@ -59,7 +59,7 @@ test('layout: root plugin.json is a minimal valid manifest named antigravity-boo
   }
 });
 
-test('layout: hooks.json is exactly the single agb-policy-guard registration (spec §4.1)', () => {
+test('layout: hooks.json registers the 6-event agb-policy-guard lifecycle suite (spec §4.1 + v2 Wave 4 D3)', () => {
   assert.deepEqual(readJson('hooks.json'), {
     'agb-policy-guard': {
       PreToolUse: [
@@ -74,10 +74,43 @@ test('layout: hooks.json is exactly the single agb-policy-guard registration (sp
           ],
         },
       ],
+      PostToolUse: [
+        {
+          matcher: '*',
+          hooks: [
+            {
+              type: 'command',
+              command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostToolUse',
+              timeout: 10,
+            },
+          ],
+        },
+      ],
       SessionStart: [
         {
           type: 'command',
           command: '/bin/sh bin/node-launcher.sh hooks/session-start.mjs',
+          timeout: 10,
+        },
+      ],
+      PreInvocation: [
+        {
+          type: 'command',
+          command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PreInvocation',
+          timeout: 10,
+        },
+      ],
+      PostInvocation: [
+        {
+          type: 'command',
+          command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostInvocation',
+          timeout: 10,
+        },
+      ],
+      Stop: [
+        {
+          type: 'command',
+          command: '/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs Stop',
           timeout: 10,
         },
       ],
@@ -283,5 +316,20 @@ test('layout: committed dist/hooks/pre-tool-use.bundle.mjs matches fresh non-mut
     assert.equal(freshText, committedText, 'dist/hooks/pre-tool-use.bundle.mjs is stale; run npm run build');
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('layout: hooks/lifecycle.mjs and hooks/session-start.mjs use strictly Node built-in modules (zero external/relative imports)', async () => {
+  const { findExternalSpecifiers } = await import('../scripts/check-bundle-externals.mjs');
+  for (const relHook of ['hooks/lifecycle.mjs', 'hooks/session-start.mjs']) {
+    const absHook = join(ROOT, relHook);
+    const src = readFileSync(absHook, 'utf8');
+    const externals = findExternalSpecifiers(src);
+    assert.deepEqual(externals, [], `${relHook} must not import external npm packages: ${externals.join(', ')}`);
+    assert.equal(
+      /(?:from|import|require\s*\()\s*['"]\.\.?\//.test(src),
+      false,
+      `${relHook} must be self-contained without relative '../' or './' imports`
+    );
   }
 });

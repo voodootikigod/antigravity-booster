@@ -38,14 +38,21 @@ If the diff is empty, `agb review` prints `review: empty diff — nothing to pro
 
 The result is printed as JSON on stdout: `findings` (each with `lens`, `model` and `family` added), `rounds`, `requests` and `converged`. Progress lines go to stderr.
 
+## Flags and ARL modes
+
+- `--plan <spec.md>` runs the 5-lens Plan Adversarial Review Loop (ARL) over a Markdown specification instead of a git diff (`devils_advocate`, `requirements_fidelity`, `simplicity`, `evidence_strategy`, `dag_topology`).
+- `--five-lens` (or `--5-lens`) enables the 5-lens Code ARL (`correctness_redteam`, `security`, `simplicity`, `evidence_runner`, `anti_slop`).
+- `--loop` runs iterative convergence across up to `3` rounds (`reviewPlan`) or `3` max rounds (`reviewFleet`).
+- `--no-arbiter` skips neutral arbiter triage.
+
 ## Exit semantics
 
 | Exit | When |
 | --- | --- |
-| `0` | Empty diff, or the fleet converged with no `critical` or `high` findings |
-| `1` | Quota telemetry unavailable, or another error |
-| `2` | Any `critical` or `high` finding, **or** the fleet did not converge |
+| `0` | Empty diff (code mode), or converged with `gateVerdict === "SHIP"`, no `critical`/`high`/escalated/`blast_radius` findings, and `--plan` `ok: true` |
+| `1` | Quota telemetry unavailable, missing `--plan` value, or another error |
+| `2` | Any `critical`/`high`/escalated/`blast_radius` finding, `--plan` `ok: false`, `gateVerdict !== "SHIP"` (including `> 180,000` char payload truncation), **or** the fleet did not converge |
 
-Evidence: [exit logic](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L160-L164). When it does not converge, `agb` prints `review: did NOT converge — diff too large or contested; split it`. Treat that as a signal to review smaller slices, not to rerun the same diff.
+Evidence: `bin/agb.mjs` review exit logic. When it does not converge, `agb` prints `review: did NOT converge — diff too large or contested; split it`. Treat that as a signal to review smaller slices, not to rerun the same diff.
 
 <Callout type="info">`agb review` never writes to the repo. To act on findings, fix them yourself or turn them into tickets. For prosecution inside a run, see [Prosecution](/docs/concepts/prosecution).</Callout>

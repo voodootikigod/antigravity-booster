@@ -1,7 +1,7 @@
 ---
 title: "Sidecar dashboard"
-description: "Run agb sidecar to watch a run in Antigravity: the token URL, port selection, cleanup, and the jetski-mode security note."
-claims: [C16, C3]
+description: "Run agb sidecar to watch a run in Antigravity: the token URL, port selection, and the jetski-mode security note."
+claims: [C3]
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
@@ -20,35 +20,28 @@ agb sidecar                 # repo defaults to the current directory
 agb sidecar /path/to/repo --port 4000
 ```
 
-The repo argument is optional and defaults to `.`. The port comes from `--port`, else `AGB_SIDECAR_PORT`, else `3333`; it must be an integer from 0 to 65535, and `0` asks the OS for a free port ([port selection](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L368-L398)). Any other `--` flag is rejected. The server binds to `127.0.0.1` only and prints `AGB Sidecar Server running at http://127.0.0.1:<port>` ([listen](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L203-L206)).
+The repo argument is optional and defaults to `.`. The port comes from `--port`, else `AGB_SIDECAR_PORT`, else `3333`; it must be an integer from 0 to 65535, and `0` asks the OS for a free port. Any other `--` flag is rejected. The server binds to `127.0.0.1` only and prints `AGB Sidecar Dashboard URL: http://127.0.0.1:<port>/?token=<token>` (when running `sidecars/server.mjs` directly, it logs `AGB Sidecar Server running at http://127.0.0.1:<port>`).
 
 </Step>
 <Step>
 
 ### The token URL
 
-Each launch generates a fresh random token, 16 bytes as hex, and the dashboard URL is `http://127.0.0.1:<port>/?token=<token>` (token and URL: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L399-L424)). Nothing is written to the repo: the token lives only in the sidecar manifest described below. Requests to `/` and `/index.html` need the token as `?token=`; the `/events` stream accepts it as `?token=` or as an `Authorization: Bearer` header. Comparisons are constant-time ([token checks](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L24-L48)).
-
-</Step>
-<Step>
-
-### Registration with Antigravity
-
-`agb sidecar` writes a dynamic plugin (`plugin.json` plus `sidecars/agb.json` carrying the token URL, mode `0600`) and runs `agy plugin install` on it. The directory is `AGB_PLUGIN_DIR` if set (in unbundled source runs; ignored in the bundled plugin build), otherwise `~/.gemini/agb-sidecar-plugin-<pid>-<port>` (manifest directory: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L407-L433)). If `AGB_PLUGIN_DIR` already holds a `plugin.json` or `sidecars/agb.json`, it refuses to overwrite it. If registration fails, the server keeps running and prints the manifest directory so you can register it by hand ([fallback](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L463-L466)).
+Each launch generates a fresh random session token and prints the authenticated dashboard URL `http://127.0.0.1:<port>/?token=<token>` directly to stdout (v2.0.0 removed `agb-sidecar-plugin-*` dynamic manifest creation and `agy plugin install`/`uninstall` registration). Because stdout contains the session token, avoid forwarding `agb sidecar` output into shared CI or transcript logs. Requests to `/` and `/index.html` require `?token=`; `/events` accepts `?token=` or `Authorization: Bearer`. Comparisons are constant-time.
 
 </Step>
 <Step>
 
 ### Watch a run
 
-Start a run in another terminal (`agb run plan.json`). The dashboard reads `.booster/run.json` to find the current `runId` and tails `.booster/logs/<runId>/events.jsonl` ([event source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/sidecars/server.mjs#L50-L60)).
+Start a run in another terminal (`agb run plan.json`). The dashboard reads `.booster/run.json` to find the current `runId` and tails `.booster/logs/<runId>/events.jsonl`.
 
 </Step>
 </Steps>
 
 ## Stopping
 
-Press Ctrl+C or send SIGTERM. On exit the server closes, runs `agy plugin uninstall` for the dynamic plugin, and removes the manifest (the whole directory if `agb sidecar` created it, only the two files if you supplied `AGB_PLUGIN_DIR`). The process exits `130` on SIGINT and `143` on SIGTERM (signal exit codes: [C16](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L438-L459)).
+Press `Ctrl+C` or send `SIGTERM`. On exit the HTTP server closes cleanly (`130` on `SIGINT`, `143` on `SIGTERM`).
 
 ## What the server serves
 

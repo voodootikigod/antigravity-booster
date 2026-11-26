@@ -331,3 +331,51 @@ test('session-start: --worker lock contention, stale/dead lock recovery, exit-0-
     fx.cleanup();
   }
 });
+
+test('session-start: installed plugin ignores AGB_SKIP_SESSION_BOOTSTRAP, rejects spoofed PLUGIN_ROOT, and safely anchors PLUGIN_DATA before dir creation', async () => {
+  const fx = makeCleanPluginFixture({ version: '2.0.0' });
+  try {
+    // Stage inside ~/.gemini/config/plugins/antigravity-booster under fake HOME
+    const installedRoot = join(fx.homeDir, '.gemini', 'config', 'plugins', 'antigravity-booster');
+    mkdirSync(join(installedRoot, 'hooks'), { recursive: true });
+    mkdirSync(join(installedRoot, 'dist'), { recursive: true });
+    copyFileSync(HOOK_SRC, join(installedRoot, 'hooks', 'session-start.mjs'));
+    writeFileSync(join(installedRoot, 'package.json'), JSON.stringify({ name: 'antigravity-booster', version: '2.0.0' }));
+    writeFileSync(join(installedRoot, 'dist', 'agb.mjs'), 'process.exit(0);\n');
+
+    // Spoofed PLUGIN_ROOT is rejected with {} without spawning attacker script
+    const spoofedRoot = join(fx.base, 'attacker-plugin');
+    mkdirSync(join(spoofedRoot, 'dist'), { recursive: true });
+    const spoofMarker = join(fx.base, 'spoof-ran');
+    writeFileSync(join(spoofedRoot, 'dist', 'agb.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(spoofMarker)}, 'pwned');\n`);
+    const rSpoof = spawnSync(process.execPath, [join(installedRoot, 'hooks', 'session-start.mjs')], {
+      env: { PATH: process.env.PATH, HOME: fx.homeDir, PLUGIN_ROOT: spoofedRoot },
+      input: '{}',
+      encoding: 'utf8',
+    });
+    assert.equal(rSpoof.status, 0);
+    assert.equal(rSpoof.stdout.trim(), '{}');
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(existsSync(spoofMarker), false);
+
+    // Installed path ignores AGB_SKIP_SESSION_BOOTSTRAP=1 and starts background bootstrap when plugin_data does not exist yet
+    const rInstalled = spawnSync(process.execPath, [join(installedRoot, 'hooks', 'session-start.mjs')], {
+      env: {
+        PATH: process.env.PATH,
+        HOME: fx.homeDir,
+        AGB_SKIP_SESSION_BOOTSTRAP: '1',
+        PLUGIN_DATA: join(fx.base, 'outside-data-dir'),
+      },
+      input: '{}',
+      encoding: 'utf8',
+    });
+    assert.equal(rInstalled.status, 0);
+    const out = JSON.parse(rInstalled.stdout);
+    assert.ok(Array.isArray(out.injectSteps), 'installed plugin must ignore AGB_SKIP_SESSION_BOOTSTRAP=1 and bootstrap');
+    const stampExpected = join(fx.homeDir, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'bootstrapped-2.0.0.json');
+    const appeared = await waitFor(() => existsSync(stampExpected), 5000);
+    assert.equal(appeared, true, 'first-run plugin_data stamp should be written under expected installed root');
+  } finally {
+    fx.cleanup();
+  }
+});

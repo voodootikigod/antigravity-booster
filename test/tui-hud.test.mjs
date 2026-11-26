@@ -325,5 +325,49 @@ test('tui v2 cockpit: renderTUIDashboard renders cursor, filter, Flight Deck tab
   });
   const plainPros = stripAnsi(prosOut.join('\n'));
   assert.ok(plainPros.includes('[HIGH] lib/foo.mjs: Missing null guard'));
+
+  // !RUNWAY warning banner when runwayWarning is active
+  const runwayOut = renderTUIDashboard(
+    {
+      ...state,
+      runwayWarning: true,
+      runway: {
+        willExhaust: true,
+        exhaustingWave: 2,
+        recommendation: 'Wave 2 is projected to exceed gemini remaining quota.',
+      },
+    },
+    { cols: 110 }
+  );
+  const plainRunway = stripAnsi(runwayOut.join('\n'));
+  assert.match(plainRunway, /!RUNWAY: Wave 2 is projected to exceed gemini remaining quota/);
+
+  // Wave 3: OSC 8 width invariance, Factory Economics Strip, and clickable prosecutor file links
+  const oscProsOut = renderTUIDashboard(
+    {
+      ...state,
+      economics: {
+        strike0YieldPct: 87.5,
+        cacheHitPct: 74.2,
+        autofixAppliedCount: 3,
+        billableTokens: 4200,
+      },
+    },
+    {
+      cols: 110,
+      selectedTicketId: 'T2',
+      activeTab: 'prosecutor',
+      osc8: true,
+      repo: '/test/cockpit',
+      prosecutorFindings: [{ severity: 'high', file: 'lib/foo.mjs', line: 42, claim: 'Missing null guard' }],
+    }
+  );
+  const rawOscPros = oscProsOut.join('\n');
+  assert.match(rawOscPros, /\x1b\]8;;file:\/\/\/test\/cockpit\/lib\/foo\.mjs#L42\x07lib\/foo\.mjs:42\x1b\]8;;\x07/);
+  const plainOscPros = stripAnsi(rawOscPros);
+  assert.match(plainOscPros, /Economics: Yield 87\.5% · Cache 74\.2% · Autofix 3 · Billable 4200 tok/);
+  assert.match(plainOscPros, /\[HIGH\] lib\/foo\.mjs:42: Missing null guard/);
+  assert.equal(visibleLength('\x1b]8;;file:///a/b.js\x07b.js\x1b]8;;\x07'), 4);
 });
+
 

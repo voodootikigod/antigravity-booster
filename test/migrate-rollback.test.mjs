@@ -858,3 +858,42 @@ test('treeSize excludes STAGE_COPY_EXCLUSIONS (.claude, .agents, maintainer-skil
   }
 });
 
+test('migrate --rollback removes v2 statusLine and title entries from settings.json', async () => {
+  const ctx = setup({ preStaged: false });
+  try {
+    const cliDir = join(ctx.home, '.gemini', 'antigravity-cli');
+    mkdirSync(cliDir, { recursive: true });
+    const settingsPath = join(cliDir, 'settings.json');
+    assert.equal(await run(ctx), 0, ctx.errs.join('\n'));
+    // Simulate v2 bootstrap having installed agb statusLine/title settings during migration
+    writeFileSync(settingsPath, JSON.stringify({
+      statusLine: { type: 'command', command: '/bin/sh -c "~/.local/bin/agb statusline render"' },
+      title: { type: 'command', command: '/bin/sh -c "~/.local/bin/agb statusline title"' },
+      unrelatedSetting: 42,
+    }, null, 2));
+    assert.equal(await run(ctx, { rollback: true }), 0, ctx.errs.join('\n'));
+    const restored = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    assert.equal(restored.statusLine, undefined);
+    assert.equal(restored.title, undefined);
+    assert.equal(restored.unrelatedSetting, 42);
+  } finally { ctx.cleanup(); }
+});
+
+test('migrate --rollback preserves pre-existing statusLine and title when present before migration and shim existed', async () => {
+  const ctx = setup({ preStaged: false, shim: 'orig-shim\n' });
+  try {
+    const cliDir = join(ctx.home, '.gemini', 'antigravity-cli');
+    mkdirSync(cliDir, { recursive: true });
+    const settingsPath = join(cliDir, 'settings.json');
+    const preSettings = {
+      statusLine: { type: 'command', command: '~/.local/bin/agb statusline render' },
+      title: { type: 'command', command: '~/.local/bin/agb statusline title' },
+    };
+    writeFileSync(settingsPath, JSON.stringify(preSettings, null, 2));
+    assert.equal(await run(ctx), 0, ctx.errs.join('\n'));
+    assert.equal(await run(ctx, { rollback: true }), 0, ctx.errs.join('\n'));
+    const restored = JSON.parse(readFileSync(settingsPath, 'utf8'));
+    assert.deepEqual(restored, preSettings);
+  } finally { ctx.cleanup(); }
+});
+

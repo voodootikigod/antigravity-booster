@@ -17,6 +17,7 @@ import {
   buildFlightDeckHtml,
   buildMissionControlHtml,
   buildPlanViewerHtml,
+  buildAcceptWorkbenchHtml,
 } from '../mcp/ui-views.mjs';
 import { findLiteralStart, parseLiteral } from '../website/scripts/lib/jslit.mjs';
 import { scanEnvTokens } from '../website/scripts/gen-reference.mjs';
@@ -100,7 +101,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
   assert.ok(start !== -1, 'const TOOLS literal must exist in mcp/server.mjs');
   const { value: tools } = parseLiteral(src, start);
   assert.equal(Array.isArray(tools), true);
-  assert.equal(tools.length, 13);
+  assert.equal(tools.length, 15);
 
   const expectedNames = [
     'agb_shape',
@@ -116,6 +117,8 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
     'agb_mission_control',
     'agb_plan_viewer',
     'agb_control',
+    'agb_accept',
+    'agb_holdout',
   ];
   assert.deepEqual(tools.map((t) => t.name), expectedNames);
 
@@ -146,7 +149,7 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
 
       const listRes = await srv.send({ id: 3, method: 'tools/list', params: {} });
       const byName = new Map(listRes.result.tools.map((t) => [t.name, t]));
-      assert.equal(byName.size, 13);
+      assert.equal(byName.size, 15);
 
       assert.equal(byName.get('agb_shape')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
       assert.equal(byName.get('agb_plan')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
@@ -170,6 +173,10 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
         visibility: ['model', 'app'],
       });
       assert.deepEqual(byName.get('agb_control')._meta.ui, {
+        visibility: ['app'],
+      });
+      assert.deepEqual(byName.get('agb_accept')._meta.ui, {
+        resourceUri: 'ui://agb/accept-workbench.html',
         visibility: ['model', 'app'],
       });
 
@@ -184,13 +191,14 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
   }
 });
 
-test('resources/list & resources/read: serves all 5 deterministic ui:// MCP App views with default-deny CSP, zero external URLs, valid inline JS, and -32602 on unknown URI', async () => {
-  assert.equal(UI_RESOURCES.length, 5);
+test('resources/list & resources/read: serves all 6 deterministic ui:// MCP App views with default-deny CSP, zero external URLs, valid inline JS, and -32602 on unknown URI', async () => {
+  assert.equal(UI_RESOURCES.length, 6);
   assert.equal(buildPlanCardHtml(), buildPlanCardHtml());
   assert.equal(buildReviewCardHtml(), buildReviewCardHtml());
   assert.equal(buildFlightDeckHtml(), buildFlightDeckHtml());
   assert.equal(buildMissionControlHtml(), buildMissionControlHtml());
   assert.equal(buildPlanViewerHtml(), buildPlanViewerHtml());
+  assert.equal(buildAcceptWorkbenchHtml(), buildAcceptWorkbenchHtml());
   assert.equal(renderUiResource('ui://agb/nonexistent.html'), null);
 
   const srv = mcpSession(MCP_DIST);
@@ -203,6 +211,7 @@ test('resources/list & resources/read: serves all 5 deterministic ui:// MCP App 
       'ui://agb/flight-deck.html',
       'ui://agb/mission-control.html',
       'ui://agb/plan-viewer.html',
+      'ui://agb/accept-workbench.html',
     ]);
 
     for (let i = 0; i < uris.length; i++) {
@@ -283,6 +292,11 @@ test('resources/list & resources/read: serves all 5 deterministic ui:// MCP App 
               run: { runId: xss, done: false, tickets: { [xss]: { status: xss, model: xss } } },
               quotaCache: { quota: { gemini: { fiveHourRemainingPercent: 80, fiveHourResetTime: xss }, claude_gpt: { fiveHourRemainingPercent: 60, fiveHourResetTime: xss } } },
               modelStats: [{ model: xss, role: xss, ok: true, ms: 12 }],
+              economics: { runs: 1, avgStrike0YieldPct: 90, avgCacheHitPct: 80, totalAutofixSaves: 2, totalBillableTokens: 500 },
+              runwayEstimate: { willExhaust: true, recommendation: xss, totals: { gemini: 10, claude_gpt: 5 } },
+              base: xss,
+              hunks: [{ id: xss, file: xss, newStart: 1, lines: [xss], fingerprint: 'a'.repeat(64), verdict: xss }],
+              externalCallers: { callers: [{ file: xss, line: 1, symbol: xss, snippet: xss }] },
             },
           },
         },
@@ -569,6 +583,8 @@ test('agb_plan_viewer & symlink defenses: validates .agbplan, reports schema err
     assert.equal(okRes.result.structuredContent.ok, true);
     assert.deepEqual(okRes.result.structuredContent.validationErrors, []);
     assert.equal(okRes.result.structuredContent.plan.tickets[0].id, 'T-1');
+    assert.ok(okRes.result.structuredContent.runwayEstimate && typeof okRes.result.structuredContent.runwayEstimate === 'object');
+    assert.equal(Array.isArray(okRes.result.structuredContent.runwayEstimate.waves), true);
 
     const badJsonRes = await srv.send({
       id: 2,
@@ -585,6 +601,24 @@ test('agb_plan_viewer & symlink defenses: validates .agbplan, reports schema err
     });
     assert.equal(symPlanRes.result.isError, true);
     assert.match(symPlanRes.result.content[0].text, /symbolic link/i);
+
+    const outOfRepoSymParent = join(TMP, 'out-of-repo-sym-parent');
+    symlinkSync(repo, outOfRepoSymParent);
+    const outOfRepoSymRes = await srv.send({
+      id: 31,
+      method: 'tools/call',
+      params: { name: 'agb_plan_viewer', arguments: { path: join(outOfRepoSymParent, 'feature.agbplan') } },
+    });
+    assert.equal(outOfRepoSymRes.result.isError, true);
+    assert.match(outOfRepoSymRes.result.content[0].text, /symbolic link/i);
+
+    const escapePlanRes = await srv.send({
+      id: 32,
+      method: 'tools/call',
+      params: { name: 'agb_plan_viewer', arguments: { path: '../escape.agbplan', repo } },
+    });
+    assert.equal(escapePlanRes.result.isError, true);
+    assert.match(escapePlanRes.result.content[0].text, /escapes repository root/i);
 
     const symBoosterRes = await srv.send({
       id: 4,
@@ -655,6 +689,11 @@ if (/agb\\.mjs$/.test(entry)) {
     process.exit(0);
   }
   if (sub === 'plan') {
+    if (process.argv.includes('--estimate')) {
+      writeFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2)));
+      console.log(JSON.stringify({ ok: true, quotaEstimate: { ok: true, willExhaust: false, waves: [] }, tickets: [{ id: 'T-PLAN-1' }] }));
+      process.exit(0);
+    }
     const outIdx = process.argv.indexOf('--out');
     if (outIdx !== -1 && process.argv[outIdx + 1]) {
       writeFileSync(
@@ -739,6 +778,27 @@ if (/agb\\.mjs$/.test(entry)) {
     assert.equal(planRes.result.structuredContent.fastPath, true);
     assert.equal(planRes.result.structuredContent.tickets[0].id, 'T-PLAN-1');
 
+    const estRes = await srv.send({
+      id: 50,
+      method: 'tools/call',
+      params: { name: 'agb_plan', arguments: { spec: specPath, repo: specDir, estimate: true } },
+    });
+    assert.equal(estRes.result.isError, false);
+    assert.deepEqual(JSON.parse(readFileSync(argvLog, 'utf8')), [
+      'plan',
+      specPath,
+      specDir,
+      '--estimate',
+      '--json',
+    ]);
+
+    const badEst = await srv.send({
+      id: 51,
+      method: 'tools/call',
+      params: { name: 'agb_plan', arguments: { spec: specPath, repo: specDir, estimate: 'yes' } },
+    });
+    assert.equal(badEst.error.code, -32602);
+
     const reviewRes = await srv.send({
       id: 6,
       method: 'tools/call',
@@ -751,4 +811,291 @@ if (/agb\\.mjs$/.test(entry)) {
   } finally {
     await srv.close();
   }
+});
+
+test('agb_accept: inspects P6 hunk dossier, saves 64-hex SHA-256 verdicts, rejects non-hex verdict keys, and surfaces economics in Mission Control', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const acceptRepo = join(TMP, 'accept-mcp-repo');
+  mkdirSync(join(acceptRepo, 'src'), { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'main', acceptRepo]);
+  execFileSync('git', ['-C', acceptRepo, 'config', 'user.email', 'test@example.com']);
+  execFileSync('git', ['-C', acceptRepo, 'config', 'user.name', 'Test']);
+  execFileSync('git', ['-C', acceptRepo, 'config', 'commit.gpgsign', 'false']);
+  writeFileSync(join(acceptRepo, 'src', 'app.mjs'), 'export function run() { return 1; }\n');
+  execFileSync('git', ['-C', acceptRepo, 'add', 'src/app.mjs']);
+  execFileSync('git', ['-C', acceptRepo, 'commit', '-qm', 'base']);
+  const baseSha = execFileSync('git', ['-C', acceptRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  writeFileSync(join(acceptRepo, 'src', 'app.mjs'), 'export function run() { return 2; }\n');
+
+  const ledgerFile = join(TMP, 'factory_ledger_mcp.jsonl');
+  writeFileSync(
+    ledgerFile,
+    JSON.stringify({
+      runId: 'run-econ-1',
+      totalTickets: 4,
+      mergedCount: 4,
+      failedCount: 0,
+      strike0MergedCount: 3,
+      autofixAppliedCount: 2,
+      uncachedInputTokens: 1000,
+      cachedTokens: 4000,
+      outputTokens: 200,
+      billableTokens: 2000,
+    }) + '\n'
+  );
+
+  const holdoutTmp = mkdtempSync(join(tmpdir(), 'agb-mcp-holdout-'));
+  const homeTmp = mkdtempSync(join(tmpdir(), 'agb-mcp-home-'));
+  // Use MCP_SRC when testing AGB_FACTORY_LEDGER_FILE env override (MCP_DIST ignores unbundled env overrides per Decision 2)
+  const srv = mcpSession(MCP_SRC, {
+    env: {
+      ...process.env,
+      AGB_FACTORY_LEDGER_FILE: ledgerFile,
+      AGB_HOLDOUT_DIR: holdoutTmp,
+      AGB_HOME_DIR: homeTmp,
+    },
+  });
+  try {
+    const mcRes = await srv.send({
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'agb_mission_control', arguments: { repo: acceptRepo } },
+    });
+    assert.equal(mcRes.result.structuredContent.economics.runs, 1);
+    assert.equal(mcRes.result.structuredContent.economics.avgStrike0YieldPct, 75);
+    assert.equal(mcRes.result.structuredContent.economics.totalAutofixSaves, 2);
+
+    const d1 = await srv.send({
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'agb_accept', arguments: { repo: acceptRepo, base: baseSha } },
+    });
+    assert.equal(Boolean(d1.result.isError), false);
+    assert.equal(d1.result.structuredContent.counts.totalHunks, 1);
+    assert.equal(d1.result.structuredContent.readyForSignOff, false);
+    const fp = d1.result.structuredContent.hunks[0].fingerprint;
+    assert.match(fp, /^[0-9a-f]{64}$/);
+
+    // Non-64-hex verdict key must return isError: true
+    const badKey = await srv.send({
+      id: 3,
+      method: 'tools/call',
+      params: {
+        name: 'agb_accept',
+        arguments: { repo: acceptRepo, base: baseSha, verdicts: { 'src/app.mjs': 'accepted' } },
+      },
+    });
+    assert.equal(badKey.result.isError, true);
+    assert.match(badKey.result.content[0].text, /64-char lowercase hex SHA-256/);
+
+    // Saving valid 64-hex verdict transitions readyForSignOff -> true, and partial merge preserves untouched fingerprints
+    const otherFp = 'b'.repeat(64);
+    await srv.send({
+      id: 40,
+      method: 'tools/call',
+      params: {
+        name: 'agb_accept',
+        arguments: { repo: acceptRepo, base: baseSha, verdicts: { [otherFp]: 'flagged' }, saveVerdicts: true },
+      },
+    });
+    const saved = await srv.send({
+      id: 4,
+      method: 'tools/call',
+      params: {
+        name: 'agb_accept',
+        arguments: { repo: acceptRepo, base: baseSha, verdicts: { [fp]: 'accepted' }, saveVerdicts: true },
+      },
+    });
+    assert.equal(Boolean(saved.result.isError), false);
+    assert.equal(saved.result.structuredContent.readyForSignOff, true);
+    assert.equal(saved.result.structuredContent.counts.acceptedHunks, 1);
+    const persisted = JSON.parse(readFileSync(join(acceptRepo, '.booster', 'accept-state.json'), 'utf8'));
+    assert.equal(persisted.verdicts[otherFp], 'flagged', 'partial saveVerdicts must preserve untouched hunk fingerprints');
+    assert.equal(persisted.verdicts[fp], 'accepted');
+
+    // Wave 4: agb_holdout list & validation over MCP
+    const holdoutList = await srv.send({
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'list', repo: acceptRepo } },
+    });
+    assert.equal(Boolean(holdoutList.result.isError), false);
+    assert.equal(JSON.parse(holdoutList.result.content[0].text).ok, true);
+
+    const holdoutBad = await srv.send({
+      id: 6,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'invalid', repo: acceptRepo } },
+    });
+    assert.ok(holdoutBad.error);
+
+    const holdoutDotDot = await srv.send({
+      id: 7,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'list', repo: acceptRepo, ticketId: 'T..1' } },
+    });
+    assert.equal(holdoutDotDot.error?.code, -32602);
+
+    const holdoutRunEmpty = await srv.send({
+      id: 8,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'run', repo: acceptRepo } },
+    });
+    assert.equal(Boolean(holdoutRunEmpty.result.isError), false);
+    assert.equal(JSON.parse(holdoutRunEmpty.result.content[0].text).skipped, true);
+
+    const holdoutClean = await srv.send({
+      id: 9,
+      method: 'tools/call',
+      params: { name: 'agb_holdout', arguments: { action: 'clean', repo: acceptRepo } },
+    });
+    assert.equal(Boolean(holdoutClean.result.isError), false);
+    assert.equal(JSON.parse(holdoutClean.result.content[0].text).ok, true);
+
+    const distillRes = await srv.send({
+      id: 10,
+      method: 'tools/call',
+      params: { name: 'agb_distill', arguments: { repo: acceptRepo, compileChecks: true } },
+    });
+    assert.equal(Boolean(distillRes.result.isError), false);
+    const parsedDistill = JSON.parse(distillRes.result.content[0].text);
+    assert.equal(parsedDistill.ok, true);
+    assert.equal(parsedDistill.compiledChecks, true);
+  } finally {
+    await srv.close();
+    rmSync(holdoutTmp, { recursive: true, force: true });
+    rmSync(homeTmp, { recursive: true, force: true });
+  }
+});
+
+test('Plan Card and Plan Viewer resolve relative plan paths against repo, reject out-of-repo traversal, and check isError on CLI actions in vm runtime', async () => {
+  const calls = [];
+  const writes = [];
+  const statuses = [];
+  function runScriptInMockDom(html, { toolInput, viewerStateOverrides = {}, callToolImpl }) {
+    const scriptMatches = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    assert.ok(scriptMatches.length > 0);
+    const listeners = new Map();
+    const statusNode = { _text: '', get textContent() { return this._text; }, set textContent(v) { this._text = v; statuses.push(v); } };
+    const makeEl = (id) => ({
+      style: {},
+      value: '',
+      _text: '',
+      get textContent() { return this._text; },
+      set textContent(v) { this._text = v; if (id === 'statusLine' || id === 'viewerPath') statuses.push(v); },
+      innerHTML: '',
+      addEventListener(ev, fn) { listeners.set(`${id}:${ev}`, fn); },
+      closest() { return null; },
+    });
+    const els = new Map();
+    const windowObj = {
+      addEventListener() {},
+      parent: {
+        postMessage(msg) {
+          if (msg && msg.id !== undefined && msg.method === 'ui/initialize') {
+            queueMicrotask(() => {
+              const handler = windowObj._msgHandler;
+              if (handler) handler({ data: { jsonrpc: '2.0', id: msg.id, result: { toolInput } } });
+            });
+          } else if (msg && msg.id !== undefined && msg.method === 'tools/call') {
+            calls.push(msg.params);
+            Promise.resolve(callToolImpl(msg.params)).then((result) => {
+              if (windowObj._msgHandler) windowObj._msgHandler({ data: { jsonrpc: '2.0', id: msg.id, result } });
+            });
+          } else if (msg && msg.id !== undefined && msg.method === 'com.google.antigravity/resources/write') {
+            writes.push(msg.params);
+            Promise.resolve({ ok: true }).then((result) => {
+              if (windowObj._msgHandler) windowObj._msgHandler({ data: { jsonrpc: '2.0', id: msg.id, result } });
+            });
+          }
+        },
+      },
+    };
+    const origAdd = windowObj.addEventListener;
+    windowObj.addEventListener = (type, fn) => {
+      if (type === 'message') windowObj._msgHandler = fn;
+      return origAdd(type, fn);
+    };
+    const ctx = vm.createContext({
+      window: windowObj,
+      document: {
+        getElementById(id) {
+          if (!els.has(id)) els.set(id, id === 'statusLine' ? statusNode : makeEl(id));
+          return els.get(id);
+        },
+        documentElement: { scrollHeight: 100 },
+      },
+      setTimeout,
+      clearTimeout,
+      Promise,
+      JSON,
+      Map,
+      Set,
+      Error,
+      String,
+      Number,
+      Boolean,
+      Array,
+      encodeURIComponent,
+      RegExp,
+      URL,
+    });
+    vm.runInContext(scriptMatches[0][1], ctx);
+    if (viewerStateOverrides && ctx.viewerState) Object.assign(ctx.viewerState, viewerStateOverrides);
+    return { ctx, listeners, els };
+  }
+
+  // 1. Plan Card runtime exercise: relative path resolves against repo, no unknown repo key passed, isError surfaces error
+  const planHtml = buildPlanCardHtml();
+  assert.doesNotMatch(planHtml, /callTool\("agb_run",\s*\{\s*plan:\s*planPath,\s*repo:/);
+  const card = runScriptInMockDom(planHtml, {
+    toolInput: { repo: '/work/myrepo', out: './plans/out.json', spec: 'spec.md' },
+    callToolImpl: async (p) => {
+      if (p.name === 'agb_run') return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'gate failed in run' }) }] };
+      return { isError: true, content: [{ type: 'text', text: 'compile exploded' }] };
+    },
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  await card.listeners.get('btnCompile:click')();
+  assert.equal(card.els.get('statusLine').textContent, 'Compile failed: compile exploded');
+  await card.listeners.get('btnLaunch:click')();
+  const launchCall = calls.find((c) => c.name === 'agb_run');
+  assert.deepEqual(JSON.parse(JSON.stringify(launchCall.arguments)), { plan: '/work/myrepo/plans/out.json' });
+  assert.equal(card.els.get('statusLine').textContent, 'Launch failed: gate failed in run');
+
+  // 2. resolveRepoPath edge cases: Windows drive, empty-repo abs rejection, + traversal refusal
+  const cardBridge = vm.runInContext('__bridge', card.ctx);
+  assert.equal(cardBridge.resolveRepoPath('plan.json', 'C:\\repo'), 'C:\\repo\\plan.json');
+  assert.equal(cardBridge.resolveRepoPath('../secret.json', '/work/myrepo'), null);
+  assert.equal(cardBridge.resolveRepoPath('/etc/passwd', '/work/myrepo'), null);
+  assert.equal(cardBridge.resolveRepoPath('/etc/passwd', ''), null);
+  assert.equal(cardBridge.resolveRepoPath('/etc/passwd', '.'), null);
+
+  // btnSavePlan with empty repo refuses writing to root file:///plan.agbplan
+  const noRepoViewer = runScriptInMockDom(buildPlanViewerHtml(), {
+    toolInput: {},
+    callToolImpl: async () => ({ isError: false }),
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  await noRepoViewer.listeners.get('btnSavePlan:click')();
+  assert.match(noRepoViewer.els.get('viewerPath').textContent, /repository directory is required/i);
+
+  // 3. Plan Viewer runtime exercise: btnRunPlan + btnSavePlan refuse traversal and validate normalized file:// URIs
+  const viewerHtml = buildPlanViewerHtml();
+  const viewer = runScriptInMockDom(viewerHtml, {
+    toolInput: { repo: '/work/myrepo', path: './sub/plan.json' },
+    callToolImpl: async () => ({ isError: true, content: [{ type: 'text', text: 'runner error' }] }),
+  });
+  await new Promise((r) => setTimeout(r, 15));
+  await viewer.listeners.get('btnRunPlan:click')();
+  assert.equal(viewer.els.get('viewerPath').textContent, 'Run failed: runner error');
+  await viewer.listeners.get('btnSavePlan:click')();
+  assert.equal(writes[writes.length - 1].uri, 'file:///work/myrepo/sub/plan.json');
+
+  // Rejects out-of-repo traversal in btnSavePlan & btnRunPlan cleanly
+  vm.runInContext('viewerState.path = "../../outside.json"', viewer.ctx);
+  await viewer.listeners.get('btnSavePlan:click')();
+  assert.match(viewer.els.get('viewerPath').textContent, /invalid or out-of-repo/i);
+  await viewer.listeners.get('btnRunPlan:click')();
+  assert.match(viewer.els.get('viewerPath').textContent, /invalid or out-of-repo/i);
 });

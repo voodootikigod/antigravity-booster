@@ -1125,4 +1125,26 @@ for (const [label, shell] of SHELLS) {
     assertInvariant(rNoAction);
     assert.equal(decisionOf(rNoAction), 'deny', 'manage_task without Action must deny in headless fallback');
   });
+
+  test(`[${label}] fallback TARGETS_PROTECTED denies v2 protected paths and ambient AGB_USER_HOME does not suppress ADLC root`, async () => {
+    for (const protectedPath of [
+      `${ADLC_REPO}/.booster/logs/hooks.log`,
+      '/tmp/agb-ctrl-1234.sock',
+      `${os.homedir()}/.gemini/settings.json`,
+    ]) {
+      const rProt = await run(shell, {
+        payload: payloadFor('read_file', { args: { Path: protectedPath } }),
+        env: { STUB_MODE: 'crash', AGB_WORKER_TICKET: 'T-1' },
+      });
+      assertInvariant(rProt);
+      assert.equal(decisionOf(rProt), 'deny', `fallback must deny protected target ${protectedPath}`);
+    }
+
+    const rAmbient = await run(shell, {
+      payload: payloadFor('write_file', { args: { Path: `${ADLC_REPO}/lib/lock.mjs` } }),
+      env: { STUB_MODE: 'crash', AGB_USER_HOME: ADLC_REPO },
+    });
+    assertInvariant(rAmbient);
+    assert.equal(decisionOf(rAmbient), 'deny', 'ambient AGB_USER_HOME outside .agb_home must not skip ADLC root in emit_fallback');
+  });
 }

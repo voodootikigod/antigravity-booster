@@ -158,6 +158,14 @@ test('checkSecondaryInstall uses path.delimiter for path splitting', async () =>
   const res = checkSecondaryInstall({ home, env: { PATH: [otherBin, shimDir].join(delimiter) } });
   assert.equal(res.level, 'warn');
   assert.match(res.detail, /secondary install detected/);
+
+  // Win32 platform detection splits on ';' and checks Path + .cmd/.ps1 binaries
+  const winBin = join(base, `win-bin-${n++}`);
+  mkdirSync(winBin, { recursive: true });
+  writeFileSync(join(winBin, 'agb.cmd'), '@echo off\r\n');
+  const winRes = checkSecondaryInstall({ home, env: { Path: `${winBin};C:\\Windows\\System32` }, platform: 'win32' });
+  assert.equal(winRes.level, 'warn');
+  assert.match(winRes.detail, /agb\.cmd/);
 });
 
 test('D15: killswitch notices in hooks.log are counted and reported', () => {

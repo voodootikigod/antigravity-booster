@@ -4,7 +4,7 @@ description: "The tools exposed by the agb MCP server, generated from the TOOLS 
 claims: [C6, C33]
 ---
 
-The plugin registers an MCP server named `agb` (see [Plugin layout](/docs/reference/plugin-layout)). It speaks JSON-RPC over stdio and exposes a small set of tools, each of which runs the matching [CLI](/docs/reference/cli) command as a child process and returns its output.
+The plugin registers an MCP server named `agb` (see [Plugin layout](/docs/reference/plugin-layout)). It speaks JSON-RPC over stdio (`tools`, `resources`, and Antigravity `ui://` MCP App resources) and exposes **15 tools**: 10 CLI-backed workflow tools that invoke the matching [CLI](/docs/reference/cli) subcommand, plus 5 in-process UI/control/sign-off tools (`agb_flight_deck`, `agb_mission_control`, `agb_plan_viewer`, `agb_control`, `agb_accept`) paired with 6 interactive `ui://agb/*.html` resources.
 
 ## Server
 
@@ -22,16 +22,22 @@ The list below is generated from the `TOOLS` array in `mcp/server.mjs`.
 
 ## Mapping to the CLI
 
-| Tool | Runs |
+| Tool | Runs / Mode |
 | --- | --- |
 | `agb_shape` | `agb shape <spec> [repo] --json` plus `--sync-brain`, `--max-ticket-scope`, `--strict` |
-| `agb_plan` | `agb plan <spec> <repo>` plus `--out`, `--emit-workflow` (`emitWorkflow`), `--force`, `--decompose`, `--max-ticket-scope`, `--no-fast-path`, `--no-coldstart`, `--no-parallax`, `--no-premortem` |
-| `agb_distill` | `agb distill <repo> --json` plus `--apply` |
-| `agb_run` | `agb run <plan>` plus `-c <n>` (`concurrency`) |
+| `agb_plan` | `agb plan <spec> <repo>` plus `--out`, `--emit-workflow` (`emitWorkflow`), `--estimate`, `--force`, `--decompose`, `--max-ticket-scope`, `--no-fast-path`, `--no-coldstart`, `--no-parallax`, `--no-premortem` |
+| `agb_distill` | `agb distill <repo> --json` plus `--apply`, `--compile-checks` (`compileChecks`) |
+| `agb_run` | `agb run <plan>` plus `-c <n>` (`concurrency`), `--resume`, `--reset-rescue` (`resetRescue`) |
 | `agb_preflight` | `agb preflight <plan>` plus `--no-coldstart` |
 | `agb_status` | `agb status <repo>` |
 | `agb_doctor` | `agb doctor [repo]` plus `--fix` |
 | `agb_init` | `agb init <repo>` |
 | `agb_review` | `agb review <repo> [ref]` plus `--plan`, `--loop`, `--five-lens`, `--no-arbiter` |
+| `agb_holdout` | `agb holdout <list\|run\|clean> [repo]` plus `--ticket` (`ticketId`), `--run-id` (`runId`) |
+| `agb_control` | In-process `control.sock` IPC / diff / stream telemetry (`action`, `repo`, `ticketId`, `lines`) |
+| `agb_accept` | In-process P6 sign-off dossier & hunk verdict persistence (`repo`, `base`, `verdicts`, `saveVerdicts`, `ui://agb/accept-workbench.html`) |
+| `agb_flight_deck` | In-process UI resource (`ui://agb/flight-deck.html`) + live `control.sock` snapshot (`repo`) |
+| `agb_mission_control` | In-process UI resource (`ui://agb/mission-control.html`) + Factory Economics Ledger & quota telemetry (`repo`) |
+| `agb_plan_viewer` | In-process UI resource (`ui://agb/plan-viewer.html`) for inspecting and saving `.agbplan` / `plan.json` (`path`, `repo`) |
 
 Evidence: [tool dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L178-L196). The server resolves the CLI to the sibling `dist/agb.mjs` in the bundled plugin, `bin/agb.mjs` in a source checkout, or `agb` on `PATH` ([resolveAgbEntry](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/mcp/server.mjs#L19-L23)). See [Headless and MCP](/docs/guides/headless-and-mcp).

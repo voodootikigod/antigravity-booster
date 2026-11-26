@@ -3,21 +3,21 @@ name: agb-plan
 description: Compile an Antigravity brain plan or Markdown specification file into an executable plan.json ticket DAG with scope overlap, coldstart, parallax, and premortem gates (using the 0-LLM Structured Spec Fast-Path when pre-analysis passes).
 ---
 
-# /agb-plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project <name>]
+# /agb-plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project <name>]
 
-Compiles a plan artifact (an Antigravity brain ID or prefix, or a raw Markdown spec file) into an executable `plan.json` ticket DAG (and optionally emits a native `run_workflow` Python script via `--emit-workflow <file.py>`). When `preAnalyzeSpec()` passes (`0` structural/overlap errors), `agb plan` takes the **Structured Spec Fast-Path** (0 Stage A LLM conversion calls) and runs Stage B gates (`coldstart`, `parallax`, `premortem`, `model-router`, `merge-forecast`).
+Compiles a plan artifact (an Antigravity brain ID or prefix, or a raw Markdown spec file) into an executable `plan.json` ticket DAG (and optionally emits a native `run_workflow` Python script via `--emit-workflow <file.py>`, or computes a zero-dispatch static quota/runway forecast with `--estimate`). When `preAnalyzeSpec()` passes (`0` structural/overlap errors), `agb plan` takes the **Structured Spec Fast-Path** (0 Stage A LLM conversion calls) and runs Stage B gates (`coldstart`, `parallax`, `premortem`, `model-router`, `merge-forecast`).
 
 ## How to run it
 
 Use your shell tool (`run_command`) to run the antigravity-booster terminal shim, passing the user's arguments through unchanged (quote each argument; never interpolate untrusted text into a larger shell string):
 
 ```sh
-~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project <name>]
+~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem] [--project <name>]
 ```
 
 Run it from the user's workspace, wait for it to finish, then report its output and exit code to the user (exit 0 = pass, 2 = gate failure or findings, 1 = usage or internal error).
 
-If the `agb` MCP server is connected, you may instead prefer the `mcp__agb__agb_plan` tool with `spec` and `repo` (plus `out`, `emitWorkflow`, `force`, `decompose`, `maxTicketScope`, `noFastPath`, `noColdstart`, `noParallax`, `noPremortem` when the user passed the matching flags); it runs the same command and returns its output.
+If the `agb` MCP server is connected, you may instead prefer the `mcp__agb__agb_plan` tool with `spec` and `repo` (plus `out`, `emitWorkflow`, `estimate`, `force`, `decompose`, `maxTicketScope`, `noFastPath`, `noColdstart`, `noParallax`, `noPremortem` when the user passed the matching flags); it runs the same command and returns its output.
 
 ## If the shim is missing
 

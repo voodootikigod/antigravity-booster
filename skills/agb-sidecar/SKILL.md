@@ -5,7 +5,7 @@ description: Launch the live HTTP telemetry dashboard server for the Antigravity
 
 # /agb-sidecar [repo-path] [--port <port>]
 
-Launches the native web dashboard sidecar server for a repository and prints the local host/port binding, while the full authenticated URL containing the session token is registered into the dynamic sidecar plugin manifest. The server keeps running until stopped, so always run it as a background task (or instruct the user to run it in their own terminal) rather than blocking on it.
+Launches the local `127.0.0.1` HTTP dashboard sidecar server for a repository and prints the authenticated dashboard URL (`http://127.0.0.1:<port>/?token=<token>`) to stdout (no dynamic plugin manifest is written or registered; handle logs/transcripts carefully since stdout contains the session token). The server keeps running until stopped, so always run it as a background task (or instruct the user to run it in their own terminal) rather than blocking on it.
 
 ## How to run it
 

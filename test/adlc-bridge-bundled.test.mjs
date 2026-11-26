@@ -172,3 +172,28 @@ test('spawn: a world-writable vendored path is refused (no pin copy protects it)
   assert.equal(vTs.ok, false);
   assert.match(vTs.error, /syntax-check-typescript\.mjs is world-writable/);
 });
+
+test('bundled mode ignores AGB_HOME_DIR, AGB_EXEC_CACHE_DIR, and AGB_EXEC_LOCKS_DIR in approved base/locks helpers', async () => {
+  const { getApprovedPinnedBase, getApprovedLocksDir } = await import('../lib/adlc-bridge.mjs');
+  const prevHome = process.env.AGB_HOME_DIR;
+  const prevCache = process.env.AGB_EXEC_CACHE_DIR;
+  const prevLocks = process.env.AGB_EXEC_LOCKS_DIR;
+  const evilHome = join(base, 'evil-home');
+  const evilCache = join(base, 'evil-cache');
+  const evilLocks = join(base, 'evil-locks');
+  process.env.AGB_HOME_DIR = evilHome;
+  process.env.AGB_EXEC_CACHE_DIR = evilCache;
+  process.env.AGB_EXEC_LOCKS_DIR = evilLocks;
+  try {
+    assert.equal(getApprovedPinnedBase({ bundled: false }), evilCache);
+    assert.equal(getApprovedLocksDir({ bundled: false }), evilLocks);
+    const bundledPinned = getApprovedPinnedBase({ bundled: true });
+    const bundledLocks = getApprovedLocksDir({ bundled: true });
+    assert.ok(!bundledPinned.startsWith(evilHome) && bundledPinned !== evilCache);
+    assert.ok(!bundledLocks.startsWith(evilHome) && bundledLocks !== evilLocks);
+  } finally {
+    if (prevHome === undefined) delete process.env.AGB_HOME_DIR; else process.env.AGB_HOME_DIR = prevHome;
+    if (prevCache === undefined) delete process.env.AGB_EXEC_CACHE_DIR; else process.env.AGB_EXEC_CACHE_DIR = prevCache;
+    if (prevLocks === undefined) delete process.env.AGB_EXEC_LOCKS_DIR; else process.env.AGB_EXEC_LOCKS_DIR = prevLocks;
+  }
+});

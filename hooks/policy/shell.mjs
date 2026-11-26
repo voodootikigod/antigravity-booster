@@ -46,24 +46,59 @@ const GLOB_CHARS = /[*?[{]/;
 
 // ---------- argv shape ----------
 
+const PREFIX_VALUE_FLAGS = new Map([
+  ['command', new Set()],
+  ['nice', new Set(['-n', '--adjustment'])],
+  ['exec', new Set(['-a'])],
+  ['time', new Set()],
+  ['nohup', new Set()],
+  ['sudo', new Set(['-u', '-g', '-h', '-p', '-C', '-T', '-U', '-r', '-t', '--user', '--group', '--host', '--prompt', '--close-from', '--command-timeout', '--other-user', '--role', '--type'])],
+  ['doas', new Set(['-u', '-C'])],
+]);
+
 /**
- * Strip prefix words (`builtin cd`, `if cd`, `env FOO=1 git`) to the real
- * command (P5 round 2). Assignments made through `env` are returned so they
- * count exactly like leading `FOO=1` assignments: `env GIT_EXTERNAL_DIFF=…
- * git diff` runs arbitrary code and is never Stage 1 (P5 round 3 W1).
+ * Strip prefix words (`builtin cd`, `if cd`, `env FOO=1 git`, `nice -n 10 sh`)
+ * to the real command (P5 round 2). Assignments made through `env` / `sudo`
+ * are returned so they count like leading `FOO=1` assignments.
  */
-function unwrap(argv) {
+export function unwrap(argv) {
   let i = 0;
   const assignments = [];
   while (i < argv.length) {
     const word = argv[i];
     if (PREFIX_WORDS.has(word)) {
       i += 1;
+      if (word === 'command') {
+        while (i < argv.length && (argv[i] === '--' || /^-[pvV]+$/.test(argv[i]))) {
+          const opt = argv[i];
+          i += 1;
+          if (opt === '--') break;
+        }
+      } else if (PREFIX_VALUE_FLAGS.has(word)) {
+        const valueFlags = PREFIX_VALUE_FLAGS.get(word);
+        while (i < argv.length && (argv[i].startsWith('-') || ((word === 'sudo' || word === 'doas') && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i])))) {
+          const opt = argv[i];
+          i += 1;
+          if (opt === '--') break;
+          if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(opt)) {
+            assignments.push(opt);
+            continue;
+          }
+          if (!opt.includes('=') && valueFlags.has(opt) && i < argv.length) {
+            i += 1;
+          }
+        }
+      }
     } else if (word === 'env') {
       i += 1;
       while (i < argv.length && (argv[i].startsWith('-') || /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[i]))) {
-        assignments.push(argv[i]); // VAR=value, and env -i / -u / -S, all change the environment
+        const tok = argv[i];
+        assignments.push(tok); // VAR=value, and env -i / -u / -S, all change the environment
         i += 1;
+        if ((tok === '-u' || tok === '--unset' || tok === '-C' || tok === '--chdir' || tok === '-S' || tok === '--split-string') && i < argv.length) {
+          assignments.push(argv[i]);
+          i += 1;
+        }
       }
     } else {
       break;
@@ -448,11 +483,33 @@ function checkDestructiveRoot(sub, cwd, cwdRepo, ctx, verbs, repos) {
 // ---------- classification ----------
 
 /** Script text of `sh -c '…'` / `bash -lc "…"` / `eval …`, or null. */
-function inlineScript(argv) {
+export function inlineScript(argv) {
   if (argv[0] === 'eval') return argv.slice(1).join(' ');
   if (!SHELLS.has(basename(argv[0] ?? ''))) return null;
-  const flag = argv.findIndex((t, i) => i > 0 && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(t));
-  return flag > 0 && typeof argv[flag + 1] === 'string' ? argv[flag + 1] : null;
+  let idx = 1;
+  let sawC = false;
+  while (idx < argv.length) {
+    const tok = argv[idx];
+    if (tok === '--') {
+      idx += 1;
+      break;
+    }
+    if (!tok.startsWith('-') && !tok.startsWith('+')) break;
+    idx += 1;
+    if (sawC) {
+      if (/^[-+][a-zA-Z]*o$/.test(tok) && idx < argv.length) idx += 1;
+      continue;
+    }
+    if (/^-[a-zA-Z]*c[a-zA-Z]*$/.test(tok)) {
+      sawC = true;
+      if (/^-[a-zA-Z]*o[a-zA-Z]*$/.test(tok) && idx < argv.length) idx += 1;
+      continue;
+    }
+    if ((/^[-+][a-zA-Z]*o$/.test(tok) || tok === '--rcfile' || tok === '--init-file') && idx < argv.length) {
+      idx += 1;
+    }
+  }
+  return sawC && typeof argv[idx] === 'string' ? argv[idx] : null;
 }
 
 function classifySubcommand(rawSub, cwd, ctx, depth) {

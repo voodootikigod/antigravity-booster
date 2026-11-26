@@ -12,10 +12,43 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "type": "command",
         "command": "/bin/sh bin/node-launcher.sh hooks/session-start.mjs",
+        "timeout": 10
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PreInvocation",
+        "timeout": 10
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs PostInvocation",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/bin/sh bin/node-launcher.sh hooks/lifecycle.mjs Stop",
         "timeout": 10
       }
     ]

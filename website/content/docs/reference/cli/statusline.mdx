@@ -1,0 +1,24 @@
+---
+title: "agb statusline"
+description: "Render the compact CLI statusLine / window title or install/uninstall settings.json hooks for Antigravity CLI."
+---
+
+`agb statusline` powers the Antigravity CLI live footer HUD and terminal window title integration, configured automatically by `agb bootstrap` (and reverted by `agb migrate --rollback`).
+
+## Synopsis
+
+<include>../../../../generated/cli-statusline.mdx</include>
+
+## Subcommands and flags
+
+- `render` (default) reads JSON status telemetry from stdin and writes a single-line ANSI quota/fleet summary to stdout.
+- `title` emits the terminal window title string from stdin telemetry.
+- `install` writes `statusLine` and `title` command entries into `~/.gemini/antigravity-cli/settings.json` (`--force` overwrites differing entries).
+- `uninstall` removes booster's `statusLine` and `title` entries from `settings.json` while leaving unrelated user settings intact.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Action completed cleanly. |
+| `1` | Unknown action or failure modifying `settings.json`. |

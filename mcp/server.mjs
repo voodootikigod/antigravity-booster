@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'node:path';
+import { basename, dirname, join, parse, relative, resolve, isAbsolute, sep } from 'node:path';
 import {
   closeSync,
   constants,
@@ -14,7 +14,14 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { readFreshStatusLineQuotaCache } from '../lib/pools.mjs';
+import { estimatePlanQuotaRunway, readFreshStatusLineQuotaCache } from '../lib/pools.mjs';
+import { FactoryLedger } from '../lib/factory-ledger.mjs';
+import {
+  buildAcceptanceDossier,
+  formatAcceptanceDossierMarkdown,
+  loadAcceptVerdicts,
+  saveAcceptVerdicts,
+} from '../lib/accept.mjs';
 import { sendControlCommand } from '../lib/control-ipc.mjs';
 import { TICKET_ID_RE, validatePlan } from '../lib/plan-integrity.mjs';
 import { UI_RESOURCES, renderUiResource } from './ui-views.mjs';
@@ -99,6 +106,7 @@ const TOOLS = [
       properties: {
         spec: { type: 'string', description: 'Brain ID, prefix, or spec.md path to compile' },
         repo: { type: 'string', description: 'Absolute path to the target repository' },
+        estimate: { type: 'boolean', description: 'Forecast wave-by-wave quota burn without writing plan.json or running Stage B LLM gates' },
         out: { type: 'string', description: 'Custom output file path (default plan.json)' },
         force: { type: 'boolean', description: 'Force overwrite the output file if it exists' },
         decompose: { type: 'boolean', description: 'Automatically split wide tickets exceeding maxTicketScope' },
@@ -124,7 +132,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         repo: { type: 'string', description: 'Path to target repository' },
-        apply: { type: 'boolean', description: 'Write compacted defenses to .gemini/rules/adlc-learned.md' }
+        apply: { type: 'boolean', description: 'Write compacted defenses to .gemini/rules/adlc-learned.md' },
+        compileChecks: { type: 'boolean', description: 'Compile recurring findings into declarative .adlc/learned-checks.json invariants' }
       },
       required: ['repo']
     }
@@ -302,8 +311,51 @@ const TOOLS = [
     },
     _meta: {
       ui: {
+        visibility: ['app']
+      }
+    }
+  },
+  {
+    name: 'agb_accept',
+    description: 'Inspect candidate diff hunks, external-caller blast radius, and gate manifest evidence for ADLC P6 human sign-off',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Optional path to target repository (defaults to cwd)' },
+        base: { type: 'string', description: 'Optional git base ref (defaults to HEAD)' },
+        verdicts: {
+          type: 'object',
+          description: 'Optional map of 64-char SHA-256 hunk fingerprints to accepted, flagged, or pending'
+        },
+        saveVerdicts: {
+          type: 'boolean',
+          description: 'Persist hunk verdicts to .booster/accept-state.json'
+        }
+      }
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/accept-workbench.html',
         visibility: ['model', 'app']
       }
+    }
+  },
+  {
+    name: 'agb_holdout',
+    description: 'List metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'run', 'clean'],
+          description: 'Holdout operation to perform'
+        },
+        repo: { type: 'string', description: 'Path to target repository' },
+        ticketId: { type: 'string', description: 'Optional ticket ID filter' },
+        runId: { type: 'string', description: 'Optional run ID filter' }
+      },
+      required: ['action', 'repo']
     }
   }
 ];
@@ -576,7 +628,15 @@ function inspectBoosterDir(repo) {
   if (boosterSt.isSymbolicLink() || !boosterSt.isDirectory()) {
     throw symlinkSecurityError(boosterDir);
   }
-  for (const sub of ['run.json', 'report.json', 'model_stats.jsonl', 'rescue-latest']) {
+  for (const sub of [
+    'run.json',
+    'report.json',
+    'model_stats.jsonl',
+    'rescue-latest',
+    'factory_ledger.jsonl',
+    'accept-state.json',
+    'accept-dossier.md',
+  ]) {
     const p = join(boosterDir, sub);
     const st = lstatOrNull(p);
     if (st && st.isSymbolicLink()) {
@@ -606,6 +666,15 @@ export async function buildSnapshotPayload(repo) {
   const report = exists ? readJsonOrNull(join(boosterDir, 'report.json'), 192 * 1024) : null;
   const quotaCache = readFreshStatusLineQuotaCache();
   const modelStats = exists ? readTailJsonl(join(boosterDir, 'model_stats.jsonl'), { maxLines: 50 }) : [];
+  let economics = null;
+  try {
+    economics = new FactoryLedger({ repo: resolvedRepo }).summarizeEconomics({ recentLimit: 10 });
+  } catch (err) {
+    if (err?.code === 'ESYMLINK' || /symbolic link/i.test(String(err?.message ?? ''))) {
+      throw err;
+    }
+    economics = null;
+  }
 
   const rawControl = await sendControlCommand(resolvedRepo, { action: 'status' });
   if (rawControl?.error && /symbolic link/i.test(rawControl.error)) {
@@ -623,6 +692,7 @@ export async function buildSnapshotPayload(repo) {
     control,
     quotaCache,
     modelStats,
+    economics,
   };
 
   return boundStructuredObject(snapshot, () => ({
@@ -633,6 +703,7 @@ export async function buildSnapshotPayload(repo) {
     control,
     quotaCache,
     modelStats: modelStats.slice(-20),
+    economics: economics ? { ...economics, recentRuns: [] } : null,
     truncated: true,
   }));
 }
@@ -656,6 +727,8 @@ function resolveOptionalRepoArg(args) {
   return { ok: true, repo: resolved };
 }
 
+const OS_ROOT_SYMLINK_DIRS = new Set(['/bin', '/lib', '/lib32', '/lib64', '/libx32', '/sbin', '/tmp', '/var', '/etc']);
+
 function assertNoSymlinkSegments(baseDir, targetPath) {
   const rel = relative(baseDir, targetPath);
   if (!rel.startsWith('..') && !isAbsolute(rel)) {
@@ -665,6 +738,22 @@ function assertNoSymlinkSegments(baseDir, targetPath) {
       const st = lstatOrNull(cur);
       if (st && st.isSymbolicLink()) {
         throw symlinkSecurityError(cur);
+      }
+    }
+  } else {
+    const parsed = parse(targetPath);
+    const tail = targetPath.slice(parsed.root.length);
+    let cur = parsed.root;
+    let depth = 0;
+    for (const seg of tail.split(sep).filter(Boolean)) {
+      depth += 1;
+      cur = join(cur, seg);
+      const st = lstatOrNull(cur);
+      if (st && st.isSymbolicLink()) {
+        const isOsRootLink = depth === 1 && st.uid === 0 && OS_ROOT_SYMLINK_DIRS.has(cur.replace(/\\/g, '/'));
+        if (!isOsRootLink) {
+          throw symlinkSecurityError(cur);
+        }
       }
     }
   }
@@ -720,6 +809,13 @@ async function handleInProcessUiTool(id, name, args) {
       return;
     }
     const planFile = resolve(repoRes.repo, pathCheck.value);
+    if (args?.repo !== undefined) {
+      const rel = relative(repoRes.repo, planFile);
+      if (rel.startsWith('..') || isAbsolute(rel)) {
+        sendToolError(id, `Plan path escapes repository root: ${pathCheck.value}`);
+        return;
+      }
+    }
     let fileData;
     try {
       assertNoSymlinkSegments(repoRes.repo, planFile);
@@ -744,11 +840,22 @@ async function handleInProcessUiTool(id, name, args) {
       return;
     }
     const errors = validatePlan(parsed);
+    const quotaCache = readFreshStatusLineQuotaCache();
+    let runwayEstimate = null;
+    if (errors.length === 0) {
+      try {
+        runwayEstimate = estimatePlanQuotaRunway(parsed, { quota: quotaCache?.quota ?? null });
+      } catch {
+        runwayEstimate = null;
+      }
+    }
     const structuredContent = {
       ok: errors.length === 0,
       path: planFile,
       plan: parsed,
       validationErrors: errors,
+      quotaCache,
+      runwayEstimate,
     };
     if (Buffer.byteLength(JSON.stringify(structuredContent), 'utf8') >= MAX_STRUCTURED_BYTES) {
       sendToolError(id, `Plan payload exceeds 512 KiB limit: ${planFile}`);
@@ -763,6 +870,82 @@ async function handleInProcessUiTool(id, name, args) {
       ],
       structuredContent,
     });
+    return;
+  }
+
+  if (name === 'agb_accept') {
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    let base = 'HEAD';
+    if (args?.base !== undefined) {
+      const baseCheck = requireNonFlagString(args, 'base');
+      if (!baseCheck.ok) {
+        sendToolError(id, baseCheck.error);
+        return;
+      }
+      base = baseCheck.value.trim();
+    }
+    if (args?.saveVerdicts !== undefined && typeof args.saveVerdicts !== 'boolean') {
+      sendToolError(id, 'Invalid saveVerdicts: expected boolean');
+      return;
+    }
+    let cleanVerdicts = null;
+    if (args?.verdicts !== undefined) {
+      if (!args.verdicts || typeof args.verdicts !== 'object' || Array.isArray(args.verdicts)) {
+        sendToolError(id, 'Invalid verdicts: expected object mapping 64-hex SHA-256 fingerprints to accepted, flagged, or pending');
+        return;
+      }
+      cleanVerdicts = {};
+      for (const [fp, val] of Object.entries(args.verdicts)) {
+        if (!/^[0-9a-f]{64}$/.test(fp)) {
+          sendToolError(id, `Invalid hunk fingerprint key '${fp}': expected 64-char lowercase hex SHA-256`);
+          return;
+        }
+        if (val !== 'accepted' && val !== 'flagged' && val !== 'pending') {
+          sendToolError(id, `Invalid verdict '${String(val)}' for ${fp}`);
+          return;
+        }
+        cleanVerdicts[fp] = val;
+      }
+    }
+    try {
+      inspectBoosterDir(repoRes.repo);
+      let effectiveOverride = null;
+      if (args?.saveVerdicts === true) {
+        saveAcceptVerdicts(repoRes.repo, cleanVerdicts ?? {}, { merge: true });
+      } else if (cleanVerdicts) {
+        const merged = { ...loadAcceptVerdicts(repoRes.repo) };
+        for (const [fp, val] of Object.entries(cleanVerdicts)) {
+          if (val === 'pending') delete merged[fp];
+          else merged[fp] = val;
+        }
+        effectiveOverride = merged;
+      }
+      const dossier = buildAcceptanceDossier({
+        repo: repoRes.repo,
+        base,
+        verdictsOverride: effectiveOverride,
+      });
+      const markdown = sliceUtf8(formatAcceptanceDossierMarkdown(dossier), 64 * 1024);
+      const structuredContent = boundStructuredObject(
+        { ...dossier, markdown },
+        () => ({
+          ...dossier,
+          hunks: dossier.hunks.slice(0, 40).map((h) => ({ ...h, lines: h.lines.slice(0, 20) })),
+          markdown,
+          truncated: true,
+        })
+      );
+      sendResult(id, {
+        content: [{ type: 'text', text: markdown }],
+        structuredContent,
+      });
+    } catch (err) {
+      sendToolError(id, err.message);
+    }
     return;
   }
 
@@ -995,7 +1178,8 @@ async function handleToolCall(id, name, args) {
     name === 'agb_flight_deck' ||
     name === 'agb_mission_control' ||
     name === 'agb_plan_viewer' ||
-    name === 'agb_control'
+    name === 'agb_control' ||
+    name === 'agb_accept'
   ) {
     await handleInProcessUiTool(id, name, args);
     return;
@@ -1033,9 +1217,15 @@ async function handleToolCall(id, name, args) {
     targetCwd = resolve(repoCheck.value);
     const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
+    if (args.estimate !== undefined && typeof args.estimate !== 'boolean') {
+      sendError(id, -32602, 'Invalid estimate: expected boolean');
+      return;
+    }
     const resolvedSpec = resolveSpecPath(specCheck.value, targetCwd);
     cliArgs.push('plan', resolvedSpec, targetCwd);
-    if (args.out !== undefined) {
+    if (args.estimate === true) {
+      cliArgs.push('--estimate', '--json');
+    } else if (args.out !== undefined) {
       const outCheck = requireNonFlagString(args, 'out');
       if (!outCheck.ok) { sendError(id, -32602, outCheck.error); return; }
       planOutPath = resolve(targetCwd, outCheck.value);
@@ -1071,6 +1261,39 @@ async function handleToolCall(id, name, args) {
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('distill', targetCwd, '--json');
     if (args.apply) cliArgs.push('--apply');
+    if (args.compileChecks) cliArgs.push('--compile-checks');
+  } else if (name === 'agb_holdout') {
+    const actionCheck = requireNonFlagString(args, 'action');
+    if (!actionCheck.ok) { sendError(id, -32602, actionCheck.error); return; }
+    const act = actionCheck.value.trim();
+    if (act !== 'list' && act !== 'run' && act !== 'clean') {
+      sendError(id, -32602, `Invalid holdout action '${act}': expected list, run, or clean`);
+      return;
+    }
+    const repoCheck = requireNonFlagString(args, 'repo');
+    if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
+    targetCwd = resolve(repoCheck.value);
+    const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
+    if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
+    cliArgs.push('holdout', act, targetCwd, '--json');
+    if (args.ticketId !== undefined) {
+      const tCheck = requireNonFlagString(args, 'ticketId');
+      const tVal = tCheck.ok ? tCheck.value.trim() : '';
+      if (!tCheck.ok || tVal.includes('..') || tVal.length > 128 || !TICKET_ID_RE.test(tVal)) {
+        sendError(id, -32602, 'Invalid ticketId');
+        return;
+      }
+      cliArgs.push('--ticket', tVal);
+    }
+    if (args.runId !== undefined) {
+      const rCheck = requireNonFlagString(args, 'runId');
+      const rVal = rCheck.ok ? rCheck.value.trim() : '';
+      if (!rCheck.ok || rVal.includes('..') || rVal.length > 128 || !TICKET_ID_RE.test(rVal)) {
+        sendError(id, -32602, 'Invalid runId');
+        return;
+      }
+      cliArgs.push('--run-id', rVal);
+    }
   } else if (name === 'agb_run') {
     const planCheck = requireNonFlagString(args, 'plan');
     if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
