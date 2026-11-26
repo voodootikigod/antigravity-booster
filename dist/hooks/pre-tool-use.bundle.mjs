@@ -2217,7 +2217,7 @@ var READ_TOOL_PATH_SCHEMAS = {
   grep_search: ["SearchPath", "DirectoryPath", "path"],
   code_search: ["SearchPath", "DirectoryPath", "path"],
   file_search: ["SearchPath", "DirectoryPath", "path"],
-  find_by_name: ["SearchPath", "DirectoryPath", "path", "dir"],
+  find_by_name: ["SearchPath", "SearchDirectory", "DirectoryPath", "path", "dir"],
   list_dir: ["DirectoryPath", "DirAbsolutePath", "AbsolutePath", "path", "dir"],
   list_permissions: ["paths", "path"],
   search_in_file: ["paths", "path", "DirectoryPath", "SearchPath"],
@@ -2234,9 +2234,11 @@ var REQUIRED_READ_PATH_KEYS = {
   read_url_content: ["url"],
   list_dir: ["directorypath", "dirabsolutepath", "absolutepath", "path", "dir"],
   list_directory: ["directorypath", "dirabsolutepath", "absolutepath", "path", "dir"],
-  list_permissions: ["paths", "path"],
   search_in_file: ["paths", "path", "directorypath", "searchpath"]
 };
+var ASK_PERMISSION_ACTIONS = /* @__PURE__ */ new Set(["command", "read_file", "write_file", "read_url", "execute_url", "download_url", "mcp"]);
+var ASK_PERMISSION_PROSE_KEYS = /* @__PURE__ */ new Set(["Reason", "reason", "toolAction", "toolaction", "toolSummary", "toolsummary"]);
+var GENERATE_IMAGE_PROSE_KEYS = /* @__PURE__ */ new Set(["Prompt", "prompt", "toolAction", "toolaction", "toolSummary", "toolsummary"]);
 var TOOL_PATH_SCHEMAS = {
   write_to_file: { required: ["TargetFile"] },
   write_file: { required: ["Path"] },
@@ -4875,7 +4877,8 @@ var isNonEmptyString = (v) => typeof v === "string" && v.trim().length > 0;
 function extractReadToolPaths(name, rawArgs) {
   const norm = normalizeArgsCaseInsensitive(rawArgs);
   if (!norm.ok) return { ok: false, reason: norm.reason };
-  const pathKeys = REQUIRED_READ_PATH_KEYS[name];
+  const pathKeys = REQUIRED_READ_PATH_KEYS[name] ?? READ_TOOL_PATH_SCHEMAS[name] ?? [];
+  const pathRequired = Object.hasOwn(REQUIRED_READ_PATH_KEYS, name);
   const extractedPaths = [];
   for (const k of pathKeys) {
     const val = norm.folded[k];
@@ -4890,7 +4893,7 @@ function extractReadToolPaths(name, rawArgs) {
       return { ok: false, reason: READ_PATH_PARAM_ERROR };
     }
   }
-  if (extractedPaths.length < 1) return { ok: false, reason: "Missing required read-tool path parameter" };
+  if (pathRequired && extractedPaths.length < 1) return { ok: false, reason: "Missing required read-tool path parameter" };
   const stringKeys = /* @__PURE__ */ new Set([...READ_STRING_KEYS, ...READ_EXTRA_STRING_KEYS[name] ?? []]);
   for (const [k, val] of Object.entries(norm.folded)) {
     if (pathKeys.includes(k)) continue;
@@ -5032,11 +5035,24 @@ function stepOne(name, args, ctx) {
   if (name === "run_command" || STDIN_TOOLS.has(name) || name === "manage_task" && norm.folded.action === "send_input") {
     return PASS;
   }
-  const isRead = READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]);
+  const act = name === "ask_permission" ? String(norm.folded.action ?? "").trim().toLowerCase() : "";
+  const isRead = name === "ask_permission" ? act !== "write_file" : name !== "generate_image" && (READ_ONLY_TOOLS.has(name) || Boolean(READ_TOOL_PATH_SCHEMAS[name]));
   let candidates;
-  if (isRead) {
+  if (name === "generate_image") {
+    candidates = [
+      ...typeof norm.folded.imagename === "string" && looksLikePath(norm.folded.imagename) ? [toPath(norm.folded.imagename)] : [],
+      ...Array.isArray(norm.folded.imagepaths) ? norm.folded.imagepaths.filter((s) => typeof s === "string").map(toPath) : []
+    ];
+  } else if (name === "ask_permission") {
+    const scan = scanPathLike(args, { topLevelSkipKeys: /* @__PURE__ */ new Set([...ASK_PERMISSION_PROSE_KEYS, "Target", "target"]) });
+    if (scan.overflow) return OVERFLOW;
+    candidates = [...scan.paths];
+    if (typeof norm.folded.target === "string" && (act === "read_file" || act === "write_file")) {
+      candidates.push(toPath(norm.folded.target));
+    }
+  } else if (isRead) {
     let extra = [];
-    if (Object.hasOwn(REQUIRED_READ_PATH_KEYS, name)) {
+    if (Object.hasOwn(REQUIRED_READ_PATH_KEYS, name) || name === "list_permissions") {
       const readRes = extractReadToolPaths(name, args);
       if (!readRes.ok) return deny(readRes.reason);
       extra = readRes.paths;
@@ -5581,6 +5597,89 @@ function evaluateWorkflowTool(args, ctx) {
   }
   return PASS;
 }
+var ASK_PERMISSION_KEYS = /* @__PURE__ */ new Set(["action", "target", "reason", "toolaction", "toolsummary"]);
+var IMAGE_KEYS = /* @__PURE__ */ new Set([...[...GENERATE_IMAGE_PROSE_KEYS].map((k) => k.toLowerCase()), "imagename", "imagepaths"]);
+function evaluateAskPermission(rawArgs, ctx) {
+  if (ctx.headless) return deny("ask_permission cannot be used in headless or read-only worker sessions");
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  const f = norm.folded;
+  for (const [k, v] of Object.entries(f)) {
+    if (!ASK_PERMISSION_KEYS.has(k)) return deny(`Unexpected argument in ask_permission: ${k}`);
+    if (k !== "action" && k !== "target" && v !== void 0 && typeof v !== "string") {
+      return deny(`Invalid ${k} parameter in ask_permission`);
+    }
+  }
+  if (!isNonEmptyString(f.action) || !isNonEmptyString(f.target)) {
+    return deny("ask_permission requires non-empty action and target strings");
+  }
+  const act = f.action.trim().toLowerCase();
+  if (!ASK_PERMISSION_ACTIONS.has(act)) return deny(`Unsupported ask_permission action: ${act}`);
+  const target = f.target;
+  const repos = ctx.anchors.map((a) => ctx.repoAt(a));
+  if (act === "command") {
+    const cmdVerdict = classifyRunCommand({ CommandLine: target }, ctx);
+    if (cmdVerdict.decision === "deny") return cmdVerdict;
+    if (isInteractivePrompt(cmdVerdict)) return forceAsk(cmdVerdict.reason);
+  } else if (act === "read_file" || act === "write_file") {
+    const write = act === "write_file";
+    if (target.includes("*") && repos.some((r) => r.adlc)) return deny("Wildcard ask_permission target cannot be verified in an ADLC repository");
+    const resolved = resolveAll(toPath(target), ctx);
+    if (resolved.length === 0) return deny("Relative ask_permission target has no workspace to anchor it");
+    for (const r of resolved) {
+      const forms = r.lexical !== r.real ? [r, { ...r, real: r.lexical }] : [r];
+      for (const form of forms) {
+        if (matchRoot(form, ctx.boosterDataRoots, ctx.platform)) return deny("ask_permission target is protected booster data");
+        if (write) {
+          if (matchRoot(form, ctx.protectedRoots, ctx.platform)) return deny("ask_permission write target is protected platform configuration");
+          const c = containsProtected(form, ctx);
+          if (c) return isInteractivePrompt(c) ? forceAsk(c.reason) : c;
+        }
+        const g = gateOnePath(form, ctx);
+        repos.push(g.repo);
+        if (g.verdict.decision === "deny") return g.verdict;
+        if (isInteractivePrompt(g.verdict)) return forceAsk(g.verdict.reason);
+      }
+    }
+  }
+  if (repos.some((r) => r.adlc && !r.store.ok)) return deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified");
+  if (repos.some((r) => r.adlc && r.activeRail)) {
+    return forceAsk("Permission request in an active-rail ADLC repository requires operator confirmation");
+  }
+  return PASS;
+}
+function evaluateGenerateImage(rawArgs, ctx) {
+  if (ctx.headless) return deny("generate_image cannot be used in headless or read-only worker sessions");
+  const norm = normalizeArgsCaseInsensitive(rawArgs);
+  if (!norm.ok) return deny(norm.reason);
+  const f = norm.folded;
+  for (const [k, v] of Object.entries(f)) {
+    if (!IMAGE_KEYS.has(k)) return deny(`Unexpected argument in generate_image: ${k}`);
+    if (k !== "imagepaths" && v !== void 0 && typeof v !== "string") return deny(`Invalid ${k} parameter in generate_image`);
+  }
+  if (!isNonEmptyString(f.prompt) || !isNonEmptyString(f.imagename)) {
+    return deny("generate_image requires non-empty Prompt and ImageName strings");
+  }
+  if (f.imagename.split(/[\\/]/).includes("..")) return deny("generate_image ImageName must not contain .. segments");
+  const paths = f.imagepaths;
+  if (paths !== void 0 && (!Array.isArray(paths) || paths.length > 20 || !paths.every(isNonEmptyString))) {
+    return deny("generate_image ImagePaths must be an array of at most 20 non-empty strings");
+  }
+  const tokens = [...looksLikePath(f.imagename) ? [f.imagename] : [], ...paths ?? []].map(toPath);
+  for (const token of tokens) {
+    const resolved = resolveAll(token, ctx);
+    if (resolved.length === 0) return deny(`Relative target '${token}' has no workspace to anchor it`);
+    for (const r of resolved) {
+      for (const form of r.lexical !== r.real ? [r, { ...r, real: r.lexical }] : [r]) {
+        const c = containsProtected(form, ctx);
+        if (c) return deny(c.reason);
+        const v = evaluateOneTargetForm(form, "write_file", { Path: token }, ctx, []);
+        if (v.decision !== "pass") return deny(v.reason);
+      }
+    }
+  }
+  return PASS;
+}
 function evaluateCodegraphTool(name, args, ctx) {
   const norm = normalizeArgsCaseInsensitive(args);
   if (!norm.ok) return deny(norm.reason);
@@ -5811,6 +5910,8 @@ function evaluatePayloadInner(payload, options = {}) {
   const ctx = buildContext(payload, options);
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;
+  if (name === "ask_permission") return evaluateAskPermission(args, ctx);
+  if (name === "generate_image") return evaluateGenerateImage(args, ctx);
   if (READ_ONLY_TOOLS.has(name)) return PASS;
   if (CODEGRAPH_READ_TOOLS.has(name)) return evaluateCodegraphTool(name, args, ctx);
   if (name === "sed_file") return evaluateSedFile(args, ctx);
