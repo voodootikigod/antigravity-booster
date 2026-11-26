@@ -59,7 +59,10 @@ for (const bad of ['', '\n', 'a\0b', '../x', 'a/../x', '/abs', '~/x', 'a(b)', 'a
 }
 
 test('readonly roles unconditionally deny mcp(*)', () => {
-  const expected = ['write_file(*)', 'command(*)', 'read_url(*)', 'execute_url(*)', 'mcp(*)'];
+  const expected = [
+    'write_file(*)', 'command(*)', 'read_url(*)', 'execute_url(*)',
+    'download_url(*)', 'unsandboxed(*)', 'mcp(*)',
+  ];
   for (const role of READONLY_ROLES) {
     for (const hasCodegraph of [false, true]) {
       const p = buildRoleSettingsProfile(role, { hasCodegraph, rails: ['lib/lock.mjs'] });
@@ -78,7 +81,7 @@ test('builder profile denies rails, destructive commands, and mcp(*) by default'
         'write_file(.git/)', 'write_file(.adlc/)', 'write_file(.booster/)',
         'write_file(lib/lock.mjs)', 'write_file(vendor/cache/)',
         'command(sudo)', 'command(rm -rf)', 'command(git push)',
-        'read_url(*)', 'execute_url(*)', 'mcp(*)',
+        'read_url(*)', 'execute_url(*)', 'download_url(*)', 'unsandboxed(*)', 'mcp(*)',
       ],
     },
   });
