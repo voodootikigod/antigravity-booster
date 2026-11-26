@@ -10737,7 +10737,8 @@ function parseQuotaProbeOutput(stdout2) {
       throw err;
     }
     const resetTimeMs = Date.parse(rawResetTime);
-    if (!Number.isFinite(resetTimeMs) || resetTimeMs < Date.now() - 1e4) {
+    const isUnusedFullEpoch = resetTimeMs === 0 && val >= 99.9999;
+    if (!Number.isFinite(resetTimeMs) || !isUnusedFullEpoch && resetTimeMs < Date.now() - 1e4) {
       const err = new Error(
         `resetTime in ${poolName}.${winName} violates future ordering / clock skew limit: ${rawResetTime}`
       );
