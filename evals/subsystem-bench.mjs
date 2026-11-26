@@ -578,7 +578,7 @@ export async function runLiveProsecutorAndReviewBenchmark() {
       quota: { raw: {}, models: {} },
       refreshQuota: async () => ({ ok: true }),
       acquire: async (model) => {
-        if (String(model).toLowerCase().includes('argon')) {
+        if (String(model).toLowerCase().includes('neon')) {
           throw new Error('simulated pool admission failure');
         }
         return () => {};

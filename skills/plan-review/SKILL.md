@@ -11,12 +11,12 @@ DAG/scope-partitioning hazards across `gemini` and `claude` model families.
 
 ## Cross-Model Lens Routing (`lib/models.mjs` at runtime; offline snapshot in `adversarial-review/references/models.json`)
 
-1.  **`devils_advocate`**: `claude-opus-5-5-high` (`claude`) -> fallback `gemini-4-argon-high` (`gemini`)
-2.  **`requirements_fidelity`**: `gemini-4-argon-medium` (`gemini`) -> fallback `claude-sonnet-5-5-high` (`claude`)
-3.  **`simplicity`**: `claude-sonnet-5-5-medium` (`claude`) -> fallback `gemini-3.8-flash-medium` (`gemini`)
-4.  **`evidence_strategy`**: `gemini-3.8-flash-medium` (`gemini`) -> fallback `claude-sonnet-5-5-medium` (`claude`)
-5.  **`dag_topology`**: `gemini-4-argon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`)
-6.  **`arbiter`**: `gemini-4-argon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`)
+1.  **`devils_advocate`**: `claude-opus-5-5-high` (`claude`) -> fallback `gemini-4-neon-high` (`gemini`)
+2.  **`requirements_fidelity`**: `gemini-4-neon-medium` (`gemini`) -> fallback `claude-sonnet-5-5-high` (`claude`)
+3.  **`simplicity`**: `claude-sonnet-5-5-medium` (`claude`) -> fallback `gemini-4-hydrogen-medium` (`gemini`)
+4.  **`evidence_strategy`**: `gemini-4-hydrogen-medium` (`gemini`) -> fallback `claude-sonnet-5-5-medium` (`claude`)
+5.  **`dag_topology`**: `gemini-4-neon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`)
+6.  **`arbiter`**: `gemini-4-neon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`)
 
 ## Operating Modes
 

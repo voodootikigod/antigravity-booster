@@ -1312,9 +1312,9 @@ test('runPlan: fails over prosecutor on transient 503 capacity error and cleans 
       [
         '#!/bin/sh',
         'for prev in "$@"; do',
-        '  if [ "$last" = "--model" ] && [ "$prev" = "gpt-oss-120b-medium" ]; then',
-        `    printf '%s\\n' "gpt-oss-503" >> ${JSON.stringify(join(state, 'prosecutor-503.log'))}`,
-        '    printf \'%s\\n\' \'{"status":"ERROR","response":"UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"}\'',
+        '  if [ "$last" = "--model" ] && [ "$prev" = "claude-sonnet-5-5-medium" ]; then',
+        `    printf '%s\\n' "claude-sonnet-503" >> ${JSON.stringify(join(state, 'prosecutor-503.log'))}`,
+        '    printf \'%s\\n\' \'{"status":"ERROR","response":"UNAVAILABLE (code 503): No capacity available for model claude-sonnet-5-5-medium on the server"}\'',
         '    exit 0',
         '  fi',
         '  last="$prev"',
@@ -1350,7 +1350,7 @@ test('runPlan: fails over prosecutor on transient 503 capacity error and cleans 
 
     assert.deepEqual(report.merged, ['T1'], `expected T1 to merge via prosecutor failover and clean rebase, got: ${JSON.stringify(report.failed)}`);
     const seen503 = readFileSync(join(state, 'prosecutor-503.log'), 'utf8').trim().split('\n');
-    assert.deepEqual(seen503, ['gpt-oss-503'], 'primary prosecutor gpt-oss-120b-medium hit 503 once before failing over to claude');
+    assert.deepEqual(seen503, ['claude-sonnet-503'], 'primary prosecutor claude-sonnet-5-5-medium hit 503 once before failing over to claude-sonnet-5-5-high');
     assert.equal(readFileSync(join(repo, 'bundle.txt'), 'utf8'), 'clean-baseline\n', 'gate-dirtied tracked file must not block rebase or leak into commit');
   } finally {
     rmSync(repo, { recursive: true, force: true });
@@ -1836,3 +1836,138 @@ test('runPlan (Wave 4): executes gate.twins, learned-checks, and sealed holdout 
     rmSync(fakeHome, { recursive: true, force: true });
   }
 });
+
+test('runPlan: Gemini-only single-group /quota account falls back across same-family Gemini prosecutors and records same-family-fallback in manifest', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-gemini-only-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-gemini-only-bin-'));
+  try {
+    const localFakeAgy = join(binDir, 'fake-agy');
+    writeFileSync(localFakeAgy, readFileSync(FAKE_AGY), { mode: 0o755 });
+    const geminiOnlyAgy = join(binDir, 'agy');
+    writeFileSync(
+      geminiOnlyAgy,
+      [
+        '#!/bin/sh',
+        'if [ "$1" = "-p" ] && [ "$2" = "/quota" ]; then',
+        '  f5=$(date -u -d "+5 hours" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "2029-01-01T00:00:00Z")',
+        '  fw=$(date -u -d "+7 days" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "2029-01-01T00:00:00Z")',
+        '  printf \'{"conversation_id":"","status":"SUCCESS","response":"","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"g-w","name":"Weekly","window":"weekly","remaining_fraction":0.9,"reset_time":"%s"},{"id":"g-5","name":"5h","window":"5h","remaining_fraction":0.9,"reset_time":"%s"}]}]}}}\\n\' "$fw" "$f5"',
+        '  exit 0',
+        'fi',
+        'for prev in "$@"; do',
+        '  if [ "$last" = "--model" ] && [ "$prev" = "gemini-4-neon-high" ]; then',
+        '    printf \'%s\\n\' \'{"status":"ERROR","response":"429 rate limit exceeded"}\'',
+        '    exit 0',
+        '  fi',
+        '  last="$prev"',
+        'done',
+        'exec "$(dirname "$0")/fake-agy" "$@"',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: geminiOnlyAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+        AGB_QUOTA_TIMEOUT_MS: '100',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: { test: 'true' },
+            tickets: [
+              {
+                id: 'T-GEMONLY',
+                title: 'Gemini-only account ticket',
+                body: 'write T-GEMONLY.txt',
+                scope: ['T-GEMONLY.txt'],
+                tier: 'cheap',
+                pool_hint: 'gemini',
+              },
+            ],
+          },
+          quiet,
+        ),
+    );
+
+    assert.deepEqual(report.merged, ['T-GEMONLY']);
+    const manifestCalls = readFileSync(join(state, 'gate-manifest-invocations'), 'utf8');
+    assert.match(manifestCalls, /"prosecutionMode":"same-family-fallback"/);
+    assert.match(manifestCalls, /"prosecutorModel":"gemini-4-carbon-high"/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: mid-run Claude quota depletion reroutes prosecutor acquire to same-family Gemini fallback', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-pros-reroute-state-'));
+  const savedPoolsDir = process.env.AGB_POOLS_DIR;
+  try {
+    process.env.AGB_POOLS_DIR = state;
+    const pools = new PoolSet({ claude: 1 }, { repo });
+    const origAcquire = pools.acquire.bind(pools);
+    let depletedOnce = false;
+    pools.acquire = async (model, opts) => {
+      if (!depletedOnce && String(model).startsWith('claude-')) {
+        depletedOnce = true;
+        pools.updateFromQuota({
+          gemini: {
+            fiveHourRemainingPercent: 90,
+            weeklyRemainingPercent: 90,
+            fiveHourResetTime: '2029-01-01T00:00:00Z',
+            weeklyResetTime: '2029-01-01T00:00:00Z',
+          },
+          claude_gpt: {
+            fiveHourRemainingPercent: 0,
+            weeklyRemainingPercent: 0,
+            fiveHourResetTime: '2029-01-01T00:00:00Z',
+            weeklyResetTime: '2029-01-01T00:00:00Z',
+            unavailable: true,
+          },
+        });
+      }
+      return origAcquire(model, opts);
+    };
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+        AGB_QUOTA_TIMEOUT_MS: '100',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            pools,
+            gate: { test: 'true' },
+            tickets: [
+              { id: 'T-WAITER', title: 'waiter', body: 'write T-WAITER.txt', scope: ['T-WAITER.txt'], tier: 'cheap', pool_hint: 'gemini' },
+            ],
+          },
+          quiet,
+        ),
+    );
+
+    assert.deepEqual(report.merged, ['T-WAITER']);
+    assert.equal(depletedOnce, true);
+    const manifestCalls = readFileSync(join(state, 'gate-manifest-invocations'), 'utf8');
+    assert.match(manifestCalls, /ticket=T-WAITER.*"prosecutorModel":"gemini-4-neon-high".*"prosecutionMode":"same-family-fallback"/);
+  } finally {
+    if (savedPoolsDir === undefined) delete process.env.AGB_POOLS_DIR;
+    else process.env.AGB_POOLS_DIR = savedPoolsDir;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+

@@ -391,14 +391,20 @@ test('validateJsonSchema: validates types, required properties, additionalProper
   assert.equal(validateJsonSchema({ id: 'T1', count: 2, status: 'unknown' }, schema).valid, false);
 });
 
-test('MODELS: retired Gemini 3.5 models removed from MODELS and remapped in resolveModelSlug', () => {
+test('MODELS: retired Gemini 3.5 and 3.8 Flash models removed from MODELS and remapped to Hydrogen in resolveModelSlug', () => {
   assert.equal(MODELS['gemini-flash'].includes('gemini-3.5-flash-low'), false);
-  assert.equal(MODELS['gemini-flash'].includes('gemini-3.5-flash-medium'), false);
-  assert.equal(MODELS['gemini-flash'].includes('gemini-3.5-flash-high'), false);
+  assert.equal(MODELS['gemini-flash'].includes('gemini-3.8-flash-low'), false);
+  assert.equal(MODELS['gemini-flash'].includes('gemini-4-hydrogen-low'), true);
 
-  assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-3.8-flash-low');
-  assert.equal(resolveModelSlug('gemini-3.5-flash-medium'), 'gemini-3.8-flash-medium');
-  assert.equal(resolveModelSlug('gemini-3.5-flash-high'), 'gemini-3.8-flash-high');
+  const orig = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-4-hydrogen-low');
+    assert.equal(resolveModelSlug('gemini-3.5-flash-medium'), 'gemini-4-hydrogen-medium');
+    assert.equal(resolveModelSlug('gemini-3.8-flash-high'), 'gemini-4-hydrogen-high');
+  } finally {
+    console.warn = orig;
+  }
 });
 
 test('validatePlan: rejects non-npm gates by default without strictGates flag', () => {

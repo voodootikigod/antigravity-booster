@@ -1327,22 +1327,23 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
   const pools44 = new PoolSet({ 'gemini-pro': 4, claude: 4 });
   const routed8 = Array.from({ length: 8 }, () => pools44.route('frontier', 'auto'));
   for (const m of routed8) pools44.unroute(m);
-  const interleavedRoutingOk =
-    routed8[0] === 'gemini-pro-orchestrator' &&
-    routed8[1] === 'claude-sonnet-5-5-high' &&
-    routed8.filter((m) => familyOf(m) === 'gemini').length === 4 &&
-    routed8.filter((m) => familyOf(m) === 'claude').length === 4 &&
-    poolOf('gemini-4-hydrogen-xhigh') === 'gemini-pro' &&
-    poolOf('hydrogen-preview') === 'gemini-pro' &&
-    ORCHESTRATOR_MODELS.has('gemini-pro-orchestrator') &&
-    ORCHESTRATOR_MODELS.has('gemini-pro-orchestrator-argon') &&
+  const interleavedRoutingOk = [
+    routed8[0] === 'gemini-pro-orchestrator-neon',
+    routed8[1] === 'claude-sonnet-5-5-high',
+    routed8.filter((m) => familyOf(m) === 'gemini').length === 4,
+    routed8.filter((m) => familyOf(m) === 'claude').length === 4,
+    poolOf('gemini-4-hydrogen-xhigh') === 'gemini-flash',
+    poolOf('hydrogen-preview') === 'gemini-flash',
+    ORCHESTRATOR_MODELS.has('gemini-pro-orchestrator-neon'),
+    ORCHESTRATOR_MODELS.has('gemini-pro-orchestrator'),
     JSON.stringify(tierCandidates('frontier', 'auto', { disableOrchestrator: true })) ===
-      JSON.stringify([...FRONTIER_NO_ORCHESTRATOR]);
+      JSON.stringify([...FRONTIER_NO_ORCHESTRATOR]),
+  ].every(Boolean);
 
   // Check 2: Concurrent AsyncLocalStorage isolation across parallel runs
   const [ctxEnabled, ctxDisabled] = await Promise.all([
     runWithOrchestratorRoutingState(
-      { disableOrchestrator: false, disabledModels: new Set(['gemini-pro-orchestrator']) },
+      { disableOrchestrator: false, disabledModels: new Set(['gemini-pro-orchestrator-neon']) },
       async () => {
         await new Promise((r) => setTimeout(r, 10));
         return tierCandidates('frontier', 'auto');
@@ -1356,11 +1357,12 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
       },
     ),
   ]);
-  const asyncLocalStorageIsolationOk =
-    !ctxEnabled.includes('gemini-pro-orchestrator') &&
-    ctxEnabled.includes('gemini-pro-orchestrator-argon') &&
-    JSON.stringify(ctxDisabled) === JSON.stringify([...FRONTIER_NO_ORCHESTRATOR]) &&
-    JSON.stringify(tierCandidates('frontier', 'auto')) === JSON.stringify([...TIER_CANDIDATES.frontier]);
+  const asyncLocalStorageIsolationOk = [
+    !ctxEnabled.includes('gemini-pro-orchestrator-neon'),
+    ctxEnabled.includes('gemini-pro-orchestrator'),
+    JSON.stringify(ctxDisabled) === JSON.stringify([...FRONTIER_NO_ORCHESTRATOR]),
+    JSON.stringify(tierCandidates('frontier', 'auto')) === JSON.stringify([...TIER_CANDIDATES.frontier]),
+  ].every(Boolean);
 
   // Check 3: agy below the 1.5.17 floor is rejected at startup before any builder is spawned
   const repoOld = makeEvalGitRepo();
@@ -1414,21 +1416,22 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
     await withIsolatedSchedulerEnv({ FAKE_BUILDER_MODE: 'noop', FAKE_STATE_DIR: stateBreaker }, () =>
       runPlan({ repo: repoBreaker, gate: { test: 'true' }, tickets: planTickets }, { log: (m) => breakerLogs.push(m) }),
     );
-    // Run 2: 2 merges -> 4 resolved, 2 builderFaultTickets (50%) -> trips gemini-pro-orchestrator
+    // Run 2: 2 merges -> 4 resolved, 2 builderFaultTickets (50%) -> trips gemini-pro-orchestrator-neon
     await withIsolatedSchedulerEnv({ FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateBreaker }, () =>
       runPlan({ repo: repoBreaker, gate: { test: 'true' }, tickets: planTickets }, { log: (m) => breakerLogs.push(m) }),
     );
     const runJsonAfter2 = JSON.parse(readFileSync(join(repoBreaker, '.booster', 'run.json'), 'utf8'));
     execFileSync('git', ['reset', '--hard', 'HEAD~2'], { cwd: repoBreaker });
-    // Run 3 on same (planHash, agyVersion) skips demoted gemini-pro-orchestrator -> uses gemini-pro-orchestrator-argon
+    // Run 3 on same (planHash, agyVersion) skips demoted gemini-pro-orchestrator-neon -> uses gemini-pro-orchestrator
     await withIsolatedSchedulerEnv({ FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateAfterBreaker }, () =>
       runPlan({ repo: repoBreaker, gate: { test: 'true' }, tickets: planTickets }, { log: () => {} }),
     );
-    perSlugCircuitBreakerOk =
-      JSON.stringify(runJsonAfter2.disabledModels) === JSON.stringify(['gemini-pro-orchestrator']) &&
-      breakerLogs.some((l) => l.includes('demoting gemini-pro-orchestrator after 2/4 builder-fault tickets')) &&
+    perSlugCircuitBreakerOk = [
+      JSON.stringify(runJsonAfter2.disabledModels) === JSON.stringify(['gemini-pro-orchestrator-neon']),
+      breakerLogs.some((l) => l.includes('demoting gemini-pro-orchestrator-neon after 2/4 builder-fault tickets')),
       JSON.stringify(extractBuilderModels(stateAfterBreaker)) ===
-        JSON.stringify(['gemini-pro-orchestrator-argon', 'gemini-pro-orchestrator-argon']);
+        JSON.stringify(['gemini-pro-orchestrator', 'gemini-pro-orchestrator']),
+    ].every(Boolean);
   } finally {
     rmSync(repoBreaker, { recursive: true, force: true });
     rmSync(stateBreaker, { recursive: true, force: true });
@@ -1476,13 +1479,14 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
     );
     const rjUnavail = JSON.parse(readFileSync(join(repoUnavail, '.booster', 'run.json'), 'utf8'));
 
-    gateExclusionAndRunScopedUnavailOk =
-      rjGate.modelStats['gemini-pro-orchestrator']?.resolvedTickets === 4 &&
-      rjGate.modelStats['gemini-pro-orchestrator']?.builderFaultTickets === 0 &&
-      rjGate.disabledModels.length === 0 &&
-      rjUnavail.disabledModels.length === 0 &&
+    gateExclusionAndRunScopedUnavailOk = [
+      rjGate.modelStats['gemini-pro-orchestrator-neon']?.resolvedTickets === 4,
+      rjGate.modelStats['gemini-pro-orchestrator-neon']?.builderFaultTickets === 0,
+      rjGate.disabledModels.length === 0,
+      rjUnavail.disabledModels.length === 0,
       JSON.stringify(extractBuilderModels(stateUnavail)) ===
-        JSON.stringify(['gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon', 'gemini-pro-orchestrator-argon']);
+        JSON.stringify(['gemini-pro-orchestrator-neon', 'gemini-pro-orchestrator', 'gemini-pro-orchestrator']),
+    ].every(Boolean);
   } finally {
     rmSync(repoGate, { recursive: true, force: true });
     rmSync(stateGate, { recursive: true, force: true });

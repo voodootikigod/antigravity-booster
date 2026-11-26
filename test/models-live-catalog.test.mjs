@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   ALL_MODELS,
+  ENTERPRISE_MODEL_ALIASES,
   FRONTIER_NO_ORCHESTRATOR,
   MODELS,
   MODEL_ALIASES,
@@ -15,10 +16,11 @@ import {
   resolveModelSlug,
   poolOf,
   familyOf,
+  sameFamilyProsecutorsFor,
   tierCandidates,
 } from '../lib/models.mjs';
 
-// Snapshot of `agy models` (agy 1.5.13). Update together with lib/models.mjs;
+// Snapshot of `agy models` post-November 30, 2026. Update together with lib/models.mjs;
 // `agb doctor` (t-doctor-catalog-drift) reports drift against the live CLI.
 const LIVE_CATALOG = [
   'gemini-4-neon-low',
@@ -28,77 +30,64 @@ const LIVE_CATALOG = [
   'gemini-4-carbon-low',
   'gemini-4-carbon-medium',
   'gemini-4-carbon-high',
-  'gemini-4-argon-low',
-  'gemini-4-argon-medium',
-  'gemini-4-argon-high',
   'gemini-4-hydrogen-low',
   'gemini-4-hydrogen-medium',
   'gemini-4-hydrogen-high',
   'gemini-4-hydrogen-xhigh',
   'gemini-pro-orchestrator-neon',
   'gemini-pro-orchestrator',
-  'gemini-pro-orchestrator-argon',
-  'gemini-3.8-flash-low',
-  'gemini-3.8-flash-medium',
-  'gemini-3.8-flash-high',
   'claude-opus-5-5-low',
   'claude-opus-5-5-medium',
   'claude-opus-5-5-high',
   'claude-sonnet-5-5-low',
   'claude-sonnet-5-5-medium',
   'claude-sonnet-5-5-high',
-  'gpt-oss-120b-medium',
 ];
 
 const RETIRED_SLUGS = [
   'gemini-3.5-flash-low', 'gemini-3.5-flash-medium', 'gemini-3.5-flash-high',
-  'gemini-3.7-flash-low', 'gemini-3.7-flash-medium', 'gemini-3.7-flash-high',
-  'gemini-3.6-flash-low', 'gemini-3.6-flash-medium', 'gemini-3.6-flash-high',
-  'gemini-3.1-pro-low', 'gemini-3.1-pro-high',
+  'gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high',
+  'gemini-4-argon-low', 'gemini-4-argon-medium', 'gemini-4-argon-high',
+  'gemini-pro-orchestrator-argon',
+  'gpt-oss-120b-medium',
   'claude-sonnet-4-6', 'claude-opus-4-6-thinking',
 ];
 
-describe('models-live-catalog: MODELS matches agy 1.5.13', () => {
+describe('models-live-catalog: MODELS matches post-Nov-30 Antigravity catalog', () => {
   it('ALL_MODELS equals the live catalog exactly', () => {
     assert.deepEqual([...ALL_MODELS].sort(), [...LIVE_CATALOG].sort());
   });
 
-  it('buckets the new models into the right pools and families', () => {
-    assert.equal(poolOf('gemini-4-argon-high'), 'gemini-pro');
-    assert.equal(familyOf('gemini-4-argon-low'), 'gemini');
+  it('buckets the live models into the right pools and families (Hydrogen in gemini-flash)', () => {
     assert.equal(poolOf('gemini-4-carbon-high'), 'gemini-pro');
     assert.equal(familyOf('gemini-4-carbon-low'), 'gemini');
-    assert.equal(poolOf('gemini-4-hydrogen-xhigh'), 'gemini-pro');
+    assert.equal(poolOf('gemini-4-hydrogen-xhigh'), 'gemini-flash');
+    assert.equal(poolOf('gemini-4-hydrogen-low'), 'gemini-flash');
     assert.equal(familyOf('gemini-4-hydrogen-medium'), 'gemini');
     assert.equal(poolOf('gemini-4-neon-xhigh'), 'gemini-pro');
     assert.equal(familyOf('gemini-4-neon-medium'), 'gemini');
     assert.equal(poolOf('gemini-pro-orchestrator'), 'gemini-pro');
-    assert.equal(poolOf('gemini-pro-orchestrator-argon'), 'gemini-pro');
     assert.equal(poolOf('gemini-pro-orchestrator-neon'), 'gemini-pro');
     assert.equal(poolOf('claude-opus-5-5-high'), 'claude');
     assert.equal(poolOf('claude-sonnet-5-5-medium'), 'claude');
-    assert.equal(poolOf('gemini-3.8-flash-high'), 'gemini-flash');
   });
 
-  it('places Orchestrator slugs on frontier builder tier while excluding them from cheap/mid, prosecutors, and roles', () => {
+  it('places Orchestrator slugs on frontier builder tier (Neon first) while excluding them from cheap/mid, prosecutors, and roles', () => {
     assert.deepEqual(TIER_CANDIDATES.frontier, [
-      'gemini-pro-orchestrator',
-      'claude-sonnet-5-5-high',
-      'gemini-pro-orchestrator-argon',
       'gemini-pro-orchestrator-neon',
-      'gemini-4-argon-high',
-      'gemini-4-carbon-high',
+      'claude-sonnet-5-5-high',
+      'gemini-pro-orchestrator',
       'gemini-4-neon-high',
+      'gemini-4-carbon-high',
       'claude-opus-5-5-high',
     ]);
     assert.deepEqual(FRONTIER_NO_ORCHESTRATOR, [
-      'gemini-4-argon-high',
+      'gemini-4-neon-high',
       'claude-sonnet-5-5-high',
       'gemini-4-carbon-high',
-      'gemini-4-neon-high',
       'claude-opus-5-5-high',
     ]);
-    assert.equal(tierCandidates('frontier', 'gemini').length, 6);
+    assert.equal(tierCandidates('frontier', 'gemini').length, 4);
     for (const tier of ['cheap', 'mid']) {
       for (const m of TIER_CANDIDATES[tier]) assert.ok(!m.includes('orchestrator'), `${tier} must not schedule orchestrator ${m}`);
     }
@@ -128,10 +117,20 @@ describe('models-live-catalog: no default points at a dead slug', () => {
     }
   });
 
-  it('every prosecutor default and candidate is live', () => {
+  it('every prosecutor default, candidate, and same-family fallback is live and non-orchestrator', () => {
     for (const [fam, m] of Object.entries(PROSECUTORS)) assert.ok(live.has(m), `PROSECUTORS.${fam} -> ${m}`);
     for (const [fam, list] of Object.entries(PROSECUTOR_CANDIDATES)) {
       for (const m of list) assert.ok(live.has(m), `PROSECUTOR_CANDIDATES.${fam} lists ${m}`);
+    }
+    for (const builder of LIVE_CATALOG) {
+      const sf = sameFamilyProsecutorsFor(builder);
+      assert.ok(sf.length > 0, `${builder} must have same-family fallbacks`);
+      for (const p of sf) {
+        assert.ok(live.has(p), `sameFamilyProsecutorsFor(${builder}) -> ${p} not live`);
+        assert.equal(familyOf(p), familyOf(builder));
+        assert.notEqual(p, builder, `sameFamilyProsecutorsFor(${builder}) must not return builder itself`);
+        assert.ok(!p.includes('orchestrator'));
+      }
     }
   });
 
@@ -159,7 +158,7 @@ describe('models-live-catalog: no default points at a dead slug', () => {
   });
 });
 
-describe('models-live-catalog: retired slugs migrate to live ones', () => {
+describe('models-live-catalog: retired slugs migrate to live ones and Enterprise models pass through', () => {
   it('every retired slug resolves to a live slug and warns', () => {
     for (const retired of RETIRED_SLUGS) {
       const warnings = [];
@@ -177,12 +176,17 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     }
   });
 
-  it('maps like-for-like effort and family', () => {
+  it('maps Nov 30 and legacy retired slugs like-for-like in effort and family', () => {
     const map = {
-      'gemini-3.7-flash-medium': 'gemini-3.8-flash-medium',
-      'gemini-3.6-flash-low': 'gemini-3.8-flash-low',
-      'gemini-3.1-pro-low': 'gemini-4-argon-low',
-      'gemini-3.1-pro-high': 'gemini-4-argon-high',
+      'gemini-3.8-flash-low': 'gemini-4-hydrogen-low',
+      'gemini-3.8-flash-medium': 'gemini-4-hydrogen-medium',
+      'gemini-3.8-flash-high': 'gemini-4-hydrogen-high',
+      'gemini-3.5-flash-low': 'gemini-4-hydrogen-low',
+      'gemini-4-argon-low': 'gemini-4-neon-low',
+      'gemini-4-argon-medium': 'gemini-4-neon-medium',
+      'gemini-4-argon-high': 'gemini-4-neon-high',
+      'gemini-pro-orchestrator-argon': 'gemini-pro-orchestrator-neon',
+      'gpt-oss-120b-medium': 'claude-sonnet-5-5-medium',
       'claude-sonnet-4-6': 'claude-sonnet-5-5-medium',
       'claude-opus-4-6-thinking': 'claude-opus-5-5-high',
     };
@@ -197,13 +201,36 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     }
   });
 
+  it('preserves Gemini Enterprise live models (3.7-flash, 3.6-flash, 3.1-pro) without retirement warnings', () => {
+    assert.equal(Object.isFrozen(ENTERPRISE_MODEL_ALIASES), true);
+    const warnings = [];
+    const orig = console.warn;
+    console.warn = (msg) => warnings.push(msg);
+    try {
+      assert.equal(resolveModelSlug('gemini-3.7-flash-medium'), 'gemini-3.7-flash-medium');
+      assert.equal(resolveModelSlug('Gemini 3.7 Flash (Medium)'), 'gemini-3.7-flash-medium');
+      assert.equal(resolveModelSlug('Gemini 3.6 Flash (Low)'), 'gemini-3.6-flash-low');
+      assert.equal(resolveModelSlug('gemini-3.1-pro-high'), 'gemini-3.1-pro-high');
+      assert.equal(resolveModelSlug('Gemini 3.1 Pro (High)'), 'gemini-3.1-pro-high');
+      assert.equal(poolOf('gemini-3.7-flash-medium'), 'gemini-flash');
+      assert.equal(poolOf('gemini-3.6-flash-low'), 'gemini-flash');
+      assert.equal(poolOf('gemini-3.1-pro-high'), 'gemini-pro');
+    } finally {
+      console.warn = orig;
+    }
+    assert.deepEqual(warnings, []);
+  });
+
   it('resolves retired display names case-insensitively', () => {
     const orig = console.warn;
     console.warn = () => {};
     try {
-      assert.equal(resolveModelSlug('Gemini 3.1 Pro (High)'), 'gemini-4-argon-high');
+      assert.equal(resolveModelSlug('Gemini 4 Argon (High)'), 'gemini-4-neon-high');
+      assert.equal(resolveModelSlug('Orchestrator (Argon)'), 'gemini-pro-orchestrator-neon');
+      assert.equal(resolveModelSlug('GPT-OSS 120B (Medium)'), 'claude-sonnet-5-5-medium');
       assert.equal(resolveModelSlug('Claude Opus 4.6 (Thinking)'), 'claude-opus-5-5-high');
-      assert.equal(resolveModelSlug('Gemini 3.5 Flash (Low)'), 'gemini-3.8-flash-low');
+      assert.equal(resolveModelSlug('Gemini 3.8 Flash (High)'), 'gemini-4-hydrogen-high');
+      assert.equal(resolveModelSlug('Gemini 3.5 Flash (Low)'), 'gemini-4-hydrogen-low');
     } finally {
       console.warn = orig;
     }
@@ -214,10 +241,10 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     const orig = console.warn;
     console.warn = (msg) => warnings.push(msg);
     try {
-      assert.equal(resolveModelSlug('Gemini 4 Argon (High)'), 'gemini-4-argon-high');
+      assert.equal(resolveModelSlug('Gemini 4 Neon (High)'), 'gemini-4-neon-high');
       assert.equal(resolveModelSlug('Claude Opus 5.5 (Low)'), 'claude-opus-5-5-low');
       assert.equal(resolveModelSlug('Claude Sonnet 5.5 (Medium)'), 'claude-sonnet-5-5-medium');
-      assert.equal(resolveModelSlug('Gemini 3.8 Flash (High)'), 'gemini-3.8-flash-high');
+      assert.equal(resolveModelSlug('Gemini 4 Hydrogen (High)'), 'gemini-4-hydrogen-high');
     } finally {
       console.warn = orig;
     }
@@ -233,26 +260,18 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
       'gemini-4-carbon-low': 'Gemini 4 Carbon (Low)',
       'gemini-4-carbon-medium': 'Gemini 4 Carbon (Medium)',
       'gemini-4-carbon-high': 'Gemini 4 Carbon (High)',
-      'gemini-4-argon-low': 'Gemini 4 Argon (Low)',
-      'gemini-4-argon-medium': 'Gemini 4 Argon (Medium)',
-      'gemini-4-argon-high': 'Gemini 4 Argon (High)',
       'gemini-4-hydrogen-low': 'Gemini 4 Hydrogen (Low)',
       'gemini-4-hydrogen-medium': 'Gemini 4 Hydrogen (Medium)',
       'gemini-4-hydrogen-high': 'Gemini 4 Hydrogen (High)',
       'gemini-4-hydrogen-xhigh': 'Gemini 4 Hydrogen (XHigh)',
       'gemini-pro-orchestrator-neon': 'Orchestrator (Neon)',
       'gemini-pro-orchestrator': 'Orchestrator (Carbon)',
-      'gemini-pro-orchestrator-argon': 'Orchestrator (Argon)',
-      'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
-      'gemini-3.8-flash-medium': 'Gemini 3.8 Flash (Medium)',
-      'gemini-3.8-flash-high': 'Gemini 3.8 Flash (High)',
       'claude-opus-5-5-low': 'Claude Opus 5.5 (Low)',
       'claude-opus-5-5-medium': 'Claude Opus 5.5 (Medium)',
       'claude-opus-5-5-high': 'Claude Opus 5.5 (High)',
       'claude-sonnet-5-5-low': 'Claude Sonnet 5.5 (Low)',
       'claude-sonnet-5-5-medium': 'Claude Sonnet 5.5 (Medium)',
       'claude-sonnet-5-5-high': 'Claude Sonnet 5.5 (High)',
-      'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
     };
     assert.deepEqual(Object.keys(display).sort(), [...LIVE_CATALOG].sort());
     const warnings = [];
@@ -302,8 +321,8 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     }
     assert.deepEqual(counts, {
       'cheap+gemini': 2, 'cheap+claude': 0, 'cheap+claude-gpt': 0, 'cheap+gpt-oss': 0,
-      'mid+gemini': 5, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
-      'frontier+gemini': 6, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
+      'mid+gemini': 4, 'mid+claude': 1, 'mid+claude-gpt': 1, 'mid+gpt-oss': 0,
+      'frontier+gemini': 4, 'frontier+claude': 2, 'frontier+claude-gpt': 2, 'frontier+gpt-oss': 0,
     });
   });
 
@@ -315,3 +334,4 @@ describe('models-live-catalog: retired slugs migrate to live ones', () => {
     assert.ok(Object.keys(MODELS).length > 0);
   });
 });
+

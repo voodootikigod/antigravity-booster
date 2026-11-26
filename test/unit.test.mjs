@@ -81,21 +81,29 @@ test('agb validate: rejects duplicate ids, unknown edges, missing body, empty sc
 // --- agy wrapper ---
 
 test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
-  assert.equal(poolOf('Gemini 3.5 Flash (Low)'), 'gemini-flash');
-  assert.equal(poolOf('Claude Opus 4.6 (Thinking)'), 'claude');
-  assert.equal(familyOf('Gemini 3.1 Pro (High)'), 'gemini');
-  assert.equal(poolOf('gemini-3.8-flash-low'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.8-flash-medium'), 'gemini-flash');
-  assert.equal(poolOf('gemini-3.8-flash-high'), 'gemini-flash');
-  assert.equal(poolOf('gemini-4-argon-low'), 'gemini-pro');
-  assert.equal(poolOf('gemini-4-argon-medium'), 'gemini-pro');
-  assert.equal(poolOf('gemini-4-argon-high'), 'gemini-pro');
-  assert.equal(poolOf('claude-sonnet-5-5-low'), 'claude');
-  assert.equal(poolOf('claude-opus-5-5-high'), 'claude');
-  assert.equal(familyOf('gemini-3.8-flash-high'), 'gemini');
-  assert.equal(familyOf('gemini-4-argon-low'), 'gemini');
-  assert.equal(familyOf('claude-sonnet-5-5-medium'), 'claude');
-  assert.equal(familyOf('gpt-oss-120b-medium'), 'gpt-oss');
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(poolOf('Gemini 3.5 Flash (Low)'), 'gemini-flash');
+    assert.equal(poolOf('Claude Opus 4.6 (Thinking)'), 'claude');
+    assert.equal(familyOf('Gemini 3.1 Pro (High)'), 'gemini');
+    assert.equal(poolOf('gemini-4-hydrogen-low'), 'gemini-flash');
+    assert.equal(poolOf('gemini-4-hydrogen-medium'), 'gemini-flash');
+    assert.equal(poolOf('gemini-4-hydrogen-high'), 'gemini-flash');
+    assert.equal(poolOf('gemini-4-neon-low'), 'gemini-pro');
+    assert.equal(poolOf('gemini-4-neon-medium'), 'gemini-pro');
+    assert.equal(poolOf('gemini-4-neon-high'), 'gemini-pro');
+    assert.equal(poolOf('claude-sonnet-5-5-low'), 'claude');
+    assert.equal(poolOf('claude-opus-5-5-high'), 'claude');
+    assert.equal(familyOf('gemini-4-hydrogen-high'), 'gemini');
+    assert.equal(familyOf('gemini-4-neon-low'), 'gemini');
+    assert.equal(familyOf('claude-sonnet-5-5-medium'), 'claude');
+    // Retired gpt-oss-120b-medium remaps to claude-sonnet-5-5-medium ('claude'); custom GPT slugs map to 'gpt-oss'
+    assert.equal(familyOf('gpt-oss-120b-medium'), 'claude');
+    assert.equal(familyOf('GPT-9'), 'gpt-oss');
+  } finally {
+    console.warn = origWarn;
+  }
   // test fuzzy/prefix fallback matching
   assert.equal(poolOf('gemini-1.5-flash-custom'), 'gemini-flash');
   assert.equal(poolOf('custom-gemini-model'), 'gemini-pro');
@@ -110,30 +118,38 @@ test('poolOf/familyOf: every model maps; prosecutor families oppose', () => {
   assert.throws(() => poolOf(123), /unknown model: 123/);
 });
 
-test('resolveModelSlug: maps retired models to live ones and resolves display aliases', () => {
-  assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-3.8-flash-low');
-  assert.equal(resolveModelSlug('gemini-3.5-flash-medium'), 'gemini-3.8-flash-medium');
-  assert.equal(resolveModelSlug('gemini-3.5-flash-high'), 'gemini-3.8-flash-high');
-  assert.equal(resolveModelSlug('Gemini 3.5 Flash (Low)'), 'gemini-3.8-flash-low');
-  assert.equal(resolveModelSlug('Gemini 3.8 Flash (High)'), 'gemini-3.8-flash-high');
-  assert.equal(resolveModelSlug('Gemini 3.7 Flash (Medium)'), 'gemini-3.8-flash-medium');
-  assert.equal(resolveModelSlug('Gemini 3.6 Flash (Low)'), 'gemini-3.8-flash-low');
-  assert.equal(resolveModelSlug('Claude Sonnet 4.6 (Thinking)'), 'claude-sonnet-5-5-medium');
+test('resolveModelSlug: maps retired models to live ones, preserves Enterprise models, and resolves display aliases', () => {
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(resolveModelSlug('gemini-3.5-flash-low'), 'gemini-4-hydrogen-low');
+    assert.equal(resolveModelSlug('gemini-3.5-flash-medium'), 'gemini-4-hydrogen-medium');
+    assert.equal(resolveModelSlug('gemini-3.5-flash-high'), 'gemini-4-hydrogen-high');
+    assert.equal(resolveModelSlug('Gemini 3.5 Flash (Low)'), 'gemini-4-hydrogen-low');
+    assert.equal(resolveModelSlug('Gemini 3.8 Flash (High)'), 'gemini-4-hydrogen-high');
+    assert.equal(resolveModelSlug('Gemini 4 Argon (High)'), 'gemini-4-neon-high');
+    assert.equal(resolveModelSlug('Claude Sonnet 4.6 (Thinking)'), 'claude-sonnet-5-5-medium');
+  } finally {
+    console.warn = origWarn;
+  }
+  // Enterprise live models & live display aliases
+  assert.equal(resolveModelSlug('Gemini 3.7 Flash (Medium)'), 'gemini-3.7-flash-medium');
+  assert.equal(resolveModelSlug('Gemini 3.6 Flash (Low)'), 'gemini-3.6-flash-low');
   assert.equal(resolveModelSlug('Claude Sonnet 5.5 (Medium)'), 'claude-sonnet-5-5-medium');
 });
 
 test('tierCandidates: filters by pool_hint including claude-gpt alias', () => {
   const cheapGemini = tierCandidates('cheap', 'gemini');
-  assert.ok(cheapGemini.includes('gemini-3.8-flash-low'));
-  assert.ok(cheapGemini.includes('gemini-3.8-flash-medium'));
+  assert.ok(cheapGemini.includes('gemini-4-hydrogen-low'));
+  assert.ok(cheapGemini.includes('gemini-4-hydrogen-medium'));
 
   const frontierClaude = tierCandidates('frontier', 'claude');
   assert.ok(frontierClaude.includes('claude-sonnet-5-5-high'));
-  assert.ok(!frontierClaude.includes('gemini-4-argon-high'));
+  assert.ok(!frontierClaude.includes('gemini-4-neon-high'));
 
   const frontierClaudeGpt = tierCandidates('frontier', 'claude-gpt');
   assert.ok(frontierClaudeGpt.includes('claude-sonnet-5-5-high'));
-  assert.ok(!frontierClaudeGpt.includes('gemini-4-argon-high'));
+  assert.ok(!frontierClaudeGpt.includes('gemini-4-neon-high'));
 });
 
 test('runAgy: success round-trip via fake binary', async () => {
@@ -272,24 +288,22 @@ test('PoolSet: caps enforced, waiters released, requests counted', async () => {
 
 test('PoolSet.route: reservation spreads concurrent dispatches across pools', () => {
   const pools = new PoolSet();
-  // First mid ticket → claude (all reserved 0, claude is first candidate).
-  // First mid ticket -> gemini-3.8-flash-high
-  assert.equal(pools.route('mid'), 'gemini-3.8-flash-high');
-  // Second mid ticket (no slot acquired yet — the bug case) must NOT pick
-  // claude again; reservation pushes it to the idle gemini-pro pool.
-  assert.equal(pools.route('mid'), 'gemini-4-argon-low');
-  // pool_hint still constrains family (but both are gemini now, so it falls back to load ratio: 1/8 < 1/4)
-  assert.equal(pools.route('mid', 'gemini'), 'gemini-3.8-flash-high');
+  // First mid ticket -> gemini-4-hydrogen-high (gemini-flash)
+  assert.equal(pools.route('mid'), 'gemini-4-hydrogen-high');
+  // Second mid ticket (no slot acquired yet) pushes to idle gemini-pro pool -> gemini-4-neon-low
+  assert.equal(pools.route('mid'), 'gemini-4-neon-low');
+  // pool_hint still constrains family (both are gemini, so it picks lower load ratio: 1/8 < 1/4)
+  assert.equal(pools.route('mid', 'gemini'), 'gemini-4-hydrogen-high');
   // unroute frees the assignment so the pool rebalances.
-  pools.unroute('gemini-4-argon-low');
-  pools.unroute('gemini-4-argon-low');
+  pools.unroute('gemini-4-neon-low');
+  pools.unroute('gemini-4-neon-low');
   assert.equal(pools.reserved['gemini-pro'], 0);
 });
 
-test('PoolSet.prosecutorFor: always a different family', () => {
+test('PoolSet.prosecutorFor: prefers opposite family when capacity is available', () => {
   const pools = new PoolSet();
-  assert.equal(familyOf(pools.prosecutorFor('Gemini 3.5 Flash (Low)')), 'gpt-oss');
-  assert.equal(familyOf(pools.prosecutorFor('GPT-OSS 120B (Medium)')), 'gemini');
+  assert.equal(familyOf(pools.prosecutorFor('Gemini 4 Hydrogen (Low)')), 'claude');
+  assert.equal(familyOf(pools.prosecutorFor('Claude Sonnet 5.5 (Medium)')), 'gemini');
 });
 
 // --- charters ---

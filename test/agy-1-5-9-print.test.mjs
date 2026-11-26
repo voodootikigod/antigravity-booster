@@ -362,17 +362,17 @@ function withTempState(fn) {
 
 test('runAgy: appends --disable-slash-commands after --model by default', async () => {
   await withTempState(async (stateDir) => {
-    const res = await runAgy({ bin: FAKE_AGY, model: 'gemini-3.8-flash-low', prompt: 'hello probe', sandbox: false });
+    const res = await runAgy({ bin: FAKE_AGY, model: 'gemini-4-hydrogen-low', prompt: 'hello probe', sandbox: false });
     assert.ok(res.ok, res.error);
     assert.equal(res.rateLimited, false);
     const argv = readFileSync(join(stateDir, 'agy-argv-seen'), 'utf8');
-    assert.match(argv, /--model gemini-3\.8-flash-low --disable-slash-commands/);
+    assert.match(argv, /--model gemini-4-hydrogen-low --disable-slash-commands/);
   });
 });
 
 test('runAgy: disableSlashCommands:false omits the flag', async () => {
   await withTempState(async (stateDir) => {
-    const res = await runAgy({ bin: FAKE_AGY, model: 'gemini-3.8-flash-low', prompt: 'hello probe', sandbox: false, disableSlashCommands: false });
+    const res = await runAgy({ bin: FAKE_AGY, model: 'gemini-4-hydrogen-low', prompt: 'hello probe', sandbox: false, disableSlashCommands: false });
     assert.ok(res.ok, res.error);
     const argv = readFileSync(join(stateDir, 'agy-argv-seen'), 'utf8');
     assert.doesNotMatch(argv, /--disable-slash-commands/);
@@ -381,10 +381,10 @@ test('runAgy: disableSlashCommands:false omits the flag', async () => {
 
 test('runAgy: stdin-piped large prompts also carry --disable-slash-commands', async () => {
   await withTempState(async (stateDir) => {
-    const res = await runAgy({ bin: FAKE_AGY, model: 'gemini-3.8-flash-low', prompt: 'x'.repeat(30 * 1024), sandbox: false });
+    const res = await runAgy({ bin: FAKE_AGY, model: 'gemini-4-hydrogen-low', prompt: 'x'.repeat(30 * 1024), sandbox: false });
     assert.ok(res.ok, res.error);
     const argv = readFileSync(join(stateDir, 'agy-argv-seen'), 'utf8');
-    assert.match(argv, /--input-format text .*--model gemini-3\.8-flash-low --disable-slash-commands/);
+    assert.match(argv, /--input-format text .*--model gemini-4-hydrogen-low --disable-slash-commands/);
   });
 });
 

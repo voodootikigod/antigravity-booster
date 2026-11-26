@@ -20,6 +20,7 @@ function resolveModelSlug(model) {
     return resolved;
   }
   if (Object.hasOwn(MODEL_ALIASES, normalized)) return MODEL_ALIASES[normalized];
+  if (Object.hasOwn(ENTERPRISE_MODEL_ALIASES, normalized)) return ENTERPRISE_MODEL_ALIASES[normalized];
   for (const list of Object.values(MODELS)) {
     for (const slug of list) {
       if (slug.toLowerCase() === normalized) return slug;
@@ -34,8 +35,8 @@ function poolOf(model) {
   }
   if (typeof slug !== "string") throw new Error(`unknown model: ${slug}`);
   const normalized = slug.toLowerCase();
-  if (normalized.includes("flash")) return "gemini-flash";
-  if (normalized.includes("gemini") || normalized.includes("hydrogen")) return "gemini-pro";
+  if (normalized.includes("flash") || normalized.includes("hydrogen")) return "gemini-flash";
+  if (normalized.includes("gemini")) return "gemini-pro";
   if (normalized.includes("claude") || normalized.includes("sonnet") || normalized.includes("opus")) return "claude";
   if (normalized.includes("gpt")) return "gpt-oss";
   throw new Error(`unknown model: ${slug}`);
@@ -65,29 +66,26 @@ function tierCandidates(tier = "mid", poolHint, options) {
     return fam === poolHint;
   });
 }
-var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, CODE_ARL_LENSES, PLAN_ARL_LENSES, ARL_LENS_MODELS, runtimeState, routingAls, VALID_EFFORTS, SLUG_EFFORT_LADDER;
+var MODELS, ALL_MODELS, MODEL_ALIASES, EFFORTS, ENTERPRISE_MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, retiredEntries, RETIRED_MODEL_MAP, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, CODE_ARL_LENSES, PLAN_ARL_LENSES, ARL_LENS_MODELS, runtimeState, routingAls, VALID_EFFORTS, SLUG_EFFORT_LADDER;
 var init_models = __esm({
   "lib/models.mjs"() {
     MODELS = {
-      "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
-      "gemini-pro": [
-        "gemini-4-argon-low",
-        "gemini-4-argon-medium",
-        "gemini-4-argon-high",
-        "gemini-4-carbon-low",
-        "gemini-4-carbon-medium",
-        "gemini-4-carbon-high",
+      "gemini-flash": [
         "gemini-4-hydrogen-low",
         "gemini-4-hydrogen-medium",
         "gemini-4-hydrogen-high",
-        "gemini-4-hydrogen-xhigh",
+        "gemini-4-hydrogen-xhigh"
+      ],
+      "gemini-pro": [
         "gemini-4-neon-low",
         "gemini-4-neon-medium",
         "gemini-4-neon-high",
         "gemini-4-neon-xhigh",
-        "gemini-pro-orchestrator",
-        "gemini-pro-orchestrator-argon",
-        "gemini-pro-orchestrator-neon"
+        "gemini-4-carbon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-carbon-high",
+        "gemini-pro-orchestrator-neon",
+        "gemini-pro-orchestrator"
       ],
       claude: [
         "claude-sonnet-5-5-low",
@@ -97,19 +95,10 @@ var init_models = __esm({
         "claude-opus-5-5-medium",
         "claude-opus-5-5-high"
       ],
-      "gpt-oss": ["gpt-oss-120b-medium"]
+      "gpt-oss": []
     };
     ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
     MODEL_ALIASES = {
-      "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
-      "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
-      "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
-      "gemini 4 argon (low)": "gemini-4-argon-low",
-      "gemini 4 argon (medium)": "gemini-4-argon-medium",
-      "gemini 4 argon (high)": "gemini-4-argon-high",
-      "gemini 4 carbon (low)": "gemini-4-carbon-low",
-      "gemini 4 carbon (medium)": "gemini-4-carbon-medium",
-      "gemini 4 carbon (high)": "gemini-4-carbon-high",
       "gemini 4 hydrogen (low)": "gemini-4-hydrogen-low",
       "gemini 4 hydrogen (medium)": "gemini-4-hydrogen-medium",
       "gemini 4 hydrogen (high)": "gemini-4-hydrogen-high",
@@ -118,30 +107,49 @@ var init_models = __esm({
       "gemini 4 neon (medium)": "gemini-4-neon-medium",
       "gemini 4 neon (high)": "gemini-4-neon-high",
       "gemini 4 neon (xhigh)": "gemini-4-neon-xhigh",
-      "orchestrator (carbon)": "gemini-pro-orchestrator",
-      "orchestrator (argon)": "gemini-pro-orchestrator-argon",
+      "gemini 4 carbon (low)": "gemini-4-carbon-low",
+      "gemini 4 carbon (medium)": "gemini-4-carbon-medium",
+      "gemini 4 carbon (high)": "gemini-4-carbon-high",
       "orchestrator (neon)": "gemini-pro-orchestrator-neon",
+      "orchestrator (carbon)": "gemini-pro-orchestrator",
       "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
       "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
       "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
       "claude opus 5.5 (low)": "claude-opus-5-5-low",
       "claude opus 5.5 (medium)": "claude-opus-5-5-medium",
-      "claude opus 5.5 (high)": "claude-opus-5-5-high",
-      "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
+      "claude opus 5.5 (high)": "claude-opus-5-5-high"
     };
-    RETIRED_FLASH_GENERATIONS = ["3.5", "3.6", "3.7"];
     EFFORTS = ["low", "medium", "high"];
+    ENTERPRISE_MODEL_ALIASES = Object.freeze(
+      Object.fromEntries([
+        ...["3.6", "3.7"].flatMap(
+          (gen) => EFFORTS.flatMap((e) => [
+            [`gemini-${gen}-flash-${e}`, `gemini-${gen}-flash-${e}`],
+            [`gemini ${gen} flash (${e})`, `gemini-${gen}-flash-${e}`]
+          ])
+        ),
+        ...["low", "high"].flatMap((e) => [
+          [`gemini-3.1-pro-${e}`, `gemini-3.1-pro-${e}`],
+          [`gemini 3.1 pro (${e})`, `gemini-3.1-pro-${e}`]
+        ])
+      ])
+    );
+    RETIRED_FLASH_GENERATIONS = ["3.5", "3.8"];
     retiredEntries = [
       ...RETIRED_FLASH_GENERATIONS.flatMap(
         (gen) => EFFORTS.flatMap((e) => [
-          [`gemini-${gen}-flash-${e}`, `gemini-3.8-flash-${e}`],
-          [`gemini ${gen} flash (${e})`, `gemini-3.8-flash-${e}`]
+          [`gemini-${gen}-flash-${e}`, `gemini-4-hydrogen-${e}`],
+          [`gemini ${gen} flash (${e})`, `gemini-4-hydrogen-${e}`]
         ])
       ),
-      ...["low", "high"].flatMap((e) => [
-        [`gemini-3.1-pro-${e}`, `gemini-4-argon-${e}`],
-        [`gemini 3.1 pro (${e})`, `gemini-4-argon-${e}`]
+      ...EFFORTS.flatMap((e) => [
+        [`gemini-4-argon-${e}`, `gemini-4-neon-${e}`],
+        [`gemini 4 argon (${e})`, `gemini-4-neon-${e}`]
       ]),
+      ["gemini-pro-orchestrator-argon", "gemini-pro-orchestrator-neon"],
+      ["orchestrator (argon)", "gemini-pro-orchestrator-neon"],
+      ["gpt-oss-120b-medium", "claude-sonnet-5-5-medium"],
+      ["gpt-oss 120b (medium)", "claude-sonnet-5-5-medium"],
       ["claude-sonnet-4-6", "claude-sonnet-5-5-medium"],
       ["claude sonnet 4.6 (thinking)", "claude-sonnet-5-5-medium"],
       ["claude-opus-4-6-thinking", "claude-opus-5-5-high"],
@@ -149,30 +157,26 @@ var init_models = __esm({
     ];
     RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
     FRONTIER_NO_ORCHESTRATOR = Object.freeze([
-      "gemini-4-argon-high",
+      "gemini-4-neon-high",
       "claude-sonnet-5-5-high",
       "gemini-4-carbon-high",
-      "gemini-4-neon-high",
       "claude-opus-5-5-high"
     ]);
     TIER_CANDIDATES = {
-      cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
+      cheap: ["gemini-4-hydrogen-low", "gemini-4-hydrogen-medium"],
       mid: [
-        "gemini-3.8-flash-high",
-        "gemini-4-argon-low",
-        "gemini-4-carbon-medium",
-        "gemini-4-hydrogen-medium",
+        "gemini-4-hydrogen-high",
+        "gemini-4-neon-low",
         "gemini-4-neon-medium",
+        "gemini-4-carbon-medium",
         "claude-sonnet-5-5-medium"
       ],
       frontier: Object.freeze([
-        "gemini-pro-orchestrator",
-        "claude-sonnet-5-5-high",
-        "gemini-pro-orchestrator-argon",
         "gemini-pro-orchestrator-neon",
-        "gemini-4-argon-high",
-        "gemini-4-carbon-high",
+        "claude-sonnet-5-5-high",
+        "gemini-pro-orchestrator",
         "gemini-4-neon-high",
+        "gemini-4-carbon-high",
         "claude-opus-5-5-high"
       ])
     };
@@ -191,16 +195,16 @@ var init_models = __esm({
       "dag_topology"
     ]);
     ARL_LENS_MODELS = Object.freeze({
-      correctness_redteam: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
-      security: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
-      simplicity: { primary: "claude-sonnet-5-5-medium", fallback: "gemini-3.8-flash-medium" },
-      evidence_runner: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
-      anti_slop: { primary: "claude-sonnet-5-5-high", fallback: "gemini-3.8-flash-high" },
-      devils_advocate: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
-      requirements_fidelity: { primary: "gemini-4-argon-medium", fallback: "claude-sonnet-5-5-high" },
-      evidence_strategy: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
-      dag_topology: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
-      arbiter: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" }
+      correctness_redteam: { primary: "claude-opus-5-5-high", fallback: "gemini-4-neon-high" },
+      security: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" },
+      simplicity: { primary: "claude-sonnet-5-5-medium", fallback: "gemini-4-hydrogen-medium" },
+      evidence_runner: { primary: "gemini-4-hydrogen-medium", fallback: "claude-sonnet-5-5-medium" },
+      anti_slop: { primary: "claude-sonnet-5-5-high", fallback: "gemini-4-hydrogen-high" },
+      devils_advocate: { primary: "claude-opus-5-5-high", fallback: "gemini-4-neon-high" },
+      requirements_fidelity: { primary: "gemini-4-neon-medium", fallback: "claude-sonnet-5-5-high" },
+      evidence_strategy: { primary: "gemini-4-hydrogen-medium", fallback: "claude-sonnet-5-5-medium" },
+      dag_topology: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" },
+      arbiter: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" }
     });
     runtimeState = {
       disableOrchestrator: false,
@@ -993,6 +997,8 @@ function isValidStatusLinePoolWindow(poolObj, nowMs) {
   if (typeof rWeekly !== "string" || !RFC3339_UTC_RE.test(rWeekly)) return false;
   const t5h = Date.parse(r5h);
   const tWeekly = Date.parse(rWeekly);
+  const isUnavailableZero = poolObj.unavailable === true && p5h === 0 && pWeekly === 0 && t5h === 0 && tWeekly === 0;
+  if (isUnavailableZero) return true;
   if (!Number.isFinite(t5h) || t5h < nowMs - 1e4 && !(t5h === 0 && p5h === 100)) return false;
   if (!Number.isFinite(tWeekly) || tWeekly < nowMs - 1e4 && !(tWeekly === 0 && pWeekly === 100)) return false;
   return true;

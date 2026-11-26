@@ -1937,10 +1937,57 @@ test('agy envelope: a non-SUCCESS status or missing groups fails closed', () => 
   assert.throws(() => parse(noGroups), (e) => e.kind === 'quota_parse_failure' && /groups/.test(e.message));
 });
 
-test('agy envelope: group cardinality and names keep the ambiguous_quota_pools rule', () => {
-  const one = envelope();
-  one.command.data.groups.pop();
-  assert.throws(() => parse(one), (e) => e.kind === 'ambiguous_quota_pools');
+test('agy envelope: supports Gemini-only single-group and post-GPT Claude Models rename while rejecting unknown/non-Gemini single groups', async () => {
+  const { writeStatusLineQuotaCache } = await import('../lib/pools.mjs');
+  // Single-group Gemini-only envelope (Free / Plus / Pro-Trial accounts)
+  const geminiOnly = envelope();
+  geminiOnly.command.data.groups.pop();
+  const parsedGeminiOnly = parse(geminiOnly);
+  assert.equal(parsedGeminiOnly.gemini.fiveHourRemainingPercent, 100);
+  assert.equal(parsedGeminiOnly.claude_gpt.fiveHourRemainingPercent, 0);
+  assert.equal(parsedGeminiOnly.claude_gpt.weeklyRemainingPercent, 0);
+  assert.equal(parsedGeminiOnly.claude_gpt.unavailable, true);
+  assert.equal(writeStatusLineQuotaCache(parsedGeminiOnly, { minWriteIntervalMs: 0 }), true);
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...parsedGeminiOnly, claude_gpt: { ...parsedGeminiOnly.claude_gpt, unavailable: false } },
+      { minWriteIntervalMs: 0 },
+    ),
+    false,
+  );
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...parsedGeminiOnly, claude_gpt: { ...parsedGeminiOnly.claude_gpt, fiveHourRemainingPercent: 1 } },
+      { minWriteIntervalMs: 0 },
+    ),
+    false,
+  );
+  assert.equal(
+    writeStatusLineQuotaCache(
+      { ...parsedGeminiOnly, claude_gpt: { ...parsedGeminiOnly.claude_gpt, weeklyRemainingPercent: 1 } },
+      { minWriteIntervalMs: 0 },
+    ),
+    false,
+  );
+
+  // Post-GPT renamed group ('Claude Models' and 'Anthropic Models')
+  const claudeRenamed = envelope();
+  claudeRenamed.command.data.groups[1].name = 'Claude Models';
+  assert.equal(parse(claudeRenamed).claude_gpt.fiveHourRemainingPercent, 25);
+  const anthropicRenamed = envelope();
+  anthropicRenamed.command.data.groups[1].name = 'Anthropic Models';
+  assert.equal(parse(anthropicRenamed).claude_gpt.fiveHourRemainingPercent, 25);
+
+  // Non-Gemini single-group, 0-group, 3-group, or unknown 2nd group still fail closed
+  const claudeOnly = envelope();
+  claudeOnly.command.data.groups.shift();
+  assert.throws(() => parse(claudeOnly), (e) => e.kind === 'ambiguous_quota_pools');
+  const emptyGroups = envelope();
+  emptyGroups.command.data.groups = [];
+  assert.throws(() => parse(emptyGroups), (e) => e.kind === 'ambiguous_quota_pools');
+  const threeGroups = envelope();
+  threeGroups.command.data.groups.push({ ...threeGroups.command.data.groups[1], name: 'Extra Models' });
+  assert.throws(() => parse(threeGroups), (e) => e.kind === 'ambiguous_quota_pools');
   const renamed = envelope();
   renamed.command.data.groups[1].name = 'Other';
   assert.throws(() => parse(renamed), (e) => e.kind === 'ambiguous_quota_pools');
@@ -2597,3 +2644,34 @@ test('statusLine quota cache enforces POSIX uid and sticky-dir ownership on read
   }
 });
 
+test('PoolSet.prosecutorFor & prosecutorsFor: prefers Claude 5.5 when Claude capacity > 0 and falls back to distinct Gemini model when Claude capacity is 0', () => {
+  const dualPools = new PoolSet({ 'gemini-flash': 4, 'gemini-pro': 4, claude: 2, 'gpt-oss': 0 });
+  assert.equal(dualPools.prosecutorFor('gemini-4-neon-high'), 'claude-sonnet-5-5-medium');
+  assert.equal(dualPools.prosecutorFor('claude-sonnet-5-5-high'), 'gemini-4-neon-high');
+
+  const geminiOnlyPools = new PoolSet({ 'gemini-flash': 4, 'gemini-pro': 4, claude: 0, 'gpt-oss': 0 });
+  assert.equal(geminiOnlyPools.prosecutorFor('gemini-4-neon-high'), 'gemini-4-carbon-high');
+  assert.equal(geminiOnlyPools.prosecutorFor('gemini-pro-orchestrator-neon'), 'gemini-4-carbon-high');
+  assert.equal(geminiOnlyPools.prosecutorFor('gemini-4-hydrogen-medium'), 'gemini-4-neon-high');
+  assert.equal(geminiOnlyPools.prosecutorFor('gemini-4-carbon-high'), 'gemini-4-neon-high');
+
+  // If gemini-pro is 0 but gemini-flash (Hydrogen) has capacity, Neon builder falls back to Hydrogen-High
+  const flashOnlyPools = new PoolSet({ 'gemini-flash': 4, 'gemini-pro': 0, claude: 0, 'gpt-oss': 0 });
+  assert.equal(flashOnlyPools.prosecutorFor('gemini-4-neon-high'), 'gemini-4-hydrogen-high');
+
+  const withFallback = geminiOnlyPools.prosecutorsFor('gemini-4-neon-high', { includeSameFamilyFallback: true });
+  assert.deepEqual(withFallback, [
+    'claude-sonnet-5-5-medium',
+    'claude-sonnet-5-5-high',
+    'claude-opus-5-5-high',
+    'gemini-4-carbon-high',
+    'gemini-4-hydrogen-high',
+  ]);
+
+  assert.equal(dualPools.isPoolViable('claude-sonnet-5-5-high'), true);
+  assert.equal(geminiOnlyPools.isPoolViable('claude-sonnet-5-5-high'), false);
+  const upstreamDepleted = new PoolSet({ claude: 2 });
+  upstreamDepleted.quota = { claude_gpt: { scaledCap: 0 }, gemini: { scaledCap: 8 } };
+  assert.equal(upstreamDepleted.isPoolViable('claude-sonnet-5-5-high'), false);
+  assert.equal(upstreamDepleted.isPoolViable('gemini-4-neon-high'), true);
+});

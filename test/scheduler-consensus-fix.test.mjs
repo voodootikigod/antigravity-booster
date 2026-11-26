@@ -62,6 +62,8 @@ test('runPlan: AC1 — a converging consensus-fix candidate is applied and ships
     // re-verification (not a regeneration strike), proving the applied fix
     // path re-prosecutes without spending fixPrompt/regenPrompt at all.
     assert.equal(readFileSync(join(repo, 'T1.txt'), 'utf8'), 'FIXED-BY-CONSENSUS\n');
+    const gmInvocations = readFileSync(join(state, 'gate-manifest-invocations'), 'utf8');
+    assert.match(gmInvocations, /"prosecutionMode":"cross-family".*"consensusFix":true/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(state, { recursive: true, force: true });
