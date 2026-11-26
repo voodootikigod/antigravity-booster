@@ -88,10 +88,11 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--settings') settingsRaw = args[i + 1];
 }
 
+const ALLOWED_SETTINGS_KEYS = new Set(["permissions", "allowNonWorkspaceAccess"]);
 if (settingsRaw !== null) {
   const parsed = JSON.parse(settingsRaw);
   for (const k of Object.keys(parsed)) {
-    if (k !== 'permissions') {
+    if (!ALLOWED_SETTINGS_KEYS.has(k)) {
       process.stderr.write(\`Error: --settings: unknown setting "\${k}"\\n\`);
       process.exit(1);
     }
@@ -313,9 +314,10 @@ test('readonly runAgy spawns 0 canary MCP servers, strips non-booster plugins, a
     assert.equal(report.XDG_CONFIG_HOME, join(report.HOME, '.config'));
     assert.deepEqual(report.discoveredPlugins, ['antigravity-booster']);
     assert.deepEqual(report.discoveredServers, []);
-    assert.deepEqual(Object.keys(report.settings), ['permissions']);
-    assert.ok(report.settings.permissions.deny.includes('write_file'));
-    assert.ok(report.settings.permissions.deny.includes('call_mcp_tool'));
+    assert.deepEqual(Object.keys(report.settings), ['allowNonWorkspaceAccess', 'permissions']);
+    assert.equal(report.settings.allowNonWorkspaceAccess, false);
+    assert.ok(report.settings.permissions.deny.includes('write_file(*)'));
+    assert.ok(report.settings.permissions.deny.includes('mcp(*)'));
 
     // Ephemeral agb-ro-* temp dir MUST be cleaned up on exit
     assert.equal(existsSync(report.HOME), false, 'ephemeral agb-ro-* .agb_home must be removed in finally');
@@ -380,10 +382,11 @@ test('builder runAgy (default) spawns 0 canary MCP servers, keeps hooks-only boo
     assert.equal(report.HOME, join(fx.worktree, '.agb_home'));
     assert.deepEqual(report.discoveredPlugins, ['adlc-antigravity', 'adlc-gemini', 'antigravity-booster']);
     assert.deepEqual(report.discoveredServers, []);
-    assert.deepEqual(Object.keys(report.settings), ['permissions']);
-    assert.ok(report.settings.permissions.deny.includes('call_mcp_tool'));
-    assert.ok(report.settings.permissions.deny.includes('invoke_subagent'));
-    assert.equal(report.settings.permissions.deny.includes('write_file'), false);
+    assert.deepEqual(Object.keys(report.settings), ['allowNonWorkspaceAccess', 'permissions']);
+    assert.equal(report.settings.allowNonWorkspaceAccess, false);
+    assert.ok(report.settings.permissions.deny.includes('mcp(*)'));
+    assert.ok(report.settings.permissions.deny.includes('write_file(.git/)'));
+    assert.equal(report.settings.permissions.deny.includes('write_file(*)'), false);
 
     // Inspect staged hooks-only antigravity-booster projection
     const stagedGemini = join(fx.worktree, '.agb_home', '.gemini');
@@ -499,7 +502,7 @@ test('codegraph MCP is staged ONLY when BOTH AGB_ALLOW_CODEGRAPH_MCP=1 AND <repo
     assert.deepEqual(fx.readCanaries(), []);
     const repA = JSON.parse(readFileSync(reportFile, 'utf8'));
     assert.deepEqual(repA.discoveredServers, []);
-    assert.ok(repA.settings.permissions.deny.includes('call_mcp_tool'));
+    assert.ok(repA.settings.permissions.deny.includes('mcp(*)'));
 
     // Case B: .codegraph exists WITHOUT AGB_ALLOW_CODEGRAPH_MCP=1 -> 0 MCP servers
     mkdirSync(join(fx.worktree, '.codegraph'), { recursive: true });
@@ -520,7 +523,7 @@ test('codegraph MCP is staged ONLY when BOTH AGB_ALLOW_CODEGRAPH_MCP=1 AND <repo
     assert.deepEqual(fx.readCanaries(), []);
     const repB = JSON.parse(readFileSync(reportFile, 'utf8'));
     assert.deepEqual(repB.discoveredServers, []);
-    assert.ok(repB.settings.permissions.deny.includes('call_mcp_tool'));
+    assert.ok(repB.settings.permissions.deny.includes('mcp(*)'));
 
     // Case C: BOTH AGB_ALLOW_CODEGRAPH_MCP=1 AND .codegraph exist -> ONLY codegraph staged
     const resC = await runAgy({
@@ -540,7 +543,8 @@ test('codegraph MCP is staged ONLY when BOTH AGB_ALLOW_CODEGRAPH_MCP=1 AND <repo
     const repC = JSON.parse(readFileSync(reportFile, 'utf8'));
     // Only codegraph was staged (from BOM+JSONC config/mcp_config.json), NOT canary-config/canary-root/booster-self
     assert.deepEqual(fx.readCanaries(), ['config-codegraph.marker']);
-    assert.equal(repC.settings.permissions.deny.includes('call_mcp_tool'), false);
+    assert.equal(repC.settings.permissions.deny.includes('mcp(*)'), false);
+    assert.ok(repC.settings.permissions.deny.includes('mcp(agb/*)'));
     const stagedRootMcp = JSON.parse(readFileSync(join(fx.worktree, '.agb_home', '.gemini', 'mcp_config.json'), 'utf8'));
     const stagedCfgMcp = JSON.parse(readFileSync(join(fx.worktree, '.agb_home', '.gemini', 'config', 'mcp_config.json'), 'utf8'));
     assert.deepEqual(Object.keys(stagedRootMcp.mcpServers), ['codegraph']);

@@ -1,0 +1,29 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T19:19:28.636Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "28354a1dbdd18be8b7e3f3075c97ebb73868a4aa175e807b05e61c1c401e7a90",
+    "ticketHash": "9694383a80881f2a47578d8efb25e9e27f92f43cfad2f4d82643df31516ed559",
+    "version": 1
+  },
+  "body": "Implement Workstream 3 post-merge hardening polish from HANDOFF.md: (1) add download_url(*) and unsandboxed(*) to base readonly and builder permissions.deny in lib/role-settings.mjs and update test/role-settings.test.mjs and test/ndjson-worker.test.mjs; (2) align NdjsonWorkerDaemon._requiresContainment() in lib/ndjson-worker.mjs so role === 'builder' unconditionally enters prepareBuilderContainment() unless an explicit test-only seam gated by isTestExecution() is passed, and route this.userHome through resolveUserHome() from lib/agy.mjs; (3) rename versionAutoDisableOk to belowFloorRejectedOk in evals/v13-enhancements-bench.mjs, evals/runner.mjs, and any referencing tests.",
+  "completed": true,
+  "edges": [],
+  "id": "T-GUARD-POLISH",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs"
+  ],
+  "scope": [
+    "lib/role-settings.mjs",
+    "lib/ndjson-worker.mjs",
+    "lib/agy.mjs",
+    "evals/**",
+    "test/role-settings.test.mjs",
+    "test/ndjson-worker.test.mjs",
+    "test/evals.test.mjs",
+    "dist/**"
+  ],
+  "title": "Post-merge v2.0 hardening polish: role-settings denies, non-bypassable NdjsonWorkerDaemon containment, and eval key rename"
+}

@@ -212,9 +212,10 @@ function directRoot(script) {
   return root;
 }
 const DENY = `{"decision":"deny","reason":"Target path matches frozen rail: lib/lock.mjs"}`;
-// Deny the rail payload correctly; behave per $NONRAIL for anything else.
-const stub = ({ rail = `echo '${DENY}'`, nonrail = 'exit 0' } = {}) =>
-  `#!/bin/sh\ninput=$(cat)\ncase "$input" in *lock.mjs*) ${rail} ;; *) ${nonrail} ;; esac\n`;
+const FORCE_ASK = `{"decision":"force_ask","reason":"run_workflow requires operator confirmation"}`;
+// Deny the rail payload correctly; force_ask workflow payload; behave per $NONRAIL for anything else.
+const stub = ({ rail = `echo '${DENY}'`, workflow = `echo '${FORCE_ASK}'`, nonrail = 'exit 0' } = {}) =>
+  `#!/bin/sh\ninput=$(cat)\ncase "$input" in *lock.mjs*) ${rail} ;; *run_workflow*) ${workflow} ;; *) ${nonrail} ;; esac\n`;
 
 test('self-test passes a correct direct guard (baseline for the cases below)', () => {
   assert.equal(checkPolicyGuard({ pluginRoot: directRoot(stub()), home: freshHome() }).level, 'pass');
@@ -248,6 +249,20 @@ test('self-test fails when the non-rail payload exits non-zero with empty output
   assert.equal(r.level, 'fail');
   assert.match(r.detail, /non-rail payload/);
 });
+
+for (const [label, workflow] of [
+  ['workflow payload exiting non-zero', `echo '${FORCE_ASK}'; exit 1`],
+  ['workflow payload returning multiple lines', `echo '${FORCE_ASK}'; echo extra`],
+  ['workflow payload returning non-JSON', `echo 'not-json'`],
+  ['workflow payload returning ask decision', `echo '{"decision":"ask","reason":"confirm"}'`],
+  ['workflow payload returning empty stdout', `exit 0`],
+]) {
+  test(`self-test fails on ${label}`, () => {
+    const r = checkPolicyGuard({ pluginRoot: directRoot(stub({ workflow })), home: freshHome() });
+    assert.equal(r.level, 'fail');
+    assert.match(r.detail, /workflow payload/);
+  });
+}
 
 test('self-test leaves no temp fixture repo behind, on pass and on fail', () => {
   const tmp = join(base, `tmpdir-${n++}`);

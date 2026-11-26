@@ -1,0 +1,20 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T16:15:40.140Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "e379dc7c59d49ba2cc12f8e0ca4fc9aa418f91d3bceaad4ebd0bc41f5d7d98b1",
+    "ticketHash": "c075f64685013cad69f8d7920760f9ab39c2be8b096490d3de22c6ff916c9b17",
+    "version": 1
+  },
+  "body": "Run npm run build, node website/scripts/gen-reference.mjs, check-bundle-externals, website check-all, plugin:validate, and npm test, then commit updated bundles and generated reference docs.",
+  "completed": true,
+  "edges": [],
+  "id": "T-GUARD-FINAL-SYNC",
+  "rails": [],
+  "scope": [
+    "dist/**",
+    "website/**"
+  ],
+  "title": "Rebuild dist bundles and regenerate website reference documentation for v2.0 guardrails"
+}

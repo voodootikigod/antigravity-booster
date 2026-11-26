@@ -1,0 +1,26 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T16:15:41.083Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "1f2261a0855974436a610702233c5818e1750c61a58d95912528aafb5a5cca34",
+    "ticketHash": "b15cc5891337ae15f445dc3b796394a378ca757c2e598d1b87256b6afd51503f",
+    "version": 1
+  },
+  "body": "Resolve merge conflicts with origin/main (#201 Waves 2-4), register new lib modules in release-audit UNITS, rebuild dist bundles and generated reference docs, verify full test and ADLC gates, and write HANDOFF.md with post-merge instructions.",
+  "completed": true,
+  "edges": [],
+  "id": "T-GUARD-MERGE-MAIN",
+  "rails": [],
+  "scope": [
+    "README.md",
+    "HANDOFF.md",
+    "hooks/**",
+    "lib/**",
+    "scripts/release-audit-collect.mjs",
+    "test/**",
+    "website/**",
+    "dist/**"
+  ],
+  "title": "Merge origin/main (#201) into research/verification-and-guardrails and author HANDOFF.md"
+}

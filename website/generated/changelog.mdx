@@ -11,6 +11,9 @@ rather than enumerate.
 
 ### Breaking Changes
 
+- **Minimum `agy` CLI raised to `1.5.17`** (#202): Raised `MIN_AGY_VERSION` and `RECOMMENDED_AGY_VERSION` to `'1.5.17'` and pruned legacy `< 1.5.17` compatibility shims across `lib/doctor.mjs`, `lib/ndjson-worker.mjs`, `lib/scheduler.mjs`, and docs/evals.
+- **`PreToolUse` `force_ask` escalation under `--yolo`** (#202): Interactive sessions now emit `force_ask` (precedence lattice `deny > force_ask > ask > pass`, never `"allow"`) for ambiguous shell syntax (`$VAR`, `${VAR}`, backticks, `$()`, `eval`/`source`, git-dir flags, `rm -r`, credentialed `curl`/`wget`) and out-of-workspace file mutations so `--yolo` / `auto_approve` cannot silently auto-run them; headless workers hard-`deny`.
+- **Native `--settings` `action(target)` role profiles** (#202, #204): `buildRoleSettingsProfile()` (`lib/role-settings.mjs`) now emits Antigravity `1.5.17` `{ allowNonWorkspaceAccess: false, permissions: { deny: [...] } }` profiles (including `download_url(*)`, `unsandboxed(*)`, and compiled `write_file(<rail>)` entries) instead of legacy `{ sandbox, autoApprove, deniedTools }`.
 - **`agb sidecar` pure-HTTP `?token=` URL**: Removed dynamic `agb-sidecar-plugin-*` manifest generation and automatic `agy plugin install`/`uninstall` registration. `agb sidecar` now runs an ephemeral `127.0.0.1` HTTP server and prints the authenticated `/?token=` URL to stdout (keep tool logs/transcripts protected).
 - **`agb watch` / `agb status --watch` TUI switch**: Switched from inline scrollback to alternate-screen buffer (`ANSI.altBufferEnter`/`ANSI.altBufferLeave`) with interactive Flight Deck navigation (`j`/`k`, `1`–`4`/`Tab`, `/`, `p` pause, `x` abort, `Enter` rescue).
 - **`agb run` rescue-lock refusal & `--reset-rescue`**: Re-running a plan while `.booster/rescue-<ticketId>.lock` holds an active or unresolved rescue session fails closed unless `--reset-rescue` is explicitly passed; `--resume` skips already-merged tickets cleanly.
@@ -28,6 +31,7 @@ rather than enumerate.
 
 ### Security & Isolation
 
+- **Native Antigravity `>= 1.5.17` guardrails & non-bypassable daemon containment** (#202, #204): Added `checkCliSettings()` in `agb doctor` and `SessionStart` advisory warnings for unsafe `~/.gemini/antigravity-cli/settings.json` flags (`allowNonWorkspaceAccess`, `toolPermission: 'always-proceed'`), `ask_permission` interception in `PreToolUse`, shared `prepareBuilderContainment()` + `buildSpawnEnv()` between `runAgy()` and `NdjsonWorkerDaemon` (making `role === 'builder'` containment non-bypassable in production), and case-insensitive attempt namespace ref normalization for macOS/Windows filesystems.
 - Sealed `IS_BUNDLED` runtime isolation across `lib/adlc-bridge.mjs`, `lib/ndjson-worker.mjs`, `lib/bandit-router.mjs`, `lib/bootstrap.mjs`, `lib/doctor.mjs`, and `hooks/session-start.mjs`.
 - Hardened `lib/pools.mjs` `durableWriteJson` (`O_EXCL`/`O_NOFOLLOW`, `randomUUID()`, symlink rejection, temp cleanup) and POSIX UID ownership verification on statusLine quota cache; tightened `hooks/policy/evaluate.mjs` recursive `sh -c`/`eval` inspection and ambient `AGB_USER_HOME` scoping.
 

@@ -227,12 +227,14 @@ export function runLiveV14HyperHarnessBenchmark() {
     JSON.stringify({ event: 'step_update', step_update: { step_type: 'tool', state: 'DONE', content: 'Command exited with code 0.\nℹ pass 10\nℹ fail 0' } })
   );
   const checks = {
-    roleSettingsReadonly:
-      Array.isArray(prof?.permissions?.deny) &&
-      prof.permissions.deny.includes('write_file') &&
-      prof.permissions.deny.includes('run_command') &&
-      prof.permissions.deny.includes('call_mcp_tool') &&
-      Object.keys(prof).every((k) => k === 'permissions'),
+    roleSettingsReadonly: [
+      prof?.allowNonWorkspaceAccess === false,
+      Array.isArray(prof?.permissions?.deny),
+      prof?.permissions?.deny?.includes('write_file(*)'),
+      prof?.permissions?.deny?.includes('command(*)'),
+      prof?.permissions?.deny?.includes('mcp(*)'),
+      Object.keys(prof ?? {}).sort().join(',') === 'allowNonWorkspaceAccess,permissions',
+    ].every(Boolean),
     watchdogDetectsErrorCycle: wdStatus.action === 'abort' && /in-turn flail detected/.test(wdStatus.reason),
     dynamicEffortEscalatesOnStrike: effort.effort === 'xhigh' && effort.escalated === true,
     symbolRailsEnforced: symOk.ok === true,
@@ -957,7 +959,7 @@ ${Object.values(a159.perClass)
 | **18-State \`classifyAgyOutcome()\` Golden Matrix** | **${results.liveBenchmarks.v13PrintAndSandbox.classifierExactMatches} / ${results.liveBenchmarks.v13PrintAndSandbox.classifierCasesTotal} exact** (prevents ${results.liveBenchmarks.v13PrintAndSandbox.naiveExitZeroSilentFalsePositives} silent \`exit 0\` false positives) | **${results.liveBenchmarks.v13PrintAndSandbox.checks.classifierAll18Exact ? 'PASS' : 'FAIL'}** |
 | **Unconditional \`--disable-slash-commands\` & Readonly \`--sandbox\`** | Present on direct \`runAgy()\` print invocations | **${results.liveBenchmarks.v13PrintAndSandbox.checks.disableSlashCommandsPresent && results.liveBenchmarks.v13PrintAndSandbox.checks.directReadonlyKeepsSandbox ? 'PASS' : 'FAIL'}** |
 | **Outer \`bwrap_pid\` Builder Omits Nested \`--sandbox\`** | Prevents nested \`CLONE_NEWUSER\` \`EPERM\` on \`agy 1.5.9\` | **${results.liveBenchmarks.v13PrintAndSandbox.checks.outerBwrapOmitsNestedSandbox ? 'PASS' : 'FAIL'}** |
-| **\`plan.disableOrchestrator\` & \`RECOMMENDED_AGY_VERSION = '1.5.13'\`** | Schema + version constants verified | **${results.liveBenchmarks.v13PrintAndSandbox.checks.planSchemaAndVersionConstantsOk ? 'PASS' : 'FAIL'}** |
+| **\`plan.disableOrchestrator\` & \`RECOMMENDED_AGY_VERSION = '1.5.17'\`** | Schema + version constants verified | **${results.liveBenchmarks.v13PrintAndSandbox.checks.planSchemaAndVersionConstantsOk ? 'PASS' : 'FAIL'}** |
 
 ### 6k. v1.3 Live Hermetic Orchestrator Routing, Per-Slug Circuit Breaker & \`AsyncLocalStorage\` Isolation (\`lib/models.mjs\`, \`lib/scheduler.mjs\`)
 
@@ -965,7 +967,7 @@ ${Object.values(a159.perClass)
 | :--- | :---: |
 | **Interleaved Cross-Family \`TIER_CANDIDATES.frontier\` (4 Gemini + 4 Claude) & \`hydrogen-*\` Pool Mapping** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.interleavedRoutingOk ? 'PASS' : 'FAIL'}** |
 | **Concurrent In-Process \`runWithOrchestratorRoutingState()\` \`AsyncLocalStorage\` Isolation** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.asyncLocalStorageIsolationOk ? 'PASS' : 'FAIL'}** |
-| **\`agy < 1.5.9\` Auto-Disables Orchestrator Slugs With Notice & Routes to \`FRONTIER_NO_ORCHESTRATOR\`** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.versionAutoDisableOk ? 'PASS' : 'FAIL'}** |
+| **Pre-\`agy 1.5.17\` Versions Rejected at Startup Before Spawning Builders** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.belowFloorRejectedOk ? 'PASS' : 'FAIL'}** |
 | **Per-Slug Circuit Breaker Trips at $\\ge 50\\%$ Over $\\ge 4$ Builder-Fault Tickets & Reroutes Next Slug** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.perSlugCircuitBreakerOk ? 'PASS' : 'FAIL'}** |
 | **\`!gates.ok\` Excluded From \`builderFaultTickets\` & \`model_unavailable\` Kept Strictly Run-Scoped** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.gateExclusionAndRunScopedUnavailOk ? 'PASS' : 'FAIL'}** |
 

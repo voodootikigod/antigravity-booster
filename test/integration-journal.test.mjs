@@ -23,6 +23,7 @@ import {
 } from '../lib/scheduler.mjs';
 
 const FAKE_AGY = join(import.meta.dirname, 'fixtures', 'fake-agy');
+const FAKE_ADLC = join(import.meta.dirname, 'fixtures', 'fake-adlc');
 const PLUGIN_COMPATIBLE = join(import.meta.dirname, 'fixtures', 'fake-adlc-antigravity-plugin-compatible');
 
 process.env.AGB_QUOTA_STATE = join(tmpdir(), `agb_pools_journal_test_${process.pid}.json`);
@@ -658,5 +659,53 @@ test('reconcileIntegrationJournal: unsupported journal phase is quarantined and 
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('Integration Journal: allowBreakingTestMigration permits intentional major-version test contract migration while running Pass 2 + hollow-test', async () => {
+  const repo = makeTestRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-breaking-migration-state-'));
+  const g = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  mkdirSync(join(repo, 'test'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'math.js'), 'export function add(a, b) { return a + b; }\n');
+  writeFileSync(join(repo, 'test', 'math.test.js'), "import assert from 'node:assert'; import { add } from '../src/math.js'; assert.equal(add(1, 1), 2);\n");
+  writeFileSync(join(repo, 'package.json'), JSON.stringify({
+    name: 'test-pkg',
+    scripts: { test: 'node test/math.test.js' },
+    type: 'module',
+  }, null, 2));
+  g('add', '-A');
+  g('commit', '-qm', 'baseline v1 contract');
+
+  try {
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        AGB_ALLOW_CUSTOM_ADLC_CLI: '1',
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+        FAKE_BUILDER_MODE: 'sabotage-math',
+      },
+      () => runPlan({
+        repo,
+        allowBreakingTestMigration: true,
+        gate: { test: 'npm test' },
+        tickets: [{
+          id: 'T1',
+          title: 'intentional v2 contract migration',
+          body: 'migrate math contract',
+          scope: ['src/math.js', 'test/math.test.js'],
+        }],
+      }, quiet),
+    );
+
+    assert.deepEqual(report.merged, ['T1'], `expected intentional migration to merge under allowBreakingTestMigration: ${JSON.stringify(report.failed)}`);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
 
 

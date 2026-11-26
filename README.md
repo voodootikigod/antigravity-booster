@@ -16,7 +16,7 @@ your build and test gates.
 
 ## Install
 
-Requires `agy` >= 1.2.6 (`>= 1.4.11` for the Antigravity Plugin Marketplace), Node >= 22.19.0, and a POSIX `/bin/sh` shell (native on macOS/Linux; Git Bash or WSL required on Windows for plugin hooks, MCP launcher, and the `agb` shim).
+Requires `agy` >= 1.5.17, Node >= 22.19.0, and a POSIX `/bin/sh` shell (native on macOS/Linux; Git Bash or WSL required on Windows for plugin hooks, MCP launcher, and the `agb` shim).
 
 Install from the **Antigravity Plugin Marketplace** (`Customizations > Marketplace` in the desktop app, `/plugin` Discover tab in the CLI, or `agy plugin install antigravity-booster@antigravity-plugins-official`), or directly from git:
 

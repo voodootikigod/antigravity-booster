@@ -217,7 +217,7 @@ if [ -n "$input_format" ] && [ "$input_format" != "text" ] && [ "$input_format" 
 fi
 if [ -n "$settings_arg" ]; then
   node -e '
-    const ALLOWED_SETTINGS_KEYS = new Set(["permissions"]);
+    const ALLOWED_SETTINGS_KEYS = new Set(["permissions", "allowNonWorkspaceAccess"]);
     let parsed;
     try {
       parsed = JSON.parse(process.argv[1]);
@@ -322,7 +322,7 @@ case "${FAKE_AGY_MODE:-}" in
 esac
 
 if [ "$1" = "--version" ]; then
-  echo "agy version ${FAKE_AGY_VERSION:-1.5.13}"
+  echo "agy version ${FAKE_AGY_VERSION:-1.5.17}"
   exit 0
 fi
 

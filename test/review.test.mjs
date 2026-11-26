@@ -505,7 +505,7 @@ process.stdin.on('end', () => {
 
     const firstBatch = readFileSync(settingsLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.equal(firstBatch.length, 2);
-    assert.ok(firstBatch[0].permissions.deny.includes('read_file'), 'allowReadTools=false denies read_file');
+    assert.ok(firstBatch[0].permissions.deny.includes('read_file(*)'), 'allowReadTools=false denies read_file(*)');
 
     // FactoryLedger persisted best-effort when repo is provided
     const ledgerRuns = new FactoryLedger({ repo: dir }).readRuns();
@@ -531,7 +531,7 @@ process.stdin.on('end', () => {
     assert.equal(resTruncCtx.converged, true);
     const secondBatch = readFileSync(settingsLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.equal(secondBatch.length, 1);
-    assert.ok(!secondBatch[0].permissions.deny.includes('read_file'), 'allowReadTools=true retains read_file when contextPack is truncated');
+    assert.ok(!secondBatch[0].permissions.deny.includes('read_file(*)'), 'allowReadTools=true retains read_file(*) when contextPack is truncated');
     // recordLedger: false did not append a 2nd entry
     assert.equal(new FactoryLedger({ repo: dir }).readRuns().length, 1);
   } finally {

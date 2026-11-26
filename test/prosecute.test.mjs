@@ -497,6 +497,75 @@ test('runHollowTest: real vendored adlc hollow-test succeeds under real OS sandb
   }
 });
 
+test('resolveHollowTestCommand & runHollowTest: excludes dist/** bundles and slow shell/bwrap suites when fast unit tests exist', async () => {
+  const { resolveHollowTestCommand } = await import('../lib/prosecute.mjs');
+  const { execFileSync } = await import('node:child_process');
+  const cmdMixed = resolveHollowTestCommand(
+    [
+      'bin/hook-runner.sh',
+      'dist/hooks/pre-tool-use.bundle.mjs',
+      'hooks/policy/verdict.mjs',
+      'test/hook-runner.test.mjs',
+      'test/pre-tool-use.test.mjs',
+    ],
+    { repo: process.cwd(), fallbackTestCmd: 'npm test' },
+  );
+  assert.match(cmdMixed, /^node --test /);
+  assert.ok(cmdMixed.includes('test/pre-tool-use.test.mjs'));
+  assert.equal(cmdMixed.includes('test/hook-runner.test.mjs'), false);
+  assert.equal(cmdMixed.includes('test/orchestrator-routing.test.mjs'), false);
+
+  const cmdSlowOnly = resolveHollowTestCommand(
+    ['test/orchestrator-routing.test.mjs'],
+    { repo: process.cwd(), fallbackTestCmd: 'npm test' },
+  );
+  assert.equal(cmdSlowOnly, 'node --test test/orchestrator-routing.test.mjs');
+
+  const repo = mkdtempSync(join(tmpdir(), 'agb-prosecute-dist-ht-'));
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+  try {
+    g('init', '-q', '-b', 'main');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'commit.gpgsign', 'false');
+    mkdirSync(join(repo, 'dist', 'hooks'), { recursive: true });
+    writeFileSync(join(repo, 'src.mjs'), 'export const flag = (x) => x > 0;\n');
+    writeFileSync(join(repo, 'dist', 'hooks', 'bundle.mjs'), 'export const untouchedBundle = (y) => y === 42;\n');
+    writeFileSync(
+      join(repo, 'src.test.mjs'),
+      'import assert from "node:assert/strict"; import { flag } from "./src.mjs"; assert.equal(flag(1), true); assert.equal(flag(0), false);\n',
+    );
+    g('add', '-A');
+    g('commit', '-qm', 'init');
+
+    g('checkout', '-qb', 'feat');
+    writeFileSync(join(repo, 'src.mjs'), 'export const flag = (x) => x >= 1;\n');
+    writeFileSync(join(repo, 'dist', 'hooks', 'bundle.mjs'), 'export const untouchedBundle = (y) => y === 99;\n');
+    g('add', '-A');
+    g('commit', '-qm', 'feat with rebuilt dist bundle');
+
+    const prevSbx = process.env.AGB_SANDBOX_GATES;
+    const prevBin = process.env.AGB_ADLC_BIN;
+    try {
+      process.env.AGB_SANDBOX_GATES = '0';
+      delete process.env.AGB_ADLC_BIN;
+      const r = await runHollowTest({
+        worktree: repo,
+        testCmd: `${process.execPath} src.test.mjs`,
+        base: 'main',
+        fastHollowTest: false,
+      });
+      assert.equal(r.ok, true, `expected ok: true, got ${r.error}`);
+      assert.equal(r.survived, 0, 'dist/** bundle must not be mutated as hand-authored source');
+    } finally {
+      if (prevSbx === undefined) delete process.env.AGB_SANDBOX_GATES; else process.env.AGB_SANDBOX_GATES = prevSbx;
+      if (prevBin === undefined) delete process.env.AGB_ADLC_BIN; else process.env.AGB_ADLC_BIN = prevBin;
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test('prosecute forwards optional cryptographic seed for deterministic diff fencing', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-prosecute-seed-'));
   const promptOut = join(dir, 'prompt.txt');
@@ -704,7 +773,7 @@ test('prepareProsecutionPrecheck: computes blastRadius, contextPack, forwards ro
         const loggedPrompt = readFileSync(logFile, 'utf8');
         assert.match(loggedPrompt, /lib\/caller\.mjs/, 'contextPack.contextBlock must be embedded in prompt');
         const deny = JSON.parse(readFileSync(settingsOut, 'utf8')).permissions.deny;
-        assert.ok(deny.includes('read_file'), 'non-truncated contextPack keeps read tools locked down');
+        assert.ok(deny.includes('read_file(*)'), 'non-truncated contextPack keeps read tools locked down');
 
         // Security-sensitive path triggers blastRadius.level === 'high' before any LLM call
         const secPrecheck = await prepareProsecutionPrecheck({
@@ -1045,7 +1114,7 @@ test('prosecute: clean run forwards observed token telemetry, aggregates System-
       });
       assert.equal(v3.verdict, 'ship');
       const deny = JSON.parse(readFileSync(settingsOut, 'utf8')).permissions.deny;
-      assert.equal(deny.includes('read_file'), false, 'truncatedContext must permit read_file via allowReadTools: true');
+      assert.equal(deny.includes('read_file(*)'), false, 'truncatedContext must permit read_file(*) via allowReadTools: true');
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
