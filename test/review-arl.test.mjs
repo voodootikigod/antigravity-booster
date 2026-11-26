@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, symlinkSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,8 +16,10 @@ import {
   triageFindings,
   reviewPlan,
   reviewFleet,
+  canUsePostRunSeams,
 } from '../lib/review.mjs';
 import { ARL_LENS_MODELS, CODE_ARL_LENSES, PLAN_ARL_LENSES, ALL_MODELS } from '../lib/models.mjs';
+import { DecisionEngine } from '../lib/decision-engine.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 
@@ -594,6 +597,539 @@ test('reviewFleet and reviewPlan fail closed (ITERATE + truncated: true + preser
     if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
     if (prevVerdict === undefined) delete process.env.FAKE_PROSECUTOR_VERDICT; else process.env.FAKE_PROSECUTOR_VERDICT = prevVerdict;
     rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('canUsePostRunSeams validates manifest.jsonl and segmented manifest.d/*.jsonl, rejecting unprosecuted or system1 fast-shipped commits', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-seams-gate-'));
+  try {
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
+    g('init', '-q', '-b', 'main');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'commit.gpgsign', 'false');
+    writeFileSync(join(dir, 'base.txt'), 'base\n');
+    g('add', 'base.txt');
+    g('commit', '-qm', 'base');
+    const baseSha = g('rev-parse', 'HEAD');
+
+    writeFileSync(join(dir, 'a.mjs'), 'export const a = 1;\n');
+    g('add', 'a.mjs');
+    g('commit', '-qm', 'T1 commit');
+    const sha1 = g('rev-parse', 'HEAD');
+
+    writeFileSync(join(dir, 'b.mjs'), 'export const b = 2;\n');
+    g('add', 'b.mjs');
+    g('commit', '-qm', 'T2 commit');
+    const sha2 = g('rev-parse', 'HEAD');
+
+    // Invalid ref & missing manifest fail closed
+    assert.equal(canUsePostRunSeams(dir, '--all').eligible, false);
+    assert.equal(canUsePostRunSeams(dir, `${baseSha}..HEAD`).eligible, false);
+
+    // 1. manifest.jsonl covers only sha1 -> sha2 unprosecuted -> eligible: false
+    mkdirSync(join(dir, '.adlc'), { recursive: true });
+    writeFileSync(
+      join(dir, '.adlc', 'manifest.jsonl'),
+      JSON.stringify({
+        seq: 1,
+        gate: 'merge-prosecution',
+        ticket: 'T-1',
+        data: { mergedShas: [sha1], fastShipped: false, scope: ['a.mjs'] },
+      }) + '\n'
+    );
+    const partial = canUsePostRunSeams(dir, `${baseSha}..HEAD`);
+    assert.equal(partial.eligible, false);
+    assert.match(partial.reason, /unprosecuted/);
+
+    // 2. Segmented manifest.d/seg-1.jsonl covers sha2 with system1 fast-ship -> eligible: false
+    mkdirSync(join(dir, '.adlc', 'manifest.d'), { recursive: true });
+    const segPath = join(dir, '.adlc', 'manifest.d', 'seg-1.jsonl');
+    writeFileSync(
+      segPath,
+      JSON.stringify({
+        seq: 1,
+        gate: 'merge-prosecution',
+        ticket: 'T-2',
+        data: { mergedShas: [sha2], fastShipped: 'system1', scope: ['b.mjs'] },
+      }) + '\n'
+    );
+    const sys1Rejected = canUsePostRunSeams(dir, `${baseSha}..HEAD`);
+    assert.equal(sys1Rejected.eligible, false);
+    assert.match(sys1Rejected.reason, /system1/i);
+
+    // 3. Boolean fastShipped: true also rejected
+    writeFileSync(
+      segPath,
+      JSON.stringify({
+        seq: 1,
+        gate: 'merge-prosecution',
+        ticket: 'T-2',
+        data: { mergedShas: [sha2], fastShipped: true, scope: ['b.mjs'] },
+      }) + '\n'
+    );
+    assert.equal(canUsePostRunSeams(dir, `${baseSha}..HEAD`).eligible, false);
+
+    // 4. Clean non-system1 prosecution in segmented manifest.d -> eligible: true + ticketScopes populated
+    writeFileSync(
+      segPath,
+      JSON.stringify({
+        seq: 1,
+        gate: 'prosecution',
+        ticket: 'T-2',
+        data: { verdict: 'ship', sha: sha2, fastShipped: false, scope: ['b.mjs'] },
+      }) + '\n'
+    );
+    const okRes = canUsePostRunSeams(dir, `${baseSha}..HEAD`);
+    assert.equal(okRes.eligible, true);
+    assert.deepEqual(okRes.ticketScopes, [
+      { id: 'T-1', scope: ['a.mjs'] },
+      { id: 'T-2', scope: ['b.mjs'] },
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('reviewFleet({ seamsOnly: true }): slices cross-ticket seams, runs targeted seam lenses, and short-circuits disjoint diffs', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-seams-fleet-'));
+  const prevAgy = process.env.AGB_AGY_BIN;
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    mkdirSync(join(dir, '.adlc', 'tickets'), { recursive: true });
+    writeFileSync(join(dir, 'lib', 'a.mjs'), 'export function sharedApi() { return 1; }\n');
+    writeFileSync(join(dir, 'lib', 'b.mjs'), 'import { sharedApi } from "./a.mjs";\nexport const use = sharedApi();\n');
+    writeFileSync(join(dir, 'lib', 'isolated.mjs'), 'export const solo = 42;\n');
+
+    writeFileSync(join(dir, '.adlc', 'tickets', 't1.json'), JSON.stringify({ id: 'T-1', scope: ['lib/a.mjs'] }));
+    writeFileSync(join(dir, '.adlc', 'tickets', 't2.json'), JSON.stringify({ id: 'T-2', scope: ['lib/b.mjs'] }));
+    writeFileSync(join(dir, '.adlc', 'tickets', 't3.json'), JSON.stringify({ id: 'T-3', scope: ['lib/isolated.mjs'] }));
+
+    const promptsDir = join(dir, 'prompts');
+    mkdirSync(promptsDir, { recursive: true });
+    const seamAgy = join(dir, 'fake-seam-agy.cjs');
+    writeFileSync(
+      seamAgy,
+      `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+let buf = ''; process.stdin.on('data', c => buf += c);
+process.stdin.on('end', () => {
+  const printIdx = process.argv.indexOf('--print');
+  const prompt = printIdx >= 0 ? process.argv[printIdx + 1] : buf;
+  const m = prompt.match(/Review strictly through exactly one lens:\\s*\\*\\*([^*]+)\\*\\*/);
+  const lens = m ? m[1] : 'unknown';
+  fs.writeFileSync(path.join(${JSON.stringify(promptsDir)}, lens + '.txt'), prompt);
+  console.log(JSON.stringify({ status: 'ok', structured_output: { findings: [] } }));
+});
+`,
+      { mode: 0o755 }
+    );
+    process.env.AGB_AGY_BIN = seamAgy;
+
+    const multiDiff = [
+      'diff --git a/lib/a.mjs b/lib/a.mjs',
+      '--- a/lib/a.mjs',
+      '+++ b/lib/a.mjs',
+      '@@ -1 +1 @@',
+      '-export function sharedApi() { return 0; }',
+      '+export function sharedApi() { return 1; }',
+      'diff --git a/lib/isolated.mjs b/lib/isolated.mjs',
+      '--- a/lib/isolated.mjs',
+      '+++ b/lib/isolated.mjs',
+      '@@ -1 +1 @@',
+      '-export const solo = 0;',
+      '+export const solo = 42;',
+    ].join('\n');
+
+    const res = await reviewFleet({
+      diff: multiDiff,
+      repo: dir,
+      seamsOnly: true,
+    });
+    assert.equal(res.converged, true);
+    assert.equal(res.gateVerdict, 'SHIP');
+    assert.equal(res.requests, 3);
+    assert.equal(existsSync(join(promptsDir, 'contracts.txt')), true);
+    assert.equal(existsSync(join(promptsDir, 'correctness_redteam.txt')), true);
+    assert.equal(existsSync(join(promptsDir, 'security.txt')), true);
+
+    const contractsPrompt = readFileSync(join(promptsDir, 'contracts.txt'), 'utf8');
+    assert.match(contractsPrompt, /lib\/a\.mjs/);
+    assert.match(contractsPrompt, /UNTRUSTED:SEAMS:/);
+    assert.ok(!contractsPrompt.includes('lib/isolated.mjs'), 'disjoint ticket chunk must be excluded by seamsOnly');
+
+    // Disjoint diff with 0 seams returns SHIP with 0 requests
+    const disjointOnlyDiff = [
+      'diff --git a/lib/isolated.mjs b/lib/isolated.mjs',
+      '--- a/lib/isolated.mjs',
+      '+++ b/lib/isolated.mjs',
+      '@@ -1 +1 @@',
+      '-export const solo = 0;',
+      '+export const solo = 42;',
+    ].join('\n');
+    const cleanDisjoint = await reviewFleet({
+      diff: disjointOnlyDiff,
+      repo: dir,
+      seamsOnly: true,
+    });
+    assert.equal(cleanDisjoint.requests, 0);
+    assert.equal(cleanDisjoint.gateVerdict, 'SHIP');
+
+    // Explicit lenses intersect with SEAM_LENSES and record skipped non-seam lenses
+    const intersected = await reviewFleet({
+      diff: multiDiff,
+      repo: dir,
+      seamsOnly: true,
+      lenses: ['security', 'simplicity'],
+    });
+    assert.equal(intersected.requests, 1);
+    assert.deepEqual(intersected.telemetry.skippedLenses, ['simplicity']);
+
+    // seamsOnly with ref refuses when commit is unprosecuted or System-1 fast-shipped
+    const g = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' }).trim();
+    g('init', '-q', '-b', 'main');
+    g('config', 'user.email', 't@t');
+    g('config', 'user.name', 't');
+    g('config', 'commit.gpgsign', 'false');
+    g('add', 'lib/a.mjs', 'lib/b.mjs');
+    g('commit', '-qm', 'init');
+    const headSha = g('rev-parse', 'HEAD');
+    writeFileSync(
+      join(dir, '.adlc', 'manifest.jsonl'),
+      JSON.stringify({
+        seq: 1,
+        gate: 'merge-prosecution',
+        ticket: 'T-1',
+        data: { mergedShas: [headSha], fastShipped: 'system1', scope: ['lib/a.mjs'] },
+      }) + '\n'
+    );
+    await assert.rejects(
+      () => reviewFleet({ diff: multiDiff, repo: dir, ref: 'HEAD', seamsOnly: true }),
+      /seamsOnly review refused.*system1/i
+    );
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('reviewFleet: routes lens models by computeDiffBlastRadius and supports opt-in gateReviewLenses', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-risk-gate-'));
+  const prevAgy = process.env.AGB_AGY_BIN;
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    writeFileSync(join(dir, 'lib', 'leaf.mjs'), 'function helper(x) {\n  return x + 1;\n}\n');
+    writeFileSync(join(dir, 'lib', 'gates.mjs'), 'export function runGate() {\n  return true;\n}\n');
+
+    const modelsSeen = [];
+    const modelCaptureAgy = join(dir, 'fake-model-agy.cjs');
+    const seenFile = join(dir, 'models-seen.jsonl');
+    writeFileSync(
+      modelCaptureAgy,
+      `#!/usr/bin/env node
+const fs = require('node:fs');
+const mIdx = process.argv.indexOf('--model');
+const model = mIdx >= 0 ? process.argv[mIdx + 1] : '';
+fs.appendFileSync(${JSON.stringify(seenFile)}, model + '\\n');
+let buf = ''; process.stdin.on('data', c => buf += c);
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({ status: 'ok', structured_output: { findings: [] } }));
+});
+`,
+      { mode: 0o755 }
+    );
+    process.env.AGB_AGY_BIN = modelCaptureAgy;
+
+    // 1. Low blast-radius diff routes correctness_redteam -> claude-sonnet-5-5-low
+    const leafDiff = [
+      'diff --git a/lib/leaf.mjs b/lib/leaf.mjs',
+      '--- a/lib/leaf.mjs',
+      '+++ b/lib/leaf.mjs',
+      '@@ -1,3 +1,3 @@',
+      ' function helper(x) {',
+      '-  return x;',
+      '+  return x + 1;',
+      ' }',
+    ].join('\n');
+    const lowRes = await reviewFleet({
+      diff: leafDiff,
+      repo: dir,
+      fiveLens: true,
+      lenses: ['correctness_redteam'],
+    });
+    assert.equal(lowRes.blastRadius.level, 'low');
+    assert.equal(readFileSync(seenFile, 'utf8').trim(), 'claude-sonnet-5-5-low');
+
+    // 2. Security-sensitive path (lib/gates.mjs) forces high blast-radius -> claude-opus-5-5-high
+    writeFileSync(seenFile, '');
+    const secDiff = [
+      'diff --git a/lib/gates.mjs b/lib/gates.mjs',
+      '--- a/lib/gates.mjs',
+      '+++ b/lib/gates.mjs',
+      '@@ -1,3 +1,3 @@',
+      ' export function runGate() {',
+      '-  return false;',
+      '+  return true;',
+      ' }',
+    ].join('\n');
+    const highRes = await reviewFleet({
+      diff: secDiff,
+      repo: dir,
+      fiveLens: true,
+      lenses: ['correctness_redteam'],
+    });
+    assert.equal(highRes.blastRadius.level, 'high');
+    assert.equal(readFileSync(seenFile, 'utf8').trim(), 'claude-opus-5-5-high');
+
+    // 3. Opt-in gateReviewLenses skips low-risk lenses and tracks system1Calls + inputTokens
+    writeFileSync(seenFile, '');
+    const sys1Engine = new DecisionEngine({
+      provider: 'jev',
+      apiKey: 'sk-test-secret-1234',
+      transport: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          usage: { inputTokens: 150 },
+          answers: [
+            { probability: 0.02, confidence: 0.95 }, // skip correctness_redteam
+            { probability: 0.70, confidence: 0.95 }, // run security
+          ],
+        }),
+      }),
+    });
+    const gatedRes = await reviewFleet({
+      diff: leafDiff,
+      repo: dir,
+      fiveLens: true,
+      lenses: ['correctness_redteam', 'security'],
+      decisionEngine: sys1Engine,
+    });
+    assert.equal(gatedRes.requests, 1);
+    assert.deepEqual(gatedRes.telemetry.skippedLenses, ['correctness_redteam']);
+    assert.equal(gatedRes.telemetry.system1Calls, 1);
+    assert.equal(gatedRes.telemetry.uncachedInputTokens, 150);
+    assert.equal(readFileSync(seenFile, 'utf8').trim(), 'gemini-3.8-flash-medium');
+
+    // decisionEngine: false disables System-1 gating
+    writeFileSync(seenFile, '');
+    const disabledRes = await reviewFleet({
+      diff: leafDiff,
+      repo: dir,
+      fiveLens: true,
+      lenses: ['correctness_redteam', 'security'],
+      decisionEngine: false,
+    });
+    assert.equal(disabledRes.requests, 2);
+    assert.equal(disabledRes.telemetry.system1Calls, 0);
+    assert.deepEqual(modelsSeen.length, 0);
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('triageFindings: 3-tier Arbiter cascade (Tier 1 System-1, Tier 2 deterministic <=4 fast-path, Tier 3 LLM)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-arbiter-3tier-'));
+  const prevAgy = process.env.AGB_AGY_BIN;
+  try {
+    const cleanTwo = [
+      { id: 'F-1', severity: 'high', file: 'lib/a.mjs', claim: 'Null deref', evidence: 'line 10' },
+      { id: 'F-2', severity: 'low', file: 'lib/b.mjs', claim: 'Style nit', evidence: 'line 20' },
+    ];
+
+    // Tier 1: System-1 high-confidence decisionEngine resolves without spawning agy
+    process.env.AGB_AGY_BIN = '/nonexistent-agy-should-not-run';
+    const sys1Engine = new DecisionEngine({
+      provider: 'jev',
+      apiKey: 'sk-test-secret-1234',
+      transport: async (url, init) => {
+        const body = JSON.parse(init.body);
+        const items = body.items;
+        const answers = items.map((item, idx) => {
+          if (body.primitive === 'choice' && item.id.startsWith('v-')) {
+            return { choice: idx === 0 ? 'accept' : 'reject', confidence: 0.96 };
+          }
+          if (body.primitive === 'score') {
+            return { score: idx === 0 ? 0.65 : 0.1, confidence: 0.95 };
+          }
+          if (body.primitive === 'choice' && item.id.startsWith('r-')) {
+            return { choice: 'auto-fix', confidence: 0.95 };
+          }
+          return { probability: 0.05, confidence: 0.95 };
+        });
+        return { ok: true, status: 200, json: async () => ({ usage: { inputTokens: 50 }, answers }) };
+      },
+    });
+    const t1 = await triageFindings({ findings: cleanTwo, decisionEngine: sys1Engine });
+    assert.equal(t1.arbiterMode, 'system1');
+    assert.equal(t1.gateVerdict, 'ITERATE');
+    assert.equal(t1.surviving.length, 1);
+    assert.equal(t1.dropped.length, 1);
+    assert.equal(t1.telemetry.system1Calls, 4);
+    assert.equal(t1.telemetry.uncachedInputTokens, 200);
+
+    // Tier 2: <=4 unique non-blast_radius findings without decisionEngine -> deterministic fast-path (0 LLM calls)
+    const t2 = await triageFindings({ findings: cleanTwo, arbiter: true });
+    assert.equal(t2.arbiterMode, 'deterministic');
+    assert.equal(t2.gateVerdict, 'ITERATE');
+    assert.equal(t2.surviving.length, 1);
+    assert.equal(t2.dropped.length, 1);
+    assert.equal(t2.telemetry.billableTokens, 0);
+
+    // Tier 3 triggered when forceLlmArbiter: true, duplicate keys, >4 findings, or low-confidence System-1
+    const fakeLlmArbiter = join(dir, 'fake-llm-arbiter.cjs');
+    writeFileSync(
+      fakeLlmArbiter,
+      `#!/usr/bin/env node
+let buf = ''; process.stdin.on('data', c => buf += c);
+process.stdin.on('end', () => {
+  console.log(JSON.stringify({
+    status: 'ok',
+    structured_output: {
+      gate_verdict: 'ITERATE',
+      summary: 'llm triaged',
+      triaged: [{ id: 'F-1', severity: 'high', file: 'lib/a.mjs', claim: 'Null deref', verdict: 'accept-candidate', resolution_route: 'auto-fix' }]
+    },
+    telemetry: { input_tokens: 500, cached_tokens: 200, output_tokens: 50 }
+  }));
+});
+`,
+      { mode: 0o755 }
+    );
+    process.env.AGB_AGY_BIN = fakeLlmArbiter;
+
+    // 3a. forceLlmArbiter: true
+    const t3Force = await triageFindings({ findings: cleanTwo, forceLlmArbiter: true });
+    assert.equal(t3Force.arbiterMode, 'llm');
+    assert.equal(t3Force.telemetry.inputTokens, 500);
+    assert.equal(t3Force.telemetry.outputTokens, 50);
+
+    // 3b. Duplicate keys (even when <= 4) bypass Tier 2 -> Tier 3
+    const dupFindings = [
+      { id: 'F-1', severity: 'high', file: 'lib/a.mjs', claim: 'Same issue', evidence: 'lens1' },
+      { id: 'F-2', severity: 'medium', file: 'lib/a.mjs', claim: 'Same issue', evidence: 'lens2' },
+    ];
+    const t3Dup = await triageFindings({ findings: dupFindings });
+    assert.equal(t3Dup.arbiterMode, 'llm');
+
+    // 3c. >4 unique findings bypass Tier 2 -> Tier 3
+    const fiveFindings = Array.from({ length: 5 }, (_, i) => ({
+      id: `F-${i + 1}`,
+      severity: i === 0 ? 'high' : 'low',
+      file: `lib/f-${i}.mjs`,
+      claim: `Issue ${i}`,
+      evidence: `line ${i + 1}`,
+    }));
+    const t3Five = await triageFindings({ findings: fiveFindings });
+    assert.equal(t3Five.arbiterMode, 'llm');
+
+    // 3d. Low-confidence System-1 (system2: true) escalates directly to Tier 3 LLM Arbiter
+    const lowConfSys1 = new DecisionEngine({
+      provider: 'jev',
+      apiKey: 'sk-test-secret-1234',
+      transport: async (url, init) => {
+        const body = JSON.parse(init.body);
+        const items = body.items;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            usage: { inputTokens: 25 },
+            answers: items.map(() =>
+              body.primitive === 'noul'
+                ? { probability: 0.2, confidence: 0.4 }
+                : body.primitive === 'score'
+                  ? { score: 0.5, confidence: 0.4 }
+                  : { choice: body.primitive === 'choice' ? 'accept' : 'auto-fix', confidence: 0.4 }
+            ),
+          }),
+        };
+      },
+    });
+    const t3Escalated = await triageFindings({ findings: cleanTwo, decisionEngine: lowConfSys1 });
+    assert.equal(t3Escalated.arbiterMode, 'llm');
+    assert.equal(t3Escalated.telemetry.system1Calls, 4);
+    assert.equal(t3Escalated.telemetry.uncachedInputTokens, 400); // 4*25 sys1 + (500-200) llm
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('reviewPlan: aggregates telemetry across lens and Arbiter calls', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-plan-tel-'));
+  const prevAgy = process.env.AGB_AGY_BIN;
+  try {
+    writeFileSync(join(dir, 'mod.mjs'), 'export const x = 1;\n');
+    const specMd = [
+      '# Clean Spec',
+      '',
+      '### Ticket 1: `T-1` — Clean Ticket',
+      '- **Scope**: `mod.mjs`',
+      '- **Rails**: (none)',
+      '- **Edges**: (none)',
+      '- **Acceptance Criteria**:',
+      '  - `mod.mjs` exports `x === 1`.',
+      '',
+    ].join('\n');
+
+    const fakePlanTelAgy = join(dir, 'fake-plan-tel.cjs');
+    writeFileSync(
+      fakePlanTelAgy,
+      `#!/usr/bin/env node
+let buf = ''; process.stdin.on('data', c => buf += c);
+process.stdin.on('end', () => {
+  const printIdx = process.argv.indexOf('--print');
+  const prompt = printIdx >= 0 ? process.argv[printIdx + 1] : buf;
+  if (prompt.includes('Neutral Arbiter')) {
+    console.log(JSON.stringify({
+      status: 'ok',
+      structured_output: {
+        gate_verdict: 'ITERATE',
+        summary: 'kept',
+        triaged: [{ id: 'F-001', severity: 'high', file: 'spec.md', claim: 'Need edge detail', verdict: 'accept-candidate', resolution_route: 'auto-fix' }]
+      },
+      telemetry: { input_tokens: 400, cached_tokens: 100, output_tokens: 40 }
+    }));
+  } else {
+    console.log(JSON.stringify({
+      status: 'ok',
+      structured_output: {
+        findings: [{ severity: 'high', file: 'spec.md', claim: 'Need edge detail', evidence: 'missing edge' }]
+      },
+      telemetry: { input_tokens: 1000, cached_tokens: 500, output_tokens: 100 }
+    }));
+  }
+});
+`,
+      { mode: 0o755 }
+    );
+    process.env.AGB_AGY_BIN = fakePlanTelAgy;
+
+    const res = await reviewPlan({
+      specContent: specMd,
+      repo: dir,
+      lenses: ['dag_topology'],
+      arbiter: true,
+      forceLlmArbiter: true,
+    });
+
+    assert.equal(res.requests, 2);
+    assert.deepEqual(res.telemetry, {
+      uncachedInputTokens: 800,
+      cachedTokens: 600,
+      outputTokens: 140,
+      inputTokens: 1400,
+      billableTokens: 1280,
+      system1Calls: 0,
+      skippedLenses: [],
+      arbiterMode: 'llm',
+    });
+  } finally {
+    if (prevAgy === undefined) delete process.env.AGB_AGY_BIN; else process.env.AGB_AGY_BIN = prevAgy;
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

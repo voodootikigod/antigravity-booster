@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { prosecute, runHollowTest, blockingFindings } from '../lib/prosecute.mjs';
+import { prosecute, prepareProsecutionPrecheck, runHollowTest, blockingFindings } from '../lib/prosecute.mjs';
+import { DecisionEngine } from '../lib/decision-engine.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const FAKE_ADLC = fileURLToPath(new URL('./fixtures/fake-adlc', import.meta.url));
@@ -179,6 +180,7 @@ test('prosecute: AC2 — the prosecution prompt embeds the hollow-test evidence 
         worktree: '/tmp',
         testCmd: 'npm test',
         logFile,
+        shortCircuitHollowTest: false,
       });
     });
     const logged = readFileSync(logFile, 'utf8');
@@ -530,6 +532,520 @@ test('prosecute forwards optional cryptographic seed for deterministic diff fenc
       });
       const p2 = readFileSync(promptOut, 'utf8');
       assert.equal(p1, p2, 'same seed + diff must produce identical prosecution prompt');
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- T-TE-5a: hollow-test short-circuit, blast-radius precheck, System-1 fast-ship & telemetry ---
+
+test('prosecute: default shortCircuitHollowTest: true blocks with 0 agy spawns and 0 LLM telemetry', async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-sc-'));
+  let spawnCount = 0;
+  let decisionEngineCalls = 0;
+  const neverCalledEngine = new DecisionEngine({
+    provider: 'jev',
+    apiKey: 'sk-test-secret-1234',
+    transport: async () => {
+      decisionEngineCalls += 1;
+      throw new Error('System-1 must not be called when hollow-test short-circuits');
+    },
+  });
+  try {
+    await withFakes(
+      {
+        AGB_AGY_BIN: '/does-not-exist/agy-must-not-spawn',
+        FAKE_HOLLOW_TEST_MODE: 'survivors',
+        FAKE_STATE_DIR: stateDir,
+      },
+      async () => {
+        const v = await prosecute({
+          ticket: {
+            id: 'T-SC',
+            body: 'spec',
+            tier: 'mid',
+            scope: ['lib/leaf.mjs'],
+            extractedACs: ['ac1'],
+          },
+          diff: 'diff --git a/lib/leaf.mjs b/lib/leaf.mjs\n--- a/lib/leaf.mjs\n+++ b/lib/leaf.mjs\n@@ -1 +1 @@\n-const a = 1;\n+const a = 2;\n',
+          model: 'claude-sonnet-5-5-medium',
+          worktree: '/tmp',
+          testCmd: 'npm test',
+          decisionEngine: neverCalledEngine,
+          onSpawn: () => { spawnCount += 1; },
+        });
+        assert.equal(v.verdict, 'block');
+        assert.equal(v.shortCircuited, 'hollow-test');
+        assert.equal(v.hollowTest.survived, 1);
+        assert.equal(v.blastRadius.level, 'low');
+        assert.deepEqual(v.telemetry, {
+          uncachedInputTokens: 0,
+          cachedTokens: 0,
+          outputTokens: 0,
+          inputTokens: 0,
+          system1Calls: 0,
+        });
+        assert.ok(v.findings.some((f) => f.charge === 'tests' && f.severity === 'critical'));
+        assert.equal(spawnCount, 0, '0 agy subprocesses must spawn on hollow-test short-circuit');
+        assert.equal(decisionEngineCalls, 0, 'System-1 engine must not run after hollow-test survivors');
+        assert.equal(existsSync(join(stateDir, 'agy-argv-seen')), false);
+      },
+    );
+  } finally {
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('prepareProsecutionPrecheck: computes blastRadius, contextPack, forwards rootRepo + changedFiles to CodeGraph-backed runHollowTest, and avoids duplicate work in prosecute()', async () => {
+  const rootRepo = mkdtempSync(join(tmpdir(), 'agb-precheck-root-'));
+  const worktree = mkdtempSync(join(tmpdir(), 'agb-precheck-wt-'));
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-precheck-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-precheck-bin-'));
+  try {
+    mkdirSync(join(rootRepo, '.codegraph'));
+    mkdirSync(join(worktree, 'lib'), { recursive: true });
+    mkdirSync(join(worktree, 'test'), { recursive: true });
+    writeFileSync(join(worktree, 'lib', 'leaf.mjs'), 'export function leafFn(x) {\n  return x + 1;\n}\n');
+    writeFileSync(join(worktree, 'lib', 'caller.mjs'), 'import { leafFn } from "./leaf.mjs";\nexport const out = leafFn(2);\n');
+    writeFileSync(join(worktree, 'test', 'affected.test.mjs'), 'import assert from "node:assert/strict";\nassert.equal(1, 1);\n');
+
+    const cgLog = join(stateDir, 'codegraph.log');
+    writeFileSync(
+      join(binDir, 'codegraph'),
+      [
+        '#!/usr/bin/env node',
+        "import { appendFileSync } from 'node:fs';",
+        `appendFileSync(${JSON.stringify(cgLog)}, process.cwd() + '|' + process.argv.slice(2).join(' ') + '\\n');`,
+        'const cmd = process.argv[2];',
+        'if (cmd === "affected") console.log(JSON.stringify({ affectedTests: ["test/affected.test.mjs"] }));',
+        'else if (cmd === "callers") console.log(JSON.stringify({ callers: [{ file: "lib/caller.mjs", line: 2, snippet: "leafFn(2)" }] }));',
+        'else if (cmd === "callees") console.log(JSON.stringify({ callees: [] }));',
+        'else if (cmd === "impact") console.log(JSON.stringify({ fanIn: 1 }));',
+        'else console.log("{}");',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+
+    const leafDiff = [
+      'diff --git a/lib/leaf.mjs b/lib/leaf.mjs',
+      '--- a/lib/leaf.mjs',
+      '+++ b/lib/leaf.mjs',
+      '@@ -1,3 +1,3 @@',
+      ' export function leafFn(x) {',
+      '-  return x;',
+      '+  return x + 1;',
+      ' }',
+    ].join('\n');
+
+    await withFakes(
+      {
+        AGB_AGY_BIN: '/does-not-exist/agy-must-not-spawn',
+        FAKE_HOLLOW_TEST_MODE: 'clean',
+        FAKE_STATE_DIR: stateDir,
+        PATH: `${binDir}:${process.env.PATH}`,
+      },
+      async () => {
+        const precheck = await prepareProsecutionPrecheck({
+          ticket: { id: 'T-PRE', body: 'spec', scope: ['lib/leaf.mjs'] },
+          diff: leafDiff,
+          worktree,
+          rootRepo,
+          testCmd: 'npm test',
+          changedFiles: ['lib/leaf.mjs'],
+        });
+
+        assert.equal(precheck.shortCircuited, null);
+        assert.equal(precheck.fastShipped, null);
+        assert.equal(precheck.hollowTest.ok, true);
+        assert.equal(precheck.hollowTest.survived, 0);
+        assert.equal(precheck.blastRadius.level, 'low');
+        assert.equal(precheck.blastRadius.source, 'codegraph');
+        assert.match(precheck.contextPack.contextBlock, /lib\/caller\.mjs/);
+        assert.deepEqual(precheck.telemetry, {
+          uncachedInputTokens: 0,
+          cachedTokens: 0,
+          outputTokens: 0,
+          inputTokens: 0,
+          system1Calls: 0,
+        });
+
+        const htInvocations = readFileSync(join(stateDir, 'hollow-test-invocations'), 'utf8').trim().split('\n');
+        assert.equal(htInvocations.length, 1);
+        assert.equal(htInvocations[0], 'test-cmd=node --test test/affected.test.mjs base=main');
+
+        // Reusing precheck in prosecute() does not re-run adlc hollow-test
+        const settingsOut = join(stateDir, 'settings.json');
+        const logFile = join(stateDir, 'pros.jsonl');
+        await withFakes(
+          {
+            AGB_AGY_BIN: FAKE_AGY,
+            FAKE_PROSECUTOR_VERDICT: 'ship',
+            FAKE_SETTINGS_FILE: settingsOut,
+            FAKE_STATE_DIR: stateDir,
+          },
+          async () => {
+            const verdict = await prosecute({
+              ticket: { id: 'T-PRE', body: 'spec', scope: ['lib/leaf.mjs'] },
+              diff: leafDiff,
+              model: 'claude-sonnet-5-5-medium',
+              worktree,
+              rootRepo,
+              testCmd: 'npm test',
+              logFile,
+              precheck,
+            });
+            assert.equal(verdict.verdict, 'ship');
+            assert.equal(verdict.blastRadius.level, 'low');
+          },
+        );
+        const htInvocationsAfter = readFileSync(join(stateDir, 'hollow-test-invocations'), 'utf8').trim().split('\n');
+        assert.equal(htInvocationsAfter.length, 1, 'supplying precheck skips duplicate runHollowTest');
+        const loggedPrompt = readFileSync(logFile, 'utf8');
+        assert.match(loggedPrompt, /lib\/caller\.mjs/, 'contextPack.contextBlock must be embedded in prompt');
+        const deny = JSON.parse(readFileSync(settingsOut, 'utf8')).permissions.deny;
+        assert.ok(deny.includes('read_file'), 'non-truncated contextPack keeps read tools locked down');
+
+        // Security-sensitive path triggers blastRadius.level === 'high' before any LLM call
+        const secPrecheck = await prepareProsecutionPrecheck({
+          ticket: { id: 'T-SEC', body: 'spec', scope: ['lib/gates.mjs'] },
+          diff: 'diff --git a/lib/gates.mjs b/lib/gates.mjs\n--- a/lib/gates.mjs\n+++ b/lib/gates.mjs\n@@ -1 +1 @@\n-a\n+b\n',
+        });
+        assert.equal(secPrecheck.blastRadius.touchesSecuritySensitivePath, true);
+        assert.equal(secPrecheck.blastRadius.level, 'high');
+
+        // codegraph: false forces static-ast fallback even when rootRepo/.codegraph exists
+        const noCgPrecheck = await prepareProsecutionPrecheck({
+          ticket: { id: 'T-NOCG', body: 'spec', scope: ['lib/leaf.mjs'] },
+          diff: leafDiff,
+          worktree,
+          rootRepo,
+          testCmd: 'npm test',
+          changedFiles: ['lib/leaf.mjs'],
+          codegraph: false,
+        });
+        assert.equal(noCgPrecheck.blastRadius.source, 'static-ast');
+        assert.equal(noCgPrecheck.contextPack.source, 'static-ast');
+      },
+    );
+  } finally {
+    rmSync(rootRepo, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('prepareProsecutionPrecheck & prosecute: System-1 fast-ship ships only when all fail-closed conditions hold and escalates otherwise', async () => {
+  const repoDir = mkdtempSync(join(tmpdir(), 'agb-s1-repo-'));
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-s1-state-'));
+  try {
+    mkdirSync(join(repoDir, '.adlc'), { recursive: true });
+    const leafDiff = [
+      'diff --git a/lib/leaf.mjs b/lib/leaf.mjs',
+      '--- a/lib/leaf.mjs',
+      '+++ b/lib/leaf.mjs',
+      '@@ -1 +1 @@',
+      '-const x = 1;',
+      '+const x = 2;',
+    ].join('\n');
+
+    const makeEngine = ({ acProb = 0.97, chargeProb = 0.02, confidence = 0.95, fail = false } = {}) => {
+      let calls = 0;
+      const engine = new DecisionEngine({
+        provider: 'jev',
+        apiKey: 'sk-test-secret-1234',
+        transport: async (_url, init) => {
+          calls += 1;
+          if (fail) throw new Error('system1 down');
+          const items = JSON.parse(init.body).items;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              answers: items.map((i) => ({
+                probability: i.id.startsWith('ac') ? acProb : chargeProb,
+                confidence,
+              })),
+            }),
+          };
+        },
+      });
+      return { engine, getCalls: () => calls };
+    };
+
+    const baseTicket = {
+      id: 'T-S1',
+      tier: 'mid',
+      body: 'Update leaf constant',
+      scope: ['lib/leaf.mjs'],
+      extractedACs: ['Constant x is updated to 2'],
+      charges: ['No regressions'],
+    };
+
+    // 1. All fail-closed conditions met -> fastShipped: 'system1', verdict: 'ship', 0 agy spawns
+    const fast = makeEngine();
+    await withFakes(
+      {
+        AGB_AGY_BIN: '/does-not-exist/agy-must-not-spawn',
+        FAKE_HOLLOW_TEST_MODE: 'clean',
+        FAKE_STATE_DIR: stateDir,
+      },
+      async () => {
+        const pre = await prepareProsecutionPrecheck({
+          ticket: baseTicket,
+          diff: leafDiff,
+          worktree: repoDir,
+          rootRepo: repoDir,
+          testCmd: 'npm test',
+          decisionEngine: fast.engine,
+        });
+        assert.equal(pre.fastShipped, 'system1');
+        assert.equal(pre.decisionRes.fastShip, true);
+        assert.equal(pre.decisionRes.model, 'jev-latest');
+        assert.equal(pre.telemetry.system1Calls, 1);
+
+        const res = await prosecute({
+          ticket: baseTicket,
+          diff: leafDiff,
+          model: 'claude-sonnet-5-5-medium',
+          worktree: repoDir,
+          rootRepo: repoDir,
+          testCmd: 'npm test',
+          decisionEngine: fast.engine,
+        });
+        assert.equal(res.verdict, 'ship');
+        assert.equal(res.fastShipped, 'system1');
+        assert.equal(res.model, 'jev-latest');
+        assert.deepEqual(res.findings, []);
+        assert.equal(res.telemetry.system1Calls, 1);
+        assert.equal(fast.getCalls(), 2);
+        assert.equal(existsSync(join(stateDir, 'agy-argv-seen')), false, '0 agy processes spawned on fast-ship');
+      },
+    );
+
+    // 2. Fail-closed pre-guards (no System-1 network call, must escalate to System-2 runAgy):
+    //    - frontier tier
+    //    - missing extractedACs
+    //    - blastRadius !== 'low' (security-sensitive path)
+    //    - hollowTest.total === 0 (without worktree/testCmd or zero mutants)
+    //    - decisionEngine: false opt-out
+    const guardCases = [
+      { label: 'frontier tier', ticket: { ...baseTicket, tier: 'frontier' }, diff: leafDiff, worktree: repoDir, testCmd: 'npm test' },
+      { label: 'empty extractedACs', ticket: { ...baseTicket, extractedACs: [] }, diff: leafDiff, worktree: repoDir, testCmd: 'npm test' },
+      {
+        label: 'high blastRadius',
+        ticket: { ...baseTicket, scope: ['lib/gates.mjs'] },
+        diff: 'diff --git a/lib/gates.mjs b/lib/gates.mjs\n--- a/lib/gates.mjs\n+++ b/lib/gates.mjs\n@@ -1 +1 @@\n-a\n+b\n',
+        worktree: repoDir,
+        testCmd: 'npm test',
+      },
+      { label: 'hollowTest missing (no worktree)', ticket: baseTicket, diff: leafDiff, worktree: undefined, testCmd: undefined },
+    ];
+
+    for (const tc of guardCases) {
+      const guardEng = makeEngine();
+      await withFakes({ FAKE_PROSECUTOR_VERDICT: 'ship', FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+        const res = await prosecute({
+          ticket: tc.ticket,
+          diff: tc.diff,
+          model: 'claude-sonnet-5-5-medium',
+          worktree: tc.worktree,
+          rootRepo: tc.worktree ? repoDir : undefined,
+          testCmd: tc.testCmd,
+          decisionEngine: guardEng.engine,
+        });
+        assert.equal(res.verdict, 'ship', tc.label);
+        assert.equal(res.fastShipped, undefined, `${tc.label} must not fast-ship`);
+        assert.equal(guardEng.getCalls(), 0, `${tc.label} must fail closed before calling System-1`);
+        assert.equal(res.telemetry.system1Calls, 0, tc.label);
+      });
+    }
+
+    // 3. Fail-closed post-decision guards (1 System-1 call made, escalates to System-2 runAgy with system1Calls: 1)
+    const escalateEngines = [
+      { label: 'low confidence', eng: makeEngine({ confidence: 0.7 }) },
+      { label: 'low AC probability', eng: makeEngine({ acProb: 0.8 }) },
+      { label: 'high charge risk', eng: makeEngine({ chargeProb: 0.25 }) },
+      { label: 'transport failure', eng: makeEngine({ fail: true }) },
+    ];
+
+    for (const { label, eng } of escalateEngines) {
+      await withFakes({ FAKE_PROSECUTOR_VERDICT: 'block', FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+        const res = await prosecute({
+          ticket: baseTicket,
+          diff: leafDiff,
+          model: 'claude-sonnet-5-5-medium',
+          worktree: repoDir,
+          rootRepo: repoDir,
+          testCmd: 'npm test',
+          decisionEngine: eng.engine,
+        });
+        assert.equal(res.verdict, 'block', `${label} must escalate to System-2 prosecutor`);
+        assert.equal(res.fastShipped, undefined, label);
+        assert.equal(eng.getCalls(), 1, label);
+        assert.equal(res.telemetry.system1Calls, 1, label);
+      });
+    }
+
+    // 4. decisionEngine: false skips System-1 even when env/config would configure it
+    const prevProvider = process.env.AGB_DECISION_PROVIDER;
+    const prevKey = process.env.TYPESAFE_API_KEY;
+    try {
+      process.env.AGB_DECISION_PROVIDER = 'jev';
+      process.env.TYPESAFE_API_KEY = 'sk-test-secret-1234';
+      const preOff = await prepareProsecutionPrecheck({
+        ticket: baseTicket,
+        diff: leafDiff,
+        rootRepo: repoDir,
+        decisionEngine: false,
+      });
+      assert.equal(preOff.fastShipped, null);
+      assert.equal(preOff.decisionRes, null);
+      assert.equal(preOff.telemetry.system1Calls, 0);
+    } finally {
+      if (prevProvider === undefined) delete process.env.AGB_DECISION_PROVIDER;
+      else process.env.AGB_DECISION_PROVIDER = prevProvider;
+      if (prevKey === undefined) delete process.env.TYPESAFE_API_KEY;
+      else process.env.TYPESAFE_API_KEY = prevKey;
+    }
+
+    // 5. Omitting decisionEngine resolves .adlc/config.json via resolveDecisionConfig({ repo: rootRepo ?? worktree })
+    const origFetch = globalThis.fetch;
+    let fetchedUrl = null;
+    globalThis.fetch = async (url, init) => {
+      fetchedUrl = String(url);
+      const items = JSON.parse(init.body).items ?? [];
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          model: 'kev-local',
+          answers: items.map((i) => ({
+            probability: i.id.startsWith('ac') ? 0.96 : 0.03,
+            confidence: 0.94,
+          })),
+        }),
+      };
+    };
+    try {
+      writeFileSync(
+        join(repoDir, '.adlc', 'config.json'),
+        JSON.stringify({
+          accelerators: {
+            decision: {
+              enabled: true,
+              provider: 'kev',
+              baseUrl: 'http://127.0.0.1:18080/v1',
+            },
+          },
+        }),
+      );
+      await withFakes({ FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+        const cfgPre = await prepareProsecutionPrecheck({
+          ticket: baseTicket,
+          diff: leafDiff,
+          worktree: repoDir,
+          rootRepo: repoDir,
+          testCmd: 'npm test',
+        });
+        assert.equal(fetchedUrl, 'http://127.0.0.1:18080/v1');
+        assert.equal(cfgPre.fastShipped, 'system1');
+        assert.equal(cfgPre.decisionRes.model, 'kev-local');
+        assert.equal(cfgPre.telemetry.system1Calls, 1);
+      });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  } finally {
+    rmSync(repoDir, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('prosecute: clean run forwards observed token telemetry, aggregates System-1 escalation calls, and toggles allowReadTools on truncatedContext', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-prosecute-tel-'));
+  const settingsOut = join(dir, 'settings.json');
+  const telemetryAgy = join(dir, 'agy-tel');
+  writeFileSync(
+    telemetryAgy,
+    [
+      '#!/bin/sh',
+      'echo \'{"status":"SUCCESS","structured_output":{"verdict":"ship","findings":[]},"telemetry":{"input_tokens":1000,"cached_tokens":700,"output_tokens":150}}\'',
+    ].join('\n'),
+    { mode: 0o755 },
+  );
+  try {
+    await withFakes({ AGB_AGY_BIN: telemetryAgy, FAKE_HOLLOW_TEST_MODE: 'clean' }, async () => {
+      // Pure System-2 prosecution forwards exact observed token telemetry
+      const v1 = await prosecute({
+        ticket: { id: 'T-TEL-1', body: 'spec', scope: ['lib/a.mjs'] },
+        diff: 'diff --git a/lib/a.mjs b/lib/a.mjs\n+export const a = 1;\n',
+        model: 'claude-sonnet-5-5-medium',
+        worktree: dir,
+        testCmd: 'npm test',
+      });
+      assert.equal(v1.verdict, 'ship');
+      assert.deepEqual(v1.telemetry, {
+        uncachedInputTokens: 300,
+        cachedTokens: 700,
+        outputTokens: 150,
+        inputTokens: 1000,
+        system1Calls: 0,
+      });
+
+      // Escalated System-1 + System-2 prosecution aggregates both
+      const lowConfEngine = new DecisionEngine({
+        provider: 'jev',
+        apiKey: 'sk-test-secret-1234',
+        transport: async (_url, init) => {
+          const items = JSON.parse(init.body).items;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              answers: items.map(() => ({ probability: 0.99, confidence: 0.4 })),
+            }),
+          };
+        },
+      });
+      const v2 = await prosecute({
+        ticket: { id: 'T-TEL-2', tier: 'mid', body: 'spec', scope: ['lib/a.mjs'], extractedACs: ['ac'] },
+        diff: 'diff --git a/lib/a.mjs b/lib/a.mjs\n+export const a = 1;\n',
+        model: 'claude-sonnet-5-5-medium',
+        worktree: dir,
+        testCmd: 'npm test',
+        decisionEngine: lowConfEngine,
+      });
+      assert.equal(v2.verdict, 'ship');
+      assert.deepEqual(v2.telemetry, {
+        uncachedInputTokens: 300,
+        cachedTokens: 700,
+        outputTokens: 150,
+        inputTokens: 1000,
+        system1Calls: 1,
+      });
+    });
+
+    // Truncated precheck contextPack forwards allowReadTools: true into agy --settings
+    await withFakes({ AGB_AGY_BIN: FAKE_AGY, FAKE_PROSECUTOR_VERDICT: 'ship', FAKE_SETTINGS_FILE: settingsOut }, async () => {
+      const v3 = await prosecute({
+        ticket: { id: 'T-TRUNC', body: 'spec' },
+        diff: 'real diff',
+        model: 'claude-sonnet-5-5-medium',
+        precheck: {
+          hollowTest: null,
+          blastRadius: { level: 'low' },
+          contextPack: { contextBlock: '<<UNTRUSTED:CALLERS:1>>\n...\n<</UNTRUSTED:CALLERS:1>>', truncatedContext: true },
+          shortCircuited: null,
+          fastShipped: null,
+          decisionRes: null,
+          telemetry: { uncachedInputTokens: 0, cachedTokens: 0, outputTokens: 0, inputTokens: 0, system1Calls: 0 },
+        },
+      });
+      assert.equal(v3.verdict, 'ship');
+      const deny = JSON.parse(readFileSync(settingsOut, 'utf8')).permissions.deny;
+      assert.equal(deny.includes('read_file'), false, 'truncatedContext must permit read_file via allowReadTools: true');
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });
