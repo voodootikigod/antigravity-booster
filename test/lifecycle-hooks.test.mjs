@@ -375,3 +375,69 @@ test('node-launcher executes hooks/lifecycle.mjs over stdin/stdout and stageHook
     rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('jetski slash-delimited conversationId & model_stop Stop hook: flat session-state files and traversal rejection', async () => {
+  const { isValidConversationId, sessionStateFilename } = await import('../hooks/lifecycle.mjs');
+  const jetskiId = 'v1/default/jetski_remote_agents_3p_devbox/3efa243c-fde2-40a7-9592-14d70dc382f3';
+  assert.equal(isValidConversationId(jetskiId), true);
+  assert.equal(isValidConversationId('0c15c0be-72fa-4edb-998a-ef83a826e69c'), true);
+  assert.equal(isValidConversationId('1/a/b/12345678'), true, '1-char prefix segments and exact 8-char leaf accepted');
+  assert.equal(isValidConversationId('12345678'), true, 'exact 8-char single-segment ID accepted');
+  assert.equal(isValidConversationId('1234567'), false, '7-char leaf rejected');
+  assert.equal(isValidConversationId('a'.repeat(128)), true, '128-char segment accepted');
+  assert.equal(isValidConversationId('a'.repeat(129)), false, '129-char segment rejected');
+  assert.equal(isValidConversationId(`${'a'.repeat(127)}/${'b'.repeat(128)}`), true, '256-char convId accepted');
+  assert.equal(isValidConversationId(`${'a'.repeat(128)}/${'b'.repeat(128)}`), false, '257-char convId rejected');
+  assert.equal(isValidConversationId(null), false, 'non-string rejected');
+  assert.equal(isValidConversationId('v1/default/a/b/3efa243c-fde2-40a7-9592-14d70dc382f3'), false, '5 segments rejected');
+  assert.equal(isValidConversationId('v1/../jetski/3efa243c-fde2-40a7-9592-14d70dc382f3'), false, '.. segment rejected');
+  assert.equal(isValidConversationId('v1/default/.system_generated/3efa243c-fde2-40a7'), false, 'dot segment rejected');
+  assert.equal(isValidConversationId('v1/default/jetski/short'), false, 'final segment < 8 rejected');
+  assert.equal(isValidConversationId('v1\\default\\jetski\\3efa243c-fde2'), false, 'backslash rejected');
+
+  const flatName = sessionStateFilename(jetskiId);
+  assert.equal(flatName.includes('/'), false, 'sessionStateFilename must be flat');
+  assert.match(flatName, /^jetski-[0-9a-f]{64}\.json$/);
+
+  const base = mkdtempSync(join(tmpdir(), 'agb-lifecycle-jetski-'));
+  const dataDir = join(base, 'pdata');
+  const adlcRepo = join(base, 'repo');
+  try {
+    mkdirSync(join(adlcRepo, '.adlc'), { recursive: true });
+    mkdirSync(join(adlcRepo, 'lib'), { recursive: true });
+    initializeDirectoryStore(join(adlcRepo, '.adlc', 'tickets'));
+    writeFileSync(
+      join(adlcRepo, '.adlc', 'tickets', ticketFilename('T-JET-1')),
+      JSON.stringify({ id: 'T-JET-1', title: 'Jetski ticket', body: 'x', scope: ['lib/**'], rails: ['lib/lock.mjs'], edges: [] }) + '\n',
+    );
+
+    evaluateLifecycleEvent(
+      {
+        hookEventName: 'PostToolUse',
+        conversationId: jetskiId,
+        cwd: adlcRepo,
+        toolCall: { name: 'edit_file', args: { Path: join(adlcRepo, 'lib', 'app.mjs') } },
+      },
+      { pluginDataDir: dataDir, env: {} },
+    );
+
+    assert.equal(existsSync(join(dataDir, 'session-state', flatName)), true);
+
+    const stopRes = evaluateLifecycleEvent(
+      {
+        hookEventName: 'Stop',
+        conversationId: jetskiId,
+        cwd: adlcRepo,
+        terminationReason: 'model_stop',
+        continuationActive: false,
+        fullyIdle: true,
+      },
+      { pluginDataDir: dataDir, env: {} },
+    );
+    assert.equal(stopRes.decision, 'continue');
+    assert.match(stopRes.reason, /T-JET-1/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+

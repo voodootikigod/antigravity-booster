@@ -16419,6 +16419,27 @@ import { readdirSync as readdirSync13, readFileSync as readFileSync22, statSync 
 import { join as join29, resolve as resolve16 } from "node:path";
 import { homedir as homedir9 } from "node:os";
 import { randomUUID as randomUUID9 } from "node:crypto";
+function getBrainDirectories(home = homedir9()) {
+  return [
+    join29(home, ".gemini", "antigravity-cli", "brain"),
+    join29(home, ".gemini", "antigravity-ide", "brain"),
+    join29(home, ".gemini", "antigravity", "brain"),
+    join29(home, ".gemini", "jetski", "brain")
+  ];
+}
+function resolveDefaultBrainDir(home = homedir9()) {
+  const dirs = getBrainDirectories(home);
+  return dirs.find((d) => existsSync27(d)) ?? dirs[0];
+}
+function isValidBrainSessionId(sessionId) {
+  if (typeof sessionId !== "string" || sessionId.length > 256 || sessionId.includes("\\")) {
+    return false;
+  }
+  const parts = sessionId.split("/");
+  if (parts.length > 4) return false;
+  if (!parts.every((seg) => isSafePathSegment(seg) && !seg.startsWith("."))) return false;
+  return parts[parts.length - 1].length >= 8;
+}
 function getBrainDir() {
   return process.env.AGB_BRAIN_DIR ?? defaultBrainDir;
 }
@@ -16448,7 +16469,7 @@ function formatPlanMarkdown(plan, { source = "spec", generatedAt = (/* @__PURE__
     for (const t of tickets) {
       const nid = safeId(t.id);
       const escapedTitle = escapeMermaid(t.title);
-      const label = `${escapeMermaid(t.id)}: ${escapedTitle}<br/><i>(${escapeMermaid(t.tier || "mid")})</i>`;
+      const label = `${escapeMermaid(t.id)}: ${escapedTitle} (${escapeMermaid(t.tier || "mid")})`;
       nodes.push(`    ${nid}["${label}"]`);
       for (const e of t.edges || []) {
         if (e && e.to) edgesList.push(`    ${nid} --> ${safeId(e.to)}`);
@@ -16513,9 +16534,9 @@ ${ticketDetails}
 function writePlanArtifact(plan, { repo, source = "brain" } = {}) {
   const isAutomatedTest = process.env.NODE_ENV === "test" || Boolean(process.env.AGB_AGY_BIN && process.env.AGB_AGY_BIN.includes("fake-agy"));
   const activeId = isAutomatedTest && !process.env.AGB_ARTIFACT_DIR ? null : getActiveSessionId();
-  const safeActiveId = isSafePathSegment(activeId) ? activeId : null;
+  const safeActiveId = isValidBrainSessionId(activeId) ? activeId : null;
   const brainDir = getBrainDir();
-  const artifactDir = process.env.AGB_ARTIFACT_DIR ?? (safeActiveId ? join29(brainDir, safeActiveId) : join29(repo, ".booster"));
+  const artifactDir = process.env.AGB_ARTIFACT_DIR ?? (safeActiveId ? join29(brainDir, ...safeActiveId.split("/")) : join29(repo, ".booster"));
   const mdContent = formatPlanMarkdown(plan, { source });
   if (repo && existsSync27(repo) && artifactDir !== join29(repo, ".booster")) {
     writeArtifactFileAtomically(join29(repo, ".booster"), "agb_plan_artifact.md", mdContent, { rootDir: repo });
@@ -16531,10 +16552,32 @@ function writePlanArtifact(plan, { repo, source = "brain" } = {}) {
   }
   return written;
 }
+function collectBrainDirs(rootDir, relSegments = [], out = []) {
+  if (relSegments.length >= 4) return out;
+  let entries;
+  try {
+    entries = readdirSync13(rootDir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const ent of entries) {
+    if (ent.isSymbolicLink() || !ent.isDirectory()) continue;
+    if (ent.name.startsWith(".") || SKIP_BRAIN_SUBDIRS.has(ent.name)) continue;
+    const nextSegs = [...relSegments, ent.name];
+    const dir = join29(rootDir, ent.name);
+    const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync27(join29(dir, f))).map((f) => ({ path: join29(dir, f), mtime: statSync7(join29(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
+    if (matchingFiles.length > 0) {
+      out.push({ id: nextSegs.join("/"), dir, matchingFiles });
+    } else if (nextSegs.length < 4) {
+      collectBrainDirs(dir, nextSegs, out);
+    }
+  }
+  return out;
+}
 function listBrains(brainDir = getBrainDir()) {
   const dirsToSearch = [brainDir];
   if (brainDir === getBrainDir()) {
-    for (const candidate of [antigravityCliBrain, antigravityBrain, jetskiBrain]) {
+    for (const candidate of ALL_BRAIN_DIRS) {
       if (brainDir !== candidate && existsSync27(candidate)) dirsToSearch.push(candidate);
     }
   }
@@ -16542,11 +16585,8 @@ function listBrains(brainDir = getBrainDir()) {
   const results = [];
   for (const bDir of dirsToSearch) {
     if (!existsSync27(bDir)) continue;
-    for (const id of readdirSync13(bDir)) {
+    for (const { id, dir, matchingFiles } of collectBrainDirs(bDir)) {
       if (seen.has(id)) continue;
-      const dir = join29(bDir, id);
-      const matchingFiles = PLAN_FILENAMES.filter((f) => existsSync27(join29(dir, f))).map((f) => ({ path: join29(dir, f), mtime: statSync7(join29(dir, f)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
-      if (!matchingFiles.length) continue;
       const hitFile = matchingFiles[0].path;
       const firstHeading = readFileSync22(hitFile, "utf8").split("\n").find((l) => l.startsWith("#"))?.replace(/^#+\s*/, "") ?? "(untitled)";
       seen.add(id);
@@ -16691,7 +16731,7 @@ async function brainToPlan(idOrPrefix, { repo, gate, model, brainDir = getBrainD
   }
   return plan;
 }
-var antigravityCliBrain, antigravityBrain, jetskiBrain, defaultBrainDir, BRAIN_DIR, PLAN_FILENAMES, SOURCE_PLAN_FILENAMES;
+var ALL_BRAIN_DIRS, defaultBrainDir, BRAIN_DIR, PLAN_FILENAMES, SOURCE_PLAN_FILENAMES, SKIP_BRAIN_SUBDIRS;
 var init_brain = __esm({
   "lib/brain.mjs"() {
     init_llm();
@@ -16700,13 +16740,12 @@ var init_brain = __esm({
     init_models();
     init_plugin_paths();
     init_plan_integrity();
-    antigravityCliBrain = join29(homedir9(), ".gemini", "antigravity-cli", "brain");
-    antigravityBrain = join29(homedir9(), ".gemini", "antigravity", "brain");
-    jetskiBrain = join29(homedir9(), ".gemini", "jetski", "brain");
-    defaultBrainDir = [antigravityCliBrain, antigravityBrain, jetskiBrain].find((d) => existsSync27(d)) ?? antigravityCliBrain;
+    ALL_BRAIN_DIRS = getBrainDirectories();
+    defaultBrainDir = resolveDefaultBrainDir();
     BRAIN_DIR = getBrainDir();
     PLAN_FILENAMES = ["implementation_plan.md", "plan.md", "agb_plan_artifact.md", "walkthrough.md", "spec.md"];
     SOURCE_PLAN_FILENAMES = ["implementation_plan.md", "plan.md", "spec.md", "walkthrough.md"];
+    SKIP_BRAIN_SUBDIRS = /* @__PURE__ */ new Set([".system_generated", "scratch"]);
   }
 });
 
@@ -18439,11 +18478,11 @@ function distillRunDefenses({
   let appliedPath = null;
   let ruleBytes = 0;
   if (apply && recurring.length > 0) {
-    const geminiDir = join35(repoRoot, ".gemini");
-    if (lstatOrNull3(geminiDir)?.isSymbolicLink()) {
-      throw new Error(`Refusing to write inside symlinked .gemini directory: ${geminiDir}`);
+    const agentsDir = join35(repoRoot, ".agents");
+    if (lstatOrNull3(agentsDir)?.isSymbolicLink()) {
+      throw new Error(`Refusing to write inside symlinked .agents directory: ${agentsDir}`);
     }
-    const rulesDir = join35(geminiDir, "rules");
+    const rulesDir = join35(agentsDir, "rules");
     if (lstatOrNull3(rulesDir)?.isSymbolicLink()) {
       throw new Error(`Refusing to write inside symlinked rules directory: ${rulesDir}`);
     }
@@ -18452,7 +18491,16 @@ function distillRunDefenses({
     if (existsSync32(ruleFile) && lstatSync18(ruleFile).isSymbolicLink()) {
       throw new Error(`Refusing to write symlinked rule file: ${ruleFile}`);
     }
-    const header = "# Learned ADLC Repository Defenses\n\n";
+    const header = [
+      "---",
+      "trigger: always_on",
+      "description: Learned ADLC repository defenses distilled from recurring prosecution and review findings",
+      "---",
+      "",
+      "# Learned ADLC Repository Defenses",
+      "",
+      ""
+    ].join("\n");
     const bullets = [];
     let currentBytes = Buffer.byteLength(header, "utf8");
     for (const item of recurring) {
@@ -34722,14 +34770,36 @@ function resolveBoosterPluginPath() {
     return resolve34(fileURLToPath5(new URL("..", import.meta.url)));
   }
 }
-function bootstrap({
-  force = false,
-  forceReinstall = false,
-  home = homedir15(),
-  destination = join48(home, ".gemini", "skills"),
-  pluginPath,
-  agyBin
-} = {}) {
+function pruneBoosterSkillSymlinks(skillsDir, skillsSrc) {
+  const dirStat = lstatSync28(skillsDir, { throwIfNoEntry: false });
+  if (!dirStat || dirStat.isSymbolicLink() || !dirStat.isDirectory()) return 0;
+  let removed = 0;
+  for (const entry of readdirSync22(skillsDir, { withFileTypes: true })) {
+    const dst = join48(skillsDir, entry.name);
+    const st = lstatSync28(dst, { throwIfNoEntry: false });
+    if (!st || !st.isSymbolicLink()) continue;
+    try {
+      const target = resolve34(dirname29(dst), readlinkSync4(dst));
+      const normalizedTarget = target.replace(/\\/g, "/");
+      if (target === resolve34(join48(skillsSrc, entry.name)) || normalizedTarget.includes("/antigravity-booster/skills/")) {
+        rmSync21(dst, { recursive: true, force: true });
+        removed += 1;
+      }
+    } catch {
+    }
+  }
+  return removed;
+}
+function bootstrap(options = {}) {
+  const {
+    force = false,
+    forceReinstall = false,
+    home = homedir15(),
+    pluginPath,
+    agyBin
+  } = options;
+  const explicitDestination = options.destination !== void 0;
+  const destination = explicitDestination ? options.destination : join48(home, ".gemini", "skills");
   const resolvedAgyBin = agyBin ?? process.env.AGB_AGY_BIN ?? resolveAgyBinary(home);
   let hasErrors = false;
   const tempRun = isNpxTemp();
@@ -34740,6 +34810,15 @@ function bootstrap({
     console.log(`info: agy CLI not found on PATH; bootstrap will attempt to fall back to jetski CLI`);
     agyCheckFailed = true;
   }
+  const explicitPath = explicitAdlcPluginPath(pluginPath);
+  const pluginInstallSuccess = explicitPath ? installPlugin(explicitPath, resolvedAgyBin, agyCheckFailed, "adlc-antigravity") : installVendoredAdlcAntigravity({ home, forceReinstall, agyBin: resolvedAgyBin, agyCheckFailed });
+  if (!pluginInstallSuccess) {
+    hasErrors = true;
+  }
+  const boosterInstallSuccess = installBoosterPlugin({ home, agyBin: resolvedAgyBin, agyCheckFailed });
+  if (!boosterInstallSuccess) {
+    hasErrors = true;
+  }
   const skillsSrc = fileURLToPath5(new URL("../skills", import.meta.url));
   let skillsFound = true;
   if (!existsSync44(skillsSrc)) {
@@ -34747,7 +34826,12 @@ function bootstrap({
     skillsFound = false;
     hasErrors = true;
   }
-  if (skillsFound) {
+  if (skillsFound && !explicitDestination && boosterInstallSuccess) {
+    const pruned = pruneBoosterSkillSymlinks(destination, skillsSrc);
+    if (pruned > 0) {
+      console.log(`agb bootstrap: pruned ${pruned} legacy ~/.gemini/skills symlink(s) (skills now served via antigravity-booster plugin)`);
+    }
+  } else if (skillsFound) {
     mkdirSync27(destination, { recursive: true });
     console.log(`agb bootstrap: installing skills into ${destination}...`);
     if (tempRun) {
@@ -34816,15 +34900,6 @@ function bootstrap({
         }
       }
     }
-  }
-  const explicitPath = explicitAdlcPluginPath(pluginPath);
-  const pluginInstallSuccess = explicitPath ? installPlugin(explicitPath, resolvedAgyBin, agyCheckFailed, "adlc-antigravity") : installVendoredAdlcAntigravity({ home, forceReinstall, agyBin: resolvedAgyBin, agyCheckFailed });
-  if (!pluginInstallSuccess) {
-    hasErrors = true;
-  }
-  const boosterInstallSuccess = installBoosterPlugin({ home, agyBin: resolvedAgyBin, agyCheckFailed });
-  if (!boosterInstallSuccess) {
-    hasErrors = true;
   }
   const shim = installTerminalShim({ home, force: forceReinstall });
   if (!shim.ok) {
@@ -35709,7 +35784,7 @@ var COMMANDS = {
   distill: {
     args: "[repo]",
     desc: "scan run/review findings for recurring patterns and stage or apply learned ADLC defenses",
-    flags: "[--apply (write compacted rules to .gemini/rules/adlc-learned.md)] [--compile-checks (emit .adlc/learned-checks.json invariants)] [--json (emit JSON)]"
+    flags: "[--apply (write compacted rules to .agents/rules/adlc-learned.md)] [--compile-checks (emit .adlc/learned-checks.json invariants)] [--json (emit JSON)]"
   },
   holdout: {
     args: "<list|run|clean> [repo]",

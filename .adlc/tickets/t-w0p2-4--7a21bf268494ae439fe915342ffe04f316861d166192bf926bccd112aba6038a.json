@@ -1,0 +1,21 @@
+{
+  "body": "Update commands/agb.md, test/commands.test.mjs, test/skills-cross-harness.test.mjs, and website/content/docs/ references to reflect .agents/rules/adlc-learned.md YAML frontmatter, _meta['com.google.antigravity/ui'] MCP App surfaces, antigravity-booster_agb MCP server naming, and mcp_config.json settings. Regenerate website/generated/ partials via node website/scripts/gen-reference.mjs, verify npm run skills:check, rebuild dist/ bundles via npm run build, and verify npm test passes with zero failures.",
+  "edges": [],
+  "id": "T-W0P2-4",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "commands/agb.md",
+    "test/commands.test.mjs",
+    "test/skills-cross-harness.test.mjs",
+    "website/content/docs/**",
+    "website/generated/**",
+    "dist/**",
+    "specs/wave0-pr2-mcp-apps-hooks-and-jetski-spec.md"
+  ],
+  "title": "Docs, Command Mirrors & Bundle Rebuild"
+}

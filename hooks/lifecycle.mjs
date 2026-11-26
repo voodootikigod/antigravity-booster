@@ -28,7 +28,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 function detectInstalledPluginPath() {
@@ -46,7 +46,24 @@ function detectInstalledPluginPath() {
 const IS_BUNDLED =
   (typeof __AGB_BUNDLED__ !== 'undefined' && Boolean(__AGB_BUNDLED__)) ||
   detectInstalledPluginPath();
-const VALID_CONVERSATION_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+const CONVERSATION_SEGMENT_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function isValidConversationId(convId) {
+  if (typeof convId !== 'string' || convId.length > 256 || convId.includes('\\')) {
+    return false;
+  }
+  const segments = convId.split('/');
+  if (segments.length > 4) return false;
+  if (!segments.every((seg) => CONVERSATION_SEGMENT_RE.test(seg))) return false;
+  return segments[segments.length - 1].length >= 8;
+}
+
+export function sessionStateFilename(conversationId) {
+  if (!conversationId.includes('/')) return `${conversationId}.json`;
+  const digest = createHash('sha256').update(conversationId, 'utf8').digest('hex');
+  return `jetski-${digest}.json`;
+}
+
 const SAFE_TICKET_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const CONTEXT_ROT_TURN_THRESHOLD = 25;
 const MAX_TOTAL_STOP_CONTINUATIONS = 2;
@@ -200,12 +217,12 @@ function defaultSessionState(conversationId) {
 }
 
 function loadSessionState(dataDir, conversationId) {
-  if (!VALID_CONVERSATION_ID_RE.test(conversationId)) return null;
+  if (!isValidConversationId(conversationId)) return null;
   if (lstatOrNull(dataDir)?.isSymbolicLink()) return null;
   const stateDir = join(dataDir, 'session-state');
   const dirSt = lstatOrNull(stateDir);
   if (dirSt?.isSymbolicLink()) return null;
-  const stateFile = join(stateDir, `${conversationId}.json`);
+  const stateFile = join(stateDir, sessionStateFilename(conversationId));
   const fSt = lstatOrNull(stateFile);
   if (!fSt) return defaultSessionState(conversationId);
   if (fSt.isSymbolicLink() || !fSt.isFile()) return null;
@@ -225,7 +242,7 @@ function loadSessionState(dataDir, conversationId) {
 }
 
 function saveSessionState(dataDir, state) {
-  if (!state || !VALID_CONVERSATION_ID_RE.test(state.conversationId)) return false;
+  if (!state || !isValidConversationId(state.conversationId)) return false;
   if (lstatOrNull(dataDir)?.isSymbolicLink()) return false;
   const stateDir = join(dataDir, 'session-state');
   if (lstatOrNull(stateDir)?.isSymbolicLink()) return false;
@@ -237,9 +254,10 @@ function saveSessionState(dataDir, state) {
   const dirSt = lstatOrNull(stateDir);
   if (!dirSt || dirSt.isSymbolicLink() || !dirSt.isDirectory()) return false;
 
-  const stateFile = join(stateDir, `${state.conversationId}.json`);
+  const fileKey = sessionStateFilename(state.conversationId);
+  const stateFile = join(stateDir, fileKey);
   if (lstatOrNull(stateFile)?.isSymbolicLink()) return false;
-  const tmpFile = join(stateDir, `.tmp-${state.conversationId}-${process.pid}-${randomUUID()}.json`);
+  const tmpFile = join(stateDir, `.tmp-${fileKey.replace(/\.json$/, '')}-${process.pid}-${randomUUID()}.json`);
   try {
     state.updatedAt = Date.now();
     writeFileSync(tmpFile, JSON.stringify(state, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
@@ -440,9 +458,11 @@ export function evaluateLifecycleEvent(
 
   if (eventName === 'Stop') {
     if (!state) return {};
+    const isModelStop =
+      payload.terminationReason === 'model_stop' || payload.terminationReason === 'NO_TOOL_CALL';
     const canContinue =
       payload.continuationActive !== true &&
-      payload.terminationReason === 'NO_TOOL_CALL' &&
+      isModelStop &&
       !payload.error &&
       payload.fullyIdle !== false &&
       adlcInfo.hasActiveTicket &&

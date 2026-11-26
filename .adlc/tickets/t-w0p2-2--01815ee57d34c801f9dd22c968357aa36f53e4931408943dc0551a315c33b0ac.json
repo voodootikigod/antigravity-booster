@@ -1,0 +1,29 @@
+{
+  "body": "Support 1-to-4 slash-delimited conversationId segments (e.g. v1/default/jetski_remote_agents_3p_devbox/<uuid>) in hooks/policy/paths.mjs (walking every segment in verifyBrainArtifactDirectory for zero symlinks) and hooks/lifecycle.mjs (flat hash-suffixed session-state file keys). Accept terminationReason === 'model_stop' || terminationReason === 'NO_TOOL_CALL' in hooks/lifecycle.mjs Stop handler. Classify App/Web/Remote built-in tools in hooks/policy/constants.mjs and hooks/policy/evaluate.mjs: read-only google_search, browse, google:browse, list_skills, lookup_skill, lookup_skills, get_skill_resources (blocking traversal in filenames) and external/customization-mutating create_github_repository, fork_github_repository, detach_github_repository, save_skill, update_skill, delete_skill (forceAsk interactively, deny in headless/readonly). Update lib/brain.mjs to include .gemini/antigravity-ide/brain, scan up to 4 levels for jetski brain dirs, support multi-segment session IDs in writePlanArtifact, and strip HTML tags from Mermaid node labels. Add tests in test/lifecycle-hooks.test.mjs, test/pre-tool-use.test.mjs, and test/cli-nextgen.test.mjs.",
+  "edges": [
+    {
+      "to": "T-W0P2-3"
+    },
+    {
+      "to": "T-W0P2-4"
+    }
+  ],
+  "id": "T-W0P2-2",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "hooks/lifecycle.mjs",
+    "hooks/policy/paths.mjs",
+    "hooks/policy/constants.mjs",
+    "hooks/policy/evaluate.mjs",
+    "lib/brain.mjs",
+    "test/lifecycle-hooks.test.mjs",
+    "test/pre-tool-use.test.mjs",
+    "test/cli-nextgen.test.mjs"
+  ],
+  "title": "jetski conversationId, Stop model_stop, PreToolUse Taxonomy & Brain Parity"
+}

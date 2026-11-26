@@ -683,4 +683,57 @@ test('agb distill --compile-checks and agb holdout <list|run|clean> operate offl
   assert.equal(JSON.parse(cleanRes.stdout).removed, true);
 });
 
+test('lib/brain.mjs: discovers 4-level jetski brain directories, skips .system_generated/scratch, and emits HTML-free Mermaid labels', async () => {
+  const { listBrains, readBrain, formatPlanMarkdown, isValidBrainSessionId, getBrainDirectories, resolveDefaultBrainDir } = await import('../lib/brain.mjs');
+  assert.deepEqual(getBrainDirectories('/h'), [
+    join('/h', '.gemini', 'antigravity-cli', 'brain'),
+    join('/h', '.gemini', 'antigravity-ide', 'brain'),
+    join('/h', '.gemini', 'antigravity', 'brain'),
+    join('/h', '.gemini', 'jetski', 'brain'),
+  ]);
+  assert.equal(resolveDefaultBrainDir('/nonexistent-agb-home-dir'), join('/nonexistent-agb-home-dir', '.gemini', 'antigravity-cli', 'brain'));
+  const fakeBrainRoot = mkdtempSync(join(tmpdir(), 'agb-jetski-brain-'));
+  try {
+    mkdirSync(join(fakeBrainRoot, '.gemini', 'jetski', 'brain'), { recursive: true });
+    assert.equal(resolveDefaultBrainDir(fakeBrainRoot), join(fakeBrainRoot, '.gemini', 'jetski', 'brain'));
+    rmSync(join(fakeBrainRoot, '.gemini'), { recursive: true, force: true });
+    const jetskiSession = 'v1/default/jetski_remote_agents_3p_devbox/3efa243c-fde2-40a7-9592-14d70dc382f3';
+    const sessionDir = join(fakeBrainRoot, ...jetskiSession.split('/'));
+    mkdirSync(join(sessionDir, '.system_generated'), { recursive: true });
+    mkdirSync(join(sessionDir, 'scratch'), { recursive: true });
+    writeFileSync(join(sessionDir, 'implementation_plan.md'), '# Jetski Multi-Surface Plan\n\nShip cleanly.\n');
+    writeFileSync(join(sessionDir, '.system_generated', 'implementation_plan.md'), '# Hidden System Plan\n');
+    writeFileSync(join(sessionDir, 'scratch', 'implementation_plan.md'), '# Scratch Plan\n');
 
+    assert.equal(isValidBrainSessionId(jetskiSession), true);
+    assert.equal(isValidBrainSessionId('1/a/b/12345678'), true);
+    assert.equal(isValidBrainSessionId('12345678'), true);
+    assert.equal(isValidBrainSessionId('1234567'), false);
+    assert.equal(isValidBrainSessionId(`${'a'.repeat(127)}/${'b'.repeat(128)}`), true);
+    assert.equal(isValidBrainSessionId(`${'a'.repeat(128)}/${'b'.repeat(128)}`), false);
+    assert.equal(isValidBrainSessionId('v1/../bad/12345678'), false);
+    assert.equal(isValidBrainSessionId('v1/.dot/bad/12345678'), false);
+    assert.equal(isValidBrainSessionId('v1/a/b/c/12345678'), false);
+    assert.equal(isValidBrainSessionId('v1\\12345678'), false);
+    assert.equal(isValidBrainSessionId(null), false);
+
+    const discovered = listBrains(fakeBrainRoot);
+    assert.equal(discovered.length, 1);
+    assert.equal(discovered[0].id, jetskiSession);
+    assert.equal(discovered[0].title, 'Jetski Multi-Surface Plan');
+
+    const loaded = readBrain(jetskiSession, fakeBrainRoot);
+    assert.equal(loaded.sourceType, 'antigravity-brain');
+    assert.match(loaded.implementationPlan, /Jetski Multi-Surface Plan/);
+
+    const md = formatPlanMarkdown({
+      repo: '/tmp/repo',
+      tickets: [{ id: 'T-1', title: 'No HTML Tags', tier: 'frontier', edges: [] }],
+    });
+    assert.equal(md.includes('<br/>'), false, 'Mermaid node label must not contain <br/> HTML');
+    assert.equal(md.includes('<i>'), false, 'Mermaid node label must not contain <i> HTML');
+    assert.match(md, /n_T_1\["T-1: No HTML Tags \(frontier\)"\]/);
+  } finally {
+    rmSync(fakeBrainRoot, { recursive: true, force: true });
+  }
+});

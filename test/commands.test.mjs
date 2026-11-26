@@ -147,7 +147,7 @@ test('commands & rules: align with live CLI/MCP surface and avoid false-green em
   assert.ok(agbCmd.includes('~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop'), 'commands/agb.md must review against <pre-run-base-sha>');
   assert.ok(!agbCmd.includes('agb review . main'), 'commands/agb.md must not instruct empty-diff review against main after merge');
   assert.ok(agbCmd.includes('~/.local/bin/agb distill'), 'commands/agb.md must document agb distill');
-  assert.ok(agbCmd.includes('mcp__agb__agb_distill'), 'commands/agb.md must document mcp__agb__agb_distill');
+  assert.ok(agbCmd.includes('agb_distill') && agbCmd.includes('antigravity-booster_agb'), 'commands/agb.md must document agb_distill on antigravity-booster_agb');
   assert.ok(agbCmd.includes('--emit-workflow'), 'commands/agb.md must document --emit-workflow');
   assert.ok(agbCmd.includes('emitWorkflow'), 'commands/agb.md must document emitWorkflow');
 

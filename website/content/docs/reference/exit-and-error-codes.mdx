@@ -36,7 +36,7 @@ Any exception that reaches the top level prints `agb: <message>` and exits 1 ([t
 | `plan` | 0 | Plan compiled and written (plus workflow script when `--emit-workflow` is given). |
 | | 1 | Bad arguments, output plan or `--emit-workflow` file exists without `--force`, or no quota telemetry ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L194-L210)). |
 | | 2 | Blocking plan-gate findings; nothing written ([source](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L220-L230)). |
-| `distill` | 0 | Defense distillation scan completed (staged `.booster/distilled-defenses.md`, and applied `.gemini/rules/adlc-learned.md` when `--apply` is given). |
+| `distill` | 0 | Defense distillation scan completed (staged `.booster/distilled-defenses.md`, and applied `.agents/rules/adlc-learned.md` when `--apply` is given). |
 | | 1 | Unknown flag or runtime/filesystem error. |
 | `import-brain` | 0 / 1 | Deprecated; 1 on bad arguments or no telemetry. |
 | `status` | 0 | Rendered once. |

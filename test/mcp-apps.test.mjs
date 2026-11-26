@@ -156,21 +156,33 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
       assert.equal(byName.get('agb_preflight')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
       assert.equal(byName.get('agb_review')._meta.ui.resourceUri, 'ui://agb/review-card.html');
 
-      assert.deepEqual(byName.get('agb_flight_deck')._meta.ui, {
-        resourceUri: 'ui://agb/flight-deck.html',
-        surface: 'aux_pane',
-        visibility: ['model', 'app'],
+      assert.deepEqual(byName.get('agb_flight_deck')._meta, {
+        ui: {
+          resourceUri: 'ui://agb/flight-deck.html',
+          visibility: ['model', 'app'],
+        },
+        'com.google.antigravity/ui': {
+          surface: 'aux_pane',
+        },
       });
-      assert.deepEqual(byName.get('agb_mission_control')._meta.ui, {
-        resourceUri: 'ui://agb/mission-control.html',
-        surface: 'global',
-        visibility: ['model', 'app'],
+      assert.deepEqual(byName.get('agb_mission_control')._meta, {
+        ui: {
+          resourceUri: 'ui://agb/mission-control.html',
+          visibility: ['model', 'app'],
+        },
+        'com.google.antigravity/ui': {
+          surface: 'global',
+        },
       });
-      assert.deepEqual(byName.get('agb_plan_viewer')._meta.ui, {
-        resourceUri: 'ui://agb/plan-viewer.html',
-        surface: 'file',
-        extensions: ['.agbplan'],
-        visibility: ['model', 'app'],
+      assert.deepEqual(byName.get('agb_plan_viewer')._meta, {
+        ui: {
+          resourceUri: 'ui://agb/plan-viewer.html',
+          visibility: ['model', 'app'],
+        },
+        'com.google.antigravity/ui': {
+          surface: 'file',
+          extensions: ['.agbplan'],
+        },
       });
       assert.deepEqual(byName.get('agb_control')._meta.ui, {
         visibility: ['app'],
@@ -1007,6 +1019,12 @@ test('Plan Card and Plan Viewer resolve relative plan paths against repo, reject
             Promise.resolve({ ok: true }).then((result) => {
               if (windowObj._msgHandler) windowObj._msgHandler({ data: { jsonrpc: '2.0', id: msg.id, result } });
             });
+          } else if (msg && msg.id !== undefined && msg.method === 'resources/read') {
+            const uri = msg.params?.uri;
+            const text = JSON.stringify({ tickets: [{ id: 'T-URI-1', title: 'Opaque URI ticket', tier: 'mid' }] });
+            Promise.resolve({ contents: [{ uri, text }] }).then((result) => {
+              if (windowObj._msgHandler) windowObj._msgHandler({ data: { jsonrpc: '2.0', id: msg.id, result } });
+            });
           }
         },
       },
@@ -1042,7 +1060,7 @@ test('Plan Card and Plan Viewer resolve relative plan paths against repo, reject
     });
     vm.runInContext(scriptMatches[0][1], ctx);
     if (viewerStateOverrides && ctx.viewerState) Object.assign(ctx.viewerState, viewerStateOverrides);
-    return { ctx, listeners, els };
+    return { ctx, listeners, els, windowObj };
   }
 
   // 1. Plan Card runtime exercise: relative path resolves against repo, no unknown repo key passed, isError surfaces error
@@ -1098,4 +1116,119 @@ test('Plan Card and Plan Viewer resolve relative plan paths against repo, reject
   assert.match(viewer.els.get('viewerPath').textContent, /invalid or out-of-repo/i);
   await viewer.listeners.get('btnRunPlan:click')();
   assert.match(viewer.els.get('viewerPath').textContent, /invalid or out-of-repo/i);
+
+  // 4. Opaque antigravity-file:// URI roundtrip via resources/read and com.google.antigravity/resources/write
+  const opaqueUri = 'antigravity-file://opaque-token-123/feature.agbplan';
+  viewer.windowObj._msgHandler({
+    data: {
+      jsonrpc: '2.0',
+      method: 'ui/notifications/tool-result',
+      params: {
+        structuredContent: {
+          ok: true,
+          deferredRead: true,
+          fileUri: opaqueUri,
+          path: opaqueUri,
+          repo: '/work/myrepo',
+        },
+      },
+    },
+  });
+  await new Promise((r) => setTimeout(r, 25));
+  assert.equal(viewer.els.get('viewerPath').textContent, opaqueUri);
+  await viewer.listeners.get('btnSavePlan:click')();
+  assert.equal(writes[writes.length - 1].uri, opaqueUri);
+  assert.equal(
+    writes[writes.length - 1].text,
+    JSON.stringify({ tickets: [{ id: 'T-URI-1', title: 'Opaque URI ticket', tier: 'mid' }], gate: {} }, null, 2) + '\n',
+  );
 });
+
+test('agb_plan_viewer antigravity-file:// URI & non-UI sidecarHint fallback over stdio MCP', async () => {
+  const repo = join(TMP, 'sidecar-hint-repo');
+  const spacedRepo = join(TMP, 'sidecar repo with space');
+  mkdirSync(repo, { recursive: true });
+  mkdirSync(spacedRepo, { recursive: true });
+  for (const entry of [MCP_SRC, MCP_DIST]) {
+    const srv = mcpSession(entry);
+    try {
+      // Before initialize (default clientSupportsUiExtension === false) -> exact unquoted sidecarHint
+      const fdPreInit = await srv.send({
+        id: 100,
+        method: 'tools/call',
+        params: { name: 'agb_flight_deck', arguments: { repo } },
+      });
+      assert.equal(fdPreInit.result.structuredContent.sidecarHint, `agb sidecar ${repo}`);
+
+      // Non-UI initialize -> sidecarHint included on agb_flight_deck (unquoted & quoted) & agb_mission_control
+      await srv.send({ id: 1, method: 'initialize', params: { capabilities: {} } });
+      const fdNonUi = await srv.send({
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'agb_flight_deck', arguments: { repo } },
+      });
+      assert.equal(Boolean(fdNonUi.result.isError), false);
+      assert.equal(fdNonUi.result.structuredContent.sidecarHint, `agb sidecar ${repo}`);
+      assert.match(fdNonUi.result.content[0].text, /agb sidecar /);
+
+      const fdSpaced = await srv.send({
+        id: 21,
+        method: 'tools/call',
+        params: { name: 'agb_flight_deck', arguments: { repo: spacedRepo } },
+      });
+      assert.equal(fdSpaced.result.structuredContent.sidecarHint, `agb sidecar ${JSON.stringify(spacedRepo)}`);
+
+      const mcNonUi = await srv.send({
+        id: 20,
+        method: 'tools/call',
+        params: { name: 'agb_mission_control', arguments: { repo } },
+      });
+      assert.equal(Boolean(mcNonUi.result.isError), false);
+      assert.equal(mcNonUi.result.structuredContent.sidecarHint, `agb sidecar ${repo}`);
+      assert.match(mcNonUi.result.content[0].text, /agb sidecar /);
+
+      // Opaque antigravity-file:// URI succeeds with deferredRead: true (no ENOENT)
+      const uriRes = await srv.send({
+        id: 3,
+        method: 'tools/call',
+        params: { name: 'agb_plan_viewer', arguments: { path: 'antigravity-file://workspace-1/plan.agbplan', repo } },
+      });
+      assert.equal(Boolean(uriRes.result.isError), false);
+      assert.equal(uriRes.result.structuredContent.deferredRead, true);
+      assert.equal(uriRes.result.structuredContent.fileUri, 'antigravity-file://workspace-1/plan.agbplan');
+
+      // Malformed antigravity-file:// URI rejected cleanly
+      const badUriRes = await srv.send({
+        id: 4,
+        method: 'tools/call',
+        params: { name: 'agb_plan_viewer', arguments: { path: 'antigravity-file://bad space', repo } },
+      });
+      assert.equal(badUriRes.result.isError, true);
+
+      // UI-capable initialize -> sidecarHint omitted
+      await srv.send({
+        id: 5,
+        method: 'initialize',
+        params: { capabilities: { extensions: { 'io.modelcontextprotocol/ui': {} } } },
+      });
+      const fdUi = await srv.send({
+        id: 6,
+        method: 'tools/call',
+        params: { name: 'agb_flight_deck', arguments: { repo } },
+      });
+      assert.equal(fdUi.result.structuredContent.sidecarHint, undefined);
+      assert.doesNotMatch(fdUi.result.content[0].text, /agb sidecar /);
+
+      const mcUi = await srv.send({
+        id: 7,
+        method: 'tools/call',
+        params: { name: 'agb_mission_control', arguments: { repo } },
+      });
+      assert.equal(mcUi.result.structuredContent.sidecarHint, undefined);
+      assert.doesNotMatch(mcUi.result.content[0].text, /agb sidecar /);
+    } finally {
+      await srv.close();
+    }
+  }
+});
+

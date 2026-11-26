@@ -118,12 +118,18 @@ test('layout: hooks.json registers the 6-event agb-policy-guard lifecycle suite 
   });
 });
 
-test('layout: mcp_config.json launches the bundled MCP server via node-launcher (spec §4.1)', () => {
+test('layout: mcp_config.json launches the bundled MCP server via node with timeoutSeconds: -1 and background/eager tool hints', () => {
   assert.deepEqual(readJson('mcp_config.json'), {
     mcpServers: {
       agb: {
-        command: '/bin/sh',
-        args: ['${PLUGIN_ROOT}/bin/node-launcher.sh', '${PLUGIN_ROOT}/dist/mcp-server.mjs'],
+        command: 'node',
+        args: ['${PLUGIN_ROOT}/dist/mcp-server.mjs'],
+        timeoutSeconds: -1,
+        tools: {
+          agb_run: { background: 'always' },
+          agb_status: { eager: true },
+          agb_doctor: { eager: true },
+        },
       },
     },
   });
@@ -200,7 +206,8 @@ test('layout: agy plugin validate processes skills, agents, commands, mcpServers
 
 test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, rules/AGENTS.md, and 7 agb-* skills', () => {
   const manifest = readJson('plugin.json');
-  assert.equal(manifest.displayName, 'Antigravity Booster');
+  assert.equal(manifest.displayName, 'Booster');
+  assert.equal(manifest.license, 'MIT');
   assert.equal(manifest.logo, 'assets/logo.svg');
   assert.equal(manifest.homepage, 'https://www.agybooster.com');
   assert.equal(manifest.repository, 'https://github.com/voodootikigod/antigravity-booster');
@@ -214,7 +221,8 @@ test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, r
   assert.match(logoSvg, /height="256"/);
 
   const rulesMd = readFileSync(join(ROOT, 'rules', 'AGENTS.md'), 'utf8');
-  assert.match(rulesMd, /mcp__agb__agb_plan/);
+  assert.match(rulesMd, /antigravity-booster_agb/);
+  assert.doesNotMatch(rulesMd, /mcp__agb__/);
   assert.match(rulesMd, /\/agb-run/);
 
   const expectedPluginSkills = [
