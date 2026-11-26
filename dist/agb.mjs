@@ -42,7 +42,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 
-// ../../node_modules/@adlc/tickets/lib/pointer.mjs
+// node_modules/@adlc/tickets/lib/pointer.mjs
 import { lstatSync, openSync, fstatSync, readSync, closeSync, constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
 function readPointerFileBounded(path5) {
@@ -201,7 +201,7 @@ function resolveActiveTicketAgainst(snapshot, { root = ".", env = process.env, a
 }
 var CURRENT_TICKET_FILE, MAX_POINTER_BYTES, ABSENT, CANONICAL_ID_KEY, DEPRECATED_ID_KEYS, ok, fail, invalid, conflict, isPlainObject, trimmed;
 var init_pointer = __esm({
-  "../../node_modules/@adlc/tickets/lib/pointer.mjs"() {
+  "node_modules/@adlc/tickets/lib/pointer.mjs"() {
     CURRENT_TICKET_FILE = ".adlc/current-ticket.json";
     MAX_POINTER_BYTES = 64 * 1024;
     ABSENT = /* @__PURE__ */ Symbol("pointer-absent");
@@ -216,10 +216,10 @@ var init_pointer = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/constants.mjs
+// node_modules/@adlc/tickets/lib/constants.mjs
 var ACTIVE_MANIFEST, ARCHIVE_MANIFEST, ACTIVE_DIRECTORY, ARCHIVE_DIRECTORY, LEGACY_FILE, LEGACY_ARCHIVE_FILE, LOCK_DIRECTORY, TRANSACTION_DIRECTORY, TICKET_HASH_DOMAIN, STORE_HASH_DOMAIN;
 var init_constants = __esm({
-  "../../node_modules/@adlc/tickets/lib/constants.mjs"() {
+  "node_modules/@adlc/tickets/lib/constants.mjs"() {
     init_pointer();
     ACTIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-directory", version: 1 });
     ARCHIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-archive", version: 1 });
@@ -234,7 +234,7 @@ var init_constants = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/errors.mjs
+// node_modules/@adlc/tickets/lib/errors.mjs
 function asTicketResult(fn) {
   try {
     return { ok: true, value: fn(), warnings: [] };
@@ -250,7 +250,7 @@ function exitCodeFor(error) {
 }
 var TicketStoreError, invalid2, conflict2, policy, operational;
 var init_errors = __esm({
-  "../../node_modules/@adlc/tickets/lib/errors.mjs"() {
+  "node_modules/@adlc/tickets/lib/errors.mjs"() {
     TicketStoreError = class extends Error {
       constructor(kind, code, message, details) {
         super(message);
@@ -267,7 +267,7 @@ var init_errors = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/canonical.mjs
+// node_modules/@adlc/tickets/lib/canonical.mjs
 import { createHash } from "node:crypto";
 function compareTicketIds(left, right) {
   const a = Buffer.from(left, "utf8");
@@ -298,7 +298,7 @@ function storeHash(tickets) {
 }
 var canonicalValue, canonicalJson, prettyCanonicalJson, sha256, ticketHash;
 var init_canonical = __esm({
-  "../../node_modules/@adlc/tickets/lib/canonical.mjs"() {
+  "node_modules/@adlc/tickets/lib/canonical.mjs"() {
     init_errors();
     init_constants();
     canonicalValue = (value) => normalize(value);
@@ -310,7 +310,7 @@ var init_canonical = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/ids.mjs
+// node_modules/@adlc/tickets/lib/ids.mjs
 import { randomBytes } from "node:crypto";
 function encode(value, width) {
   let remaining = BigInt(value);
@@ -329,26 +329,26 @@ function generateTicketId(now = Date.now(), entropy = randomBytes(10)) {
 }
 var ALPHABET, isGeneratedTicketId;
 var init_ids = __esm({
-  "../../node_modules/@adlc/tickets/lib/ids.mjs"() {
+  "node_modules/@adlc/tickets/lib/ids.mjs"() {
     ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     isGeneratedTicketId = (id) => /^T-[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(id);
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/filename.mjs
+// node_modules/@adlc/tickets/lib/filename.mjs
 function ticketSlug(id) {
   const slug = id.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/g, "");
   return slug || "ticket";
 }
 var ticketFilename;
 var init_filename = __esm({
-  "../../node_modules/@adlc/tickets/lib/filename.mjs"() {
+  "node_modules/@adlc/tickets/lib/filename.mjs"() {
     init_canonical();
     ticketFilename = (id) => `${ticketSlug(id)}--${sha256(Buffer.from(id, "utf8"))}.json`;
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/schema.mjs
+// node_modules/@adlc/tickets/lib/schema.mjs
 function validateTicket(ticket, { archive = false } = {}) {
   const errors = [];
   if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) return ["ticket is not an object"];
@@ -418,13 +418,13 @@ function validateTickets(tickets, { archive = false, validateGraph = !archive } 
   return tickets;
 }
 var init_schema = __esm({
-  "../../node_modules/@adlc/tickets/lib/schema.mjs"() {
+  "node_modules/@adlc/tickets/lib/schema.mjs"() {
     init_errors();
     init_canonical();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/help.mjs
+// node_modules/@adlc/tickets/lib/help.mjs
 function categoryWarning(category) {
   if (category === void 0) return null;
   if (SYNC_CATEGORIES.includes(category)) return null;
@@ -499,7 +499,7 @@ function ticketJsonSchema() {
 }
 var SCHEMA_ID, SYNC_CATEGORIES, TICKET_FIELDS, CREATE_EXAMPLE, FIELD_INDENT, createExampleJson, INPUT_DOCUMENT, AUTHORIZE_NOTE, TRUST_ROOT_NOTE, COMMAND_HELP, serializeTicketJsonSchema;
 var init_help = __esm({
-  "../../node_modules/@adlc/tickets/lib/help.mjs"() {
+  "node_modules/@adlc/tickets/lib/help.mjs"() {
     SCHEMA_ID = "https://adlc.dev/schemas/ticket-v1.json";
     SYNC_CATEGORIES = Object.freeze([
       "feature",
@@ -803,7 +803,7 @@ var init_help = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/edit.mjs
+// node_modules/@adlc/tickets/lib/edit.mjs
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -833,13 +833,13 @@ function planEditSession(service, id, { authorized = false, editor, runEditor = 
 }
 var spawnEditor;
 var init_edit = __esm({
-  "../../node_modules/@adlc/tickets/lib/edit.mjs"() {
+  "node_modules/@adlc/tickets/lib/edit.mjs"() {
     init_errors();
     spawnEditor = (editor, path5) => execFileSync(editor, [path5], { stdio: "inherit" });
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/snapshot.mjs
+// node_modules/@adlc/tickets/lib/snapshot.mjs
 function deepClone(value) {
   const serialized = JSON.stringify(value, function reject(key2, item) {
     if (typeof item === "number" && !Number.isFinite(item)) {
@@ -865,7 +865,7 @@ function deepFreeze(value) {
 }
 var TicketSnapshot;
 var init_snapshot = __esm({
-  "../../node_modules/@adlc/tickets/lib/snapshot.mjs"() {
+  "node_modules/@adlc/tickets/lib/snapshot.mjs"() {
     init_canonical();
     TicketSnapshot = class {
       #byId;
@@ -888,7 +888,7 @@ var init_snapshot = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/stores/directory.mjs
+// node_modules/@adlc/tickets/lib/stores/directory.mjs
 import { existsSync, lstatSync as lstatSync2, readFileSync as readFileSync2, readdirSync } from "node:fs";
 import { dirname as dirname2, join as join3, resolve } from "node:path";
 function assertRealDirectory(path5) {
@@ -908,7 +908,7 @@ function assertRealDirectory(path5) {
 }
 var DirectoryTicketStore, activeDirectoryStore, archiveDirectoryStore;
 var init_directory = __esm({
-  "../../node_modules/@adlc/tickets/lib/stores/directory.mjs"() {
+  "node_modules/@adlc/tickets/lib/stores/directory.mjs"() {
     init_constants();
     init_errors();
     init_canonical();
@@ -975,7 +975,7 @@ var init_directory = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/lock.mjs
+// node_modules/@adlc/tickets/lib/lock.mjs
 import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync3, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { hostname } from "node:os";
 import { dirname as dirname3, join as join4 } from "node:path";
@@ -1061,14 +1061,14 @@ function releaseTicketLock(lock, { removeLock = rmSync } = {}) {
 }
 var sleep;
 var init_lock = __esm({
-  "../../node_modules/@adlc/tickets/lib/lock.mjs"() {
+  "node_modules/@adlc/tickets/lib/lock.mjs"() {
     init_constants();
     init_errors();
     sleep = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/durability.mjs
+// node_modules/@adlc/tickets/lib/durability.mjs
 import {
   closeSync as closeSync2,
   copyFileSync,
@@ -1146,11 +1146,11 @@ function durableRemove(path5, options) {
   fsyncDirectory(parent);
 }
 var init_durability = __esm({
-  "../../node_modules/@adlc/tickets/lib/durability.mjs"() {
+  "node_modules/@adlc/tickets/lib/durability.mjs"() {
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/manifest-primitives.mjs
+// node_modules/@adlc/tickets/lib/manifest-primitives.mjs
 import {
   existsSync as existsSync4,
   lstatSync as lstatSync3,
@@ -1585,7 +1585,7 @@ function resolveOpenSegment(dir = ".adlc", { cwd = dir && dir !== ".adlc" ? dirn
 }
 var SEGMENT_DIRNAME, SEGMENT_NAME_RE, RESERVED_NAMES, MARKER_NAME, LINEAGE_NAME, MARKER_FORMAT, MARKER_VERSION, LOCK_SUFFIX, MAX_LOCAL_JSON_BYTES, MAX_LOCK_OWNER_BYTES, MAX_FIRST_LINE_BYTES, ULID_ALPHABET, OVERSIZED_FIRST_ENTRY, MALFORMED_FIRST_ENTRY;
 var init_manifest_primitives = __esm({
-  "../../node_modules/@adlc/tickets/lib/manifest-primitives.mjs"() {
+  "node_modules/@adlc/tickets/lib/manifest-primitives.mjs"() {
     init_canonical();
     SEGMENT_DIRNAME = "manifest.d";
     SEGMENT_NAME_RE = /^[a-z0-9-]{1,40}-[0-9A-HJKMNP-TV-Z]{26}\.jsonl$/;
@@ -1604,7 +1604,7 @@ var init_manifest_primitives = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/manifest-segments.mjs
+// node_modules/@adlc/tickets/lib/manifest-segments.mjs
 import { existsSync as existsSync5, readFileSync as readFileSync5 } from "node:fs";
 import { dirname as dirname6, join as join6 } from "node:path";
 function readRawLines(filePath) {
@@ -1730,13 +1730,13 @@ function readOwnChains(dir, { cwd = dirname6(dir), allowRecovery = false, key: k
   return [root, parseLines(signedRecovered)];
 }
 var init_manifest_segments = __esm({
-  "../../node_modules/@adlc/tickets/lib/manifest-segments.mjs"() {
+  "node_modules/@adlc/tickets/lib/manifest-segments.mjs"() {
     init_canonical();
     init_manifest_primitives();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/key-contract.mjs
+// node_modules/@adlc/tickets/lib/key-contract.mjs
 function validateKeyParam(key2) {
   if (key2 === null) return null;
   if (typeof key2 === "string" && key2.length > 0) return key2;
@@ -1749,11 +1749,11 @@ function resolveKeyFromEnv(env = process.env) {
   return typeof k === "string" && k.length > 0 ? k : null;
 }
 var init_key_contract = __esm({
-  "../../node_modules/@adlc/tickets/lib/key-contract.mjs"() {
+  "node_modules/@adlc/tickets/lib/key-contract.mjs"() {
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/evidence.mjs
+// node_modules/@adlc/tickets/lib/evidence.mjs
 import { closeSync as closeSync4, existsSync as existsSync6, fsyncSync as fsyncSync2, mkdirSync as mkdirSync4, openSync as openSync4, readFileSync as readFileSync6, unlinkSync as unlinkSync2, writeFileSync as writeFileSync5 } from "node:fs";
 import { createHmac as createHmac2, randomUUID } from "node:crypto";
 import { hostname as hostname2 } from "node:os";
@@ -1981,7 +1981,7 @@ function recordTicketEvidence(root, {
 }
 var sleep2, AUDIT_FIELDS;
 var init_evidence = __esm({
-  "../../node_modules/@adlc/tickets/lib/evidence.mjs"() {
+  "node_modules/@adlc/tickets/lib/evidence.mjs"() {
     init_errors();
     init_canonical();
     init_durability();
@@ -1992,7 +1992,7 @@ var init_evidence = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/trust-root.mjs
+// node_modules/@adlc/tickets/lib/trust-root.mjs
 import { existsSync as existsSync7, lstatSync as lstatSync4, readFileSync as readFileSync7, readdirSync as readdirSync3 } from "node:fs";
 import { join as join8 } from "node:path";
 function assertNotSymlink(path5) {
@@ -2120,7 +2120,7 @@ function assertSignableTrustRootWrite(tickets, { key: key2, allowUnsigned = fals
 }
 var STORE_MARKER;
 var init_trust_root = __esm({
-  "../../node_modules/@adlc/tickets/lib/trust-root.mjs"() {
+  "node_modules/@adlc/tickets/lib/trust-root.mjs"() {
     init_constants();
     init_errors();
     init_key_contract();
@@ -2128,7 +2128,7 @@ var init_trust_root = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/transaction.mjs
+// node_modules/@adlc/tickets/lib/transaction.mjs
 import { existsSync as existsSync8, readFileSync as readFileSync8 } from "node:fs";
 import { basename as basename2, dirname as dirname8, isAbsolute, join as join9, relative as relative2, resolve as resolve3 } from "node:path";
 import { randomUUID as randomUUID2 } from "node:crypto";
@@ -2550,7 +2550,7 @@ function initializeTicketStores(root = ".") {
 }
 var fileHash, TRANSACTION_ID, SHARD_FILENAME;
 var init_transaction = __esm({
-  "../../node_modules/@adlc/tickets/lib/transaction.mjs"() {
+  "node_modules/@adlc/tickets/lib/transaction.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -2567,7 +2567,7 @@ var init_transaction = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/stores/legacy.mjs
+// node_modules/@adlc/tickets/lib/stores/legacy.mjs
 import { existsSync as existsSync9, lstatSync as lstatSync5, readFileSync as readFileSync9 } from "node:fs";
 import { basename as basename3, dirname as dirname9 } from "node:path";
 function repositoryRootFor(path5, explicit) {
@@ -2583,7 +2583,7 @@ function repositoryRootFor(path5, explicit) {
 }
 var LegacyTicketStore;
 var init_legacy = __esm({
-  "../../node_modules/@adlc/tickets/lib/stores/legacy.mjs"() {
+  "node_modules/@adlc/tickets/lib/stores/legacy.mjs"() {
     init_transaction();
     init_constants();
     init_errors();
@@ -2633,7 +2633,7 @@ var init_legacy = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/store.mjs
+// node_modules/@adlc/tickets/lib/store.mjs
 import { existsSync as existsSync10, lstatSync as lstatSync6, readdirSync as readdirSync4 } from "node:fs";
 import { isAbsolute as isAbsolute2, join as join10, resolve as resolve4 } from "node:path";
 function pendingTransactions(root = ".") {
@@ -2672,7 +2672,7 @@ function detectTicketStore(options = {}) {
 }
 var rooted, loadTicketSnapshot;
 var init_store = __esm({
-  "../../node_modules/@adlc/tickets/lib/store.mjs"() {
+  "node_modules/@adlc/tickets/lib/store.mjs"() {
     init_constants();
     init_errors();
     init_directory();
@@ -2682,7 +2682,7 @@ var init_store = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/generated-glob-match.mjs
+// node_modules/@adlc/tickets/lib/generated-glob-match.mjs
 function globMatch(pattern, path5) {
   const tokens = pattern.split(/(\*\*\/|\*\*|\*)/).filter((part) => part !== "");
   let reach = new Uint8Array(path5.length + 1);
@@ -2723,12 +2723,12 @@ function globMatch(pattern, path5) {
 }
 var SLASH;
 var init_generated_glob_match = __esm({
-  "../../node_modules/@adlc/tickets/lib/generated-glob-match.mjs"() {
+  "node_modules/@adlc/tickets/lib/generated-glob-match.mjs"() {
     SLASH = "/".charCodeAt(0);
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/manifest-rails.mjs
+// node_modules/@adlc/tickets/lib/manifest-rails.mjs
 import { existsSync as existsSync11, readdirSync as readdirSync5 } from "node:fs";
 import { join as join11, relative as relative3, sep as sep2 } from "node:path";
 function isNestedCheckout(dir) {
@@ -2771,7 +2771,7 @@ function manifestCoveringRails(rails, manifestPaths) {
 }
 var MANIFEST_BASENAMES, SKIP_DIRS, MAX_DEPTH;
 var init_manifest_rails = __esm({
-  "../../node_modules/@adlc/tickets/lib/manifest-rails.mjs"() {
+  "node_modules/@adlc/tickets/lib/manifest-rails.mjs"() {
     init_generated_glob_match();
     MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketplace.json"]);
     SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", ".worktrees", "dist", "build", "coverage", ".next"]);
@@ -2779,7 +2779,7 @@ var init_manifest_rails = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/rail-existence.mjs
+// node_modules/@adlc/tickets/lib/rail-existence.mjs
 import { spawnSync } from "node:child_process";
 function repositoryFiles(root, { spawn: spawn6 = spawnSync } = {}) {
   const result = spawn6("git", ["-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
@@ -2797,14 +2797,14 @@ function railsMatchingNothing(rails, files) {
 }
 var GIT_TIMEOUT_MS, GIT_MAX_BUFFER;
 var init_rail_existence = __esm({
-  "../../node_modules/@adlc/tickets/lib/rail-existence.mjs"() {
+  "node_modules/@adlc/tickets/lib/rail-existence.mjs"() {
     init_generated_glob_match();
     GIT_TIMEOUT_MS = 3e4;
     GIT_MAX_BUFFER = 256 * 1024 * 1024;
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/service.mjs
+// node_modules/@adlc/tickets/lib/service.mjs
 import { existsSync as existsSync12, readFileSync as readFileSync10 } from "node:fs";
 import { join as join12 } from "node:path";
 function awaitSnapshotHash(tickets) {
@@ -2812,7 +2812,7 @@ function awaitSnapshotHash(tickets) {
 }
 var publicPlan, planContent, comparable, changedFields, TicketService, serializePlan;
 var init_service = __esm({
-  "../../node_modules/@adlc/tickets/lib/service.mjs"() {
+  "node_modules/@adlc/tickets/lib/service.mjs"() {
     init_canonical();
     init_constants();
     init_errors();
@@ -3091,7 +3091,7 @@ var init_service = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/archive.mjs
+// node_modules/@adlc/tickets/lib/archive.mjs
 import { existsSync as existsSync13, readFileSync as readFileSync11 } from "node:fs";
 import { join as join13, resolve as resolve5 } from "node:path";
 function validateArchivePath(root, path5) {
@@ -3188,7 +3188,7 @@ function restoreTicket(activeStore, archivePath, id, { expectedSnapshotHash, roo
   }
 }
 var init_archive = __esm({
-  "../../node_modules/@adlc/tickets/lib/archive.mjs"() {
+  "node_modules/@adlc/tickets/lib/archive.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -3202,7 +3202,7 @@ var init_archive = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/migrate.mjs
+// node_modules/@adlc/tickets/lib/migrate.mjs
 import { execFileSync as execFileSync3 } from "node:child_process";
 import { existsSync as existsSync14, readFileSync as readFileSync12, realpathSync } from "node:fs";
 import { basename as basename4, dirname as dirname10, isAbsolute as isAbsolute3, join as join14, relative as relative4, resolve as resolve6, sep as sep3 } from "node:path";
@@ -3603,7 +3603,7 @@ function exportLegacyStore(store, outputPath, { root = "." } = {}) {
 }
 var STORE_MARKER2, GITIGNORE_STANZA, ADLC_BLANKET, TRANSACTION_ID2, HASH;
 var init_migrate = __esm({
-  "../../node_modules/@adlc/tickets/lib/migrate.mjs"() {
+  "node_modules/@adlc/tickets/lib/migrate.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -3638,7 +3638,7 @@ var init_migrate = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/doctor.mjs
+// node_modules/@adlc/tickets/lib/doctor.mjs
 import { existsSync as existsSync15, readFileSync as readFileSync13 } from "node:fs";
 import { createHash as createHash2 } from "node:crypto";
 import { join as join15 } from "node:path";
@@ -3860,7 +3860,7 @@ function doctorTicketStore(store, { root = ".", archive = false, key: keyParam =
   return { ok: checks.every((check) => check.ok), checks };
 }
 var init_doctor = __esm({
-  "../../node_modules/@adlc/tickets/lib/doctor.mjs"() {
+  "node_modules/@adlc/tickets/lib/doctor.mjs"() {
     init_constants();
     init_lock();
     init_pointer();
@@ -3871,7 +3871,7 @@ var init_doctor = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/provenance.mjs
+// node_modules/@adlc/tickets/lib/provenance.mjs
 function raise(result) {
   const make = result.kind === "conflict" ? conflict2 : result.kind === "operational" ? operational : invalid2;
   throw make(result.code, result.message);
@@ -3893,13 +3893,13 @@ function verifyEvidenceBinding(evidence, snapshot) {
   return true;
 }
 var init_provenance = __esm({
-  "../../node_modules/@adlc/tickets/lib/provenance.mjs"() {
+  "node_modules/@adlc/tickets/lib/provenance.mjs"() {
     init_pointer();
     init_errors();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/pointer-write.mjs
+// node_modules/@adlc/tickets/lib/pointer-write.mjs
 import { mkdirSync as mkdirSync5, renameSync as renameSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { dirname as dirname11, join as join16 } from "node:path";
 function writeActiveTicket(root, { id, ticketHash: ticketHash2 } = {}) {
@@ -3919,13 +3919,13 @@ function writeActiveTicket(root, { id, ticketHash: ticketHash2 } = {}) {
 }
 var sequence;
 var init_pointer_write = __esm({
-  "../../node_modules/@adlc/tickets/lib/pointer-write.mjs"() {
+  "node_modules/@adlc/tickets/lib/pointer-write.mjs"() {
     init_pointer();
     sequence = 0;
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/prompt.mjs
+// node_modules/@adlc/tickets/lib/prompt.mjs
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 function shouldOfferLegacyMigration(store, flags = {}, { input = stdin, output = stdout } = {}) {
@@ -3961,14 +3961,14 @@ async function offerLegacyMigration(store, root, flags = {}, {
   return detect({ root, ticketStore: flags["ticket-store"], legacyTickets: flags.tickets });
 }
 var init_prompt = __esm({
-  "../../node_modules/@adlc/tickets/lib/prompt.mjs"() {
+  "node_modules/@adlc/tickets/lib/prompt.mjs"() {
     init_store();
     init_legacy();
     init_migrate();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/stores/git-tree.mjs
+// node_modules/@adlc/tickets/lib/stores/git-tree.mjs
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { posix } from "node:path";
 function runGit(cwd, args, opts = {}) {
@@ -3982,7 +3982,7 @@ function runGit(cwd, args, opts = {}) {
 }
 var GIT_TIMEOUT_MS2, MAX_BUFFER, GitTreeTicketStore;
 var init_git_tree = __esm({
-  "../../node_modules/@adlc/tickets/lib/stores/git-tree.mjs"() {
+  "node_modules/@adlc/tickets/lib/stores/git-tree.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -4090,7 +4090,7 @@ var init_git_tree = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/index.mjs
+// node_modules/@adlc/tickets/index.mjs
 var tickets_exports = {};
 __export(tickets_exports, {
   ACTIVE_DIRECTORY: () => ACTIVE_DIRECTORY,
@@ -4212,7 +4212,7 @@ __export(tickets_exports, {
   writeActiveTicket: () => writeActiveTicket
 });
 var init_tickets = __esm({
-  "../../node_modules/@adlc/tickets/index.mjs"() {
+  "node_modules/@adlc/tickets/index.mjs"() {
     init_constants();
     init_errors();
     init_canonical();
@@ -4245,7 +4245,7 @@ var init_tickets = __esm({
   }
 });
 
-// ../../node_modules/@adlc/core/lib/glob.mjs
+// node_modules/@adlc/core/lib/glob.mjs
 function globMatch2(pattern, path5) {
   const tokens = pattern.split(/(\*\*\/|\*\*|\*)/).filter((part) => part !== "");
   let reach = new Uint8Array(path5.length + 1);
@@ -4286,12 +4286,12 @@ function globMatch2(pattern, path5) {
 }
 var SLASH2;
 var init_glob = __esm({
-  "../../node_modules/@adlc/core/lib/glob.mjs"() {
+  "node_modules/@adlc/core/lib/glob.mjs"() {
     SLASH2 = "/".charCodeAt(0);
   }
 });
 
-// ../../node_modules/@adlc/core/lib/tickets.mjs
+// node_modules/@adlc/core/lib/tickets.mjs
 function validateTicket2(t) {
   return validateTicket(t);
 }
@@ -4334,7 +4334,7 @@ function scopesOverlap(a, b) {
 }
 var TICKET_TRUST_ROOT_RAILS;
 var init_tickets2 = __esm({
-  "../../node_modules/@adlc/core/lib/tickets.mjs"() {
+  "node_modules/@adlc/core/lib/tickets.mjs"() {
     init_tickets();
     init_glob();
     TICKET_TRUST_ROOT_RAILS = Object.freeze([
@@ -16000,7 +16000,7 @@ var init_gates = __esm({
   }
 });
 
-// ../../node_modules/@adlc/core/lib/llm.mjs
+// node_modules/@adlc/core/lib/llm.mjs
 import { spawn as spawn3 } from "node:child_process";
 function isAgyTimeout2(out) {
   const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -16094,7 +16094,7 @@ function extractJson(text) {
 }
 var PROVIDERS, PROVIDER_NAMES;
 var init_llm = __esm({
-  "../../node_modules/@adlc/core/lib/llm.mjs"() {
+  "node_modules/@adlc/core/lib/llm.mjs"() {
     PROVIDERS = [
       {
         name: "anthropic",
@@ -23369,9 +23369,9 @@ var init_status = __esm({
   }
 });
 
-// ../../node_modules/balanced-match/index.js
+// node_modules/balanced-match/index.js
 var require_balanced_match = __commonJS({
-  "../../node_modules/balanced-match/index.js"(exports, module) {
+  "node_modules/balanced-match/index.js"(exports, module) {
     "use strict";
     module.exports = balanced;
     function balanced(a, b, str) {
@@ -23427,9 +23427,9 @@ var require_balanced_match = __commonJS({
   }
 });
 
-// ../../node_modules/brace-expansion/index.js
+// node_modules/brace-expansion/index.js
 var require_brace_expansion = __commonJS({
-  "../../node_modules/brace-expansion/index.js"(exports, module) {
+  "node_modules/brace-expansion/index.js"(exports, module) {
     var balanced = require_balanced_match();
     module.exports = expandTop;
     var escSlash = "\0SLASH" + Math.random() + "\0";
@@ -23669,10 +23669,10 @@ var require_brace_expansion = __commonJS({
   }
 });
 
-// ../../node_modules/minimatch/dist/esm/assert-valid-pattern.js
+// node_modules/minimatch/dist/esm/assert-valid-pattern.js
 var MAX_PATTERN_LENGTH, assertValidPattern;
 var init_assert_valid_pattern = __esm({
-  "../../node_modules/minimatch/dist/esm/assert-valid-pattern.js"() {
+  "node_modules/minimatch/dist/esm/assert-valid-pattern.js"() {
     MAX_PATTERN_LENGTH = 1024 * 64;
     assertValidPattern = (pattern) => {
       if (typeof pattern !== "string") {
@@ -23685,10 +23685,10 @@ var init_assert_valid_pattern = __esm({
   }
 });
 
-// ../../node_modules/minimatch/dist/esm/brace-expressions.js
+// node_modules/minimatch/dist/esm/brace-expressions.js
 var posixClasses, braceEscape, regexpEscape, rangesToString, parseClass;
 var init_brace_expressions = __esm({
-  "../../node_modules/minimatch/dist/esm/brace-expressions.js"() {
+  "node_modules/minimatch/dist/esm/brace-expressions.js"() {
     posixClasses = {
       "[:alnum:]": ["\\p{L}\\p{Nl}\\p{Nd}", true],
       "[:alpha:]": ["\\p{L}\\p{Nl}", true],
@@ -23799,20 +23799,20 @@ var init_brace_expressions = __esm({
   }
 });
 
-// ../../node_modules/minimatch/dist/esm/unescape.js
+// node_modules/minimatch/dist/esm/unescape.js
 var unescape;
 var init_unescape = __esm({
-  "../../node_modules/minimatch/dist/esm/unescape.js"() {
+  "node_modules/minimatch/dist/esm/unescape.js"() {
     unescape = (s, { windowsPathsNoEscape = false } = {}) => {
       return windowsPathsNoEscape ? s.replace(/\[([^\/\\])\]/g, "$1") : s.replace(/((?!\\).|^)\[([^\/\\])\]/g, "$1$2").replace(/\\([^\/])/g, "$1");
     };
   }
 });
 
-// ../../node_modules/minimatch/dist/esm/ast.js
+// node_modules/minimatch/dist/esm/ast.js
 var types, isExtglobType, startNoTraversal, startNoDot, addPatternStart, justDots, reSpecials, regExpEscape, qmark, star, starNoEmpty, AST;
 var init_ast = __esm({
-  "../../node_modules/minimatch/dist/esm/ast.js"() {
+  "node_modules/minimatch/dist/esm/ast.js"() {
     init_brace_expressions();
     init_unescape();
     types = /* @__PURE__ */ new Set(["!", "?", "+", "*", "@"]);
@@ -24295,20 +24295,20 @@ var init_ast = __esm({
   }
 });
 
-// ../../node_modules/minimatch/dist/esm/escape.js
+// node_modules/minimatch/dist/esm/escape.js
 var escape;
 var init_escape = __esm({
-  "../../node_modules/minimatch/dist/esm/escape.js"() {
+  "node_modules/minimatch/dist/esm/escape.js"() {
     escape = (s, { windowsPathsNoEscape = false } = {}) => {
       return windowsPathsNoEscape ? s.replace(/[?*()[\]]/g, "[$&]") : s.replace(/[?*()[\]\\]/g, "\\$&");
     };
   }
 });
 
-// ../../node_modules/minimatch/dist/esm/index.js
+// node_modules/minimatch/dist/esm/index.js
 var import_brace_expansion, minimatch, starDotExtRE, starDotExtTest, starDotExtTestDot, starDotExtTestNocase, starDotExtTestNocaseDot, starDotStarRE, starDotStarTest, starDotStarTestDot, dotStarRE, dotStarTest, starRE, starTest, starTestDot, qmarksRE, qmarksTestNocase, qmarksTestNocaseDot, qmarksTestDot, qmarksTest, qmarksTestNoExt, qmarksTestNoExtDot, defaultPlatform, path3, sep9, GLOBSTAR, qmark2, star2, twoStarDot, twoStarNoDot, filter, ext, defaults, braceExpand, makeRe, match, globMagic, regExpEscape2, Minimatch;
 var init_esm = __esm({
-  "../../node_modules/minimatch/dist/esm/index.js"() {
+  "node_modules/minimatch/dist/esm/index.js"() {
     import_brace_expansion = __toESM(require_brace_expansion(), 1);
     init_assert_valid_pattern();
     init_ast();

@@ -242,53 +242,53 @@ var init_semver = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/pointer.mjs
+// node_modules/@adlc/tickets/lib/pointer.mjs
 var MAX_POINTER_BYTES, DEPRECATED_ID_KEYS;
 var init_pointer = __esm({
-  "../../node_modules/@adlc/tickets/lib/pointer.mjs"() {
+  "node_modules/@adlc/tickets/lib/pointer.mjs"() {
     MAX_POINTER_BYTES = 64 * 1024;
     DEPRECATED_ID_KEYS = Object.freeze(["ticket", "ticketId"]);
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/constants.mjs
+// node_modules/@adlc/tickets/lib/constants.mjs
 var ACTIVE_MANIFEST, ARCHIVE_MANIFEST;
 var init_constants = __esm({
-  "../../node_modules/@adlc/tickets/lib/constants.mjs"() {
+  "node_modules/@adlc/tickets/lib/constants.mjs"() {
     init_pointer();
     ACTIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-directory", version: 1 });
     ARCHIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-archive", version: 1 });
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/errors.mjs
+// node_modules/@adlc/tickets/lib/errors.mjs
 var init_errors = __esm({
-  "../../node_modules/@adlc/tickets/lib/errors.mjs"() {
+  "node_modules/@adlc/tickets/lib/errors.mjs"() {
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/canonical.mjs
+// node_modules/@adlc/tickets/lib/canonical.mjs
 var init_canonical = __esm({
-  "../../node_modules/@adlc/tickets/lib/canonical.mjs"() {
+  "node_modules/@adlc/tickets/lib/canonical.mjs"() {
     init_errors();
     init_constants();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/ids.mjs
+// node_modules/@adlc/tickets/lib/ids.mjs
 var init_ids = __esm({
-  "../../node_modules/@adlc/tickets/lib/ids.mjs"() {
+  "node_modules/@adlc/tickets/lib/ids.mjs"() {
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/filename.mjs
+// node_modules/@adlc/tickets/lib/filename.mjs
 var init_filename = __esm({
-  "../../node_modules/@adlc/tickets/lib/filename.mjs"() {
+  "node_modules/@adlc/tickets/lib/filename.mjs"() {
     init_canonical();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/schema.mjs
+// node_modules/@adlc/tickets/lib/schema.mjs
 function validateTicket(ticket, { archive = false } = {}) {
   const errors = [];
   if (!ticket || typeof ticket !== "object" || Array.isArray(ticket)) return ["ticket is not an object"];
@@ -320,13 +320,13 @@ function validateTicket(ticket, { archive = false } = {}) {
   return errors;
 }
 var init_schema = __esm({
-  "../../node_modules/@adlc/tickets/lib/schema.mjs"() {
+  "node_modules/@adlc/tickets/lib/schema.mjs"() {
     init_errors();
     init_canonical();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/help.mjs
+// node_modules/@adlc/tickets/lib/help.mjs
 function wrap(text, width, indent) {
   const lines = [];
   let line = "";
@@ -351,7 +351,7 @@ function fieldTable() {
 }
 var SYNC_CATEGORIES, TICKET_FIELDS, FIELD_INDENT, INPUT_DOCUMENT;
 var init_help = __esm({
-  "../../node_modules/@adlc/tickets/lib/help.mjs"() {
+  "node_modules/@adlc/tickets/lib/help.mjs"() {
     SYNC_CATEGORIES = Object.freeze([
       "feature",
       "bug",
@@ -473,23 +473,23 @@ var init_help = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/edit.mjs
+// node_modules/@adlc/tickets/lib/edit.mjs
 var init_edit = __esm({
-  "../../node_modules/@adlc/tickets/lib/edit.mjs"() {
+  "node_modules/@adlc/tickets/lib/edit.mjs"() {
     init_errors();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/snapshot.mjs
+// node_modules/@adlc/tickets/lib/snapshot.mjs
 var init_snapshot = __esm({
-  "../../node_modules/@adlc/tickets/lib/snapshot.mjs"() {
+  "node_modules/@adlc/tickets/lib/snapshot.mjs"() {
     init_canonical();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/stores/directory.mjs
+// node_modules/@adlc/tickets/lib/stores/directory.mjs
 var init_directory = __esm({
-  "../../node_modules/@adlc/tickets/lib/stores/directory.mjs"() {
+  "node_modules/@adlc/tickets/lib/stores/directory.mjs"() {
     init_constants();
     init_errors();
     init_canonical();
@@ -499,44 +499,44 @@ var init_directory = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/lock.mjs
+// node_modules/@adlc/tickets/lib/lock.mjs
 var init_lock = __esm({
-  "../../node_modules/@adlc/tickets/lib/lock.mjs"() {
+  "node_modules/@adlc/tickets/lib/lock.mjs"() {
     init_constants();
     init_errors();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/durability.mjs
+// node_modules/@adlc/tickets/lib/durability.mjs
 var init_durability = __esm({
-  "../../node_modules/@adlc/tickets/lib/durability.mjs"() {
+  "node_modules/@adlc/tickets/lib/durability.mjs"() {
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/manifest-primitives.mjs
+// node_modules/@adlc/tickets/lib/manifest-primitives.mjs
 var init_manifest_primitives = __esm({
-  "../../node_modules/@adlc/tickets/lib/manifest-primitives.mjs"() {
+  "node_modules/@adlc/tickets/lib/manifest-primitives.mjs"() {
     init_canonical();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/manifest-segments.mjs
+// node_modules/@adlc/tickets/lib/manifest-segments.mjs
 var init_manifest_segments = __esm({
-  "../../node_modules/@adlc/tickets/lib/manifest-segments.mjs"() {
+  "node_modules/@adlc/tickets/lib/manifest-segments.mjs"() {
     init_canonical();
     init_manifest_primitives();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/key-contract.mjs
+// node_modules/@adlc/tickets/lib/key-contract.mjs
 var init_key_contract = __esm({
-  "../../node_modules/@adlc/tickets/lib/key-contract.mjs"() {
+  "node_modules/@adlc/tickets/lib/key-contract.mjs"() {
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/evidence.mjs
+// node_modules/@adlc/tickets/lib/evidence.mjs
 var init_evidence = __esm({
-  "../../node_modules/@adlc/tickets/lib/evidence.mjs"() {
+  "node_modules/@adlc/tickets/lib/evidence.mjs"() {
     init_errors();
     init_canonical();
     init_durability();
@@ -545,18 +545,18 @@ var init_evidence = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/trust-root.mjs
+// node_modules/@adlc/tickets/lib/trust-root.mjs
 var init_trust_root = __esm({
-  "../../node_modules/@adlc/tickets/lib/trust-root.mjs"() {
+  "node_modules/@adlc/tickets/lib/trust-root.mjs"() {
     init_constants();
     init_errors();
     init_key_contract();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/transaction.mjs
+// node_modules/@adlc/tickets/lib/transaction.mjs
 var init_transaction = __esm({
-  "../../node_modules/@adlc/tickets/lib/transaction.mjs"() {
+  "node_modules/@adlc/tickets/lib/transaction.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -570,9 +570,9 @@ var init_transaction = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/stores/legacy.mjs
+// node_modules/@adlc/tickets/lib/stores/legacy.mjs
 var init_legacy = __esm({
-  "../../node_modules/@adlc/tickets/lib/stores/legacy.mjs"() {
+  "node_modules/@adlc/tickets/lib/stores/legacy.mjs"() {
     init_transaction();
     init_constants();
     init_errors();
@@ -581,9 +581,9 @@ var init_legacy = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/store.mjs
+// node_modules/@adlc/tickets/lib/store.mjs
 var init_store = __esm({
-  "../../node_modules/@adlc/tickets/lib/store.mjs"() {
+  "node_modules/@adlc/tickets/lib/store.mjs"() {
     init_constants();
     init_errors();
     init_directory();
@@ -591,35 +591,35 @@ var init_store = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/generated-glob-match.mjs
+// node_modules/@adlc/tickets/lib/generated-glob-match.mjs
 var SLASH;
 var init_generated_glob_match = __esm({
-  "../../node_modules/@adlc/tickets/lib/generated-glob-match.mjs"() {
+  "node_modules/@adlc/tickets/lib/generated-glob-match.mjs"() {
     SLASH = "/".charCodeAt(0);
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/manifest-rails.mjs
+// node_modules/@adlc/tickets/lib/manifest-rails.mjs
 var MANIFEST_BASENAMES;
 var init_manifest_rails = __esm({
-  "../../node_modules/@adlc/tickets/lib/manifest-rails.mjs"() {
+  "node_modules/@adlc/tickets/lib/manifest-rails.mjs"() {
     init_generated_glob_match();
     MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketplace.json"]);
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/rail-existence.mjs
+// node_modules/@adlc/tickets/lib/rail-existence.mjs
 var GIT_MAX_BUFFER;
 var init_rail_existence = __esm({
-  "../../node_modules/@adlc/tickets/lib/rail-existence.mjs"() {
+  "node_modules/@adlc/tickets/lib/rail-existence.mjs"() {
     init_generated_glob_match();
     GIT_MAX_BUFFER = 256 * 1024 * 1024;
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/service.mjs
+// node_modules/@adlc/tickets/lib/service.mjs
 var init_service = __esm({
-  "../../node_modules/@adlc/tickets/lib/service.mjs"() {
+  "node_modules/@adlc/tickets/lib/service.mjs"() {
     init_canonical();
     init_constants();
     init_errors();
@@ -635,9 +635,9 @@ var init_service = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/archive.mjs
+// node_modules/@adlc/tickets/lib/archive.mjs
 var init_archive = __esm({
-  "../../node_modules/@adlc/tickets/lib/archive.mjs"() {
+  "node_modules/@adlc/tickets/lib/archive.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -651,9 +651,9 @@ var init_archive = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/migrate.mjs
+// node_modules/@adlc/tickets/lib/migrate.mjs
 var init_migrate = __esm({
-  "../../node_modules/@adlc/tickets/lib/migrate.mjs"() {
+  "node_modules/@adlc/tickets/lib/migrate.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -669,9 +669,9 @@ var init_migrate = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/doctor.mjs
+// node_modules/@adlc/tickets/lib/doctor.mjs
 var init_doctor = __esm({
-  "../../node_modules/@adlc/tickets/lib/doctor.mjs"() {
+  "node_modules/@adlc/tickets/lib/doctor.mjs"() {
     init_constants();
     init_lock();
     init_pointer();
@@ -682,35 +682,35 @@ var init_doctor = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/provenance.mjs
+// node_modules/@adlc/tickets/lib/provenance.mjs
 var init_provenance = __esm({
-  "../../node_modules/@adlc/tickets/lib/provenance.mjs"() {
+  "node_modules/@adlc/tickets/lib/provenance.mjs"() {
     init_pointer();
     init_errors();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/pointer-write.mjs
+// node_modules/@adlc/tickets/lib/pointer-write.mjs
 var init_pointer_write = __esm({
-  "../../node_modules/@adlc/tickets/lib/pointer-write.mjs"() {
+  "node_modules/@adlc/tickets/lib/pointer-write.mjs"() {
     init_pointer();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/prompt.mjs
+// node_modules/@adlc/tickets/lib/prompt.mjs
 import { createInterface } from "node:readline/promises";
 var init_prompt = __esm({
-  "../../node_modules/@adlc/tickets/lib/prompt.mjs"() {
+  "node_modules/@adlc/tickets/lib/prompt.mjs"() {
     init_store();
     init_legacy();
     init_migrate();
   }
 });
 
-// ../../node_modules/@adlc/tickets/lib/stores/git-tree.mjs
+// node_modules/@adlc/tickets/lib/stores/git-tree.mjs
 var MAX_BUFFER;
 var init_git_tree = __esm({
-  "../../node_modules/@adlc/tickets/lib/stores/git-tree.mjs"() {
+  "node_modules/@adlc/tickets/lib/stores/git-tree.mjs"() {
     init_constants();
     init_canonical();
     init_errors();
@@ -721,9 +721,9 @@ var init_git_tree = __esm({
   }
 });
 
-// ../../node_modules/@adlc/tickets/index.mjs
+// node_modules/@adlc/tickets/index.mjs
 var init_tickets = __esm({
-  "../../node_modules/@adlc/tickets/index.mjs"() {
+  "node_modules/@adlc/tickets/index.mjs"() {
     init_constants();
     init_errors();
     init_canonical();
@@ -1654,13 +1654,13 @@ import { randomUUID as randomUUID3 } from "node:crypto";
 // lib/plan-integrity.mjs
 import { basename as basename2, dirname as dirname3, isAbsolute, join as join3, posix, relative, resolve as resolve3, sep } from "node:path";
 
-// ../../node_modules/@adlc/core/lib/tickets.mjs
+// node_modules/@adlc/core/lib/tickets.mjs
 init_tickets();
 
-// ../../node_modules/@adlc/core/lib/glob.mjs
+// node_modules/@adlc/core/lib/glob.mjs
 var SLASH2 = "/".charCodeAt(0);
 
-// ../../node_modules/@adlc/core/lib/tickets.mjs
+// node_modules/@adlc/core/lib/tickets.mjs
 var TICKET_TRUST_ROOT_RAILS = Object.freeze([
   ".adlc/tickets.json",
   ".adlc/tickets/.store.json",
