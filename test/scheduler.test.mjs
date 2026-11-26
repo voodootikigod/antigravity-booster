@@ -1401,3 +1401,97 @@ test('runPlan: multi-ticket run syncs root working tree across sequential merges
     rmSync(state, { recursive: true, force: true });
   }
 });
+
+test('runPlan: Pass 2 hollow-test permits newly added test + docs commit with zero mutable source files while rejecting modified existing test', async () => {
+  const repoAdd = makeRepo();
+  const repoMod = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-added-test-only-state-'));
+  const customBuilderBin = join(state, 'builder-agy');
+  try {
+    writeFileSync(
+      customBuilderBin,
+      `#!/bin/sh
+case "$*" in
+  *TICKET-DONE\\ or\\ TICKET-BLOCKED*)
+    mkdir -p test
+    if [ -f test/existing.test.mjs ]; then
+      printf 'import test from "node:test"; test("weakened", () => {});\\n' > test/existing.test.mjs
+      git add test/existing.test.mjs
+      git commit -qm "T1: modify existing test only"
+    else
+      printf 'import test from "node:test"; import assert from "node:assert/strict"; test("e2e", () => assert.equal(1, 1));\\n' > test/new-e2e.test.mjs
+      printf '# updated docs\\n' > README.md
+      git add test/new-e2e.test.mjs README.md
+      git commit -qm "T1: add new e2e test and docs"
+    fi
+    echo '{"type":"step_update","step":1,"action":"good"}'
+    echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+    exit 0 ;;
+  *)
+    exec "${FAKE_AGY}" "$@" ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+
+    const repAdd = await withEnv(
+      {
+        AGB_AGY_BIN: customBuilderBin,
+        AGB_SANDBOX_GATES: '0',
+        CUSTOM_TEST_MODE: 'add',
+      },
+      () =>
+        runPlan(
+          {
+            repo: repoAdd,
+            gate: { test: 'node --test test/new-e2e.test.mjs' },
+            tickets: [
+              {
+                id: 'T1',
+                title: 'add e2e test and docs',
+                body: 'add test/new-e2e.test.mjs and README.md',
+                scope: ['README.md', 'test/new-e2e.test.mjs'],
+              },
+            ],
+          },
+          quiet,
+        ),
+    );
+    assert.deepEqual(repAdd.merged, ['T1'], `expected T1 to merge cleanly, got failed=${JSON.stringify(repAdd.failed)}`);
+
+    mkdirSync(join(repoMod, 'test'), { recursive: true });
+    writeFileSync(join(repoMod, 'test', 'existing.test.mjs'), 'import test from "node:test"; import assert from "node:assert/strict"; test("orig", () => assert.equal(1, 1));\n');
+    execFileSync('git', ['add', '-A'], { cwd: repoMod });
+    execFileSync('git', ['commit', '-qm', 'seed existing test'], { cwd: repoMod });
+
+    const repMod = await withEnv(
+      {
+        AGB_AGY_BIN: customBuilderBin,
+        AGB_SANDBOX_GATES: '0',
+        CUSTOM_TEST_MODE: 'mod',
+      },
+      () =>
+        runPlan(
+          {
+            repo: repoMod,
+            gate: { test: 'node --test test/existing.test.mjs' },
+            tickets: [
+              {
+                id: 'T1',
+                title: 'modify existing test',
+                body: 'modify test/existing.test.mjs',
+                scope: ['test/existing.test.mjs'],
+              },
+            ],
+          },
+          quiet,
+        ),
+    );
+    assert.deepEqual(repMod.merged, []);
+    assert.match(repMod.failed.T1, /hollow-test mutation verification failed:.*nothing to mutate/);
+  } finally {
+    rmSync(repoAdd, { recursive: true, force: true });
+    rmSync(repoMod, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
