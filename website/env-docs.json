@@ -567,6 +567,55 @@
       "default": "1",
       "bundledIgnored": false,
       "description": "Set to 0 to bypass the advisory in-session lifecycle hooks (PostToolUse, PreInvocation, PostInvocation, Stop) in hooks/lifecycle.mjs."
+    },
+    {
+      "name": "AGB_CODEGRAPH",
+      "group": "core",
+      "default": "auto when .codegraph/ exists",
+      "bundledIgnored": false,
+      "description": "Set to 0 to disable opt-in CodeGraph (.codegraph/) context slicing, blast-radius scoring, and impacted-test resolution, falling back to zero-dependency static-AST mode."
+    },
+    {
+      "name": "AGB_DECISION_ENGINE",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 0 to disable the opt-in System-1 Decision Engine (lens gating, typed Arbiter triage, coldstart screening, and low-risk fast-ship) even when configured in .adlc/config.json."
+    },
+    {
+      "name": "AGB_DECISION_PROVIDER",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Selects the System-1 Decision Engine provider (jev, gemini-decisions, or kev) used by lib/decision-engine.mjs."
+    },
+    {
+      "name": "TYPESAFE_API_KEY",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "API key for the TypeSafe Jev System-1 Decision Engine provider (jev-latest). Treated as a secret and scrubbed from error output."
+    },
+    {
+      "name": "GEMINI_API_KEY",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "API key for the Google Gemini Decisions API System-1 provider (gemini-decision-1, zero output tokens). Treated as a secret and scrubbed from error output."
+    },
+    {
+      "name": "AGB_KEV_BASE_URL",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Base HTTPS (or loopback HTTP) endpoint URL for a local or self-hosted Kev / OpenRouter-compatible System-1 Decision Engine provider."
+    },
+    {
+      "name": "AGB_KEV_API_KEY",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Optional Bearer API key for the kev System-1 Decision Engine provider (falls back to OPENROUTER_API_KEY if unset). Scrubbed from error output."
     }
   ],
   "ignore": [

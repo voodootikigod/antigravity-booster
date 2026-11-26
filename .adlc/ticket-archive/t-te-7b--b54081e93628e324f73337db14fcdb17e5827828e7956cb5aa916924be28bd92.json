@@ -1,0 +1,37 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T19:02:49.989Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "a11e3ff01b64923c0f267ccf3b36541ad56a04f9169d8955bf38f19d1e62016f",
+    "ticketHash": "4b4b246628a6862bd8d4a9178e47e91f3d083065fc9849ebba6232ca118b762a",
+    "version": 1
+  },
+  "body": "## Shared Spec Context\nResolve the primary user feedback on `antigravity-booster`: **excessive token and weekly pool-quota burn concentrated in cross-model prosecution (`lib/prosecute.mjs`) and multi-lens adversarial review (`lib/review.mjs`)**, while preserving every ADLC P1–P5 safety invariant (cross-model isolation, fail-closed mechanical gates, prompt-injection fencing, and mutation-testing enforcement).\n\n## Ticket T-TE-7b: Flight Deck, TUI, Sidecar Telemetry UI & Skill Documentation Updates\n- **Scope**: `mcp/ui-views.mjs`, `lib/tui.mjs`, `sidecars/app.js`, `sidecars/index.html`, `skills/agb*/SKILL.md`, `skills/code-review/SKILL.md`, `skills/implement-and-review/SKILL.md`, `skills/adversarial-review/SKILL.md`, `test/tui-hud.test.mjs`, `test/sidecar.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n- **Edges**: `Depends on T-TE-7a; T-TE-7b -> T-TE-8`\n- **Tier**: `mid`\n- **Pool Hint**: `claude-gpt`\n- **Objectives**:\n  1. Surface split `Build / Prosecute / Review / System-1` token and short-circuit counters in `mcp/ui-views.mjs` (Flight Deck & Mission Control Economics card), `lib/tui.mjs`, and `sidecars/app.js` + `sidecars/index.html` (consuming the live `telemetry` SSE event from `RunStatus`).\n  2. Update `skills/agb/SKILL.md`, `skills/agb-review/SKILL.md`, `skills/agb-preflight/SKILL.md`, `skills/agb-doctor/SKILL.md`, `skills/code-review/SKILL.md`, `skills/implement-and-review/SKILL.md`, and `skills/adversarial-review/SKILL.md` to document single-pass + `--delta` fix loops, `--seams-only` post-run review, `--force-coldstart`, advisory accelerator checks, and 1-turn pre-baked context slices (removing the stale \"You MAY read the repo for surrounding code\" instruction in `adversarial-review/SKILL.md`).\n- **Acceptance Criteria**:\n  - Flight Deck (`mcp/ui-views.mjs`), `lib/tui.mjs`, and Sidecar (`sidecars/app.js` + `sidecars/index.html`) render split `Build / Prosecute / Review / System-1` counters cleanly without breaking existing layout tests. Verify: `node --test test/tui-hud.test.mjs test/sidecar.test.mjs`\n  - All updated skill files pass `npm run skills:check` and reflect the new CLI/MCP flags and 1-turn readonly contract. Verify: `npm run skills:check`\n\n--------------------------------------------------------------------------------",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-TE-8"
+    }
+  ],
+  "id": "T-TE-7b",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "mcp/ui-views.mjs",
+    "lib/tui.mjs",
+    "sidecars/app.js",
+    "sidecars/index.html",
+    "skills/agb*/SKILL.md",
+    "skills/code-review/SKILL.md",
+    "skills/implement-and-review/SKILL.md",
+    "skills/adversarial-review/SKILL.md",
+    "test/tui-hud.test.mjs",
+    "test/sidecar.test.mjs"
+  ],
+  "title": "Flight Deck, TUI, Sidecar Telemetry UI & Skill Documentation Updates"
+}

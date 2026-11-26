@@ -1,0 +1,36 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T19:02:49.801Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "49db301a5b66f71de46fe2602c2eaa15510c42f5bc47a47ef4257b3b1a0badb8",
+    "ticketHash": "b75c92ba168552026205ee3af5f9b75c32b17ed7ab43f651fe9ed7821b308b6c",
+    "version": 1
+  },
+  "body": "## Shared Spec Context\nResolve the primary user feedback on `antigravity-booster`: **excessive token and weekly pool-quota burn concentrated in cross-model prosecution (`lib/prosecute.mjs`) and multi-lens adversarial review (`lib/review.mjs`)**, while preserving every ADLC P1–P5 safety invariant (cross-model isolation, fail-closed mechanical gates, prompt-injection fencing, and mutation-testing enforcement).\n\n## Ticket T-TE-7a: CLI Flags, MCP Tool Schemas & `doctor`/`init` Accelerators\n- **Scope**: `bin/agb.mjs`, `mcp/server.mjs`, `lib/doctor.mjs`, `test/cli.test.mjs`, `test/mcp-apps.test.mjs`, `test/doctor.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n- **Edges**: `Depends on T-TE-4, T-TE-5a, T-TE-5b, T-TE-6; T-TE-7a -> T-TE-7b, T-TE-8`\n- **Tier**: `mid`\n- **Pool Hint**: `gemini`\n- **Objectives**:\n  1. Extend `bin/agb.mjs` and `mcp/server.mjs` with additive flags/schemas:\n     - `agb review` / `agb_review`: `--thorough`, `--dry-rounds <n>`, `--seams-only`, `--plan-file <plan.json>` (source for `ticketScopes`), `--delta <base-ref>`, `--prior-findings <path>`, `--no-codegraph`, `--no-decision-engine` (and decouple `--loop` from forcing `maxRounds: 3` over static diffs).\n     - `agb preflight` / `agb_preflight`: `--force-coldstart`.\n     - `agb init` / `agb_init`: `--with-codegraph` (adds `.codegraph/` to `.gitignore`, runs `codegraph init` if installed, and scaffolds `accelerators.codegraph` in `.adlc/config.json`) and `--decision-provider <jev|gemini-decisions|kev>`.\n  2. Extend `lib/doctor.mjs` with advisory accelerator readiness checks: `.codegraph/` index presence/staleness (`codegraph status`) and configured System-1 decision provider env/endpoint check (never failing `doctor` when opt-in accelerators are unconfigured).\n- **Acceptance Criteria**:\n  - `bin/agb.mjs` and `mcp/server.mjs` accept and forward all new `review`, `preflight`, and `init` flags/params while rejecting unknown flags cleanly. Verify: `node --test test/cli.test.mjs test/mcp-apps.test.mjs`\n  - `agb doctor` reports CodeGraph and System-1 accelerator readiness as advisory checks without failing unconfigured repos. Verify: `node --test test/doctor.test.mjs`\n\n--------------------------------------------------------------------------------",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-TE-7b"
+    },
+    {
+      "to": "T-TE-8"
+    }
+  ],
+  "id": "T-TE-7a",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "bin/agb.mjs",
+    "mcp/server.mjs",
+    "lib/doctor.mjs",
+    "test/cli.test.mjs",
+    "test/mcp-apps.test.mjs",
+    "test/doctor.test.mjs"
+  ],
+  "title": "CLI Flags, MCP Tool Schemas & `doctor`/`init` Accelerators"
+}

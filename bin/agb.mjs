@@ -117,7 +117,7 @@ const COMMANDS = {
   preflight: {
     args: '<plan.json>',
     desc: 'plan-time gates: scope overlap + coldstart',
-    flags: '[--no-coldstart (skip coldstart plan gate)] [--force-coldstart (ignore cached coldstart hashes)]'
+    flags: '--no-coldstart (skip coldstart plan gate), --force-coldstart (ignore cached coldstart hashes)'
   },
   doctor: { args: '[repo]', desc: 'verify your environment and tools', flags: '[--fix (auto-repair setup)]' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },

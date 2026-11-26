@@ -1,0 +1,33 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T19:02:49.234Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "1bf846b3efa751b29386979cc4697cbd04c80bfd3bb7c097793135708448ded7",
+    "ticketHash": "14c57750301c2d609984c89a263e4b0dfb6ab94f91c203f5c978f25e0f8f83d7",
+    "version": 1
+  },
+  "body": "## Shared Spec Context\nResolve the primary user feedback on `antigravity-booster`: **excessive token and weekly pool-quota burn concentrated in cross-model prosecution (`lib/prosecute.mjs`) and multi-lens adversarial review (`lib/review.mjs`)**, while preserving every ADLC P1–P5 safety invariant (cross-model isolation, fail-closed mechanical gates, prompt-injection fencing, and mutation-testing enforcement).\n\n## Ticket T-TE-5a: Pre-Prosecution `hollow-test` Short-Circuit, Blast-Radius Slicing & System-1 Fast-Ship\n- **Scope**: `lib/prosecute.mjs`, `test/prosecute.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`, `test/unit.test.mjs`\n- **Edges**: `Depends on T-TE-1, T-TE-2, T-TE-3; T-TE-5a -> T-TE-6, T-TE-7a`\n- **Tier**: `frontier`\n- **Pool Hint**: `gemini`\n- **Objectives**:\n  1. Export `prepareProsecutionPrecheck({ ticket, diff, worktree, rootRepo, testCmd, base, adlcBin, changedFiles, decisionEngine, shortCircuitHollowTest = true })` in `lib/prosecute.mjs` so callers (`scheduler.mjs` and `prosecute()`) can run `runHollowTest()`, `computeDiffBlastRadius()`, `buildReviewContextPack()`, and opt-in `screenTicketFastShip()` **before** acquiring a System-2 quota pool lease.\n  2. Update `prosecute()` to reuse `prepareProsecutionPrecheck()` (accepting optional precomputed `precheck`, `rootRepo`, `changedFiles`, `shortCircuitHollowTest = true`):\n     - When `shortCircuitHollowTest !== false` and `hollowTest?.ok && hollowTest.survived > 0`, immediately return `{ verdict: 'block', model, shortCircuited: 'hollow-test', findings: [hollowSurvivorFinding], hollowTest, telemetry: zeroTelemetry }` with `0` `agy` subprocesses spawned.\n     - When `screenTicketFastShip()` returns `fastShip: true`, return `{ verdict: 'ship', model: decisionRes.model, fastShipped: 'system1', findings: [], hollowTest, telemetry }` with `0` `agy` tokens.\n     - Otherwise invoke 1-turn `runAgy` (`allowReadTools: Boolean(contextPack?.truncatedContext)`), attach the `buildReviewContextPack` block, and return normalized observed `telemetry` alongside `blastRadius`.\n  3. Update `test/prosecute.test.mjs` to verify both default `hollow-test` short-circuit (`0` LLM spawns) and `shortCircuitHollowTest: false` opt-out, plus System-1 fast-ship fail-closed behavior and `telemetry` forwarding.\n- **Acceptance Criteria**:\n  - `prosecute()` with surviving mutants short-circuits with `shortCircuited: 'hollow-test'` and `0` `agy` calls by default, while `shortCircuitHollowTest: false` still invokes `runAgy`; `prepareProsecutionPrecheck()` returns `blastRadius` and `fastShipped` before any LLM call. Verify: `node --test test/prosecute.test.mjs test/unit.test.mjs`\n  - Clean `prosecute()` returns observed `telemetry` (`uncachedInputTokens`, `cachedTokens`, `outputTokens`, `inputTokens`, `system1Calls`) and respects `screenTicketFastShip()` fail-closed guards. Verify: `node --test test/prosecute.test.mjs`\n\n--------------------------------------------------------------------------------",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-TE-6"
+    },
+    {
+      "to": "T-TE-7a"
+    }
+  ],
+  "id": "T-TE-5a",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs",
+    "test/unit.test.mjs"
+  ],
+  "scope": [
+    "lib/prosecute.mjs",
+    "test/prosecute.test.mjs"
+  ],
+  "title": "Pre-Prosecution `hollow-test` Short-Circuit, Blast-Radius Slicing & System-1 Fast-Ship"
+}

@@ -109,8 +109,7 @@ PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
         `~/.local/bin/agb review . <pre-run-base-sha> --seams-only --plan-file plan.json`
         (automatically fails closed / refuses `--seams-only` if any commit was unprosecuted or System-1 fast-shipped).
     -   Otherwise (or for a full 5-lens audit), run single-pass 5-lens review against `<pre-run-base-sha>` — not `main`, because after merging onto `main`, diffing against `main` produces an empty diff and false-greens:
-        `~/.local/bin/agb review . <pre-run-base-sha> --five-lens`
-        For fix rounds after edits, re-verify only the delta and prior findings via `--delta <fix-base-ref> --prior-findings .review/last-findings.json` (pass `--thorough` or `--dry-rounds <n>` only when stochastic multi-dry convergence is explicitly desired).
+        `~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop` (single-pass per static diff by default; for fix rounds after edits, re-verify only the delta and prior findings via `--delta <fix-base-ref> --prior-findings .review/last-findings.json`, or pass `--thorough` / `--dry-rounds <n>` when stochastic multi-dry convergence is explicitly desired).
 3.  **Distill Learned Defenses (Optional)**: Run `~/.local/bin/agb distill . [--apply]` (or `mcp__agb__agb_distill`) to scan run/review findings for recurring patterns and stage or apply learned ADLC rules to `.gemini/rules/adlc-learned.md`.
 4.  **Report to User**: Present a concise summary of the implemented components, test results, merged tickets, split token telemetry (`Build / Prosecute / Review / System-1`), and gate evidence.
 

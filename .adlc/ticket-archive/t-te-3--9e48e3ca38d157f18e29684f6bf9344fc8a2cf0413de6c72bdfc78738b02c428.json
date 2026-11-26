@@ -1,0 +1,44 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T19:02:48.724Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "92340519782d0e1c0aabfca198892ce230b4841dfd58ef3ab06fe76e73ed4328",
+    "ticketHash": "daf930102d32571b47c5cb711b6e6e87164ec2cec4d9af01f448201a46fe73a2",
+    "version": 1
+  },
+  "body": "## Shared Spec Context\nResolve the primary user feedback on `antigravity-booster`: **excessive token and weekly pool-quota burn concentrated in cross-model prosecution (`lib/prosecute.mjs`) and multi-lens adversarial review (`lib/review.mjs`)**, while preserving every ADLC P1–P5 safety invariant (cross-model isolation, fail-closed mechanical gates, prompt-injection fencing, and mutation-testing enforcement).\n\n## Ticket T-TE-3: 1-Turn Readonly Lockdown, Risk-Tiered Models, `agy.mjs` Plumbing & Schemas\n- **Scope**: `lib/ndjson-worker.mjs`, `lib/models.mjs`, `lib/agy.mjs`, `lib/schemas.mjs`, `lib/plan-integrity.mjs`, `test/ndjson-worker.test.mjs`, `test/models-registry.test.mjs`, `test/agy-json-schema.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n- **Edges**: `T-TE-3 -> T-TE-2, T-TE-4, T-TE-5a, T-TE-5b`\n- **Tier**: `mid`\n- **Pool Hint**: `gemini`\n- **Objectives**:\n  1. In `lib/ndjson-worker.mjs`, extend `buildRoleSettingsProfile(role, { hasCodegraph = false, allowReadTools = false, extraSettings = {} })` so `READONLY_ROLES` deny filesystem/search read tools (`view_file`, `read_file`, `grep_search`, `code_search`, `file_search`, `list_directory`, `find_by_name`, `list_dir`, `search_in_file`, `view_file_outline`, `read_url_content`, `read_browser_page`, `search_web`) by default unless `allowReadTools === true`.\n  2. In `lib/agy.mjs`, accept optional `allowReadTools = false` in `runAgy()` and forward `{ hasCodegraph, allowReadTools }` into `buildRoleSettingsProfile(role, ...)`.\n  3. In `lib/models.mjs`, export `selectRiskTieredProsecutor(builderModel, { blastRadius = 'high', ticketTier = 'mid', pools } = {})` (strictly preserving `familyOf(prosecutor) !== familyOf(builderModel)`) and `selectRiskTieredLensModel(lens, { blastRadius = 'high', pools, fallbackIndex = 0 } = {})`, routing `low` risk to `gemini-3.8-flash-medium` / `claude-sonnet-5-5-low` / `gpt-oss-120b-medium`, `medium` risk to `claude-sonnet-5-5-medium` / `gemini-4-argon-medium`, and `high` risk to full frontier `ARL_LENS_MODELS`.\n  4. In `lib/schemas.mjs` and `lib/plan-integrity.mjs`, add optional `gateProvenance: { coldstartHashes }` schema support (compatible with `BRAIN_PLAN_SCHEMA`'s `additionalProperties: false` and `validatePlan`).\n- **Acceptance Criteria**:\n  - `buildRoleSettingsProfile('prosecutor')` and `runAgy({ role: 'review', useRoleSettings: true })` deny filesystem read tools by default while `allowReadTools: true` and `builder` roles retain read access. Verify: `node --test test/ndjson-worker.test.mjs test/agy-json-schema.test.mjs`\n  - `selectRiskTieredProsecutor` preserves cross-family isolation across all `(builderFamily, blastRadius, ticketTier)` inputs, `selectRiskTieredLensModel` scales across `low`/`medium`/`high`, and `validatePlan` accepts valid `gateProvenance.coldstartHashes`. Verify: `node --test test/models-registry.test.mjs test/agy-json-schema.test.mjs`\n\n--------------------------------------------------------------------------------",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-TE-2"
+    },
+    {
+      "to": "T-TE-4"
+    },
+    {
+      "to": "T-TE-5a"
+    },
+    {
+      "to": "T-TE-5b"
+    }
+  ],
+  "id": "T-TE-3",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/ndjson-worker.mjs",
+    "lib/models.mjs",
+    "lib/agy.mjs",
+    "lib/schemas.mjs",
+    "lib/plan-integrity.mjs",
+    "test/ndjson-worker.test.mjs",
+    "test/models-registry.test.mjs",
+    "test/agy-json-schema.test.mjs"
+  ],
+  "title": "1-Turn Readonly Lockdown, Risk-Tiered Models, `agy.mjs` Plumbing & Schemas"
+}

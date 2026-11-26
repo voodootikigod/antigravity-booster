@@ -1,0 +1,40 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T19:02:48.855Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "964dc752c8af0eedbeede21cc220aefb602fc08420d08ef8a7b899472a0001b6",
+    "ticketHash": "7861ff4dc58d6c602c6fa8988a6802250f442520b60c67eaa0d437c199bd5c17",
+    "version": 1
+  },
+  "body": "## Shared Spec Context\nResolve the primary user feedback on `antigravity-booster`: **excessive token and weekly pool-quota burn concentrated in cross-model prosecution (`lib/prosecute.mjs`) and multi-lens adversarial review (`lib/review.mjs`)**, while preserving every ADLC P1–P5 safety invariant (cross-model isolation, fail-closed mechanical gates, prompt-injection fencing, and mutation-testing enforcement).\n\n## Ticket T-TE-2: CodeGraph Root-Index Slicing, Blast-Radius Scorer, Seam Extractor & Dirty-Guard Fix\n- **Scope**: `lib/context-slice.mjs`, `lib/test-impact.mjs`, `lib/worktrees.mjs`, `test/context-slice.test.mjs`, `test/test-impact.test.mjs`, `test/worktrees-codegraph.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`, `test/unit.test.mjs`\n- **Edges**: `Depends on T-TE-3; T-TE-2 -> T-TE-4, T-TE-5a, T-TE-5b`\n- **Tier**: `mid`\n- **Pool Hint**: `gemini`\n- **Objectives**:\n  1. In `lib/worktrees.mjs`, leave `ensureGitignore()`'s canonical stanza unchanged (preserving frozen `test/unit.test.mjs` and `test/scheduler.test.mjs`), update `isDirty()` to ignore `.codegraph` / `.codegraph/**` untracked metadata (fixing the `codegraph init` `.codegraph/.gitignore` dirty-tree blocker), and export `syncCodegraphIndex(rootRepo, { codegraphBin = 'codegraph', timeoutMs = 15_000 } = {})` that runs `codegraph sync` when `<rootRepo>/.codegraph` exists and degrades cleanly to `{ ok: false, error }` without throwing.\n  2. In `lib/context-slice.mjs`, support `{ repo, rootRepo, worktree, enabled }` in `hasCodegraphIndex()`, `buildContextSlice()`, and `discoverExternalCallers()` (honoring `AGB_CODEGRAPH=0` and `.adlc/config.json` `accelerators.codegraph === false`) so worktree callers resolve `<rootRepo>/.codegraph` for repository-wide graph queries while reading modified files directly from `worktree`.\n  3. Upgrade `discoverExternalCallers()` in `lib/context-slice.mjs` to map unified diff `@@` line ranges onto enclosing modified functions/classes/methods (not just `^[+-]\\s*export` lines) and use `codegraph callers --json` / `codegraph callees --json` when available (static-AST fallback otherwise); layer `buildReviewContextPack(diffText, { rootRepo, worktree, lens, scope, maxBytes = 16_384, tag })` on top of it to filter lens-irrelevant diff noise (lockfiles, generated `dist/`/`vendor/`/`website/generated/` chunks, snapshots) and return `{ filteredDiff, contextBlock, truncatedContext, modifiedSymbols, callers, source, omittedNoiseFiles }`.\n  4. Export `computeDiffBlastRadius(diffText, { rootRepo, worktree, scope })` (forcing `level = 'high'` whenever `touchesSecuritySensitivePath === true`, e.g. `hooks/policy/**`, `lib/gates.mjs`, `lib/lock.mjs`, `lib/agy.mjs`, auth/sandbox paths) and `extractCrossTicketSeams(diffText, ticketScopes, { rootRepo })` (cross-ticket import/caller hunks + `codegraph cycles`).\n  5. In `lib/test-impact.mjs`, accept `rootRepo` in `deriveImpactedTests()` and merge `codegraph affected --json` test candidates strictly validated through `isContainedValidTestFile` when `hasCodegraphIndex(rootRepo ?? repo)` is true.\n- **Acceptance Criteria**:\n  - A repository with untracked `.codegraph/.gitignore` reports `isDirty(repo) === false`, `ensureGitignore()` leaves `CANONICAL_STANZA` byte-identical, and `buildContextSlice` / `discoverExternalCallers` called with `{ rootRepo, worktree }` hit `<rootRepo>/.codegraph`. Verify: `node --test test/worktrees-codegraph.test.mjs test/context-slice.test.mjs test/unit.test.mjs`\n  - `buildReviewContextPack`, `computeDiffBlastRadius` (including `touchesSecuritySensitivePath -> level: 'high'`), `extractCrossTicketSeams`, and `deriveImpactedTests` pass in both mock-CodeGraph and zero-dep `static-ast` fallback modes while rejecting path-traversal strings. Verify: `node --test test/context-slice.test.mjs test/test-impact.test.mjs`\n\n--------------------------------------------------------------------------------",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-TE-4"
+    },
+    {
+      "to": "T-TE-5a"
+    },
+    {
+      "to": "T-TE-5b"
+    }
+  ],
+  "id": "T-TE-2",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs",
+    "test/unit.test.mjs"
+  ],
+  "scope": [
+    "lib/context-slice.mjs",
+    "lib/test-impact.mjs",
+    "lib/worktrees.mjs",
+    "test/context-slice.test.mjs",
+    "test/test-impact.test.mjs",
+    "test/worktrees-codegraph.test.mjs"
+  ],
+  "title": "CodeGraph Root-Index Slicing, Blast-Radius Scorer, Seam Extractor & Dirty-Guard Fix"
+}

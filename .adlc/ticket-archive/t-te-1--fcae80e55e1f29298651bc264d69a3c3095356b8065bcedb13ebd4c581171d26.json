@@ -1,0 +1,35 @@
+{
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T19:01:36.906Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "2caeb51e7ba1296fcbbe2b13c1a2f97b5228c2771225a52a29a9112d0aea0e0a",
+    "ticketHash": "635bc060be29dc1a3d3dc2fbf2df6f5b52383a6ee20e493f007e58bd333b0806",
+    "version": 1
+  },
+  "body": "## Shared Spec Context\nResolve the primary user feedback on `antigravity-booster`: **excessive token and weekly pool-quota burn concentrated in cross-model prosecution (`lib/prosecute.mjs`) and multi-lens adversarial review (`lib/review.mjs`)**, while preserving every ADLC P1–P5 safety invariant (cross-model isolation, fail-closed mechanical gates, prompt-injection fencing, and mutation-testing enforcement).\n\n## Ticket T-TE-1: Zero-Dependency Multi-Provider System-1 Decision Engine\n- **Scope**: `lib/decision-engine.mjs`, `test/decision-engine.test.mjs`\n- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`\n- **Edges**: `T-TE-1 -> T-TE-4, T-TE-5a, T-TE-5b`\n- **Tier**: `mid`\n- **Pool Hint**: `claude-gpt`\n- **Objectives**:\n  1. Create `lib/decision-engine.mjs` with zero external npm dependencies using Node `>=22` global `fetch` (plus injectable `transport` for offline unit tests, `AbortSignal.timeout`, strict HTTPS/loopback URL validation, and credential-redacted error reporting).\n  2. Export `resolveDecisionConfig({ repo, env, enabled })` reading `.adlc/config.json` (`accelerators.decision`) and environment variables (`AGB_DECISION_PROVIDER`, `TYPESAFE_API_KEY`, `GEMINI_API_KEY`, `AGB_KEV_BASE_URL`, `AGB_DECISION_ENGINE=0` opt-out), returning `{ enabled: false }` by default when unconfigured.\n  3. Implement provider drivers normalizing responses to `{ ok, provider, model, latencyMs, inputTokens, outputTokens: 0, answers }` across three primitives (`noul`, `choice`, `score`):\n     - `jev`: TypeSafe Jev `systemOne` endpoint (`jev-latest`).\n     - `gemini-decisions`: Google Gemini Decisions API (`gemini-decision-1`, zero output tokens).\n     - `kev`: Local/self-hosted Kev or OpenRouter-compatible HTTP endpoint (`AGB_KEV_BASE_URL` / config `baseUrl`).\n  4. Export fail-closed recipes:\n     - `gateReviewLenses(engine, { diff, contextSummary, lenses })`: skips a lens only when `noul` probability `< 0.15` and `confidence >= 0.85`; any error, timeout, or lower confidence returns `run`.\n     - `screenTicketFastShip(engine, { ticket, diff, blastRadius, hollowTest })`: returns `fastShip: true` ONLY when `hollowTest?.ok && hollowTest.total > 0 && hollowTest.survived === 0`, `blastRadius?.level === 'low'`, `ticket?.tier !== 'frontier'`, `extractedACs.length > 0` with every AC `noul >= 0.92`, every prosecution charge risk `noul < 0.10`, and minimum confidence `>= 0.85`; otherwise returns `{ fastShip: false, reason }`.\n     - `triageFindingsSystemOne(engine, { findings, targetType, context })`: batches `verdict` (`choice`), `severity` (`score`), `resolution_route` (`choice`), and `blast_radius` (`noul`), preserving `SHAPE-*` and `blast_radius` safety floors identical to `lib/review.mjs`.\n     - `scoreColdstartTickets(engine, { tickets, gate })`: batches coldstart executable confidence per ticket, escalating uncertain tickets (`confidence < 0.85` or gap `noul >= 0.20`) to System-2.\n- **Acceptance Criteria**:\n  - `resolveDecisionConfig` returns `{ enabled: false }` when unconfigured or when `AGB_DECISION_ENGINE=0`, and `DecisionEngine` evaluates `noul`, `choice`, and `score` across `jev`, `gemini-decisions`, and `kev` mock transports with `outputTokens === 0` while scrubbing API keys on HTTP/timeout errors. Verify: `node --test test/decision-engine.test.mjs`\n  - `screenTicketFastShip` fails closed when `hollowTest.total === 0`, `hollowTest.survived > 0`, `extractedACs.length === 0`, `blastRadius.level !== 'low'`, `ticket.tier === 'frontier'`, `confidence < 0.85`, or transport fails; `gateReviewLenses`, `triageFindingsSystemOne` (preserving `SHAPE-*`/`blast_radius`), and `scoreColdstartTickets` fail closed on low confidence or errors. Verify: `node --test test/decision-engine.test.mjs`\n\n--------------------------------------------------------------------------------",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-TE-4"
+    },
+    {
+      "to": "T-TE-5a"
+    },
+    {
+      "to": "T-TE-5b"
+    }
+  ],
+  "id": "T-TE-1",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/decision-engine.mjs",
+    "test/decision-engine.test.mjs"
+  ],
+  "title": "Zero-Dependency Multi-Provider System-1 Decision Engine"
+}

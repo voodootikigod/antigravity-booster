@@ -6,10 +6,15 @@
 | AGB_ALLOW_DIRTY | unset | Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start). | honoured |
 | AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
 | AGB_BUILD_TIMEOUT | 15m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
+| AGB_CODEGRAPH | auto when .codegraph/ exists | Set to 0 to disable opt-in CodeGraph (.codegraph/) context slicing, blast-radius scoring, and impacted-test resolution, falling back to zero-dependency static-AST mode. | honoured |
+| AGB_DECISION_ENGINE | unset | Set to 0 to disable the opt-in System-1 Decision Engine (lens gating, typed Arbiter triage, coldstart screening, and low-risk fast-ship) even when configured in .adlc/config.json. | honoured |
+| AGB_DECISION_PROVIDER | unset | Selects the System-1 Decision Engine provider (jev, gemini-decisions, or kev) used by lib/decision-engine.mjs. | honoured |
 | AGB_DEFAULT_EFFORT | unset | Optional Strike-0 effort level override (low, medium, high, xhigh, max) passed as --effort to agy when ticket.effort is unset. | honoured |
 | AGB_EVENT_PROGRESS_TIMEOUT | 5m | No-progress watchdog: an agy stream that emits no events for this long is terminated. | honoured |
 | AGB_GATE_TIMEOUT_MS | 1800000 | Per-gate execution timeout in milliseconds for deterministic build/test gates in lib/scheduler.mjs. | honoured |
 | AGB_HUD | auto on TTY | Set to 0 to disable the inline ANSI status bar during agb run, or 1 to force-enable it. | honoured |
+| AGB_KEV_API_KEY | unset | Optional Bearer API key for the kev System-1 Decision Engine provider (falls back to OPENROUTER_API_KEY if unset). Scrubbed from error output. | honoured |
+| AGB_KEV_BASE_URL | unset | Base HTTPS (or loopback HTTP) endpoint URL for a local or self-hosted Kev / OpenRouter-compatible System-1 Decision Engine provider. | honoured |
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
 | AGB_MODEL_STATS_FILE | &lt;plugin_data&gt;/model_stats.jsonl | Unbundled override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan; ignored in bundled plugin builds. | ignored |
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
@@ -25,6 +30,8 @@
 | AGY_BIN | agy | Override path for the agy CLI executable used by scripts/stage-marketplace-plugin.mjs when validating staged plugin bundles. | honoured |
 | ANTIGRAVITY_CONVERSATION_ID | set by Antigravity | Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes. | honoured |
 | ANTIGRAVITY_WORKSPACE | set by agb on builders | Set by agb on builder agy processes (alongside AGY_WORKSPACE and PWD) to the isolated ticket worktree path so headless companion hooks always resolve the worktree root. | honoured |
+| GEMINI_API_KEY | unset | API key for the Google Gemini Decisions API System-1 provider (gemini-decision-1, zero output tokens). Treated as a secret and scrubbed from error output. | honoured |
+| TYPESAFE_API_KEY | unset | API key for the TypeSafe Jev System-1 Decision Engine provider (jev-latest). Treated as a secret and scrubbed from error output. | honoured |
 
 **Plugin resolution**
 
