@@ -155,7 +155,7 @@ function assertInvariant(r) {
   const lines = r.stdout.split('\n');
   assert.equal(lines.length, 2, `exactly one line, got: ${JSON.stringify(r.stdout)}`);
   const parsed = JSON.parse(lines[0]);
-  assert.ok(['ask', 'deny'].includes(parsed.decision), `decision is ask|deny, got ${parsed.decision}`);
+  assert.ok(['ask', 'force_ask', 'deny'].includes(parsed.decision), `decision is ask|force_ask|deny, got ${parsed.decision}`);
 }
 
 function decisionOf(r) {
@@ -182,7 +182,7 @@ for (const [label, shell] of SHELLS) {
     // Fallback decision table: ADLC repo, child exit 86 / crash / malformed
     // ------------------------------------------------------------------
     const adlcExpect = {
-      interactive: { [MUTATION]: 'deny', [SHELL_TOOL]: 'ask', [READ_TOOL]: '' },
+      interactive: { [MUTATION]: 'deny', [SHELL_TOOL]: 'force_ask', [READ_TOOL]: '' },
       'worker-ticket': { [MUTATION]: 'deny', [SHELL_TOOL]: 'deny', [READ_TOOL]: '' },
       'worker-readonly': { [MUTATION]: 'deny', [SHELL_TOOL]: 'deny', [READ_TOOL]: '' },
     };
@@ -210,7 +210,7 @@ for (const [label, shell] of SHELLS) {
         for (const tool of [MUTATION, SHELL_TOOL, READ_TOOL]) {
           let expected;
           if (cause.startsWith('missing node')) expected = ''; // exit 86 passes through before worker deny
-          else expected = mode === 'interactive' ? 'ask' : 'deny';
+          else expected = mode === 'interactive' ? 'force_ask' : 'deny';
           test(`non-ADLC repo / ${cause} / ${mode} / ${tool} -> ${JSON.stringify(expected)}`, async () => {
             const r = await go({
               payload: payloadFor(tool, { ws: PLAIN_REPO }),
@@ -239,14 +239,14 @@ for (const [label, shell] of SHELLS) {
           assert.ok(r.ms < 2500, `took ${r.ms}ms`);
         });
       }
-      test(`watchdog / non-ADLC repo / ${mode} -> ${mode === 'interactive' ? 'ask' : 'deny'}`, async () => {
+      test(`watchdog / non-ADLC repo / ${mode} -> ${mode === 'interactive' ? 'force_ask' : 'deny'}`, async () => {
         const r = await go({
           payload: payloadFor(MUTATION, { ws: PLAIN_REPO }),
           args: ['--timeout', '1'],
           env: { STUB_MODE: 'hang', ...modeEnv },
         });
         assertInvariant(r);
-        assert.equal(decisionOf(r), mode === 'interactive' ? 'ask' : 'deny');
+        assert.equal(decisionOf(r), mode === 'interactive' ? 'force_ask' : 'deny');
       });
     }
 
@@ -283,20 +283,20 @@ for (const [label, shell] of SHELLS) {
       test(`child emits allow is converted (non-ADLC, ${mode})`, async () => {
         const r = await go({ payload: payloadFor(MUTATION, { ws: PLAIN_REPO }), env: { STUB_MODE: 'allow', ...modeEnv } });
         assertInvariant(r);
-        assert.equal(decisionOf(r), mode === 'interactive' ? 'ask' : 'deny');
+        assert.equal(decisionOf(r), mode === 'interactive' ? 'force_ask' : 'deny');
       });
     }
 
     test('child emits spaced allow is converted, never forwarded', async () => {
       const r = await go({ payload: payloadFor(MUTATION, { ws: PLAIN_REPO }), env: { STUB_MODE: 'allow_spaced' } });
       assertInvariant(r);
-      assert.equal(decisionOf(r), 'ask');
+      assert.equal(decisionOf(r), 'force_ask');
     });
 
     test('child emits two JSON lines: collapsed to a single fallback line', async () => {
       const r = await go({ payload: payloadFor(MUTATION, { ws: PLAIN_REPO }), env: { STUB_MODE: 'twolines' } });
       assertInvariant(r);
-      assert.equal(decisionOf(r), 'ask');
+      assert.equal(decisionOf(r), 'force_ask');
     });
 
     // ------------------------------------------------------------------
@@ -332,14 +332,14 @@ for (const [label, shell] of SHELLS) {
       assert.equal(decisionOf(r), 'deny');
     });
 
-    test('--fallback allow never yields allow in non-ADLC repo (-> ask)', async () => {
+    test('--fallback allow never yields allow in non-ADLC repo (-> force_ask)', async () => {
       const r = await go({
         payload: payloadFor(MUTATION, { ws: PLAIN_REPO }),
         args: ['--fallback', 'allow'],
         env: { STUB_MODE: 'crash' },
       });
       assertInvariant(r);
-      assert.equal(decisionOf(r), 'ask');
+      assert.equal(decisionOf(r), 'force_ask');
       assert.ok(!r.stdout.includes('allow'));
     });
 
@@ -495,7 +495,7 @@ for (const [label, shell] of SHELLS) {
     test('child ignoring SIGTERM is escalated to SIGKILL and fallback emitted within timeout + 2.5s', async () => {
       const r = await go({ payload: payloadFor(SHELL_TOOL), args: ['--timeout', '2'], env: { STUB_MODE: 'hang_ignore_term' } });
       assertInvariant(r);
-      assert.equal(decisionOf(r), 'ask');
+      assert.equal(decisionOf(r), 'force_ask');
       assert.ok(r.ms >= 2900, `emitted before the 1s SIGKILL escalation could run: ${r.ms}ms`);
       assert.ok(r.ms <= 4500, `took ${r.ms}ms`);
     });

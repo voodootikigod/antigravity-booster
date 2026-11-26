@@ -303,7 +303,7 @@ while [ $# -gt 0 ]; do
 done
 
 case "$FALLBACK_DECISION" in
-  ask|deny) ;;
+  ask|force_ask|deny) ;;
   *) FALLBACK_DECISION="deny" ;;
 esac
 
@@ -501,7 +501,7 @@ emit_fallback() {
     # For shell commands (run_command): fall back to interactive operator prompt (ask)
     # rather than hard-denying all shell commands when the hook is degraded
     if [ "$TOOL_NAME" = "run_command" ]; then
-      printf '{"decision":"ask","reason":"Hook runner fail-safe in ADLC repository — shell command requires operator confirmation while hook is degraded%s"}\n' "$DEGRADED_SUFFIX"
+      printf '{"decision":"force_ask","reason":"Hook runner fail-safe in ADLC repository — shell command requires operator confirmation while hook is degraded%s"}\n' "$DEGRADED_SUFFIX"
       cleanup_tmp
       exit 0
     fi
@@ -525,8 +525,8 @@ emit_fallback() {
       exit 0
     fi
     case "$FALLBACK_DECISION" in
-      deny) printf '{"decision":"ask","reason":"Hook runner fail-safe — falling back to user confirmation%s"}\n' "$DEGRADED_SUFFIX" ;;
-      *)    printf '{"decision":"%s","reason":"Hook runner fail-safe — falling back to default policy%s"}\n' "$FALLBACK_DECISION" "$DEGRADED_SUFFIX" ;;
+      ask) printf '{"decision":"ask","reason":"Hook runner fail-safe — falling back to default policy%s"}\n' "$DEGRADED_SUFFIX" ;;
+      *) printf '{"decision":"force_ask","reason":"Hook runner fail-safe — falling back to user confirmation%s"}\n' "$DEGRADED_SUFFIX" ;;
     esac
   fi
 
@@ -616,7 +616,15 @@ fi
 LINE_COUNT="$(printf '%s\n' "$OUTPUT" | wc -l | tr -d ' ')"
 if [ "$LINE_COUNT" -eq 1 ]; then
   case "$OUTPUT" in
-    '{"decision":"ask"'*|'{"decision": "ask"'*|'{"decision":"deny"'*|'{"decision": "deny"'*)
+    '{"decision":"ask"'*|'{"decision": "ask"'*|'{"decision":"force_ask"'*|'{"decision": "force_ask"'*|'{"decision":"deny"'*|'{"decision": "deny"'*)
+      if [ -n "$AGB_WORKER_TICKET" ] || [ -n "$AGB_WORKER_MODE" ]; then
+        case "$OUTPUT" in
+          '{"decision":"ask"'*|'{"decision": "ask"'*|'{"decision":"force_ask"'*|'{"decision": "force_ask"'*)
+            printf '%s: [warn] hook runner: child emitted interactive prompt in headless worker; converting to fallback\n' "$(date)" >>"$HOOK_LOG_FILE" 2>/dev/null || true
+            emit_fallback
+            ;;
+        esac
+      fi
       case "$OUTPUT" in
         *\}*)
           trap - EXIT HUP INT TERM

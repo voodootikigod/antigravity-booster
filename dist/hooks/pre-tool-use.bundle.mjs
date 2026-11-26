@@ -4233,7 +4233,9 @@ function lexCommandLine(line) {
 var PASS = Object.freeze({ decision: "pass" });
 var deny = (reason) => ({ decision: "deny", reason });
 var ask = (reason) => ({ decision: "ask", reason });
-var RANK = { pass: 0, ask: 1, deny: 2 };
+var forceAsk = (reason) => ({ decision: "force_ask", reason });
+var isInteractivePrompt = (v) => v?.decision === "ask" || v?.decision === "force_ask";
+var RANK = { pass: 0, ask: 1, force_ask: 2, deny: 3 };
 function mostRestrictive(verdicts) {
   let best = PASS;
   for (const v of verdicts) if (RANK[v.decision] > RANK[best.decision]) best = v;
@@ -4625,7 +4627,7 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   if (ticketOps && ticketOps[0] === "ticket" && LIFECYCLE_VERBS.has(ticketOps[1])) {
     if (!contextRepos.some((r) => r.adlc)) return finish(PASS);
     if (!argv.includes("--authorize")) return deny("Ticket lifecycle change without --authorize is forbidden in-session");
-    return ctx.headless ? deny("Headless worker cannot authorize a ticket lifecycle change") : ask("Authorized ticket lifecycle change requires operator confirmation");
+    return ctx.headless ? deny("Headless worker cannot authorize a ticket lifecycle change") : forceAsk("Authorized ticket lifecycle change requires operator confirmation");
   }
   if (stage1) return finish(PASS);
   if (isStage2(sub, cwd, ctx)) return finish(PASS);
@@ -5206,7 +5208,7 @@ function evaluateSedFile(rawArgs, ctx) {
   const sedCheck = validateSedCall(norm.folded.expressions);
   if (!sedCheck.ok) return deny(sedCheck.reason);
   const v = evaluateFileTool("write_to_file", { TargetFile: target }, ctx);
-  return v.decision === "ask" ? deny(v.reason) : v;
+  return isInteractivePrompt(v) ? deny(v.reason) : v;
 }
 var NOTEBOOK_EXEC_ALLOWED_KEYS = /* @__PURE__ */ new Set(["notebookpath", "absolutepath", "path", "cellids", "toolaction", "toolsummary"]);
 var NOTEBOOK_EXEC_PATH_KEYS = ["notebookpath", "absolutepath", "path"];
@@ -5296,7 +5298,7 @@ function evaluateFileTool(name, args, ctx) {
     }
   }
   const finalVerdict = mostRestrictive(verdicts);
-  return name === "notebook_edit" && finalVerdict.decision === "ask" ? deny(finalVerdict.reason) : finalVerdict;
+  return name === "notebook_edit" && isInteractivePrompt(finalVerdict) ? deny(finalVerdict.reason) : finalVerdict;
 }
 function evaluateMcpTool(name, args, ctx) {
   const norm = normalizeArgsCaseInsensitive(args);
@@ -5340,7 +5342,7 @@ function evaluateMcpTool(name, args, ctx) {
   const repos = [...ctx.anchors.map((a) => ctx.repoAt(a)), ...scannedRepos];
   if (ctx.workerTicket && repos.some((r) => r.adlc)) return deny("Third-party MCP tool call cannot prompt operator in headless worker mode");
   if (repos.some((r) => r.adlc && r.activeRail)) {
-    return ctx.headless ? deny("Third-party MCP tool call cannot prompt operator in headless worker mode") : ask("Third-party MCP tool call in an active-rail ADLC repository requires operator confirmation");
+    return ctx.headless ? deny("Third-party MCP tool call cannot prompt operator in headless worker mode") : forceAsk("Third-party MCP tool call in an active-rail ADLC repository requires operator confirmation");
   }
   return PASS;
 }
@@ -5575,7 +5577,7 @@ function evaluateWorkflowTool(args, ctx) {
     return deny("ADLC ticket store corrupt or unreadable; frozen rails cannot be verified");
   }
   if (repos.some((r) => r.adlc && r.activeRail)) {
-    return ask("run_workflow executes Python outside PreToolUse file hooks in an active-rail ADLC repository; operator confirmation required");
+    return forceAsk("run_workflow executes Python outside PreToolUse file hooks in an active-rail ADLC repository; operator confirmation required");
   }
   return PASS;
 }
@@ -5796,6 +5798,11 @@ function evaluateRunCommand(args, ctx) {
   return verdict;
 }
 function evaluatePayload(payload, options = {}) {
+  const verdict = evaluatePayloadInner(payload, options);
+  if (isInteractivePrompt(verdict) && buildContext(payload, options).headless) return deny(verdict.reason);
+  return verdict;
+}
+function evaluatePayloadInner(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== "string" || name.length === 0) return deny("Malformed PreToolUse payload: missing tool name");
   const args = payload.toolCall.args === void 0 ? {} : payload.toolCall.args;
@@ -5846,7 +5853,7 @@ async function main() {
     return;
   }
   const verdict = evaluatePayload(payload);
-  if (verdict.decision === "deny" || verdict.decision === "ask") {
+  if (verdict.decision === "deny" || isInteractivePrompt(verdict)) {
     process.stdout.write(`${JSON.stringify({ decision: verdict.decision, reason: verdict.reason })}
 `);
   }

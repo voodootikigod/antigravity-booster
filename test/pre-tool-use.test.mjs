@@ -205,7 +205,7 @@ test('MCP: any MCP tool whose args reference a rail is denied, booster or third-
 
 test('MCP: third-party tools ask in active-rail interactive, deny headless, pass elsewhere', () => {
   const args = { path: join(fx.active, 'lib/feature.mjs') };
-  assert.equal(run('mcp__fs__write_file', args, fx.active).decision, 'ask');
+  assert.equal(run('mcp__fs__write_file', args, fx.active).decision, 'force_ask');
   assert.equal(run('mcp__fs__write_file', args, fx.active, WORKER).decision, 'deny');
   assert.equal(run('mcp__fs__write_file', args, fx.active, READONLY).decision, 'deny');
   assert.equal(run('mcp__fs__write_file', { path: join(fx.plain, 'x') }, fx.plain).decision, 'pass');
@@ -313,7 +313,7 @@ test('Shell: Cwd=/tmp targeting an ADLC rail by absolute path is denied', () => 
 
 test('Shell: ticket lifecycle needs --authorize and asks only interactively', () => {
   assert.equal(shell('adlc ticket complete T1 --write', fx.active).decision, 'deny');
-  assert.equal(shell('adlc ticket archive T1 --write --authorize', fx.active).decision, 'ask');
+  assert.equal(shell('adlc ticket archive T1 --write --authorize', fx.active).decision, 'force_ask');
   assert.equal(shell('adlc ticket archive T1 --write --authorize', fx.active, WORKER).decision, 'deny');
   assert.equal(shell('adlc ticket complete T9 --write', fx.inactive).decision, 'deny', 'applies in every ADLC repo');
   assert.equal(shell('adlc ticket complete T1 --write', fx.plain).decision, 'pass');
@@ -440,6 +440,23 @@ test('entry: deny prints exactly one JSON line; pass prints nothing; never allow
   assert.equal(passRun.status, 0);
   assert.equal(passRun.stdout, '');
   assert.doesNotMatch(denyRun.stdout + passRun.stdout, /"allow"/);
+});
+
+test('entry: force_ask and ask are printed as one JSON line; headless converts to deny; pass is empty', () => {
+  const cli = (name, args) => entry(JSON.stringify(payload(name, args, fx.active)));
+  const fa = cli('run_workflow', { Script: 'print(1)' });
+  assert.equal(fa.status, 0);
+  assert.equal(fa.stdout.trim().split('\n').length, 1);
+  assert.equal(JSON.parse(fa.stdout.trim()).decision, 'force_ask');
+  const a = cli('run_command', { CommandLine: 'npm test', Cwd: fx.active });
+  assert.equal(a.status, 0);
+  assert.equal(a.stdout.trim().split('\n').length, 1);
+  assert.equal(JSON.parse(a.stdout.trim()).decision, 'ask');
+  const hw = entry(JSON.stringify(payload('run_workflow', { Script: 'print(1)' }, fx.active)), { AGB_WORKER_TICKET: 'T1' });
+  assert.equal(JSON.parse(hw.stdout.trim()).decision, 'deny');
+  const p = cli('view_file', { AbsolutePath: join(fx.active, 'lib/feature.mjs') });
+  assert.equal(p.status, 0);
+  assert.equal(p.stdout, '');
 });
 
 test('entry: invalid JSON is denied', () => {
@@ -654,7 +671,7 @@ test('run_workflow: asks in active-rail interactive sessions, passes in inactive
   };
 
   const activeVerdict = run('run_workflow', wfArgs, fx.active, INTERACTIVE);
-  assert.equal(activeVerdict.decision, 'ask');
+  assert.equal(activeVerdict.decision, 'force_ask');
   assert.match(activeVerdict.reason, /run_workflow executes Python outside PreToolUse/);
 
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: fx.inactive, Args: { repo: fx.inactive } }, fx.inactive, INTERACTIVE).decision, 'pass');
@@ -683,7 +700,7 @@ test('run_workflow: enforces ScriptPath, Cwd, and nested Args against rails, tru
   assert.equal(run('run_workflow', { ScriptPath: 123 }, fx.active).decision, 'deny');
 
   // Valid non-rail ScriptPath in active repo -> ask; in plain repo -> pass
-  assert.equal(run('run_workflow', { ScriptPath: join(fx.active, 'lib/feature.mjs') }, fx.active).decision, 'ask');
+  assert.equal(run('run_workflow', { ScriptPath: join(fx.active, 'lib/feature.mjs') }, fx.active).decision, 'force_ask');
   assert.equal(run('run_workflow', { ScriptPath: join(fx.plain, 'lib/feature.mjs') }, fx.plain).decision, 'pass');
 
   // Nested Args keys named `Script` or `Description` (depth >= 1) are NOT skipped as top-level prose!
@@ -707,7 +724,7 @@ test('run_workflow: enforces ScriptPath, Cwd, and nested Args against rails, tru
 
   // Plain workspace referencing an active-rail ADLC repo via Args -> deny on rail, ask on non-rail
   assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp', Args: { f: join(fx.active, 'lib/lock.mjs') } }, fx.plain).decision, 'deny');
-  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp', Args: { repo: fx.active } }, fx.plain).decision, 'ask');
+  assert.equal(run('run_workflow', { Script: 'print(1)', Cwd: '/tmp', Args: { repo: fx.active } }, fx.plain).decision, 'force_ask');
 });
 
 test('swarm & run_workflow: symlink escapes, bare-filename rails, workspace enum, and prose-key exemptions', () => {

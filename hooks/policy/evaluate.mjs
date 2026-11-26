@@ -26,7 +26,7 @@ import {
 } from './paths.mjs';
 import { classifyRunCommand } from './shell.mjs';
 import { lexCommandLine } from './shell-lexer.mjs';
-import { ask, deny, mostRestrictive, PASS } from './verdict.mjs';
+import { ask, deny, forceAsk, isInteractivePrompt, mostRestrictive, PASS } from './verdict.mjs';
 
 const UNEXPECTED_PATH = /[/\\]|\.(mjs|js|json)$/;
 // Any file: URL (P5 rounds 1, 3, 5). Only an empty or `localhost` authority is a
@@ -633,7 +633,7 @@ export function evaluateSedFile(rawArgs, ctx) {
   const sedCheck = validateSedCall(norm.folded.expressions);
   if (!sedCheck.ok) return deny(sedCheck.reason);
   const v = evaluateFileTool('write_to_file', { TargetFile: target }, ctx);
-  return v.decision === 'ask' ? deny(v.reason) : v;
+  return isInteractivePrompt(v) ? deny(v.reason) : v;
 }
 
 const NOTEBOOK_EXEC_ALLOWED_KEYS = new Set(['notebookpath', 'absolutepath', 'path', 'cellids', 'toolaction', 'toolsummary']);
@@ -729,7 +729,7 @@ function evaluateFileTool(name, args, ctx) {
     }
   }
   const finalVerdict = mostRestrictive(verdicts);
-  return name === 'notebook_edit' && finalVerdict.decision === 'ask' ? deny(finalVerdict.reason) : finalVerdict;
+  return name === 'notebook_edit' && isInteractivePrompt(finalVerdict) ? deny(finalVerdict.reason) : finalVerdict;
 }
 
 function evaluateMcpTool(name, args, ctx) {
@@ -790,7 +790,7 @@ function evaluateMcpTool(name, args, ctx) {
   if (repos.some((r) => r.adlc && r.activeRail)) {
     return ctx.headless
       ? deny('Third-party MCP tool call cannot prompt operator in headless worker mode')
-      : ask('Third-party MCP tool call in an active-rail ADLC repository requires operator confirmation');
+      : forceAsk('Third-party MCP tool call in an active-rail ADLC repository requires operator confirmation');
   }
   return PASS;
 }
@@ -1030,7 +1030,7 @@ function evaluateWorkflowTool(args, ctx) {
     return deny('ADLC ticket store corrupt or unreadable; frozen rails cannot be verified');
   }
   if (repos.some((r) => r.adlc && r.activeRail)) {
-    return ask('run_workflow executes Python outside PreToolUse file hooks in an active-rail ADLC repository; operator confirmation required');
+    return forceAsk('run_workflow executes Python outside PreToolUse file hooks in an active-rail ADLC repository; operator confirmation required');
   }
   return PASS;
 }
@@ -1253,6 +1253,12 @@ function evaluateRunCommand(args, ctx) {
 }
 
 export function evaluatePayload(payload, options = {}) {
+  const verdict = evaluatePayloadInner(payload, options);
+  if (isInteractivePrompt(verdict) && buildContext(payload, options).headless) return deny(verdict.reason);
+  return verdict;
+}
+
+function evaluatePayloadInner(payload, options = {}) {
   const name = payload?.toolCall?.name;
   if (typeof name !== 'string' || name.length === 0) return deny('Malformed PreToolUse payload: missing tool name');
   const args = payload.toolCall.args === undefined ? {} : payload.toolCall.args;
