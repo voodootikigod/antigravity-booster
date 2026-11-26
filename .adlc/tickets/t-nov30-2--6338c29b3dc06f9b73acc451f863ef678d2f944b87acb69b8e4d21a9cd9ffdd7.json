@@ -1,6 +1,7 @@
 {
   "body": "Harden parseQuotaProbeOutput against post-Nov-30 group renames and Gemini-only tiers, and add fresh-context same-family Gemini prosecutor fallback when Claude pool capacity is 0.\n\nObjectives:\n1. Update parseQuotaProbeOutput and writeStatusLineQuotaCache in lib/pools.mjs to accept 'Claude Models' / 'Claude and GPT models' / 'Anthropic Models' and single-group 'Gemini Models' agy usage envelopes (synthesizing claude_gpt with 0% remaining and unavailable: true).\n2. Wire sameFamilyProsecutorsFor(builderModel) into PoolSet (lib/pools.mjs), acquireWithQuotaHandling & prosecuteBranch (lib/scheduler.mjs), prosecute (lib/prosecute.mjs), and runInteractiveRescue (lib/rescue.mjs), recording prosecutorModel and prosecutionMode ('cross-family' | 'same-family-fallback') in .adlc/manifest.jsonl.\n3. Add regression tests in test/pools.test.mjs and test/prosecute.test.mjs.\n\nAcceptance criteria:\n1. Quota parser accepts renamed Claude groups and single-group Gemini-only envelopes while rejecting unknown/duplicate pools. Verify: node --test test/pools.test.mjs\n2. Prosecutor routes to Claude 5.5 when Claude capacity > 0 and falls back to distinct Gemini model with prosecutionMode 'same-family-fallback' when Claude capacity is 0. Verify: node --test test/pools.test.mjs test/prosecute.test.mjs",
   "category": "feature",
+  "completed": true,
   "duration": 2,
   "edges": [
     {
