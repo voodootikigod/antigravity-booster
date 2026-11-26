@@ -233,6 +233,19 @@ test('F-014: resolveDecisionConfig pins jev/gemini-decisions endpoints and never
     assert.equal(kevHostEnv.enabled, true);
     assert.equal(kevHostEnv.baseUrl, 'https://trusted-kev.example/v1');
     assert.equal(kevHostEnv.apiKey, KEY);
+
+    // 6. F-011: AGB_ALLOW_REPO_KEV_URL=1 allows a non-loopback HTTPS repo baseUrl while still stripping host API keys
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ accelerators: { decision: { enabled: true, provider: 'kev', baseUrl: 'https://repo-kev.example/v1' } } }),
+    );
+    const kevAllowedRepo = resolveDecisionConfig({
+      repo,
+      env: { AGB_ALLOW_REPO_KEV_URL: '1', AGB_KEV_API_KEY: KEY, OPENROUTER_API_KEY: KEY },
+    });
+    assert.equal(kevAllowedRepo.enabled, true);
+    assert.equal(kevAllowedRepo.baseUrl, 'https://repo-kev.example/v1');
+    assert.equal(kevAllowedRepo.apiKey, undefined);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

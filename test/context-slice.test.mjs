@@ -844,3 +844,58 @@ else if (cmd === 'impact') console.log(JSON.stringify({ fanIn: 0 }));
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('F-001 & F-015: blank context lines inside active hunks do not close the hunk early in parseUnifiedDiff or verifySymbolScopeDiff', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ctx-blank-hunk-'));
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    writeFileSync(
+      join(dir, 'lib', 'sample.mjs'),
+      [
+        'export function first() {',
+        '  return 1;',
+        '}',
+        '',
+        'export function second() {',
+        '  return 2;',
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    // Note: line 4 is an empty string ("") blank context line without leading space,
+    // followed by edits in second() and an added "+++ b/spoof.mjs" string inside the hunk.
+    const diff = [
+      'diff --git a/lib/sample.mjs b/lib/sample.mjs',
+      '--- a/lib/sample.mjs',
+      '+++ b/lib/sample.mjs',
+      '@@ -1,7 +1,8 @@',
+      ' export function first() {',
+      '   return 1;',
+      ' }',
+      '',
+      ' export function second() {',
+      '-  return 2;',
+      '+  const banner = "+++ b/spoof.mjs";',
+      '+  return banner;',
+      ' }',
+    ].join('\n');
+
+    const blast = computeDiffBlastRadius(diff, { repo: dir, scope: ['lib/sample.mjs'] });
+    assert.equal(blast.changedLoc, 3, 'edits after blank context line must still count toward changedLoc');
+    assert.equal(blast.touchesExportedApi, true, 'modified symbol second() after blank context line must be detected');
+
+    const pack = buildReviewContextPack(diff, { repo: dir, scope: ['lib/sample.mjs'] });
+    assert.ok(pack.filteredDiff.includes('+++ b/spoof.mjs'), 'lines after blank context line must remain inside the lib/sample.mjs diff chunk');
+
+    // verifySymbolScopeDiff reuses parseUnifiedDiff and catches rail violation on second()
+    const railRes = verifySymbolScopeDiff(diff, {
+      repo: dir,
+      symbolRails: ['lib/sample.mjs#second'],
+    });
+    assert.equal(railRes.ok, false);
+    assert.ok(railRes.violations.some((v) => v.includes('lib/sample.mjs#second')));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

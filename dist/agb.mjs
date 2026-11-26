@@ -16420,7 +16420,7 @@ function parseUnifiedDiff(diffText) {
         curHunk.modifiedLines.push(curNewLine);
         continue;
       }
-      if (line.startsWith(" ")) {
+      if (line.startsWith(" ") || line === "" && oldRemaining > 0 && newRemaining > 0) {
         curFile.lines.push(line);
         oldRemaining = Math.max(0, oldRemaining - 1);
         newRemaining = Math.max(0, newRemaining - 1);
@@ -17207,49 +17207,10 @@ function verifySymbolScopeDiff(diffText, { symbolScope = [], symbolRails = [], r
   }
   const repoRoot = resolve15(repo);
   const hunksByFile = /* @__PURE__ */ new Map();
-  let currentFile = null;
-  let oldRemaining = 0;
-  let newRemaining = 0;
-  for (const line of String(diffText || "").split(/\r?\n/)) {
-    if (oldRemaining > 0 || newRemaining > 0) {
-      if (line.startsWith("+")) {
-        newRemaining = Math.max(0, newRemaining - 1);
-        continue;
-      }
-      if (line.startsWith("-")) {
-        oldRemaining = Math.max(0, oldRemaining - 1);
-        continue;
-      }
-      if (line.startsWith(" ")) {
-        oldRemaining = Math.max(0, oldRemaining - 1);
-        newRemaining = Math.max(0, newRemaining - 1);
-        continue;
-      }
-      if (line.startsWith("\\")) {
-        continue;
-      }
-      oldRemaining = 0;
-      newRemaining = 0;
-    }
-    const diffGitMatch = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
-    if (diffGitMatch) {
-      currentFile = diffGitMatch[2].trim();
-      continue;
-    }
-    const plusMatch = line.match(/^\+\+\+\s+b\/(.+)$/);
-    if (plusMatch) {
-      currentFile = plusMatch[1].trim();
-      continue;
-    }
-    const hunkMatch = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
-    if (hunkMatch && currentFile) {
-      oldRemaining = hunkMatch[2] !== void 0 ? Number(hunkMatch[2]) : 1;
-      const start = Number(hunkMatch[3]);
-      const count = hunkMatch[4] !== void 0 ? Number(hunkMatch[4]) : 1;
-      newRemaining = count;
-      const end = start + Math.max(0, count - 1);
-      if (!hunksByFile.has(currentFile)) hunksByFile.set(currentFile, []);
-      hunksByFile.get(currentFile).push({ start, end });
+  for (const entry of parseUnifiedDiff(diffText)) {
+    if (!hunksByFile.has(entry.file)) hunksByFile.set(entry.file, []);
+    for (const h of entry.hunks) {
+      hunksByFile.get(entry.file).push({ start: h.start, end: h.end });
     }
   }
   const violations = [];

@@ -1886,7 +1886,7 @@ function parseUnifiedDiff(diffText) {
         curHunk.modifiedLines.push(curNewLine);
         continue;
       }
-      if (line.startsWith(" ")) {
+      if (line.startsWith(" ") || line === "" && oldRemaining > 0 && newRemaining > 0) {
         curFile.lines.push(line);
         oldRemaining = Math.max(0, oldRemaining - 1);
         newRemaining = Math.max(0, newRemaining - 1);
