@@ -95,3 +95,97 @@ test('FactoryLedger atomically records bounded run summaries under lock, compute
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('computeRunEconomics and FactoryLedger track split build/prosecution/review tokens, system1Calls, hollowShortCircuits, and review-only entries', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-factory-ledger-split-'));
+  try {
+    const ledgerFile = join(dir, 'factory_ledger.jsonl');
+    const ledger = new FactoryLedger({ ledgerFile });
+
+    // 1. Explicit split fields without raw token breakdown fall back cleanly to sum for billableTokens
+    const splitOnly = computeRunEconomics({
+      runId: 'run-split-1',
+      repo: '/tmp/sample-repo',
+      totalTickets: 2,
+      mergedCount: 2,
+      strike0MergedCount: 1,
+      buildTokens: 1200,
+      prosecutionTokens: 450,
+      reviewTokens: 150,
+      system1Calls: 3,
+      hollowShortCircuits: 1,
+      skippedLenses: ['simplicity', 'anti_slop', 'simplicity'],
+    });
+    assert.equal(splitOnly.kind, 'run');
+    assert.equal(splitOnly.buildTokens, 1200);
+    assert.equal(splitOnly.prosecutionTokens, 450);
+    assert.equal(splitOnly.reviewTokens, 150);
+    assert.equal(splitOnly.billableTokens, 1800);
+    assert.equal(splitOnly.system1Calls, 3);
+    assert.equal(splitOnly.hollowShortCircuits, 1);
+    assert.deepEqual(splitOnly.skippedLenses, ['simplicity', 'anti_slop']);
+
+    // 2. Append a fleet run entry with raw + split telemetry
+    const fleetRes = ledger.appendRunSummary({
+      runId: 'run-fleet-1',
+      repo: '/tmp/sample-repo',
+      totalTickets: 2,
+      mergedCount: 2,
+      failedCount: 0,
+      strike0MergedCount: 2,
+      autofixAppliedCount: 1,
+      uncachedInputTokens: 700,
+      cachedTokens: 800,
+      outputTokens: 200,
+      buildTokens: 560,
+      prosecutionTokens: 820,
+      reviewTokens: 0,
+      system1Calls: 1,
+      hollowShortCircuits: 1,
+      requestsByPool: { 'gemini-flash': 2, 'gpt-oss': 1 },
+      durationMs: 4000,
+    });
+    assert.equal(fleetRes.ok, true);
+    assert.equal(fleetRes.entry.kind, 'run');
+    assert.equal(fleetRes.entry.billableTokens, 1380);
+    assert.equal(fleetRes.entry.buildTokens, 560);
+    assert.equal(fleetRes.entry.prosecutionTokens, 820);
+    assert.equal(fleetRes.entry.reviewTokens, 0);
+
+    // 3. Append a review-only entry matching reviewFleet's recordReviewTelemetryToLedger() shape
+    const reviewRes = ledger.appendRunSummary({
+      runId: 'agb-review-999',
+      repo: '/tmp/sample-repo',
+      uncachedInputTokens: 1200,
+      cachedTokens: 800,
+      outputTokens: 200,
+      system1Calls: 2,
+      skippedLenses: ['simplicity'],
+      requestsByPool: { 'gemini-flash': 2 },
+      durationMs: 900,
+    });
+    assert.equal(reviewRes.ok, true);
+    assert.equal(reviewRes.entry.kind, 'review');
+    assert.equal(reviewRes.entry.billableTokens, 1880);
+    assert.equal(reviewRes.entry.reviewTokens, 1880);
+    assert.equal(reviewRes.entry.buildTokens, 0);
+    assert.equal(reviewRes.entry.prosecutionTokens, 0);
+    assert.equal(reviewRes.entry.system1Calls, 2);
+    assert.deepEqual(reviewRes.entry.skippedLenses, ['simplicity']);
+
+    // 4. Summarize across both fleet and review-only entries without diluting Strike-0 yield
+    const summary = ledger.summarizeEconomics();
+    assert.equal(summary.runs, 2);
+    assert.equal(summary.totalTickets, 2);
+    assert.equal(summary.avgStrike0YieldPct, 100);
+    assert.equal(summary.totalBuildTokens, 560);
+    assert.equal(summary.totalProsecutionTokens, 820);
+    assert.equal(summary.totalReviewTokens, 1880);
+    assert.equal(summary.totalBillableTokens, 3260);
+    assert.equal(summary.totalSystem1Calls, 3);
+    assert.equal(summary.totalHollowShortCircuits, 1);
+    assert.equal(summary.totalSkippedLenses, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
