@@ -4,6 +4,7 @@
 | --- | --- | --- | --- |
 | AGB_AGY_BIN | agy | Path or name of the agy executable used for builds, quota telemetry, doctor checks and bootstrap. | honoured |
 | AGB_ALLOW_DIRTY | unset | Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start). | honoured |
+| AGB_ALLOW_REPO_KEV_URL | unset | Set to 1 to permit a non-loopback accelerators.decision.baseUrl from repository .adlc/config.json for the kev provider (host API keys are still never attached to repo-configured URLs). | honoured |
 | AGB_BUILD_MAX_TIMEOUT | 30m | Hard ceiling on a single agy invocation, applied even when AGB_BUILD_TIMEOUT is 0. | honoured |
 | AGB_BUILD_TIMEOUT | 15m | Per-ticket builder timeout passed to agy. For stream-json output, 0 (or empty) means no wall-clock limit; the ceiling and no-progress watchdog still apply. | honoured |
 | AGB_CODEGRAPH | auto when .codegraph/ exists | Set to 0 to disable opt-in CodeGraph (.codegraph/) context slicing, blast-radius scoring, and impacted-test resolution, falling back to zero-dependency static-AST mode. | honoured |

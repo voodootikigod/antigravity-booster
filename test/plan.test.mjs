@@ -808,4 +808,99 @@ test('compilePlan: opt-in DecisionEngine screens clearly executable tickets and 
   }
 });
 
+test('F-009: compilePlan stamps coldstartHashes ONLY for probed/screened tickets with zero gaps/errors', async () => {
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'agb-f009-cold-'));
+  try {
+    mkdirSync(join(tmpRepo, 'lib'), { recursive: true });
+    writeFileSync(join(tmpRepo, 'lib', 'a.mjs'), 'export const a = 1;\n');
+    writeFileSync(join(tmpRepo, 'lib', 'b.mjs'), 'export const b = 2;\n');
+    writeFileSync(join(tmpRepo, 'lib', 'c.mjs'), 'export const c = 3;\n');
+    const specFile = join(tmpRepo, 'spec.md');
+    writeFileSync(
+      specFile,
+      [
+        '# F-009 Coldstart Provenance Spec',
+        '**Gate:** `{"test": "npm test"}`',
+        '### Ticket 1: `T-F9-1` — Screened by System-1',
+        '- **Scope**: `lib/a.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export a from lib/a.mjs. Verify: `npm test`',
+        '### Ticket 2: `T-F9-2` — Probed by System-2',
+        '- **Scope**: `lib/b.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export b from lib/b.mjs. Verify: `npm test`',
+        '### Ticket 3: `T-F9-3` — Unprobed ticket',
+        '- **Scope**: `lib/c.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export c from lib/c.mjs. Verify: `npm test`',
+      ].join('\n')
+    );
+
+    // T-F9-1 passes System-1 screening; T-F9-2 and T-F9-3 escalate to System-2.
+    const screeningEngine = new DecisionEngine({
+      provider: 'kev',
+      baseUrl: 'http://127.0.0.1:18080/decide',
+      transport: async (_url, init) => {
+        const body = JSON.parse(init.body);
+        if (body.primitive === 'score') {
+          return {
+            ok: true,
+            json: async () => ({
+              answers: [
+                { score: 0.96, confidence: 0.95 },
+                { score: 0.60, confidence: 0.70 },
+                { score: 0.60, confidence: 0.70 },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            answers: [
+              { probability: 0.05, confidence: 0.95 },
+              { probability: 0.45, confidence: 0.70 },
+              { probability: 0.45, confidence: 0.70 },
+            ],
+          }),
+        };
+      },
+    });
+
+    // Subtest A: coldstartFn probes only T-F9-2 (omitting T-F9-3) -> T-F9-1 & T-F9-2 stamped, T-F9-3 NOT stamped
+    const partialRes = await compilePlan(specFile, {
+      repo: tmpRepo,
+      premortem: false,
+      parallax: false,
+      decisionEngine: screeningEngine,
+      coldstartFn: async () => [{ id: 'T-F9-2', gaps: [] }],
+    });
+    assert.equal(partialRes.ok, true);
+    assert.ok(partialRes.plan.gateProvenance?.coldstartHashes?.['T-F9-1'], 'System-1 screened ticket must be stamped');
+    assert.ok(partialRes.plan.gateProvenance?.coldstartHashes?.['T-F9-2'], 'cleanly probed ticket must be stamped');
+    assert.equal(
+      partialRes.plan.gateProvenance?.coldstartHashes?.['T-F9-3'],
+      undefined,
+      'unprobed ticket must NOT be stamped in coldstartHashes'
+    );
+
+    // Subtest B: tickets with coldstart gaps or errors must NEVER be stamped
+    const gapRes = await compilePlan(specFile, {
+      repo: tmpRepo,
+      premortem: false,
+      parallax: false,
+      maxAttempts: 0,
+      coldstartFn: async () => [
+        { id: 'T-F9-1', gaps: [] },
+        { id: 'T-F9-2', gaps: ['missing acceptance criterion'] },
+        { id: 'T-F9-3', error: 'coldstart timeout', gaps: [] },
+      ],
+    });
+    assert.equal(gapRes.ok, false);
+    assert.equal(gapRes.plan.gateProvenance, undefined, 'failed coldstart must not stamp gateProvenance');
+  } finally {
+    rmSync(tmpRepo, { recursive: true, force: true });
+  }
+});
+
 

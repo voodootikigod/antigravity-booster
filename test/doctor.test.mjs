@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION, checkHookLogDir, healthLogPath } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor, runInit, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION, checkHookLogDir, healthLogPath } from '../lib/doctor.mjs';
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { spawnSync } from 'child_process';
 import { join, delimiter } from 'path';
 import { tmpdir } from 'os';
-import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync, symlinkSync, cpSync } from 'fs';
+import { writeFileSync, readFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync, symlinkSync, cpSync } from 'fs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
@@ -1006,6 +1006,48 @@ test('T-TE-7a: runDoctor surfaces CodeGraph and Decision Engine advisory checks 
     assert.strictEqual(exitCode, 0, output);
     assert.match(output, /CodeGraph index\s+\|\s+INFO\s+\|\s+not initialized \(opt-in\)/);
     assert.match(output, /Decision Engine\s+\|\s+INFO\s+\|\s+opt-in, not configured/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('F-010: runInit fails closed on malformed or non-object .adlc/config.json when --with-codegraph or --decision-provider is passed', () => {
+  const base = mkdtempSync(join(tmpdir(), 'agb-init-malformed-'));
+  try {
+    const adlcDir = join(base, '.adlc');
+    mkdirSync(adlcDir, { recursive: true });
+    const configPath = join(adlcDir, 'config.json');
+    const malformed = '{ "version": 1, "securityMode": "signed", "signingKey": "preserve-me", ';
+    writeFileSync(configPath, malformed, 'utf8');
+
+    const resCg = runInit({ repo: base, withCodegraph: true });
+    assert.strictEqual(resCg.ok, false);
+    assert.match(resCg.error, /Malformed \.adlc\/config\.json/i);
+    assert.strictEqual(
+      readFileSync(configPath, 'utf8'),
+      malformed,
+      'runInit --with-codegraph must not overwrite malformed .adlc/config.json'
+    );
+
+    const resDp = runInit({ repo: base, decisionProvider: 'gemini-decisions' });
+    assert.strictEqual(resDp.ok, false);
+    assert.match(resDp.error, /Malformed \.adlc\/config\.json/i);
+    assert.strictEqual(
+      readFileSync(configPath, 'utf8'),
+      malformed,
+      'runInit --decision-provider must not overwrite malformed .adlc/config.json'
+    );
+
+    const nonObject = '[1, 2, 3]\n';
+    writeFileSync(configPath, nonObject, 'utf8');
+    const resArr = runInit({ repo: base, withCodegraph: true });
+    assert.strictEqual(resArr.ok, false);
+    assert.match(resArr.error, /Invalid \.adlc\/config\.json/i);
+    assert.strictEqual(
+      readFileSync(configPath, 'utf8'),
+      nonObject,
+      'runInit must not overwrite non-object .adlc/config.json'
+    );
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

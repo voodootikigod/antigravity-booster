@@ -387,11 +387,11 @@ test('buildReviewContextPack strips diff noise files and tracks truncatedContext
     assert.equal(pack.source, 'static-ast');
     assert.deepEqual(pack.omittedNoiseFiles, [
       'package-lock.json',
-      'dist/bundle.js',
       'website/generated/cli.mdx',
       'test/__snapshots__/a.snap',
     ]);
     assert.ok(!pack.filteredDiff.includes('package-lock.json'));
+    assert.ok(pack.filteredDiff.includes('dist/bundle.js'), 'dist/ must not be stripped as diff noise');
     assert.ok(pack.filteredDiff.includes('lib/calc.mjs'));
     assert.deepEqual(pack.modifiedSymbols, ['addOne']);
     assert.equal(pack.truncatedContext, false);
@@ -542,6 +542,304 @@ if (cmd === 'cycles') {
     });
     assert.equal(cgSeams.source, 'codegraph');
     assert.deepEqual(cgSeams.cycles, [['lib/a.mjs', 'lib/b.mjs']]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('F-015 & F-002: parseUnifiedDiff tracks active hunk line counts and never treats +++ / --- inside hunks as file headers', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-hunk-spoof-'));
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    writeFileSync(
+      join(dir, 'lib', 'gates.mjs'),
+      [
+        'export function gated() {',
+        '  return true;',
+        '}',
+      ].join('\n'),
+    );
+
+    // Hunk adds lines beginning with '+++ ' and '--- ', plus '+++counter;' and removes '--- comment'
+    const spoofedDiff = [
+      'diff --git a/lib/gates.mjs b/lib/gates.mjs',
+      '--- a/lib/gates.mjs',
+      '+++ b/lib/gates.mjs',
+      '@@ -1,4 +1,6 @@',
+      ' export function gated() {',
+      '--- old markdown line',
+      '+++ b/package-lock.json',
+      '+--- a/package-lock.json',
+      '+++counter;',
+      '   return true;',
+      ' }',
+    ].join('\n');
+
+    const pack = buildReviewContextPack(spoofedDiff, { repo: dir, scope: ['lib/gates.mjs'] });
+    assert.deepEqual(pack.omittedNoiseFiles, []);
+    assert.ok(pack.filteredDiff.includes('lib/gates.mjs'));
+    assert.ok(pack.filteredDiff.includes('+++counter;'));
+
+    const blast = computeDiffBlastRadius(spoofedDiff, { repo: dir, scope: ['lib/gates.mjs'] });
+    assert.equal(blast.touchesSecuritySensitivePath, true);
+    assert.equal(blast.level, 'high');
+    // 3 added lines ('+++ b/package-lock.json', '+--- a/package-lock.json', '+++counter;') + 1 removed ('--- old markdown line')
+    assert.equal(blast.changedLoc, 4);
+
+    // verifySymbolScopeDiff must also ignore '+++ b/...' inside an active hunk
+    const railCheck = verifySymbolScopeDiff(
+      [
+        'diff --git a/lib/gates.mjs b/lib/gates.mjs',
+        '--- a/lib/gates.mjs',
+        '+++ b/lib/gates.mjs',
+        '@@ -1,2 +1,3 @@',
+        ' export function gated() {',
+        '+++ b/lib/other.mjs',
+        '   return true;',
+      ].join('\n'),
+      { symbolRails: ['lib/gates.mjs#gated'], repo: dir },
+    );
+    assert.equal(railCheck.ok, false);
+    assert.match(railCheck.violations[0], /lib\/gates\.mjs#gated/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('F-006: computeDiffBlastRadius checks both file and oldFile and marks prosecute/decision-engine/review/.adlc/config.json high', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-sec-paths-'));
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    mkdirSync(join(dir, '.adlc'), { recursive: true });
+
+    for (const rel of [
+      'lib/prosecute.mjs',
+      'lib/decision-engine.mjs',
+      'lib/review.mjs',
+      '.adlc/config.json',
+    ]) {
+      const diff = [
+        `diff --git a/${rel} b/${rel}`,
+        `--- a/${rel}`,
+        `+++ b/${rel}`,
+        '@@ -1 +1 @@',
+        '-a',
+        '+b',
+      ].join('\n');
+      const blast = computeDiffBlastRadius(diff, { repo: dir, scope: [rel] });
+      assert.equal(blast.touchesSecuritySensitivePath, true, `${rel} must be security-sensitive`);
+      assert.equal(blast.level, 'high', `${rel} must force high blast radius`);
+    }
+
+    // Rename from security-sensitive oldFile to innocent new file must still trigger high
+    const renameDiff = [
+      'diff --git a/lib/gates.mjs b/lib/harmless.mjs',
+      'similarity index 90%',
+      'rename from lib/gates.mjs',
+      'rename to lib/harmless.mjs',
+      '--- a/lib/gates.mjs',
+      '+++ b/lib/harmless.mjs',
+      '@@ -1 +1 @@',
+      '-export const a = 1;',
+      '+export const a = 2;',
+    ].join('\n');
+    const renameBlast = computeDiffBlastRadius(renameDiff, { repo: dir, scope: ['lib/harmless.mjs'] });
+    assert.equal(renameBlast.touchesSecuritySensitivePath, true);
+    assert.equal(renameBlast.level, 'high');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('F-007: buildReviewContextPack retains dist/ and vendor/ diffs while stripping lockfiles, snapshots, and website/generated/', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-noise-'));
+  try {
+    const diff = [
+      'diff --git a/dist/agb.mjs b/dist/agb.mjs',
+      '--- a/dist/agb.mjs',
+      '+++ b/dist/agb.mjs',
+      '@@ -1 +1 @@',
+      '-console.log(1);',
+      '+console.log(2);',
+      'diff --git a/vendor/adlc/dist/adlc.bundle.mjs b/vendor/adlc/dist/adlc.bundle.mjs',
+      '--- a/vendor/adlc/dist/adlc.bundle.mjs',
+      '+++ b/vendor/adlc/dist/adlc.bundle.mjs',
+      '@@ -1 +1 @@',
+      '-old',
+      '+evil',
+      'diff --git a/yarn.lock b/yarn.lock',
+      '--- a/yarn.lock',
+      '+++ b/yarn.lock',
+      '@@ -1 +1 @@',
+      '-1',
+      '+2',
+    ].join('\n');
+    const pack = buildReviewContextPack(diff, { repo: dir });
+    assert.deepEqual(pack.omittedNoiseFiles, ['yarn.lock']);
+    assert.ok(pack.filteredDiff.includes('dist/agb.mjs'));
+    assert.ok(pack.filteredDiff.includes('vendor/adlc/dist/adlc.bundle.mjs'));
+    assert.ok(!pack.filteredDiff.includes('yarn.lock'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('F-005: CodeGraph per-symbol failure and cap overflow fall back to static-AST, set truncatedContext, and never underestimate blast radius', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-cg-fallback-'));
+  try {
+    mkdirSync(join(dir, '.codegraph'));
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+
+    // Create 14 symbols in lib/many.mjs (exceeds both impact cap 8 and caller cap 12)
+    const manyLines = Array.from({ length: 14 }, (_, i) => `export function fn${i}() {\n  return ${i};\n}`);
+    writeFileSync(join(dir, 'lib', 'many.mjs'), manyLines.join('\n') + '\n');
+    // Caller for fn13 (uncapped) and fn1 (simulated CodeGraph failure)
+    writeFileSync(
+      join(dir, 'lib', 'consumer.mjs'),
+      'import { fn1, fn13 } from "./many.mjs";\nexport const a = fn1();\nexport const b = fn13();\n',
+    );
+
+    // Fake codegraph: fails for fn1, succeeds with empty callers & fanIn=0 for everything else
+    const fakeCg = join(dir, 'fake-cg-partial.mjs');
+    writeFileSync(
+      fakeCg,
+      `#!/usr/bin/env node
+const [cmd, sym] = process.argv.slice(2);
+if (sym === 'fn1') process.exit(1);
+if (cmd === 'callers') console.log(JSON.stringify({ callers: [] }));
+else if (cmd === 'callees') console.log(JSON.stringify({ callees: [] }));
+else if (cmd === 'impact') console.log(JSON.stringify({ fanIn: 0 }));
+`,
+      { mode: 0o755 },
+    );
+
+    // 1. Partial CodeGraph failure on 2-symbol diff (fn0 ok, fn1 fails)
+    const twoSymDiff = [
+      'diff --git a/lib/many.mjs b/lib/many.mjs',
+      '--- a/lib/many.mjs',
+      '+++ b/lib/many.mjs',
+      '@@ -1,6 +1,6 @@',
+      ' export function fn0() {',
+      '-  return 0;',
+      '+  return 100;',
+      ' }',
+      ' export function fn1() {',
+      '-  return 1;',
+      '+  return 101;',
+      ' }',
+    ].join('\n');
+
+    const callersPartial = discoverExternalCallers(twoSymDiff, {
+      rootRepo: dir,
+      worktree: dir,
+      scope: ['lib/many.mjs'],
+      codegraphBin: fakeCg,
+    });
+    assert.equal(callersPartial.truncated, true);
+    assert.ok(callersPartial.callers.some((c) => c.symbol === 'fn1' && c.file === 'lib/consumer.mjs'));
+
+    const packPartial = buildReviewContextPack(twoSymDiff, {
+      rootRepo: dir,
+      worktree: dir,
+      scope: ['lib/many.mjs'],
+      codegraphBin: fakeCg,
+    });
+    assert.equal(packPartial.truncatedContext, true);
+    assert.ok(packPartial.callers.some((c) => c.symbol === 'fn1' && c.file === 'lib/consumer.mjs'));
+
+    const blastPartial = computeDiffBlastRadius(twoSymDiff, {
+      rootRepo: dir,
+      worktree: dir,
+      scope: ['lib/many.mjs'],
+      codegraphBin: fakeCg,
+    });
+    assert.equal(blastPartial.truncatedContext, true);
+    assert.notEqual(blastPartial.level, 'low');
+
+    // 2. Cap overflow: 14 symbols (> 12 caller cap, > 8 impact cap) even when CodeGraph succeeds on all queried symbols
+    const manyDiffHunk = manyLines
+      .map((_, i) => ` export function fn${i}() {\n-  return ${i};\n+  return ${i + 10};\n }`)
+      .join('\n');
+    const manyDiff = [
+      'diff --git a/lib/many.mjs b/lib/many.mjs',
+      '--- a/lib/many.mjs',
+      '+++ b/lib/many.mjs',
+      `@@ -1,${14 * 3} +1,${14 * 3} @@`,
+      manyDiffHunk,
+    ].join('\n');
+
+    // Run without fn1 failing (use fn0-only clean fake codegraph)
+    const cleanCg = join(dir, 'fake-cg-clean.mjs');
+    writeFileSync(
+      cleanCg,
+      `#!/usr/bin/env node
+const [cmd] = process.argv.slice(2);
+if (cmd === 'callers') console.log(JSON.stringify({ callers: [] }));
+else if (cmd === 'callees') console.log(JSON.stringify({ callees: [] }));
+else if (cmd === 'impact') console.log(JSON.stringify({ fanIn: 0 }));
+`,
+      { mode: 0o755 },
+    );
+
+    const callersCapped = discoverExternalCallers(manyDiff, {
+      rootRepo: dir,
+      worktree: dir,
+      scope: ['lib/many.mjs'],
+      codegraphBin: cleanCg,
+    });
+    assert.equal(callersCapped.truncated, true);
+    assert.ok(
+      callersCapped.callers.some((c) => c.symbol === 'fn13' && c.file === 'lib/consumer.mjs'),
+      'uncapped symbols beyond cap must fall back to static-AST',
+    );
+
+    // Even with 0 external callers on 9 symbols (> 8 impact cap), blast radius must not be 'low'
+    writeFileSync(join(dir, 'lib', 'consumer.mjs'), '// no callers\n');
+    const nineSymLines = Array.from({ length: 9 }, (_, i) => `export function s${i}() {\n  return ${i};\n}`);
+    writeFileSync(join(dir, 'lib', 'nine.mjs'), nineSymLines.join('\n') + '\n');
+    const nineDiff = [
+      'diff --git a/lib/nine.mjs b/lib/nine.mjs',
+      '--- a/lib/nine.mjs',
+      '+++ b/lib/nine.mjs',
+      `@@ -1,${9 * 3} +1,${9 * 3} @@`,
+      nineSymLines.map((_, i) => ` export function s${i}() {\n-  return ${i};\n+  return ${i + 1};\n }`).join('\n'),
+    ].join('\n');
+
+    const blastCapped = computeDiffBlastRadius(nineDiff, {
+      rootRepo: dir,
+      worktree: dir,
+      scope: ['lib/nine.mjs'],
+      codegraphBin: cleanCg,
+    });
+    assert.equal(blastCapped.truncatedContext, true);
+    assert.equal(blastCapped.level, 'medium');
+
+    // 3. impact-only failure (callers succeeds with []) falls back to static-AST and elevates blast radius
+    writeFileSync(
+      join(dir, 'lib', 'consumer.mjs'),
+      'import { fn1 } from "./many.mjs";\nexport const x = fn1();\n',
+    );
+    const impactFailCg = join(dir, 'fake-cg-impact-fail.mjs');
+    writeFileSync(
+      impactFailCg,
+      `#!/usr/bin/env node
+const [cmd, sym] = process.argv.slice(2);
+if (cmd === 'impact' && sym === 'fn1') process.exit(1);
+if (cmd === 'callers') console.log(JSON.stringify({ callers: [] }));
+else if (cmd === 'callees') console.log(JSON.stringify({ callees: [] }));
+else if (cmd === 'impact') console.log(JSON.stringify({ fanIn: 0 }));
+`,
+      { mode: 0o755 },
+    );
+    const blastImpactFail = computeDiffBlastRadius(twoSymDiff, {
+      rootRepo: dir,
+      worktree: dir,
+      scope: ['lib/many.mjs'],
+      codegraphBin: impactFailCg,
+    });
+    assert.equal(blastImpactFail.truncatedContext, true);
+    assert.ok(blastImpactFail.externalCallersCount >= 1);
+    assert.notEqual(blastImpactFail.level, 'low');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -431,3 +431,54 @@ test('T-TE-7a: agb preflight --force-coldstart bypasses cached coldstart hashes'
   assert.strictEqual(badRes.status, 1);
   assert.match(badRes.stderr, /unknown flag '--unknown' for preflight/);
 });
+
+test('F-008: agb review --delta with empty delta diff preserves unresolved priorFindings (exit 2) and exits 0 when none', () => {
+  const repo = join(TMP, 'review-empty-delta-repo');
+  mkdirSync(repo, { recursive: true });
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+  g('init', '-b', 'main');
+  g('config', 'user.email', 't@t');
+  g('config', 'user.name', 't');
+  g('config', 'commit.gpgsign', 'false');
+  writeFileSync(join(repo, 'app.js'), 'export const x = 1;\n');
+  g('add', '-A');
+  g('commit', '-m', 'init');
+
+  const fakeAgy = fileURLToPath(new URL('fixtures/fake-agy', import.meta.url));
+  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_DECISION_ENGINE: '0' };
+
+  // Case 1: Empty deltaDiff + unresolved priorFindings -> exit 2, gateVerdict ITERATE, file untouched
+  const findingsDir = join(repo, '.review');
+  mkdirSync(findingsDir, { recursive: true });
+  const defaultPriorPath = join(findingsDir, 'last-findings.json');
+  const unresolved = [{ file: 'app.js', lens: 'security', claim: 'unresolved issue', severity: 'high' }];
+  writeFileSync(defaultPriorPath, JSON.stringify(unresolved, null, 2));
+
+  const resUnresolved = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'review', repo, '--delta', 'HEAD', '--no-codegraph', '--no-decision-engine'],
+    { encoding: 'utf8', env }
+  );
+  assert.strictEqual(resUnresolved.status, 2, `expected exit 2, got ${resUnresolved.status}: ${resUnresolved.stderr}`);
+  const parsedUnresolved = JSON.parse(resUnresolved.stdout);
+  assert.strictEqual(parsedUnresolved.gateVerdict, 'ITERATE');
+  assert.strictEqual(parsedUnresolved.converged, false);
+  assert.strictEqual(parsedUnresolved.rounds, 0);
+  assert.strictEqual(parsedUnresolved.requests, 0);
+  assert.deepStrictEqual(parsedUnresolved.findings, unresolved);
+  assert.deepStrictEqual(
+    JSON.parse(readFileSync(defaultPriorPath, 'utf8')),
+    unresolved,
+    '.review/last-findings.json must NOT be overwritten on empty delta diff'
+  );
+
+  // Case 2: Empty deltaDiff + empty priorFindings -> exit 0 without creating/overwriting prior findings file
+  const absentPriorPath = join(findingsDir, 'absent-findings.json');
+  const resClean = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'review', repo, '--delta', 'HEAD', '--prior-findings', absentPriorPath, '--no-codegraph', '--no-decision-engine'],
+    { encoding: 'utf8', env }
+  );
+  assert.strictEqual(resClean.status, 0, resClean.stderr);
+  assert.strictEqual(existsSync(absentPriorPath), false, 'empty delta with no prior findings must not write prior findings file');
+});

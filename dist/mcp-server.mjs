@@ -1850,6 +1850,8 @@ function parseUnifiedDiff(diffText) {
   let curFile = null;
   let curHunk = null;
   let curNewLine = 0;
+  let oldRemaining = 0;
+  let newRemaining = 0;
   const pushFile = (initialName = null) => {
     curFile = {
       file: initialName,
@@ -1858,13 +1860,47 @@ function parseUnifiedDiff(diffText) {
       hunks: [],
       addedCount: 0,
       removedCount: 0,
-      hasMinusHeader: false
+      hasMinusHeader: false,
+      hasPlusHeader: false
     };
     files.push(curFile);
     curHunk = null;
     curNewLine = 0;
+    oldRemaining = 0;
+    newRemaining = 0;
   };
   for (const line of lines) {
+    if (curFile && curHunk && (oldRemaining > 0 || newRemaining > 0)) {
+      if (line.startsWith("+")) {
+        curFile.lines.push(line);
+        newRemaining = Math.max(0, newRemaining - 1);
+        curFile.addedCount += 1;
+        curHunk.modifiedLines.push(curNewLine);
+        curNewLine += 1;
+        continue;
+      }
+      if (line.startsWith("-")) {
+        curFile.lines.push(line);
+        oldRemaining = Math.max(0, oldRemaining - 1);
+        curFile.removedCount += 1;
+        curHunk.modifiedLines.push(curNewLine);
+        continue;
+      }
+      if (line.startsWith(" ")) {
+        curFile.lines.push(line);
+        oldRemaining = Math.max(0, oldRemaining - 1);
+        newRemaining = Math.max(0, newRemaining - 1);
+        curNewLine += 1;
+        continue;
+      }
+      if (line.startsWith("\\")) {
+        curFile.lines.push(line);
+        continue;
+      }
+      curHunk = null;
+      oldRemaining = 0;
+      newRemaining = 0;
+    }
     const diffGitMatch = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
     if (diffGitMatch) {
       pushFile(diffGitMatch[2].trim());
@@ -1887,7 +1923,8 @@ function parseUnifiedDiff(diffText) {
       continue;
     }
     const plusMatch = line.match(/^\+\+\+\s+(?:b\/)?(.+)$/);
-    if (plusMatch && curFile) {
+    if (plusMatch && curFile && !curFile.hasPlusHeader) {
+      curFile.hasPlusHeader = true;
       const candidate = plusMatch[1].trim();
       if (candidate !== "/dev/null") {
         curFile.file = candidate;
@@ -1897,6 +1934,7 @@ function parseUnifiedDiff(diffText) {
     }
     const hunkMatch = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
     if (hunkMatch && curFile) {
+      const oldCount = hunkMatch[2] !== void 0 ? Number(hunkMatch[2]) : 1;
       const start = Number(hunkMatch[3]);
       const count = hunkMatch[4] !== void 0 ? Number(hunkMatch[4]) : 1;
       const end = count === 0 ? start : start + count - 1;
@@ -1907,23 +1945,13 @@ function parseUnifiedDiff(diffText) {
       };
       curFile.hunks.push(curHunk);
       curNewLine = start;
+      oldRemaining = oldCount;
+      newRemaining = count;
       curFile.lines.push(line);
       continue;
     }
     if (curFile) {
       curFile.lines.push(line);
-      if (curHunk) {
-        if (line.startsWith("+") && !line.startsWith("+++")) {
-          curFile.addedCount += 1;
-          curHunk.modifiedLines.push(curNewLine);
-          curNewLine += 1;
-        } else if (line.startsWith("-") && !line.startsWith("---")) {
-          curFile.removedCount += 1;
-          curHunk.modifiedLines.push(curNewLine);
-        } else if (line.startsWith(" ") || line === "") {
-          curNewLine += 1;
-        }
-      }
     }
   }
   return files.filter((f) => f.file).map((f) => ({
@@ -1989,6 +2017,50 @@ function normalizeCodegraphList(data, keys) {
   }
   return [];
 }
+var CALLER_SYMBOL_CAP = 12;
+function scanStaticAstCallers(sourceRoot, symbolsToScan, { scope = [], maxBytes = 16384, bytes = 0, seenCallers = /* @__PURE__ */ new Set(), callers = [] } = {}) {
+  if (!Array.isArray(symbolsToScan) || symbolsToScan.length === 0) {
+    return { bytes, truncated: false };
+  }
+  let truncated = false;
+  let usedBytes = bytes;
+  const allFiles = collectRepoSourceFiles(sourceRoot);
+  const symRegexes = symbolsToScan.map((sym) => ({
+    sym,
+    re: new RegExp(`\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
+  }));
+  for (const rel of allFiles) {
+    if (usedBytes >= maxBytes) {
+      truncated = true;
+      break;
+    }
+    if (matchesTicketScope(rel, scope)) continue;
+    const content = readSafeRepoFile(sourceRoot, rel);
+    if (content === null) continue;
+    const lines = content.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      for (const { sym, re } of symRegexes) {
+        if (re.test(line)) {
+          const dedupKey = `${rel}:${i + 1}:${sym}`;
+          if (!seenCallers.has(dedupKey)) {
+            seenCallers.add(dedupKey);
+            const snippet = sanitizeBoundarySnippet(line.trim()).slice(0, 240);
+            callers.push({ file: rel, line: i + 1, symbol: sym, snippet });
+            usedBytes += Buffer.byteLength(`${rel}:${i + 1} [${sym}]: ${snippet}
+`, "utf8");
+          }
+          break;
+        }
+      }
+      if (usedBytes >= maxBytes) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+  return { bytes: usedBytes, truncated };
+}
 function discoverExternalCallers(diffText, {
   repo = process.cwd(),
   rootRepo = null,
@@ -2012,16 +2084,25 @@ function discoverExternalCallers(diffText, {
   }
   const callers = [];
   const callees = [];
+  const seenCallers = /* @__PURE__ */ new Set();
+  const seenCallees = /* @__PURE__ */ new Set();
   let source = "static-ast";
   let bytes = 0;
   let truncated = false;
+  let fallbackSymbols = [];
   if (hasCodegraphIndex({ rootRepo: graphRoot, enabled })) {
     let anyCodegraphOk = false;
-    const seenCallers = /* @__PURE__ */ new Set();
-    const seenCallees = /* @__PURE__ */ new Set();
-    for (const sym of symbols.slice(0, 12)) {
+    const queried = symbols.slice(0, CALLER_SYMBOL_CAP);
+    const uncapped = symbols.slice(CALLER_SYMBOL_CAP);
+    const fallbackSet = new Set(uncapped);
+    if (uncapped.length > 0) {
+      truncated = true;
+    }
+    for (let i = 0; i < queried.length; i++) {
+      const sym = queried[i];
       if (bytes >= maxBytes) {
         truncated = true;
+        for (const rem of queried.slice(i)) fallbackSet.add(rem);
         break;
       }
       const callerRes = runCodegraphJson(codegraphBin, ["callers", sym, "--json"], {
@@ -2050,6 +2131,9 @@ function discoverExternalCallers(diffText, {
           bytes += Buffer.byteLength(`${file}:${line} [${sym}]: ${snippet}
 `, "utf8");
         }
+      } else {
+        truncated = true;
+        fallbackSet.add(sym);
       }
       const calleeRes = runCodegraphJson(codegraphBin, ["callees", sym, "--json"], {
         cwd: graphRoot,
@@ -2071,45 +2155,29 @@ function discoverExternalCallers(diffText, {
           seenCallees.add(dedupKey);
           callees.push({ file, line, symbol: sym, callee: calleeName, snippet });
         }
+      } else {
+        truncated = true;
       }
     }
     if (anyCodegraphOk) {
       source = "codegraph";
+      fallbackSymbols = [...fallbackSet];
+    } else {
+      fallbackSymbols = symbols;
     }
+  } else {
+    fallbackSymbols = symbols;
   }
-  if (source !== "codegraph") {
-    const allFiles = collectRepoSourceFiles(sourceRoot);
-    const symRegexes = symbols.map((sym) => ({
-      sym,
-      re: new RegExp(`\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
-    }));
-    for (const rel of allFiles) {
-      if (bytes >= maxBytes) {
-        truncated = true;
-        break;
-      }
-      if (matchesTicketScope(rel, scope)) continue;
-      const content = readSafeRepoFile(sourceRoot, rel);
-      if (content === null) continue;
-      const lines = content.split(/\r?\n/);
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        for (const { sym, re } of symRegexes) {
-          if (re.test(line)) {
-            const snippet = sanitizeBoundarySnippet(line.trim()).slice(0, 240);
-            const entry = { file: rel, line: i + 1, symbol: sym, snippet };
-            callers.push(entry);
-            bytes += Buffer.byteLength(`${rel}:${i + 1} [${sym}]: ${snippet}
-`, "utf8");
-            break;
-          }
-        }
-        if (bytes >= maxBytes) {
-          truncated = true;
-          break;
-        }
-      }
-    }
+  if (fallbackSymbols.length > 0) {
+    const astRes = scanStaticAstCallers(sourceRoot, fallbackSymbols, {
+      scope,
+      maxBytes,
+      bytes,
+      seenCallers,
+      callers
+    });
+    bytes = astRes.bytes;
+    if (astRes.truncated) truncated = true;
   }
   if (callers.length === 0 && callees.length === 0) {
     return { symbols, callers: [], callees: [], promptBlock: "", source, truncated };

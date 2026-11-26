@@ -7844,10 +7844,18 @@ function validateDecisionUrl(raw) {
   } catch {
     throw new Error("invalid decision endpoint URL");
   }
-  const loopback = ["localhost", "127.0.0.1", "[::1]", "::1"].includes(u.hostname);
+  const loopback = LOOPBACK_HOSTS.has(u.hostname);
   if (u.protocol === "https:") return u.toString();
   if (u.protocol === "http:" && loopback) return u.toString();
   throw new Error("decision endpoint must be https (or http on loopback)");
+}
+function isLoopbackDecisionUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    return LOOPBACK_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
 }
 function scrubSecrets(text, secrets = []) {
   let out = String(text ?? "");
@@ -7876,9 +7884,20 @@ function resolveDecisionConfig({ repo, env = process.env, enabled } = {}) {
   const wanted = typeof enabled === "boolean" ? enabled : cfg.enabled === true || Boolean(env.AGB_DECISION_PROVIDER);
   if (!wanted || !provider || !PROVIDERS[provider]) return { enabled: false };
   const spec = PROVIDERS[provider];
-  const apiKey = env[spec.keyEnv] || (provider === "kev" ? env.OPENROUTER_API_KEY : void 0) || void 0;
-  const baseUrl = provider === "kev" ? env.AGB_KEV_BASE_URL || cfg.baseUrl : cfg.baseUrl || spec.url;
+  let baseUrl;
+  let usingRepoBaseUrl = false;
+  if (provider === "kev") {
+    if (env.AGB_KEV_BASE_URL) {
+      baseUrl = env.AGB_KEV_BASE_URL;
+    } else if (typeof cfg.baseUrl === "string" && cfg.baseUrl && (isLoopbackDecisionUrl(cfg.baseUrl) || env.AGB_ALLOW_REPO_KEV_URL === "1")) {
+      baseUrl = cfg.baseUrl;
+      usingRepoBaseUrl = true;
+    }
+  } else {
+    baseUrl = spec.url;
+  }
   if (!baseUrl) return { enabled: false };
+  const apiKey = usingRepoBaseUrl ? void 0 : env[spec.keyEnv] || (provider === "kev" ? env.OPENROUTER_API_KEY : void 0) || void 0;
   if (provider !== "kev" && !apiKey) return { enabled: false };
   try {
     validateDecisionUrl(baseUrl);
@@ -7910,14 +7929,14 @@ function buildRequest(provider, { primitive, queries, model, apiKey }) {
 }
 function normalizeAnswer(primitive, a) {
   if (!a || typeof a !== "object") return null;
-  const confidence = num(a.confidence);
+  const confidence = unitNum(a.confidence);
   if (confidence === null) return null;
   if (primitive === "noul") {
-    const probability = num(a.probability ?? a.p);
+    const probability = unitNum(a.probability ?? a.p);
     return probability === null ? null : { probability, confidence };
   }
   if (primitive === "score") {
-    const score = num(a.score ?? a.value);
+    const score = unitNum(a.score ?? a.value);
     return score === null ? null : { score, confidence };
   }
   const choice = a.choice ?? a.label;
@@ -7932,12 +7951,14 @@ async function gateReviewLenses(engine, { diff, contextSummary, lenses } = {}) {
     decisions: Object.fromEntries(names.map((n) => [n, { action: "run", reason }]))
   });
   if (!isEngine(engine) || names.length === 0) return runAll("engine unavailable");
+  const diffStr = String(diff ?? "");
+  if (diffStr.length > MAX_DECISION_DIFF_CHARS) return runAll("diff_truncated");
   const queries = names.map((n) => ({
     id: n,
     prompt: `Does this change contain a defect in the "${n}" lens (${descr[n] ?? n})?
 Context: ${clip(contextSummary, 1e3)}
 Diff:
-${clip(diff)}`
+${diffStr}`
   }));
   let r;
   try {
@@ -7965,6 +7986,8 @@ async function screenTicketFastShip(engine, { ticket, diff, blastRadius, hollowT
   if (blastRadius?.level !== "low") return no("blast radius not low");
   if (!ticket || ticket.tier === "frontier") return no("frontier or missing ticket");
   if (!isEngine(engine)) return no("engine unavailable");
+  const diffStr = String(diff ?? "");
+  if (diffStr.length > MAX_DECISION_DIFF_CHARS) return no("diff_truncated");
   const acs = Array.isArray(ticket.extractedACs) ? ticket.extractedACs : [];
   const charges = Array.isArray(ticket.charges ?? ticket.prosecutionCharges) ? ticket.charges ?? ticket.prosecutionCharges : [];
   if (acs.length === 0) return no("no extracted acceptance criteria");
@@ -7974,14 +7997,14 @@ async function screenTicketFastShip(engine, { ticket, diff, blastRadius, hollowT
     prompt: `Is this acceptance criterion fully satisfied by the diff?
 AC: ${text(ac)}
 Diff:
-${clip(diff)}`
+${diffStr}`
   }));
   const chQ = charges.map((c, i) => ({
     id: `charge-${i}`,
     prompt: `Is this prosecution charge a real defect in the diff?
 Charge: ${text(c)}
 Diff:
-${clip(diff)}`
+${diffStr}`
   }));
   let r;
   try {
@@ -8087,12 +8110,14 @@ ${body(t)}` })))
   });
   return { ok: true, scores };
 }
-var PRIMITIVES, DEFAULT_TIMEOUT_MS, MIN_CONFIDENCE, PROVIDERS, DECISION_PROVIDERS, num, DecisionEngine, good, isEngine, clip, VERDICTS, ROUTES, SEV_RANK, SEV_BANDS;
+var PRIMITIVES, DEFAULT_TIMEOUT_MS, MAX_DECISION_DIFF_CHARS, MIN_CONFIDENCE, LOOPBACK_HOSTS, PROVIDERS, DECISION_PROVIDERS, num, unitNum, DecisionEngine, good, isEngine, clip, VERDICTS, ROUTES, SEV_RANK, SEV_BANDS;
 var init_decision_engine = __esm({
   "lib/decision-engine.mjs"() {
     PRIMITIVES = ["noul", "choice", "score"];
     DEFAULT_TIMEOUT_MS = 15e3;
+    MAX_DECISION_DIFF_CHARS = 12e3;
     MIN_CONFIDENCE = 0.85;
+    LOOPBACK_HOSTS = /* @__PURE__ */ new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
     PROVIDERS = {
       jev: {
         model: "jev-latest",
@@ -8108,6 +8133,7 @@ var init_decision_engine = __esm({
     };
     DECISION_PROVIDERS = Object.keys(PROVIDERS);
     num = (v) => typeof v === "number" && Number.isFinite(v) ? v : null;
+    unitNum = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1 ? v : null;
     DecisionEngine = class _DecisionEngine {
       constructor({ provider, model, baseUrl, apiKey, transport, timeoutMs } = {}) {
         if (!PROVIDERS[provider]) throw new Error(`unknown decision provider: ${provider}`);
@@ -9739,9 +9765,25 @@ function runInit({
     try {
       config = JSON.parse(readFileSync18(configPath, "utf8"));
       if (!config || typeof config !== "object" || Array.isArray(config)) {
+        if (withCodegraph || decisionProvider) {
+          return {
+            ok: false,
+            repo: targetRepo,
+            configPath,
+            error: `Invalid .adlc/config.json at ${configPath}: expected a JSON object; refusing to overwrite existing configuration`
+          };
+        }
         config = { version: 1, securityMode: "unsigned-fallback" };
       }
-    } catch {
+    } catch (err) {
+      if (withCodegraph || decisionProvider) {
+        return {
+          ok: false,
+          repo: targetRepo,
+          configPath,
+          error: `Malformed .adlc/config.json at ${configPath}: ${err.message}; refusing to overwrite existing configuration`
+        };
+      }
       config = { version: 1, securityMode: "unsigned-fallback" };
     }
   }
@@ -16342,6 +16384,8 @@ function parseUnifiedDiff(diffText) {
   let curFile = null;
   let curHunk = null;
   let curNewLine = 0;
+  let oldRemaining = 0;
+  let newRemaining = 0;
   const pushFile = (initialName = null) => {
     curFile = {
       file: initialName,
@@ -16350,13 +16394,47 @@ function parseUnifiedDiff(diffText) {
       hunks: [],
       addedCount: 0,
       removedCount: 0,
-      hasMinusHeader: false
+      hasMinusHeader: false,
+      hasPlusHeader: false
     };
     files.push(curFile);
     curHunk = null;
     curNewLine = 0;
+    oldRemaining = 0;
+    newRemaining = 0;
   };
   for (const line of lines) {
+    if (curFile && curHunk && (oldRemaining > 0 || newRemaining > 0)) {
+      if (line.startsWith("+")) {
+        curFile.lines.push(line);
+        newRemaining = Math.max(0, newRemaining - 1);
+        curFile.addedCount += 1;
+        curHunk.modifiedLines.push(curNewLine);
+        curNewLine += 1;
+        continue;
+      }
+      if (line.startsWith("-")) {
+        curFile.lines.push(line);
+        oldRemaining = Math.max(0, oldRemaining - 1);
+        curFile.removedCount += 1;
+        curHunk.modifiedLines.push(curNewLine);
+        continue;
+      }
+      if (line.startsWith(" ")) {
+        curFile.lines.push(line);
+        oldRemaining = Math.max(0, oldRemaining - 1);
+        newRemaining = Math.max(0, newRemaining - 1);
+        curNewLine += 1;
+        continue;
+      }
+      if (line.startsWith("\\")) {
+        curFile.lines.push(line);
+        continue;
+      }
+      curHunk = null;
+      oldRemaining = 0;
+      newRemaining = 0;
+    }
     const diffGitMatch = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
     if (diffGitMatch) {
       pushFile(diffGitMatch[2].trim());
@@ -16379,7 +16457,8 @@ function parseUnifiedDiff(diffText) {
       continue;
     }
     const plusMatch = line.match(/^\+\+\+\s+(?:b\/)?(.+)$/);
-    if (plusMatch && curFile) {
+    if (plusMatch && curFile && !curFile.hasPlusHeader) {
+      curFile.hasPlusHeader = true;
       const candidate = plusMatch[1].trim();
       if (candidate !== "/dev/null") {
         curFile.file = candidate;
@@ -16389,6 +16468,7 @@ function parseUnifiedDiff(diffText) {
     }
     const hunkMatch = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
     if (hunkMatch && curFile) {
+      const oldCount = hunkMatch[2] !== void 0 ? Number(hunkMatch[2]) : 1;
       const start = Number(hunkMatch[3]);
       const count = hunkMatch[4] !== void 0 ? Number(hunkMatch[4]) : 1;
       const end = count === 0 ? start : start + count - 1;
@@ -16399,23 +16479,13 @@ function parseUnifiedDiff(diffText) {
       };
       curFile.hunks.push(curHunk);
       curNewLine = start;
+      oldRemaining = oldCount;
+      newRemaining = count;
       curFile.lines.push(line);
       continue;
     }
     if (curFile) {
       curFile.lines.push(line);
-      if (curHunk) {
-        if (line.startsWith("+") && !line.startsWith("+++")) {
-          curFile.addedCount += 1;
-          curHunk.modifiedLines.push(curNewLine);
-          curNewLine += 1;
-        } else if (line.startsWith("-") && !line.startsWith("---")) {
-          curFile.removedCount += 1;
-          curHunk.modifiedLines.push(curNewLine);
-        } else if (line.startsWith(" ") || line === "") {
-          curNewLine += 1;
-        }
-      }
     }
   }
   return files.filter((f) => f.file).map((f) => ({
@@ -16576,6 +16646,49 @@ ${numbered}
     artifactPath
   };
 }
+function scanStaticAstCallers(sourceRoot, symbolsToScan, { scope = [], maxBytes = 16384, bytes = 0, seenCallers = /* @__PURE__ */ new Set(), callers = [] } = {}) {
+  if (!Array.isArray(symbolsToScan) || symbolsToScan.length === 0) {
+    return { bytes, truncated: false };
+  }
+  let truncated = false;
+  let usedBytes = bytes;
+  const allFiles = collectRepoSourceFiles(sourceRoot);
+  const symRegexes = symbolsToScan.map((sym) => ({
+    sym,
+    re: new RegExp(`\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
+  }));
+  for (const rel of allFiles) {
+    if (usedBytes >= maxBytes) {
+      truncated = true;
+      break;
+    }
+    if (matchesTicketScope(rel, scope)) continue;
+    const content = readSafeRepoFile(sourceRoot, rel);
+    if (content === null) continue;
+    const lines = content.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      for (const { sym, re } of symRegexes) {
+        if (re.test(line)) {
+          const dedupKey = `${rel}:${i + 1}:${sym}`;
+          if (!seenCallers.has(dedupKey)) {
+            seenCallers.add(dedupKey);
+            const snippet = sanitizeBoundarySnippet(line.trim()).slice(0, 240);
+            callers.push({ file: rel, line: i + 1, symbol: sym, snippet });
+            usedBytes += Buffer.byteLength(`${rel}:${i + 1} [${sym}]: ${snippet}
+`, "utf8");
+          }
+          break;
+        }
+      }
+      if (usedBytes >= maxBytes) {
+        truncated = true;
+        break;
+      }
+    }
+  }
+  return { bytes: usedBytes, truncated };
+}
 function discoverExternalCallers(diffText, {
   repo = process.cwd(),
   rootRepo = null,
@@ -16599,16 +16712,25 @@ function discoverExternalCallers(diffText, {
   }
   const callers = [];
   const callees = [];
+  const seenCallers = /* @__PURE__ */ new Set();
+  const seenCallees = /* @__PURE__ */ new Set();
   let source = "static-ast";
   let bytes = 0;
   let truncated = false;
+  let fallbackSymbols = [];
   if (hasCodegraphIndex({ rootRepo: graphRoot, enabled })) {
     let anyCodegraphOk = false;
-    const seenCallers = /* @__PURE__ */ new Set();
-    const seenCallees = /* @__PURE__ */ new Set();
-    for (const sym of symbols.slice(0, 12)) {
+    const queried = symbols.slice(0, CALLER_SYMBOL_CAP);
+    const uncapped = symbols.slice(CALLER_SYMBOL_CAP);
+    const fallbackSet = new Set(uncapped);
+    if (uncapped.length > 0) {
+      truncated = true;
+    }
+    for (let i = 0; i < queried.length; i++) {
+      const sym = queried[i];
       if (bytes >= maxBytes) {
         truncated = true;
+        for (const rem of queried.slice(i)) fallbackSet.add(rem);
         break;
       }
       const callerRes = runCodegraphJson(codegraphBin, ["callers", sym, "--json"], {
@@ -16637,6 +16759,9 @@ function discoverExternalCallers(diffText, {
           bytes += Buffer.byteLength(`${file}:${line} [${sym}]: ${snippet}
 `, "utf8");
         }
+      } else {
+        truncated = true;
+        fallbackSet.add(sym);
       }
       const calleeRes = runCodegraphJson(codegraphBin, ["callees", sym, "--json"], {
         cwd: graphRoot,
@@ -16658,45 +16783,29 @@ function discoverExternalCallers(diffText, {
           seenCallees.add(dedupKey);
           callees.push({ file, line, symbol: sym, callee: calleeName, snippet });
         }
+      } else {
+        truncated = true;
       }
     }
     if (anyCodegraphOk) {
       source = "codegraph";
+      fallbackSymbols = [...fallbackSet];
+    } else {
+      fallbackSymbols = symbols;
     }
+  } else {
+    fallbackSymbols = symbols;
   }
-  if (source !== "codegraph") {
-    const allFiles = collectRepoSourceFiles(sourceRoot);
-    const symRegexes = symbols.map((sym) => ({
-      sym,
-      re: new RegExp(`\\b${sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`)
-    }));
-    for (const rel of allFiles) {
-      if (bytes >= maxBytes) {
-        truncated = true;
-        break;
-      }
-      if (matchesTicketScope(rel, scope)) continue;
-      const content = readSafeRepoFile(sourceRoot, rel);
-      if (content === null) continue;
-      const lines = content.split(/\r?\n/);
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        for (const { sym, re } of symRegexes) {
-          if (re.test(line)) {
-            const snippet = sanitizeBoundarySnippet(line.trim()).slice(0, 240);
-            const entry = { file: rel, line: i + 1, symbol: sym, snippet };
-            callers.push(entry);
-            bytes += Buffer.byteLength(`${rel}:${i + 1} [${sym}]: ${snippet}
-`, "utf8");
-            break;
-          }
-        }
-        if (bytes >= maxBytes) {
-          truncated = true;
-          break;
-        }
-      }
-    }
+  if (fallbackSymbols.length > 0) {
+    const astRes = scanStaticAstCallers(sourceRoot, fallbackSymbols, {
+      scope,
+      maxBytes,
+      bytes,
+      seenCallers,
+      callers
+    });
+    bytes = astRes.bytes;
+    if (astRes.truncated) truncated = true;
   }
   if (callers.length === 0 && callees.length === 0) {
     return { symbols, callers: [], callees: [], promptBlock: "", source, truncated };
@@ -16758,7 +16867,7 @@ function buildReviewContextPack(diffText, {
   const keptChunks = [];
   if (parsedFiles.length > 0) {
     for (const entry of parsedFiles) {
-      if (isDiffNoiseFile(entry.file)) {
+      if (isDiffNoiseFile(entry.file) && (!entry.oldFile || isDiffNoiseFile(entry.oldFile))) {
         omittedNoiseFiles.push(entry.file);
       } else {
         keptChunks.push(entry.rawChunk);
@@ -16815,7 +16924,7 @@ function computeDiffBlastRadius(diffText, {
   let touchesSecuritySensitivePath = false;
   for (const entry of parsedFiles) {
     changedLoc += entry.addedCount + entry.removedCount;
-    if (isSecuritySensitivePath(entry.file)) {
+    if (isSecuritySensitivePath(entry.file) || entry.oldFile && isSecuritySensitivePath(entry.oldFile)) {
       touchesSecuritySensitivePath = true;
     }
   }
@@ -16834,20 +16943,29 @@ function computeDiffBlastRadius(diffText, {
     timeoutMs,
     enabled
   });
-  const externalCallersCount = callerInfo.callers.length;
-  let fanIn = externalCallersCount;
+  const callers = [...callerInfo.callers];
+  let truncatedContext = Boolean(callerInfo.truncated);
   let source = callerInfo.source;
+  let impactFanIn = 0;
   if (hasCodegraphIndex({ rootRepo: graphRoot, enabled }) && symbols.length > 0) {
     let anyImpactOk = false;
     let impactTotal = 0;
     const impactedNodes = /* @__PURE__ */ new Set();
-    for (const sym of symbols.slice(0, 8)) {
+    const impactFallbackSet = new Set(symbols.slice(IMPACT_SYMBOL_CAP));
+    if (symbols.length > IMPACT_SYMBOL_CAP) {
+      truncatedContext = true;
+    }
+    for (const sym of symbols.slice(0, IMPACT_SYMBOL_CAP)) {
       const impactRes = runCodegraphJson(
         codegraphBin,
         ["impact", sym, "--depth", "2", "--json"],
         { cwd: graphRoot, timeoutMs }
       );
-      if (!impactRes.ok || impactRes.data == null) continue;
+      if (!impactRes.ok || impactRes.data == null) {
+        truncatedContext = true;
+        impactFallbackSet.add(sym);
+        continue;
+      }
       anyImpactOk = true;
       const d = impactRes.data;
       if (typeof d.fanIn === "number" && Number.isFinite(d.fanIn)) {
@@ -16867,17 +16985,30 @@ function computeDiffBlastRadius(diffText, {
         }
       }
     }
+    if (impactFallbackSet.size > 0) {
+      const seenCallers = new Set(callers.map((c) => `${c.file}:${c.line}:${c.symbol}`));
+      const astRes = scanStaticAstCallers(sourceRoot, [...impactFallbackSet], {
+        scope,
+        maxBytes: 16384,
+        bytes: 0,
+        seenCallers,
+        callers
+      });
+      if (astRes.truncated) truncatedContext = true;
+    }
     if (anyImpactOk) {
       source = "codegraph";
-      fanIn = Math.max(fanIn, impactTotal + impactedNodes.size);
+      impactFanIn = impactTotal + impactedNodes.size;
     }
   }
+  const externalCallersCount = callers.length;
+  const fanIn = Math.max(externalCallersCount, impactFanIn);
   let level = "low";
   if (touchesSecuritySensitivePath) {
     level = "high";
   } else if (fanIn >= 10 || externalCallersCount >= 8 || changedLoc >= 300) {
     level = "high";
-  } else if (fanIn >= 3 || externalCallersCount >= 2 || touchesExportedApi && changedLoc >= 30 || changedLoc >= 100) {
+  } else if (truncatedContext || fanIn >= 3 || externalCallersCount >= 2 || touchesExportedApi && changedLoc >= 30 || changedLoc >= 100) {
     level = "medium";
   }
   return {
@@ -16887,7 +17018,8 @@ function computeDiffBlastRadius(diffText, {
     touchesExportedApi,
     touchesSecuritySensitivePath,
     changedLoc,
-    source
+    source,
+    truncatedContext
   };
 }
 function normalizeTicketScopes(ticketScopes) {
@@ -17076,16 +17208,45 @@ function verifySymbolScopeDiff(diffText, { symbolScope = [], symbolRails = [], r
   const repoRoot = resolve15(repo);
   const hunksByFile = /* @__PURE__ */ new Map();
   let currentFile = null;
+  let oldRemaining = 0;
+  let newRemaining = 0;
   for (const line of String(diffText || "").split(/\r?\n/)) {
+    if (oldRemaining > 0 || newRemaining > 0) {
+      if (line.startsWith("+")) {
+        newRemaining = Math.max(0, newRemaining - 1);
+        continue;
+      }
+      if (line.startsWith("-")) {
+        oldRemaining = Math.max(0, oldRemaining - 1);
+        continue;
+      }
+      if (line.startsWith(" ")) {
+        oldRemaining = Math.max(0, oldRemaining - 1);
+        newRemaining = Math.max(0, newRemaining - 1);
+        continue;
+      }
+      if (line.startsWith("\\")) {
+        continue;
+      }
+      oldRemaining = 0;
+      newRemaining = 0;
+    }
+    const diffGitMatch = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+    if (diffGitMatch) {
+      currentFile = diffGitMatch[2].trim();
+      continue;
+    }
     const plusMatch = line.match(/^\+\+\+\s+b\/(.+)$/);
     if (plusMatch) {
       currentFile = plusMatch[1].trim();
       continue;
     }
-    const hunkMatch = line.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,(\d+))?\s+@@/);
+    const hunkMatch = line.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
     if (hunkMatch && currentFile) {
-      const start = Number(hunkMatch[1]);
-      const count = hunkMatch[2] !== void 0 ? Number(hunkMatch[2]) : 1;
+      oldRemaining = hunkMatch[2] !== void 0 ? Number(hunkMatch[2]) : 1;
+      const start = Number(hunkMatch[3]);
+      const count = hunkMatch[4] !== void 0 ? Number(hunkMatch[4]) : 1;
+      newRemaining = count;
       const end = start + Math.max(0, count - 1);
       if (!hunksByFile.has(currentFile)) hunksByFile.set(currentFile, []);
       hunksByFile.get(currentFile).push({ start, end });
@@ -17175,7 +17336,7 @@ function formatHydratedBuilderAppendix({
 ${parts.join("\n\n")}`;
   return truncateUtf8Safe(full, limit);
 }
-var SOURCE_EXTS, RESOLVE_EXTS, SKIP_DIRS2, DIFF_NOISE_PATTERNS, SECURITY_SENSITIVE_PATTERNS, CONTROL_KEYWORDS;
+var SOURCE_EXTS, RESOLVE_EXTS, SKIP_DIRS2, DIFF_NOISE_PATTERNS, SECURITY_SENSITIVE_PATTERNS, CONTROL_KEYWORDS, CALLER_SYMBOL_CAP, IMPACT_SYMBOL_CAP;
 var init_context_slice = __esm({
   "lib/context-slice.mjs"() {
     init_plan_integrity();
@@ -17212,8 +17373,6 @@ var init_context_slice = __esm({
       /(?:^|\/)package-lock\.json$/,
       /(?:^|\/)yarn\.lock$/,
       /(?:^|\/)pnpm-lock\.yaml$/,
-      /^dist\//,
-      /^vendor\//,
       /^website\/generated\//,
       /\.snap$/
     ];
@@ -17223,6 +17382,10 @@ var init_context_slice = __esm({
       /^lib\/lock\.mjs$/,
       /^lib\/agy\.mjs$/,
       /^lib\/run-integrity\.mjs$/,
+      /^lib\/prosecute\.mjs$/,
+      /^lib\/decision-engine\.mjs$/,
+      /^lib\/review\.mjs$/,
+      /^\.adlc\/config\.json$/,
       /^scripts\/rails-guard-ci\.mjs$/,
       /^\.github\/workflows\//,
       /(?:^|\/)(?:auth|sandbox|security|policy|permission|credential|secret|crypto|token)(?:[./_-]|$)/i
@@ -17248,6 +17411,8 @@ var init_context_slice = __esm({
       "void",
       "await"
     ]);
+    CALLER_SYMBOL_CAP = 12;
+    IMPACT_SYMBOL_CAP = 8;
   }
 });
 
@@ -31068,7 +31233,8 @@ async function compilePlan(idOrPrefix, opts = {}) {
     strictGates = process.env.AGB_STRICT_GATES !== "0",
     decompose = false,
     fastPath = true,
-    estimateOnly = false
+    estimateOnly = false,
+    coldstartFn = coldstartTickets
   } = opts;
   const maxTicketScope = opts.maxTicketScope ?? (decompose ? 3 : 12);
   const finalProject = project2 ?? `agb-plan-${Date.now()}`;
@@ -31195,10 +31361,11 @@ async function compilePlan(idOrPrefix, opts = {}) {
   if (structuralErrors.length) return fail2(structuralErrors);
   const runGates2 = async () => {
     if (estimateOnly) {
-      return { gaps: [], parallaxResults: [], blocking: [] };
+      return { gaps: [], parallaxResults: [], blocking: [], verifiedColdstartIds: /* @__PURE__ */ new Set() };
     }
     const runColdstart = async () => {
       let ticketsToProbe = plan.tickets ?? [];
+      let screenedIds2 = /* @__PURE__ */ new Set();
       if (decisionEngine && ticketsToProbe.length > 0) {
         const scored = await scoreColdstartTickets(decisionEngine, {
           tickets: ticketsToProbe,
@@ -31208,27 +31375,35 @@ async function compilePlan(idOrPrefix, opts = {}) {
           const escalateIds = new Set(
             scored.scores.filter((s) => !s || s.system2 !== false).map((s) => s?.ticket)
           );
-          const screenedIds = new Set(
+          screenedIds2 = new Set(
             scored.scores.filter((s) => s && s.system2 === false && !escalateIds.has(s.ticket)).map((s) => s.ticket)
           );
-          ticketsToProbe = ticketsToProbe.filter((t) => !screenedIds.has(t.id));
+          ticketsToProbe = ticketsToProbe.filter((t) => !screenedIds2.has(t.id));
         }
       }
-      if (ticketsToProbe.length === 0) return [];
-      return coldstartTickets(ticketsToProbe, plan.gate, { pools, project: finalProject, repo });
+      if (ticketsToProbe.length === 0) return { cold: [], screenedIds: screenedIds2 };
+      const cold2 = await coldstartFn(ticketsToProbe, plan.gate, { pools, project: finalProject, repo });
+      return { cold: cold2, screenedIds: screenedIds2 };
     };
-    const [cold, lax] = await Promise.all([
-      coldstart ? runColdstart() : Promise.resolve([]),
+    const [coldRes, lax] = await Promise.all([
+      coldstart ? runColdstart() : Promise.resolve({ cold: [], screenedIds: /* @__PURE__ */ new Set() }),
       parallax ? parallaxEdges(plan, { pools, n: parallaxN, project: finalProject, repo }) : Promise.resolve([])
     ]);
+    const { cold, screenedIds } = coldRes;
     const gaps = cold.filter((c) => c.gaps.length || c.error);
+    const verifiedColdstartIds = new Set(screenedIds);
+    for (const c of cold) {
+      if (c && c.id && !c.error && Array.isArray(c.gaps) && c.gaps.length === 0) {
+        verifiedColdstartIds.add(c.id);
+      }
+    }
     const blocking = [
       ...gaps.map((g) => g.error ? `${g.id}: coldstart error: ${g.error}` : `${g.id}: underspecified for a fresh agent \u2014 ${g.gaps.join("; ")}`),
       ...lax.filter((e) => e.error || e.divergent).map((e) => e.error ? `edge ${e.edge}: parallax error: ${e.error}` : `edge ${e.edge}: contract ambiguity \u2014 ${e.divergences.join("; ")}`)
     ];
-    return { gaps, parallaxResults: lax, blocking };
+    return { gaps, parallaxResults: lax, blocking, verifiedColdstartIds };
   };
-  let gates = { gaps: [], parallaxResults: [], blocking: [] };
+  let gates = { gaps: [], parallaxResults: [], blocking: [], verifiedColdstartIds: /* @__PURE__ */ new Set() };
   if (!estimateOnly) {
     gatePasses = 1;
     gates = await runGates2();
@@ -31283,11 +31458,16 @@ async function compilePlan(idOrPrefix, opts = {}) {
       log2(`plan: warning \u2014 could not write the ADLC ticket store projection to ${repo}: ${err.message}`);
     }
     if (coldstart) {
+      const verified = gates.verifiedColdstartIds ?? /* @__PURE__ */ new Set();
       const coldstartHashes = {};
       for (const t of plan.tickets ?? []) {
-        coldstartHashes[t.id] = hashTicketColdstart(t, plan.gate);
+        if (verified.has(t.id)) {
+          coldstartHashes[t.id] = hashTicketColdstart(t, plan.gate);
+        }
       }
-      plan.gateProvenance = { coldstartHashes };
+      if (Object.keys(coldstartHashes).length > 0) {
+        plan.gateProvenance = { coldstartHashes };
+      }
     }
   }
   return {
@@ -38822,6 +39002,23 @@ try {
     if (deltaRef) {
       deltaDiff = reviewDiff(repo, deltaRef);
       priorFindings = loadPriorFindings(repo, priorFindingsPath ?? void 0);
+      if (!deltaDiff.trim()) {
+        if (priorFindings.length > 0) {
+          console.error(`review: empty delta diff since ${deltaRef} \u2014 ${priorFindings.length} prior finding(s) remain unresolved`);
+          console.log(JSON.stringify({
+            findings: priorFindings,
+            rounds: 0,
+            requests: 0,
+            errors: [],
+            converged: false,
+            truncated: false,
+            gateVerdict: "ITERATE"
+          }, null, 2));
+          process.exit(2);
+        }
+        console.error("review: empty delta diff and no prior findings \u2014 nothing to prosecute");
+        process.exit(0);
+      }
     } else {
       diff = reviewDiff(repo, ref);
       if (!diff.trim()) {
@@ -39290,6 +39487,7 @@ try {
     const targetRepo = resolve38(positional[0] ?? ".");
     const res = runInit({ repo: targetRepo, withCodegraph, decisionProvider });
     console.log(JSON.stringify(res, null, 2));
+    if (!res.ok) process.exit(1);
   } else if (cmd === "sync-models") {
     rejectUnknownFlags("sync-models", rest, /* @__PURE__ */ new Set(["--check", "--offline", "--json", "--write"]));
     const { syncModels: syncModels2, isBoosterRepoCheckout: isBoosterRepoCheckout2 } = await Promise.resolve().then(() => (init_sync_models(), sync_models_exports));

@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   DecisionEngine,
+  MAX_DECISION_DIFF_CHARS,
   resolveDecisionConfig,
   gateReviewLenses,
   screenTicketFastShip,
@@ -179,4 +180,156 @@ test('coldstart escalates uncertain tickets', async () => {
   r = await scoreColdstartTickets(throwing(), { tickets });
   assert.equal(r.ok, false);
   assert.ok(r.scores.every((s) => s.system2));
+});
+
+test('F-014: resolveDecisionConfig pins jev/gemini-decisions endpoints and never sends host API keys to repo baseUrl', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'de-f014-'));
+  try {
+    mkdirSync(join(repo, '.adlc'));
+
+    // 1. jev ignores repo-configured baseUrl
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ accelerators: { decision: { enabled: true, provider: 'jev', baseUrl: 'https://evil.example/steal' } } }),
+    );
+    const jevCfg = resolveDecisionConfig({ repo, env: { TYPESAFE_API_KEY: KEY } });
+    assert.equal(jevCfg.enabled, true);
+    assert.equal(jevCfg.baseUrl, 'https://api.typesafe.ai/v1/systemOne');
+    assert.equal(jevCfg.apiKey, KEY);
+
+    // 2. gemini-decisions ignores repo-configured baseUrl
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ accelerators: { decision: { enabled: true, provider: 'gemini-decisions', baseUrl: 'https://evil.example/steal' } } }),
+    );
+    const gemCfg = resolveDecisionConfig({ repo, env: { GEMINI_API_KEY: KEY } });
+    assert.equal(gemCfg.enabled, true);
+    assert.equal(gemCfg.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/decisions:evaluate');
+    assert.equal(gemCfg.apiKey, KEY);
+
+    // 3. kev ignores non-loopback repo-configured baseUrl
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ accelerators: { decision: { enabled: true, provider: 'kev', baseUrl: 'https://evil.example/steal' } } }),
+    );
+    const kevRemoteRepo = resolveDecisionConfig({ repo, env: { AGB_KEV_API_KEY: KEY, OPENROUTER_API_KEY: KEY } });
+    assert.deepEqual(kevRemoteRepo, { enabled: false });
+
+    // 4. kev allows loopback repo-configured baseUrl ONLY without attaching host API keys
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({ accelerators: { decision: { enabled: true, provider: 'kev', baseUrl: 'http://127.0.0.1:8080/v1' } } }),
+    );
+    const kevLocalRepo = resolveDecisionConfig({ repo, env: { AGB_KEV_API_KEY: KEY, OPENROUTER_API_KEY: KEY } });
+    assert.equal(kevLocalRepo.enabled, true);
+    assert.equal(kevLocalRepo.baseUrl, 'http://127.0.0.1:8080/v1');
+    assert.equal(kevLocalRepo.apiKey, undefined);
+
+    // 5. kev prefers host env AGB_KEV_BASE_URL and attaches host key only to host-specified URL
+    const kevHostEnv = resolveDecisionConfig({
+      repo,
+      env: { AGB_KEV_BASE_URL: 'https://trusted-kev.example/v1', AGB_KEV_API_KEY: KEY },
+    });
+    assert.equal(kevHostEnv.enabled, true);
+    assert.equal(kevHostEnv.baseUrl, 'https://trusted-kev.example/v1');
+    assert.equal(kevHostEnv.apiKey, KEY);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('F-003: gateReviewLenses and screenTicketFastShip fail closed on oversized diff without truncation', async () => {
+  const oversizedDiff = `+${'a'.repeat(MAX_DECISION_DIFF_CHARS + 1)}`;
+  let calls = 0;
+  const spyEngine = new DecisionEngine({
+    provider: 'jev',
+    apiKey: KEY,
+    transport: async (_url, init) => {
+      calls += 1;
+      const items = JSON.parse(init.body).items;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          answers: items.map((i) => ({ probability: i.id.startsWith('ac') ? 0.99 : 0.01, confidence: 0.99 })),
+        }),
+      };
+    },
+  });
+
+  const lensRes = await gateReviewLenses(spyEngine, {
+    diff: oversizedDiff,
+    lenses: { security: 'sec', correctness: 'corr' },
+  });
+  assert.equal(calls, 0);
+  assert.deepEqual(lensRes.run, ['security', 'correctness']);
+  assert.deepEqual(lensRes.skipped, []);
+  assert.equal(lensRes.decisions.security.reason, 'diff_truncated');
+
+  const fastRes = await screenTicketFastShip(spyEngine, {
+    ...okInputs(),
+    diff: oversizedDiff,
+  });
+  assert.equal(calls, 0);
+  assert.deepEqual(fastRes, { fastShip: false, reason: 'diff_truncated' });
+
+  // Diff within limit (> old 4000-char clip) is sent in full without truncation
+  const midDiff = `${'a'.repeat(5000)}TAIL_MARKER`;
+  let seenPrompt = '';
+  const captureEngine = new DecisionEngine({
+    provider: 'jev',
+    apiKey: KEY,
+    transport: async (_url, init) => {
+      const items = JSON.parse(init.body).items;
+      seenPrompt = items[0].prompt;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ answers: items.map(() => ({ probability: 0.01, confidence: 0.99 })) }),
+      };
+    },
+  });
+  const midLensRes = await gateReviewLenses(captureEngine, { diff: midDiff, lenses: ['security'] });
+  assert.deepEqual(midLensRes.skipped, ['security']);
+  assert.ok(seenPrompt.includes('TAIL_MARKER'), 'diff within MAX_DECISION_DIFF_CHARS must not be silently truncated');
+});
+
+test('F-004: normalizeAnswer rejects out-of-range percentage/negative/non-finite values', async () => {
+  const badPayloads = [
+    { primitive: 'noul', answer: { probability: 0.01, confidence: 95 } },
+    { primitive: 'noul', answer: { probability: 95, confidence: 0.95 } },
+    { primitive: 'noul', answer: { probability: -0.1, confidence: 0.95 } },
+    { primitive: 'noul', answer: { probability: 0.5, confidence: -0.2 } },
+    { primitive: 'noul', answer: { probability: 1.01, confidence: 0.9 } },
+    { primitive: 'score', answer: { score: 90, confidence: 0.95 } },
+    { primitive: 'score', answer: { score: -1, confidence: 0.95 } },
+    { primitive: 'choice', answer: { choice: 'accept', confidence: 100 } },
+  ];
+  for (const { primitive, answer } of badPayloads) {
+    const e = new DecisionEngine({
+      provider: 'jev',
+      apiKey: KEY,
+      transport: async () => ({ ok: true, status: 200, json: async () => ({ answers: [answer] }) }),
+    });
+    const res = await e.evaluate(primitive, [{ prompt: 'x', choices: ['accept'] }]);
+    assert.equal(res.ok, false, `expected malformed rejection for ${JSON.stringify(answer)}`);
+  }
+
+  // Exact [0, 1] boundaries remain valid
+  const boundEngine = new DecisionEngine({
+    provider: 'jev',
+    apiKey: KEY,
+    transport: async (_u, init) => {
+      const prim = JSON.parse(init.body).primitive;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          answers: [prim === 'noul' ? { probability: 0, confidence: 1 } : { score: 1, confidence: 0 }],
+        }),
+      };
+    },
+  });
+  assert.equal((await boundEngine.noul([{ prompt: 'x' }])).ok, true);
+  assert.equal((await boundEngine.score([{ prompt: 'x' }])).ok, true);
 });

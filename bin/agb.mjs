@@ -514,6 +514,23 @@ try {
     if (deltaRef) {
       deltaDiff = reviewDiff(repo, deltaRef);
       priorFindings = loadPriorFindings(repo, priorFindingsPath ?? undefined);
+      if (!deltaDiff.trim()) {
+        if (priorFindings.length > 0) {
+          console.error(`review: empty delta diff since ${deltaRef} — ${priorFindings.length} prior finding(s) remain unresolved`);
+          console.log(JSON.stringify({
+            findings: priorFindings,
+            rounds: 0,
+            requests: 0,
+            errors: [],
+            converged: false,
+            truncated: false,
+            gateVerdict: 'ITERATE',
+          }, null, 2));
+          process.exit(2);
+        }
+        console.error('review: empty delta diff and no prior findings — nothing to prosecute');
+        process.exit(0);
+      }
     } else {
       diff = reviewDiff(repo, ref);
       if (!diff.trim()) {
@@ -985,6 +1002,7 @@ try {
     const targetRepo = resolve(positional[0] ?? '.');
     const res = runInit({ repo: targetRepo, withCodegraph, decisionProvider });
     console.log(JSON.stringify(res, null, 2));
+    if (!res.ok) process.exit(1);
   } else if (cmd === 'sync-models') {
     rejectUnknownFlags('sync-models', rest, new Set(['--check', '--offline', '--json', '--write']));
     const { syncModels, isBoosterRepoCheckout } = await import('../scripts/sync-models.mjs');

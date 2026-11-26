@@ -616,6 +616,13 @@
       "default": "unset",
       "bundledIgnored": false,
       "description": "Optional Bearer API key for the kev System-1 Decision Engine provider (falls back to OPENROUTER_API_KEY if unset). Scrubbed from error output."
+    },
+    {
+      "name": "AGB_ALLOW_REPO_KEV_URL",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 to permit a non-loopback accelerators.decision.baseUrl from repository .adlc/config.json for the kev provider (host API keys are still never attached to repo-configured URLs)."
     }
   ],
   "ignore": [
