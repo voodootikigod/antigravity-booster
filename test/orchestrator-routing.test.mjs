@@ -453,5 +453,5 @@ test('60-tool completeness canary against test/fixtures/agy-1.5.9-init-tools.jso
 test('live agy version floor benchmarks pass (1.5.17 floor, version gate)', LINUX_ONLY, async () => {
   const { runLiveAgy159PrintAndSandboxBenchmark, runLiveOrchestratorSchedulerBenchmark } = await import('../evals/v13-enhancements-bench.mjs');
   assert.equal((await runLiveAgy159PrintAndSandboxBenchmark()).checks.planSchemaAndVersionConstantsOk, true);
-  assert.equal((await runLiveOrchestratorSchedulerBenchmark()).checks.versionAutoDisableOk, true);
+  assert.equal((await runLiveOrchestratorSchedulerBenchmark()).checks.belowFloorRejectedOk, true);
 });

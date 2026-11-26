@@ -15,7 +15,7 @@ import { StreamWatchdog } from '../lib/stream-watchdog.mjs';
 
 const FAKE_AGY = join(process.cwd(), 'test', 'fixtures', 'fake-agy');
 
-const PURE = { containment: false, sandbox: false };
+const PURE = { containment: false, sandbox: false, unsafeSkipContainmentForTest: true };
 
 function writeDumpAgy(dir, name = 'dump-agy.mjs') {
   const dumpFile = join(dir, `${name}.dump.json`);
@@ -72,13 +72,17 @@ function tmpDir() {
 test('buildRoleSettingsProfile re-export emits action(target) permission rules', () => {
   const ro = buildRoleSettingsProfile('prosecutor');
   assert.equal(ro.allowNonWorkspaceAccess, false);
-  for (const rule of ['write_file(*)', 'command(*)', 'mcp(*)']) {
+  for (const rule of ['write_file(*)', 'command(*)', 'download_url(*)', 'unsandboxed(*)', 'mcp(*)']) {
     assert.ok(ro.permissions.deny.includes(rule));
   }
   const builderNoCg = buildRoleSettingsProfile('builder', { hasCodegraph: false });
   assert.ok(builderNoCg.permissions.deny.includes('mcp(*)'));
+  assert.ok(builderNoCg.permissions.deny.includes('download_url(*)'));
+  assert.ok(builderNoCg.permissions.deny.includes('unsandboxed(*)'));
   const builderCg = buildRoleSettingsProfile('builder', { hasCodegraph: true });
   assert.equal(builderCg.permissions.deny.includes('mcp(*)'), false);
+  assert.ok(builderCg.permissions.deny.includes('download_url(*)'));
+  assert.ok(builderCg.permissions.deny.includes('unsandboxed(*)'));
 });
 
 test('runLiveV14HyperHarnessBenchmark reports roleSettingsReadonly true', () => {
@@ -180,7 +184,11 @@ test('NdjsonWorkerDaemon builder containment defaults, allowCodegraph forwarding
     await d2.close();
     assert.equal(spy2.calls[0].allowCodegraph, true);
 
-    for (const flags of [{ containment: false, sandbox: true }, { containment: true, sandbox: false }]) {
+    for (const flags of [
+      { containment: false, sandbox: true },
+      { containment: true, sandbox: false },
+      { containment: false, sandbox: false },
+    ]) {
       const s = makeSpy(dir, a.script);
       const d = new NdjsonWorkerDaemon({ model: 'gemini-4-neon-medium', cwd: dir, bin: a.script, env: { AGB_HOME_DIR: home }, ...flags, prepareContainment: s.prepareContainment });
       assert.equal((await d.sendTurn('hi')).ok, true);
@@ -561,10 +569,21 @@ exit 1
     await daemon.close().catch(() => {});
 
     rmSync(outEnvFile, { force: true });
+    // Under __AGB_BUNDLED__ = true, builder containment is non-bypassable even with PURE
+    const bundledBuilderPure = new NdjsonWorkerDaemon({
+      model: 'gemini-4-neon-medium',
+      cwd: dir,
+      bin: envSpyBin,
+      env: { AGB_WORKER_TICKET: 'T-1', AGB_HOME_DIR: fakeHome },
+      ...PURE,
+    });
+    assert.equal(bundledBuilderPure._requiresContainment(), true, 'builder containment must remain non-bypassable when bundled');
+
     daemon = new NdjsonWorkerDaemon({
       model: 'gemini-4-neon-medium',
       cwd: dir,
       bin: envSpyBin,
+      role: 'readonly',
       env: { AGB_WORKER_TICKET: 'T-1', AGB_HOME_DIR: fakeHome },
       ...PURE,
     });

@@ -871,6 +871,8 @@ var init_ndjson_worker = __esm({
     init_plugin_paths();
     init_role_settings();
     init_adlc_bridge();
+    init_doctor2();
+    init_agy();
   }
 });
 

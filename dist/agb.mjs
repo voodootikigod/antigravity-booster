@@ -6819,7 +6819,15 @@ function buildRoleSettingsProfile(role = "builder", { hasCodegraph = false, rail
   const normalizedRole = String(role || "builder").trim().toLowerCase();
   let deny;
   if (READONLY_ROLES.includes(normalizedRole)) {
-    deny = ["write_file(*)", "command(*)", "read_url(*)", "execute_url(*)", "mcp(*)"];
+    deny = [
+      "write_file(*)",
+      "command(*)",
+      "read_url(*)",
+      "execute_url(*)",
+      "download_url(*)",
+      "unsandboxed(*)",
+      "mcp(*)"
+    ];
   } else {
     deny = [
       "write_file(.git/)",
@@ -6831,6 +6839,8 @@ function buildRoleSettingsProfile(role = "builder", { hasCodegraph = false, rail
       "command(git push)",
       "read_url(*)",
       "execute_url(*)",
+      "download_url(*)",
+      "unsandboxed(*)",
       ...hasCodegraph ? ["mcp(agb/*)", "mcp(antigravity-booster_agb/*)"] : ["mcp(*)"]
     ];
   }
@@ -11670,6 +11680,8 @@ var init_ndjson_worker = __esm({
     init_plugin_paths();
     init_role_settings();
     init_adlc_bridge();
+    init_doctor2();
+    init_agy();
   }
 });
 

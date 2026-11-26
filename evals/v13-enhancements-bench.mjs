@@ -1365,7 +1365,7 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
   // Check 3: agy below the 1.5.17 floor is rejected at startup before any builder is spawned
   const repoOld = makeEvalGitRepo();
   const stateOld = realpathSync(mkdtempSync(join(tmpdir(), 'agb-v13-st-old-')));
-  let versionAutoDisableOk = false;
+  let belowFloorRejectedOk = false;
   try {
     const t1Plan = () => ({
       repo: repoOld,
@@ -1386,7 +1386,7 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
       { FAKE_AGY_VERSION: '1.5.16', FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateOld },
       () => runPlan(t1Plan(), { log: () => {} }),
     ).then(() => '', (err) => String(err?.message ?? err));
-    versionAutoDisableOk = [
+    belowFloorRejectedOk = [
       /required >= v1\.5\.17/.test(rejectedMsg),
       JSON.stringify(extractBuilderModels(stateOld)) === JSON.stringify([]),
     ].every(Boolean);
@@ -1493,7 +1493,7 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
   const checks = {
     interleavedRoutingOk,
     asyncLocalStorageIsolationOk,
-    versionAutoDisableOk,
+    belowFloorRejectedOk,
     perSlugCircuitBreakerOk,
     gateExclusionAndRunScopedUnavailOk,
   };

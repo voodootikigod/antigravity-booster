@@ -967,7 +967,7 @@ ${Object.values(a159.perClass)
 | :--- | :---: |
 | **Interleaved Cross-Family \`TIER_CANDIDATES.frontier\` (4 Gemini + 4 Claude) & \`hydrogen-*\` Pool Mapping** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.interleavedRoutingOk ? 'PASS' : 'FAIL'}** |
 | **Concurrent In-Process \`runWithOrchestratorRoutingState()\` \`AsyncLocalStorage\` Isolation** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.asyncLocalStorageIsolationOk ? 'PASS' : 'FAIL'}** |
-| **Pre-\`agy 1.5.17\` Versions Auto-Disable Orchestrator Slugs With Notice & Routes to \`FRONTIER_NO_ORCHESTRATOR\`** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.versionAutoDisableOk ? 'PASS' : 'FAIL'}** |
+| **Pre-\`agy 1.5.17\` Versions Rejected at Startup Before Spawning Builders** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.belowFloorRejectedOk ? 'PASS' : 'FAIL'}** |
 | **Per-Slug Circuit Breaker Trips at $\\ge 50\\%$ Over $\\ge 4$ Builder-Fault Tickets & Reroutes Next Slug** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.perSlugCircuitBreakerOk ? 'PASS' : 'FAIL'}** |
 | **\`!gates.ok\` Excluded From \`builderFaultTickets\` & \`model_unavailable\` Kept Strictly Run-Scoped** | **${results.liveBenchmarks.v13OrchestratorScheduler.checks.gateExclusionAndRunScopedUnavailOk ? 'PASS' : 'FAIL'}** |
 
