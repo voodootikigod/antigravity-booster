@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   hasCodegraphIndex,
   buildContextSlice,
   discoverExternalCallers,
+  buildReviewContextPack,
+  computeDiffBlastRadius,
+  extractCrossTicketSeams,
   parseSymbolAnchor,
   verifySymbolScopeDiff,
   sanitizeBoundarySnippet,
@@ -211,4 +214,335 @@ test('formatHydratedBuilderAppendix bounds UTF-8 byte length, sanitizes fences, 
   });
   assert.ok(Buffer.byteLength(huge, 'utf8') <= 300);
   assert.ok(!huge.includes('\uFFFD'), 'must not split multi-byte UTF-8 codepoints');
+});
+
+test('hasCodegraphIndex honors rootRepo, enabled:false, AGB_CODEGRAPH=0, and .adlc/config.json', () => {
+  const rootDir = mkdtempSync(join(tmpdir(), 'agb-cg-root-'));
+  const wtDir = mkdtempSync(join(tmpdir(), 'agb-cg-wt-'));
+  try {
+    mkdirSync(join(rootDir, '.codegraph'));
+    assert.equal(hasCodegraphIndex({ repo: wtDir, rootRepo: rootDir }), true);
+    assert.equal(hasCodegraphIndex({ repo: wtDir, rootRepo: rootDir, enabled: false }), false);
+    assert.equal(hasCodegraphIndex(wtDir), false);
+
+    // Env opt-out
+    const prev = process.env.AGB_CODEGRAPH;
+    process.env.AGB_CODEGRAPH = '0';
+    try {
+      assert.equal(hasCodegraphIndex({ rootRepo: rootDir }), false);
+    } finally {
+      if (prev === undefined) delete process.env.AGB_CODEGRAPH;
+      else process.env.AGB_CODEGRAPH = prev;
+    }
+
+    // .adlc/config.json opt-out
+    mkdirSync(join(rootDir, '.adlc'), { recursive: true });
+    writeFileSync(
+      join(rootDir, '.adlc', 'config.json'),
+      JSON.stringify({ accelerators: { codegraph: false } })
+    );
+    assert.equal(hasCodegraphIndex({ rootRepo: rootDir }), false);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+    rmSync(wtDir, { recursive: true, force: true });
+  }
+});
+
+test('buildContextSlice and discoverExternalCallers resolve rootRepo/.codegraph while reading worktree files', () => {
+  const rootDir = mkdtempSync(join(tmpdir(), 'agb-root-'));
+  const wtDir = mkdtempSync(join(tmpdir(), 'agb-wt-'));
+  try {
+    mkdirSync(join(rootDir, '.codegraph'));
+    mkdirSync(join(wtDir, 'lib'), { recursive: true });
+    writeFileSync(
+      join(wtDir, 'lib', 'svc.mjs'),
+      [
+        'export class OrderService {',
+        '  processOrder(id) {',
+        '    const updated = id + 1;',
+        '    return updated;',
+        '  }',
+        '}',
+      ].join('\n')
+    );
+
+    const fakeCg = join(rootDir, 'fake-cg.mjs');
+    writeFileSync(
+      fakeCg,
+      `#!/usr/bin/env node
+const [cmd, arg] = process.argv.slice(2);
+if (cmd === 'explore') {
+  console.log('EXPLORE_FROM_ROOT:' + process.cwd());
+} else if (cmd === 'callers') {
+  console.log(JSON.stringify({
+    callers: [
+      { file: 'lib/app.mjs', line: 12, snippet: 'svc.processOrder(42)' },
+      { file: '../escape.mjs', line: 1, snippet: 'evil traversal' },
+      { file: 'lib/svc.mjs', line: 2, snippet: 'in-scope self' }
+    ]
+  }));
+} else if (cmd === 'callees') {
+  console.log(JSON.stringify({
+    callees: [
+      { file: 'lib/db.mjs', line: 5, callee: 'saveOrder', snippet: 'saveOrder(updated)' }
+    ]
+  }));
+}
+`,
+      { mode: 0o755 }
+    );
+
+    const slice = buildContextSlice(
+      { id: 'T-WT', scope: ['lib/svc.mjs'] },
+      { rootRepo: rootDir, worktree: wtDir, codegraphBin: fakeCg }
+    );
+    assert.equal(slice.source, 'codegraph');
+    assert.match(slice.markdown, /EXPLORE_FROM_ROOT:/);
+    assert.ok(slice.artifactPath && realpathSync(slice.artifactPath).startsWith(realpathSync(wtDir)));
+
+    // Diff modifies ONLY the body line (no `export` on the +/- line!)
+    const bodyOnlyDiff = [
+      '--- a/lib/svc.mjs',
+      '+++ b/lib/svc.mjs',
+      '@@ -2,3 +2,3 @@',
+      '   processOrder(id) {',
+      '-    const updated = id;',
+      '+    const updated = id + 1;',
+      '     return updated;',
+    ].join('\n');
+
+    const cgCallers = discoverExternalCallers(bodyOnlyDiff, {
+      rootRepo: rootDir,
+      worktree: wtDir,
+      scope: ['lib/svc.mjs'],
+      codegraphBin: fakeCg,
+      tag: 'WT1',
+    });
+    assert.equal(cgCallers.source, 'codegraph');
+    assert.ok(cgCallers.symbols.includes('OrderService'));
+    assert.ok(cgCallers.symbols.includes('processOrder'));
+    // Traversal entry ../escape.mjs and in-scope lib/svc.mjs must be filtered out
+    assert.ok(cgCallers.callers.every((c) => c.file === 'lib/app.mjs'));
+    assert.ok(cgCallers.callers.length >= 1);
+    assert.ok(cgCallers.callees.length >= 1);
+    assert.match(cgCallers.promptBlock, /<<UNTRUSTED:CALLERS:WT1>>/);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+    rmSync(wtDir, { recursive: true, force: true });
+  }
+});
+
+test('buildReviewContextPack strips diff noise files and tracks truncatedContext', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-pack-'));
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    writeFileSync(join(dir, 'lib', 'calc.mjs'), 'export function addOne(n) {\n  return n + 1;\n}\n');
+    writeFileSync(
+      join(dir, 'lib', 'use.mjs'),
+      'import { addOne } from "./calc.mjs";\nexport const v = addOne(10);\n'
+    );
+
+    const noisyDiff = [
+      'diff --git a/package-lock.json b/package-lock.json',
+      '--- a/package-lock.json',
+      '+++ b/package-lock.json',
+      '@@ -1,2 +1,2 @@',
+      '-"version": "1.0.0"',
+      '+"version": "1.0.1"',
+      'diff --git a/dist/bundle.js b/dist/bundle.js',
+      '--- a/dist/bundle.js',
+      '+++ b/dist/bundle.js',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+      'diff --git a/website/generated/cli.mdx b/website/generated/cli.mdx',
+      '--- a/website/generated/cli.mdx',
+      '+++ b/website/generated/cli.mdx',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+      'diff --git a/test/__snapshots__/a.snap b/test/__snapshots__/a.snap',
+      '--- a/test/__snapshots__/a.snap',
+      '+++ b/test/__snapshots__/a.snap',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+      'diff --git a/lib/calc.mjs b/lib/calc.mjs',
+      '--- a/lib/calc.mjs',
+      '+++ b/lib/calc.mjs',
+      '@@ -1,3 +1,3 @@',
+      ' export function addOne(n) {',
+      '-  return n;',
+      '+  return n + 1;',
+      ' }',
+    ].join('\n');
+
+    const pack = buildReviewContextPack(noisyDiff, {
+      repo: dir,
+      scope: ['lib/calc.mjs'],
+      lens: 'correctness',
+      maxBytes: 4096,
+      tag: 'PACK1',
+    });
+    assert.equal(pack.source, 'static-ast');
+    assert.deepEqual(pack.omittedNoiseFiles, [
+      'package-lock.json',
+      'dist/bundle.js',
+      'website/generated/cli.mdx',
+      'test/__snapshots__/a.snap',
+    ]);
+    assert.ok(!pack.filteredDiff.includes('package-lock.json'));
+    assert.ok(pack.filteredDiff.includes('lib/calc.mjs'));
+    assert.deepEqual(pack.modifiedSymbols, ['addOne']);
+    assert.equal(pack.truncatedContext, false);
+    assert.match(pack.contextBlock, /lib\/use\.mjs/);
+
+    // Tiny maxBytes triggers truncatedContext: true
+    const tinyPack = buildReviewContextPack(noisyDiff, {
+      repo: dir,
+      scope: ['lib/calc.mjs'],
+      maxBytes: 40,
+      tag: 'PACK2',
+    });
+    assert.equal(tinyPack.truncatedContext, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('computeDiffBlastRadius enforces security-sensitive high level and supports CodeGraph impact', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-blast-'));
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    writeFileSync(join(dir, 'lib', 'leaf.mjs'), 'function helper(x) {\n  return x + 1;\n}\n');
+    writeFileSync(join(dir, 'lib', 'gates.mjs'), 'export function runGate() {\n  return true;\n}\n');
+
+    // 1. Trivial leaf change -> low
+    const leafDiff = [
+      '--- a/lib/leaf.mjs',
+      '+++ b/lib/leaf.mjs',
+      '@@ -1,3 +1,3 @@',
+      ' function helper(x) {',
+      '-  return x;',
+      '+  return x + 1;',
+      ' }',
+    ].join('\n');
+    const lowRes = computeDiffBlastRadius(leafDiff, { repo: dir, scope: ['lib/leaf.mjs'] });
+    assert.equal(lowRes.level, 'low');
+    assert.equal(lowRes.touchesSecuritySensitivePath, false);
+    assert.equal(lowRes.changedLoc, 2);
+    assert.equal(lowRes.source, 'static-ast');
+
+    // 2. Security-sensitive path (lib/gates.mjs) -> forced high even with 0 callers & 2 LOC
+    const secDiff = [
+      '--- a/lib/gates.mjs',
+      '+++ b/lib/gates.mjs',
+      '@@ -1,3 +1,3 @@',
+      ' export function runGate() {',
+      '-  return false;',
+      '+  return true;',
+      ' }',
+    ].join('\n');
+    const secRes = computeDiffBlastRadius(secDiff, { repo: dir, scope: ['lib/gates.mjs'] });
+    assert.equal(secRes.level, 'high');
+    assert.equal(secRes.touchesSecuritySensitivePath, true);
+    assert.equal(secRes.touchesExportedApi, true);
+
+    // 3. CodeGraph impact escalation -> high fanIn
+    mkdirSync(join(dir, '.codegraph'));
+    const fakeCg = join(dir, 'fake-cg-impact.mjs');
+    writeFileSync(
+      fakeCg,
+      `#!/usr/bin/env node
+const [cmd] = process.argv.slice(2);
+if (cmd === 'impact') {
+  console.log(JSON.stringify({ fanIn: 14 }));
+} else if (cmd === 'callers') {
+  console.log(JSON.stringify({ callers: [] }));
+} else if (cmd === 'callees') {
+  console.log(JSON.stringify({ callees: [] }));
+}
+`,
+      { mode: 0o755 }
+    );
+    const cgBlast = computeDiffBlastRadius(leafDiff, {
+      rootRepo: dir,
+      worktree: dir,
+      scope: ['lib/leaf.mjs'],
+      codegraphBin: fakeCg,
+    });
+    assert.equal(cgBlast.source, 'codegraph');
+    assert.equal(cgBlast.fanIn, 14);
+    assert.equal(cgBlast.level, 'high');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('extractCrossTicketSeams isolates cross-ticket hunks and merges codegraph cycles safely', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-seams-'));
+  try {
+    mkdirSync(join(dir, 'lib'), { recursive: true });
+    writeFileSync(join(dir, 'lib', 'a.mjs'), 'export function sharedApi() { return 1; }\n');
+    writeFileSync(
+      join(dir, 'lib', 'b.mjs'),
+      'import { sharedApi } from "./a.mjs";\nexport function useApi() { return sharedApi(); }\n'
+    );
+    writeFileSync(join(dir, 'lib', 'isolated.mjs'), 'export const solo = 42;\n');
+
+    const multiDiff = [
+      'diff --git a/lib/a.mjs b/lib/a.mjs',
+      '--- a/lib/a.mjs',
+      '+++ b/lib/a.mjs',
+      '@@ -1 +1 @@',
+      '-export function sharedApi() { return 0; }',
+      '+export function sharedApi() { return 1; }',
+      'diff --git a/lib/isolated.mjs b/lib/isolated.mjs',
+      '--- a/lib/isolated.mjs',
+      '+++ b/lib/isolated.mjs',
+      '@@ -1 +1 @@',
+      '-export const solo = 0;',
+      '+export const solo = 42;',
+    ].join('\n');
+
+    const scopes = [
+      { id: 'T-1', scope: ['lib/a.mjs'] },
+      { id: 'T-2', scope: ['lib/b.mjs'] },
+      { id: 'T-3', scope: ['lib/isolated.mjs'] },
+    ];
+
+    // Static-AST fallback
+    const astSeams = extractCrossTicketSeams(multiDiff, scopes, { repo: dir });
+    assert.equal(astSeams.source, 'static-ast');
+    assert.deepEqual(astSeams.seamFiles, ['lib/a.mjs']);
+    assert.ok(astSeams.seamDiff.includes('lib/a.mjs'));
+    assert.ok(!astSeams.seamDiff.includes('lib/isolated.mjs'));
+    assert.ok(astSeams.seamEdges.length >= 1);
+    assert.deepEqual(astSeams.cycles, []);
+
+    // Mock CodeGraph cycles (including traversal entry that must be dropped)
+    mkdirSync(join(dir, '.codegraph'));
+    const fakeCg = join(dir, 'fake-cg-cycles.mjs');
+    writeFileSync(
+      fakeCg,
+      `#!/usr/bin/env node
+const [cmd] = process.argv.slice(2);
+if (cmd === 'cycles') {
+  console.log(JSON.stringify({ cycles: [['lib/a.mjs', 'lib/b.mjs'], ['../evil.mjs']] }));
+} else {
+  console.log(JSON.stringify([]));
+}
+`,
+      { mode: 0o755 }
+    );
+    const cgSeams = extractCrossTicketSeams(multiDiff, scopes, {
+      rootRepo: dir,
+      worktree: dir,
+      codegraphBin: fakeCg,
+    });
+    assert.equal(cgSeams.source, 'codegraph');
+    assert.deepEqual(cgSeams.cycles, [['lib/a.mjs', 'lib/b.mjs']]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
