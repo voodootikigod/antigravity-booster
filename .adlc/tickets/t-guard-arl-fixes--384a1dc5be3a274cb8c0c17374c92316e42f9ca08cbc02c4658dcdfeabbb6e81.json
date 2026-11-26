@@ -1,12 +1,4 @@
 {
-  "_adlcArchive": {
-    "archivedAt": "2026-11-26T05:13:53.365Z",
-    "reason": "completed",
-    "sourceRevision": null,
-    "sourceStoreHash": "87aa0847821e446f4733ca65e0e257d11e35d190771cd08851cf7835102942c1",
-    "ticketHash": "3980529fb88ddc86f53881d0a3773a116516dbe305ceb0930f0268681f956c31",
-    "version": 1
-  },
   "body": "Address 5-lens Code ARL findings across evaluateAskPermission, buildRoleSettingsProfile, session-start lock recovery, NdjsonWorkerDaemon, prosecute, and scheduler.",
   "completed": true,
   "edges": [],

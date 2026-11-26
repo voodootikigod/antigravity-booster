@@ -1,12 +1,4 @@
 {
-  "_adlcArchive": {
-    "archivedAt": "2026-11-26T04:45:02.888Z",
-    "reason": "completed",
-    "sourceRevision": null,
-    "sourceStoreHash": "3fca51368fc777ea7a3cb46b567a847a7991afa0324b8facda93446327881772",
-    "ticketHash": "c075f64685013cad69f8d7920760f9ab39c2be8b096490d3de22c6ff916c9b17",
-    "version": 1
-  },
   "body": "Run npm run build, node website/scripts/gen-reference.mjs, check-bundle-externals, website check-all, plugin:validate, and npm test, then commit updated bundles and generated reference docs.",
   "completed": true,
   "edges": [],

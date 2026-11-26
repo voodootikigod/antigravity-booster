@@ -34,6 +34,13 @@ git worktree remove .worktrees/verification-and-guardrails
 git worktree prune
 git fetch --prune origin
 
+# Archive the completed PR #202 tickets from .adlc/tickets/ into .adlc/ticket-archive/
+# in forward topological order (sources before targets so no inbound edges remain)
+for id in T-GUARD-0 T-GUARD-0B T-GUARD-3 T-GUARD-2 T-GUARD-1A T-GUARD-1B T-GUARD-4 T-GUARD-5A T-GUARD-5B T-GUARD-6 T-GUARD-FINAL-SYNC T-GUARD-ARL-FIXES T-GUARD-MERGE-MAIN; do
+  npx --no-install adlc ticket archive "$id" --write --authorize --allow-unsigned
+done
+npx --no-install adlc ticket doctor --archive
+
 # Re-install / update the local Antigravity plugin from main and re-bootstrap
 agy plugin install /home/voodootikigod/Projects/voodootikigod/antigravity-booster
 /bin/sh "$HOME/.gemini/config/plugins/antigravity-booster/bin/node-launcher.sh" dist/agb.mjs bootstrap
