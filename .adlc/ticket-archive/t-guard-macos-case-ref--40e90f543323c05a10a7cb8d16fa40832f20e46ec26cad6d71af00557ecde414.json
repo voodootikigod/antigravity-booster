@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T16:15:41.549Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "72c5675bd87553821481c8a2de080b44ff24276b2889e15244df604779b3d0fe",
+    "ticketHash": "ed83f9b75c3c0128f2ae73f7067e2aff8150c2be7dfea1479fbb2a4e922bfc43",
+    "version": 1
+  },
   "body": "Fix macOS CI failure in test/scheduler.test.mjs where refs/namespaces/attempts/t2/rebased pre-exists on a case-insensitive filesystem (APFS) and causes git push to refs/namespaces/attempts/T2/... to resolve on disk as attempts/t2/..., triggering Unauthorized or unregistered attempt namespace modified in verifyRootGitIntegrity. Lowercase t.id in attemptSlug (matching tempRef) and compare attemptNamespace, knownAttemptNamespaces, and activeAttemptNamespaces case-insensitively in verifyRootGitIntegrity, with unit test coverage.",
   "completed": true,
   "edges": [],
