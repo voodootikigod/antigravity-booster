@@ -4,7 +4,7 @@
 // so the fake plugin root uses a launcher shim that execs this test's Node.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -25,7 +25,11 @@ cpSync(join(REPO, 'lib', 'active-rails.mjs'), join(plugin, 'lib', 'active-rails.
 // Unbundled sources resolve @adlc/tickets and minimatch via node_modules (ESM ignores NODE_PATH).
 const nmSrc = (() => {
   let d = REPO;
-  while (d !== dirname(d) && !existsSync(join(d, 'node_modules'))) d = dirname(d);
+  while (d !== dirname(d)) {
+    const nm = join(d, 'node_modules');
+    if (existsSync(nm) && !lstatSync(nm).isSymbolicLink() && !existsSync(join(nm, '.agb-materialized'))) break;
+    d = dirname(d);
+  }
   return join(d, 'node_modules');
 })();
 symlinkSync(nmSrc, join(plugin, 'node_modules'), 'dir');

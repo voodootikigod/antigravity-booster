@@ -271,7 +271,7 @@ test('refactored call sites forward exact expected CLI arguments including --jso
       if (args[1] !== '--tickets' || args[2] !== '/tmp/t.json' || args[3] !== '--json' || args[4] !== '--graph-coupling') process.exit(1);
       console.log(JSON.stringify({ recommendedWidth: 2 }));
     } else if (tool === 'hollow-test') {
-      if (args[1] !== '--test-cmd' || args[2] !== 'npm test' || args[3] !== '--base' || args[4] !== 'origin/custom-base' || args[5] !== '--json') process.exit(1);
+      if (args[1] !== '--test-cmd' || args[2] !== 'npm test' || args[3] !== '--base' || args[4] !== 'origin/custom-base' || args[5] !== '--test-glob' || args[6] !== 'dist/**' || args[7] !== '--json') process.exit(1);
       console.log(JSON.stringify({ summary: { total: 3, killed: 3 }, mutants: [] }));
     } else if (tool === 'review-calibration') {
       if (args[1] !== '--review-cmd' || args[2] !== 'echo ship' || args[3] !== '--json') process.exit(1);

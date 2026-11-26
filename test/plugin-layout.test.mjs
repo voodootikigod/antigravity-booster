@@ -291,6 +291,7 @@ test('layout: committed dist/hooks/pre-tool-use.bundle.mjs matches fresh non-mut
   try {
     const outFile = join(tmpDir, 'pre-tool-use.bundle.mjs');
     esbuild.buildSync({
+      absWorkingDir: ROOT,
       entryPoints: [join(ROOT, 'hooks', 'pre-tool-use.mjs')],
       bundle: true,
       platform: 'node',
@@ -304,9 +305,15 @@ test('layout: committed dist/hooks/pre-tool-use.bundle.mjs matches fresh non-mut
       },
       logLevel: 'silent',
     });
-    const freshBytes = readFileSync(outFile);
-    const committedBytes = readFileSync(join(ROOT, 'dist', 'hooks', 'pre-tool-use.bundle.mjs'));
-    assert.equal(freshBytes.equals(committedBytes), true, 'dist/hooks/pre-tool-use.bundle.mjs is stale; run npm run build');
+    const normalizeWorktreeNodeModules = (text) =>
+      text
+        .replace(/^(\s*\/\/ )(?:\.\.\/)+node_modules\//gm, '$1node_modules/')
+        .replace(/^(\s*")(?:\.\.\/)+node_modules\//gm, '$1node_modules/');
+    const freshText = normalizeWorktreeNodeModules(readFileSync(outFile, 'utf8'));
+    const committedText = normalizeWorktreeNodeModules(
+      readFileSync(join(ROOT, 'dist', 'hooks', 'pre-tool-use.bundle.mjs'), 'utf8')
+    );
+    assert.equal(freshText, committedText, 'dist/hooks/pre-tool-use.bundle.mjs is stale; run npm run build');
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });
   }

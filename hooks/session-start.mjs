@@ -61,7 +61,12 @@ function hasLiveBootstrapLock(lockPath) {
     if (raw.trim() === '') {
       return Date.now() - st.mtimeMs < 5_000;
     }
-    const parsed = JSON.parse(raw);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return Date.now() - st.mtimeMs < 5_000;
+    }
     const pid = Number(parsed?.pid);
     const ts = Number(parsed?.ts ?? parsed?.startTime);
     if (!Number.isFinite(ts)) return false;
@@ -170,6 +175,8 @@ function runDetachedWorker(workerArgs) {
     writeFileSync(fd, lockPayload, { encoding: 'utf8' });
     closeSync(fd);
     fd = null;
+
+    if (hasBootstrapStamp(stampPath)) return;
 
     execFileSync(process.execPath, [join(targetPluginRoot, 'dist', 'agb.mjs'), 'bootstrap'], {
       stdio: 'ignore',

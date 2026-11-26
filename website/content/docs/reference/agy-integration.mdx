@@ -4,7 +4,7 @@ description: "How agb invokes the agy CLI: arguments, --project isolation, outpu
 claims: [C2, C19, C34]
 ---
 
-Every model call agb makes goes through one function, [`runAgy`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L221-L245) in `lib/agy.mjs`: one call, one agy process, one structured result. It never throws on an agent failure; it returns `{ ok, output, ms, error, kind }` and lets the caller decide. agb requires agy 1.2.6 or later (`agb doctor` checks this) ([MIN_AGY_VERSION](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26)).
+Every model call agb makes goes through one function, [`runAgy`](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/agy.mjs#L221-L245) in `lib/agy.mjs`: one call, one agy process, one structured result. It never throws on an agent failure; it returns `{ ok, output, ms, error, kind }` and lets the caller decide. agb requires agy 1.5.17 or later (`agb doctor` checks this) ([MIN_AGY_VERSION](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/doctor.mjs#L26)).
 
 ## Invocation
 

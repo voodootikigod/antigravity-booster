@@ -832,3 +832,40 @@ test('runPlan: builder emitting TICKET-BLOCKED after dirtying worktree skips com
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('verifyRootGitIntegrity: tolerates case-folded attempt namespace refs on case-insensitive filesystems', () => {
+  const repo = makeTestRepo();
+  try {
+    const wt = createWorktree(repo, 'T2', 'main');
+    setupAttemptGitDatabase(repo, wt, 'main');
+    writeFileSync(join(wt, 'T2.txt'), 'change\n');
+    execFileSync('git', ['add', 'T2.txt'], { cwd: wt });
+    execFileSync('git', ['commit', '-qm', 'T2 work'], { cwd: wt });
+
+    const preSnapshot = snapshotRootGit(repo);
+    const attemptSlugUpper = 'attempts/T2/1/tokenCase';
+    const attemptSlugLower = attemptSlugUpper.toLowerCase();
+    const candidateSha = hostMediatedFetch(repo, wt, attemptSlugLower);
+
+    const okCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      ticketId: 'T2',
+      attemptNamespace: attemptSlugUpper,
+      activeAttemptNamespaces: new Set([attemptSlugUpper]),
+      candidateSha,
+    });
+    assert.equal(okCheck.ok, true, `case-folded attempt namespace must be accepted: ${okCheck.error}`);
+
+    const wrongTokenSlug = 'attempts/t2/1/other999';
+    execFileSync('git', ['update-ref', `refs/namespaces/${wrongTokenSlug}/refs/heads/candidate`, candidateSha], { cwd: repo });
+    const badCheck = verifyRootGitIntegrity(repo, preSnapshot, {
+      ticketId: 'T2',
+      attemptNamespace: attemptSlugUpper,
+      activeAttemptNamespaces: new Set([attemptSlugUpper]),
+      candidateSha,
+    });
+    assert.equal(badCheck.ok, false);
+    assert.match(badCheck.error, /Unauthorized or unregistered attempt namespace modified/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

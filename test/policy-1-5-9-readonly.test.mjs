@@ -63,7 +63,7 @@ const TOOLS = {
 };
 const PATH_TOOLS = Object.keys(TOOLS).filter((n) => !['read_browser_page', 'read_url_content'].includes(n));
 
-test('REQUIRED_READ_PATH_KEYS covers exactly the 10 required-path read tools, all in READ_ONLY_TOOLS', () => {
+test('REQUIRED_READ_PATH_KEYS covers exactly the 9 required-path read tools, all in READ_ONLY_TOOLS', () => {
   assert.deepEqual(REQUIRED_READ_PATH_KEYS, {
     view_file: ['absolutepath', 'filepath', 'path'],
     view_file_outline: ['absolutepath', 'filepath', 'path'],
@@ -73,7 +73,6 @@ test('REQUIRED_READ_PATH_KEYS covers exactly the 10 required-path read tools, al
     read_url_content: ['url'],
     list_dir: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
     list_directory: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
-    list_permissions: ['paths', 'path'],
     search_in_file: ['paths', 'path', 'directorypath', 'searchpath'],
   });
   for (const name of Object.keys(REQUIRED_READ_PATH_KEYS)) assert.ok(READ_ONLY_TOOLS.has(name), name);
@@ -115,7 +114,11 @@ for (const col of COLUMNS) {
 
   test(`column ${col.label}: missing, empty and confused path parameters are denied`, () => {
     for (const [name, [key]] of Object.entries(TOOLS)) {
-      assert.equal(run(name, {}, col).reason, 'Missing required read-tool path parameter', name);
+      if (name === 'list_permissions') {
+        assert.equal(run(name, {}, col).decision, 'pass', name);
+      } else {
+        assert.equal(run(name, {}, col).reason, 'Missing required read-tool path parameter', name);
+      }
       assert.equal(run(name, { [key]: '   ' }, col).reason, 'Invalid read-tool path parameter', name);
       assert.equal(run(name, { [key]: 42 }, col).reason, 'Invalid read-tool path parameter', name);
     }

@@ -1,0 +1,12 @@
+{
+  "body": "Run npm run build, node website/scripts/gen-reference.mjs, check-bundle-externals, website check-all, plugin:validate, and npm test, then commit updated bundles and generated reference docs.",
+  "completed": true,
+  "edges": [],
+  "id": "T-GUARD-FINAL-SYNC",
+  "rails": [],
+  "scope": [
+    "dist/**",
+    "website/**"
+  ],
+  "title": "Rebuild dist bundles and regenerate website reference documentation for v2.0 guardrails"
+}

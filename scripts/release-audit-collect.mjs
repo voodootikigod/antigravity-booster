@@ -72,7 +72,7 @@ export const UNITS = Object.freeze([
     kind: 'cli',
     label: 'CLI entry, slash commands, status, TUI/HUD, and mux',
     paths: ['bin/agb.mjs', 'dist/agb.mjs', 'lib/status.mjs', 'lib/sweep.mjs', 'lib/semver.mjs', 'lib/agy.mjs',
-      'lib/charters.mjs', 'lib/brain.mjs', 'lib/plugin-paths.mjs', 'lib/cli-statusline.mjs', 'lib/hud.mjs',
+      'lib/role-settings.mjs', 'lib/charters.mjs', 'lib/brain.mjs', 'lib/plugin-paths.mjs', 'lib/cli-statusline.mjs', 'lib/hud.mjs',
       'lib/tui.mjs', 'lib/mux.mjs', 'lib/overview-pane.mjs', 'lib/accept-tui.mjs', 'lib/accept.mjs',
       'lib/terminal-osc.mjs', 'lib/models.mjs', 'lib/json.mjs', 'commands', 'agents', 'templates', 'docs/calibration'],
     rails: [],
@@ -116,7 +116,7 @@ export const UNITS = Object.freeze([
     kind: 'install',
     label: 'Plugin manifest, bootstrap, doctor, migrate and rollback',
     paths: ['plugin.json', 'package.json', 'lib/bootstrap.mjs', 'lib/doctor.mjs', 'lib/doctor-models.mjs',
-      'lib/migrate.mjs', 'lib/migration-lock.mjs'],
+      'lib/doctor-settings.mjs', 'lib/migrate.mjs', 'lib/migration-lock.mjs'],
     rails: [],
   },
   {

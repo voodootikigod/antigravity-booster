@@ -242,7 +242,7 @@ test('R2 shell: ~user home paths are expanded for protection matching', () => {
 
 test('R2 shell: ticket lifecycle through the scoped @adlc/cli package needs --authorize', () => {
   assert.equal(sh('npx @adlc/cli ticket complete T1 --write', I), 'deny');
-  assert.equal(sh('npx @adlc/cli@1.11.1 ticket complete T1 --write --authorize', I), 'ask');
+  assert.equal(sh('npx @adlc/cli@1.11.1 ticket complete T1 --write --authorize', I), 'force_ask');
 });
 
 test('R2 shell: sh -c / bash -c scripts are re-lexed and classified', () => {

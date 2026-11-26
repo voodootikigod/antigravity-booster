@@ -1,159 +1,16 @@
 import { createRequire as __agbCreateRequire } from 'node:module'; const require = __agbCreateRequire(import.meta.url);
-
-// mcp/server.mjs
-import readline from "node:readline";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { basename as basename3, dirname as dirname6, join as join7, parse as parse2, relative as relative4, resolve as resolve7, isAbsolute as isAbsolute4, sep as sep3 } from "node:path";
-import {
-  closeSync as closeSync2,
-  constants as constants2,
-  existsSync as existsSync6,
-  fstatSync as fstatSync2,
-  lstatSync as lstatSync6,
-  openSync as openSync2,
-  readFileSync as readFileSync6,
-  readSync,
-  realpathSync as realpathSync4,
-  statSync as statSync2
-} from "node:fs";
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
+};
 
 // lib/models.mjs
 import { AsyncLocalStorage } from "node:async_hooks";
-var MODELS = {
-  "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
-  "gemini-pro": [
-    "gemini-4-argon-low",
-    "gemini-4-argon-medium",
-    "gemini-4-argon-high",
-    "gemini-4-carbon-low",
-    "gemini-4-carbon-medium",
-    "gemini-4-carbon-high",
-    "gemini-4-hydrogen-low",
-    "gemini-4-hydrogen-medium",
-    "gemini-4-hydrogen-high",
-    "gemini-4-hydrogen-xhigh",
-    "gemini-4-neon-low",
-    "gemini-4-neon-medium",
-    "gemini-4-neon-high",
-    "gemini-4-neon-xhigh",
-    "gemini-pro-orchestrator",
-    "gemini-pro-orchestrator-argon",
-    "gemini-pro-orchestrator-neon"
-  ],
-  claude: [
-    "claude-sonnet-5-5-low",
-    "claude-sonnet-5-5-medium",
-    "claude-sonnet-5-5-high",
-    "claude-opus-5-5-low",
-    "claude-opus-5-5-medium",
-    "claude-opus-5-5-high"
-  ],
-  "gpt-oss": ["gpt-oss-120b-medium"]
-};
-var ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
-var MODEL_ALIASES = {
-  "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
-  "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
-  "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
-  "gemini 4 argon (low)": "gemini-4-argon-low",
-  "gemini 4 argon (medium)": "gemini-4-argon-medium",
-  "gemini 4 argon (high)": "gemini-4-argon-high",
-  "gemini 4 carbon (low)": "gemini-4-carbon-low",
-  "gemini 4 carbon (medium)": "gemini-4-carbon-medium",
-  "gemini 4 carbon (high)": "gemini-4-carbon-high",
-  "gemini 4 hydrogen (low)": "gemini-4-hydrogen-low",
-  "gemini 4 hydrogen (medium)": "gemini-4-hydrogen-medium",
-  "gemini 4 hydrogen (high)": "gemini-4-hydrogen-high",
-  "gemini 4 hydrogen (xhigh)": "gemini-4-hydrogen-xhigh",
-  "gemini 4 neon (low)": "gemini-4-neon-low",
-  "gemini 4 neon (medium)": "gemini-4-neon-medium",
-  "gemini 4 neon (high)": "gemini-4-neon-high",
-  "gemini 4 neon (xhigh)": "gemini-4-neon-xhigh",
-  "orchestrator (carbon)": "gemini-pro-orchestrator",
-  "orchestrator (argon)": "gemini-pro-orchestrator-argon",
-  "orchestrator (neon)": "gemini-pro-orchestrator-neon",
-  "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
-  "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
-  "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
-  "claude opus 5.5 (low)": "claude-opus-5-5-low",
-  "claude opus 5.5 (medium)": "claude-opus-5-5-medium",
-  "claude opus 5.5 (high)": "claude-opus-5-5-high",
-  "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
-};
-var RETIRED_FLASH_GENERATIONS = ["3.5", "3.6", "3.7"];
-var EFFORTS = ["low", "medium", "high"];
-var retiredEntries = [
-  ...RETIRED_FLASH_GENERATIONS.flatMap(
-    (gen) => EFFORTS.flatMap((e) => [
-      [`gemini-${gen}-flash-${e}`, `gemini-3.8-flash-${e}`],
-      [`gemini ${gen} flash (${e})`, `gemini-3.8-flash-${e}`]
-    ])
-  ),
-  ...["low", "high"].flatMap((e) => [
-    [`gemini-3.1-pro-${e}`, `gemini-4-argon-${e}`],
-    [`gemini 3.1 pro (${e})`, `gemini-4-argon-${e}`]
-  ]),
-  ["claude-sonnet-4-6", "claude-sonnet-5-5-medium"],
-  ["claude sonnet 4.6 (thinking)", "claude-sonnet-5-5-medium"],
-  ["claude-opus-4-6-thinking", "claude-opus-5-5-high"],
-  ["claude opus 4.6 (thinking)", "claude-opus-5-5-high"]
-];
-var RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
-var FRONTIER_NO_ORCHESTRATOR = Object.freeze([
-  "gemini-4-argon-high",
-  "claude-sonnet-5-5-high",
-  "gemini-4-carbon-high",
-  "gemini-4-neon-high",
-  "claude-opus-5-5-high"
-]);
-var TIER_CANDIDATES = {
-  cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
-  mid: [
-    "gemini-3.8-flash-high",
-    "gemini-4-argon-low",
-    "gemini-4-carbon-medium",
-    "gemini-4-hydrogen-medium",
-    "gemini-4-neon-medium",
-    "claude-sonnet-5-5-medium"
-  ],
-  frontier: Object.freeze([
-    "gemini-pro-orchestrator",
-    "claude-sonnet-5-5-high",
-    "gemini-pro-orchestrator-argon",
-    "gemini-pro-orchestrator-neon",
-    "gemini-4-argon-high",
-    "gemini-4-carbon-high",
-    "gemini-4-neon-high",
-    "claude-opus-5-5-high"
-  ])
-};
-var CODE_ARL_LENSES = Object.freeze([
-  "correctness_redteam",
-  "security",
-  "simplicity",
-  "evidence_runner",
-  "anti_slop"
-]);
-var PLAN_ARL_LENSES = Object.freeze([
-  "devils_advocate",
-  "requirements_fidelity",
-  "simplicity",
-  "evidence_strategy",
-  "dag_topology"
-]);
-var ARL_LENS_MODELS = Object.freeze({
-  correctness_redteam: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
-  security: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
-  simplicity: { primary: "claude-sonnet-5-5-medium", fallback: "gemini-3.8-flash-medium" },
-  evidence_runner: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
-  anti_slop: { primary: "claude-sonnet-5-5-high", fallback: "gemini-3.8-flash-high" },
-  devils_advocate: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
-  requirements_fidelity: { primary: "gemini-4-argon-medium", fallback: "claude-sonnet-5-5-high" },
-  evidence_strategy: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
-  dag_topology: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
-  arbiter: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" }
-});
 function resolveModelSlug(model) {
   if (typeof model !== "string") return model;
   const normalized = model.trim().toLowerCase();
@@ -194,11 +51,6 @@ function upstreamPoolOf(model) {
 function toModelSet(v) {
   return v instanceof Set ? v : Array.isArray(v) ? new Set(v) : null;
 }
-var runtimeState = {
-  disableOrchestrator: false,
-  disabledModels: null
-};
-var routingAls = new AsyncLocalStorage();
 function tierCandidates(tier = "mid", poolHint, options) {
   const activeState = routingAls.getStore() ?? runtimeState;
   const effectiveTier = TIER_CANDIDATES[tier] ? tier : "mid";
@@ -213,34 +65,228 @@ function tierCandidates(tier = "mid", poolHint, options) {
     return fam === poolHint;
   });
 }
-var VALID_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
-var SLUG_EFFORT_LADDER = Object.freeze(["low", "medium", "high", "xhigh"]);
+var MODELS, ALL_MODELS, MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, EFFORTS, retiredEntries, RETIRED_MODEL_MAP, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, CODE_ARL_LENSES, PLAN_ARL_LENSES, ARL_LENS_MODELS, runtimeState, routingAls, VALID_EFFORTS, SLUG_EFFORT_LADDER;
+var init_models = __esm({
+  "lib/models.mjs"() {
+    MODELS = {
+      "gemini-flash": ["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high"],
+      "gemini-pro": [
+        "gemini-4-argon-low",
+        "gemini-4-argon-medium",
+        "gemini-4-argon-high",
+        "gemini-4-carbon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-carbon-high",
+        "gemini-4-hydrogen-low",
+        "gemini-4-hydrogen-medium",
+        "gemini-4-hydrogen-high",
+        "gemini-4-hydrogen-xhigh",
+        "gemini-4-neon-low",
+        "gemini-4-neon-medium",
+        "gemini-4-neon-high",
+        "gemini-4-neon-xhigh",
+        "gemini-pro-orchestrator",
+        "gemini-pro-orchestrator-argon",
+        "gemini-pro-orchestrator-neon"
+      ],
+      claude: [
+        "claude-sonnet-5-5-low",
+        "claude-sonnet-5-5-medium",
+        "claude-sonnet-5-5-high",
+        "claude-opus-5-5-low",
+        "claude-opus-5-5-medium",
+        "claude-opus-5-5-high"
+      ],
+      "gpt-oss": ["gpt-oss-120b-medium"]
+    };
+    ALL_MODELS = Object.freeze(Object.values(MODELS).flat());
+    MODEL_ALIASES = {
+      "gemini 3.8 flash (low)": "gemini-3.8-flash-low",
+      "gemini 3.8 flash (medium)": "gemini-3.8-flash-medium",
+      "gemini 3.8 flash (high)": "gemini-3.8-flash-high",
+      "gemini 4 argon (low)": "gemini-4-argon-low",
+      "gemini 4 argon (medium)": "gemini-4-argon-medium",
+      "gemini 4 argon (high)": "gemini-4-argon-high",
+      "gemini 4 carbon (low)": "gemini-4-carbon-low",
+      "gemini 4 carbon (medium)": "gemini-4-carbon-medium",
+      "gemini 4 carbon (high)": "gemini-4-carbon-high",
+      "gemini 4 hydrogen (low)": "gemini-4-hydrogen-low",
+      "gemini 4 hydrogen (medium)": "gemini-4-hydrogen-medium",
+      "gemini 4 hydrogen (high)": "gemini-4-hydrogen-high",
+      "gemini 4 hydrogen (xhigh)": "gemini-4-hydrogen-xhigh",
+      "gemini 4 neon (low)": "gemini-4-neon-low",
+      "gemini 4 neon (medium)": "gemini-4-neon-medium",
+      "gemini 4 neon (high)": "gemini-4-neon-high",
+      "gemini 4 neon (xhigh)": "gemini-4-neon-xhigh",
+      "orchestrator (carbon)": "gemini-pro-orchestrator",
+      "orchestrator (argon)": "gemini-pro-orchestrator-argon",
+      "orchestrator (neon)": "gemini-pro-orchestrator-neon",
+      "claude sonnet 5.5 (low)": "claude-sonnet-5-5-low",
+      "claude sonnet 5.5 (medium)": "claude-sonnet-5-5-medium",
+      "claude sonnet 5.5 (high)": "claude-sonnet-5-5-high",
+      "claude opus 5.5 (low)": "claude-opus-5-5-low",
+      "claude opus 5.5 (medium)": "claude-opus-5-5-medium",
+      "claude opus 5.5 (high)": "claude-opus-5-5-high",
+      "gpt-oss 120b (medium)": "gpt-oss-120b-medium"
+    };
+    RETIRED_FLASH_GENERATIONS = ["3.5", "3.6", "3.7"];
+    EFFORTS = ["low", "medium", "high"];
+    retiredEntries = [
+      ...RETIRED_FLASH_GENERATIONS.flatMap(
+        (gen) => EFFORTS.flatMap((e) => [
+          [`gemini-${gen}-flash-${e}`, `gemini-3.8-flash-${e}`],
+          [`gemini ${gen} flash (${e})`, `gemini-3.8-flash-${e}`]
+        ])
+      ),
+      ...["low", "high"].flatMap((e) => [
+        [`gemini-3.1-pro-${e}`, `gemini-4-argon-${e}`],
+        [`gemini 3.1 pro (${e})`, `gemini-4-argon-${e}`]
+      ]),
+      ["claude-sonnet-4-6", "claude-sonnet-5-5-medium"],
+      ["claude sonnet 4.6 (thinking)", "claude-sonnet-5-5-medium"],
+      ["claude-opus-4-6-thinking", "claude-opus-5-5-high"],
+      ["claude opus 4.6 (thinking)", "claude-opus-5-5-high"]
+    ];
+    RETIRED_MODEL_MAP = Object.freeze(Object.fromEntries(retiredEntries));
+    FRONTIER_NO_ORCHESTRATOR = Object.freeze([
+      "gemini-4-argon-high",
+      "claude-sonnet-5-5-high",
+      "gemini-4-carbon-high",
+      "gemini-4-neon-high",
+      "claude-opus-5-5-high"
+    ]);
+    TIER_CANDIDATES = {
+      cheap: ["gemini-3.8-flash-low", "gemini-3.8-flash-medium"],
+      mid: [
+        "gemini-3.8-flash-high",
+        "gemini-4-argon-low",
+        "gemini-4-carbon-medium",
+        "gemini-4-hydrogen-medium",
+        "gemini-4-neon-medium",
+        "claude-sonnet-5-5-medium"
+      ],
+      frontier: Object.freeze([
+        "gemini-pro-orchestrator",
+        "claude-sonnet-5-5-high",
+        "gemini-pro-orchestrator-argon",
+        "gemini-pro-orchestrator-neon",
+        "gemini-4-argon-high",
+        "gemini-4-carbon-high",
+        "gemini-4-neon-high",
+        "claude-opus-5-5-high"
+      ])
+    };
+    CODE_ARL_LENSES = Object.freeze([
+      "correctness_redteam",
+      "security",
+      "simplicity",
+      "evidence_runner",
+      "anti_slop"
+    ]);
+    PLAN_ARL_LENSES = Object.freeze([
+      "devils_advocate",
+      "requirements_fidelity",
+      "simplicity",
+      "evidence_strategy",
+      "dag_topology"
+    ]);
+    ARL_LENS_MODELS = Object.freeze({
+      correctness_redteam: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
+      security: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
+      simplicity: { primary: "claude-sonnet-5-5-medium", fallback: "gemini-3.8-flash-medium" },
+      evidence_runner: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
+      anti_slop: { primary: "claude-sonnet-5-5-high", fallback: "gemini-3.8-flash-high" },
+      devils_advocate: { primary: "claude-opus-5-5-high", fallback: "gemini-4-argon-high" },
+      requirements_fidelity: { primary: "gemini-4-argon-medium", fallback: "claude-sonnet-5-5-high" },
+      evidence_strategy: { primary: "gemini-3.8-flash-medium", fallback: "claude-sonnet-5-5-medium" },
+      dag_topology: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" },
+      arbiter: { primary: "gemini-4-argon-high", fallback: "claude-opus-5-5-high" }
+    });
+    runtimeState = {
+      disableOrchestrator: false,
+      disabledModels: null
+    };
+    routingAls = new AsyncLocalStorage();
+    VALID_EFFORTS = Object.freeze(["low", "medium", "high", "xhigh", "max"]);
+    SLUG_EFFORT_LADDER = Object.freeze(["low", "medium", "high", "xhigh"]);
+  }
+});
 
 // lib/plugin-paths.mjs
-var BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
-var VENDORED_ADLC_ANTIGRAVITY_TARBALL = `vendor/cache/adlc-antigravity-${BUNDLED_ADLC_ANTIGRAVITY_VERSION}.tgz`;
-var INSTALL_COPY_EXCLUSIONS = Object.freeze(["node_modules", ".worktrees", ".git"]);
-var STAGE_COPY_EXCLUSIONS = Object.freeze([...INSTALL_COPY_EXCLUSIONS, "maintainer-skills", ".claude", ".agents"]);
+var BUNDLED_ADLC_ANTIGRAVITY_VERSION, VENDORED_ADLC_ANTIGRAVITY_TARBALL, INSTALL_COPY_EXCLUSIONS, STAGE_COPY_EXCLUSIONS;
+var init_plugin_paths = __esm({
+  "lib/plugin-paths.mjs"() {
+    BUNDLED_ADLC_ANTIGRAVITY_VERSION = "1.7.0";
+    VENDORED_ADLC_ANTIGRAVITY_TARBALL = `vendor/cache/adlc-antigravity-${BUNDLED_ADLC_ANTIGRAVITY_VERSION}.tgz`;
+    INSTALL_COPY_EXCLUSIONS = Object.freeze(["node_modules", ".worktrees", ".git"]);
+    STAGE_COPY_EXCLUSIONS = Object.freeze([...INSTALL_COPY_EXCLUSIONS, "maintainer-skills", ".claude", ".agents"]);
+  }
+});
 
-// lib/doctor.mjs
-import { execFile as execFile2, execFileSync as execFileSync2, execSync, spawnSync } from "child_process";
-import { promisify as promisify2 } from "util";
+// lib/digest.mjs
+var init_digest = __esm({
+  "lib/digest.mjs"() {
+  }
+});
 
 // lib/semver.mjs
-var NUM = "(0|[1-9]\\d*)";
-var PRE_ID = "(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)";
-var BUILD_ID = "[0-9A-Za-z-]+";
-var RE = new RegExp(
-  `^${NUM}\\.${NUM}\\.${NUM}(?:-(${PRE_ID}(?:\\.${PRE_ID})*))?(?:\\+(${BUILD_ID}(?:\\.${BUILD_ID})*))?$`
-);
+var NUM, PRE_ID, BUILD_ID, RE;
+var init_semver = __esm({
+  "lib/semver.mjs"() {
+    NUM = "(0|[1-9]\\d*)";
+    PRE_ID = "(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)";
+    BUILD_ID = "[0-9A-Za-z-]+";
+    RE = new RegExp(
+      `^${NUM}\\.${NUM}\\.${NUM}(?:-(${PRE_ID}(?:\\.${PRE_ID})*))?(?:\\+(${BUILD_ID}(?:\\.${BUILD_ID})*))?$`
+    );
+  }
+});
 
 // node_modules/@adlc/tickets/lib/pointer.mjs
-var MAX_POINTER_BYTES = 64 * 1024;
-var DEPRECATED_ID_KEYS = Object.freeze(["ticket", "ticketId"]);
+var MAX_POINTER_BYTES, DEPRECATED_ID_KEYS;
+var init_pointer = __esm({
+  "node_modules/@adlc/tickets/lib/pointer.mjs"() {
+    MAX_POINTER_BYTES = 64 * 1024;
+    DEPRECATED_ID_KEYS = Object.freeze(["ticket", "ticketId"]);
+  }
+});
 
 // node_modules/@adlc/tickets/lib/constants.mjs
-var ACTIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-directory", version: 1 });
-var ARCHIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-archive", version: 1 });
+var ACTIVE_MANIFEST, ARCHIVE_MANIFEST;
+var init_constants = __esm({
+  "node_modules/@adlc/tickets/lib/constants.mjs"() {
+    init_pointer();
+    ACTIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-directory", version: 1 });
+    ARCHIVE_MANIFEST = Object.freeze({ format: "adlc-ticket-archive", version: 1 });
+  }
+});
+
+// node_modules/@adlc/tickets/lib/errors.mjs
+var init_errors = __esm({
+  "node_modules/@adlc/tickets/lib/errors.mjs"() {
+  }
+});
+
+// node_modules/@adlc/tickets/lib/canonical.mjs
+var init_canonical = __esm({
+  "node_modules/@adlc/tickets/lib/canonical.mjs"() {
+    init_errors();
+    init_constants();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/ids.mjs
+var init_ids = __esm({
+  "node_modules/@adlc/tickets/lib/ids.mjs"() {
+  }
+});
+
+// node_modules/@adlc/tickets/lib/filename.mjs
+var init_filename = __esm({
+  "node_modules/@adlc/tickets/lib/filename.mjs"() {
+    init_canonical();
+  }
+});
 
 // node_modules/@adlc/tickets/lib/schema.mjs
 function validateTicket(ticket, { archive = false } = {}) {
@@ -273,119 +319,14 @@ function validateTicket(ticket, { archive = false } = {}) {
   }
   return errors;
 }
+var init_schema = __esm({
+  "node_modules/@adlc/tickets/lib/schema.mjs"() {
+    init_errors();
+    init_canonical();
+  }
+});
 
 // node_modules/@adlc/tickets/lib/help.mjs
-var SYNC_CATEGORIES = Object.freeze([
-  "feature",
-  "bug",
-  "bugfix",
-  "refactor",
-  "docs",
-  "chore",
-  "test",
-  "spec",
-  "contract",
-  "architecture"
-]);
-var TICKET_FIELDS = [
-  {
-    name: "id",
-    type: "string",
-    required: false,
-    summary: "Ticket id. Omit it on create and the store mints a ULID (T-01K...); supply one only to keep an existing T<n> id.",
-    schema: { type: "string", minLength: 1 }
-  },
-  {
-    name: "title",
-    type: "string",
-    required: true,
-    summary: "One imperative line naming the work.",
-    schema: { type: "string", minLength: 1 }
-  },
-  {
-    name: "body",
-    type: "string",
-    required: false,
-    summary: "The self-contained ticket text: what to build, the acceptance criteria, and the concrete command that verifies each one. A fresh agent sees only this \u2014 never the conversation that produced it. coldstart audits it for gaps.",
-    schema: {}
-    // unpoliced by validateTicket — see the `schema` note below
-  },
-  {
-    name: "category",
-    type: "string",
-    required: false,
-    // The store accepts any string, so the schema must too — but ticket-sync's
-    // rich validator pins an enum, and a category outside it round-trips to a
-    // remote provider and then fails closed on the next sync. Name the set here
-    // so the choice is made once, at authoring time.
-    summary: "Routing hint, not a free-form label. model-router sends contract, spec, and architecture to a frontier model and routes the rest from empirical priors. Keep to the set ticket-sync accepts or a synced ticket cannot converge: feature, bug, bugfix, refactor, docs, chore, test, spec, contract, architecture.",
-    schema: {}
-    // unpoliced by validateTicket — see the `schema` note below
-  },
-  {
-    name: "duration",
-    type: "number > 0",
-    required: false,
-    summary: "Positive number (number > 0) giving the relative build-time estimate used to order the ticket DAG. Defaults to 1.",
-    schema: { type: "number", exclusiveMinimum: 0 }
-  },
-  {
-    name: "budget",
-    type: "number > 0",
-    required: false,
-    // NOT constrained in the schema: the store does not police budget, and
-    // model-router ignores a non-positive or non-numeric one rather than
-    // rejecting it. Pinning it here would narrow v1 under an unchanged $id and
-    // make the published schema reject stores that load fine.
-    summary: "Optional token ceiling. model-router and flail-detector honour a positive number and ignore anything else; the store does not validate it. Omit it to take the tier default.",
-    schema: {}
-  },
-  {
-    name: "scope",
-    type: "string[]",
-    required: false,
-    summary: "Path globs this ticket may touch, e.g. src/auth/**.",
-    schema: { type: "array", items: { type: "string" } }
-  },
-  {
-    name: "rails",
-    type: "string[]",
-    required: false,
-    summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Narrowing rails, widening scope, or changing `completed` on an existing ticket requires `--authorize` (see `adlc ticket update --help`); `ADLC_RAILS_BYPASS` governs only the `rails-guard` hook/CLI check on direct store-path edits, not `adlc ticket` writes.",
-    schema: { type: "array", items: { type: "string" } }
-  },
-  {
-    name: "completed",
-    type: "boolean",
-    required: false,
-    // Written by planComplete, not by an author — but it lives on a stored
-    // ticket, so an update rebuilt from this table without it silently retires
-    // the flag and downstream tooling schedules the work again.
-    summary: "Lifecycle state, set by `adlc ticket complete` rather than authored by hand. It is part of the stored document, so an update that omits it REMOVES it \u2014 build updates from `show <id> --json`, not from scratch.",
-    schema: {}
-  },
-  {
-    name: "edges",
-    type: 'array of "to" objects',
-    required: false,
-    summary: 'Array of edge objects (each with a non-empty string "to" id) giving ordering constraints, prerequisite to dependent: this ticket completes before `to` (an edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here). An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
-    schema: {
-      type: "array",
-      items: {
-        type: "object",
-        required: ["to"],
-        properties: {
-          to: { type: "string", minLength: 1, description: "Id of the dependent ticket (this ticket completes before `to`, which must not start before this one completes)." },
-          // Unconstrained for the same reason as body/category: validateTicket
-          // checks only that an edge carries a string `to`.
-          contract: { description: "Path to the interface this edge guarantees the dependent ticket can consume." }
-        },
-        additionalProperties: true
-      }
-    }
-  }
-];
-var FIELD_INDENT = "  ";
 function wrap(text, width, indent) {
   const lines = [];
   let line = "";
@@ -408,45 +349,470 @@ function fieldTable() {
   }
   return lines;
 }
-var INPUT_DOCUMENT = [
-  "Input document (--input <path> or - for stdin; see `adlc ticket schema`):",
-  "",
-  ...fieldTable(),
-  "",
-  "Unknown fields are preserved as-is; the store never strips them."
-];
+var SYNC_CATEGORIES, TICKET_FIELDS, FIELD_INDENT, INPUT_DOCUMENT;
+var init_help = __esm({
+  "node_modules/@adlc/tickets/lib/help.mjs"() {
+    SYNC_CATEGORIES = Object.freeze([
+      "feature",
+      "bug",
+      "bugfix",
+      "refactor",
+      "docs",
+      "chore",
+      "test",
+      "spec",
+      "contract",
+      "architecture"
+    ]);
+    TICKET_FIELDS = [
+      {
+        name: "id",
+        type: "string",
+        required: false,
+        summary: "Ticket id. Omit it on create and the store mints a ULID (T-01K...); supply one only to keep an existing T<n> id.",
+        schema: { type: "string", minLength: 1 }
+      },
+      {
+        name: "title",
+        type: "string",
+        required: true,
+        summary: "One imperative line naming the work.",
+        schema: { type: "string", minLength: 1 }
+      },
+      {
+        name: "body",
+        type: "string",
+        required: false,
+        summary: "The self-contained ticket text: what to build, the acceptance criteria, and the concrete command that verifies each one. A fresh agent sees only this \u2014 never the conversation that produced it. coldstart audits it for gaps.",
+        schema: {}
+        // unpoliced by validateTicket — see the `schema` note below
+      },
+      {
+        name: "category",
+        type: "string",
+        required: false,
+        // The store accepts any string, so the schema must too — but ticket-sync's
+        // rich validator pins an enum, and a category outside it round-trips to a
+        // remote provider and then fails closed on the next sync. Name the set here
+        // so the choice is made once, at authoring time.
+        summary: "Routing hint, not a free-form label. model-router sends contract, spec, and architecture to a frontier model and routes the rest from empirical priors. Keep to the set ticket-sync accepts or a synced ticket cannot converge: feature, bug, bugfix, refactor, docs, chore, test, spec, contract, architecture.",
+        schema: {}
+        // unpoliced by validateTicket — see the `schema` note below
+      },
+      {
+        name: "duration",
+        type: "number > 0",
+        required: false,
+        summary: "Positive number (number > 0) giving the relative build-time estimate used to order the ticket DAG. Defaults to 1.",
+        schema: { type: "number", exclusiveMinimum: 0 }
+      },
+      {
+        name: "budget",
+        type: "number > 0",
+        required: false,
+        // NOT constrained in the schema: the store does not police budget, and
+        // model-router ignores a non-positive or non-numeric one rather than
+        // rejecting it. Pinning it here would narrow v1 under an unchanged $id and
+        // make the published schema reject stores that load fine.
+        summary: "Optional token ceiling. model-router and flail-detector honour a positive number and ignore anything else; the store does not validate it. Omit it to take the tier default.",
+        schema: {}
+      },
+      {
+        name: "scope",
+        type: "string[]",
+        required: false,
+        summary: "Path globs this ticket may touch, e.g. src/auth/**.",
+        schema: { type: "array", items: { type: "string" } }
+      },
+      {
+        name: "rails",
+        type: "string[]",
+        required: false,
+        summary: "Path globs frozen for the duration of the build; rails-guard denies edits to them. Each rail must match at least one file in the repository when it is added, or the write is refused (RAIL_MATCHES_NOTHING). Narrowing rails, widening scope, or changing `completed` on an existing ticket requires `--authorize` (see `adlc ticket update --help`); `ADLC_RAILS_BYPASS` governs only the `rails-guard` hook/CLI check on direct store-path edits, not `adlc ticket` writes.",
+        schema: { type: "array", items: { type: "string" } }
+      },
+      {
+        name: "completed",
+        type: "boolean",
+        required: false,
+        // Written by planComplete, not by an author — but it lives on a stored
+        // ticket, so an update rebuilt from this table without it silently retires
+        // the flag and downstream tooling schedules the work again.
+        summary: "Lifecycle state, set by `adlc ticket complete` rather than authored by hand. It is part of the stored document, so an update that omits it REMOVES it \u2014 build updates from `show <id> --json`, not from scratch.",
+        schema: {}
+      },
+      {
+        name: "edges",
+        type: 'array of "to" objects',
+        required: false,
+        summary: 'Array of edge objects (each with a non-empty string "to" id) giving ordering constraints, prerequisite to dependent: this ticket completes before `to` (an edge with "to": "TX" on THIS ticket means this ticket must complete before TX \u2014 so making this ticket depend on an existing one is an edge added to that existing ticket, never a reversed edge here). An edge may also carry "contract": a path to the interface it guarantees TX can consume, which is what lets the two be built in parallel; ticket-sync recognizes it and nothing else on an edge.',
+        schema: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["to"],
+            properties: {
+              to: { type: "string", minLength: 1, description: "Id of the dependent ticket (this ticket completes before `to`, which must not start before this one completes)." },
+              // Unconstrained for the same reason as body/category: validateTicket
+              // checks only that an edge carries a string `to`.
+              contract: { description: "Path to the interface this edge guarantees the dependent ticket can consume." }
+            },
+            additionalProperties: true
+          }
+        }
+      }
+    ];
+    FIELD_INDENT = "  ";
+    INPUT_DOCUMENT = [
+      "Input document (--input <path> or - for stdin; see `adlc ticket schema`):",
+      "",
+      ...fieldTable(),
+      "",
+      "Unknown fields are preserved as-is; the store never strips them."
+    ];
+  }
+});
+
+// node_modules/@adlc/tickets/lib/edit.mjs
+var init_edit = __esm({
+  "node_modules/@adlc/tickets/lib/edit.mjs"() {
+    init_errors();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/snapshot.mjs
+var init_snapshot = __esm({
+  "node_modules/@adlc/tickets/lib/snapshot.mjs"() {
+    init_canonical();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/stores/directory.mjs
+var init_directory = __esm({
+  "node_modules/@adlc/tickets/lib/stores/directory.mjs"() {
+    init_constants();
+    init_errors();
+    init_canonical();
+    init_filename();
+    init_schema();
+    init_snapshot();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/lock.mjs
+var init_lock = __esm({
+  "node_modules/@adlc/tickets/lib/lock.mjs"() {
+    init_constants();
+    init_errors();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/durability.mjs
+var init_durability = __esm({
+  "node_modules/@adlc/tickets/lib/durability.mjs"() {
+  }
+});
+
+// node_modules/@adlc/tickets/lib/manifest-primitives.mjs
+var init_manifest_primitives = __esm({
+  "node_modules/@adlc/tickets/lib/manifest-primitives.mjs"() {
+    init_canonical();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/manifest-segments.mjs
+var init_manifest_segments = __esm({
+  "node_modules/@adlc/tickets/lib/manifest-segments.mjs"() {
+    init_canonical();
+    init_manifest_primitives();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/key-contract.mjs
+var init_key_contract = __esm({
+  "node_modules/@adlc/tickets/lib/key-contract.mjs"() {
+  }
+});
+
+// node_modules/@adlc/tickets/lib/evidence.mjs
+var init_evidence = __esm({
+  "node_modules/@adlc/tickets/lib/evidence.mjs"() {
+    init_errors();
+    init_canonical();
+    init_durability();
+    init_manifest_segments();
+    init_key_contract();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/trust-root.mjs
+var init_trust_root = __esm({
+  "node_modules/@adlc/tickets/lib/trust-root.mjs"() {
+    init_constants();
+    init_errors();
+    init_key_contract();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/transaction.mjs
+var init_transaction = __esm({
+  "node_modules/@adlc/tickets/lib/transaction.mjs"() {
+    init_constants();
+    init_canonical();
+    init_errors();
+    init_filename();
+    init_lock();
+    init_schema();
+    init_evidence();
+    init_durability();
+    init_key_contract();
+    init_trust_root();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/stores/legacy.mjs
+var init_legacy = __esm({
+  "node_modules/@adlc/tickets/lib/stores/legacy.mjs"() {
+    init_transaction();
+    init_constants();
+    init_errors();
+    init_schema();
+    init_snapshot();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/store.mjs
+var init_store = __esm({
+  "node_modules/@adlc/tickets/lib/store.mjs"() {
+    init_constants();
+    init_errors();
+    init_directory();
+    init_legacy();
+  }
+});
 
 // node_modules/@adlc/tickets/lib/generated-glob-match.mjs
-var SLASH = "/".charCodeAt(0);
+var SLASH;
+var init_generated_glob_match = __esm({
+  "node_modules/@adlc/tickets/lib/generated-glob-match.mjs"() {
+    SLASH = "/".charCodeAt(0);
+  }
+});
 
 // node_modules/@adlc/tickets/lib/manifest-rails.mjs
-var MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketplace.json"]);
+var MANIFEST_BASENAMES;
+var init_manifest_rails = __esm({
+  "node_modules/@adlc/tickets/lib/manifest-rails.mjs"() {
+    init_generated_glob_match();
+    MANIFEST_BASENAMES = Object.freeze(["package.json", "plugin.json", "marketplace.json"]);
+  }
+});
 
 // node_modules/@adlc/tickets/lib/rail-existence.mjs
-var GIT_MAX_BUFFER = 256 * 1024 * 1024;
+var GIT_MAX_BUFFER;
+var init_rail_existence = __esm({
+  "node_modules/@adlc/tickets/lib/rail-existence.mjs"() {
+    init_generated_glob_match();
+    GIT_MAX_BUFFER = 256 * 1024 * 1024;
+  }
+});
+
+// node_modules/@adlc/tickets/lib/service.mjs
+var init_service = __esm({
+  "node_modules/@adlc/tickets/lib/service.mjs"() {
+    init_canonical();
+    init_constants();
+    init_errors();
+    init_filename();
+    init_ids();
+    init_snapshot();
+    init_directory();
+    init_legacy();
+    init_transaction();
+    init_schema();
+    init_manifest_rails();
+    init_rail_existence();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/archive.mjs
+var init_archive = __esm({
+  "node_modules/@adlc/tickets/lib/archive.mjs"() {
+    init_constants();
+    init_canonical();
+    init_errors();
+    init_filename();
+    init_lock();
+    init_directory();
+    init_transaction();
+    init_durability();
+    init_key_contract();
+    init_trust_root();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/migrate.mjs
+var init_migrate = __esm({
+  "node_modules/@adlc/tickets/lib/migrate.mjs"() {
+    init_constants();
+    init_canonical();
+    init_errors();
+    init_filename();
+    init_lock();
+    init_directory();
+    init_legacy();
+    init_evidence();
+    init_schema();
+    init_durability();
+    init_key_contract();
+    init_trust_root();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/doctor.mjs
+var init_doctor = __esm({
+  "node_modules/@adlc/tickets/lib/doctor.mjs"() {
+    init_constants();
+    init_lock();
+    init_pointer();
+    init_store();
+    init_directory();
+    init_manifest_segments();
+    init_key_contract();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/provenance.mjs
+var init_provenance = __esm({
+  "node_modules/@adlc/tickets/lib/provenance.mjs"() {
+    init_pointer();
+    init_errors();
+  }
+});
+
+// node_modules/@adlc/tickets/lib/pointer-write.mjs
+var init_pointer_write = __esm({
+  "node_modules/@adlc/tickets/lib/pointer-write.mjs"() {
+    init_pointer();
+  }
+});
 
 // node_modules/@adlc/tickets/lib/prompt.mjs
 import { createInterface } from "node:readline/promises";
+var init_prompt = __esm({
+  "node_modules/@adlc/tickets/lib/prompt.mjs"() {
+    init_store();
+    init_legacy();
+    init_migrate();
+  }
+});
 
 // node_modules/@adlc/tickets/lib/stores/git-tree.mjs
-var MAX_BUFFER = 64 * 1024 * 1024;
+var MAX_BUFFER;
+var init_git_tree = __esm({
+  "node_modules/@adlc/tickets/lib/stores/git-tree.mjs"() {
+    init_constants();
+    init_canonical();
+    init_errors();
+    init_filename();
+    init_schema();
+    init_snapshot();
+    MAX_BUFFER = 64 * 1024 * 1024;
+  }
+});
+
+// node_modules/@adlc/tickets/index.mjs
+var init_tickets = __esm({
+  "node_modules/@adlc/tickets/index.mjs"() {
+    init_constants();
+    init_errors();
+    init_canonical();
+    init_ids();
+    init_filename();
+    init_schema();
+    init_help();
+    init_edit();
+    init_snapshot();
+    init_store();
+    init_lock();
+    init_durability();
+    init_transaction();
+    init_service();
+    init_manifest_rails();
+    init_trust_root();
+    init_archive();
+    init_migrate();
+    init_doctor();
+    init_provenance();
+    init_pointer();
+    init_pointer_write();
+    init_prompt();
+    init_evidence();
+    init_manifest_segments();
+    init_legacy();
+    init_directory();
+    init_git_tree();
+    init_key_contract();
+  }
+});
 
 // lib/adlc-bridge.mjs
-var PLUGIN_CONTRACT_STATUSES = Object.freeze(["compatible", "tolerant", "incompatible", "unreadable", "corrupt"]);
-var KNOWN_VENDORED_ADLC = Object.freeze({
-  version: "1.13.0",
-  binarySha256: "3a4a8883bae7bbe624d021e9b544c32f99a5803b1451ef17b2e57eb81c3413f6",
-  vendoredBundleSha256: "63822430cceed99b20301de770460538cfc614021bdddd90bdaf987e381c85b3",
-  treeDigest: "c25d24e9096a17a7239b77a08c2fbc2cecc9a971a4696e237c489e694f598726"
-});
-var STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS = Object.freeze({
-  "1.7.0": "c9bad8ac16bf47cdc7001645ed6d4ffb77997e91063fe983084d151e3f840754"
+var PLUGIN_CONTRACT_STATUSES, KNOWN_VENDORED_ADLC, STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS;
+var init_adlc_bridge = __esm({
+  "lib/adlc-bridge.mjs"() {
+    init_digest();
+    init_plugin_paths();
+    init_semver();
+    init_tickets();
+    PLUGIN_CONTRACT_STATUSES = Object.freeze(["compatible", "tolerant", "incompatible", "unreadable", "corrupt"]);
+    KNOWN_VENDORED_ADLC = Object.freeze({
+      version: "1.13.0",
+      binarySha256: "3a4a8883bae7bbe624d021e9b544c32f99a5803b1451ef17b2e57eb81c3413f6",
+      vendoredBundleSha256: "63822430cceed99b20301de770460538cfc614021bdddd90bdaf987e381c85b3",
+      treeDigest: "c25d24e9096a17a7239b77a08c2fbc2cecc9a971a4696e237c489e694f598726"
+    });
+    STAGED_ADLC_ANTIGRAVITY_TREE_DIGESTS = Object.freeze({
+      "1.7.0": "c9bad8ac16bf47cdc7001645ed6d4ffb77997e91063fe983084d151e3f840754"
+    });
+  }
 });
 
 // lib/doctor-models.mjs
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-var execFileAsync = promisify(execFile);
+var execFileAsync;
+var init_doctor_models = __esm({
+  "lib/doctor-models.mjs"() {
+    init_plugin_paths();
+    init_models();
+    execFileAsync = promisify(execFile);
+  }
+});
+
+// lib/role-settings.mjs
+var READONLY_ROLES;
+var init_role_settings = __esm({
+  "lib/role-settings.mjs"() {
+    READONLY_ROLES = Object.freeze([
+      "prosecutor",
+      "review",
+      "review-plan",
+      "coldstart",
+      "parallax",
+      "premortem",
+      "brain",
+      "arbiter",
+      "readonly"
+    ]);
+  }
+});
+
+// lib/doctor-settings.mjs
+var init_doctor_settings = __esm({
+  "lib/doctor-settings.mjs"() {
+    init_role_settings();
+  }
+});
 
 // lib/run-integrity.mjs
 function sanitizedGitEnv(baseEnv = process.env) {
@@ -456,39 +822,109 @@ function sanitizedGitEnv(baseEnv = process.env) {
   }
   return out;
 }
+var init_run_integrity = __esm({
+  "lib/run-integrity.mjs"() {
+    init_digest();
+    init_plugin_paths();
+  }
+});
 
 // lib/worktrees.mjs
-var NULL_HOOKS_PATH = process.platform === "win32" ? "NUL" : "/dev/null";
+var NULL_HOOKS_PATH;
+var init_worktrees = __esm({
+  "lib/worktrees.mjs"() {
+    init_run_integrity();
+    NULL_HOOKS_PATH = process.platform === "win32" ? "NUL" : "/dev/null";
+  }
+});
 
 // lib/doctor.mjs
-var execFileAsync2 = promisify2(execFile2);
-var SELFTEST_RAIL = "lib/lock.mjs";
-var SELFTEST_REASON = `Target path matches frozen rail: ${SELFTEST_RAIL}`;
+import { execFile as execFile2, execFileSync as execFileSync2, execSync, spawnSync } from "child_process";
+import { promisify as promisify2 } from "util";
+var execFileAsync2, SELFTEST_RAIL, SELFTEST_REASON;
+var init_doctor2 = __esm({
+  "lib/doctor.mjs"() {
+    init_adlc_bridge();
+    init_plugin_paths();
+    init_tickets();
+    init_digest();
+    init_semver();
+    init_doctor_models();
+    init_doctor_settings();
+    init_worktrees();
+    execFileAsync2 = promisify2(execFile2);
+    SELFTEST_RAIL = "lib/lock.mjs";
+    SELFTEST_REASON = `Target path matches frozen rail: ${SELFTEST_RAIL}`;
+  }
+});
+
+// lib/json.mjs
+var init_json = __esm({
+  "lib/json.mjs"() {
+  }
+});
+
+// lib/ndjson-worker.mjs
+var init_ndjson_worker = __esm({
+  "lib/ndjson-worker.mjs"() {
+    init_models();
+    init_plugin_paths();
+    init_role_settings();
+    init_adlc_bridge();
+  }
+});
+
+// lib/stream-watchdog.mjs
+var init_stream_watchdog = __esm({
+  "lib/stream-watchdog.mjs"() {
+    init_models();
+  }
+});
+
+// lib/schemas.mjs
+var init_schemas = __esm({
+  "lib/schemas.mjs"() {
+  }
+});
 
 // lib/agy.mjs
-var MAX_STREAM_LINE_BYTES = 1024 * 1024;
-var MAX_STREAM_TOTAL_BYTES = 50 * 1024 * 1024;
-var MAX_CONSECUTIVE_GARBAGE_BYTES = 5 * 1024 * 1024;
-var MAX_ARGV_PROMPT_BYTES = 24 * 1024;
-var ALL_AGY_ERROR_KINDS = Object.freeze([
-  "containment_unavailable",
-  "stream_overflow",
-  "stream_corruption",
-  "timeout",
-  "spawn",
-  "signal",
-  "interrupted",
-  "model_unavailable",
-  "envelope_error",
-  "server",
-  "server_shutdown_error",
-  "cli",
-  "missing_terminal_result",
-  "missing_structured_output",
-  "schema_violation",
-  "empty",
-  "unclassified"
-]);
+var MAX_STREAM_LINE_BYTES, MAX_STREAM_TOTAL_BYTES, MAX_CONSECUTIVE_GARBAGE_BYTES, MAX_ARGV_PROMPT_BYTES, ALL_AGY_ERROR_KINDS;
+var init_agy = __esm({
+  "lib/agy.mjs"() {
+    init_plugin_paths();
+    init_doctor2();
+    init_pools();
+    init_models();
+    init_json();
+    init_ndjson_worker();
+    init_role_settings();
+    init_stream_watchdog();
+    init_schemas();
+    MAX_STREAM_LINE_BYTES = 1024 * 1024;
+    MAX_STREAM_TOTAL_BYTES = 50 * 1024 * 1024;
+    MAX_CONSECUTIVE_GARBAGE_BYTES = 5 * 1024 * 1024;
+    MAX_ARGV_PROMPT_BYTES = 24 * 1024;
+    ALL_AGY_ERROR_KINDS = Object.freeze([
+      "containment_unavailable",
+      "stream_overflow",
+      "stream_corruption",
+      "timeout",
+      "spawn",
+      "signal",
+      "interrupted",
+      "model_unavailable",
+      "envelope_error",
+      "server",
+      "server_shutdown_error",
+      "cli",
+      "missing_terminal_result",
+      "missing_structured_output",
+      "schema_violation",
+      "empty",
+      "unclassified"
+    ]);
+  }
+});
 
 // lib/pools.mjs
 import {
@@ -515,9 +951,6 @@ import { tmpdir } from "node:os";
 import { execFileSync as execFileSync3, execFile as execFile3 } from "node:child_process";
 import { promisify as promisify3 } from "node:util";
 import { randomUUID } from "node:crypto";
-var execFileP = promisify3(execFile3);
-var RFC3339_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
-var IS_BUNDLED_POOLS = true;
 function isBundledPoolsRuntime() {
   return IS_BUNDLED_POOLS || true;
 }
@@ -558,8 +991,8 @@ function isValidStatusLinePoolWindow(poolObj, nowMs) {
   if (typeof rWeekly !== "string" || !RFC3339_UTC_RE.test(rWeekly)) return false;
   const t5h = Date.parse(r5h);
   const tWeekly = Date.parse(rWeekly);
-  if (!Number.isFinite(t5h) || t5h < nowMs - 1e4) return false;
-  if (!Number.isFinite(tWeekly) || tWeekly < nowMs - 1e4) return false;
+  if (!Number.isFinite(t5h) || t5h < nowMs - 1e4 && !(t5h === 0 && p5h === 100)) return false;
+  if (!Number.isFinite(tWeekly) || tWeekly < nowMs - 1e4 && !(tWeekly === 0 && pWeekly === 100)) return false;
   return true;
 }
 function isValidNormalizedQuotaPayload(normalizedQuota, nowMs) {
@@ -753,11 +1186,6 @@ function withLockSync(lockFile = getLockFile(), fn, { timeoutMs = 5e3, retryMs =
     }
   }
 }
-var TIER_QUOTA_PRIORS = Object.freeze({
-  cheap: 1,
-  mid: 3,
-  frontier: 7.5
-});
 function partitionRunwayWaves(tickets = []) {
   const byId = /* @__PURE__ */ new Map();
   const inDegree = /* @__PURE__ */ new Map();
@@ -932,8 +1360,44 @@ function estimatePlanQuotaRunway(plan = {}, { quota = null, records = [] } = {})
     recommendation
   };
 }
+var execFileP, RFC3339_UTC_RE, IS_BUNDLED_POOLS, TIER_QUOTA_PRIORS;
+var init_pools = __esm({
+  "lib/pools.mjs"() {
+    init_models();
+    init_plugin_paths();
+    init_agy();
+    execFileP = promisify3(execFile3);
+    RFC3339_UTC_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
+    IS_BUNDLED_POOLS = true;
+    TIER_QUOTA_PRIORS = Object.freeze({
+      cheap: 1,
+      mid: 3,
+      frontier: 7.5
+    });
+  }
+});
+
+// mcp/server.mjs
+init_pools();
+import readline from "node:readline";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { basename as basename3, dirname as dirname6, join as join7, parse as parse2, relative as relative4, resolve as resolve7, isAbsolute as isAbsolute4, sep as sep3 } from "node:path";
+import {
+  closeSync as closeSync2,
+  constants as constants2,
+  existsSync as existsSync6,
+  fstatSync as fstatSync2,
+  lstatSync as lstatSync6,
+  openSync as openSync2,
+  readFileSync as readFileSync6,
+  readSync,
+  realpathSync as realpathSync4,
+  statSync as statSync2
+} from "node:fs";
 
 // lib/factory-ledger.mjs
+init_pools();
 import {
   chmodSync as chmodSync2,
   existsSync as existsSync2,
@@ -1188,6 +1652,9 @@ import { randomUUID as randomUUID3 } from "node:crypto";
 // lib/plan-integrity.mjs
 import { basename as basename2, dirname as dirname3, isAbsolute, join as join3, posix, relative, resolve as resolve3, sep } from "node:path";
 
+// node_modules/@adlc/core/lib/tickets.mjs
+init_tickets();
+
 // node_modules/@adlc/core/lib/glob.mjs
 var SLASH2 = "/".charCodeAt(0);
 
@@ -1225,6 +1692,10 @@ function topoSort(tickets) {
   }
   return { order, cycle: null };
 }
+
+// lib/plan-integrity.mjs
+init_pools();
+init_models();
 
 // lib/twins.mjs
 var IS_BUNDLED3 = Boolean(true);
@@ -1410,6 +1881,9 @@ function validatePlan(plan, { strictGates = true } = {}) {
   }
   if (plan.disableOrchestrator !== void 0 && typeof plan.disableOrchestrator !== "boolean") {
     errors.push("plan.disableOrchestrator must be a boolean when provided");
+  }
+  if (plan.allowBreakingTestMigration !== void 0 && typeof plan.allowBreakingTestMigration !== "boolean") {
+    errors.push("plan.allowBreakingTestMigration must be a boolean when provided");
   }
   if (plan.holdouts !== void 0 && typeof plan.holdouts !== "boolean") {
     errors.push("plan.holdouts must be a boolean when provided");
@@ -1692,6 +2166,7 @@ function discoverExternalCallers(diffText, { repo = process.cwd(), scope = [], m
 }
 
 // lib/accept.mjs
+init_run_integrity();
 var SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 var VALID_HUNK_VERDICTS = /* @__PURE__ */ new Set(["accepted", "flagged", "pending"]);
 function assertNotSymlink(targetPath) {

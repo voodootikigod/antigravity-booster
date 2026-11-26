@@ -89,7 +89,7 @@ export const READ_TOOL_PATH_SCHEMAS = {
   grep_search: ['SearchPath', 'DirectoryPath', 'path'],
   code_search: ['SearchPath', 'DirectoryPath', 'path'],
   file_search: ['SearchPath', 'DirectoryPath', 'path'],
-  find_by_name: ['SearchPath', 'DirectoryPath', 'path', 'dir'],
+  find_by_name: ['SearchPath', 'SearchDirectory', 'DirectoryPath', 'path', 'dir'],
   list_dir: ['DirectoryPath', 'DirAbsolutePath', 'AbsolutePath', 'path', 'dir'],
   list_permissions: ['paths', 'path'],
   search_in_file: ['paths', 'path', 'DirectoryPath', 'SearchPath'],
@@ -108,9 +108,12 @@ export const REQUIRED_READ_PATH_KEYS = {
   read_url_content: ['url'],
   list_dir: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
   list_directory: ['directorypath', 'dirabsolutepath', 'absolutepath', 'path', 'dir'],
-  list_permissions: ['paths', 'path'],
   search_in_file: ['paths', 'path', 'directorypath', 'searchpath'],
 };
+
+export const ASK_PERMISSION_ACTIONS = new Set(['command', 'read_file', 'write_file', 'read_url', 'execute_url', 'download_url', 'mcp']);
+export const ASK_PERMISSION_PROSE_KEYS = new Set(['Reason', 'reason', 'toolAction', 'toolaction', 'toolSummary', 'toolsummary']);
+export const GENERATE_IMAGE_PROSE_KEYS = new Set(['Prompt', 'prompt', 'toolAction', 'toolaction', 'toolSummary', 'toolsummary']);
 
 // Gate 1: required path keys for file-mutating tools (probed agy 1.2.16).
 export const TOOL_PATH_SCHEMAS = {

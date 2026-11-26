@@ -77,7 +77,7 @@ const REPO_WITH_NM = (() => {
   let d = join(import.meta.dirname, '..');
   while (d !== dirname(d)) {
     const nm = join(d, 'node_modules');
-    if (existsSync(nm) && !lstatSync(nm).isSymbolicLink()) break;
+    if (existsSync(nm) && !lstatSync(nm).isSymbolicLink() && !existsSync(join(nm, '.agb-materialized'))) break;
     d = dirname(d);
   }
   return d;

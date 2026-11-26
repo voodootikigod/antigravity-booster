@@ -53,7 +53,7 @@ import {
   FAILURE_FINISHED_REASONS,
   BRAIN_PLAN_SCHEMA,
 } from '../lib/agy.mjs';
-import { checkHookLogDir, RECOMMENDED_AGY_VERSION } from '../lib/doctor.mjs';
+import { checkHookLogDir, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION } from '../lib/doctor.mjs';
 import {
   FRONTIER_NO_ORCHESTRATOR,
   ORCHESTRATOR_MODELS,
@@ -1205,13 +1205,15 @@ export async function runLiveAgy159PrintAndSandboxBenchmark() {
     gate: { test: 'npm test' },
     tickets: [{ id: 'T1', title: 't', body: 'b', scope: ['src/**'] }],
   });
-  const planSchemaOk =
-    validPlanBool.length === 0 &&
-    invalidPlanBool.some((e) => /disableOrchestrator/.test(e)) &&
-    BRAIN_PLAN_SCHEMA?.properties?.disableOrchestrator?.type === 'boolean' &&
-    RECOMMENDED_AGY_VERSION === '1.5.13' &&
-    ALL_AGY_ERROR_KINDS.length === 17 &&
-    FAILURE_FINISHED_REASONS.size === 9;
+  const planSchemaOk = [
+    validPlanBool.length === 0,
+    invalidPlanBool.some((e) => /disableOrchestrator/.test(e)),
+    BRAIN_PLAN_SCHEMA?.properties?.disableOrchestrator?.type === 'boolean',
+    MIN_AGY_VERSION === '1.5.17',
+    RECOMMENDED_AGY_VERSION === '1.5.17',
+    ALL_AGY_ERROR_KINDS.length === 17,
+    FAILURE_FINISHED_REASONS.size === 9,
+  ].every(Boolean);
 
   const checks = {
     classifierAll18Exact: classifierExactMatches === outcomeCases.length,
@@ -1360,38 +1362,34 @@ export async function runLiveOrchestratorSchedulerBenchmark() {
     JSON.stringify(ctxDisabled) === JSON.stringify([...FRONTIER_NO_ORCHESTRATOR]) &&
     JSON.stringify(tierCandidates('frontier', 'auto')) === JSON.stringify([...TIER_CANDIDATES.frontier]);
 
-  // Check 3: agy < 1.5.9 auto-disables Orchestrator slugs with notice without failing spawn check
+  // Check 3: agy below the 1.5.17 floor is rejected at startup before any builder is spawned
   const repoOld = makeEvalGitRepo();
   const stateOld = realpathSync(mkdtempSync(join(tmpdir(), 'agb-v13-st-old-')));
   let versionAutoDisableOk = false;
   try {
-    const logsOld = [];
-    const repOld = await withIsolatedSchedulerEnv(
-      { FAKE_AGY_VERSION: '1.5.8', FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateOld },
-      () =>
-        runPlan(
-          {
-            repo: repoOld,
-            gate: { test: 'true' },
-            tickets: [
-              {
-                id: 'T1',
-                title: 'T1',
-                body: 'write T1.txt',
-                scope: ['T1.txt'],
-                rails: ['README.md'],
-                tier: 'frontier',
-                pool_hint: 'gemini',
-              },
-            ],
-          },
-          { log: (m) => logsOld.push(m) },
-        ),
-    );
-    versionAutoDisableOk =
-      repOld.merged.includes('T1') &&
-      logsOld.some((l) => l.includes('agy 1.5.8 < 1.5.9; Orchestrator slugs auto-disabled')) &&
-      JSON.stringify(extractBuilderModels(stateOld)) === JSON.stringify(['gemini-4-argon-high']);
+    const t1Plan = () => ({
+      repo: repoOld,
+      gate: { test: 'true' },
+      tickets: [
+        {
+          id: 'T1',
+          title: 'T1',
+          body: 'write T1.txt',
+          scope: ['T1.txt'],
+          rails: ['README.md'],
+          tier: 'frontier',
+          pool_hint: 'gemini',
+        },
+      ],
+    });
+    const rejectedMsg = await withIsolatedSchedulerEnv(
+      { FAKE_AGY_VERSION: '1.5.16', FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateOld },
+      () => runPlan(t1Plan(), { log: () => {} }),
+    ).then(() => '', (err) => String(err?.message ?? err));
+    versionAutoDisableOk = [
+      /required >= v1\.5\.17/.test(rejectedMsg),
+      JSON.stringify(extractBuilderModels(stateOld)) === JSON.stringify([]),
+    ].every(Boolean);
   } finally {
     rmSync(repoOld, { recursive: true, force: true });
     rmSync(stateOld, { recursive: true, force: true });

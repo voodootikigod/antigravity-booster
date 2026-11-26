@@ -1,0 +1,21 @@
+{
+  "body": "Address 5-lens Code ARL findings across evaluateAskPermission, buildRoleSettingsProfile, session-start lock recovery, NdjsonWorkerDaemon, prosecute, and scheduler.",
+  "completed": true,
+  "edges": [],
+  "id": "T-GUARD-ARL-FIXES",
+  "rails": [],
+  "scope": [
+    "hooks/policy/evaluate.mjs",
+    "hooks/session-start.mjs",
+    "lib/role-settings.mjs",
+    "lib/ndjson-worker.mjs",
+    "lib/prosecute.mjs",
+    "lib/scheduler.mjs",
+    "dist/**",
+    "test/policy-guardrails-1-5-17.test.mjs",
+    "test/role-settings.test.mjs",
+    "test/session-start-hook.test.mjs",
+    "test/ndjson-worker.test.mjs"
+  ],
+  "title": "Harden ask_permission checks, role normalization, daemon close race, and lock/worktree boundaries"
+}

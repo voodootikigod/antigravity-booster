@@ -1295,6 +1295,208 @@ test('runPlan: runs reconcileIntegrationJournal() BEFORE ensureGitignore() commi
   }
 });
 
+test('runPlan: fails over prosecutor on transient 503 capacity error and cleans gate-dirtied tracked files before rebase', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-prosecute-503-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-prosecute-503-bin-'));
+  try {
+    writeFileSync(join(repo, 'bundle.txt'), 'clean-baseline\n');
+    execFileSync('git', ['add', 'bundle.txt'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add tracked bundle'], { cwd: repo });
+
+    const localFakeAgy = join(binDir, 'fake-agy');
+    writeFileSync(localFakeAgy, readFileSync(FAKE_AGY), { mode: 0o755 });
+    const wrapperAgy = join(binDir, 'agy');
+    writeFileSync(
+      wrapperAgy,
+      [
+        '#!/bin/sh',
+        'for prev in "$@"; do',
+        '  if [ "$last" = "--model" ] && [ "$prev" = "gpt-oss-120b-medium" ]; then',
+        `    printf '%s\\n' "gpt-oss-503" >> ${JSON.stringify(join(state, 'prosecutor-503.log'))}`,
+        '    printf \'%s\\n\' \'{"status":"ERROR","response":"UNAVAILABLE (code 503): No capacity available for model gpt-oss-120b-medium on the server"}\'',
+        '    exit 0',
+        '  fi',
+        '  last="$prev"',
+        'done',
+        'exec "$(dirname "$0")/fake-agy" "$@"',
+      ].join('\n'),
+      { mode: 0o755 },
+    );
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: wrapperAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: {
+          build: 'sh -c "echo dirtied-by-gate > bundle.txt"',
+          test: 'true',
+        },
+        tickets: [{
+          id: 'T1',
+          title: 'gemini build with 503 primary prosecutor and dirtying build gate',
+          body: 'write T1.txt',
+          scope: ['T1.txt'],
+          tier: 'cheap',
+          pool_hint: 'gemini',
+        }],
+      }, quiet),
+    );
+
+    assert.deepEqual(report.merged, ['T1'], `expected T1 to merge via prosecutor failover and clean rebase, got: ${JSON.stringify(report.failed)}`);
+    const seen503 = readFileSync(join(state, 'prosecutor-503.log'), 'utf8').trim().split('\n');
+    assert.deepEqual(seen503, ['gpt-oss-503'], 'primary prosecutor gpt-oss-120b-medium hit 503 once before failing over to claude');
+    assert.equal(readFileSync(join(repo, 'bundle.txt'), 'utf8'), 'clean-baseline\n', 'gate-dirtied tracked file must not block rebase or leak into commit');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: multi-ticket run syncs root working tree across sequential merges when .adlc/tickets has untracked projections', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-advisory-sync-state-'));
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    writeFileSync(join(repo, '.adlc', 'config.json'), JSON.stringify({ version: 1 }) + '\n');
+    writeFileSync(join(repo, '.gitignore'), '.worktrees/\n.booster/\n.adlc/leases/\n.adlc/manifest.jsonl\n.adlc/sessions.json\n');
+    execFileSync('git', ['add', '-A'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'setup adlc config with unignored .adlc/tickets'], { cwd: repo });
+    initializeDirectoryStore(join(repo, '.adlc', 'tickets'));
+    writeFileSync(
+      join(repo, '.adlc', 'tickets', ticketFilename('T1')),
+      JSON.stringify({ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], rails: [], edges: [] }) + '\n',
+    );
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    const staleRebasedSha = execFileSync('git', ['commit-tree', `${headSha}^{tree}`, '-m', 'stale rebased ref'], { cwd: repo, encoding: 'utf8' }).trim();
+    execFileSync('git', ['update-ref', 'refs/namespaces/attempts/t2/rebased', staleRebasedSha], { cwd: repo });
+
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () => runPlan({
+        repo,
+        gate: { test: 'true' },
+        tickets: [
+          { id: 'T1', title: 'first', body: 'write T1.txt', scope: ['T1.txt'] },
+          { id: 'T2', title: 'second', body: 'write T2.txt', scope: ['T2.txt'], edges: [{ to: undefined }].filter((e) => e.to) },
+        ],
+      }, { ...quiet, concurrency: 1 }),
+    );
+
+    assert.deepEqual(report.merged.sort(), ['T1', 'T2'], `second ticket must not fail with repo became dirty mid-run: ${JSON.stringify(report.failed)}`);
+    assert.equal(existsSync(join(repo, 'T1.txt')), true);
+    assert.equal(existsSync(join(repo, 'T2.txt')), true);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan: Pass 2 hollow-test permits newly added test + docs commit with zero mutable source files while rejecting modified existing test', async () => {
+  const repoAdd = makeRepo();
+  const repoMod = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-added-test-only-state-'));
+  const customBuilderBin = join(state, 'builder-agy');
+  try {
+    writeFileSync(
+      customBuilderBin,
+      `#!/bin/sh
+case "$*" in
+  *TICKET-DONE\\ or\\ TICKET-BLOCKED*)
+    mkdir -p test
+    if [ -f test/existing.test.mjs ]; then
+      printf 'import test from "node:test"; test("weakened", () => {});\\n' > test/existing.test.mjs
+      git add test/existing.test.mjs
+      git commit -qm "T1: modify existing test only"
+    else
+      printf 'import test from "node:test"; import assert from "node:assert/strict"; test("e2e", () => assert.equal(1, 1));\\n' > test/new-e2e.test.mjs
+      printf '# updated docs\\n' > README.md
+      git add test/new-e2e.test.mjs README.md
+      git commit -qm "T1: add new e2e test and docs"
+    fi
+    echo '{"type":"step_update","step":1,"action":"good"}'
+    echo '{"type":"result","status":"SUCCESS","exit_code":0}'
+    exit 0 ;;
+  *)
+    exec "${FAKE_AGY}" "$@" ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+
+    const repAdd = await withEnv(
+      {
+        AGB_AGY_BIN: customBuilderBin,
+        AGB_SANDBOX_GATES: '0',
+        CUSTOM_TEST_MODE: 'add',
+      },
+      () =>
+        runPlan(
+          {
+            repo: repoAdd,
+            gate: { test: 'node --test test/new-e2e.test.mjs' },
+            tickets: [
+              {
+                id: 'T1',
+                title: 'add e2e test and docs',
+                body: 'add test/new-e2e.test.mjs and README.md',
+                scope: ['README.md', 'test/new-e2e.test.mjs'],
+              },
+            ],
+          },
+          quiet,
+        ),
+    );
+    assert.deepEqual(repAdd.merged, ['T1'], `expected T1 to merge cleanly, got failed=${JSON.stringify(repAdd.failed)}`);
+
+    mkdirSync(join(repoMod, 'test'), { recursive: true });
+    writeFileSync(join(repoMod, 'test', 'existing.test.mjs'), 'import test from "node:test"; import assert from "node:assert/strict"; test("orig", () => assert.equal(1, 1));\n');
+    execFileSync('git', ['add', '-A'], { cwd: repoMod });
+    execFileSync('git', ['commit', '-qm', 'seed existing test'], { cwd: repoMod });
+
+    const repMod = await withEnv(
+      {
+        AGB_AGY_BIN: customBuilderBin,
+        AGB_SANDBOX_GATES: '0',
+        CUSTOM_TEST_MODE: 'mod',
+      },
+      () =>
+        runPlan(
+          {
+            repo: repoMod,
+            gate: { test: 'node --test test/existing.test.mjs' },
+            tickets: [
+              {
+                id: 'T1',
+                title: 'modify existing test',
+                body: 'modify test/existing.test.mjs',
+                scope: ['test/existing.test.mjs'],
+              },
+            ],
+          },
+          quiet,
+        ),
+    );
+    assert.deepEqual(repMod.merged, []);
+    assert.match(repMod.failed.T1, /hollow-test mutation verification failed:.*nothing to mutate/);
+  } finally {
+    rmSync(repoAdd, { recursive: true, force: true });
+    rmSync(repoMod, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
 test('runPlan: hydrates AGENTS.md by default, runs post-guard gate.autofix ONLY on changed files (not in runConfiguredGates or post-merge), and updates pending runway', async () => {
   const repo = makeRepo();
   const state = mkdtempSync(join(tmpdir(), 'agb-w2-sched-state-'));
@@ -1634,5 +1836,3 @@ test('runPlan (Wave 4): executes gate.twins, learned-checks, and sealed holdout 
     rmSync(fakeHome, { recursive: true, force: true });
   }
 });
-
-

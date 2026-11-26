@@ -1,11 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  existsSync,
+  realpathSync,
+  chmodSync,
+} from 'node:fs';
+import { join, dirname, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import {
   runAgy,
+  prepareBuilderContainment,
   NdjsonWorkerDaemon,
   buildRoleSettingsProfile,
   StreamWatchdog,
@@ -50,11 +61,12 @@ test('v1.4 integration: runAgy supports --settings and --effort and re-exports N
     assert.equal(res.ok, true);
     assert.ok(existsSync(settingsOut));
     const parsed = JSON.parse(readFileSync(settingsOut, 'utf8'));
-    assert.deepEqual(Object.keys(parsed), ['permissions']);
+    assert.deepEqual(Object.keys(parsed), ['allowNonWorkspaceAccess', 'permissions']);
+    assert.equal(parsed.allowNonWorkspaceAccess, false);
     assert.ok(Array.isArray(parsed.permissions.deny));
-    assert.ok(parsed.permissions.deny.includes('write_file'));
-    assert.ok(parsed.permissions.deny.includes('run_command'));
-    assert.ok(parsed.permissions.deny.includes('call_mcp_tool'));
+    assert.ok(parsed.permissions.deny.includes('write_file(*)'));
+    assert.ok(parsed.permissions.deny.includes('command(*)'));
+    assert.ok(parsed.permissions.deny.includes('mcp(*)'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -361,5 +373,341 @@ test('v1.4 integration: PreToolUse hook enforces CodeGraph explore and agb_disti
   } finally {
     rmSync(ws, { recursive: true, force: true });
     rmSync(outsideDir, { recursive: true, force: true });
+  }
+});
+
+const mockMechanism = (mechanism) => ({ AGB_MOCK_CONTAINMENT_MECHANISM: mechanism });
+
+function makeContainmentFixture() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agb-v14-pbc-')));
+  const repo = join(root, 'repo');
+  const cwd = join(repo, '.worktrees', 'wt');
+  const home = join(root, 'home');
+  const privateTmp = join(root, 'private-tmp');
+  mkdirSync(join(repo, '.git'), { recursive: true });
+  mkdirSync(join(repo, 'node_modules', 'pkg'), { recursive: true });
+  mkdirSync(join(repo, '.codegraph'), { recursive: true });
+  mkdirSync(join(cwd, '.codegraph'), { recursive: true });
+  mkdirSync(join(home, '.gemini', 'config'), { recursive: true });
+  mkdirSync(privateTmp, { recursive: true });
+  writeFileSync(
+    join(home, '.gemini', 'config', 'mcp_config.json'),
+    JSON.stringify({ mcpServers: { codegraph: { command: 'cg' }, other: { command: 'x' } } })
+  );
+  const agyBin = join(root, 'agy-bin');
+  writeFileSync(agyBin, '#!/bin/sh\nexit 0\n');
+  chmodSync(agyBin, 0o755);
+  return {
+    root,
+    repo,
+    cwd,
+    home,
+    privateTmp,
+    agyBin,
+    cleanup: () => rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+async function withEnv(overrides, fn) {
+  const saved = {};
+  for (const [k, v] of Object.entries(overrides)) {
+    saved[k] = process.env[k];
+    process.env[k] = v;
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test('prepareBuilderContainment (linux bwrap_pid): argv, node_modules mount, default codegraph exclusion and cleanup', async () => {
+  const fx = makeContainmentFixture();
+  try {
+    const args = ['--print', 'hello'];
+    const base = {
+      agyBin: fx.agyBin,
+      args,
+      cwd: fx.cwd,
+      repo: fx.repo,
+      userHome: fx.home,
+      platform: 'linux',
+      env: mockMechanism('bwrap_pid'),
+    };
+    const localNm = join(fx.cwd, 'node_modules');
+    // sandbox, containment and allowCodegraph are intentionally omitted to exercise their defaults
+    const res = await withEnv({ TMPDIR: fx.privateTmp }, () => prepareBuilderContainment(base));
+    assert.equal(res.ok, true, res.error);
+    assert.equal(res.launchBin, 'bwrap');
+    assert.equal(res.verifiedBypass, null);
+    assert.ok(res.launchArgs.includes('--unshare-pid'));
+    const sep = res.launchArgs.indexOf('--');
+    assert.deepEqual(res.launchArgs.slice(sep), ['--', fx.agyBin, ...args], 'nested --sandbox must be stripped');
+    assert.deepEqual(args, ['--print', 'hello'], 'caller args must not be mutated');
+
+    const tmpIdx = res.launchArgs.indexOf('/tmp');
+    assert.equal(res.launchArgs[tmpIdx - 2], '--bind');
+    const bwrapTmpDir = res.launchArgs[tmpIdx - 1];
+    assert.ok(basename(bwrapTmpDir).startsWith('agb-bwrap-tmp-'));
+    assert.equal(dirname(bwrapTmpDir), fx.privateTmp);
+
+    const nmIdx = res.launchArgs.findIndex((a, i) => a === '--ro-bind' && res.launchArgs[i + 2] === localNm);
+    assert.ok(nmIdx >= 0, 'canonical node_modules must be mounted over the worktree');
+    assert.equal(res.launchArgs[nmIdx + 1], join(fx.repo, 'node_modules'));
+
+    assert.equal(res.stagedBuilderHome, join(fx.cwd, '.agb_home'));
+    const stagedMcp = readFileSync(join(res.stagedBuilderHome, '.gemini', 'mcp_config.json'), 'utf8');
+    assert.deepEqual(JSON.parse(stagedMcp), { mcpServers: {} });
+    assert.equal(stagedMcp.includes('codegraph'), false, 'codegraph MCP must not be staged by default');
+
+    assert.equal(typeof res.cleanup, 'function');
+    assert.equal(existsSync(localNm), true);
+    assert.equal(existsSync(bwrapTmpDir), true);
+    res.cleanup();
+    assert.equal(existsSync(localNm), false);
+    assert.equal(existsSync(bwrapTmpDir), false);
+    assert.deepEqual(readdirSync(fx.privateTmp), []);
+    res.cleanup();
+
+    const opted = await withEnv({ TMPDIR: fx.privateTmp }, () =>
+      prepareBuilderContainment({ ...base, allowCodegraph: true })
+    );
+    assert.equal(opted.ok, true, opted.error);
+    const optedMcp = JSON.parse(readFileSync(join(opted.stagedBuilderHome, '.gemini', 'mcp_config.json'), 'utf8'));
+    assert.deepEqual(Object.keys(optedMcp.mcpServers), ['codegraph']);
+    opted.cleanup();
+    assert.deepEqual(readdirSync(fx.privateTmp), []);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('prepareBuilderContainment (error paths): rejected mechanisms, missing cwd and disabled sandbox/containment leave nothing behind', async () => {
+  const fx = makeContainmentFixture();
+  try {
+    const base = {
+      agyBin: fx.agyBin,
+      args: ['--print', 'x'],
+      cwd: fx.cwd,
+      repo: fx.repo,
+      userHome: fx.home,
+      platform: 'linux',
+      env: mockMechanism('bwrap_pid'),
+    };
+    const cases = [
+      [{ sandbox: false }, /Builder sandbox is mandatory on linux/],
+      [{ containment: false }, /Builder containment is mandatory on linux/],
+      [{ cwd: '' }, /requires an existing directory worktree cwd/],
+      [{ cwd: join(fx.root, 'missing') }, /requires an existing directory worktree cwd/],
+      [{ cwd: join(fx.repo, 'package.json-not-a-dir') }, /requires an existing directory worktree cwd/],
+      [{ env: { AGB_MOCK_CONTAINMENT_UNAVAILABLE: '1' } }, /Kernel containment floor unavailable on linux: .*Attestation bypass is restricted to Windows/],
+      [{ env: mockMechanism('cgroups_v2_scope') }, /mechanism 'cgroups_v2_scope' provides insufficient filesystem isolation/],
+      [{ env: mockMechanism('pid_namespace') }, /mechanism 'pid_namespace' provides insufficient filesystem isolation/],
+      [{ env: mockMechanism('mystery') }, /mechanism 'mystery' cannot be attached to subprocess directly/],
+    ];
+    for (const [override, pattern] of cases) {
+      const res = await withEnv({ TMPDIR: fx.privateTmp }, () => prepareBuilderContainment({ ...base, ...override }));
+      assert.equal(res.ok, false);
+      assert.equal(res.kind, 'containment_unavailable');
+      assert.match(res.error, pattern);
+      assert.equal(res.cleanup, undefined);
+      assert.equal(existsSync(join(fx.cwd, 'node_modules')), false);
+      assert.deepEqual(readdirSync(fx.privateTmp), [], `no temp dirs may leak for ${pattern}`);
+    }
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('prepareBuilderContainment (darwin seatbelt): sandbox-exec profile without nested --sandbox', async () => {
+  const fx = makeContainmentFixture();
+  try {
+    const args = ['--print', 'hi'];
+    const res = await prepareBuilderContainment({
+      agyBin: fx.agyBin,
+      args,
+      cwd: fx.cwd,
+      repo: fx.repo,
+      userHome: fx.home,
+      platform: 'darwin',
+      env: mockMechanism('seatbelt'),
+    });
+    assert.equal(res.ok, true, res.error);
+    assert.equal(res.launchBin, 'sandbox-exec');
+    assert.equal(res.launchArgs[0], '-p');
+    assert.ok(res.launchArgs[1].includes(`(allow file-write* (subpath "${fx.cwd}"))`));
+    assert.equal(res.launchArgs[2], fx.agyBin);
+    assert.deepEqual(res.launchArgs.slice(3), args);
+    assert.equal(res.stagedBuilderHome, null);
+    assert.equal(res.verifiedBypass, null);
+    assert.equal(typeof res.cleanup, 'function');
+    res.cleanup();
+
+    const noSandbox = await prepareBuilderContainment({
+      agyBin: fx.agyBin,
+      args,
+      cwd: fx.cwd,
+      platform: 'darwin',
+      sandbox: false,
+      env: mockMechanism('seatbelt'),
+    });
+    assert.equal(noSandbox.ok, false);
+    assert.match(noSandbox.error, /Builder sandbox is mandatory on darwin/);
+
+    if (process.platform !== 'win32') {
+      const badCwd = join(fx.root, 'bad\nname');
+      mkdirSync(badCwd, { recursive: true });
+      const bad = await prepareBuilderContainment({
+        agyBin: fx.agyBin,
+        args,
+        cwd: badCwd,
+        platform: 'darwin',
+        env: mockMechanism('seatbelt'),
+      });
+      assert.equal(bad.ok, false);
+      assert.equal(bad.kind, 'containment_unavailable');
+      assert.match(bad.error, /Unsafe worktree path for seatbelt containment/);
+    }
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('prepareBuilderContainment (win32 job_object): attestation, verifiedBypass reuse, --sandbox gating and args temp dir cleanup', async () => {
+  const fx = makeContainmentFixture();
+  try {
+    const decodeInline = (res) =>
+      JSON.parse(Buffer.from(res.launchArgs[res.launchArgs.indexOf('-ArgsBase64') + 1], 'base64').toString('utf8'));
+    const bypass = { valid: true };
+    const base = {
+      agyBin: fx.agyBin,
+      args: ['--print', 'hi'],
+      cwd: fx.cwd,
+      repo: fx.repo,
+      userHome: fx.home,
+      platform: 'win32',
+      env: mockMechanism('job_object'),
+      verifiedBypass: bypass,
+    };
+
+    const sandboxed = await prepareBuilderContainment({ ...base, sandbox: true });
+    assert.equal(sandboxed.ok, true, sandboxed.error);
+    assert.equal(sandboxed.launchBin, 'powershell.exe');
+    assert.equal(sandboxed.launchArgs[sandboxed.launchArgs.indexOf('-TargetBin') + 1], fx.agyBin);
+    assert.deepEqual(decodeInline(sandboxed), ['--print', 'hi', '--sandbox']);
+    assert.equal(sandboxed.verifiedBypass, bypass);
+    assert.equal(sandboxed.stagedBuilderHome, null);
+    sandboxed.cleanup();
+
+    const unsandboxed = await prepareBuilderContainment({ ...base, sandbox: false });
+    assert.equal(unsandboxed.ok, true, unsandboxed.error);
+    assert.deepEqual(decodeInline(unsandboxed), ['--print', 'hi']);
+    assert.equal(unsandboxed.verifiedBypass, bypass);
+
+    const uncontained = await prepareBuilderContainment({ ...base, containment: false });
+    assert.equal(uncontained.ok, true, uncontained.error);
+    assert.equal(uncontained.launchBin, fx.agyBin);
+    assert.deepEqual(uncontained.launchArgs, ['--print', 'hi', '--sandbox']);
+
+    const floorMissing = await prepareBuilderContainment({
+      ...base,
+      env: { AGB_MOCK_CONTAINMENT_UNAVAILABLE: '1' },
+    });
+    assert.equal(floorMissing.ok, true, floorMissing.error);
+    assert.equal(floorMissing.launchBin, fx.agyBin);
+
+    for (const sandbox of [true, false]) {
+      const big = await withEnv({ HOME: fx.home, USERPROFILE: fx.home }, () =>
+        prepareBuilderContainment({ ...base, args: ['--print', 'x'.repeat(9000)], sandbox })
+      );
+      assert.equal(big.ok, true, big.error);
+      assert.equal(big.launchBin, 'powershell.exe');
+      const argsFile = big.launchArgs[big.launchArgs.indexOf('-ArgsFile') + 1];
+      const argsTempDir = dirname(argsFile);
+      assert.ok(basename(argsTempDir).startsWith('agb-args-'));
+      assert.equal(existsSync(argsFile), true);
+      const written = JSON.parse(readFileSync(argsFile, 'utf8'));
+      assert.equal(written.includes('--sandbox'), sandbox);
+      big.cleanup();
+      assert.equal(existsSync(argsTempDir), false);
+      assert.equal(existsSync(argsFile), false);
+      big.cleanup();
+    }
+
+    const denied = await prepareBuilderContainment({ ...base, verifiedBypass: null, sandbox: false });
+    assert.equal(denied.ok, false);
+    assert.equal(denied.kind, 'containment_unavailable');
+    assert.match(denied.error, /^Sandbox bypass denied: /);
+
+    const floorDenied = await prepareBuilderContainment({
+      ...base,
+      verifiedBypass: null,
+      env: { AGB_MOCK_CONTAINMENT_UNAVAILABLE: '1' },
+    });
+    assert.equal(floorDenied.ok, false);
+    assert.match(floorDenied.error, /^Kernel containment floor unavailable: .*Authenticated bypass attestation required: /);
+
+    const uncontainedDenied = await prepareBuilderContainment({ ...base, verifiedBypass: null, containment: false });
+    assert.equal(uncontainedDenied.ok, false);
+    assert.match(uncontainedDenied.error, /^Builder containment cannot be disabled without an authenticated bypass attestation: /);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('runAgy builder delegates containment failures to prepareBuilderContainment', async () => {
+  const noSandbox = await runAgy({ model: 'gemini-4-neon-medium', role: 'builder', cwd: '', prompt: 'x' });
+  assert.equal(noSandbox.ok, false);
+  assert.equal(noSandbox.ms, 0);
+  assert.equal(noSandbox.output, '');
+  assert.equal(noSandbox.kind, 'containment_unavailable');
+  assert.match(noSandbox.error, /Builder sandbox is mandatory/);
+
+  const noCwd = await runAgy({ model: 'gemini-4-neon-medium', role: 'builder', cwd: '', prompt: 'x', sandbox: true });
+  assert.equal(noCwd.ok, false);
+  assert.equal(noCwd.ms, 0);
+  assert.equal(noCwd.kind, 'containment_unavailable');
+  assert.match(noCwd.error, /requires an existing directory worktree cwd/);
+});
+
+test('runAgy non-builder roles append --sandbox only when requested and forward rails into role settings', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-v14-argv-'));
+  try {
+    const recorder = join(dir, 'rec-agy');
+    writeFileSync(recorder, '#!/bin/sh\nprintf \'%s\\n\' "$@" > "$AGB_ARGV_FILE"\necho OK\n');
+    chmodSync(recorder, 0o755);
+    const argvFile = join(dir, 'argv.txt');
+    const run = async (extra) => {
+      const res = await runAgy({
+        model: 'gemini-4-neon-medium',
+        prompt: 'Reply OK',
+        cwd: dir,
+        bin: recorder,
+        role: 'prosecutor',
+        worker: { mode: 'readonly' },
+        env: { AGB_ARGV_FILE: argvFile },
+        ...extra,
+      });
+      assert.equal(res.ok, true, res.error);
+      return readFileSync(argvFile, 'utf8').split('\n').filter(Boolean);
+    };
+
+    assert.ok((await run({ sandbox: true })).includes('--sandbox'));
+    assert.equal((await run({ sandbox: false })).includes('--sandbox'), false);
+    assert.equal((await run({})).includes('--sandbox'), false);
+
+    const withRails = await run({
+      role: 'implementer',
+      useRoleSettings: true,
+      rails: ['lib/lock.mjs'],
+    });
+    const settings = JSON.parse(withRails[withRails.indexOf('--settings') + 1]);
+    assert.ok(settings.permissions.deny.includes('write_file(lib/lock.mjs)'));
+    assert.equal(settings.allowNonWorkspaceAccess, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

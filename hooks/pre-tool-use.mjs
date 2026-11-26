@@ -9,6 +9,7 @@
 // only fire between I/O turns; a stalled synchronous filesystem read is
 // bounded by hook-runner.sh's 9 s watchdog instead.
 import { evaluatePayload } from './policy/evaluate.mjs';
+import { isInteractivePrompt } from './policy/verdict.mjs';
 
 const CEILING_MS = 7000;
 
@@ -40,7 +41,7 @@ async function main() {
     return;
   }
   const verdict = evaluatePayload(payload);
-  if (verdict.decision === 'deny' || verdict.decision === 'ask') {
+  if (verdict.decision === 'deny' || isInteractivePrompt(verdict)) {
     process.stdout.write(`${JSON.stringify({ decision: verdict.decision, reason: verdict.reason })}\n`);
   }
 }

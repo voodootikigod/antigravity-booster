@@ -46,7 +46,13 @@ function pluginValidationErrors(data) {
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
 const HOST_NODE_MODULES = (() => {
   let d = process.cwd();
-  while (d !== dirname(d) && !existsSync(join(d, 'node_modules'))) d = dirname(d);
+  while (d !== dirname(d)) {
+    const nm = join(d, 'node_modules');
+    if (existsSync(nm) && !lstatSync(nm).isSymbolicLink() && !existsSync(join(nm, '.agb-materialized'))) {
+      break;
+    }
+    d = dirname(d);
+  }
   return join(d, 'node_modules');
 })();
 
@@ -1477,6 +1483,32 @@ test('writeAdlcTickets: rejects dangling symlink at .adlc or .adlc/tickets befor
   } finally {
     rmSync(repo1, { recursive: true, force: true });
     rmSync(repo2, { recursive: true, force: true });
+  }
+});
+
+test('resolveAdlcBinary: authenticates materializeWorktreeNodeModules symlinked @adlc/cli while rejecting unmaterialized symlinks', async () => {
+  const { materializeWorktreeNodeModules } = await import('../lib/worktrees.mjs');
+  const wt = mkdtempSync(join(process.cwd(), '.test-mat-nm-wt-'));
+  const rogue = mkdtempSync(join(process.cwd(), '.test-rogue-nm-wt-'));
+  try {
+    writeFileSync(join(wt, 'package-lock.json'), readFileSync(join(dirname(HOST_NODE_MODULES), 'package-lock.json')));
+    assert.equal(materializeWorktreeNodeModules(wt, HOST_NODE_MODULES), true);
+    const res = resolveAdlcBinary({ repo: wt });
+    assert.equal(res.ok, true, res.error);
+    assert.equal(res.source, 'project-local');
+    const execRes = await execFileAuthenticatedAdlc(res.binary, ['--version'], {}, { repo: wt });
+    assert.match(execRes.stdout, /1\.13\./);
+
+    // Without .agb-materialized sentinel, symlinked @adlc/cli is still rejected
+    mkdirSync(join(rogue, 'node_modules', '@adlc'), { recursive: true });
+    writeFileSync(join(rogue, 'package-lock.json'), readFileSync(join(dirname(HOST_NODE_MODULES), 'package-lock.json')));
+    symlinkSync(join(HOST_NODE_MODULES, '@adlc', 'cli'), join(rogue, 'node_modules', '@adlc', 'cli'), 'junction');
+    const rogueRes = resolveAdlcBinary({ repo: rogue });
+    assert.equal(rogueRes.ok, false);
+    assert.match(rogueRes.error, /is a symlink/);
+  } finally {
+    rmSync(wt, { recursive: true, force: true });
+    rmSync(rogue, { recursive: true, force: true });
   }
 });
 

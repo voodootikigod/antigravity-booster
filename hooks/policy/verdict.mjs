@@ -5,7 +5,10 @@ export const PASS = Object.freeze({ decision: 'pass' });
 export const deny = (reason) => ({ decision: 'deny', reason });
 export const ask = (reason) => ({ decision: 'ask', reason });
 
-const RANK = { pass: 0, ask: 1, deny: 2 };
+export const forceAsk = (reason) => ({ decision: 'force_ask', reason });
+export const isInteractivePrompt = (v) => v?.decision === 'ask' || v?.decision === 'force_ask';
+
+const RANK = { pass: 0, ask: 1, force_ask: 2, deny: 3 };
 
 /** Most restrictive verdict wins: deny > ask > pass (A.4 item 5, A.6 item 8). */
 export function mostRestrictive(verdicts) {

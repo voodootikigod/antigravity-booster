@@ -17,7 +17,7 @@ import {
   boosterDataRoots, expandHome, hasHomePrefix, isBenignProcRead, isImplicitAncestorOnly, isRailAncestorOnly, isWithin,
   matchDeclaredRail, matchImplicitRail, matchRoot, physicalResolve, protectedRoots, railStaticPrefix, repoRelative, resolveCandidate,
 } from './paths.mjs';
-import { ask, deny, PASS, mostRestrictive } from './verdict.mjs';
+import { ask, deny, forceAsk, PASS, mostRestrictive } from './verdict.mjs';
 import { normalizeArgsCaseInsensitive } from './evaluate.mjs';
 
 const GIT_READ_FLAGS = {
@@ -555,7 +555,7 @@ function classifySubcommand(rawSub, cwd, ctx, depth) {
   if (ticketOps && ticketOps[0] === 'ticket' && LIFECYCLE_VERBS.has(ticketOps[1])) {
     if (!contextRepos.some((r) => r.adlc)) return finish(PASS);
     if (!argv.includes('--authorize')) return deny('Ticket lifecycle change without --authorize is forbidden in-session');
-    return ctx.headless ? deny('Headless worker cannot authorize a ticket lifecycle change') : ask('Authorized ticket lifecycle change requires operator confirmation');
+    return ctx.headless ? deny('Headless worker cannot authorize a ticket lifecycle change') : forceAsk('Authorized ticket lifecycle change requires operator confirmation');
   }
   if (stage1) return finish(PASS);
   if (isStage2(sub, cwd, ctx)) return finish(PASS);

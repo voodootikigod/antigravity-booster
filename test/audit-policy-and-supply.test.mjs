@@ -111,7 +111,7 @@ test('evaluateWorkflowTool preserves ask/pass behavior for valid lowercase cwd a
     { cwd: fx.active, scriptPath: join(fx.active, 'scripts', 'ok.py') },
     fx.active,
   );
-  assert.equal(activeOk.decision, 'ask');
+  assert.equal(activeOk.decision, 'force_ask');
 
   const inactiveOk = evalWorkflow(
     { cwd: fx.inactive, scriptPath: join(fx.inactive, 'scripts', 'ok.py') },
