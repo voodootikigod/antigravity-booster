@@ -13666,7 +13666,7 @@ ${ticket.body}
 ${rails.length ? `- READ-ONLY paths (rails \u2014 never edit): ${rails.join(", ")}` : ""}
 - Prefer minimal diffs over file regeneration. Never rewrite a file you can edit.
 - No new dependencies unless the spec names them.
-- Never add linter, typechecker, or coverage suppression comments (e.g. eslint-disable, @ts-ignore, c8 ignore, istanbul ignore, noqa) \u2014 adlc rails-guard mechanically blocks suppression markers.
+- Never add linter, typechecker, or coverage suppression directives in comments \u2014 adlc rails-guard mechanically blocks suppression markers.
 - Do not create documentation, READMEs, or comments about your own process.
 - If the spec is ambiguous, choose the simplest reading and note the
   assumption in your final summary \u2014 do not expand scope.
