@@ -6,6 +6,7 @@ import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { runPlan } from '../lib/scheduler.mjs';
+import { runRemoteSdkPlan } from '../lib/remote-sdk-worker.mjs';
 import { renderStatus } from '../lib/status.mjs';
 import { runAgy } from '../lib/agy.mjs';
 import { sweepToPlan } from '../lib/sweep.mjs';
@@ -76,7 +77,7 @@ const COMMANDS = {
   run: {
     args: '<plan.json>',
     desc: 'execute a ticket DAG (build → gate → prosecute → merge)',
-    flags: '[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)]'
+    flags: '[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)] [--driver <local|remote-sdk> (execution driver)] [--dry-run (preview remote-sdk waves without spawning)]'
   },
   'gate-ticket': {
     args: '<ticket-id> [repo]',
@@ -302,6 +303,8 @@ try {
     let planPath = 'plan.json';
     let resume = false;
     let resetRescue = false;
+    let driver = 'local';
+    let dryRun = false;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '-c') {
         if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
@@ -313,6 +316,18 @@ try {
           console.error(`agb: invalid concurrency '${rest[i]}'`);
           process.exit(1);
         }
+      } else if (rest[i] === '--driver') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --driver');
+          process.exit(1);
+        }
+        driver = rest[++i];
+        if (driver !== 'local' && driver !== 'remote-sdk') {
+          console.error(`agb: invalid --driver '${driver}' (expected 'local' or 'remote-sdk')`);
+          process.exit(1);
+        }
+      } else if (rest[i] === '--dry-run') {
+        dryRun = true;
       } else if (rest[i] === '--resume') {
         resume = true;
       } else if (rest[i] === '--reset-rescue') {
@@ -328,6 +343,11 @@ try {
     if (errors.length) {
       console.error('plan invalid:\n  ' + errors.join('\n  '));
       process.exit(1);
+    }
+    if (driver === 'remote-sdk') {
+      const report = await runRemoteSdkPlan(plan, { concurrency, dryRun, log: (m) => console.error(m) });
+      await new Promise((r) => process.stdout.write(`${JSON.stringify(report, null, 2)}\n`, r));
+      process.exit(report.ok ? 0 : 2);
     }
     const report = await runPlan(plan, { project, concurrency, resume, resetRescue });
     console.log(JSON.stringify(report, null, 2));

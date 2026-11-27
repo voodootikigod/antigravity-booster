@@ -1,0 +1,29 @@
+#!/usr/bin/env node
+// Offline fake remote-sdk executable for test/remote-sdk-worker.test.mjs.
+
+import { readFileSync } from 'node:fs';
+
+const raw = readFileSync(0, 'utf8').trim();
+const payload = JSON.parse(raw || '{}');
+
+if (payload.prompt && payload.prompt.includes('FAIL_TICKET')) {
+  process.stdout.write(
+    JSON.stringify({ ok: false, kind: 'sdk_runtime_error', error: `Remote VM build failed for ${payload.ticketId}` }) + '\n'
+  );
+  process.exit(1);
+}
+
+if (payload.prompt && payload.prompt.includes('HANG_TICKET')) {
+  setTimeout(() => {}, 30_000);
+} else {
+  process.stdout.write(
+    JSON.stringify({
+      ok: true,
+      sessionId: `remote-vm-${payload.ticketId}`,
+      branch: payload.branchName,
+      commitSha: '1234567890abcdef1234567890abcdef12345678',
+      output: `Completed ${payload.ticketId} on ${payload.model}`,
+      ms: 12,
+    }) + '\n'
+  );
+}

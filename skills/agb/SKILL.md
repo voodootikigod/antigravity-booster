@@ -122,7 +122,7 @@ PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
 ~/.local/bin/agb shape <spec.md | id> [repo-path] [--analyze] [--strict] [--sync-brain] [--max-ticket-scope <n>] [--json]
 ~/.local/bin/agb plan <id | spec.md> [repo-path] [--delta <prev-plan.json>] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--prompt-only] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
 ~/.local/bin/agb preflight [plan.json] [--no-coldstart] [--force-coldstart]
-~/.local/bin/agb run <plan.json> [-c <n>] [--resume] [--reset-rescue]
+~/.local/bin/agb run <plan.json> [-c <n>] [--resume] [--reset-rescue] [--driver <local|remote-sdk>] [--dry-run]
 ~/.local/bin/agb gate-ticket <ticket-id> [repo-path] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-manifest] [--json]
 ~/.local/bin/agb handoff <ticket-id> [repo-path] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--html <file>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-prosecute] [--prompt-only] [--require-prosecutor] [--no-manifest] [--json]
 ~/.local/bin/agb rescue <ticket-id> [repo-path] [--continue] [--plan <plan.json>]

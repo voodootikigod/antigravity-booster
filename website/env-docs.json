@@ -674,6 +674,20 @@
       "description": "Set to 1 by agb remote-control (or Antigravity Web Remote Control) to render compact vertical mobile status and P6 sign-off cards instead of wide ASCII tables."
     },
     {
+      "name": "AGB_REMOTE_SDK_BIN",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Optional executable wrapper for agb run --driver remote-sdk overriding the default python3 google-antigravity SDK bridge in lib/remote-sdk-worker.mjs."
+    },
+    {
+      "name": "AGB_LINUX_CONTAINER_ATTESTATION",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 on restricted Docker/Kubernetes Linux CI runners without unprivileged userns to permit an ADLC_ADMIN_KEY-signed Linux container sandboxBypassAttestation in prepareBuilderContainment."
+    },
+    {
       "name": "ANTIGRAVITY_RESOLVING_ENVIRONMENT",
       "group": "core",
       "default": "set by Antigravity SSH",

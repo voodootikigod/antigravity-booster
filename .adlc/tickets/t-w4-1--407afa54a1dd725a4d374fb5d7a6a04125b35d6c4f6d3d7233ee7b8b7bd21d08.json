@@ -1,0 +1,22 @@
+{
+  "body": "Create lib/remote-sdk-worker.mjs exporting isRemoteSdkAvailable, buildRemoteSdkBridgeScript, runRemoteSdkTicket, and runRemoteSdkPlan for wave-ordered cloud-VM ticket execution with bounded concurrency, timeout teardown, dry-run planning, and graceful { ok: false, kind, error } degradation. Add offline fixture test/fixtures/fake-remote-sdk and test/remote-sdk-worker.test.mjs. Verify: node --test test/remote-sdk-worker.test.mjs",
+  "category": "feature",
+  "edges": [
+    {
+      "to": "T-W4-3"
+    }
+  ],
+  "id": "T-W4-1",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/remote-sdk-worker.mjs",
+    "test/remote-sdk-worker.test.mjs",
+    "test/fixtures/fake-remote-sdk"
+  ],
+  "title": "google-antigravity Python SDK Cloud-Bursting Worker Adapter"
+}

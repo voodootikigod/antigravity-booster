@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T17:58:50.118Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "dfb22204c639cc800a5cd024ed3621920615ca74718f4558a1ae0a8c48701e75",
+    "ticketHash": "0f489b6935eb447f0cc527a07987bfd95cee869e1321d4f8164a14366a1a4518",
+    "version": 1
+  },
   "body": "Create lib/remote-control.mjs exporting isRemoteControlEnv, buildRemoteControlArgs, launchRemoteControl, formatMobileStatusCard, and formatMobileAcceptCard for antigravity.google.com Remote Control sessions (ANTIGRAVITY_REMOTE_CONTROL=1) with compact vertical Markdown cards and ask_question-ready operator actions. Wire { mobile } support into renderStatus (lib/status.mjs) and export formatAcceptanceDossierMobile in lib/accept.mjs. Add test/remote-control-and-mobile.test.mjs. Verify: node --test test/remote-control-and-mobile.test.mjs test/status.test.mjs test/accept.test.mjs",
   "category": "feature",
   "completed": true,
