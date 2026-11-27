@@ -1540,3 +1540,86 @@ test('jetski slash-delimited conversationId brain writes & App/Web/Remote built-
   );
 });
 
+test('Wave 1 A7: AGB_WORKTREE_ROOT confines Workspace="inherit" subagent mutations to assigned worktree', () => {
+  // Set up an ADLC git worktree inside fx.active/.worktrees/agb-T1
+  const wtRoot = join(fx.active, '.worktrees', 'agb-T1');
+  mkdirSync(join(wtRoot, 'lib'), { recursive: true });
+  mkdirSync(join(wtRoot, '.adlc'), { recursive: true });
+  writeFileSync(join(wtRoot, '.git'), 'gitdir: ../../.git/worktrees/agb-T1\n');
+  writeFileSync(join(wtRoot, '.adlc', 'config.json'), '{}\n');
+  initializeDirectoryStore(join(wtRoot, '.adlc', 'tickets'));
+  writeFileSync(
+    join(wtRoot, '.adlc', 'tickets', ticketFilename('T1')),
+    JSON.stringify({ id: 'T1', title: 'wt', body: 'b', scope: ['lib/feature.mjs'], rails: ['lib/lock.mjs'], edges: [] }, null, 2) + '\n',
+  );
+  writeFileSync(join(wtRoot, 'lib', 'feature.mjs'), '// wt feature\n');
+  writeFileSync(join(wtRoot, 'lib', 'lock.mjs'), '// wt rail\n');
+
+  const wtEnv = { AGB_WORKER_TICKET: 'T1', AGB_WORKTREE_ROOT: wtRoot };
+
+  // 0. Baseline without AGB_WORKTREE_ROOT: normal active workspace write passes
+  assert.equal(
+    run('write_to_file', { TargetFile: join(fx.active, 'lib', 'feature.mjs'), CodeContent: 'ok' }, fx.active, { AGB_WORKER_TICKET: 'T1' }).decision,
+    'pass',
+  );
+
+  // 1. Writing to in-scope file INSIDE assigned worktree passes (even though workspacePaths points to parent fx.active!)
+  assert.equal(
+    run('write_to_file', { TargetFile: join(wtRoot, 'lib', 'feature.mjs'), CodeContent: 'ok' }, fx.active, wtEnv).decision,
+    'pass',
+  );
+
+  // 2. Writing to the SAME scope-matching path in the PARENT checkout (fx.active/lib/feature.mjs) is DENIED!
+  const parentEscape = run('write_to_file', { TargetFile: join(fx.active, 'lib', 'feature.mjs'), CodeContent: 'escape' }, fx.active, wtEnv);
+  assert.equal(parentEscape.decision, 'deny');
+  assert.match(parentEscape.reason, /AGB_WORKTREE_ROOT/);
+
+  // 2b. Scratch file in tmpdir outside workspaceRealPaths is allowed under AGB_WORKTREE_ROOT
+  assert.equal(
+    run('write_to_file', { TargetFile: join(tmpdir(), 'agb-wt-scratch.txt'), CodeContent: 'tmp' }, fx.active, { AGB_WORKTREE_ROOT: wtRoot }).decision,
+    'pass',
+  );
+
+  // 3. Writing to out-of-scope or frozen rail INSIDE assigned worktree is still denied
+  assert.equal(
+    run('write_to_file', { TargetFile: join(wtRoot, 'lib', 'other.mjs'), CodeContent: 'nope' }, fx.active, wtEnv).decision,
+    'deny',
+  );
+  assert.equal(
+    run('write_to_file', { TargetFile: join(wtRoot, 'lib', 'lock.mjs'), CodeContent: 'rail' }, fx.active, wtEnv).decision,
+    'deny',
+  );
+
+  // 4. Relative or nonexistent/dangling AGB_WORKTREE_ROOT fails closed even on read tools
+  assert.equal(
+    run('view_file', { AbsolutePath: join(fx.active, 'lib', 'feature.mjs') }, fx.active, { AGB_WORKTREE_ROOT: 'relative/wt' }).decision,
+    'deny',
+  );
+  const loopLink = join(fx.base, 'wt-loop');
+  try { symlinkSync(loopLink, loopLink); } catch {}
+  assert.equal(
+    run('view_file', { AbsolutePath: join(fx.active, 'lib', 'feature.mjs') }, fx.active, { AGB_WORKTREE_ROOT: loopLink }).decision,
+    'deny',
+  );
+
+  // 5. run_command Cwd outside AGB_WORKTREE_ROOT is denied; Cwd inside AGB_WORKTREE_ROOT passes benign test commands
+  assert.equal(shell('npm test', fx.active, wtEnv, fx.active).decision, 'deny');
+  assert.equal(shell('npm test', fx.active, wtEnv, wtRoot).decision, 'pass');
+
+  // 6. Shell redirects and destructive commands escaping AGB_WORKTREE_ROOT to parent repo are denied
+  assert.equal(
+    shell(`echo hi > ${join(fx.active, 'lib', 'feature.mjs')}`, fx.active, wtEnv, wtRoot).decision,
+    'deny',
+  );
+  assert.equal(
+    shell(`rm -f ${join(fx.active, 'lib', 'feature.mjs')}`, fx.active, wtEnv, wtRoot).decision,
+    'deny',
+  );
+  // Redirect to /dev/null inside worktree is permitted
+  assert.equal(
+    shell('npm test >/dev/null', fx.active, wtEnv, wtRoot).decision,
+    'pass',
+  );
+});
+
+

@@ -232,6 +232,7 @@ export async function start({
   env = process.env,
   defaultPort = 3333,
   exitOnError = false,
+  allowProxyHost = false,
 } = {}) {
   const jetskiPort = parseJetskiPort(env.ANTIGRAVITY_SIDECAR_WEB_PORT);
   const isJetski = jetskiPort !== null;
@@ -265,7 +266,7 @@ export async function start({
     // sidecar_sdk not available, proceed to standalone HTTP server
   }
 
-  const token = isJetski ? null : randomBytes(16).toString('hex');
+  const token = isJetski && !allowProxyHost ? null : randomBytes(16).toString('hex');
 
   if (token) {
     try {
@@ -281,9 +282,10 @@ export async function start({
 
   console.log(`Starting AGB Dashboard for repository: ${repoPath} on port: ${port}`);
   try {
-    const server = await serveSidecar(repoPath, port, token);
+    const server = await serveSidecar(repoPath, port, token, { allowProxyHost });
     const actualPort = server.address()?.port ?? port;
-    console.log(`AGB Dashboard successfully running at http://127.0.0.1:${actualPort}`);
+    const urlSuffix = token ? `/?token=${token}` : '';
+    console.log(`AGB Dashboard successfully running at http://127.0.0.1:${actualPort}${urlSuffix}`);
     return server;
   } catch (err) {
     console.error(`Failed to start AGB Dashboard: ${err.message}`);

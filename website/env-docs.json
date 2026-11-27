@@ -623,6 +623,20 @@
       "default": "unset",
       "bundledIgnored": false,
       "description": "Set to 1 to permit a non-loopback accelerators.decision.baseUrl from repository .adlc/config.json for the kev provider (host API keys are still never attached to repo-configured URLs)."
+    },
+    {
+      "name": "AGB_WORKTREE_ROOT",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Absolute worktree directory path enforced by PreToolUse (hooks/policy/evaluate.mjs) for Workspace='inherit' cloud/Remote Agent builders; denies file mutations, redirects, destructive shell commands, and run_command Cwd outside the assigned worktree."
+    },
+    {
+      "name": "ANTIGRAVITY_RESOLVING_ENVIRONMENT",
+      "group": "core",
+      "default": "set by Antigravity SSH",
+      "bundledIgnored": false,
+      "description": "Set to 1 by Antigravity Desktop when probing a remote host's login shell over SSH; causes agb bootstrap to return immediately without running plugin installation."
     }
   ],
   "ignore": [

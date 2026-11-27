@@ -66,7 +66,7 @@ function tierCandidates(tier = "mid", poolHint, options) {
     return fam === poolHint;
   });
 }
-var MODELS, ALL_MODELS, MODEL_ALIASES, EFFORTS, ENTERPRISE_MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, retiredEntries, RETIRED_MODEL_MAP, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, CODE_ARL_LENSES, PLAN_ARL_LENSES, ARL_LENS_MODELS, runtimeState, routingAls, VALID_EFFORTS, SLUG_EFFORT_LADDER, RISK_TIERED_PROSECUTOR_CANDIDATES;
+var MODELS, ALL_MODELS, MODEL_ALIASES, EFFORTS, ENTERPRISE_MODEL_ALIASES, RETIRED_FLASH_GENERATIONS, retiredEntries, RETIRED_MODEL_MAP, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, PROSECUTORS, CODE_ARL_LENSES, PLAN_ARL_LENSES, ARL_LENS_MODELS, ROLE_MODELS, runtimeState, routingAls, VALID_EFFORTS, SLUG_EFFORT_LADDER, RISK_TIERED_PROSECUTOR_CANDIDATES;
 var init_models = __esm({
   "lib/models.mjs"() {
     MODELS = {
@@ -180,6 +180,11 @@ var init_models = __esm({
         "claude-opus-5-5-high"
       ])
     };
+    PROSECUTORS = {
+      gemini: "claude-sonnet-5-5-high",
+      claude: "gemini-4-neon-high",
+      "gpt-oss": "gemini-4-neon-high"
+    };
     CODE_ARL_LENSES = Object.freeze([
       "correctness_redteam",
       "security",
@@ -206,6 +211,17 @@ var init_models = __esm({
       dag_topology: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" },
       arbiter: { primary: "gemini-4-neon-high", fallback: "claude-opus-5-5-high" }
     });
+    ROLE_MODELS = {
+      coldstart: "gemini-4-hydrogen-low",
+      premortem: "gemini-4-neon-high",
+      parallaxReader: "gemini-4-hydrogen-medium",
+      parallaxJudge: "gemini-4-neon-high",
+      brainConvert: "gemini-4-neon-high",
+      brainRepair: "gemini-4-neon-high",
+      arbiter: "gemini-4-neon-high",
+      probeDefault: "Gemini 4 Hydrogen (Low)",
+      reviewFleetAlternates: ["gemini-4-hydrogen-high", "gemini-4-neon-high"]
+    };
     runtimeState = {
       disableOrchestrator: false,
       disabledModels: null
@@ -878,7 +894,7 @@ var init_decision_engine = __esm({
 // lib/doctor.mjs
 import { execFile as execFile2, execFileSync as execFileSync2, execSync, spawnSync } from "child_process";
 import { promisify as promisify2 } from "util";
-var execFileAsync2, SELFTEST_RAIL, SELFTEST_REASON;
+var execFileAsync2, SELFTEST_RAIL, SELFTEST_REASON, CLOUD_ENVIRONMENT_JSON, CLOUD_PROSECUTOR_AGENT_MD, CLOUD_SPEC_LINTER_AGENT_MD;
 var init_doctor2 = __esm({
   "lib/doctor.mjs"() {
     init_adlc_bridge();
@@ -888,11 +904,43 @@ var init_doctor2 = __esm({
     init_semver();
     init_doctor_models();
     init_doctor_settings();
+    init_models();
     init_worktrees();
     init_decision_engine();
     execFileAsync2 = promisify2(execFile2);
     SELFTEST_RAIL = "lib/lock.mjs";
     SELFTEST_REASON = `Target path matches frozen rail: ${SELFTEST_RAIL}`;
+    CLOUD_ENVIRONMENT_JSON = JSON.stringify(
+      {
+        install: "set -euo pipefail; if command -v apt-get >/dev/null 2>&1 && { ! command -v bwrap >/dev/null 2>&1 || ! command -v shellcheck >/dev/null 2>&1; }; then sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq bubblewrap shellcheck; fi; if ! command -v adlc >/dev/null 2>&1; then npm install -g --ignore-scripts @adlc/cli; fi; if ! command -v agb >/dev/null 2>&1; then npm install -g --ignore-scripts antigravity-booster; fi; if ! command -v codegraph >/dev/null 2>&1; then npm install -g @colbymchenry/codegraph; fi; if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi; if [ -d .codegraph ]; then CODEGRAPH_TELEMETRY=0 codegraph sync; else CODEGRAPH_TELEMETRY=0 codegraph init -y --local-only; fi"
+      },
+      null,
+      2
+    ) + "\n";
+    CLOUD_PROSECUTOR_AGENT_MD = `---
+name: prosecutor
+description: Cross-model refutation prosecutor evaluating candidate diffs against ticket scope and frozen rails.
+tools: [grep_search, find_by_name, view_file, list_dir]
+subagent: true
+mainAgent: false
+commandExecutionPolicy: sandbox
+model: ${PROSECUTORS.gemini}
+---
+
+You are a skeptical ADLC prosecutor. Refute unverified claims of completion by auditing candidate diffs against declared ticket scope, frozen rails, edge cases, and hollow test assertions.
+`;
+    CLOUD_SPEC_LINTER_AGENT_MD = `---
+name: spec-linter
+description: ADLC P1 specification auditor verifying executable acceptance criteria and disjoint ticket scopes.
+tools: [grep_search, find_by_name, view_file, list_dir]
+subagent: true
+mainAgent: false
+commandExecutionPolicy: sandbox
+model: ${ROLE_MODELS.premortem}
+---
+
+You are an ADLC specification auditor. Verify that every ticket declares disjoint scopes, explicit dependency edges, standing rails, and deterministic backticked verification commands.
+`;
   }
 });
 

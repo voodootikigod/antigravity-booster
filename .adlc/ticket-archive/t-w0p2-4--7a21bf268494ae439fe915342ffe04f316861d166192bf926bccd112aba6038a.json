@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T02:36:06.346Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "80fe9fd5c5c9a15ef58d4a0586c51f5c8eb6e56db9d8292802b5ebf72668217a",
+    "ticketHash": "a2d91b31f1b668b956938dabf043f115e792c2a8f04304c3bfed18c2dd7a040f",
+    "version": 1
+  },
   "body": "Update commands/agb.md, test/commands.test.mjs, test/skills-cross-harness.test.mjs, and website/content/docs/ references to reflect .agents/rules/adlc-learned.md YAML frontmatter, _meta['com.google.antigravity/ui'] MCP App surfaces, antigravity-booster_agb MCP server naming, and mcp_config.json settings. Regenerate website/generated/ partials via node website/scripts/gen-reference.mjs, verify npm run skills:check, rebuild dist/ bundles via npm run build, and verify npm test passes with zero failures.",
   "completed": true,
   "edges": [],

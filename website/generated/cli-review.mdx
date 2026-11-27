@@ -9,6 +9,7 @@ Read-only lens fleet over a diff or plan spec (single-pass by default).
 | --delta | &lt;base-ref&gt; | review only fix delta since ref |
 | --dry-rounds | &lt;n&gt; | consecutive dry rounds required |
 | --five-lens | — | use 5-lens Code ARL |
+| --json | — | emit JSON |
 | --loop | — | iterative Plan ARL up to 3 rounds |
 | --no-arbiter | — | skip neutral arbiter |
 | --no-codegraph | — | disable CodeGraph context slicing |
@@ -16,5 +17,6 @@ Read-only lens fleet over a diff or plan spec (single-pass by default).
 | --plan | &lt;spec.md&gt; | run 5-lens Plan ARL |
 | --plan-file | &lt;plan.json&gt; | load ticketScopes for --seams-only |
 | --prior-findings | &lt;path&gt; | path to persisted prior findings JSON |
+| --prompt-only | — | emit ARL prompts without agy |
 | --seams-only | — | review cross-ticket seams only |
 | --thorough | — | enable multi-dry convergence |

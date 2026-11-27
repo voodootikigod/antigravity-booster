@@ -1,0 +1,24 @@
+{
+  "body": "Rewrite compilePlanToWorkflow in lib/workflow-emit.mjs to emit an async Python 3 script supporting Antigravity /run-workflow (await parallel(wave, ...), await agent(prompt=..., schema=TICKET_RESULT_SCHEMA, role=..., type_name='self', workspace='inherit', model=...)), per-ticket .worktrees/agb-<ticket-id> provisioning + agb gate-ticket gating when live primitives are present, and clean standalone python3 dry-run JSON output. Enforce AGB_WORKTREE_ROOT physical containment in hooks/policy/evaluate.mjs (buildContext, file mutations, and shell/command write checks): fail closed if AGB_WORKTREE_ROOT is non-empty and non-absolute, and deny any repo/filesystem mutation outside AGB_WORKTREE_ROOT (other than tmpRoots and verified Brain artifacts). Expand test/workflow-emit.test.mjs and test/pre-tool-use.test.mjs.",
+  "completed": true,
+  "edges": [
+    {
+      "reason": "lib/plan.mjs statically imports compilePlanToWorkflow from lib/workflow-emit.mjs",
+      "to": "T-W1-1"
+    }
+  ],
+  "id": "T-W1-3",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/workflow-emit.mjs",
+    "hooks/policy/evaluate.mjs",
+    "test/workflow-emit.test.mjs",
+    "test/pre-tool-use.test.mjs"
+  ],
+  "title": "Async /run-workflow Compiler & AGB_WORKTREE_ROOT PreToolUse Confinement"
+}

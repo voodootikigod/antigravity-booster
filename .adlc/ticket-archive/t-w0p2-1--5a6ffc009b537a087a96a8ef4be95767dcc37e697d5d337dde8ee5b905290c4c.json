@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T02:36:03.352Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "8424b34f2c2330ad364d865d7fd1052477a170ea358dfc75b6fcf9e2a9ee3d50",
+    "ticketHash": "00eb924add6c07d651387377199465ab74c2bc2a234cbf7452404f80568a27aa",
+    "version": 1
+  },
   "body": "Move surface ('aux_pane', 'global', 'file') and extensions (['.agbplan']) from _meta.ui into _meta['com.google.antigravity/ui'] on agb_flight_deck, agb_mission_control, and agb_plan_viewer in mcp/server.mjs. Support opaque antigravity-file:// URIs in agb_plan_viewer (mcp/server.mjs) and buildPlanViewerHtml (mcp/ui-views.mjs) via deferredRead: true + __bridge.readResource / __bridge.writeResource. Track clientSupportsUiExtension on initialize and emit sidecarHint ('agb sidecar <repo>') for non-UI clients in agb_flight_deck, agb_mission_control, and agb_run. Update mcp_config.json to command 'node', args ['${PLUGIN_ROOT}/dist/mcp-server.mjs'], timeoutSeconds -1, and tools metadata (agb_run background='always', agb_status/agb_doctor eager=true). Expand test/mcp-apps.test.mjs.",
   "completed": true,
   "edges": [

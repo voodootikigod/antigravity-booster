@@ -138,45 +138,82 @@ export function resolveSafeEventsPath(repoPath) {
   return { ok: true, runId, eventsPath: realEvents };
 }
 
-export function serveSidecar(repoPath, port = 3333, token = null) {
+function parseCookieValue(cookieHeader, name) {
+  if (!cookieHeader || typeof cookieHeader !== 'string') return null;
+  for (const part of cookieHeader.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const k = part.slice(0, eq).trim();
+    if (k === name) {
+      try {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      } catch {
+        return part.slice(eq + 1).trim();
+      }
+    }
+  }
+  return null;
+}
+
+function matchesSecretConstantTime(candidate, expectedBuf) {
+  if (!candidate || typeof candidate !== 'string') return false;
+  const candBuf = Buffer.from(candidate);
+  return candBuf.length === expectedBuf.length && timingSafeEqual(candBuf, expectedBuf);
+}
+
+export function serveSidecar(repoPath, port = 3333, token = null, options = {}) {
+  const { allowProxyHost = false, bindHost = '127.0.0.1' } = options;
+  if (allowProxyHost && (typeof token !== 'string' || token.length === 0)) {
+    return Promise.reject(new Error('serveSidecar: non-empty token is required when allowProxyHost is enabled'));
+  }
 
   const handleRequest = async (req, res) => {
     const hostHeader = req.headers.host || '';
     let hostname = '';
     try {
       hostname = new URL('http://' + hostHeader).hostname;
-    } catch(e) {}
+    } catch {}
     const allowlistHosts = ['127.0.0.1', 'localhost', '[::1]', '::1'];
-    
-    if (!allowlistHosts.includes(hostname)) {
+    const isLocalHost = allowlistHosts.includes(hostname);
+
+    if (!isLocalHost && !allowProxyHost) {
       res.writeHead(403);
       return res.end('Forbidden');
     }
+
     const reqUrl = new URL(req.url, 'http://localhost');
     const reqToken = reqUrl.searchParams.get('token');
-    
+    const authHeader = req.headers.authorization || '';
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+    const cookieToken = parseCookieValue(req.headers.cookie, 'agb_sidecar_token');
+
     if (token) {
       const tokenBuf = Buffer.from(token);
+      const queryOk = matchesSecretConstantTime(reqToken, tokenBuf);
+      const bearerOk = matchesSecretConstantTime(bearerToken, tokenBuf);
+      const cookieOk = matchesSecretConstantTime(cookieToken, tokenBuf);
+      const anyAuthOk = queryOk || bearerOk || cookieOk;
+
+      if (!isLocalHost && !anyAuthOk) {
+        res.writeHead(403);
+        return res.end('Forbidden: Invalid token');
+      }
+
       if (reqUrl.pathname === '/' || reqUrl.pathname === '/index.html') {
-        const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
-        const isAuth = reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual(reqTokenBuf, tokenBuf);
-        if (!isAuth) {
+        if (!queryOk && !cookieOk && !bearerOk) {
           res.writeHead(403);
           return res.end('Forbidden: Invalid token');
         }
+        if (allowProxyHost && !isLocalHost && queryOk) {
+          res.setHeader('Set-Cookie', `agb_sidecar_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`);
+        }
       } else if (reqUrl.pathname === '/events') {
-        const authHeader = req.headers.authorization || '';
-        const bearerToken = authHeader.replace(/^Bearer\s+/, '');
-        const bearerTokenBuf = bearerToken ? Buffer.from(bearerToken) : null;
-        const reqTokenBuf = reqToken ? Buffer.from(reqToken) : null;
-        const isAuth = (bearerTokenBuf && bearerTokenBuf.length === tokenBuf.length && timingSafeEqual(bearerTokenBuf, tokenBuf)) ||
-                       (reqTokenBuf && reqTokenBuf.length === tokenBuf.length && timingSafeEqual(reqTokenBuf, tokenBuf));
-        if (!isAuth) {
+        if (!anyAuthOk) {
           res.writeHead(403);
           return res.end('Forbidden: Invalid token header');
         }
       }
-      // /app.js and /style.css are served without token checks.
+      // On loopback Host, /app.js and /style.css remain directly loadable; on non-loopback proxy Host, !anyAuthOk above already gated them.
     }
 
     if (reqUrl.pathname === '/events') {
@@ -380,9 +417,9 @@ export function serveSidecar(repoPath, port = 3333, token = null) {
       }
     });
     
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, bindHost, () => {
       isListening = true;
-      console.log(`AGB Sidecar Server running at http://127.0.0.1:${server.address().port}`);
+      console.log(`AGB Sidecar Server running at http://${bindHost}:${server.address().port}`);
       resolve(server);
     });
   });

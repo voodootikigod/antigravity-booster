@@ -200,3 +200,53 @@ test('buildAcceptanceDossier, SHA-256 fingerprint invalidation, external callers
     rmSync(fx.dir, { recursive: true, force: true });
   }
 });
+
+test('formatAcceptanceDossierHtml and writeAcceptHtmlFile escape untrusted XSS/OSC sequences and write Brain artifacts safely', async () => {
+  const { formatAcceptanceDossierHtml, writeAcceptHtmlFile } = await import('../lib/accept.mjs');
+  const fx = makeAcceptRepo();
+  const brainOut = mkdtempSync(join(tmpdir(), 'agb-accept-brain-'));
+  try {
+    const html = formatAcceptanceDossierHtml({
+      base: 'main"><script>alert(1)</script>',
+      readyForSignOff: true,
+      counts: { filesChanged: 1, totalHunks: 1, acceptedHunks: 1, flaggedHunks: 0, pendingHunks: 0 },
+      gateManifest: { totalEntries: 2, gatesByType: { tests: 1, 'hollow-test': 1 } },
+      externalCallers: { callers: [{ file: 'src/caller.mjs', line: 2, symbol: 'add', snippet: '<img src=x onerror=alert(2)>' }] },
+      hunks: [
+        {
+          id: 'H-001',
+          file: 'src/math.mjs',
+          newStart: 1,
+          addedCount: 1,
+          removedCount: 0,
+          fingerprint: 'abcdef1234567890',
+          verdict: 'accepted',
+          lines: ['+const evil = "\x1b[0m<script>pwn()</script>\x1b]9;BAD\x07";'],
+        },
+      ],
+    });
+    assert.match(html, /READY FOR P6 MERGE SIGN-OFF/);
+    assert.doesNotMatch(html, /<script>alert\(1\)<\/script>|<script>pwn\(\)<\/script>|<img src=x|\x1b|\[0m/);
+    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    assert.match(html, /data-filter="accepted"/);
+
+    // Default .booster/accept-dossier.html write + external Brain artifact dir write
+    const defaultHtmlPath = writeAcceptHtmlFile(fx.dir, html);
+    assert.equal(existsSync(defaultHtmlPath), true);
+
+    const extHtmlPath = writeAcceptHtmlFile(fx.dir, html, join(brainOut, 'nested', 'accept-cockpit.html'));
+    assert.equal(existsSync(extHtmlPath), true);
+    assert.match(readFileSync(extHtmlPath, 'utf8'), /ADLC P6 Sign-Off Evidence Dossier/);
+
+    // Rejects symlinked target file in external Brain dir
+    const secretTarget = join(brainOut, 'secret.txt');
+    writeFileSync(secretTarget, 'secret');
+    const symHtmlTarget = join(brainOut, 'sym.html');
+    symlinkSync(secretTarget, symHtmlTarget);
+    assert.throws(() => writeAcceptHtmlFile(fx.dir, html, symHtmlTarget), /symbolic link not allowed/i);
+  } finally {
+    rmSync(brainOut, { recursive: true, force: true });
+    rmSync(fx.dir, { recursive: true, force: true });
+  }
+});
+

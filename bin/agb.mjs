@@ -9,11 +9,12 @@ import { runPlan } from '../lib/scheduler.mjs';
 import { renderStatus } from '../lib/status.mjs';
 import { runAgy } from '../lib/agy.mjs';
 import { sweepToPlan } from '../lib/sweep.mjs';
-import { reviewFleet, reviewDiff, reviewPlan, loadPriorFindings, savePriorFindings } from '../lib/review.mjs';
+import { reviewFleet, reviewDiff, reviewPlan, loadPriorFindings, savePriorFindings, buildReviewPrompts } from '../lib/review.mjs';
 import { DECISION_PROVIDERS } from '../lib/decision-engine.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
-import { validatePlan, compilePlan, compilePlanToWorkflow } from '../lib/plan.mjs';
+import { validatePlan, compilePlan, compilePlanToWorkflow, buildPlanPrompts } from '../lib/plan.mjs';
+import { runGateTicket } from '../lib/gate-ticket.mjs';
 import { distillRunDefenses } from '../lib/distill.mjs';
 import {
   resolveHoldoutDir,
@@ -38,7 +39,9 @@ import {
 import {
   buildAcceptanceDossier,
   formatAcceptanceDossierMarkdown,
+  formatAcceptanceDossierHtml,
   writeAcceptDossierFile,
+  writeAcceptHtmlFile,
 } from '../lib/accept.mjs';
 import { runInteractiveAcceptTui } from '../lib/accept-tui.mjs';
 import { normalizeMuxName } from '../lib/mux.mjs';
@@ -72,6 +75,11 @@ const COMMANDS = {
     desc: 'execute a ticket DAG (build → gate → prosecute → merge)',
     flags: '[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)]'
   },
+  'gate-ticket': {
+    args: '<ticket-id> [repo]',
+    desc: 'execute deterministic zero-agy ADLC P5 verification (scope, rails-guard, sandboxed tests, learned checks, hollow-test, gate-manifest)',
+    flags: '[--base <ref> (git base ref)] [--worktree <dir> (candidate worktree)] [--test-cmd <cmd> (test command)] [--build-cmd <cmd> (build command)] [--skip-hollow (skip hollow-test)] [--autocommit (stage and commit dirty worktree)] [--no-manifest (skip gate-manifest recording)] [--json (emit JSON)]'
+  },
   rescue: {
     args: '<ticket-id> [repo]',
     desc: 'launch an interactive clean-host agy rescue session for a failed ticket and verify/merge on exit',
@@ -80,7 +88,7 @@ const COMMANDS = {
   accept: {
     args: '[repo]',
     desc: 'inspect candidate hunks, external-caller blast radius, and gate evidence for ADLC P6 sign-off',
-    flags: '[--base <ref> (git base ref)] [--json (emit JSON)] [--markdown <file> (write PR dossier)]'
+    flags: '[--base <ref> (git base ref)] [--json (emit JSON)] [--markdown <file> (write PR dossier)] [--html <file> (write interactive HTML P6 cockpit)]'
   },
   statusline: {
     args: '[render|title|install|uninstall]',
@@ -91,7 +99,7 @@ const COMMANDS = {
   review: {
     args: '[repo] [ref]',
     desc: 'read-only lens fleet over a diff or plan spec (single-pass by default)',
-    flags: '[--plan <spec.md> (run 5-lens Plan ARL)] [--loop (iterative Plan ARL up to 3 rounds)] [--five-lens (use 5-lens Code ARL)] [--no-arbiter (skip neutral arbiter)] [--thorough (enable multi-dry convergence)] [--dry-rounds <n> (consecutive dry rounds required)] [--seams-only (review cross-ticket seams only)] [--plan-file <plan.json> (load ticketScopes for --seams-only)] [--delta <base-ref> (review only fix delta since ref)] [--prior-findings <path> (path to persisted prior findings JSON)] [--no-codegraph (disable CodeGraph context slicing)] [--no-decision-engine (disable System-1 decision engine)]'
+    flags: '[--plan <spec.md> (run 5-lens Plan ARL)] [--loop (iterative Plan ARL up to 3 rounds)] [--five-lens (use 5-lens Code ARL)] [--no-arbiter (skip neutral arbiter)] [--prompt-only (emit ARL prompts without agy)] [--json (emit JSON)] [--thorough (enable multi-dry convergence)] [--dry-rounds <n> (consecutive dry rounds required)] [--seams-only (review cross-ticket seams only)] [--plan-file <plan.json> (load ticketScopes for --seams-only)] [--delta <base-ref> (review only fix delta since ref)] [--prior-findings <path> (path to persisted prior findings JSON)] [--no-codegraph (disable CodeGraph context slicing)] [--no-decision-engine (disable System-1 decision engine)]'
   },
   shape: {
     args: '<spec.md | id> [repo]',
@@ -102,7 +110,7 @@ const COMMANDS = {
     args: '<id | spec.md> [repo]',
     desc: 'compile an Antigravity brain plan or spec file into plan.json',
     extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
-    flags: '[--estimate (forecast quota burn without writing files)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
+    flags: '[--estimate (forecast quota burn without writing files)] [--prompt-only (emit conversion/premortem/parallax prompts without agy)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
   },
   distill: {
     args: '[repo]',
@@ -135,14 +143,14 @@ const COMMANDS = {
   init: {
     args: '[repo]',
     desc: 'initialize a target repository for ADLC and agb (.adlc/config.json, specs/feature-template.md, .gitignore)',
-    flags: '[--with-codegraph (add .codegraph/ to .gitignore, run codegraph init, enable in config)] [--decision-provider <jev|gemini-decisions|kev> (configure System-1 decision engine provider)]'
+    flags: '[--cloud (scaffold .agents/ zero-install cloud repo pack)] [--force (overwrite existing template/cloud files)] [--with-codegraph (add .codegraph/ to .gitignore, run codegraph init, enable in config)] [--decision-provider <jev|gemini-decisions|kev> (configure System-1 decision engine provider)]'
   },
   'sync-models': {
     args: '',
     desc: 'audit live agy models output against lib/models.mjs',
     flags: '[--check (exit 1 on drift)] [--offline (skip live CLI probe)] [--json (emit JSON)] [--write (update references/models.json)]'
   },
-  sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>]' },
+  sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>] [--cloud (allow token-authenticated proxy Host headers)]' },
   probe: { args: '[widths] [model]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '[--force] [--force-reinstall]', desc: 'install adlc-antigravity, ~/.local/bin/agb shim, booster skills, and CLI statusLine/title settings (aliases: setup, install)' },
@@ -311,6 +319,53 @@ try {
     const report = await runPlan(plan, { project, concurrency, resume, resetRescue });
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
+  } else if (cmd === 'gate-ticket') {
+    const valueFlags = new Set(['--base', '--worktree', '--test-cmd', '--build-cmd']);
+    rejectUnknownFlags(
+      'gate-ticket',
+      rest,
+      new Set(['--skip-hollow', '--autocommit', '--no-manifest', '--json']),
+      valueFlags
+    );
+    let base = 'HEAD~1';
+    let worktree = null;
+    let testCmd = 'npm test';
+    let buildCmd = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--base') base = rest[++i];
+      else if (rest[i] === '--worktree') worktree = rest[++i];
+      else if (rest[i] === '--test-cmd') testCmd = rest[++i];
+      else if (rest[i] === '--build-cmd') buildCmd = rest[++i];
+    }
+    const skipHollow = rest.includes('--skip-hollow');
+    const autocommit = rest.includes('--autocommit') || Boolean(worktree);
+    const noManifest = rest.includes('--no-manifest');
+    const jsonOut = rest.includes('--json');
+    const positional = extractPositionalArgs(rest, valueFlags);
+    const ticketId = positional[0];
+    const targetRepo = resolve(positional[1] ?? '.');
+    if (!ticketId) {
+      console.error('usage: agb gate-ticket <ticket-id> [repo] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--skip-hollow] [--autocommit] [--no-manifest] [--json]');
+      process.exit(1);
+    }
+    const res = await runGateTicket(targetRepo, ticketId, {
+      base,
+      worktree: worktree ? resolve(targetRepo, worktree) : null,
+      testCmd,
+      buildCmd,
+      skipHollow,
+      autocommit,
+      recordManifest: !noManifest,
+    });
+    if (jsonOut) {
+      await new Promise((r) => process.stdout.write(`${JSON.stringify(res, null, 2)}\n`, r));
+      process.exit(res.ok ? 0 : 2);
+    } else if (res.ok) {
+      console.log(`gate-ticket ${ticketId}: PASS (${res.changedPaths.length} file(s) verified against ${res.baseRefSha.slice(0, 8)})`);
+    } else {
+      console.error(`gate-ticket ${ticketId}: FAIL [${res.kind}] — ${res.error}`);
+    }
+    process.exit(res.ok ? 0 : 2);
   } else if (cmd === 'rescue') {
     rejectUnknownFlags('rescue', rest, new Set(['--continue']), new Set(['--plan']));
     let planPath;
@@ -396,6 +451,8 @@ try {
       '--five-lens',
       '--5-lens',
       '--no-arbiter',
+      '--prompt-only',
+      '--json',
       '--thorough',
       '--seams-only',
       '--no-codegraph',
@@ -456,12 +513,36 @@ try {
     const isLoop = rest.includes('--loop');
     const isFiveLens = rest.includes('--five-lens') || rest.includes('--5-lens');
     const noArbiter = rest.includes('--no-arbiter');
+    const promptOnly = rest.includes('--prompt-only');
+    const jsonOut = rest.includes('--json');
     const isThorough = rest.includes('--thorough');
     const seamsOnly = rest.includes('--seams-only');
     const noCodegraph = rest.includes('--no-codegraph');
     const noDecisionEngine = rest.includes('--no-decision-engine');
     const positional = extractPositionalArgs(rest, REVIEW_VALUE_FLAGS);
     const repo = resolve(positional[0] ?? '.');
+
+    if (promptOnly) {
+      const built = buildReviewPrompts({
+        repo,
+        ref: positional[1],
+        specPath: planSpec,
+        fiveLens: isFiveLens,
+      });
+      if (jsonOut) {
+        await new Promise((r) => process.stdout.write(`${JSON.stringify(built, null, 2)}\n`, r));
+        process.exit(0);
+      }
+      if (built.emptyDiff) {
+        console.error('review --prompt-only: empty diff — nothing to prosecute');
+        process.exit(0);
+      }
+      const outText = built.lenses
+        .map((l) => `=== LENS: ${l.lens} (model: ${l.model} | fallback: ${l.fallbackModel}) ===\n${l.prompt}\n`)
+        .join('\n');
+      await new Promise((r) => process.stdout.write(`${outText}\n`, r));
+      process.exit(0);
+    }
 
     let ticketScopes = null;
     if (planFileArg) {
@@ -596,7 +677,7 @@ try {
     rejectUnknownFlags(
       'plan',
       rest,
-      new Set(['--estimate', '--json', '--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
+      new Set(['--estimate', '--prompt-only', '--json', '--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
       new Set(['--out', '--max-ticket-scope', '--emit-workflow'])
     );
     // The plan itself is authored in Antigravity (GUI plan mode or an agy
@@ -605,6 +686,7 @@ try {
     let emitWorkflow = null;
     let maxTicketScope;
     const estimate = rest.includes('--estimate');
+    const promptOnly = rest.includes('--prompt-only');
     const jsonOut = rest.includes('--json');
     const decompose = rest.includes('--decompose');
     const noFastPath = rest.includes('--no-fast-path');
@@ -638,12 +720,30 @@ try {
     const id = positional[0];
     const repo = positional[1] ?? '.';
     if (!id || !out) {
-      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--estimate] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
+      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--estimate] [--prompt-only] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
       process.exit(1);
     }
     const force = rest.includes('--force');
     const targetRepo = resolve(repo);
     const resolvedWorkflowPath = emitWorkflow ? resolve(targetRepo, emitWorkflow) : null;
+    if (promptOnly) {
+      const built = buildPlanPrompts(id, { repo: targetRepo, maxTicketScope });
+      if (jsonOut) {
+        await new Promise((r) => process.stdout.write(`${JSON.stringify(built, null, 2)}\n`, r));
+        process.exit(0);
+      }
+      const chunks = [];
+      if (built.fastPath) {
+        chunks.push(`=== PREMORTEM (${built.prompts.premortem.model}) ===\n${built.prompts.premortem.prompt}`);
+        for (const p of built.prompts.parallax) {
+          chunks.push(`=== PARALLAX EDGE ${p.edge} (${p.model}) ===\n${p.prompts[0]}`);
+        }
+      } else {
+        chunks.push(`=== PLAN CONVERT (${built.prompts.convert.model}) ===\n${built.prompts.convert.prompt}`);
+      }
+      await new Promise((r) => process.stdout.write(`${chunks.join('\n\n')}\n`, r));
+      process.exit(0);
+    }
     if (estimate) {
       const result = await compilePlan(id, {
         repo: targetRepo,
@@ -935,10 +1035,11 @@ try {
       'accept',
       rest,
       new Set(['--json']),
-      new Set(['--base', '--markdown'])
+      new Set(['--base', '--markdown', '--html'])
     );
     let base = 'HEAD';
     let markdownOut = null;
+    let htmlOut = null;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '--base') {
         if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
@@ -952,10 +1053,16 @@ try {
           process.exit(1);
         }
         markdownOut = rest[++i];
+      } else if (rest[i] === '--html') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --html');
+          process.exit(1);
+        }
+        htmlOut = rest[++i];
       }
     }
     const jsonOut = rest.includes('--json');
-    const positional = extractPositionalArgs(rest, new Set(['--base', '--markdown']));
+    const positional = extractPositionalArgs(rest, new Set(['--base', '--markdown', '--html']));
     const targetRepo = resolve(positional[0] ?? '.');
     const dossier = buildAcceptanceDossier({ repo: targetRepo, base });
     if (markdownOut) {
@@ -965,12 +1072,19 @@ try {
         console.error(`accept: wrote P6 sign-off dossier → ${writtenPath}`);
       }
     }
+    if (htmlOut) {
+      const htmlText = formatAcceptanceDossierHtml(dossier);
+      const writtenHtmlPath = writeAcceptHtmlFile(targetRepo, htmlText, htmlOut);
+      if (!jsonOut) {
+        console.error(`accept: wrote P6 HTML cockpit → ${writtenHtmlPath}`);
+      }
+    }
     if (jsonOut) {
       console.log(JSON.stringify(dossier, null, 2));
       process.exit(0);
     }
-    if (markdownOut || !process.stdout.isTTY || !process.stdin.isTTY || process.env.CI) {
-      if (!markdownOut) {
+    if (markdownOut || htmlOut || !process.stdout.isTTY || !process.stdin.isTTY || process.env.CI) {
+      if (!markdownOut && !htmlOut) {
         process.stdout.write(formatAcceptanceDossierMarkdown(dossier));
       }
       process.exit(0);
@@ -978,9 +1092,11 @@ try {
     const tuiRes = await runInteractiveAcceptTui(dossier, { repo: targetRepo });
     process.exit(tuiRes.ok ? 0 : 1);
   } else if (cmd === 'init') {
-    const INIT_BOOL_FLAGS = new Set(['--with-codegraph']);
+    const INIT_BOOL_FLAGS = new Set(['--cloud', '--force', '--with-codegraph']);
     const INIT_VALUE_FLAGS = new Set(['--decision-provider']);
     rejectUnknownFlags('init', rest, INIT_BOOL_FLAGS, INIT_VALUE_FLAGS);
+    const cloud = rest.includes('--cloud');
+    const force = rest.includes('--force');
     const withCodegraph = rest.includes('--with-codegraph');
     let decisionProvider = null;
     for (let i = 0; i < rest.length; i++) {
@@ -1000,7 +1116,13 @@ try {
     }
     const positional = extractPositionalArgs(rest, INIT_VALUE_FLAGS);
     const targetRepo = resolve(positional[0] ?? '.');
-    const res = runInit({ repo: targetRepo, withCodegraph, decisionProvider });
+    const res = runInit({
+      repo: targetRepo,
+      cloud,
+      force,
+      withCodegraph,
+      decisionProvider,
+    });
     console.log(JSON.stringify(res, null, 2));
     if (!res.ok) process.exit(1);
   } else if (cmd === 'sync-models') {
@@ -1147,12 +1269,13 @@ try {
       console.error('probe: all requests failed — not recording garbage latencies as calibration data');
     }
   } else if (cmd === 'sidecar') {
-    rejectUnknownFlags('sidecar', rest, new Set(), new Set(['--port']));
+    rejectUnknownFlags('sidecar', rest, new Set(['--cloud']), new Set(['--port']));
     let portStr = process.env.AGB_SIDECAR_PORT;
     const pIdx = rest.indexOf('--port');
     if (pIdx !== -1) {
       portStr = rest[pIdx + 1];
     }
+    const cloud = rest.includes('--cloud');
     const positional = extractPositionalArgs(rest, new Set(['--port']));
     const { serveSidecar } = await import('../sidecars/server.mjs');
     const { randomBytes } = await import('node:crypto');
@@ -1162,7 +1285,7 @@ try {
       process.exit(1);
     }
     const token = randomBytes(16).toString('hex');
-    const server = await serveSidecar(resolve(positional[0] ?? '.'), port, token);
+    const server = await serveSidecar(resolve(positional[0] ?? '.'), port, token, { allowProxyHost: cloud });
     const actualPort = server.address().port;
     console.log(`AGB Sidecar Dashboard URL: http://127.0.0.1:${actualPort}/?token=${token}`);
 

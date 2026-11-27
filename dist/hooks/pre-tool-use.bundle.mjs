@@ -5260,7 +5260,16 @@ function schemaViolationVerdict(name, args, reason, ctx) {
   }
   return PASS;
 }
+function isAllowedInWorktreeRoot(resolvedPath, ctx) {
+  if (!ctx.worktreeRealRoot) return true;
+  if (isWithin(resolvedPath, ctx.worktreeRealRoot, ctx.platform)) return true;
+  if ((ctx.workspaceRealPaths ?? []).some((w) => isWithin(resolvedPath, w, ctx.platform))) return false;
+  return (ctx.tmpRoots ?? []).some((t) => isWithin(resolvedPath, t, ctx.platform));
+}
 function evaluateOneTargetForm(target, name, args, ctx, workerRepos) {
+  if (!isAllowedInWorktreeRoot(target.real, ctx)) {
+    return deny(`Worker confined to AGB_WORKTREE_ROOT (${ctx.worktreeRealRoot}) attempted mutation outside assigned worktree: ${target.real}`);
+  }
   const { verdict, repo, rel } = gateOnePath(target, ctx);
   if (verdict.decision !== "pass") return verdict;
   if (repo.adlc && rel) {
@@ -5345,6 +5354,8 @@ function evaluateNotebookExecution(rawArgs, ctx) {
   if (ctx.workerTicket) return deny("Headless agb worker session cannot execute notebooks");
   for (const [k, v] of Object.entries(norm.folded)) {
     if (!NOTEBOOK_EXEC_ALLOWED_KEYS.has(k)) return deny(`Unexpected argument in notebook_execution: ${k}`);
+  }
+  for (const [k, v] of Object.entries(norm.folded)) {
     if ((k === "toolaction" || k === "toolsummary") && v !== void 0 && typeof v !== "string") {
       return deny(`Invalid ${k} parameter in notebook_execution`);
     }
@@ -5386,8 +5397,9 @@ function evaluateFileTool(name, args, ctx) {
     return schemaViolationVerdict(name, args, reason, ctx);
   }
   if (ctx.readonly) return deny("Read-only agb worker session: file mutations are forbidden");
-  const workerRepos = ctx.workerTicket ? ctx.anchors.map((a) => ctx.repoAt(a)).filter((r) => r.adlc) : [];
-  if (ctx.workerTicket && ctx.anchors.length === 0) return deny("Headless worker has no workspace; mutations denied");
+  const workerAnchorRoots = ctx.worktreeRealRoot ? [ctx.worktreeRealRoot] : ctx.anchors;
+  const workerRepos = ctx.workerTicket ? workerAnchorRoots.map((a) => ctx.repoAt(a)).filter((r) => r.adlc) : [];
+  if (ctx.workerTicket && workerAnchorRoots.length === 0) return deny("Headless worker has no workspace; mutations denied");
   const verdicts = [];
   for (const token of extracted.paths.map(toPath)) {
     const resolved = resolveAll(token, ctx);
@@ -5875,6 +5887,11 @@ function buildContext(payload, options = {}) {
   const workspaceRealPaths = unique(workspacePaths.map((w) => physicalResolve(w, "/", platform) ?? w));
   const workerTicket = env.AGB_WORKER_TICKET ? String(env.AGB_WORKER_TICKET) : null;
   const rescueTicket = env.AGB_RESCUE_TICKET ? String(env.AGB_RESCUE_TICKET) : null;
+  const rawWorktreeRoot = typeof env.AGB_WORKTREE_ROOT === "string" ? env.AGB_WORKTREE_ROOT.trim() : "";
+  const worktreeRootRelInvalid = rawWorktreeRoot.length > 0 && !isAbsolute5(rawWorktreeRoot);
+  const worktreeRoot = rawWorktreeRoot.length > 0 && !worktreeRootRelInvalid ? resolve8(rawWorktreeRoot) : null;
+  const worktreeRealRoot = worktreeRoot ? physicalResolve(worktreeRoot, "/", platform) ?? null : null;
+  const worktreeRootInvalid = rawWorktreeRoot.length > 0 && (worktreeRootRelInvalid || !worktreeRealRoot);
   const rawWorkerBuildCmd = typeof env.AGB_WORKER_BUILD_CMD === "string" ? env.AGB_WORKER_BUILD_CMD.trim() : "";
   const workerBuildCmd = /^npm run [a-zA-Z0-9_.:-]+$/.test(rawWorkerBuildCmd) ? rawWorkerBuildCmd : null;
   const readonly = Boolean(env.AGB_WORKER_MODE);
@@ -5909,7 +5926,7 @@ function buildContext(payload, options = {}) {
     }
   }
   const homes = unique([home, realHome, ...extraHomes]);
-  const headless = Boolean(workerTicket) || readonly;
+  const headless = Boolean(workerTicket) || readonly || rawWorktreeRoot.length > 0;
   const rawTmpCandidates = [tmpdir2(), "/tmp", "/private/tmp", env.TMPDIR, env.TMP, env.TEMP].filter((p) => typeof p === "string" && p.length > 0 && isAbsolute5(p));
   const tmpRoots = unique(rawTmpCandidates.flatMap((p) => {
     const resolvedTmp = resolve8(p);
@@ -5937,6 +5954,9 @@ function buildContext(payload, options = {}) {
     workspaceRealPaths,
     workerTicket,
     rescueTicket,
+    worktreeRoot,
+    worktreeRealRoot,
+    worktreeRootInvalid,
     workerBuildCmd,
     readonly,
     allowCodegraphMcp: env.AGB_ALLOW_CODEGRAPH_MCP === "1",
@@ -5946,8 +5966,8 @@ function buildContext(payload, options = {}) {
     brainRoots: brainRootsList,
     hasBrainMetadata,
     verifiedBrainArtifact,
-    anchor: cwd ?? workspacePaths[0] ?? null,
-    anchors: unique([...cwd ? [cwd] : [], ...workspacePaths]),
+    anchor: cwd ?? worktreeRoot ?? workspacePaths[0] ?? null,
+    anchors: unique([...cwd ? [cwd] : [], ...worktreeRoot ? [worktreeRoot] : [], ...workspacePaths]),
     // Roots for both the lexical and the physical home (P5 round 3 M4).
     protectedRoots: unique(homes.flatMap((h) => protectedRoots(h))),
     boosterDataRoots: headless ? [...baseBoosterDataRoots, ...brainRootsList, headlessProtectedMatcher(tmpRoots)] : rescueTicket ? [...baseBoosterDataRoots, headlessProtectedMatcher(tmpRoots)] : baseBoosterDataRoots,
@@ -6038,7 +6058,13 @@ function evaluateRunCommand(args, ctx) {
     return deny("Shell command could not be parsed in protected worker/rescue session");
   }
   const cwdArg = norm.folded.cwd;
-  const baseCwd = typeof cwdArg === "string" && cwdArg.length > 0 ? resolve8(cwdArg) : ctx.workspacePaths[0] ?? "/";
+  const baseCwd = typeof cwdArg === "string" && cwdArg.length > 0 ? resolve8(cwdArg) : ctx.worktreeRealRoot ?? ctx.workspacePaths[0] ?? "/";
+  if (ctx.worktreeRealRoot) {
+    const baseCwdReal = physicalResolve(baseCwd, "/", ctx.platform);
+    if (!baseCwdReal || !isWithin(baseCwdReal, ctx.worktreeRealRoot, ctx.platform)) {
+      return deny(`run_command Cwd sits outside assigned AGB_WORKTREE_ROOT worktree (${ctx.worktreeRealRoot})`);
+    }
+  }
   const ipcMatcher = headlessProtectedMatcher(ctx.tmpRoots);
   for (const sub of lexed.subcommands) {
     const mutatingReason = inspectSubcommandForMutatingAgb(sub, { headless: ctx.headless });
@@ -6058,6 +6084,9 @@ function evaluateRunCommand(args, ctx) {
         return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
       }
       if (isDestructive) {
+        if (ctx.worktreeRealRoot && (!isAllowedInWorktreeRoot(cand.real, ctx) || !isAllowedInWorktreeRoot(cand.lexical, ctx))) {
+          return deny(`Destructive shell target sits outside assigned AGB_WORKTREE_ROOT worktree (${ctx.worktreeRealRoot})`);
+        }
         const isBoosterDir = /(?:^|[\\/])\.booster$/i.test(cand.real) || /(?:^|[\\/])\.booster$/i.test(cand.lexical);
         const containsTmp = (ctx.tmpRoots ?? []).some((t) => isWithin(t, cand.real, ctx.platform) || isWithin(t, cand.lexical, ctx.platform));
         if (isBoosterDir || containsTmp) {
@@ -6072,6 +6101,9 @@ function evaluateRunCommand(args, ctx) {
         return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
       }
       if (String(redir.op ?? "").includes(">")) {
+        if (ctx.worktreeRealRoot && redir.target !== "/dev/null" && (!isAllowedInWorktreeRoot(cand.real, ctx) || !isAllowedInWorktreeRoot(cand.lexical, ctx))) {
+          return deny(`Shell redirect target sits outside assigned AGB_WORKTREE_ROOT worktree (${ctx.worktreeRealRoot})`);
+        }
         const inBooster = /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.real) || /(?:^|[\\/])\.booster(?:$|[\\/])/i.test(cand.lexical);
         if (inBooster) {
           return deny("Inspection or modification of booster plugin data or credentials via tool calls is forbidden");
@@ -6110,6 +6142,9 @@ function evaluateExternalOrSkillMutatingTool(name, args, ctx) {
   return forceAsk(`GitHub repository management tool ${name} modifies remote/project resources; operator confirmation required`);
 }
 function evaluatePayloadWithContext(name, args, ctx) {
+  if (ctx.worktreeRootInvalid) {
+    return deny("Invalid or unresolvable AGB_WORKTREE_ROOT; session confined to fail closed");
+  }
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;
   if (name === "ask_permission") return evaluateAskPermission(args, ctx);

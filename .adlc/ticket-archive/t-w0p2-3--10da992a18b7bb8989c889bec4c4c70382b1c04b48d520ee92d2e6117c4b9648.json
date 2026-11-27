@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T02:36:05.351Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "477154909040ea0c003a53608998371705a2bf1808380b488497203a4877f7cb",
+    "ticketHash": "284293e05e7da70f17957284a7cd60fbb1d7dc0451e0e7e4215c95b65257a959",
+    "version": 1
+  },
   "body": "Update lib/distill.mjs (distillRunDefenses --apply) and bin/agb.mjs to write .agents/rules/adlc-learned.md with valid Antigravity YAML frontmatter (trigger: always_on + description) and zero-symlink checks on .agents, .agents/rules, and adlc-learned.md. Update lib/bootstrap.mjs so default agb bootstrap runs (without explicit destination override) skip duplicating skill symlinks into ~/.gemini/skills/ when antigravity-booster is installed into ~/.gemini/config/plugins/antigravity-booster and prune stale booster skill symlinks from ~/.gemini/skills/, while preserving explicit destination overrides. Set displayName: 'Booster' and license: 'MIT' in plugin.json, and update rules/AGENTS.md + skills/agb/SKILL.md to Antigravity MCP naming (antigravity-booster_agb), 5 ARL lenses, and .agents/rules/adlc-learned.md. Update test/bandit-distill.test.mjs, test/v14-integration.test.mjs, test/plugin-layout.test.mjs, and test/bootstrap-install.test.mjs.",
   "completed": true,
   "edges": [
