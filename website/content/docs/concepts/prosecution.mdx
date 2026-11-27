@@ -32,7 +32,8 @@ The oversize rule exists because truncating let a builder pad an early file and 
 When the plan has a test gate, `agb` runs `adlc hollow-test --test-cmd <gate.test> --base <base>` in the ticket worktree before prosecuting. It mutates the changed lines and checks that the tests catch every mutant ([lib/prosecute.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/prosecute.mjs#L16-L56)).
 
 - The result goes into the prosecutor's prompt as evidence.
-- A survivor is added as a critical finding the model cannot overrule.
+- **Pre-prosecution short-circuit (`v2.0`)**: when `adlc hollow-test` detects surviving mutants, `prepareProsecutionPrecheck()` returns `block` immediately with `0` System-2 quota leases and `0` `agy` spawns (disable via `plan.prosecution.shortCircuitHollowTest: false`).
+- On clean non-frontier diffs, `computeDiffBlastRadius()` scales the cross-family prosecutor tier (`selectRiskTieredProsecutor()`) and locks static-diff prosecutors to 1 turn (`read_file(*)` denied unless `contextPack.truncatedContext === true`). When Google's Gemini Decisions API is active (`GEMINI_API_KEY`), low-blast-radius tickets with 0 surviving mutants can also pass fail-closed System-1 fast-ship (`>= 0.92` AC satisfaction, `< 0.10` charge risk, `>= 0.85` confidence). See [Token efficiency](/docs/concepts/token-efficiency).
 - If hollow-test cannot run (no test gate, `adlc` missing, timeout), the evidence is shown as unavailable and the cross-model pass still runs.
 
 hollow-test runs again after merge in the integration worktree when the merged change touches `test/`; a failure there stops the merge ([lib/scheduler.mjs](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/scheduler.mjs#L2251-L2272)).

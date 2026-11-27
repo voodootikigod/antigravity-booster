@@ -11,6 +11,10 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 This page assumes you have finished [Installation](/docs/getting-started/installation) and `agb doctor` passes. Inside an interactive Antigravity session, you can also invoke the full 5-phase Factory in natural language with `/agb <description>` (or `/agb --yolo <description>` for autonomous end-to-end execution) or with the specific `/agb-shape`, `/agb-plan`, `/agb-run`, `/agb-watch`, and `/code-review` slash commands.
 
+<Callout type="info" title="Optional v2.0 token-efficiency accelerators (zero config)">
+  Tier 0 token optimizations are enabled automatically. To unlock Tier 1 and Tier 2 acceleration (up to **-92.6%** fewer prosecution/review tokens at `100%` recall), initialize [CodeGraph](https://github.com/colbymchenry/codegraph) (`codegraph init` or `agb init --with-codegraph`) and export `GEMINI_API_KEY` (auto-detected for Google's zero-output-token **Gemini Decisions API**). Verify readiness anytime with `agb doctor`, or read [Token efficiency](/docs/concepts/token-efficiency).
+</Callout>
+
 <Steps>
 <Step>
 
