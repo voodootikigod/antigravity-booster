@@ -660,6 +660,20 @@
       "description": "Exported by lib/browser-gate.mjs to the candidate ticket ID when running a browserGate checkCmd."
     },
     {
+      "name": "AGB_ACP_POOL",
+      "group": "core",
+      "default": "1",
+      "bundledIgnored": false,
+      "description": "Set to 0 to disable the persistent warm agy acp JSON-RPC daemon pool in lib/acp-pool.mjs and force per-invocation agy --print fallback."
+    },
+    {
+      "name": "ANTIGRAVITY_REMOTE_CONTROL",
+      "group": "core",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Set to 1 by agb remote-control (or Antigravity Web Remote Control) to render compact vertical mobile status and P6 sign-off cards instead of wide ASCII tables."
+    },
+    {
       "name": "ANTIGRAVITY_RESOLVING_ENVIRONMENT",
       "group": "core",
       "default": "set by Antigravity SSH",

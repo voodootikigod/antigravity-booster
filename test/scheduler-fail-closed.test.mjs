@@ -167,7 +167,7 @@ test('rails-guard operational error: the run is compromised and nothing merges',
         { id: 'T1', title: 'one', body: 'x', scope: ['T1.txt'], rails: ['RAIL.txt'] },
         { id: 'T2', title: 'two', body: 'y', scope: ['T2.txt'] },
       ],
-    }, quiet));
+    }, { ...quiet, concurrency: 1 }));
     assert.equal(report.merged.length, 0, 'no ticket merges once the rails engine is unverifiable');
     assert.match(report.failed.T1, /run compromised: .*rails-guard/);
     assert.ok(report.compromised, 'report flags the run as compromised');

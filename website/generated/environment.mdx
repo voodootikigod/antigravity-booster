@@ -2,6 +2,7 @@
 
 | Name | Default | Description | Bundled |
 | --- | --- | --- | --- |
+| AGB_ACP_POOL | 1 | Set to 0 to disable the persistent warm agy acp JSON-RPC daemon pool in lib/acp-pool.mjs and force per-invocation agy --print fallback. | honoured |
 | AGB_AGY_BIN | agy | Path or name of the agy executable used for builds, quota telemetry, doctor checks and bootstrap. | honoured |
 | AGB_ALLOW_DIRTY | unset | Set to 1 to let agb run start against a repository with uncommitted changes (otherwise the run refuses to start). | honoured |
 | AGB_ALLOW_REPO_KEV_URL | unset | Set to 1 to permit a non-loopback accelerators.decision.baseUrl from repository .adlc/config.json for the kev provider (host API keys are still never attached to repo-configured URLs). | honoured |
@@ -30,6 +31,7 @@
 | AGB_WORKER_TICKET | set by agb | Set by agb on builder agy processes to the ticket id; the PreToolUse guard scopes writes to that ticket and never prompts. | honoured |
 | AGY_BIN | agy | Override path for the agy CLI executable used by scripts/stage-marketplace-plugin.mjs when validating staged plugin bundles. | honoured |
 | ANTIGRAVITY_CONVERSATION_ID | set by Antigravity | Current Antigravity conversation id. Used to locate the active brain and artifact directory, and forwarded to builder agy processes. | honoured |
+| ANTIGRAVITY_REMOTE_CONTROL | unset | Set to 1 by agb remote-control (or Antigravity Web Remote Control) to render compact vertical mobile status and P6 sign-off cards instead of wide ASCII tables. | honoured |
 | ANTIGRAVITY_RESOLVING_ENVIRONMENT | set by Antigravity SSH | Set to 1 by Antigravity Desktop when probing a remote host's login shell over SSH; causes agb bootstrap to return immediately without running plugin installation. | honoured |
 | ANTIGRAVITY_WORKSPACE | set by agb on builders | Set by agb on builder agy processes (alongside AGY_WORKSPACE and PWD) to the isolated ticket worktree path so headless companion hooks always resolve the worktree root. | honoured |
 | GEMINI_API_KEY | unset | API key for the Google Gemini Decisions API System-1 provider (gemini-decision-1 at v1beta/decisions, zero output tokens). Auto-detected and prioritized by default unless AGB_DECISION_ENGINE=0 or another provider is explicitly configured. Treated as a secret and scrubbed from error output. | honoured |

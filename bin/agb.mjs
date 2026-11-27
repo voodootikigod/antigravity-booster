@@ -41,11 +41,13 @@ import {
   buildAcceptanceDossier,
   formatAcceptanceDossierMarkdown,
   formatAcceptanceDossierHtml,
+  formatAcceptanceDossierMobile,
   writeAcceptDossierFile,
   writeAcceptHtmlFile,
 } from '../lib/accept.mjs';
 import { runInteractiveAcceptTui } from '../lib/accept-tui.mjs';
 import { normalizeMuxName } from '../lib/mux.mjs';
+import { launchRemoteControl, isRemoteControlEnv } from '../lib/remote-control.mjs';
 
 const rawArgs = process.argv.slice(2);
 let project;
@@ -94,7 +96,7 @@ const COMMANDS = {
   accept: {
     args: '[repo]',
     desc: 'inspect candidate hunks, external-caller blast radius, and gate evidence for ADLC P6 sign-off',
-    flags: '[--base <ref> (git base ref)] [--json (emit JSON)] [--markdown <file> (write PR dossier)] [--html <file> (write interactive HTML P6 cockpit)]'
+    flags: '[--base <ref> (git base ref)] [--json (emit JSON)] [--markdown <file> (write PR dossier)] [--html <file> (write interactive HTML P6 cockpit)] [--mobile (compact vertical Remote Control sign-off card)]'
   },
   statusline: {
     args: '[render|title|install|uninstall]',
@@ -139,7 +141,7 @@ const COMMANDS = {
   status: {
     args: '[repo]',
     desc: "render the live dashboard for a repo's current run",
-    flags: '[--watch (watch mode)] [-w (watch mode)] [--interval <ms> (poll interval)] [--tui (render TUI snapshot)] [--follow (keep watching after run completion)] [--compact (compact rows)]'
+    flags: '[--watch (watch mode)] [-w (watch mode)] [--interval <ms> (poll interval)] [--tui (render TUI snapshot)] [--follow (keep watching after run completion)] [--compact (compact rows)] [--mobile (compact vertical Remote Control card)]'
   },
   watch: {
     args: '[repo]',
@@ -157,6 +159,11 @@ const COMMANDS = {
     flags: '[--check (exit 1 on drift)] [--offline (skip live CLI probe)] [--json (emit JSON)] [--write (update references/models.json)]'
   },
   sidecar: { args: '[repo]', desc: 'launch the HTTP server for the Antigravity Sidecar UI', flags: '[--port <port>] [--cloud (allow token-authenticated proxy Host headers)]' },
+  'remote-control': {
+    args: '[repo]',
+    desc: 'launch an agy --remote-control fleet supervisor session for antigravity.google.com mobile/web steering',
+    flags: '[--dry-run (print resolved launch arguments without spawning agy)] [--json (emit JSON)]'
+  },
   probe: { args: '[widths] [model]', desc: 'measure pool concurrency/latency, print JSON lines; appends results to $AGB_CALIBRATION_DIR or ./docs/calibration/probes-<day>.md' },
   validate: { args: '<plan>', desc: 'validate a plan file without running anything' },
   bootstrap: { args: '[--force] [--force-reinstall]', desc: 'install adlc-antigravity, ~/.local/bin/agb shim, booster skills, and CLI statusLine/title settings (aliases: setup, install)' },
@@ -1068,13 +1075,14 @@ try {
     rejectUnknownFlags(
       'status',
       rest,
-      new Set(['--watch', '-w', '--tui', '--follow', '--compact']),
+      new Set(['--watch', '-w', '--tui', '--follow', '--compact', '--mobile']),
       new Set(['--interval'])
     );
     const isWatch = rest.includes('--watch') || rest.includes('-w');
     const wantsTui = rest.includes('--tui');
     const follow = rest.includes('--follow');
     const compact = rest.includes('--compact');
+    const mobile = rest.includes('--mobile');
     const intervalMs = parseIntervalFlag(rest, isWatch ? 200 : 1000);
     const positional = extractPositionalArgs(rest, new Set(['--interval']));
     const targetRepo = resolve(positional[0] ?? '.');
@@ -1091,7 +1099,7 @@ try {
       });
       process.exitCode = code;
     } else {
-      console.log(renderStatus(targetRepo, { tui: wantsTui, compact }));
+      console.log(renderStatus(targetRepo, { tui: wantsTui, compact, mobile }));
     }
   } else if (cmd === 'watch') {
     let mux = null;
@@ -1139,7 +1147,7 @@ try {
     rejectUnknownFlags(
       'accept',
       rest,
-      new Set(['--json']),
+      new Set(['--json', '--mobile']),
       new Set(['--base', '--markdown', '--html'])
     );
     let base = 'HEAD';
@@ -1167,6 +1175,7 @@ try {
       }
     }
     const jsonOut = rest.includes('--json');
+    const mobile = isRemoteControlEnv(process.env, rest.includes('--mobile'));
     const positional = extractPositionalArgs(rest, new Set(['--base', '--markdown', '--html']));
     const targetRepo = resolve(positional[0] ?? '.');
     const dossier = buildAcceptanceDossier({ repo: targetRepo, base });
@@ -1186,6 +1195,10 @@ try {
     }
     if (jsonOut) {
       console.log(JSON.stringify(dossier, null, 2));
+      process.exit(0);
+    }
+    if (mobile) {
+      await new Promise((r) => process.stdout.write(`${formatAcceptanceDossierMobile(dossier)}\n`, r));
       process.exit(0);
     }
     if (markdownOut || htmlOut || !process.stdout.isTTY || !process.stdin.isTTY || process.env.CI) {
@@ -1405,6 +1418,21 @@ try {
     };
     process.on('SIGINT', () => cleanup(130));
     process.on('SIGTERM', () => cleanup(143));
+  } else if (cmd === 'remote-control') {
+    rejectUnknownFlags('remote-control', rest, new Set(['--dry-run', '--json']));
+    const dryRun = rest.includes('--dry-run');
+    const jsonOut = rest.includes('--json');
+    const positional = extractPositionalArgs(rest);
+    const targetRepo = resolve(positional[0] ?? '.');
+    const res = await launchRemoteControl({ repo: targetRepo, project, dryRun });
+    if (jsonOut) {
+      await new Promise((r) => process.stdout.write(`${JSON.stringify(res, null, 2)}\n`, r));
+    } else if (!res.ok) {
+      console.error(`remote-control: ${res.error || 'failed'}`);
+    } else if (dryRun) {
+      console.log(`remote-control: ${res.agyBin} ${res.args.join(' ')} (cwd=${res.repo})`);
+    }
+    process.exit(res.ok ? 0 : (res.exitCode || 1));
   } else if (cmd === 'pool') {
     rejectUnknownFlags('pool', rest, new Set());
     const sub = rest[0];

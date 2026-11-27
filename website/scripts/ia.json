@@ -60,6 +60,7 @@
             "bootstrap",
             "migrate",
             "sidecar",
+            "remote-control",
             "probe",
             "pool",
             "brains",
