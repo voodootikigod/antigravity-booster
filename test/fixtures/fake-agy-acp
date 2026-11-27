@@ -1,0 +1,68 @@
+#!/usr/bin/env node
+// Offline fake `agy acp` JSON-RPC 2.0 stdio server for test/acp-pool.test.mjs.
+
+import { createInterface } from 'node:readline';
+
+let model = 'default';
+let effort = 'medium';
+let promptCount = 0;
+
+function writeMsg(obj) {
+  process.stdout.write(`${JSON.stringify(obj)}\n`);
+}
+
+const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
+rl.on('line', (line) => {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+  let msg;
+  try {
+    msg = JSON.parse(trimmed);
+  } catch {
+    return;
+  }
+  const { id, method, params } = msg;
+  if (method === 'initialize') {
+    if (process.env.FAKE_ACP_FAIL_INIT === '1') {
+      writeMsg({ jsonrpc: '2.0', id, error: { code: -32000, message: 'ACP init refused' } });
+      return;
+    }
+    writeMsg({ jsonrpc: '2.0', id, result: { protocolVersion: 1, serverInfo: { name: 'fake-agy-acp' } } });
+    return;
+  }
+  if (method === 'session/new') {
+    writeMsg({ jsonrpc: '2.0', id, result: { sessionId: `sess-${process.pid}` } });
+    return;
+  }
+  if (method === 'session/set_config_option') {
+    if (params?.configId === 'model') model = String(params.value);
+    if (params?.configId === 'effort') effort = String(params.value);
+    writeMsg({ jsonrpc: '2.0', id, result: { ok: true } });
+    return;
+  }
+  if (method === 'session/prompt') {
+    promptCount += 1;
+    const text = params?.prompt?.[0]?.text ?? '';
+    if (text.includes('CRASH_NOW')) {
+      process.exit(42);
+    }
+    if (text.includes('HANG_NOW')) {
+      return; // Intentionally never reply to trigger timeout + session/cancel
+    }
+    writeMsg({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        stopReason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify({ pid: process.pid, count: promptCount, model, effort, echo: text }) }],
+      },
+    });
+    return;
+  }
+  if (method === 'session/cancel') {
+    return;
+  }
+  if (id !== undefined) {
+    writeMsg({ jsonrpc: '2.0', id, error: { code: -32601, message: `Unknown method: ${method}` } });
+  }
+});

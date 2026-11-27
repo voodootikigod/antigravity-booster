@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T13:33:13.322Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "2fce512462ab8134119dd58ebeafe8f52bfe64a9d274b884711dc821b012e12e",
+    "ticketHash": "f3c2bb5f0ca7f593b37a7306c6924216a4d1ddd937338b035b69ee1c73bd6ea7",
+    "version": 1
+  },
   "body": "Create lib/handoff.mjs exporting runTicketHandoff and formatHandoffMarkdown to execute runGateTicket, run single-diff cross-model prosecute() when agy + quota are available (or emit prosecutorPrompt in prompt-only/zero-agy fallback mode unless requireProsecutor: true), and render a P5/P6 Markdown + optional --html handoff dossier. Export extractInlinePlanComments and compilePlanDelta in lib/plan.mjs and wire deltaFrom into compilePlan and buildPlanPrompts so untouched tickets in a prior plan.json are preserved verbatim while modified, commented, or newly added tickets are incrementally recompiled. Add test/handoff-and-plan-delta.test.mjs. Verify: node --test test/handoff-and-plan-delta.test.mjs test/plan.test.mjs",
   "category": "feature",
   "completed": true,

@@ -36,13 +36,13 @@ Use your shell tool (`run_command`) to run the antigravity-booster terminal shim
 ~/.local/bin/agb gate-ticket <ticket-id> [repo-path] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-manifest] [--json]
 ~/.local/bin/agb handoff <ticket-id> [repo-path] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--html <file>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-prosecute] [--prompt-only] [--require-prosecutor] [--no-manifest] [--json]
 ~/.local/bin/agb rescue <ticket-id> [repo-path] [--continue] [--plan <plan.json>]
-~/.local/bin/agb accept [repo-path] [--base <ref>] [--json] [--markdown <file>] [--html <file>]
+~/.local/bin/agb accept [repo-path] [--base <ref>] [--json] [--markdown <file>] [--html <file>] [--mobile]
 ~/.local/bin/agb holdout <list | run | clean> [repo-path] [--ticket <id>] [--run-id <id>] [--json]
 ~/.local/bin/agb statusline <render | title | install | uninstall> [--force]
 ~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--loop] [--five-lens] [--no-arbiter] [--prompt-only] [--json]
 ~/.local/bin/agb distill [repo-path] [--apply] [--compile-checks] [--json]
 ~/.local/bin/agb doctor [repo-path] [--fix]
-~/.local/bin/agb status [repo-path] [--watch] [-w] [--interval <ms>] [--tui] [--follow] [--compact]
+~/.local/bin/agb status [repo-path] [--watch] [-w] [--interval <ms>] [--tui] [--follow] [--compact] [--mobile]
 ~/.local/bin/agb watch [repo-path] [--interval <ms>] [--follow] [--compact] [--mux] [--no-alerts]
 ~/.local/bin/agb sync-models [--check] [--write] [--offline] [--json]
 ~/.local/bin/agb init [repo-path] [--cloud] [--automations] [--force]
@@ -50,6 +50,7 @@ Use your shell tool (`run_command`) to run the antigravity-booster terminal shim
 ~/.local/bin/agb preflight <plan.json>
 ~/.local/bin/agb validate <plan.json>
 ~/.local/bin/agb sidecar [repo-path] [--port <port>] [--cloud]
+~/.local/bin/agb remote-control [repo-path] [--dry-run] [--json]
 ~/.local/bin/agb bootstrap [--force] [--force-reinstall]
 ~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```

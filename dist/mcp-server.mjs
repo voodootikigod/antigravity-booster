@@ -2787,6 +2787,11 @@ function truncateUtf8Safe(text, maxBytes) {
 
 // lib/accept.mjs
 init_run_integrity();
+
+// lib/remote-control.mjs
+init_plugin_paths();
+
+// lib/accept.mjs
 var SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 var VALID_HUNK_VERDICTS = /* @__PURE__ */ new Set(["accepted", "flagged", "pending"]);
 function assertNotSymlink(targetPath) {

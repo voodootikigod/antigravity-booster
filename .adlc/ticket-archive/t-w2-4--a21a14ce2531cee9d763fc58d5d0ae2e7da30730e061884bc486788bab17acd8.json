@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T13:33:15.004Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "b463c019489f9f19bb793ab1faa7371c683256a9a88a3d9a931c1ed528ab5ed4",
+    "ticketHash": "6948b1bc10d2c0e0776a0e62246ecfe2429920467844f864f575956e33bdcdce",
+    "version": 1
+  },
   "body": "Wire agb handoff, agb gate-ticket --skip-browser --browser-url, agb plan --delta, and agb init --automations in bin/agb.mjs, and register lib/browser-gate.mjs, lib/handoff.mjs, and handoff in scripts/release-audit-collect.mjs. Author commands/agb-handoff.md and skills/agb-handoff/SKILL.md, update commands/agb.md and skills/agb/SKILL.md, and update skill/command inventories in test/commands.test.mjs, test/plugin-layout.test.mjs, and test/skills-cross-harness.test.mjs. Add AGB_BROWSER_CHECK_CMD to website/env-docs.json, create website/content/docs/reference/cli/handoff.mdx, register handoff in website/content/docs/reference/cli/meta.json and website/scripts/ia.json, regenerate website/generated/*, verify node website/scripts/check-all.mjs, and rebuild dist/**. Verify: npm run build && node website/scripts/gen-reference.mjs --check && node website/scripts/check-all.mjs && npm run skills:check && node --test test/commands.test.mjs test/plugin-layout.test.mjs test/skills-cross-harness.test.mjs",
   "category": "feature",
   "completed": true,

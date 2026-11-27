@@ -1,0 +1,23 @@
+{
+  "body": "Wire agb remote-control [repo] [--dry-run] [--json], agb status --mobile, and agb accept --mobile in bin/agb.mjs, fix resolveAgyBinary() call in lib/handoff.mjs, and update commands/agb.md and skills/agb/SKILL.md. Register lib/acp-pool.mjs, lib/remote-control.mjs, and remote-control in scripts/release-audit-collect.mjs. Document AGB_ACP_POOL and ANTIGRAVITY_REMOTE_CONTROL in website/env-docs.json, create website/content/docs/reference/cli/remote-control.mdx, register remote-control in website/content/docs/reference/cli/meta.json and website/scripts/ia.json, regenerate website/generated/*, and rebuild dist/**. Verify: npm run build && node website/scripts/gen-reference.mjs --check && node website/scripts/check-all.mjs && npm run skills:check",
+  "category": "feature",
+  "edges": [],
+  "id": "T-W3-4",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "bin/agb.mjs",
+    "lib/handoff.mjs",
+    "scripts/release-audit-collect.mjs",
+    "commands/agb.md",
+    "skills/agb/SKILL.md",
+    "website/**",
+    "dist/**",
+    "specs/wave3-remote-control-acp-and-flail-steering-spec.md"
+  ],
+  "title": "CLI Wiring (agb remote-control, --mobile), Audit Registry, Website Docs & Bundles"
+}

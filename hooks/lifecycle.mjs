@@ -351,6 +351,30 @@ function didToolCallFail(payload) {
   return false;
 }
 
+function buildFailureSignature(toolName, args, payload) {
+  const cmd = typeof args?.CommandLine === 'string'
+    ? args.CommandLine
+    : typeof args?.command === 'string'
+    ? args.command
+    : '';
+  const target = typeof args?.TargetFile === 'string'
+    ? args.TargetFile
+    : typeof args?.file_path === 'string'
+    ? args.file_path
+    : '';
+  const rawErr =
+    typeof payload?.error === 'string'
+      ? payload.error
+      : typeof payload?.toolResponse?.output === 'string'
+      ? payload.toolResponse.output
+      : typeof payload?.result?.output === 'string'
+      ? payload.result.output
+      : '';
+  const firstLine = rawErr.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const key = (cmd || target || firstLine || 'error').replace(/\s+/g, ' ').trim().slice(0, 120);
+  return `${toolName || 'tool'}:${key}`;
+}
+
 function buildZeroTokenUserMarkdown(markdown) {
   return {
     injectSteps: [
@@ -386,14 +410,24 @@ export function evaluateLifecycleEvent(
   }
 
   const eventName = String(eventOverride || payload.hookEventName || '').trim();
-  if (eventName === 'PostInvocation') {
-    return {};
-  }
   const conversationId = typeof payload.conversationId === 'string' ? payload.conversationId.trim() : '';
   const dataDir = resolveLifecyclePluginData({ env, bundled, pluginDataDir });
   const userHome = (!bundled && env?.AGB_HOME_DIR) ? resolve(env.AGB_HOME_DIR) : homedir();
   const adlcInfo = inspectActiveAdlcRepo(payload.cwd, payload.workspacePaths, userHome);
   const state = conversationId ? loadSessionState(dataDir, conversationId) : null;
+
+  if (eventName === 'PostInvocation') {
+    if (!state) return {};
+    if (
+      (Number(state.consecutiveFailures) || 0) >= 2 &&
+      state.lastFailureSig &&
+      state.flailWarnedSig !== state.lastFailureSig
+    ) {
+      state.flailAlertPending = true;
+      saveSessionState(dataDir, state);
+    }
+    return {};
+  }
 
   if (eventName === 'PostToolUse') {
     if (!state) return {};
@@ -401,7 +435,29 @@ export function evaluateLifecycleEvent(
     const args = payload.toolCall?.args ?? {};
     const hadError = didToolCallFail(payload);
 
-    if (!hadError && MUTATING_FILE_TOOLS.has(toolName) && adlcInfo.hasActiveTicket) {
+    if (hadError) {
+      const sig = buildFailureSignature(toolName, args, payload);
+      if (state.lastFailureSig === sig) {
+        state.consecutiveFailures = (Number(state.consecutiveFailures) || 0) + 1;
+      } else {
+        state.lastFailureSig = sig;
+        state.consecutiveFailures = 1;
+        state.flailAlertPending = false;
+      }
+      saveSessionState(dataDir, state);
+      return {};
+    }
+
+    let stateDirty = false;
+    if (state.consecutiveFailures || state.lastFailureSig || state.flailAlertPending) {
+      state.consecutiveFailures = 0;
+      state.lastFailureSig = null;
+      state.flailAlertPending = false;
+      state.flailWarnedSig = null;
+      stateDirty = true;
+    }
+
+    if (MUTATING_FILE_TOOLS.has(toolName) && adlcInfo.hasActiveTicket) {
       const targets = extractEditedTargets(args);
       const repoRelevant =
         targets.length === 0
@@ -412,17 +468,20 @@ export function evaluateLifecycleEvent(
         state.editCount = (Number(state.editCount) || 0) + 1;
         state.lastEditedPath = repoRelevant[0] ? basename(repoRelevant[0]) : null;
         state.stopContinuationCount = 0;
-        saveSessionState(dataDir, state);
+        stateDirty = true;
       }
-    } else if (!hadError && toolName === 'run_command') {
+    } else if (toolName === 'run_command') {
       const cmd = String(args.CommandLine ?? args.command ?? '');
       if (GATE_PASS_CMD_RE.test(cmd) && !MASKED_EXIT_RE.test(cmd)) {
         state.dirtySinceGate = false;
         state.stopContinuationCount = 0;
         state.totalStopContinuations = 0;
         state.lastGatePassAt = Date.now();
-        saveSessionState(dataDir, state);
+        stateDirty = true;
       }
+    }
+    if (stateDirty) {
+      saveSessionState(dataDir, state);
     }
     return {};
   }
@@ -432,6 +491,22 @@ export function evaluateLifecycleEvent(
     state.turnCount = (Number(state.turnCount) || 0) + 1;
     if (payload.continuationActive !== true) {
       state.totalStopContinuations = 0;
+    }
+
+    if (
+      state.flailAlertPending === true ||
+      ((Number(state.consecutiveFailures) || 0) >= 2 &&
+        state.lastFailureSig &&
+        state.flailWarnedSig !== state.lastFailureSig)
+    ) {
+      const count = Number(state.consecutiveFailures) || 2;
+      const sig = String(state.lastFailureSig || 'repeated failure');
+      state.flailAlertPending = false;
+      state.flailWarnedSig = state.lastFailureSig;
+      saveSessionState(dataDir, state);
+      return buildZeroTokenUserMarkdown(
+        `> **AGB ADLC P4 Flail Breaker:** ${count} consecutive identical failures detected (\`${sig}\`). Stop retrying the same edit — re-read ticket scope, inspect callers via \`codegraph impact\`, or run \`agb rescue\`.`
+      );
     }
 
     if (adlcInfo.hasActiveTicket && !state.readinessShown) {

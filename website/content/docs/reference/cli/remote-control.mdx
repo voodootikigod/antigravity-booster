@@ -1,0 +1,23 @@
+---
+title: "agb remote-control"
+description: "Launch an agy --remote-control fleet supervisor session for antigravity.google.com mobile/web steering."
+---
+
+`agb remote-control` launches an `agy --remote-control` session anchored to the target repository with `ANTIGRAVITY_REMOTE_CONTROL=1` exported so `agb status` and `agb accept` automatically render compact vertical mobile cards with `ask_question`-ready sign-off and rescue prompts on phones and tablets.
+
+## Synopsis
+
+<include>../../../../generated/cli-remote-control.mdx</include>
+
+## Arguments and flags
+
+- `[repo]` targets the repository directory (defaults to `.`).
+- `--dry-run` prints the resolved `agy` binary, arguments, and environment without spawning `agy`.
+- `--json` emits the structured launch result to stdout.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Remote Control session exited cleanly (or `--dry-run` succeeded). |
+| `1` | Invalid flags, missing repository path, or failed `agy` spawn. |

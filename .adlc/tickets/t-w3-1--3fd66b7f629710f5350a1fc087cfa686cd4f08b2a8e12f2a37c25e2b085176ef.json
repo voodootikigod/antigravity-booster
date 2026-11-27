@@ -1,0 +1,22 @@
+{
+  "body": "Create lib/acp-pool.mjs exporting isAcpPoolEnabled, AcpReviewPool, and createAcpReviewPool implementing a bounded persistent stdio JSON-RPC 2.0 worker pool over agy acp (initialize, session/new, session/set_config_option, session/prompt, session/cancel) with timeout/crash respawn, clean shutdown(), and graceful { ok: false, fallback: true } degradation when AGB_ACP_POOL=0 or unavailable. Add offline fixture test/fixtures/fake-agy-acp and test/acp-pool.test.mjs. Verify: node --test test/acp-pool.test.mjs",
+  "category": "feature",
+  "edges": [
+    {
+      "to": "T-W3-4"
+    }
+  ],
+  "id": "T-W3-1",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/acp-pool.mjs",
+    "test/acp-pool.test.mjs",
+    "test/fixtures/fake-agy-acp"
+  ],
+  "title": "Warm agy acp JSON-RPC Daemon Pool"
+}
