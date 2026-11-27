@@ -69,10 +69,10 @@ Reproducible offline via `node --test test/token-efficiency-v2.test.mjs` (`evals
 
 | Configuration | Review Reqs | System-2 Reqs | Billable Tokens | Token Reduction | Defect & Mutation Recall |
 | --- | --- | --- | --- | --- | --- |
-| Legacy `v2.0.0` baseline | 29 | 35 | 100,662 | — | 100% |
-| Tier 0 (Zero-Dep Core) | 10 (-65.5%) | 12 | 12,391 | **-87.7%** | 100% |
-| Tier 1 (+ CodeGraph) | 10 (-65.5%) | 12 | 10,397 | **-89.7%** | 100% |
-| Tier 2 (+ Decision Engine) | 6 (-79.3%) | 7 | 7,457 | **-92.6%** | 100% |
+| Pre-optimization `agb` (tiers disabled) | 29 | 35 | 134,322 | — | 100% |
+| Tier 0 (Zero-Dep Core) | 10 (-65.5%) | 12 | 16,171 | **-88.0%** | 100% |
+| Tier 1 (+ CodeGraph) | 10 (-65.5%) | 12 | 14,177 | **-89.4%** | 100% |
+| Tier 2 (+ Decision Engine) | 6 (-79.3%) | 7 | 9,677 | **-92.8%** | 100% |
 
 ## Split token telemetry
 

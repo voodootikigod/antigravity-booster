@@ -320,19 +320,19 @@ In addition to the *N* = 100 Monte Carlo distributions and the 5-pillar live sub
 
 Reproducible offline via `node --test test/token-efficiency-v2.test.mjs` (`runTokenEfficiencyBenchmark()` in [`evals/subsystem-bench.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/evals/subsystem-bench.mjs)). Runs a paired 3-ticket workload (`T-HOLLOW` with a surviving mutant, `T-LEAF` clean low-blast-radius change, and `T-DEFECT` with a planted auth bypass) through preflight coldstart, prosecution, and multi-lens code review across all four configurations:
 
-| Configuration | Review Reqs | System-2 Reqs | Billable Tokens | Token Reduction vs. Legacy | Defect & Mutation Recall |
+| Configuration | Review Reqs | System-2 Reqs | Billable Tokens | Token Reduction vs. Pre-Optimization | Defect & Mutation Recall |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Legacy `v2.0.0` baseline** (multi-dry review, open read tools, no short-circuit) | `29` | `35` | `100,662` | — | `100%` |
-| **Tier 0 — Zero-Dependency Core** (default ON) | `10` (`-65.5%`) | `12` | `12,391` | **`-87.7%`** | `100%` |
-| **Tier 1 — + CodeGraph Index** (`.codegraph/` auto-detected) | `10` (`-65.5%`) | `12` | `10,397` | **`-89.7%`** | `100%` |
-| **Tier 2 — + System-1 Decision Engine** (`GEMINI_API_KEY` / Gemini Decisions API) | `6` (`-79.3%`) | `7` | `7,457` | **`-92.6%`** | `100%` |
+| **Pre-optimization `agb` (tiers disabled)** (multi-dry review, open read tools, no short-circuit) | `29` | `35` | `134,322` | — | `100%` |
+| **Tier 0 — Zero-Dependency Core** (default ON) | `10` (`-65.5%`) | `12` | `16,171` | **`-88.0%`** | `100%` |
+| **Tier 1 — + CodeGraph Index** (`.codegraph/` auto-detected) | `10` (`-65.5%`) | `12` | `14,177` | **`-89.4%`** | `100%` |
+| **Tier 2 — + System-1 Decision Engine** (`GEMINI_API_KEY` / Gemini Decisions API) | `6` (`-79.3%`) | `7` | `9,677` | **`-92.8%`** | `100%` |
 
 <Mermaid
   chart={`xychart-beta
     title "v2.0 Token-Efficiency A/B Benchmark: Billable Tokens (Thousands, Lower Is Better)"
-    x-axis ["Legacy v2.0.0", "Tier 0 Core", "Tier 1 + CodeGraph", "Tier 2 + Decisions API"]
-    y-axis "Billable Tokens (k)" 0 --> 110
-    bar [100.7, 12.4, 10.4, 7.5]`}
+    x-axis ["Pre-opt agb", "Tier 0 Core", "Tier 1 + CodeGraph", "Tier 2 + Decisions API"]
+    y-axis "Billable Tokens (k)" 0 --> 145
+    bar [134.3, 16.2, 14.2, 9.7]`}
 />
 
 See [Token efficiency](/docs/concepts/token-efficiency) for the full three-tier design, fail-closed guarantees, and opt-in/out controls.

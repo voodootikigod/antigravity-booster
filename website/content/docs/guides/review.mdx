@@ -48,8 +48,9 @@ The result is printed as JSON on stdout: `findings` (each with `lens`, `model` a
 - `--five-lens` (or `--5-lens`) enables the 5-lens Code ARL (`correctness_redteam`, `security`, `simplicity`, `evidence_runner`, `anti_slop`).
 - `--delta <ref>` and `--prior-findings <path>` review only the fix-round delta while embedding prior open findings for verification (preserving unresolved prior blockers if the delta is empty).
 - `--seams-only --plan-file <path>` audits only cross-ticket integration seams after a fleet run (fails closed if any merged commit was unprosecuted or System-1 fast-shipped).
-- `--thorough` or `--dry-rounds <n>` opts into multi-dry stochastic convergence over a static diff; `--loop` runs iterative convergence across up to `3` rounds (`reviewPlan` / `reviewFleet`).
-- `--no-codegraph`, `--decision-engine` / `--no-decision-engine`, and `--no-arbiter` toggle accelerators and neutral arbiter triage.
+- `--thorough` opts into multi-dry stochastic convergence over a static diff (`dryRounds=2`, `maxRounds=3`); `--dry-rounds <n>` overrides the required consecutive dry rounds (`maxRounds = Math.max(1, dryRounds)`). In default single-pass mode (`maxRounds === 1`), a clean pass converges immediately.
+- `--loop` runs iterative convergence across up to `3` rounds (`reviewPlan` / `reviewFleet`).
+- `--no-codegraph`, `--no-decision-engine`, and `--no-arbiter` disable CodeGraph context slicing, System-1 Decision Engine gating/triage, and neutral arbiter triage respectively.
 
 ## Exit semantics
 
