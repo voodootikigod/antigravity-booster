@@ -12169,6 +12169,9 @@ import { tmpdir as tmpdir6, homedir as homedir7 } from "node:os";
 import { basename as basename8, dirname as dirname17, join as join24, resolve as resolve12, relative as relative8, isAbsolute as isAbsolute7 } from "node:path";
 import { fileURLToPath as fileURLToPath3 } from "node:url";
 import crypto4 from "node:crypto";
+function isChildUnreaped(child) {
+  return Boolean(child && child.exitCode === null && child.signalCode === null);
+}
 function isAllowedEnvVar(key2, env = process.env, platform4 = process.platform) {
   if (typeof key2 !== "string") return false;
   const isWin = platform4 === "win32";
@@ -13643,6 +13646,7 @@ async function runAgy({
             } catch {
             }
           }
+          if (!isChildUnreaped(p)) return;
           if (originalPid && isProcessAlive2(originalPid, originalStartTime)) {
             if (process.platform === "win32") {
               try {
@@ -13835,54 +13839,6 @@ async function runAgy({
         if (cleanupContainment) {
           cleanupContainment();
           cleanupContainment = null;
-        }
-        if (childKilled || killReason || signal) {
-          if (originalPid && isProcessAlive2(originalPid, originalStartTime)) {
-            try {
-              if (process.platform === "win32") {
-                try {
-                  execFileSync11("taskkill", ["/pid", String(originalPid), "/T", "/F"], { stdio: "ignore" });
-                } catch {
-                }
-              } else {
-                try {
-                  process.kill(-originalPid, "SIGTERM");
-                } catch {
-                }
-                try {
-                  const pids = execFileSync11("pgrep", ["-P", String(originalPid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
-                  for (const pidStr of pids) {
-                    const subPid = Number(pidStr);
-                    if (subPid) {
-                      try {
-                        process.kill(subPid, "SIGTERM");
-                      } catch {
-                      }
-                    }
-                  }
-                } catch {
-                }
-                try {
-                  process.kill(-originalPid, "SIGKILL");
-                } catch {
-                }
-                try {
-                  const pids = execFileSync11("pgrep", ["-P", String(originalPid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split(/\s+/);
-                  for (const pidStr of pids) {
-                    const subPid = Number(pidStr);
-                    if (subPid) {
-                      try {
-                        process.kill(subPid, "SIGKILL");
-                      } catch {
-                      }
-                    }
-                  }
-                } catch {
-                }
-              }
-            } catch {
-            }
-          }
         }
         const ms = Date.now() - t0;
         let envelope = null;
@@ -30012,7 +29968,7 @@ init_holdout();
 init_twins();
 var NULL_HOOKS_PATH5 = process.platform === "win32" ? "NUL" : "/dev/null";
 function terminateProcessTree(child, sig = "SIGKILL") {
-  if (!child) return;
+  if (!isChildUnreaped(child)) return;
   const pid = child.pid;
   if (pid) {
     if (process.platform === "win32") {

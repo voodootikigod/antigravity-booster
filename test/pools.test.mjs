@@ -1437,8 +1437,8 @@ test('terminateWorkerTree: terminates active worker process when dead orchestrat
     assert.equal(v2After.leases['lease-worker-test'].state, 'RECLAIMED');
     assert.equal(v2After.pools.gemini.inFlight, 0);
   } finally {
-    if (worker && isProcessAlive(worker.pid)) {
-      try { process.kill(worker.pid, 'SIGKILL'); } catch {}
+    if (worker && worker.exitCode === null && worker.signalCode === null) {
+      try { worker.kill('SIGKILL'); } catch {}
     }
     if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
     if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
@@ -1504,8 +1504,8 @@ test('terminateWorkerTree: terminates active worker when dead orchestrator lease
     }
     assert.equal(alive, false, 'worker process must be killed during acquireLease dead-lease reclamation');
   } finally {
-    if (worker && isProcessAlive(worker.pid)) {
-      try { process.kill(worker.pid, 'SIGKILL'); } catch {}
+    if (worker && worker.exitCode === null && worker.signalCode === null) {
+      try { worker.kill('SIGKILL'); } catch {}
     }
     if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
     if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;
@@ -1575,8 +1575,8 @@ test('terminateWorkerTree and reconcileLeases: do not terminate worker process w
     // Worker must still be alive!
     assert.ok(isProcessAlive(workerPid, workerStartTime), 'worker process must not be killed when workerStartTime is absent');
   } finally {
-    if (worker && isProcessAlive(worker.pid)) {
-      try { process.kill(worker.pid, 'SIGKILL'); } catch {}
+    if (worker && worker.exitCode === null && worker.signalCode === null) {
+      try { worker.kill('SIGKILL'); } catch {}
     }
     if (savedV2 === undefined) delete process.env.AGB_POOLS_V2; else process.env.AGB_POOLS_V2 = savedV2;
     if (savedLock === undefined) delete process.env.AGB_POOLS_LOCK; else process.env.AGB_POOLS_LOCK = savedLock;

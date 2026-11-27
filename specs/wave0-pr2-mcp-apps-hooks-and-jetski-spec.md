@@ -36,6 +36,7 @@ flowchart TD
   T-W0P2-2["T-W0P2-2: jetski conversationId, Stop model_stop, PreToolUse Taxonomy & Brain Parity"] --> T-W0P2-3["T-W0P2-3: .agents/rules Frontmatter, ~/.gemini/skills Cleanup & Booster Branding"]
   T-W0P2-2 --> T-W0P2-4
   T-W0P2-3 --> T-W0P2-4
+  T-W0P2-4 --> T-W0P2-5["T-W0P2-5: macOS CI Post-Reap PID-Recycling SIGKILL Guard & hook-runner.sh Trap Race Fix"]
 ```
 
 --------------------------------------------------------------------------------
@@ -98,7 +99,7 @@ flowchart TD
 
 - **Scope**: `commands/agb.md`, `test/commands.test.mjs`, `test/skills-cross-harness.test.mjs`, `website/content/docs/**`, `website/generated/**`, `dist/**`, `specs/wave0-pr2-mcp-apps-hooks-and-jetski-spec.md`
 - **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`
-- **Edges**: None
+- **Edges**: `T-W0P2-4 -> T-W0P2-5`
 - **Tier**: `cheap`
 - **Pool Hint**: `gemini`
 - **Objectives**:
@@ -109,9 +110,26 @@ flowchart TD
 
 --------------------------------------------------------------------------------
 
+### Ticket 5: `T-W0P2-5` — macOS CI Post-Reap PID-Recycling `SIGKILL` Guard & `hook-runner.sh` Trap Race Fix
+
+- **Scope**: `bin/hook-runner.sh`, `lib/agy.mjs`, `lib/scheduler.mjs`, `lib/ndjson-worker.mjs`, `test/hook-runner.test.mjs`, `test/scheduler.test.mjs`, `test/ndjson-worker.test.mjs`, `test/pools.test.mjs`, `dist/agb.mjs`, `website/generated/modules.mdx`, `specs/wave0-pr2-mcp-apps-hooks-and-jetski-spec.md`
+- **Rails**: `lib/lock.mjs`, `lib/gates.mjs`, `vendor/cache/**`, `scripts/rails-guard-ci.mjs`
+- **Edges**: None
+- **Tier**: `frontier`
+- **Pool Hint**: `gemini`
+- **Objectives**:
+  1. Guard `killProcessTree` / `finish` in `lib/agy.mjs`, `terminateProcessTree` in `lib/scheduler.mjs`, `killDaemonProcessTree` / `quiesceChildren` in `lib/ndjson-worker.mjs`, and `finally` cleanup in `test/pools.test.mjs` on `exitCode === null && signalCode === null` so already-reaped child PIDs can never send `SIGKILL` (`-pid` or `pgrep -P pid`) to innocent concurrent test processes on macOS where `ps -o lstart=` has 1-second resolution.
+  2. Replace `trap - EXIT HUP INT TERM` with `trap - EXIT; trap '' HUP INT TERM` in `bin/hook-runner.sh` (`emit_fallback` and normal exit paths) so a racing `kill -TERM "$MAIN_PID"` from the watchdog cannot terminate `hook-runner.sh` via `SIG_DFL` after disarming `EXIT`.
+  3. Add regression tests in `test/scheduler.test.mjs`, `test/ndjson-worker.test.mjs`, and `test/hook-runner.test.mjs`.
+- **Acceptance Criteria**:
+  - `node --test test/hook-runner.test.mjs test/scheduler.test.mjs test/ndjson-worker.test.mjs test/pools.test.mjs` exits `0`.
+
+--------------------------------------------------------------------------------
+
 ## 4. Acceptance Criteria
 
 1. `agb_flight_deck`, `agb_mission_control`, and `agb_plan_viewer` declare `surface` and `extensions` under `_meta["com.google.antigravity/ui"]`, `agb_plan_viewer` handles `antigravity-file://` URIs without `ENOENT`, non-UI clients receive a `sidecarHint`, and `mcp_config.json` configures `node`, `timeoutSeconds: -1`, and background/eager tool metadata. Verify: `npm run build:mcp && node --test test/mcp-apps.test.mjs test/plugin-layout.test.mjs`
 2. Slash-delimited `jetski` `conversationId`s (`v1/default/jetski_remote_agents_3p_devbox/<uuid>`) pass zero-symlink verification in `PreToolUse`, flat session keying in `hooks/lifecycle.mjs`, and 4-level discovery + HTML-free Mermaid rendering in `lib/brain.mjs`, while `Stop` fires on `'model_stop'` and App/Web/Remote built-in tools are classified in `constants.mjs` + `evaluate.mjs`. Verify: `npm run build:hooks && node --test test/lifecycle-hooks.test.mjs test/pre-tool-use.test.mjs test/cli-nextgen.test.mjs`
 3. `agb distill --apply` writes `.agents/rules/adlc-learned.md` with `trigger: always_on` YAML frontmatter, `plugin.json` sets `displayName: "Booster"` + `license: "MIT"`, default `agb bootstrap` avoids `~/.gemini/skills` duplication when the plugin is installed, and `rules/AGENTS.md` + `skills/agb/SKILL.md` use Antigravity MCP naming. Verify: `node --test test/bandit-distill.test.mjs test/plugin-layout.test.mjs test/bootstrap-install.test.mjs`
-4. Full bundle build, reference docs check, skills mirror check, mutation gate, and test suite pass with zero failures. Verify: `npm run build && node website/scripts/gen-reference.mjs --check && npm run skills:check && npm test`
+4. Reaped `ChildProcess` handles never send post-exit `SIGKILL` to recycled PIDs and `bin/hook-runner.sh` ignores `HUP`/`INT`/`TERM` during exit/fallback cleanup. Verify: `node --test test/hook-runner.test.mjs test/scheduler.test.mjs test/ndjson-worker.test.mjs`
+5. Full bundle build, reference docs check, skills mirror check, mutation gate, and test suite pass with zero failures. Verify: `npm run build && node website/scripts/gen-reference.mjs --check && npm run skills:check && npm test`

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 
 import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/scheduler.mjs';
+import { runAgy, isChildUnreaped } from '../lib/agy.mjs';
 import {
   reapIntegrationWorktrees, resetToBase, cleanEmptyNodeModules, isDirty, createWorktree, removeWorktree,
   JOURNAL_PHASES, writeIntegrationJournal, readIntegrationJournal,
@@ -1157,6 +1158,91 @@ test('terminateProcessTree: kills child and all descendant processes in process 
     leaderAlive = true;
   } catch {}
   assert.equal(leaderAlive, false, 'leader process must be terminated');
+});
+
+test('terminateProcessTree & runAgy: isChildUnreaped prevents signaling recycled PIDs after child exit or signal', async () => {
+  assert.equal(isChildUnreaped(null), false);
+  assert.equal(isChildUnreaped(undefined), false);
+  assert.equal(isChildUnreaped({ exitCode: null, signalCode: null }), true);
+  assert.equal(isChildUnreaped({ exitCode: 0, signalCode: null }), false);
+  assert.equal(isChildUnreaped({ exitCode: 1, signalCode: null }), false);
+  assert.equal(isChildUnreaped({ exitCode: null, signalCode: 'SIGTERM' }), false);
+
+  // 1. terminateProcessTree must not signal a live innocent process that recycled a reaped child's PID.
+  const victim = spawn(process.execPath, ['-e', 'setInterval(() => {}, 10000);'], {
+    detached: process.platform !== 'win32',
+    stdio: 'ignore',
+  });
+  try {
+    assert.ok(victim.pid > 0);
+    terminateProcessTree(null, 'SIGKILL');
+    let killInvocations = 0;
+    terminateProcessTree(
+      { pid: victim.pid, exitCode: 0, signalCode: null, kill() { killInvocations += 1; } },
+      'SIGKILL'
+    );
+    terminateProcessTree(
+      { pid: victim.pid, exitCode: null, signalCode: 'SIGKILL', kill() { killInvocations += 1; } },
+      'SIGKILL'
+    );
+    assert.equal(killInvocations, 0);
+    process.kill(victim.pid, 0); // victim must still be alive
+  } finally {
+    terminateProcessTree(victim, 'SIGKILL');
+  }
+
+  // 2. runAgy killProcessTree kills a live hung child on timeout, AND skips killing once child is reaped.
+  const tmpBinDir = mkdtempSync(join(tmpdir(), 'agb-reaped-agy-'));
+  try {
+    const hangBin = join(tmpBinDir, 'hang-agy');
+    writeFileSync(hangBin, `#!/usr/bin/env node\nsetInterval(() => {}, 10000);\n`, { mode: 0o755 });
+    const hangRes = await runAgy({
+      prompt: 'hi',
+      model: 'gemini-4-neon-high',
+      cwd: tmpBinDir,
+      bin: hangBin,
+      role: 'prosecutor',
+      sandbox: false,
+      containment: false,
+      maxTimeout: 40,
+    });
+    assert.equal(hangRes.ok, false);
+    assert.equal(hangRes.kind, 'timeout');
+
+    // Outer child exits immediately (reaped: exitCode === 0) while a detached helper keeps
+    // inherited stdout open past maxTimeout so terminateTree() fires after `p` was reaped.
+    const earlyExitBin = join(tmpBinDir, 'early-exit-agy');
+    writeFileSync(
+      earlyExitBin,
+      `#!/usr/bin/env node\nconst { spawn } = require('node:child_process');\nspawn(process.execPath, ['-e', 'setTimeout(() => {}, 260)'], { stdio: 'inherit' }).unref();\nprocess.exit(0);\n`,
+      { mode: 0o755 }
+    );
+    let postReapKills = 0;
+    const earlyRes = await runAgy({
+      prompt: 'hi',
+      model: 'gemini-4-neon-high',
+      cwd: tmpBinDir,
+      bin: earlyExitBin,
+      role: 'prosecutor',
+      sandbox: false,
+      containment: false,
+      maxTimeout: 120,
+      onSpawn(child) {
+        const origKill = child.kill.bind(child);
+        child.kill = (sig) => {
+          if (child.exitCode !== null || child.signalCode !== null) {
+            postReapKills += 1;
+          }
+          return origKill(sig);
+        };
+      },
+    });
+    assert.equal(earlyRes.ok, false);
+    assert.equal(earlyRes.kind, 'timeout');
+    assert.equal(postReapKills, 0, 'killProcessTree must not invoke p.kill after child has been reaped');
+  } finally {
+    rmSync(tmpBinDir, { recursive: true, force: true });
+  }
 });
 
 test('isDirty: preserves leading space on porcelain output so unstaged edits to .adlc/tickets/ shards are ignored', () => {
