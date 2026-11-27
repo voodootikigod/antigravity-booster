@@ -1,5 +1,6 @@
 {
   "body": "Create lib/interactive-escalation.mjs exporting formatEscalationAlert, buildGrillMeEscalationPrompt, and runInteractiveEscalation (terminal bell + OSC title alert, structured /grill-me interview supporting retry with guidance, skip, or abort). Wire interactive and onEscalation into lib/scheduler.mjs at Strike-2 flail/failure so only the affected ticket pauses without aborting sibling tickets. Add unit and scheduler-integration tests in test/interactive-escalation.test.mjs.",
+  "completed": true,
   "edges": [
     {
       "to": "T-W5-3",

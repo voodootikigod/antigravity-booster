@@ -1,5 +1,6 @@
 {
   "body": "Extend lib/remote-sdk-worker.mjs with verifyAndMergeRemoteBranch and opt-in merge: true (plus verifyBranch / mergeBranch hooks) in runRemoteSdkPlan so completed remote ticket branches are sequentially verified and merged into the target branch, populating report.merged and failing closed (blocking downstream dependents) on verification or merge failure. Expand test/remote-sdk-worker.test.mjs.",
+  "completed": true,
   "edges": [
     {
       "to": "T-W5-3",
