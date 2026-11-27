@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T20:41:59.889Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "892ef7c1724c0071c788af8183ee923e4fa18644891f72f70d84bfaec2f2dd0a",
+    "ticketHash": "27a04fadf34c1827c1e499998a0445accd32dcbf78b6f2299f582d20c4245968",
+    "version": 1
+  },
   "body": "Create lib/remote-sdk-worker.mjs exporting isRemoteSdkAvailable, buildRemoteSdkBridgeScript, runRemoteSdkTicket, and runRemoteSdkPlan for wave-ordered cloud-VM ticket execution with bounded concurrency, timeout teardown, dry-run planning, and graceful { ok: false, kind, error } degradation. Add offline fixture test/fixtures/fake-remote-sdk and test/remote-sdk-worker.test.mjs. Verify: node --test test/remote-sdk-worker.test.mjs",
   "category": "feature",
   "completed": true,
