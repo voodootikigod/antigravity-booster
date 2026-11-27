@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION, checkHookLogDir, healthLogPath } from '../lib/doctor.mjs';
+import { checkNodeVersion, checkAgyBinary, checkAgyAuth, checkModelCatalog, parseAgyModels, compareModelCatalog, checkAdlcBinary, checkSandbox, checkBrainDir, checkPlugin, checkTicketStore, checkKernelContainment, runDoctor, runInit, MIN_AGY_VERSION, RECOMMENDED_AGY_VERSION, checkHookLogDir, healthLogPath } from '../lib/doctor.mjs';
 import { resolveAdlcBinary, MIN_ADLC_CLI_VERSION } from '../lib/adlc-bridge.mjs';
 import { spawnSync } from 'child_process';
 import { join, delimiter } from 'path';
 import { tmpdir } from 'os';
-import { writeFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync, symlinkSync, cpSync } from 'fs';
+import { writeFileSync, readFileSync, chmodSync, rmSync, mkdirSync, mkdtempSync, existsSync, symlinkSync, cpSync } from 'fs';
 
 // AGB_PLUGIN_ROOT: vendor-less fixture: these suites exercise the legacy (unbundled)
 // adlc tiers, which spec Appendix A.6 item 12 reaches only without vendor/adlc.
@@ -865,6 +865,188 @@ test('runDoctor: forwards resolved { home, env } to all 6 home-scoped checks', a
     assert.match(output, /Hook killswitch\s+\|\s+WARN\s+\|\s+1 AGB_HOOK_DISABLE bypass notice\(s\)/);
     // 6. checkProbePlugins read customHome plugins dir
     assert.match(output, /Probe plugins\s+\|\s+WARN\s+\|\s+installed: probe-home-forward/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('T-TE-7a: checkCodegraph reports advisory INFO/PASS/WARN without failing unconfigured repos', async () => {
+  const { checkCodegraph } = await import('../lib/doctor.mjs');
+  const base = mkdtempSync(join(tmpdir(), 'agb-doctor-cg-'));
+  try {
+    // 1. Uninitialized repo -> INFO (never fail)
+    const rNone = await checkCodegraph({ cwd: base, env: { PATH: process.env.PATH } });
+    assert.strictEqual(rNone.name, 'CodeGraph index');
+    assert.strictEqual(rNone.level, 'info');
+    assert.match(rNone.detail, /not initialized/);
+
+    // 2. Disabled via env -> INFO
+    const rDisabled = await checkCodegraph({ cwd: base, env: { AGB_CODEGRAPH: '0' } });
+    assert.strictEqual(rDisabled.level, 'info');
+
+    // 3. Present .codegraph + healthy mock CLI -> PASS
+    mkdirSync(join(base, '.codegraph'), { recursive: true });
+    const mockOk = join(base, 'mock-cg-ok.sh');
+    writeFileSync(mockOk, '#!/bin/sh\necho "up-to-date (42 symbols)"\nexit 0\n');
+    chmodSync(mockOk, 0o755);
+    const rPass = await checkCodegraph({ cwd: base, codegraphBin: mockOk, env: { PATH: process.env.PATH } });
+    assert.strictEqual(rPass.level, 'pass');
+    assert.match(rPass.detail, /indexed/);
+
+    // 4. Present .codegraph + stale mock CLI -> WARN
+    const mockStale = join(base, 'mock-cg-stale.sh');
+    writeFileSync(mockStale, '#!/bin/sh\necho "index is stale: 3 files changed"\nexit 0\n');
+    chmodSync(mockStale, 0o755);
+    const rStale = await checkCodegraph({ cwd: base, codegraphBin: mockStale, env: { PATH: process.env.PATH } });
+    assert.strictEqual(rStale.level, 'warn');
+    assert.match(rStale.detail, /stale/);
+
+    // 5. Present .codegraph + missing CLI -> WARN (never fail)
+    const rMissing = await checkCodegraph({ cwd: base, codegraphBin: join(base, 'no-such-codegraph'), env: { PATH: '' } });
+    assert.strictEqual(rMissing.level, 'warn');
+    assert.match(rMissing.detail, /CLI not installed/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('T-TE-7a: checkDecisionEngine reports advisory readiness and never leaks secrets', async () => {
+  const { checkDecisionEngine } = await import('../lib/doctor.mjs');
+  const base = mkdtempSync(join(tmpdir(), 'agb-doctor-de-'));
+  try {
+    // 1. Unconfigured -> INFO
+    const rNone = await checkDecisionEngine({ cwd: base, env: {} });
+    assert.strictEqual(rNone.name, 'Decision Engine');
+    assert.strictEqual(rNone.level, 'info');
+    assert.match(rNone.detail, /opt-in, not configured/);
+
+    // 2. Disabled via env -> INFO
+    const rDisabled = await checkDecisionEngine({ cwd: base, env: { AGB_DECISION_ENGINE: '0', AGB_DECISION_PROVIDER: 'jev' } });
+    assert.strictEqual(rDisabled.level, 'info');
+
+    // 3. Configured jev missing key -> WARN
+    mkdirSync(join(base, '.adlc'), { recursive: true });
+    writeFileSync(
+      join(base, '.adlc', 'config.json'),
+      JSON.stringify({ version: 1, accelerators: { decision: { enabled: true, provider: 'jev' } } })
+    );
+    const rMissingKey = await checkDecisionEngine({ cwd: base, env: {} });
+    assert.strictEqual(rMissingKey.level, 'warn');
+    assert.match(rMissingKey.detail, /missing TYPESAFE_API_KEY/);
+
+    // 4. Configured jev with secret key -> PASS, secret never printed
+    const secret = 'ts_super_secret_token_987654321';
+    const rReady = await checkDecisionEngine({ cwd: base, env: { TYPESAFE_API_KEY: secret } });
+    assert.strictEqual(rReady.level, 'pass');
+    assert.match(rReady.detail, /jev \(jev-latest\)/);
+    assert.strictEqual(JSON.stringify(rReady).includes(secret), false, 'must never leak API key');
+
+    // 5. Configured kev: missing base URL -> WARN, valid loopback -> PASS, invalid http -> WARN
+    const rKevMissing = await checkDecisionEngine({ cwd: base, env: { AGB_DECISION_PROVIDER: 'kev' } });
+    assert.strictEqual(rKevMissing.level, 'warn');
+    assert.match(rKevMissing.detail, /missing base URL/);
+
+    const rKevOk = await checkDecisionEngine({
+      cwd: base,
+      env: { AGB_DECISION_PROVIDER: 'kev', AGB_KEV_BASE_URL: 'http://127.0.0.1:8787/decide' },
+    });
+    assert.strictEqual(rKevOk.level, 'pass');
+
+    const rKevBadUrl = await checkDecisionEngine({
+      cwd: base,
+      env: { AGB_DECISION_PROVIDER: 'kev', AGB_KEV_BASE_URL: 'http://example.com/decide' },
+    });
+    assert.strictEqual(rKevBadUrl.level, 'warn');
+    assert.match(rKevBadUrl.detail, /invalid endpoint URL/);
+
+    // 6. Auto-detected Gemini Decisions API when GEMINI_API_KEY is set (no config needed)
+    const emptyRepo = mkdtempSync(join(tmpdir(), 'agb-doctor-de-gemini-'));
+    try {
+      const geminiSecret = 'AIzaSyFakeGeminiKeyForDoctorTest12345';
+      const rGeminiAuto = await checkDecisionEngine({ cwd: emptyRepo, env: { GEMINI_API_KEY: geminiSecret } });
+      assert.strictEqual(rGeminiAuto.level, 'pass');
+      assert.match(rGeminiAuto.detail, /gemini-decisions \(gemini-decision-1, auto-detected via GEMINI_API_KEY\)/);
+      assert.strictEqual(JSON.stringify(rGeminiAuto).includes(geminiSecret), false, 'must never leak GEMINI_API_KEY');
+    } finally {
+      rmSync(emptyRepo, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('T-TE-7a: runDoctor surfaces CodeGraph and Decision Engine advisory checks without failing unconfigured repos', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'agb-doctor-accel-e2e-'));
+  const home = join(base, 'home');
+  const repo = join(base, 'repo');
+  mkdirSync(home, { recursive: true });
+  mkdirSync(repo, { recursive: true });
+  const pluginDir = join(home, '.gemini', 'config', 'plugins', 'adlc-antigravity');
+  mkdirSync(pluginDir, { recursive: true });
+  writeFileSync(join(pluginDir, 'plugin.json'), JSON.stringify({ version: '1.8.0', adlcContract: 1 }));
+  mkdirSync(join(home, '.gemini', 'antigravity-cli', 'brain'), { recursive: true });
+  const pluginRoot = makeSelftestPluginRoot(base);
+  const FAKE_AGY = join(process.cwd(), 'test/fixtures/fake-agy');
+
+  try {
+    const { result: exitCode, output } = await captureConsoleLog(() =>
+      runDoctor({
+        cwd: repo,
+        pluginRoot,
+        env: {
+          HOME: home,
+          PATH: process.env.PATH,
+          AGB_AGY_BIN: FAKE_AGY,
+          AGB_SANDBOX_GATES: '0',
+          AGB_SYNC_MODELS_OFFLINE: '1',
+        },
+      })
+    );
+    assert.strictEqual(exitCode, 0, output);
+    assert.match(output, /CodeGraph index\s+\|\s+INFO\s+\|\s+not initialized \(opt-in\)/);
+    assert.match(output, /Decision Engine\s+\|\s+INFO\s+\|\s+opt-in, not configured/);
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('F-010: runInit fails closed on malformed or non-object .adlc/config.json when --with-codegraph or --decision-provider is passed', () => {
+  const base = mkdtempSync(join(tmpdir(), 'agb-init-malformed-'));
+  try {
+    const adlcDir = join(base, '.adlc');
+    mkdirSync(adlcDir, { recursive: true });
+    const configPath = join(adlcDir, 'config.json');
+    const malformed = '{ "version": 1, "securityMode": "signed", "signingKey": "preserve-me", ';
+    writeFileSync(configPath, malformed, 'utf8');
+
+    const resCg = runInit({ repo: base, withCodegraph: true });
+    assert.strictEqual(resCg.ok, false);
+    assert.match(resCg.error, /Malformed \.adlc\/config\.json/i);
+    assert.strictEqual(
+      readFileSync(configPath, 'utf8'),
+      malformed,
+      'runInit --with-codegraph must not overwrite malformed .adlc/config.json'
+    );
+
+    const resDp = runInit({ repo: base, decisionProvider: 'gemini-decisions' });
+    assert.strictEqual(resDp.ok, false);
+    assert.match(resDp.error, /Malformed \.adlc\/config\.json/i);
+    assert.strictEqual(
+      readFileSync(configPath, 'utf8'),
+      malformed,
+      'runInit --decision-provider must not overwrite malformed .adlc/config.json'
+    );
+
+    const nonObject = '[1, 2, 3]\n';
+    writeFileSync(configPath, nonObject, 'utf8');
+    const resArr = runInit({ repo: base, withCodegraph: true });
+    assert.strictEqual(resArr.ok, false);
+    assert.match(resArr.error, /Invalid \.adlc\/config\.json/i);
+    assert.strictEqual(
+      readFileSync(configPath, 'utf8'),
+      nonObject,
+      'runInit must not overwrite non-object .adlc/config.json'
+    );
   } finally {
     rmSync(base, { recursive: true, force: true });
   }

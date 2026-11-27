@@ -123,6 +123,7 @@ test('triageFindings: emits console.warn and sets arbiterDegraded/arbiterError w
       pools: failingPools,
       model: 'claude-sonnet-4-6',
       arbiter: true,
+      forceLlmArbiter: true,
     });
 
     assert.equal(res.arbiterDegraded, true);
@@ -155,6 +156,7 @@ test('triageFindings: emits console.warn and sets arbiterDegraded/arbiterError w
       ],
       targetType: 'code',
       arbiter: true,
+      forceLlmArbiter: true,
     });
 
     assert.equal(res.arbiterDegraded, true);

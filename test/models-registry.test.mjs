@@ -12,6 +12,9 @@ import {
   TIER_CANDIDATES,
   PROSECUTORS,
   PROSECUTOR_CANDIDATES,
+  ARL_LENS_MODELS,
+  CODE_ARL_LENSES,
+  PLAN_ARL_LENSES,
   ROLE_MODELS,
   VALID_EFFORTS,
   modelFor,
@@ -22,6 +25,8 @@ import {
   tierCandidates,
   escalateModelSlugInFamily,
   selectCliEffortFlag,
+  selectRiskTieredProsecutor,
+  selectRiskTieredLensModel,
 } from '../lib/models.mjs';
 
 import * as agyExports from '../lib/agy.mjs';
@@ -324,6 +329,96 @@ describe('models-registry: single source of truth', () => {
     assert.deepEqual(sameFamilyProsecutorsFor('claude-opus-5-5-high'), ['claude-sonnet-5-5-high']);
     assert.deepEqual(sameFamilyProsecutorsFor('claude-sonnet-5-5-medium'), ['claude-opus-5-5-high']);
     assert.deepEqual(sameFamilyProsecutorsFor('gpt-future-oss'), []);
+  });
+
+  it('selectRiskTieredProsecutor scales by blastRadius/ticketTier, preserves cross-family invariant, and respects pool availability', () => {
+    // Low risk (non-frontier)
+    assert.equal(
+      selectRiskTieredProsecutor('gemini-4-neon-medium', { blastRadius: 'low', ticketTier: 'cheap' }),
+      'claude-sonnet-5-5-low'
+    );
+    assert.equal(
+      selectRiskTieredProsecutor('claude-sonnet-5-5-medium', { blastRadius: 'low', ticketTier: 'mid' }),
+      'gemini-4-hydrogen-medium'
+    );
+
+    // Medium risk (non-frontier)
+    assert.equal(
+      selectRiskTieredProsecutor('gemini-4-neon-medium', { blastRadius: 'medium', ticketTier: 'mid' }),
+      'claude-sonnet-5-5-medium'
+    );
+    assert.equal(
+      selectRiskTieredProsecutor('claude-sonnet-5-5-medium', { blastRadius: 'medium', ticketTier: 'mid' }),
+      'gemini-4-neon-medium'
+    );
+    const noGeminiProPools = new PoolSet({ 'gemini-flash': 8, 'gemini-pro': 0, claude: 4, 'gpt-oss': 0 });
+    assert.equal(
+      selectRiskTieredProsecutor('claude-sonnet-5-5-medium', { blastRadius: 'medium', ticketTier: 'mid', pools: noGeminiProPools }),
+      'gemini-4-hydrogen-high'
+    );
+
+    // High risk OR frontier ticketTier escalates to frontier PROSECUTOR_CANDIDATES
+    assert.equal(
+      selectRiskTieredProsecutor('claude-sonnet-5-5-high', { blastRadius: 'low', ticketTier: 'frontier' }),
+      PROSECUTOR_CANDIDATES.claude[0]
+    );
+    assert.equal(
+      selectRiskTieredProsecutor('claude-sonnet-5-5-medium', { blastRadius: 'high', ticketTier: 'cheap' }),
+      PROSECUTOR_CANDIDATES.claude[0]
+    );
+    assert.equal(
+      selectRiskTieredProsecutor('gemini-4-neon-high', { blastRadius: 'high', ticketTier: 'frontier' }),
+      PROSECUTOR_CANDIDATES.gemini[0]
+    );
+
+    // Strict cross-family invariant across all combinations
+    const builders = ['gemini-4-hydrogen-low', 'gemini-4-neon-high', 'claude-sonnet-5-5-medium'];
+    for (const b of builders) {
+      for (const blastRadius of ['low', 'medium', 'high']) {
+        for (const ticketTier of ['cheap', 'mid', 'frontier']) {
+          const picked = selectRiskTieredProsecutor(b, { blastRadius, ticketTier });
+          assert.ok(ALL_MODELS.includes(picked), `prosecutor ${picked} must be in ALL_MODELS`);
+          assert.notEqual(
+            familyOf(picked),
+            familyOf(b),
+            `prosecutor ${picked} must differ in family from builder ${b} (${blastRadius}/${ticketTier})`
+          );
+        }
+      }
+    }
+  });
+
+  it('selectRiskTieredLensModel scales by blastRadius while preserving family diversity, fallbackIndex, and pool availability', () => {
+    // Low risk preserves family diversity across lenses
+    assert.equal(selectRiskTieredLensModel('correctness_redteam', { blastRadius: 'low' }), 'claude-sonnet-5-5-low');
+    assert.equal(selectRiskTieredLensModel('security', { blastRadius: 'low' }), 'gemini-4-hydrogen-medium');
+    assert.equal(selectRiskTieredLensModel('correctness_redteam', { blastRadius: 'low', fallbackIndex: 1 }), 'gemini-4-hydrogen-medium');
+
+    // Medium risk
+    assert.equal(selectRiskTieredLensModel('correctness_redteam', { blastRadius: 'medium' }), 'claude-sonnet-5-5-medium');
+    assert.equal(selectRiskTieredLensModel('security', { blastRadius: 'medium' }), 'gemini-4-neon-medium');
+    assert.equal(selectRiskTieredLensModel('evidence_runner', { blastRadius: 'medium' }), 'gemini-4-hydrogen-high');
+
+    // High risk maps to ARL_LENS_MODELS
+    for (const lens of [...CODE_ARL_LENSES, ...PLAN_ARL_LENSES, 'arbiter']) {
+      assert.equal(selectRiskTieredLensModel(lens, { blastRadius: 'high' }), ARL_LENS_MODELS[lens].primary);
+      assert.equal(selectRiskTieredLensModel(lens, { blastRadius: 'high', fallbackIndex: 1 }), ARL_LENS_MODELS[lens].fallback);
+    }
+
+    // Pool availability fallback
+    const noClaudePools = new PoolSet({ 'gemini-flash': 8, 'gemini-pro': 4, claude: 0, 'gpt-oss': 0 });
+    assert.equal(
+      selectRiskTieredLensModel('correctness_redteam', { blastRadius: 'low', pools: noClaudePools }),
+      'gemini-4-hydrogen-medium'
+    );
+    assert.equal(
+      selectRiskTieredLensModel('correctness_redteam', { blastRadius: 'medium', pools: noClaudePools }),
+      'gemini-4-neon-medium'
+    );
+    assert.equal(
+      selectRiskTieredLensModel('correctness_redteam', { blastRadius: 'high', pools: noClaudePools }),
+      'gemini-4-neon-high'
+    );
   });
 });
 

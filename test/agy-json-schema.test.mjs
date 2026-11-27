@@ -539,5 +539,59 @@ test('BRAIN_PLAN_SCHEMA & validatePlan: allow colon-delimited script names in ga
   assert.equal(errors.length, 0);
 });
 
+test('BRAIN_PLAN_SCHEMA & validatePlan: validate optional gateProvenance.coldstartHashes', () => {
+  const basePlan = {
+    repo: '/tmp/repo',
+    base: 'main',
+    gate: { test: 'npm test' },
+    tickets: [
+      { id: 'T1', title: 'Ticket 1', body: 'Body', scope: ['lib/a.mjs'], edges: [], tier: 'mid' },
+    ],
+  };
+
+  // Valid with gateProvenance.coldstartHashes
+  const validWithHashes = {
+    ...basePlan,
+    gateProvenance: {
+      coldstartHashes: {
+        T1: 'a1b2c3d4e5f6',
+      },
+    },
+  };
+  assert.equal(validateJsonSchema(validWithHashes, BRAIN_PLAN_SCHEMA).valid, true);
+  assert.deepEqual(validatePlan(validWithHashes), []);
+
+  // Valid with empty gateProvenance
+  const validEmptyProv = { ...basePlan, gateProvenance: {} };
+  assert.equal(validateJsonSchema(validEmptyProv, BRAIN_PLAN_SCHEMA).valid, true);
+  assert.deepEqual(validatePlan(validEmptyProv), []);
+
+  // Invalid: gateProvenance not a plain object
+  for (const badProv of [null, 'str', 42, []]) {
+    const p = { ...basePlan, gateProvenance: badProv };
+    assert.equal(validateJsonSchema(p, BRAIN_PLAN_SCHEMA).valid, false);
+    assert.ok(validatePlan(p).some((e) => e.includes('gateProvenance')));
+  }
+
+  // Invalid: unknown property in gateProvenance
+  const extraKeyPlan = { ...basePlan, gateProvenance: { coldstartHashes: { T1: 'abc' }, extra: 1 } };
+  assert.equal(validateJsonSchema(extraKeyPlan, BRAIN_PLAN_SCHEMA).valid, false);
+  assert.ok(validatePlan(extraKeyPlan).some((e) => e.includes('unsupported key')));
+
+  // Invalid: coldstartHashes not a plain object
+  for (const badHashes of [null, 'abc', []]) {
+    const p = { ...basePlan, gateProvenance: { coldstartHashes: badHashes } };
+    assert.equal(validateJsonSchema(p, BRAIN_PLAN_SCHEMA).valid, false);
+    assert.ok(validatePlan(p).some((e) => e.includes('coldstartHashes')));
+  }
+
+  // Invalid: empty, whitespace, or non-string hash values
+  for (const badVal of ['', '   ', 123, null]) {
+    const p = { ...basePlan, gateProvenance: { coldstartHashes: { T1: badVal } } };
+    assert.equal(validateJsonSchema(p, BRAIN_PLAN_SCHEMA).valid, false);
+    assert.ok(validatePlan(p).some((e) => e.includes("coldstartHashes['T1']")));
+  }
+});
+
 
 

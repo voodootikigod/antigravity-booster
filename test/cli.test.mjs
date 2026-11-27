@@ -279,3 +279,206 @@ test('T-RA-4B: init, sweep, brains, import-brain, probe, and pool reject unknown
   const brainsRes = spawnSync(process.execPath, [AGB_BIN, 'brains'], { encoding: 'utf8' });
   assert.strictEqual(brainsRes.status, 0, brainsRes.stderr);
 });
+
+test('T-TE-7a: help text documents new review, preflight, and init flags', () => {
+  const reviewHelp = execFileSync(process.execPath, [AGB_BIN, 'help', 'review'], { encoding: 'utf8' });
+  for (const flag of ['--thorough', '--dry-rounds', '--seams-only', '--plan-file', '--delta', '--prior-findings', '--no-codegraph', '--no-decision-engine']) {
+    assert.ok(reviewHelp.includes(flag), `agb help review missing ${flag}`);
+  }
+  const preflightHelp = execFileSync(process.execPath, [AGB_BIN, 'help', 'preflight'], { encoding: 'utf8' });
+  assert.ok(preflightHelp.includes('--force-coldstart'), 'agb help preflight missing --force-coldstart');
+  const initHelp = execFileSync(process.execPath, [AGB_BIN, 'help', 'init'], { encoding: 'utf8' });
+  assert.ok(initHelp.includes('--with-codegraph'), 'agb help init missing --with-codegraph');
+  assert.ok(initHelp.includes('--decision-provider'), 'agb help init missing --decision-provider');
+});
+
+test('T-TE-7a: agb init --with-codegraph and --decision-provider scaffold config & .gitignore and reject invalid provider', () => {
+  const repo = join(TMP, 'init-accel-repo');
+  mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '-b', 'main'], { cwd: repo, stdio: 'ignore' });
+
+  // Invalid provider fails before mutating repo
+  const bad = spawnSync(process.execPath, [AGB_BIN, 'init', repo, '--decision-provider', 'bogus'], { encoding: 'utf8' });
+  assert.strictEqual(bad.status, 1);
+  assert.match(bad.stderr, /invalid --decision-provider 'bogus'/);
+  assert.strictEqual(existsSync(join(repo, '.adlc', 'config.json')), false);
+
+  // Valid --with-codegraph + --decision-provider gemini-decisions
+  const minimalPath = '/usr/bin:/bin';
+  const ok = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'init', repo, '--with-codegraph', '--decision-provider', 'gemini-decisions'],
+    { encoding: 'utf8', env: { ...process.env, PATH: minimalPath } }
+  );
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  const parsed = JSON.parse(ok.stdout);
+  assert.strictEqual(parsed.ok, true);
+  assert.strictEqual(parsed.withCodegraph, true);
+  assert.strictEqual(parsed.decisionProvider, 'gemini-decisions');
+
+  const cfg = JSON.parse(readFileSync(join(repo, '.adlc', 'config.json'), 'utf8'));
+  assert.strictEqual(cfg.accelerators?.codegraph, true);
+  assert.deepStrictEqual(cfg.accelerators?.decision, { enabled: true, provider: 'gemini-decisions' });
+
+  const gitignore = readFileSync(join(repo, '.gitignore'), 'utf8');
+  assert.match(gitignore, /^\.codegraph\/$/m);
+
+  // Idempotent second run does not duplicate .codegraph/
+  const ok2 = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'init', repo, '--with-codegraph'],
+    { encoding: 'utf8', env: { ...process.env, PATH: minimalPath } }
+  );
+  assert.strictEqual(ok2.status, 0, ok2.stderr);
+  const gitignore2 = readFileSync(join(repo, '.gitignore'), 'utf8');
+  assert.strictEqual(gitignore2.match(/^\.codegraph\/$/gm)?.length, 1);
+});
+
+test('T-TE-7a: agb review validates new flags, decouples --loop from static multi-round, and supports --delta + --prior-findings', async () => {
+  const repo = join(TMP, 'review-flags-repo');
+  mkdirSync(repo, { recursive: true });
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+  g('init', '-b', 'main');
+  g('config', 'user.email', 't@t');
+  g('config', 'user.name', 't');
+  g('config', 'commit.gpgsign', 'false');
+  writeFileSync(join(repo, 'app.js'), 'export const x = 1;\n');
+  g('add', '-A');
+  g('commit', '-m', 'init');
+  writeFileSync(join(repo, 'app.js'), 'export const x = 2;\n');
+
+  // Reject unknown flag and invalid --dry-rounds
+  const badFlag = spawnSync(process.execPath, [AGB_BIN, 'review', repo, '--bogus-flag'], { encoding: 'utf8' });
+  assert.strictEqual(badFlag.status, 1);
+  assert.match(badFlag.stderr, /unknown flag '--bogus-flag' for review/);
+
+  const badDry = spawnSync(process.execPath, [AGB_BIN, 'review', repo, '--dry-rounds', '0'], { encoding: 'utf8' });
+  assert.strictEqual(badDry.status, 1);
+  assert.match(badDry.stderr, /invalid --dry-rounds '0'/);
+
+  const badPlanFile = join(TMP, 'bad-plan-file.json');
+  writeFileSync(badPlanFile, JSON.stringify({ notTickets: true }));
+  const badPfRes = spawnSync(process.execPath, [AGB_BIN, 'review', repo, '--plan-file', badPlanFile], { encoding: 'utf8' });
+  assert.strictEqual(badPfRes.status, 1);
+  assert.match(badPfRes.stderr, /invalid --plan-file/);
+
+  const fakeAgy = fileURLToPath(new URL('fixtures/fake-agy', import.meta.url));
+  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_DECISION_ENGINE: '0' };
+
+  // --loop over a static diff must NOT force maxRounds: 3 (runs 1 round by default)
+  const loopRes = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'review', repo, '--loop', '--no-codegraph', '--no-decision-engine'],
+    { encoding: 'utf8', env }
+  );
+  assert.strictEqual(loopRes.status, 0, loopRes.stderr);
+  const loopJson = JSON.parse(loopRes.stdout);
+  assert.strictEqual(loopJson.rounds, 1, 'static diff --loop must default to 1 round unless --thorough or --dry-rounds is set');
+
+  // --thorough runs multi-dry convergence (2 dry rounds)
+  const thoroughRes = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'review', repo, '--thorough', '--no-codegraph', '--no-decision-engine'],
+    { encoding: 'utf8', env }
+  );
+  assert.strictEqual(thoroughRes.status, 0, thoroughRes.stderr);
+  const thoroughJson = JSON.parse(thoroughRes.stdout);
+  assert.strictEqual(thoroughJson.rounds, 2, '--thorough must run 2 dry rounds on clean diff');
+
+  // --delta + --prior-findings persists updated findings state
+  const priorPath = join(repo, '.review', 'custom-findings.json');
+  mkdirSync(join(repo, '.review'), { recursive: true });
+  writeFileSync(priorPath, JSON.stringify([{ file: 'app.js', lens: 'correctness', claim: 'old issue', severity: 'low' }]));
+  const deltaRes = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'review', repo, '--delta', 'HEAD', '--prior-findings', priorPath, '--no-codegraph', '--no-decision-engine'],
+    { encoding: 'utf8', env }
+  );
+  assert.strictEqual(deltaRes.status, 0, deltaRes.stderr);
+  assert.strictEqual(existsSync(priorPath), true);
+  assert.deepStrictEqual(JSON.parse(readFileSync(priorPath, 'utf8')), []);
+});
+
+test('T-TE-7a: agb preflight --force-coldstart bypasses cached coldstart hashes', async () => {
+  const { hashTicketColdstart } = await import('../lib/preflight.mjs');
+  const repo = join(TMP, 'preflight-force-repo');
+  mkdirSync(repo, { recursive: true });
+  const ticket = { id: 'T1', title: 'test', body: 'Do work in a.txt', scope: ['a.txt'], rails: [], edges: [] };
+  const gate = { test: 'npm test' };
+  const plan = {
+    repo,
+    tickets: [ticket],
+    gate,
+    gateProvenance: {
+      coldstartHashes: { T1: hashTicketColdstart(ticket, gate) },
+    },
+  };
+  const planPath = join(repo, 'plan.json');
+  writeFileSync(planPath, JSON.stringify(plan, null, 2));
+
+  const fakeAgy = fileURLToPath(new URL('fixtures/fake-agy', import.meta.url));
+  const env = { ...process.env, AGB_AGY_BIN: fakeAgy };
+
+  const cachedRes = spawnSync(process.execPath, [AGB_BIN, 'preflight', planPath], { encoding: 'utf8', env });
+  assert.strictEqual(cachedRes.status, 0, cachedRes.stderr);
+  assert.deepStrictEqual(JSON.parse(cachedRes.stdout).cachedColdstartIds, ['T1']);
+
+  const forcedRes = spawnSync(process.execPath, [AGB_BIN, 'preflight', planPath, '--force-coldstart'], { encoding: 'utf8', env });
+  assert.strictEqual(forcedRes.status, 0, forcedRes.stderr);
+  assert.deepStrictEqual(JSON.parse(forcedRes.stdout).cachedColdstartIds, []);
+
+  const badRes = spawnSync(process.execPath, [AGB_BIN, 'preflight', planPath, '--unknown'], { encoding: 'utf8', env });
+  assert.strictEqual(badRes.status, 1);
+  assert.match(badRes.stderr, /unknown flag '--unknown' for preflight/);
+});
+
+test('F-008: agb review --delta with empty delta diff preserves unresolved priorFindings (exit 2) and exits 0 when none', () => {
+  const repo = join(TMP, 'review-empty-delta-repo');
+  mkdirSync(repo, { recursive: true });
+  const g = (...a) => execFileSync('git', a, { cwd: repo, encoding: 'utf8' });
+  g('init', '-b', 'main');
+  g('config', 'user.email', 't@t');
+  g('config', 'user.name', 't');
+  g('config', 'commit.gpgsign', 'false');
+  writeFileSync(join(repo, 'app.js'), 'export const x = 1;\n');
+  g('add', '-A');
+  g('commit', '-m', 'init');
+
+  const fakeAgy = fileURLToPath(new URL('fixtures/fake-agy', import.meta.url));
+  const env = { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_DECISION_ENGINE: '0' };
+
+  // Case 1: Empty deltaDiff + unresolved priorFindings -> exit 2, gateVerdict ITERATE, file untouched
+  const findingsDir = join(repo, '.review');
+  mkdirSync(findingsDir, { recursive: true });
+  const defaultPriorPath = join(findingsDir, 'last-findings.json');
+  const unresolved = [{ file: 'app.js', lens: 'security', claim: 'unresolved issue', severity: 'high' }];
+  writeFileSync(defaultPriorPath, JSON.stringify(unresolved, null, 2));
+
+  const resUnresolved = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'review', repo, '--delta', 'HEAD', '--no-codegraph', '--no-decision-engine'],
+    { encoding: 'utf8', env }
+  );
+  assert.strictEqual(resUnresolved.status, 2, `expected exit 2, got ${resUnresolved.status}: ${resUnresolved.stderr}`);
+  const parsedUnresolved = JSON.parse(resUnresolved.stdout);
+  assert.strictEqual(parsedUnresolved.gateVerdict, 'ITERATE');
+  assert.strictEqual(parsedUnresolved.converged, false);
+  assert.strictEqual(parsedUnresolved.rounds, 0);
+  assert.strictEqual(parsedUnresolved.requests, 0);
+  assert.deepStrictEqual(parsedUnresolved.findings, unresolved);
+  assert.deepStrictEqual(
+    JSON.parse(readFileSync(defaultPriorPath, 'utf8')),
+    unresolved,
+    '.review/last-findings.json must NOT be overwritten on empty delta diff'
+  );
+
+  // Case 2: Empty deltaDiff + empty priorFindings -> exit 0 without creating/overwriting prior findings file
+  const absentPriorPath = join(findingsDir, 'absent-findings.json');
+  const resClean = spawnSync(
+    process.execPath,
+    [AGB_BIN, 'review', repo, '--delta', 'HEAD', '--prior-findings', absentPriorPath, '--no-codegraph', '--no-decision-engine'],
+    { encoding: 'utf8', env }
+  );
+  assert.strictEqual(resClean.status, 0, resClean.stderr);
+  assert.strictEqual(existsSync(absentPriorPath), false, 'empty delta with no prior findings must not write prior findings file');
+});

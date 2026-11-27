@@ -10,6 +10,7 @@ import {
   killDaemonProcessTree,
   MAX_BYPASS_RESPAWNS,
 } from '../lib/ndjson-worker.mjs';
+import { runAgy } from '../lib/agy.mjs';
 import { runLiveV14HyperHarnessBenchmark } from '../evals/runner.mjs';
 import { StreamWatchdog } from '../lib/stream-watchdog.mjs';
 
@@ -69,12 +70,17 @@ function tmpDir() {
   return mkdtempSync(join(tmpdir(), 'agb-ndjson-'));
 }
 
-test('buildRoleSettingsProfile re-export emits action(target) permission rules', () => {
+test('buildRoleSettingsProfile re-export emits action(target) permission rules and supports allowReadTools lockdown', () => {
   const ro = buildRoleSettingsProfile('prosecutor');
   assert.equal(ro.allowNonWorkspaceAccess, false);
   for (const rule of ['write_file(*)', 'command(*)', 'download_url(*)', 'unsandboxed(*)', 'mcp(*)']) {
     assert.ok(ro.permissions.deny.includes(rule));
   }
+  const roLocked = buildRoleSettingsProfile('prosecutor', { allowReadTools: false });
+  assert.ok(roLocked.permissions.deny.includes('read_file(*)'));
+  const roOpenReads = buildRoleSettingsProfile('prosecutor', { allowReadTools: true });
+  assert.equal(roOpenReads.permissions.deny.includes('read_file(*)'), false);
+
   const builderNoCg = buildRoleSettingsProfile('builder', { hasCodegraph: false });
   assert.ok(builderNoCg.permissions.deny.includes('mcp(*)'));
   assert.ok(builderNoCg.permissions.deny.includes('download_url(*)'));
@@ -333,6 +339,42 @@ test('NdjsonWorkerDaemon contained builder fails closed and never uses single-sh
     const r5 = await allowed.sendTurn('x');
     assert.equal(r5.fallback, true);
     assert.equal(fbCalls.length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runAgy forwards allowReadTools into buildRoleSettingsProfile when useRoleSettings is true', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agb-runagy-ro-'));
+  const defaultSettingsFile = join(dir, 'default-settings.json');
+  const allowReadsSettingsFile = join(dir, 'allow-reads-settings.json');
+  try {
+    const resDefault = await runAgy({
+      model: 'gemini-3.8-flash-low',
+      prompt: 'audit diff',
+      bin: FAKE_AGY,
+      role: 'prosecutor',
+      useRoleSettings: true,
+      env: { FAKE_SETTINGS_FILE: defaultSettingsFile },
+    });
+    assert.equal(resDefault.ok, true);
+    const defaultParsed = JSON.parse(readFileSync(defaultSettingsFile, 'utf8'));
+    assert.ok(defaultParsed.permissions.deny.includes('read_file(*)'));
+    assert.ok(defaultParsed.permissions.deny.includes('write_file(*)'));
+
+    const resAllow = await runAgy({
+      model: 'gemini-3.8-flash-low',
+      prompt: 'audit diff with reads',
+      bin: FAKE_AGY,
+      role: 'prosecutor',
+      useRoleSettings: true,
+      allowReadTools: true,
+      env: { FAKE_SETTINGS_FILE: allowReadsSettingsFile },
+    });
+    assert.equal(resAllow.ok, true);
+    const allowParsed = JSON.parse(readFileSync(allowReadsSettingsFile, 'utf8'));
+    assert.equal(allowParsed.permissions.deny.includes('read_file(*)'), false);
+    assert.ok(allowParsed.permissions.deny.includes('write_file(*)'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

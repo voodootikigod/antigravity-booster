@@ -1,5 +1,6 @@
 const runStatus = document.getElementById('runStatus');
 const poolStatus = document.getElementById('poolStatus');
+const telemetryStrip = document.getElementById('telemetryStrip');
 const ticketsGrid = document.getElementById('ticketsGrid');
 const eventsLog = document.getElementById('eventsLog');
 const repoPathEl = document.getElementById('repoPath');
@@ -7,6 +8,7 @@ const repoPathEl = document.getElementById('repoPath');
 let state = {
   tickets: new Map(),
   pools: null,
+  telemetry: null,
   done: false,
   runId: null
 };
@@ -35,11 +37,16 @@ async function pollEvents() {
       if ((data.runId && state.runId !== data.runId) || data.reset) {
         state.tickets.clear();
         state.pools = null;
+        state.telemetry = null;
         state.done = false;
         state.runId = data.runId;
         eventsLog.innerHTML = '';
         ticketsGrid.innerHTML = '';
         poolStatus.innerHTML = '';
+        if (telemetryStrip) {
+          telemetryStrip.innerHTML = '';
+          if (telemetryStrip.style) telemetryStrip.style.display = 'none';
+        }
         runStatus.innerHTML = '<span class="pulse"></span>Waiting for activity...';
         runStatus.className = 'run-status status-badge status-running';
         console.log('Resetting dashboard for new run:', data.runId);
@@ -95,14 +102,19 @@ async function pollEvents() {
 function processEvent(evt) {
   addEventLog(evt);
   
-  if ((evt.type === 'pool' || evt.type === 'phase' || evt.type === 'strike') && !state.done && runStatus.innerHTML.includes('Waiting for activity...')) {
+  if ((evt.type === 'pool' || evt.type === 'phase' || evt.type === 'strike' || evt.type === 'telemetry') && !state.done && runStatus.innerHTML.includes('Waiting for activity...')) {
     runStatus.innerHTML = '<span class="pulse"></span>Running...';
   }
 
   if (evt.type === 'pool') {
     state.pools = evt.pools;
+  } else if (evt.type === 'telemetry') {
+    state.telemetry = evt.telemetry && typeof evt.telemetry === 'object' ? evt.telemetry : null;
   } else if (evt.type === 'report') {
     state.done = true;
+    if (evt.report && evt.report.telemetry && typeof evt.report.telemetry === 'object') {
+      state.telemetry = evt.report.telemetry;
+    }
     runStatus.innerHTML = '<span class="pulse done"></span> Run Complete';
     runStatus.className = 'run-status status-badge status-running';
   } else if (evt.ticket) {
@@ -142,6 +154,10 @@ function addEventLog(evt) {
   if (evt.type === 'phase') body = `[${escapeHtml(evt.ticket)}] Phase changed to <b>${escapeHtml(evt.to)}</b> ${evt.detail ? '- ' + escapeHtml(evt.detail) : ''}`;
   else if (evt.type === 'strike') body = `[${escapeHtml(evt.ticket)}] <span style="color:var(--danger)">Strike!</span> ${evt.error ? escapeHtml(String(evt.error).split('\n')[0]) : ''}`;
   else if (evt.type === 'pool') body = `Pools updated`;
+  else if (evt.type === 'telemetry') {
+    const t = evt.telemetry || {};
+    body = `Telemetry: Build <b>${escapeHtml(t.buildTokens ?? 0)}</b> · Prosecute <b>${escapeHtml(t.prosecutionTokens ?? 0)}</b> · Review <b>${escapeHtml(t.reviewTokens ?? 0)}</b> · Sys1 <b>${escapeHtml(t.system1Calls ?? 0)}</b>`;
+  }
   else if (evt.type === 'report') body = `Run finished.`;
   
   el.innerHTML = `
@@ -167,6 +183,38 @@ function render() {
       `).join('');
     } else {
       poolStatus.innerHTML = '';
+    }
+
+    // Render split token & accelerator telemetry strip
+    if (telemetryStrip) {
+      if (state.telemetry && typeof state.telemetry === 'object') {
+        const t = state.telemetry;
+        const skippedCount = Array.isArray(t.skippedLenses)
+          ? t.skippedLenses.length
+          : (typeof t.skippedLenses === 'number' ? t.skippedLenses : 0);
+        const items = [
+          { label: 'Build', val: `${t.buildTokens ?? 0} tok` },
+          { label: 'Prosecute', val: `${t.prosecutionTokens ?? 0} tok` },
+          { label: 'Review', val: `${t.reviewTokens ?? 0} tok` },
+          { label: 'Sys1', val: `${t.system1Calls ?? 0} calls` },
+        ];
+        if (t.hollowShortCircuits) {
+          items.push({ label: 'Hollow-SC', val: String(t.hollowShortCircuits) });
+        }
+        if (skippedCount > 0) {
+          items.push({ label: 'Skip-Lens', val: String(skippedCount) });
+        }
+        telemetryStrip.innerHTML = items.map(item => `
+          <div class="pool-badge">
+            <span class="pool-name">${escapeHtml(item.label)}</span>
+            <span class="pool-val">${escapeHtml(item.val)}</span>
+          </div>
+        `).join('');
+        if (telemetryStrip.style) telemetryStrip.style.display = 'flex';
+      } else {
+        telemetryStrip.innerHTML = '';
+        if (telemetryStrip.style) telemetryStrip.style.display = 'none';
+      }
     }
     
     // Render tickets

@@ -1144,6 +1144,84 @@ test('Plan Card and Plan Viewer resolve relative plan paths against repo, reject
   );
 });
 
+test('T-TE-7a: MCP server exposes and forwards new agb_review, agb_preflight, and agb_init parameters with validation', async () => {
+  const workDir = mkdtempSync(join(tmpdir(), 'agb-mcp-te7a-'));
+  const fakeAgy = join(ROOT, 'test', 'fixtures', 'fake-agy');
+  const srv = mcpSession(MCP_SRC, {
+    env: { ...process.env, AGB_AGY_BIN: fakeAgy, AGB_DECISION_ENGINE: '0' },
+  });
+  try {
+    const listRes = await srv.send({ id: 1, method: 'tools/list', params: {} });
+    const byName = new Map(listRes.result.tools.map((t) => [t.name, t]));
+
+    const revProps = byName.get('agb_review').inputSchema.properties;
+    for (const k of ['thorough', 'dryRounds', 'seamsOnly', 'planFile', 'delta', 'priorFindings', 'codegraph', 'decisionEngine']) {
+      assert.ok(revProps[k], `agb_review schema missing ${k}`);
+    }
+    const pfProps = byName.get('agb_preflight').inputSchema.properties;
+    assert.ok(pfProps.forceColdstart, 'agb_preflight schema missing forceColdstart');
+    const initProps = byName.get('agb_init').inputSchema.properties;
+    assert.ok(initProps.withCodegraph, 'agb_init schema missing withCodegraph');
+    assert.deepEqual(initProps.decisionProvider.enum, ['jev', 'gemini-decisions', 'kev']);
+
+    // Validation errors (-32602)
+    const badInit = await srv.send({
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'agb_init', arguments: { repo: workDir, decisionProvider: 'invalid' } },
+    });
+    assert.equal(badInit.error?.code, -32602);
+
+    const badDryRounds = await srv.send({
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'agb_review', arguments: { repo: workDir, dryRounds: 0 } },
+    });
+    assert.equal(badDryRounds.error?.code, -32602);
+
+    const badForce = await srv.send({
+      id: 4,
+      method: 'tools/call',
+      params: { name: 'agb_preflight', arguments: { plan: join(workDir, 'plan.json'), forceColdstart: 'yes' } },
+    });
+    assert.equal(badForce.error?.code, -32602);
+
+    // Valid agb_init with withCodegraph + decisionProvider
+    const initRes = await srv.send({
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'agb_init', arguments: { repo: workDir, withCodegraph: true, decisionProvider: 'jev' } },
+    });
+    assert.equal(Boolean(initRes.result?.isError), false, initRes.result?.content?.[0]?.text);
+    const cfg = JSON.parse(readFileSync(join(workDir, '.adlc', 'config.json'), 'utf8'));
+    assert.equal(cfg.accelerators?.codegraph, true);
+    assert.deepEqual(cfg.accelerators?.decision, { enabled: true, provider: 'jev' });
+    assert.match(readFileSync(join(workDir, '.gitignore'), 'utf8'), /^\.codegraph\/$/m);
+
+    // Valid agb_preflight with forceColdstart: true
+    const { hashTicketColdstart } = await import('../lib/preflight.mjs');
+    const ticket = { id: 'T1', title: 't', body: 'b', scope: ['a.txt'], rails: [], edges: [] };
+    const gate = { test: 'npm test' };
+    const planPath = join(workDir, 'plan.json');
+    writeFileSync(planPath, JSON.stringify({
+      repo: workDir,
+      tickets: [ticket],
+      gate,
+      gateProvenance: { coldstartHashes: { T1: hashTicketColdstart(ticket, gate) } },
+    }));
+    const pfRes = await srv.send({
+      id: 6,
+      method: 'tools/call',
+      params: { name: 'agb_preflight', arguments: { plan: planPath, forceColdstart: true } },
+    });
+    assert.equal(Boolean(pfRes.result?.isError), false, pfRes.result?.content?.[0]?.text);
+    assert.deepEqual(pfRes.result?.structuredContent?.cachedColdstartIds, []);
+  } finally {
+    await srv.close();
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test('agb_plan_viewer antigravity-file:// URI & non-UI sidecarHint fallback over stdio MCP', async () => {
   const repo = join(TMP, 'sidecar-hint-repo');
   const spacedRepo = join(TMP, 'sidecar repo with space');
@@ -1231,4 +1309,3 @@ test('agb_plan_viewer antigravity-file:// URI & non-UI sidecarHint fallback over
     }
   }
 });
-

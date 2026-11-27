@@ -1,14 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync, lstatSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, symlinkSync, lstatSync, realpathSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 
-import { runPlan, safeWriteWorktreeFile, terminateProcessTree } from '../lib/scheduler.mjs';
+import {
+  runPlan,
+  safeWriteWorktreeFile,
+  terminateProcessTree,
+  snapshotRootGit,
+  verifyRootGitIntegrity,
+  prepareTicketContextAndTdd,
+  resolveTicketGateConfig,
+  BanditModelRouter,
+} from '../lib/scheduler.mjs';
+import { FactoryLedger } from '../lib/factory-ledger.mjs';
 import { runAgy, isChildUnreaped } from '../lib/agy.mjs';
 import {
   reapIntegrationWorktrees, resetToBase, cleanEmptyNodeModules, isDirty, createWorktree, removeWorktree,
@@ -1398,7 +1409,7 @@ test('runPlan: fails over prosecutor on transient 503 capacity error and cleans 
       [
         '#!/bin/sh',
         'for prev in "$@"; do',
-        '  if [ "$last" = "--model" ] && [ "$prev" = "claude-sonnet-5-5-medium" ]; then',
+        '  if [ "$last" = "--model" ] && [ "$prev" = "claude-sonnet-5-5-low" ]; then',
         `    printf '%s\\n' "claude-sonnet-503" >> ${JSON.stringify(join(state, 'prosecutor-503.log'))}`,
         '    printf \'%s\\n\' \'{"status":"ERROR","response":"UNAVAILABLE (code 503): No capacity available for model claude-sonnet-5-5-medium on the server"}\'',
         '    exit 0',
@@ -1920,6 +1931,473 @@ test('runPlan (Wave 4): executes gate.twins, learned-checks, and sealed holdout 
     rmSync(binDir, { recursive: true, force: true });
     rmSync(holdoutDir, { recursive: true, force: true });
     rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('snapshotRootGit and verifyRootGitIntegrity ignore untracked and modified .codegraph entries while catching real root tampering', () => {
+  const repo = makeRepo();
+  try {
+    // 1. Clean snapshot -> .codegraph created/updated mid-run passes
+    const preClean = snapshotRootGit(repo);
+    mkdirSync(join(repo, '.codegraph'), { recursive: true });
+    writeFileSync(join(repo, '.codegraph', '.gitignore'), '*\n!.gitignore\n');
+    writeFileSync(join(repo, '.codegraph', 'codegraph.db'), 'sqlite-v1');
+    assert.equal(verifyRootGitIntegrity(repo, preClean).ok, true);
+
+    // 2. Snapshot with existing untracked .codegraph -> mutations inside .codegraph pass
+    const preWithCg = snapshotRootGit(repo);
+    writeFileSync(join(repo, '.codegraph', 'codegraph.db'), 'sqlite-v2');
+    writeFileSync(join(repo, '.codegraph', 'extra.idx'), 'index-bytes');
+    assert.equal(verifyRootGitIntegrity(repo, preWithCg).ok, true);
+
+    // 3. Non-.codegraph untracked file still triggers root integrity failure
+    writeFileSync(join(repo, 'rogue.txt'), 'tampered');
+    const badRes = verifyRootGitIntegrity(repo, preWithCg);
+    assert.equal(badRes.ok, false);
+    assert.match(badRes.error, /Porcelain status altered in root repository/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('prepareTicketContextAndTdd and resolveTicketGateConfig forward rootRepo to root .codegraph index', () => {
+  const rootRepo = mkdtempSync(join(tmpdir(), 'agb-tte6-root-'));
+  const worktree = mkdtempSync(join(tmpdir(), 'agb-tte6-wt-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-tte6-bin-'));
+  const savedPath = process.env.PATH;
+  try {
+    mkdirSync(join(rootRepo, '.codegraph'), { recursive: true });
+    mkdirSync(join(worktree, 'lib'), { recursive: true });
+    mkdirSync(join(worktree, 'test'), { recursive: true });
+    writeFileSync(join(worktree, 'lib', 'leaf.mjs'), 'export function leafFn() { return 1; }\n');
+    writeFileSync(join(worktree, 'test', 'leaf.test.mjs'), 'import { leafFn } from "../lib/leaf.mjs";\n');
+
+    const cgLog = join(rootRepo, 'cg.log');
+    writeFileSync(
+      join(binDir, 'codegraph'),
+      [
+        '#!/usr/bin/env node',
+        "import { appendFileSync } from 'node:fs';",
+        `appendFileSync(${JSON.stringify(cgLog)}, process.cwd() + '|' + process.argv.slice(2).join(' ') + '\\n');`,
+        'if (process.argv[2] === "affected") console.log(JSON.stringify({ affectedTests: ["test/leaf.test.mjs"] }));',
+        'else console.log("symbol: leafFn");',
+      ].join('\n'),
+      { mode: 0o755 }
+    );
+    process.env.PATH = `${binDir}:${savedPath}`;
+
+    const ticket = { id: 'T-CG', title: 'leaf', body: 'update leaf', scope: ['lib/leaf.mjs'] };
+    const prep = prepareTicketContextAndTdd(ticket, {}, {
+      repo: worktree,
+      rootRepo,
+      writeArtifact: false,
+    });
+    assert.equal(prep.contextSlice.source, 'codegraph');
+
+    const gateCfg = resolveTicketGateConfig(
+      { test: 'npm test' },
+      ['lib/leaf.mjs'],
+      { repo: worktree, rootRepo, phase: 'strike0' }
+    );
+    assert.equal(gateCfg.fast, true);
+    assert.equal(gateCfg.test, 'node --test test/leaf.test.mjs');
+
+    const logged = readFileSync(cgLog, 'utf8').trim().split('\n');
+    assert.equal(logged.length, 2);
+    const realRoot = realpathSync(rootRepo);
+    assert.ok(logged.every((line) => line.startsWith(`${realRoot}|`)), `expected rootRepo cwd, got: ${logged.join('; ')}`);
+  } finally {
+    process.env.PATH = savedPath;
+    rmSync(rootRepo, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('runPlan (T-TE-6): hollow-test survivors short-circuit pre-lease with 0 prosecutor pool requests and emit telemetry', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-tte6-ht-state-'));
+  try {
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: FAKE_AGY,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_HOLLOW_TEST_MODE: 'survivors',
+        FAKE_CONSENSUS_FIX_MODE: 'no-survivors',
+        FAKE_STATE_DIR: state,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: { test: 'true' },
+            tickets: [{ id: 'T1', title: 'one', body: 'write T1.txt', scope: ['T1.txt'], tier: 'mid', pool_hint: 'gemini' }],
+          },
+          quiet
+        )
+    );
+
+    assert.equal(report.merged.length, 0);
+    assert.match(report.failed.T1, /hollow-test/);
+    assert.equal(report.economics.hollowShortCircuits, 2);
+    assert.equal(report.economics.prosecutionTokens, 0);
+    assert.equal(report.telemetry.hollowShortCircuits, 2);
+    // Only the 2 builder strikes acquired a pool lease; 0 prosecutor leases were acquired!
+    assert.equal(report.requests['gpt-oss'] ?? 0, 0);
+    assert.equal(report.requests.claude ?? 0, 0);
+    const totalReqs = Object.values(report.requests).reduce((a, b) => a + b, 0);
+    assert.equal(totalReqs, 2, 'only builder requests must be counted on hollow-test short-circuit');
+
+    const argvSeen = readFileSync(join(state, 'agy-argv-seen'), 'utf8').trim().split('\n');
+    assert.equal(
+      argvSeen.filter((l) => l.includes('--output-format stream-json')).length,
+      2,
+      'agy must spawn only for the 2 builder strikes'
+    );
+    assert.equal(
+      argvSeen.filter((l) => l.includes('--output-format json')).length,
+      0,
+      'agy must NEVER spawn for prosecutor when hollow-test short-circuits pre-lease'
+    );
+    const htCalls = readFileSync(join(state, 'hollow-test-invocations'), 'utf8').trim().split('\n');
+    assert.equal(htCalls.length, 2, 'hollow-test must run once per strike in precheck, never re-run inside prosecute()');
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+  }
+});
+
+test('runPlan (T-TE-6): System-1 fast-ship skips prosecutor lease, emits split telemetry events, and marks merge-prosecution fastShipped=true', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-tte6-s1-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-tte6-s1-bin-'));
+  let srv = null;
+  try {
+    mkdirSync(join(repo, '.adlc'), { recursive: true });
+    mkdirSync(join(repo, 'lib'), { recursive: true });
+    writeFileSync(join(repo, 'lib', 'leaf.mjs'), 'export const x = 1;\n');
+    execFileSync('git', ['add', 'lib/leaf.mjs'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'seed leaf'], { cwd: repo });
+
+    // Local loopback Kev System-1 endpoint
+    srv = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        const parsed = JSON.parse(body || '{}');
+        const items = parsed.items ?? [];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            model: 'kev-fast-1',
+            inputTokens: 40,
+            answers: items.map((item) => ({
+              probability: String(item.id || '').startsWith('ac') ? 0.98 : 0.02,
+              confidence: 0.95,
+            })),
+          })
+        );
+      });
+    });
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    const port = srv.address().port;
+
+    writeFileSync(
+      join(repo, '.adlc', 'config.json'),
+      JSON.stringify({
+        version: 1,
+        accelerators: {
+          decision: { enabled: true, provider: 'kev', baseUrl: `http://127.0.0.1:${port}/v1` },
+        },
+      }) + '\n'
+    );
+    execFileSync('git', ['add', '.adlc/config.json'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'add decision config'], { cwd: repo });
+
+    const customAgy = join(binDir, 's1-agy');
+    writeFileSync(
+      customAgy,
+      [
+        '#!/usr/bin/env node',
+        "import { appendFileSync, writeFileSync } from 'node:fs';",
+        "import { spawnSync } from 'node:child_process';",
+        'const args = process.argv.slice(2);',
+        `if (args.includes('--print') || args.includes('models') || args[0] === '--version' || args[0] === '--help' || (args[0] === '-p' && args[1] === '/quota')) {`,
+        '  if (process.env.AGB_WORKER_TICKET === "T-S1") {',
+        `    appendFileSync(${JSON.stringify(join(state, 's1-agy-calls'))}, args.join(' ') + '\\n');`,
+        "    writeFileSync('lib/leaf.mjs', 'export const x = 2;\\n');",
+        "    console.log(JSON.stringify({ type: 'init', conversation_id: 'c-s1' }));",
+        "    console.log(JSON.stringify({ type: 'result', status: 'SUCCESS', exit_code: 0, telemetry: { input_tokens: 500, cached_tokens: 100, output_tokens: 50 } }));",
+        '    process.exit(0);',
+        '  }',
+        `  const r = spawnSync(${JSON.stringify(FAKE_AGY)}, args, { stdio: 'inherit', env: process.env });`,
+        '  process.exit(r.status ?? 0);',
+        '}',
+      ].join('\n') + '\n',
+      { mode: 0o755 }
+    );
+
+    const statsFile = join(state, 'bandit.jsonl');
+    const report = await withEnv(
+      {
+        AGB_AGY_BIN: customAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_HOLLOW_TEST_MODE: 'clean',
+        FAKE_STATE_DIR: state,
+        AGB_MODEL_STATS_FILE: statsFile,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: { test: 'true' },
+            tickets: [
+              {
+                id: 'T-S1',
+                title: 'update leaf',
+                body: 'set x = 2 in lib/leaf.mjs',
+                scope: ['lib/leaf.mjs'],
+                tier: 'mid',
+                pool_hint: 'gemini',
+                extractedACs: ['x is updated to 2'],
+              },
+            ],
+          },
+          quiet
+        )
+    );
+
+    assert.deepEqual(report.merged, ['T-S1']);
+    assert.equal(report.economics.buildTokens, 560); // 400 + 0.1*100 + 3*50
+    assert.equal(report.economics.prosecutionTokens, 0);
+    assert.equal(report.economics.reviewTokens, 0);
+    assert.equal(report.economics.system1Calls, 1);
+    assert.equal(report.economics.hollowShortCircuits, 0);
+    assert.equal(report.economics.billableTokens, 560);
+
+    // Zero prosecutor pool lease acquired and only builder invoked agy
+    assert.equal(report.requests['gpt-oss'] ?? 0, 0);
+    assert.equal(report.requests.claude ?? 0, 0);
+    assert.equal(readFileSync(join(state, 's1-agy-calls'), 'utf8').trim().split('\n').length, 1);
+    const s1HtCalls = readFileSync(join(state, 'hollow-test-invocations'), 'utf8').trim().split('\n');
+    assert.equal(s1HtCalls.length, 1, 'hollow-test runs once in precheck and is reused on System-1 fast-ship');
+    const s1Bandit = new BanditModelRouter({ statsFile }).readRecords();
+    assert.equal(s1Bandit.length, 1);
+    assert.equal(s1Bandit[0].role, 'builder');
+    assert.equal(s1Bandit[0].uncachedInputTokens, 400);
+    assert.equal(s1Bandit[0].cachedTokens, 100);
+    assert.equal(s1Bandit[0].outputTokens, 50);
+
+    // merge-prosecution manifest entry recorded with fastShipped: true and mergedShas
+    const gmLines = readFileSync(join(state, 'gate-manifest-invocations'), 'utf8').trim().split('\n');
+    const mergeProsLine = gmLines.find((l) => l.startsWith('gate=merge-prosecution ticket=T-S1'));
+    assert.ok(mergeProsLine, `expected merge-prosecution record, got:\n${gmLines.join('\n')}`);
+    const mergeData = JSON.parse(mergeProsLine.split(' data=')[1]);
+    assert.equal(mergeData.verdict, 'ship');
+    assert.equal(mergeData.fastShipped, true);
+    assert.deepEqual(mergeData.scope, ['lib/leaf.mjs']);
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.ok(mergeData.mergedShas.includes(headSha));
+
+    // RunStatus persisted telemetry + emitted telemetry SSE event in events.jsonl
+    const runJson = JSON.parse(readFileSync(join(repo, '.booster', 'run.json'), 'utf8'));
+    assert.equal(runJson.telemetry.buildTokens, 560);
+    assert.equal(runJson.telemetry.system1Calls, 1);
+    const events = readFileSync(join(repo, '.booster', 'logs', report.runId, 'events.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map(JSON.parse);
+    const telEvents = events.filter((e) => e.type === 'telemetry');
+    assert.ok(telEvents.length >= 2, 'telemetry events emitted during build and prosecution');
+    assert.equal(telEvents.at(-1).telemetry.system1Calls, 1);
+  } finally {
+    if (srv) srv.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test('runPlan (T-TE-6): risk-tiered prosecutor pre-lease routing, root .codegraph sync gating, split ledger vs builder-only BanditModelRouter', async () => {
+  const repo = makeRepo();
+  const state = mkdtempSync(join(tmpdir(), 'agb-tte6-full-state-'));
+  const binDir = mkdtempSync(join(tmpdir(), 'agb-tte6-full-bin-'));
+  const savedPath = process.env.PATH;
+  try {
+    mkdirSync(join(repo, '.codegraph'), { recursive: true });
+    writeFileSync(join(repo, '.codegraph', '.gitignore'), '*\n!.gitignore\n');
+    mkdirSync(join(repo, 'lib'), { recursive: true });
+    mkdirSync(join(repo, 'test'), { recursive: true });
+    writeFileSync(join(repo, 'lib', 'leaf.mjs'), 'export function leafFn() { return 1; }\n');
+    writeFileSync(join(repo, 'test', 'leaf.test.mjs'), 'import { leafFn } from "../lib/leaf.mjs";\n');
+    execFileSync('git', ['add', 'lib/leaf.mjs', 'test/leaf.test.mjs'], { cwd: repo });
+    execFileSync('git', ['commit', '-qm', 'seed repo with leaf'], { cwd: repo });
+
+    const cgLog = join(state, 'codegraph-calls.log');
+    writeFileSync(
+      join(binDir, 'codegraph'),
+      [
+        '#!/usr/bin/env node',
+        "import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';",
+        "import { join } from 'node:path';",
+        `appendFileSync(${JSON.stringify(cgLog)}, process.cwd() + '|' + process.argv.slice(2).join(' ') + '\\n');`,
+        'const cmd = process.argv[2];',
+        'if (cmd === "affected") console.log(JSON.stringify({ affectedTests: ["test/leaf.test.mjs"] }));',
+        'else if (cmd === "callers") console.log(JSON.stringify({ callers: [] }));',
+        'else if (cmd === "callees") console.log(JSON.stringify({ callees: [] }));',
+        'else if (cmd === "impact") console.log(JSON.stringify({ fanIn: 0 }));',
+        'else if (cmd === "sync") { mkdirSync(join(process.cwd(), ".codegraph"), { recursive: true }); writeFileSync(join(process.cwd(), ".codegraph", "index.db"), "synced"); console.log("ok"); }',
+        'else console.log("ok");',
+      ].join('\n'),
+      { mode: 0o755 }
+    );
+
+    const prosModelLog = join(state, 'prosecutor-models.log');
+    const customAgy = join(binDir, 'tel-agy');
+    writeFileSync(
+      customAgy,
+      [
+        '#!/usr/bin/env node',
+        "import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';",
+        "import { spawnSync } from 'node:child_process';",
+        'const args = process.argv.slice(2);',
+        'if (args.includes("--print") || args.includes("--input-format")) {',
+        '  const mIdx = args.indexOf("--model");',
+        '  const mSlug = mIdx >= 0 ? args[mIdx + 1] : "";',
+        '  if (process.env.AGB_WORKER_TICKET) {',
+        '    const tid = process.env.AGB_WORKER_TICKET;',
+        "    if (tid === 'T1') writeFileSync('lib/leaf.mjs', 'export function leafFn() { return 2; }\\n');",
+        "    else writeFileSync('lib/leaf.mjs', 'export function leafFn() { return 3; }\\n');",
+        "    console.log(JSON.stringify({ type: 'init', conversation_id: 'conv-' + tid }));",
+        "    console.log(JSON.stringify({ type: 'result', status: 'SUCCESS', exit_code: 0, telemetry: { input_tokens: 500, cached_tokens: 100, output_tokens: 50 } }));",
+        '    process.exit(0);',
+        '  }',
+        '  if (process.env.AGB_WORKER_MODE === "readonly") {',
+        '    const printIdx = args.indexOf("--print");',
+        '    const promptText = printIdx >= 0 ? String(args[printIdx + 1] ?? "") : (args.includes("--input-format") ? readFileSync(0, "utf8") : "");',
+        '    if (promptText.includes("You are a prosecutor")) {',
+        `      appendFileSync(${JSON.stringify(prosModelLog)}, mSlug + '\\n');`,
+        "      console.log(JSON.stringify({ status: 'SUCCESS', structured_output: { verdict: 'ship', findings: [] }, telemetry: { input_tokens: 1000, cached_tokens: 700, output_tokens: 150 } }));",
+        '      process.exit(0);',
+        '    }',
+        '  }',
+        '}',
+        `const r = spawnSync(${JSON.stringify(FAKE_AGY)}, args, { stdio: 'inherit', env: process.env });`,
+        'process.exit(r.status ?? 0);',
+      ].join('\n') + '\n',
+      { mode: 0o755 }
+    );
+
+    process.env.PATH = `${binDir}:${savedPath}`;
+    const statsFile = join(state, 'bandit-stats.jsonl');
+
+    // Run 1: Clean root with untracked .codegraph/ -> risk-tiered prosecutor + root sync + split economics
+    const report1 = await withEnv(
+      {
+        AGB_AGY_BIN: customAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_HOLLOW_TEST_MODE: 'clean',
+        FAKE_STATE_DIR: state,
+        AGB_MODEL_STATS_FILE: statsFile,
+        AGB_SANDBOX_GATES: '0',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: { test: 'true' },
+            tickets: [
+              { id: 'T1', title: 'leaf', body: 'update leafFn', scope: ['lib/leaf.mjs'], tier: 'mid', pool_hint: 'gemini' },
+            ],
+          },
+          quiet
+        )
+    );
+
+    assert.deepEqual(report1.merged, ['T1']);
+    assert.equal(report1.economics.buildTokens, 560);
+    assert.equal(report1.economics.prosecutionTokens, 820);
+    assert.equal(report1.economics.reviewTokens, 0);
+    assert.equal(report1.economics.billableTokens, 1380);
+    assert.equal(report1.economics.system1Calls, 0);
+    assert.equal(report1.economics.hollowShortCircuits, 0);
+
+    const ledgerSummary1 = new FactoryLedger({ repo }).summarizeEconomics();
+    assert.equal(ledgerSummary1.runs, 1);
+    assert.equal(ledgerSummary1.totalBuildTokens, 560);
+    assert.equal(ledgerSummary1.totalProsecutionTokens, 820);
+    assert.equal(ledgerSummary1.totalReviewTokens, 0);
+    assert.equal(ledgerSummary1.totalSystem1Calls, 0);
+    assert.equal(ledgerSummary1.totalHollowShortCircuits, 0);
+
+    // Risk-tiered prosecutor for gemini builder on low blastRadius + mid tier -> gpt-oss-120b-medium
+    const prosModels = readFileSync(prosModelLog, 'utf8').trim().split('\n');
+    assert.deepEqual(prosModels, ['claude-sonnet-5-5-low']);
+
+    // BanditModelRouter strictly records ONLY builder tokens (never prosecutor tokens)
+    const banditRecords = new BanditModelRouter({ statsFile }).readRecords();
+    assert.equal(banditRecords.length, 1);
+    assert.equal(banditRecords[0].role, 'builder');
+    assert.equal(banditRecords[0].uncachedInputTokens, 400);
+    assert.equal(banditRecords[0].cachedTokens, 100);
+    assert.equal(banditRecords[0].outputTokens, 50);
+
+    // Root CodeGraph was queried from worktree hydration AND synced after root working tree update
+    const realRoot = realpathSync(repo);
+    const cgCalls1 = readFileSync(cgLog, 'utf8').trim().split('\n');
+    assert.ok(cgCalls1.some((l) => l.startsWith(`${realRoot}|explore`)), 'builder hydration queried root .codegraph');
+    assert.ok(cgCalls1.some((l) => l.startsWith(`${realRoot}|affected`)), 'impacted tests queried root .codegraph');
+    assert.ok(cgCalls1.some((l) => l.startsWith(`${realRoot}|sync `)), 'integrate() synced root .codegraph after working tree update');
+
+    // merge-prosecution manifest entry recorded with fastShipped: false and rebased commit SHA
+    const gmLines = readFileSync(join(state, 'gate-manifest-invocations'), 'utf8').trim().split('\n');
+    const mergePros = gmLines.find((l) => l.startsWith('gate=merge-prosecution ticket=T1'));
+    assert.ok(mergePros, 'merge-prosecution recorded');
+    const mergePayload = JSON.parse(mergePros.split(' data=')[1]);
+    assert.equal(mergePayload.verdict, 'ship');
+    assert.equal(mergePayload.fastShipped, false);
+    const head1 = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+    assert.ok(mergePayload.mergedShas.includes(head1));
+
+    // Run 2: Under AGB_ALLOW_DIRTY=1 (dirty root), integrate() must skip syncCodegraphIndex(repo)
+    writeFileSync(cgLog, '');
+    writeFileSync(join(repo, 'README.md'), 'dirty user edit\n');
+    const report2 = await withEnv(
+      {
+        AGB_AGY_BIN: customAgy,
+        AGB_ADLC_BIN: FAKE_ADLC,
+        FAKE_HOLLOW_TEST_MODE: 'clean',
+        FAKE_STATE_DIR: state,
+        AGB_MODEL_STATS_FILE: statsFile,
+        AGB_ALLOW_DIRTY: '1',
+        AGB_SANDBOX_GATES: '0',
+      },
+      () =>
+        runPlan(
+          {
+            repo,
+            gate: { test: 'true' },
+            tickets: [
+              { id: 'T2', title: 'leaf2', body: 'update leafFn again', scope: ['lib/leaf.mjs'], tier: 'mid', pool_hint: 'gemini' },
+            ],
+          },
+          quiet
+        )
+    );
+    assert.deepEqual(report2.merged, ['T2']);
+    const cgCalls2 = readFileSync(cgLog, 'utf8').trim().split('\n').filter(Boolean);
+    assert.equal(
+      cgCalls2.some((l) => l.includes('|sync ')),
+      false,
+      `syncCodegraphIndex must be skipped under AGB_ALLOW_DIRTY=1, got: ${cgCalls2.join('; ')}`
+    );
+  } finally {
+    process.env.PATH = savedPath;
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(state, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
   }
 });
 

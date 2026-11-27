@@ -7,7 +7,8 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { validatePlan, planEdges, compilePlan, premortemPlan, parallaxEdges, PARALLAX_READER_SCHEMA, PARALLAX_JUDGE_SCHEMA, PREMORTEM_SCHEMA } from '../lib/plan.mjs';
-import { coldstartTickets, COLDSTART_SCHEMA } from '../lib/preflight.mjs';
+import { coldstartTickets, COLDSTART_SCHEMA, preflight, hashTicketColdstart } from '../lib/preflight.mjs';
+import { DecisionEngine } from '../lib/decision-engine.mjs';
 import { readBrain } from '../lib/brain.mjs';
 
 const FAKE_AGY = fileURLToPath(new URL('./fixtures/fake-agy', import.meta.url));
@@ -575,6 +576,328 @@ test('validatePlan accepts valid gate.autofix and ticket.effort, rejects invalid
     assert.equal(existsSync(join(tmpRepo, '.adlc')), false, 'estimateOnly must not create .adlc/');
     assert.equal(existsSync(join(tmpRepo, '.gitignore')), false, 'estimateOnly must not create .gitignore');
     assert.deepEqual(readdirSync(tmpRepo).sort(), ['lib', 'spec.md']);
+  } finally {
+    rmSync(tmpRepo, { recursive: true, force: true });
+  }
+});
+
+// --- T-TE-5b: provenance-cached coldstart hashes & DecisionEngine screening ---
+
+test('hashTicketColdstart: deterministic SHA-256 hex digest sensitive to id, title, body, scope, rails, and gate', () => {
+  const baseTicket = {
+    id: 'T1',
+    title: 'Build widget',
+    body: 'Implement lib/widget.mjs',
+    scope: ['lib/widget.mjs'],
+    rails: ['lib/lock.mjs'],
+  };
+  const gate = { test: 'npm test' };
+
+  const h1 = hashTicketColdstart(baseTicket, gate);
+  const h2 = hashTicketColdstart({ ...baseTicket }, { test: 'npm test' });
+  assert.match(h1, /^[0-9a-f]{64}$/);
+  assert.equal(h1, h2, 'identical inputs must produce identical hashes');
+
+  assert.notEqual(hashTicketColdstart({ ...baseTicket, id: 'T2' }, gate), h1);
+  assert.notEqual(hashTicketColdstart({ ...baseTicket, title: 'Other' }, gate), h1);
+  assert.notEqual(hashTicketColdstart({ ...baseTicket, body: 'Changed body' }, gate), h1);
+  assert.notEqual(hashTicketColdstart({ ...baseTicket, scope: ['lib/other.mjs'] }, gate), h1);
+  assert.notEqual(hashTicketColdstart({ ...baseTicket, rails: ['lib/gates.mjs'] }, gate), h1);
+  assert.notEqual(hashTicketColdstart(baseTicket, { build: 'npm run build', test: 'npm test' }), h1);
+  assert.notEqual(hashTicketColdstart(baseTicket, null), h1);
+
+  // Missing optional fields normalize to defaults
+  assert.equal(
+    hashTicketColdstart({ id: 'T1', title: 'X', body: 'Y' }, undefined),
+    hashTicketColdstart({ id: 'T1', title: 'X', body: 'Y', scope: [], rails: [] }, null)
+  );
+});
+
+test('compilePlan stamps gateProvenance.coldstartHashes; preflight skips cached tickets, re-probes changed tickets, and honors forceColdstart', async () => {
+  const brainDir = makeBrainDir();
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-coldcache-'));
+  try {
+    let compiledPlan;
+    await withFakeAgy({ FAKE_BRAIN_MODE: 'edges' }, async () => {
+      const r = await compilePlan('aaaa', { repo: '/r', brainDir, premortem: false, parallax: false });
+      assert.equal(r.ok, true);
+      compiledPlan = r.plan;
+      assert.ok(compiledPlan.gateProvenance?.coldstartHashes, 'compilePlan must stamp gateProvenance.coldstartHashes');
+      assert.equal(
+        compiledPlan.gateProvenance.coldstartHashes.T1,
+        hashTicketColdstart(compiledPlan.tickets[0], compiledPlan.gate)
+      );
+      assert.equal(
+        compiledPlan.gateProvenance.coldstartHashes.T2,
+        hashTicketColdstart(compiledPlan.tickets[1], compiledPlan.gate)
+      );
+      assert.deepEqual(validatePlan(compiledPlan), []);
+
+      // compilePlan with coldstart: false must NOT stamp coldstartHashes
+      const noCold = await compilePlan('aaaa', {
+        repo: '/r', brainDir, premortem: false, parallax: false, coldstart: false,
+      });
+      assert.equal(noCold.ok, true);
+      assert.equal(noCold.plan.gateProvenance, undefined);
+    });
+
+    const envLog = join(stateDir, 'agy-env-seen');
+    const countAgyCalls = () => (existsSync(envLog) ? readFileSync(envLog, 'utf8').trim().split('\n').filter(Boolean).length : 0);
+
+    // 1. Immediate preflight(compiledPlan): 0 LLM calls, pools.refreshQuota not called
+    let refreshCalled = false;
+    const guardPools = {
+      quota: null,
+      circuitBreakerTripped: false,
+      refreshQuota: async () => {
+        refreshCalled = true;
+        throw new Error('refreshQuota should not be called when all tickets are cached');
+      },
+      acquire: async () => {
+        throw new Error('acquire should not be called when all tickets are cached');
+      },
+    };
+    await withFakeAgy({ FAKE_STATE_DIR: stateDir }, async () => {
+      const pf = await preflight(compiledPlan, { pools: guardPools });
+      assert.equal(pf.ok, true);
+      assert.deepEqual(pf.cachedColdstartIds, ['T1', 'T2']);
+      assert.deepEqual(pf.gaps, []);
+      assert.equal(refreshCalled, false);
+      assert.equal(countAgyCalls(), 0, 'preflight must make 0 duplicate coldstart LLM calls');
+    });
+
+    // 2. Mutating T1.body re-probes ONLY T1 (T2 stays cached)
+    const bodyChanged = structuredClone(compiledPlan);
+    bodyChanged.tickets[0].body = 'updated step 1 specification';
+    await withFakeAgy({ FAKE_STATE_DIR: stateDir }, async () => {
+      const before = countAgyCalls();
+      const pf = await preflight(bodyChanged);
+      assert.equal(pf.ok, true);
+      assert.deepEqual(pf.cachedColdstartIds, ['T2']);
+      assert.equal(countAgyCalls() - before, 1, 'only changed ticket T1 should be re-probed');
+    });
+
+    // 3. Mutating T2.scope re-probes ONLY T2 (T1 stays cached)
+    const scopeChanged = structuredClone(compiledPlan);
+    scopeChanged.tickets[1].scope = ['src/widget3/**'];
+    await withFakeAgy({ FAKE_STATE_DIR: stateDir }, async () => {
+      const before = countAgyCalls();
+      const pf = await preflight(scopeChanged);
+      assert.equal(pf.ok, true);
+      assert.deepEqual(pf.cachedColdstartIds, ['T1']);
+      assert.equal(countAgyCalls() - before, 1, 'only changed ticket T2 should be re-probed');
+    });
+
+    // 4. Mutating plan.gate invalidates all ticket hashes
+    const gateChanged = structuredClone(compiledPlan);
+    gateChanged.gate = { build: 'npm run build', test: 'npm test' };
+    await withFakeAgy({ FAKE_STATE_DIR: stateDir }, async () => {
+      const before = countAgyCalls();
+      const pf = await preflight(gateChanged);
+      assert.equal(pf.ok, true);
+      assert.deepEqual(pf.cachedColdstartIds, []);
+      assert.equal(countAgyCalls() - before, 2, 'changing plan.gate must re-probe all tickets');
+    });
+
+    // 5. forceColdstart: true re-probes all tickets even with matching hashes
+    await withFakeAgy({ FAKE_STATE_DIR: stateDir }, async () => {
+      const before = countAgyCalls();
+      const pf = await preflight(compiledPlan, { forceColdstart: true });
+      assert.equal(pf.ok, true);
+      assert.deepEqual(pf.cachedColdstartIds, []);
+      assert.equal(countAgyCalls() - before, 2, 'forceColdstart must re-probe all tickets');
+    });
+  } finally {
+    rmSync(brainDir, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('compilePlan: opt-in DecisionEngine screens clearly executable tickets and escalates uncertain ones to System-2 coldstart', async () => {
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'agb-s1-cold-'));
+  const stateDir = mkdtempSync(join(tmpdir(), 'agb-s1-state-'));
+  try {
+    mkdirSync(join(tmpRepo, 'lib'), { recursive: true });
+    writeFileSync(join(tmpRepo, 'lib', 'a.mjs'), 'export const a = 1;\n');
+    writeFileSync(join(tmpRepo, 'lib', 'b.mjs'), 'export const b = 2;\n');
+    const specFile = join(tmpRepo, 'spec.md');
+    writeFileSync(
+      specFile,
+      [
+        '# S1 Coldstart Spec',
+        '**Gate:** `{"test": "npm test"}`',
+        '### Ticket 1: `T-S1-1` — Clear ticket',
+        '- **Scope**: `lib/a.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export a from lib/a.mjs. Verify: `npm test`',
+        '### Ticket 2: `T-S1-2` — Uncertain ticket',
+        '- **Scope**: `lib/b.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export b from lib/b.mjs. Verify: `npm test`',
+      ].join('\n')
+    );
+
+    // T-S1-1: high confidence, low gapRisk -> screened by System-1
+    // T-S1-2: low confidence -> escalated to System-2 coldstartTickets
+    const screeningEngine = new DecisionEngine({
+      provider: 'kev',
+      baseUrl: 'http://127.0.0.1:18080/decide',
+      transport: async (_url, init) => {
+        const body = JSON.parse(init.body);
+        if (body.primitive === 'score') {
+          return {
+            ok: true,
+            json: async () => ({
+              answers: [
+                { score: 0.96, confidence: 0.95 },
+                { score: 0.65, confidence: 0.70 },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            answers: [
+              { probability: 0.05, confidence: 0.95 },
+              { probability: 0.40, confidence: 0.70 },
+            ],
+          }),
+        };
+      },
+    });
+
+    const envLog = join(stateDir, 'agy-env-seen');
+    const countAgyCalls = () => (existsSync(envLog) ? readFileSync(envLog, 'utf8').trim().split('\n').filter(Boolean).length : 0);
+
+    await withFakeAgy({ FAKE_STATE_DIR: stateDir }, async () => {
+      const r = await compilePlan(specFile, {
+        repo: tmpRepo,
+        premortem: false,
+        parallax: false,
+        decisionEngine: screeningEngine,
+      });
+      assert.equal(r.ok, true);
+      assert.equal(countAgyCalls(), 1, 'only the escalated ticket T-S1-2 should invoke System-2 coldstart');
+      assert.ok(r.plan.gateProvenance?.coldstartHashes?.['T-S1-1']);
+      assert.ok(r.plan.gateProvenance?.coldstartHashes?.['T-S1-2']);
+    });
+
+    // Fail-closed: if DecisionEngine transport errors, all tickets must be sent to System-2
+    const failingEngine = new DecisionEngine({
+      provider: 'kev',
+      baseUrl: 'http://127.0.0.1:18080/decide',
+      transport: async () => {
+        throw new Error('connection refused');
+      },
+    });
+    await withFakeAgy({ FAKE_STATE_DIR: stateDir }, async () => {
+      const before = countAgyCalls();
+      const r = await compilePlan(specFile, {
+        repo: tmpRepo,
+        premortem: false,
+        parallax: false,
+        decisionEngine: failingEngine,
+      });
+      assert.equal(r.ok, true);
+      assert.equal(countAgyCalls() - before, 2, 'DecisionEngine failure must fail closed and probe all tickets');
+    });
+  } finally {
+    rmSync(tmpRepo, { recursive: true, force: true });
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+test('F-009: compilePlan stamps coldstartHashes ONLY for probed/screened tickets with zero gaps/errors', async () => {
+  const tmpRepo = mkdtempSync(join(tmpdir(), 'agb-f009-cold-'));
+  try {
+    mkdirSync(join(tmpRepo, 'lib'), { recursive: true });
+    writeFileSync(join(tmpRepo, 'lib', 'a.mjs'), 'export const a = 1;\n');
+    writeFileSync(join(tmpRepo, 'lib', 'b.mjs'), 'export const b = 2;\n');
+    writeFileSync(join(tmpRepo, 'lib', 'c.mjs'), 'export const c = 3;\n');
+    const specFile = join(tmpRepo, 'spec.md');
+    writeFileSync(
+      specFile,
+      [
+        '# F-009 Coldstart Provenance Spec',
+        '**Gate:** `{"test": "npm test"}`',
+        '### Ticket 1: `T-F9-1` — Screened by System-1',
+        '- **Scope**: `lib/a.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export a from lib/a.mjs. Verify: `npm test`',
+        '### Ticket 2: `T-F9-2` — Probed by System-2',
+        '- **Scope**: `lib/b.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export b from lib/b.mjs. Verify: `npm test`',
+        '### Ticket 3: `T-F9-3` — Unprobed ticket',
+        '- **Scope**: `lib/c.mjs`',
+        '- **Acceptance Criteria**:',
+        '  - Export c from lib/c.mjs. Verify: `npm test`',
+      ].join('\n')
+    );
+
+    // T-F9-1 passes System-1 screening; T-F9-2 and T-F9-3 escalate to System-2.
+    const screeningEngine = new DecisionEngine({
+      provider: 'kev',
+      baseUrl: 'http://127.0.0.1:18080/decide',
+      transport: async (_url, init) => {
+        const body = JSON.parse(init.body);
+        if (body.primitive === 'score') {
+          return {
+            ok: true,
+            json: async () => ({
+              answers: [
+                { score: 0.96, confidence: 0.95 },
+                { score: 0.60, confidence: 0.70 },
+                { score: 0.60, confidence: 0.70 },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            answers: [
+              { probability: 0.05, confidence: 0.95 },
+              { probability: 0.45, confidence: 0.70 },
+              { probability: 0.45, confidence: 0.70 },
+            ],
+          }),
+        };
+      },
+    });
+
+    // Subtest A: coldstartFn probes only T-F9-2 (omitting T-F9-3) -> T-F9-1 & T-F9-2 stamped, T-F9-3 NOT stamped
+    const partialRes = await compilePlan(specFile, {
+      repo: tmpRepo,
+      premortem: false,
+      parallax: false,
+      decisionEngine: screeningEngine,
+      coldstartFn: async () => [{ id: 'T-F9-2', gaps: [] }],
+    });
+    assert.equal(partialRes.ok, true);
+    assert.ok(partialRes.plan.gateProvenance?.coldstartHashes?.['T-F9-1'], 'System-1 screened ticket must be stamped');
+    assert.ok(partialRes.plan.gateProvenance?.coldstartHashes?.['T-F9-2'], 'cleanly probed ticket must be stamped');
+    assert.equal(
+      partialRes.plan.gateProvenance?.coldstartHashes?.['T-F9-3'],
+      undefined,
+      'unprobed ticket must NOT be stamped in coldstartHashes'
+    );
+
+    // Subtest B: tickets with coldstart gaps or errors must NEVER be stamped
+    const gapRes = await compilePlan(specFile, {
+      repo: tmpRepo,
+      premortem: false,
+      parallax: false,
+      maxAttempts: 0,
+      coldstartFn: async () => [
+        { id: 'T-F9-1', gaps: [] },
+        { id: 'T-F9-2', gaps: ['missing acceptance criterion'] },
+        { id: 'T-F9-3', error: 'coldstart timeout', gaps: [] },
+      ],
+    });
+    assert.equal(gapRes.ok, false);
+    assert.equal(gapRes.plan.gateProvenance, undefined, 'failed coldstart must not stamp gateProvenance');
   } finally {
     rmSync(tmpRepo, { recursive: true, force: true });
   }

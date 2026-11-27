@@ -9,7 +9,8 @@ import { runPlan } from '../lib/scheduler.mjs';
 import { renderStatus } from '../lib/status.mjs';
 import { runAgy } from '../lib/agy.mjs';
 import { sweepToPlan } from '../lib/sweep.mjs';
-import { reviewFleet, reviewDiff, reviewPlan } from '../lib/review.mjs';
+import { reviewFleet, reviewDiff, reviewPlan, loadPriorFindings, savePriorFindings } from '../lib/review.mjs';
+import { DECISION_PROVIDERS } from '../lib/decision-engine.mjs';
 import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { validatePlan, compilePlan, compilePlanToWorkflow } from '../lib/plan.mjs';
@@ -89,8 +90,8 @@ const COMMANDS = {
   sweep: { args: '<sweep.json>', desc: 'same operation × many targets, then run' },
   review: {
     args: '[repo] [ref]',
-    desc: 'read-only lens fleet over a diff or plan spec, loop-until-dry',
-    flags: '[--plan <spec.md> (run 5-lens Plan ARL)] [--loop (iterative ARL up to 3 rounds)] [--five-lens (use 5-lens Code ARL)] [--no-arbiter (skip neutral arbiter)]'
+    desc: 'read-only lens fleet over a diff or plan spec (single-pass by default)',
+    flags: '[--plan <spec.md> (run 5-lens Plan ARL)] [--loop (iterative Plan ARL up to 3 rounds)] [--five-lens (use 5-lens Code ARL)] [--no-arbiter (skip neutral arbiter)] [--thorough (enable multi-dry convergence)] [--dry-rounds <n> (consecutive dry rounds required)] [--seams-only (review cross-ticket seams only)] [--plan-file <plan.json> (load ticketScopes for --seams-only)] [--delta <base-ref> (review only fix delta since ref)] [--prior-findings <path> (path to persisted prior findings JSON)] [--no-codegraph (disable CodeGraph context slicing)] [--no-decision-engine (disable System-1 decision engine)]'
   },
   shape: {
     args: '<spec.md | id> [repo]',
@@ -113,7 +114,11 @@ const COMMANDS = {
     desc: 'inspect metadata, execute sanitized P5 checks, or clean sealed Dark-Factory holdout scenarios',
     flags: '[--ticket <id> (scope to ticket)] [--run-id <id> (scope to run)] [--json (emit JSON)]'
   },
-  preflight: { args: '<plan.json>', desc: 'plan-time gates: scope overlap + coldstart', flags: '--no-coldstart' },
+  preflight: {
+    args: '<plan.json>',
+    desc: 'plan-time gates: scope overlap + coldstart',
+    flags: '--no-coldstart (skip coldstart plan gate), --force-coldstart (ignore cached coldstart hashes)'
+  },
   doctor: { args: '[repo]', desc: 'verify your environment and tools', flags: '[--fix (auto-repair setup)]' },
   brains: { args: '', desc: 'list Antigravity plan artifacts (GUI + agy sessions)' },
   'import-brain': { args: '<id> <repo>', desc: 'DEPRECATED: raw one-shot conversion (use agb plan)' },
@@ -129,7 +134,8 @@ const COMMANDS = {
   },
   init: {
     args: '[repo]',
-    desc: 'initialize a target repository for ADLC and agb (.adlc/config.json, specs/feature-template.md, .gitignore)'
+    desc: 'initialize a target repository for ADLC and agb (.adlc/config.json, specs/feature-template.md, .gitignore)',
+    flags: '[--with-codegraph (add .codegraph/ to .gitignore, run codegraph init, enable in config)] [--decision-provider <jev|gemini-decisions|kev> (configure System-1 decision engine provider)]'
   },
   'sync-models': {
     args: '',
@@ -385,26 +391,96 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'review') {
-    rejectUnknownFlags(
-      'review',
-      rest,
-      new Set(['--loop', '--five-lens', '--5-lens', '--no-arbiter']),
-      new Set(['--plan'])
-    );
+    const REVIEW_BOOL_FLAGS = new Set([
+      '--loop',
+      '--five-lens',
+      '--5-lens',
+      '--no-arbiter',
+      '--thorough',
+      '--seams-only',
+      '--no-codegraph',
+      '--no-decision-engine',
+    ]);
+    const REVIEW_VALUE_FLAGS = new Set([
+      '--plan',
+      '--dry-rounds',
+      '--plan-file',
+      '--delta',
+      '--prior-findings',
+    ]);
+    rejectUnknownFlags('review', rest, REVIEW_BOOL_FLAGS, REVIEW_VALUE_FLAGS);
     let planSpec = null;
-    const pIdx = rest.indexOf('--plan');
-    if (pIdx !== -1) {
-      if (pIdx + 1 >= rest.length || rest[pIdx + 1].startsWith('-')) {
-        console.error('agb: missing value for --plan');
-        process.exit(1);
+    let dryRounds;
+    let planFileArg = null;
+    let deltaRef = null;
+    let priorFindingsPath = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--plan') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --plan');
+          process.exit(1);
+        }
+        planSpec = rest[++i];
+      } else if (rest[i] === '--dry-rounds') {
+        const val = rest[i + 1];
+        if (val === undefined || val.startsWith('-')) {
+          console.error('agb: missing value for --dry-rounds');
+          process.exit(1);
+        }
+        if (!/^\d+$/.test(val) || Number(val) < 1) {
+          console.error(`agb: invalid --dry-rounds '${val}' (expected positive integer >= 1)`);
+          process.exit(1);
+        }
+        dryRounds = Number(val);
+        i += 1;
+      } else if (rest[i] === '--plan-file') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --plan-file');
+          process.exit(1);
+        }
+        planFileArg = rest[++i];
+      } else if (rest[i] === '--delta') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --delta');
+          process.exit(1);
+        }
+        deltaRef = rest[++i];
+      } else if (rest[i] === '--prior-findings') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --prior-findings');
+          process.exit(1);
+        }
+        priorFindingsPath = rest[++i];
       }
-      planSpec = rest[pIdx + 1];
     }
     const isLoop = rest.includes('--loop');
     const isFiveLens = rest.includes('--five-lens') || rest.includes('--5-lens');
     const noArbiter = rest.includes('--no-arbiter');
-    const positional = extractPositionalArgs(rest, new Set(['--plan']));
+    const isThorough = rest.includes('--thorough');
+    const seamsOnly = rest.includes('--seams-only');
+    const noCodegraph = rest.includes('--no-codegraph');
+    const noDecisionEngine = rest.includes('--no-decision-engine');
+    const positional = extractPositionalArgs(rest, REVIEW_VALUE_FLAGS);
     const repo = resolve(positional[0] ?? '.');
+
+    let ticketScopes = null;
+    if (planFileArg) {
+      const resolvedPlanFile = existsSync(resolve(planFileArg)) ? resolve(planFileArg) : resolve(repo, planFileArg);
+      let parsedPlan;
+      try {
+        parsedPlan = JSON.parse(readFileSync(resolvedPlanFile, 'utf8'));
+      } catch (err) {
+        console.error(`agb: failed to read --plan-file '${planFileArg}': ${err.message}`);
+        process.exit(1);
+      }
+      if (!parsedPlan || typeof parsedPlan !== 'object' || !Array.isArray(parsedPlan.tickets)) {
+        console.error(`agb: invalid --plan-file '${planFileArg}' (missing tickets array)`);
+        process.exit(1);
+      }
+      ticketScopes = parsedPlan.tickets
+        .filter((t) => t && typeof t.id === 'string' && Array.isArray(t.scope) && t.scope.length > 0)
+        .map((t) => ({ id: t.id, scope: t.scope.filter((s) => typeof s === 'string' && s.trim()) }));
+    }
 
     const pools = new PoolSet(undefined, { repo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy', {
@@ -423,6 +499,7 @@ try {
         loop: isLoop,
         maxRounds: isLoop ? 3 : 1,
         arbiter: !noArbiter,
+        ...(noDecisionEngine ? { decisionEngine: false } : {}),
         log: (m) => console.error(m),
         project,
       });
@@ -431,21 +508,57 @@ try {
     }
 
     const ref = positional[1]; // e.g. main...HEAD, a SHA range; default: uncommitted vs HEAD
-    const diff = reviewDiff(repo, ref);
-    if (!diff.trim()) {
-      console.error('review: empty diff — nothing to prosecute');
-      process.exit(0);
+    let diff = '';
+    let deltaDiff;
+    let priorFindings;
+    if (deltaRef) {
+      deltaDiff = reviewDiff(repo, deltaRef);
+      priorFindings = loadPriorFindings(repo, priorFindingsPath ?? undefined);
+      if (!deltaDiff.trim()) {
+        if (priorFindings.length > 0) {
+          console.error(`review: empty delta diff since ${deltaRef} — ${priorFindings.length} prior finding(s) remain unresolved`);
+          console.log(JSON.stringify({
+            findings: priorFindings,
+            rounds: 0,
+            requests: 0,
+            errors: [],
+            converged: false,
+            truncated: false,
+            gateVerdict: 'ITERATE',
+          }, null, 2));
+          process.exit(2);
+        }
+        console.error('review: empty delta diff and no prior findings — nothing to prosecute');
+        process.exit(0);
+      }
+    } else {
+      diff = reviewDiff(repo, ref);
+      if (!diff.trim()) {
+        console.error('review: empty diff — nothing to prosecute');
+        process.exit(0);
+      }
     }
     const result = await reviewFleet({
       diff,
       repo,
+      ref,
       pools,
       fiveLens: isFiveLens,
       arbiter: !noArbiter,
-      maxRounds: isLoop ? 3 : undefined,
+      thorough: isThorough,
+      ...(dryRounds !== undefined ? { dryRounds } : {}),
+      seamsOnly,
+      ...(ticketScopes ? { ticketScopes } : {}),
+      ...(deltaRef ? { deltaDiff, priorFindings } : {}),
+      ...(priorFindingsPath ? { priorFindingsPath } : {}),
+      ...(noCodegraph ? { codegraph: false } : {}),
+      ...(noDecisionEngine ? { decisionEngine: false } : {}),
       log: (m) => console.error(m),
       project,
     });
+    if ((result.findings.length > 0 || Boolean(deltaRef)) && (result.errors?.length ?? 0) === 0 && !result.truncated) {
+      savePriorFindings(repo, result.findings, priorFindingsPath ?? undefined);
+    }
     console.log(JSON.stringify(result, null, 2));
     if (!result.converged) console.error('review: did NOT converge — diff too large or contested; split it');
     const blocking = result.findings.filter(
@@ -456,7 +569,7 @@ try {
     const code = runShapeCli(rest, { repo: process.cwd() });
     process.exit(code);
   } else if (cmd === 'preflight') {
-    rejectUnknownFlags('preflight', rest, new Set(['--no-coldstart']));
+    rejectUnknownFlags('preflight', rest, new Set(['--no-coldstart', '--force-coldstart']));
     const planPath = rest.find((arg) => !arg.startsWith('--')) ?? 'plan.json';
     const { plan, errors } = loadPlan(planPath);
     if (errors.length) {
@@ -465,6 +578,7 @@ try {
     }
     const targetRepo = resolve(plan.repo ?? '.');
     const skipColdstart = rest.includes('--no-coldstart');
+    const forceColdstart = rest.includes('--force-coldstart');
     const pools = new PoolSet(undefined, { repo: targetRepo });
     if (!skipColdstart) {
       const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || 'agy', {
@@ -475,7 +589,7 @@ try {
         process.exit(1);
       }
     }
-    const result = await preflight(plan, { pools, repo: targetRepo, skipColdstart, project });
+    const result = await preflight(plan, { pools, repo: targetRepo, skipColdstart, forceColdstart, project });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
@@ -864,11 +978,31 @@ try {
     const tuiRes = await runInteractiveAcceptTui(dossier, { repo: targetRepo });
     process.exit(tuiRes.ok ? 0 : 1);
   } else if (cmd === 'init') {
-    rejectUnknownFlags('init', rest, new Set());
-    const positional = extractPositionalArgs(rest);
+    const INIT_BOOL_FLAGS = new Set(['--with-codegraph']);
+    const INIT_VALUE_FLAGS = new Set(['--decision-provider']);
+    rejectUnknownFlags('init', rest, INIT_BOOL_FLAGS, INIT_VALUE_FLAGS);
+    const withCodegraph = rest.includes('--with-codegraph');
+    let decisionProvider = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--decision-provider') {
+        const val = rest[i + 1];
+        if (val === undefined || val.startsWith('-')) {
+          console.error('agb: missing value for --decision-provider');
+          process.exit(1);
+        }
+        if (!DECISION_PROVIDERS.includes(val)) {
+          console.error(`agb: invalid --decision-provider '${val}' (expected one of: ${DECISION_PROVIDERS.join(', ')})`);
+          process.exit(1);
+        }
+        decisionProvider = val;
+        i += 1;
+      }
+    }
+    const positional = extractPositionalArgs(rest, INIT_VALUE_FLAGS);
     const targetRepo = resolve(positional[0] ?? '.');
-    const res = runInit({ repo: targetRepo });
+    const res = runInit({ repo: targetRepo, withCodegraph, decisionProvider });
     console.log(JSON.stringify(res, null, 2));
+    if (!res.ok) process.exit(1);
   } else if (cmd === 'sync-models') {
     rejectUnknownFlags('sync-models', rest, new Set(['--check', '--offline', '--json', '--write']));
     const { syncModels, isBoosterRepoCheckout } = await import('../scripts/sync-models.mjs');

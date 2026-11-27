@@ -724,3 +724,25 @@ test('fake-agy strictly rejects unknown --settings top-level keys mirroring agy 
   assert.equal(res.ok, false);
   assert.match(res.error, /Error: --settings: unknown setting "mcpServersDisabled"/);
 });
+
+test('stageIsolatedGeminiHome stages only Library/Keychains on darwin for agy 1.5.17 OAuth', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agb-keychain-')));
+  const userHome = join(root, 'user-home');
+  const agbDarwin = join(root, 'agb-darwin');
+  const agbLinux = join(root, 'agb-linux');
+  try {
+    mkdirSync(join(userHome, 'Library', 'Keychains'), { recursive: true });
+    mkdirSync(join(userHome, 'Library', 'Cookies'), { recursive: true });
+    writeFileSync(join(userHome, 'Library', 'Keychains', 'login.keychain-db'), 'stub');
+
+    stageIsolatedGeminiHome(agbDarwin, userHome, { mode: 'readonly', platform: 'darwin' });
+    assert.equal(existsSync(join(agbDarwin, 'Library', 'Keychains', 'login.keychain-db')), true);
+    assert.equal(lstatSync(join(agbDarwin, 'Library', 'Keychains')).isSymbolicLink(), true);
+    assert.equal(existsSync(join(agbDarwin, 'Library', 'Cookies')), false);
+
+    stageIsolatedGeminiHome(agbLinux, userHome, { mode: 'readonly', platform: 'linux' });
+    assert.equal(existsSync(join(agbLinux, 'Library')), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

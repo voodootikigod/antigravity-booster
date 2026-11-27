@@ -169,7 +169,8 @@ const TOOLS = [
       type: 'object',
       properties: {
         plan: { type: 'string', description: 'Path to plan.json file' },
-        noColdstart: { type: 'boolean', description: 'Skip coldstart plan gate' }
+        noColdstart: { type: 'boolean', description: 'Skip coldstart plan gate' },
+        forceColdstart: { type: 'boolean', description: 'Ignore cached coldstart provenance hashes and re-run coldstart probes' }
       },
       required: ['plan']
     },
@@ -207,7 +208,13 @@ const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        repo: { type: 'string', description: 'Path to target repository' }
+        repo: { type: 'string', description: 'Path to target repository' },
+        withCodegraph: { type: 'boolean', description: 'Add .codegraph/ to .gitignore, run codegraph init if available, and enable accelerators.codegraph in .adlc/config.json' },
+        decisionProvider: {
+          type: 'string',
+          enum: ['jev', 'gemini-decisions', 'kev'],
+          description: 'Configure opt-in System-1 decision engine provider in .adlc/config.json'
+        }
       },
       required: ['repo']
     }
@@ -221,9 +228,17 @@ const TOOLS = [
         repo: { type: 'string', description: 'Path to target repository' },
         ref: { type: 'string', description: 'Optional diff reference range (e.g. main...HEAD)' },
         plan: { type: 'string', description: 'Optional spec.md path to run 5-lens Plan ARL instead of diff review' },
-        loop: { type: 'boolean', description: 'Run iterative ARL up to 3 rounds' },
+        loop: { type: 'boolean', description: 'Run iterative Plan ARL up to 3 rounds' },
         fiveLens: { type: 'boolean', description: 'Run 5-lens Code ARL (Correctness, Simplicity, Security, Evidence, Anti-Slop)' },
-        arbiter: { type: 'boolean', description: 'Enable neutral arbiter triage (default true; pass false for --no-arbiter)' }
+        arbiter: { type: 'boolean', description: 'Enable neutral arbiter triage (default true; pass false for --no-arbiter)' },
+        thorough: { type: 'boolean', description: 'Enable multi-dry convergence over static diffs' },
+        dryRounds: { type: 'integer', minimum: 1, description: 'Consecutive dry rounds required for convergence' },
+        seamsOnly: { type: 'boolean', description: 'Review cross-ticket integration seams only' },
+        planFile: { type: 'string', description: 'Optional path to plan.json used to load ticketScopes for seamsOnly review' },
+        delta: { type: 'string', description: 'Base git ref for delta fix-round review' },
+        priorFindings: { type: 'string', description: 'Optional path to persisted prior findings JSON file' },
+        codegraph: { type: 'boolean', description: 'Enable CodeGraph context slicing (default true; pass false for --no-codegraph)' },
+        decisionEngine: { type: 'boolean', description: 'Enable System-1 decision engine (default true; pass false for --no-decision-engine)' }
       },
       required: ['repo']
     },
@@ -1378,12 +1393,17 @@ async function handleToolCall(id, name, args) {
   } else if (name === 'agb_preflight') {
     const planCheck = requireNonFlagString(args, 'plan');
     if (!planCheck.ok) { sendError(id, -32602, planCheck.error); return; }
+    if (args.forceColdstart !== undefined && typeof args.forceColdstart !== 'boolean') {
+      sendError(id, -32602, 'Invalid forceColdstart: expected boolean');
+      return;
+    }
     const absPlan = resolve(planCheck.value);
     targetCwd = dirname(absPlan);
     const dirCheck = validateDirectory(targetCwd, 'plan', planCheck.value);
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('preflight', absPlan);
     if (args.noColdstart) cliArgs.push('--no-coldstart');
+    if (args.forceColdstart) cliArgs.push('--force-coldstart');
   } else if (name === 'agb_status') {
     const repoCheck = requireNonFlagString(args, 'repo');
     if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
@@ -1407,16 +1427,45 @@ async function handleToolCall(id, name, args) {
   } else if (name === 'agb_init') {
     const repoCheck = requireNonFlagString(args, 'repo');
     if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
+    if (args.withCodegraph !== undefined && typeof args.withCodegraph !== 'boolean') {
+      sendError(id, -32602, 'Invalid withCodegraph: expected boolean');
+      return;
+    }
+    let decisionProvider = null;
+    if (args.decisionProvider !== undefined) {
+      const dpCheck = requireNonFlagString(args, 'decisionProvider');
+      if (!dpCheck.ok) { sendError(id, -32602, dpCheck.error); return; }
+      const dpVal = dpCheck.value.trim();
+      if (dpVal !== 'jev' && dpVal !== 'gemini-decisions' && dpVal !== 'kev') {
+        sendError(id, -32602, `Invalid decisionProvider '${dpVal}': expected jev, gemini-decisions, or kev`);
+        return;
+      }
+      decisionProvider = dpVal;
+    }
     targetCwd = resolve(repoCheck.value);
     const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
     cliArgs.push('init', targetCwd);
+    if (args.withCodegraph) cliArgs.push('--with-codegraph');
+    if (decisionProvider) cliArgs.push('--decision-provider', decisionProvider);
   } else if (name === 'agb_review') {
     const repoCheck = requireNonFlagString(args, 'repo');
     if (!repoCheck.ok) { sendError(id, -32602, repoCheck.error); return; }
     targetCwd = resolve(repoCheck.value);
     const dirCheck = validateDirectory(targetCwd, 'repo', repoCheck.value);
     if (!dirCheck.ok) { sendError(id, -32602, dirCheck.error); return; }
+    for (const boolKey of ['thorough', 'seamsOnly', 'codegraph', 'decisionEngine']) {
+      if (args[boolKey] !== undefined && typeof args[boolKey] !== 'boolean') {
+        sendError(id, -32602, `Invalid ${boolKey}: expected boolean`);
+        return;
+      }
+    }
+    if (args.dryRounds !== undefined) {
+      if (typeof args.dryRounds !== 'number' || !Number.isInteger(args.dryRounds) || args.dryRounds < 1) {
+        sendError(id, -32602, 'Invalid dryRounds: expected integer >= 1');
+        return;
+      }
+    }
     cliArgs.push('review', targetCwd);
     if (args.ref !== undefined) {
       const refCheck = requireNonFlagString(args, 'ref');
@@ -1431,6 +1480,26 @@ async function handleToolCall(id, name, args) {
     if (args.loop) cliArgs.push('--loop');
     if (args.fiveLens) cliArgs.push('--five-lens');
     if (args.arbiter === false || args.noArbiter === true) cliArgs.push('--no-arbiter');
+    if (args.thorough) cliArgs.push('--thorough');
+    if (args.dryRounds !== undefined) cliArgs.push('--dry-rounds', String(args.dryRounds));
+    if (args.seamsOnly) cliArgs.push('--seams-only');
+    if (args.planFile !== undefined) {
+      const pfCheck = requireNonFlagString(args, 'planFile');
+      if (!pfCheck.ok) { sendError(id, -32602, pfCheck.error); return; }
+      cliArgs.push('--plan-file', resolve(targetCwd, pfCheck.value));
+    }
+    if (args.delta !== undefined) {
+      const deltaCheck = requireNonFlagString(args, 'delta');
+      if (!deltaCheck.ok) { sendError(id, -32602, deltaCheck.error); return; }
+      cliArgs.push('--delta', deltaCheck.value);
+    }
+    if (args.priorFindings !== undefined) {
+      const priorCheck = requireNonFlagString(args, 'priorFindings');
+      if (!priorCheck.ok) { sendError(id, -32602, priorCheck.error); return; }
+      cliArgs.push('--prior-findings', resolve(targetCwd, priorCheck.value));
+    }
+    if (args.codegraph === false || args.noCodegraph === true) cliArgs.push('--no-codegraph');
+    if (args.decisionEngine === false || args.noDecisionEngine === true) cliArgs.push('--no-decision-engine');
   } else {
     sendError(id, -32602, `Unknown tool: ${name}`);
     return;

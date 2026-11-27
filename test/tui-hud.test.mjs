@@ -370,4 +370,129 @@ test('tui v2 cockpit: renderTUIDashboard renders cursor, filter, Flight Deck tab
   assert.equal(visibleLength('\x1b]8;;file:///a/b.js\x07b.js\x1b]8;;\x07'), 4);
 });
 
+test('tui & ui-views: split Build / Prosecute / Review / System-1 telemetry renders cleanly and escapes HTML', async () => {
+  const vm = await import('node:vm');
+  const { buildFlightDeckHtml, buildMissionControlHtml } = await import('../mcp/ui-views.mjs');
+
+  const baseState = {
+    runId: 'run-te-7b',
+    startedAt: new Date(Date.now() - 10_000).toISOString(),
+    repo: '/test/te7b',
+    pools: { inFlight: { gemini: 1 }, caps: { gemini: 4 }, requests: { gemini: 1 } },
+    tickets: new Map([['T1', { id: 'T1', phase: 'merged', model: 'gemini-3.8-flash-medium', strikes: 0 }]]),
+    merged: new Set(['T1']),
+    failed: new Set(),
+    blocked: new Set(),
+    done: false,
+    report: null,
+    telemetry: {
+      buildTokens: 1200,
+      prosecutionTokens: 350,
+      reviewTokens: 220,
+      system1Calls: 4,
+      hollowShortCircuits: 2,
+      skippedLenses: ['simplicity', 'anti_slop'],
+    },
+    events: [
+      {
+        ts: new Date().toISOString(),
+        type: 'telemetry',
+        telemetry: { buildTokens: 1200, prosecutionTokens: 350, reviewTokens: 220, system1Calls: 4 },
+      },
+    ],
+  };
+
+  const tuiOut = stripAnsi(renderTUIDashboard(baseState, { cols: 110 }).join('\n'));
+  assert.match(
+    tuiOut,
+    /Telemetry: Build 1200 · Prosecute 350 · Review 220 · Sys1 4 · Hollow-SC 2 · Skip-Lens 2/
+  );
+  assert.match(tuiOut, /Telemetry: Build 1200 · Prosecute 350 · Review 220 · Sys1 4/);
+
+  // Verify Flight Deck and Mission Control inline scripts compile and render split counters safely
+  for (const [label, html] of [
+    ['flight-deck', buildFlightDeckHtml()],
+    ['mission-control', buildMissionControlHtml()],
+  ]) {
+    const scriptMatch = /<script>([\s\S]*?)<\/script>/.exec(html);
+    assert.ok(scriptMatch, `${label} must include inline script`);
+    const elements = new Map();
+    const makeEl = () => ({
+      style: {},
+      innerHTML: '',
+      textContent: '',
+      value: '',
+      className: '',
+      classList: { toggle() {} },
+      addEventListener() {},
+    });
+    let onMsg = null;
+    const sandbox = {
+      console,
+      setTimeout: () => 1,
+      clearTimeout: () => {},
+      setInterval: () => 2,
+      clearInterval: () => {},
+      ResizeObserver: class { observe() {} },
+      document: {
+        documentElement: { scrollHeight: 300 },
+        body: { scrollHeight: 300 },
+        getElementById(id) {
+          if (!elements.has(id)) elements.set(id, makeEl());
+          return elements.get(id);
+        },
+      },
+      window: {
+        parent: { postMessage() {} },
+        addEventListener(ev, fn) { if (ev === 'message') onMsg = fn; },
+      },
+    };
+    new vm.Script(scriptMatch[1], { filename: `${label}.html` }).runInNewContext(sandbox);
+    onMsg({
+      data: {
+        jsonrpc: '2.0',
+        method: 'ui/notifications/tool-result',
+        params: {
+          structuredContent: {
+            run: {
+              runId: 'run-te-7b',
+              done: true,
+              tickets: { T1: { status: 'merged', model: 'gemini-3.8-flash-medium' } },
+              telemetry: {
+                buildTokens: 1200,
+                prosecutionTokens: 350,
+                reviewTokens: 220,
+                system1Calls: 4,
+                hollowShortCircuits: 2,
+                skippedLenses: ['simplicity', 'anti_slop'],
+              },
+            },
+            economics: {
+              runs: 3,
+              avgStrike0YieldPct: 92,
+              avgCacheHitPct: 78,
+              totalAutofixSaves: 5,
+              totalBillableTokens: 1770,
+              totalBuildTokens: 1200,
+              totalProsecutionTokens: 350,
+              totalReviewTokens: 220,
+              totalSystem1Calls: 4,
+              totalHollowShortCircuits: 2,
+              totalSkippedLenses: 2,
+            },
+          },
+        },
+      },
+    });
+    const targetEl = label === 'flight-deck' ? elements.get('telemetrySummary') : elements.get('economicsSummary');
+    assert.ok(targetEl.innerHTML.includes('Build 1200 tok'), `${label} must render Build tokens`);
+    assert.ok(targetEl.innerHTML.includes('Prosecute 350 tok'), `${label} must render Prosecute tokens`);
+    assert.ok(targetEl.innerHTML.includes('Review 220 tok'), `${label} must render Review tokens`);
+    assert.ok(targetEl.innerHTML.includes('System-1 4 calls'), `${label} must render System-1 calls`);
+    assert.ok(targetEl.innerHTML.includes('Hollow-SC 2'), `${label} must render Hollow-SC count`);
+    assert.ok(targetEl.innerHTML.includes('Skipped Lenses 2'), `${label} must render Skipped Lenses count`);
+  }
+});
+
+
 

@@ -50,7 +50,9 @@
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| decisionProvider | string | no | Configure opt-in System-1 decision engine provider in .adlc/config.json |
 | repo | string | yes | Path to target repository |
+| withCodegraph | boolean | no | Add .codegraph/ to .gitignore, run codegraph init if available, and enable accelerators.codegraph in .adlc/config.json |
 
 **`agb_mission_control`**: Open the global AGB Mission Control dashboard for 4-window quota gauges and model telemetry
 
@@ -86,6 +88,7 @@
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
+| forceColdstart | boolean | no | Ignore cached coldstart provenance hashes and re-run coldstart probes |
 | noColdstart | boolean | no | Skip coldstart plan gate |
 | plan | string | yes | Path to plan.json file |
 
@@ -94,11 +97,19 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | arbiter | boolean | no | Enable neutral arbiter triage (default true; pass false for --no-arbiter) |
+| codegraph | boolean | no | Enable CodeGraph context slicing (default true; pass false for --no-codegraph) |
+| decisionEngine | boolean | no | Enable System-1 decision engine (default true; pass false for --no-decision-engine) |
+| delta | string | no | Base git ref for delta fix-round review |
+| dryRounds | integer | no | Consecutive dry rounds required for convergence |
 | fiveLens | boolean | no | Run 5-lens Code ARL (Correctness, Simplicity, Security, Evidence, Anti-Slop) |
-| loop | boolean | no | Run iterative ARL up to 3 rounds |
+| loop | boolean | no | Run iterative Plan ARL up to 3 rounds |
 | plan | string | no | Optional spec.md path to run 5-lens Plan ARL instead of diff review |
+| planFile | string | no | Optional path to plan.json used to load ticketScopes for seamsOnly review |
+| priorFindings | string | no | Optional path to persisted prior findings JSON file |
 | ref | string | no | Optional diff reference range (e.g. main...HEAD) |
 | repo | string | yes | Path to target repository |
+| seamsOnly | boolean | no | Review cross-ticket integration seams only |
+| thorough | boolean | no | Enable multi-dry convergence over static diffs |
 
 **`agb_run`**: Execute a compiled ticket DAG plan.json
 

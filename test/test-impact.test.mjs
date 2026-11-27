@@ -88,3 +88,66 @@ test('bisectFailedBatch splits failed batches in O(log k) halves down to singlet
   ]);
   assert.deepEqual(bisectFailedBatch(['T1', 'T2']), [['T1'], ['T2']]);
 });
+
+test('deriveImpactedTests merges codegraph affected --json via rootRepo and rejects traversal/symlinks', () => {
+  const rootDir = mkdtempSync(join(tmpdir(), 'agb-ti-root-'));
+  const wtDir = mkdtempSync(join(tmpdir(), 'agb-ti-wt-'));
+  const outside = mkdtempSync(join(tmpdir(), 'agb-ti-out-'));
+  try {
+    mkdirSync(join(rootDir, '.codegraph'));
+    mkdirSync(join(wtDir, 'lib'), { recursive: true });
+    mkdirSync(join(wtDir, 'test'), { recursive: true });
+
+    writeFileSync(join(wtDir, 'lib', 'core.mjs'), 'export const c = 1;\n');
+    writeFileSync(join(wtDir, 'test', 'core.test.mjs'), 'import { c } from "../lib/core.mjs";\n');
+    writeFileSync(join(wtDir, 'test', 'dynamic.test.mjs'), 'export const d = 2;\n');
+
+    const evilTest = join(outside, 'evil.test.mjs');
+    writeFileSync(evilTest, 'export const evil = true;\n');
+    symlinkSync(evilTest, join(wtDir, 'test', 'sym.test.mjs'));
+
+    const fakeCg = join(rootDir, 'fake-cg-affected.mjs');
+    writeFileSync(
+      fakeCg,
+      `#!/usr/bin/env node
+console.log(JSON.stringify({
+  affectedTests: [
+    'test/dynamic.test.mjs',
+    '../evil.test.mjs',
+    'test/../outside.test.mjs',
+    'test/sym.test.mjs',
+    'lib/core.mjs'
+  ]
+}));
+`,
+      { mode: 0o755 }
+    );
+
+    const res = deriveImpactedTests(['lib/core.mjs'], {
+      repo: wtDir,
+      rootRepo: rootDir,
+      codegraphBin: fakeCg,
+    });
+    assert.equal(res.fast, true);
+    assert.equal(res.source, 'codegraph');
+    // Must merge valid codegraph candidate (test/dynamic.test.mjs) + reverse-import (test/core.test.mjs)
+    // and strictly reject traversal, symlink, and non-test paths
+    assert.deepEqual(res.testFiles, ['test/core.test.mjs', 'test/dynamic.test.mjs']);
+    assert.equal(res.testCmd, 'node --test test/core.test.mjs test/dynamic.test.mjs');
+
+    // Disabled CodeGraph falls back cleanly to static-ast reverse-import only
+    const disabledRes = deriveImpactedTests(['lib/core.mjs'], {
+      repo: wtDir,
+      rootRepo: rootDir,
+      codegraphBin: fakeCg,
+      enabled: false,
+    });
+    assert.equal(disabledRes.fast, true);
+    assert.equal(disabledRes.source, 'static-ast');
+    assert.deepEqual(disabledRes.testFiles, ['test/core.test.mjs']);
+  } finally {
+    rmSync(rootDir, { recursive: true, force: true });
+    rmSync(wtDir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
