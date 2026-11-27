@@ -1,5 +1,6 @@
 {
   "body": "Export isChildUnreaped(child) from lib/agy.mjs, guard killProcessTree in lib/agy.mjs, terminateProcessTree in lib/scheduler.mjs, killDaemonProcessTree and quiesceChildren in lib/ndjson-worker.mjs, and finally cleanup in test/pools.test.mjs on exitCode === null && signalCode === null, and remove the post-close originalPid SIGKILL sweep in finish() so already-reaped child PIDs never send SIGKILL (-pid or pgrep -P pid) to innocent concurrent test processes on macOS where ps -o lstart= has 1-second resolution. Replace trap - EXIT HUP INT TERM with trap - EXIT; trap '' HUP INT TERM in bin/hook-runner.sh so a racing kill -TERM \"$MAIN_PID\" from the watchdog cannot terminate hook-runner.sh via SIG_DFL after disarming EXIT. Rebuild dist/agb.mjs and website/generated/modules.mdx, and add regression tests in test/scheduler.test.mjs, test/ndjson-worker.test.mjs, and test/hook-runner.test.mjs.",
+  "completed": true,
   "edges": [],
   "id": "T-W0P2-5",
   "rails": [
