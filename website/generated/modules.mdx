@@ -37,6 +37,7 @@
 | lib/handoff.mjs | formatHandoffMarkdown, runTicketHandoff |
 | lib/holdout.mjs | buildHoldoutAuthorPrompt, cleanHoldoutScenarios, collectHoldoutMaskDirs, computeRepoHoldoutHash, extractHoldoutCodeBlock, extractStaticScenarioTitles, invokeHoldoutAuthor, listHoldoutScenarios, resolveHoldoutBaseRoot, resolveHoldoutDir, runHoldoutScenarios, runMaskedWorktreeGate, runMaskedWorktreeGates, sanitizeHoldoutFailureOutput, selectOppositeHoldoutPool, shouldRunHoldoutScenarios, stageHoldoutScenarios, verifyHoldoutRedPhase |
 | lib/hud.mjs | TerminalHUD |
+| lib/interactive-escalation.mjs | ESCALATION_ACTIONS, buildGrillMeEscalationPrompt, formatEscalationAlert, parseEscalationAnswer, runInteractiveEscalation |
 | lib/json.mjs | safeExtractJson |
 | lib/lock.mjs | acquireRepoLock |
 | lib/migrate.mjs | HANDOVER_TIMEOUT_MS, SNAPSHOT_SIZE_CAP_BYTES, breakLock, finishUninstallCommand, isOwnedSkillLink, migrate, parseValidateOutput, scanSkillSymlinks, treeSize |
@@ -52,7 +53,7 @@
 | lib/preflight.mjs | COLDSTART_SCHEMA, applyMergeForecast, coldstartPrompt, coldstartTickets, forecastOverlaps, hashTicketColdstart, preflight, verifyDeclaredPaths |
 | lib/prosecute.mjs | blockingFindings, prepareProsecutionPrecheck, prosecute, resolveHollowTestCommand, resolveProsecutionMode, runHollowTest |
 | lib/remote-control.mjs | buildRemoteControlArgs, formatMobileAcceptCard, formatMobileStatusCard, isRemoteControlEnv, launchRemoteControl |
-| lib/remote-sdk-worker.mjs | DEFAULT_CONCURRENCY, KILL_GRACE_MS, buildRemoteSdkBridgeScript, isRemoteSdkAvailable, runRemoteSdkPlan, runRemoteSdkTicket |
+| lib/remote-sdk-worker.mjs | DEFAULT_CONCURRENCY, KILL_GRACE_MS, buildRemoteSdkBridgeScript, isRemoteSdkAvailable, runRemoteSdkPlan, runRemoteSdkTicket, verifyAndMergeRemoteBranch |
 | lib/rescue.mjs | FORBIDDEN_RESCUE_CUSTOMIZATION_PREFIXES, buildRescueBrief, clearRescueWorktreeLock, hasProtectedRescueWorktree, isForbiddenRescuePath, runInteractiveRescue, saveRescueSnapshot, writeRescueWorktreeLock; re-exports ./worktrees.mjs |
 | lib/review.mjs | ARBITER_TRIAGE_SCHEMA, ARL_FINDING_SCHEMA, CODE_LENSES, LENSES, MAX_REVIEW_PAYLOAD_CHARS, PLAN_LENSES, REVIEW_FINDINGS_SCHEMA, arbiterPrompt, buildReviewPrompts, canUsePostRunSeams, lensPrompt, loadPriorFindings, normalizeSeverity, planLensPrompt, reviewCalibration, reviewDiff, reviewFleet, reviewPlan, savePriorFindings, selectLensModel, triageFindings |
 | lib/role-settings.mjs | PERMISSION_RULE_RE, READONLY_ROLES, buildRoleSettingsProfile, compileRailsToDenyRules, isValidPermissionRule |

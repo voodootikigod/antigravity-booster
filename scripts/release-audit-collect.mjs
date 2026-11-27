@@ -85,7 +85,7 @@ export const UNITS = Object.freeze([
       'lib/gates.mjs', 'lib/sandbox-probe-helper.mjs', 'lib/job-object-wrapper.ps1', 'lib/bandit-router.mjs',
       'lib/context-slice.mjs', 'lib/control-ipc.mjs', 'lib/factory-ledger.mjs', 'lib/ndjson-worker.mjs',
       'lib/rescue.mjs', 'lib/scheduler-verify.mjs', 'lib/stream-watchdog.mjs', 'lib/test-impact.mjs',
-      'lib/holdout.mjs', 'lib/twins.mjs', 'lib/distill.mjs', 'lib/remote-sdk-worker.mjs'],
+      'lib/holdout.mjs', 'lib/twins.mjs', 'lib/distill.mjs', 'lib/remote-sdk-worker.mjs', 'lib/interactive-escalation.mjs'],
     rails: ['lib/lock.mjs', 'lib/gates.mjs'],
   },
   {

@@ -11,6 +11,7 @@ import {
   KILL_GRACE_MS,
   runRemoteSdkPlan,
   runRemoteSdkTicket,
+  verifyAndMergeRemoteBranch,
 } from '../lib/remote-sdk-worker.mjs';
 
 const FAKE_SDK = fileURLToPath(new URL('./fixtures/fake-remote-sdk', import.meta.url));
@@ -104,6 +105,8 @@ test('runRemoteSdkTicket and runRemoteSdkPlan execute parallel waves, handle fai
     const runHelp = spawnSync(process.execPath, [agbBin, 'run', '--help'], { encoding: 'utf8' });
     assert.equal(runHelp.status, 0);
     assert.ok(runHelp.stdout.includes('[--driver <local|remote-sdk> (execution driver)]'));
+    assert.ok(runHelp.stdout.includes('[--interactive (pause flailing Strike-2 ticket for /grill-me rescue without aborting siblings)]'));
+    assert.ok(runHelp.stdout.includes('[--merge (verify and merge remote-sdk branches locally)]'));
     assert.ok(runHelp.stdout.includes('[-c <n> (cap concurrent workers)]'));
 
     const planFile = join(repo, 'remote-plan.json');
@@ -122,7 +125,7 @@ test('runRemoteSdkTicket and runRemoteSdkPlan execute parallel waves, handle fai
     assert.equal(badDriver.status, 1);
     assert.match(badDriver.stderr, /invalid --driver/);
 
-    const cliDry = spawnSync(process.execPath, [agbBin, 'run', planFile, '--driver', 'remote-sdk', '--dry-run'], { encoding: 'utf8' });
+    const cliDry = spawnSync(process.execPath, [agbBin, 'run', planFile, '--driver', 'remote-sdk', '--dry-run', '--merge', '--interactive'], { encoding: 'utf8' });
     assert.equal(cliDry.status, 0, cliDry.stderr);
     const parsedDry = JSON.parse(cliDry.stdout);
     assert.equal(parsedDry.driver, 'remote-sdk');
@@ -141,3 +144,122 @@ test('runRemoteSdkTicket and runRemoteSdkPlan execute parallel waves, handle fai
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('verifyAndMergeRemoteBranch and runRemoteSdkPlan({ merge: true }) enforce rails, custom verifier, git --no-ff merge, and block dependents on merge failure', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { existsSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const repo = mkdtempSync(join(tmpdir(), 'agb-remote-merge-'));
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: 'pipe' }).trim();
+    git('init', '-b', 'main');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Test');
+    git('config', 'commit.gpgsign', 'false');
+    writeFileSync(join(repo, 'README.md'), 'base\n');
+    writeFileSync(join(repo, 'conflict.txt'), 'base\n');
+    git('add', '.');
+    git('commit', '-m', 'init');
+
+    // 1. Invalid branch and missing branch
+    const invalidRes = await verifyAndMergeRemoteBranch({ repo, branch: '-bad' });
+    assert.equal(invalidRes.ok, false);
+    assert.equal(invalidRes.kind, 'invalid_branch');
+
+    const missingRes = await verifyAndMergeRemoteBranch({ repo, branch: 'agb/remote-missing' });
+    assert.equal(missingRes.ok, false);
+    assert.equal(missingRes.kind, 'branch_not_found');
+
+    // 2. Create clean branch agb/remote-t-1
+    git('checkout', '-b', 'agb/remote-t-1');
+    writeFileSync(join(repo, 'feature-1.txt'), 'hello\n');
+    git('add', '.');
+    git('commit', '-m', 'T-1 commit');
+
+    // 3. Create rail-violating branch agb/remote-t-rail
+    git('checkout', 'main');
+    git('checkout', '-b', 'agb/remote-t-rail');
+    mkdirSync(join(repo, 'frozen'), { recursive: true });
+    writeFileSync(join(repo, 'frozen', 'rail.mjs'), 'tampered\n');
+    git('add', '.');
+    git('commit', '-m', 'rail touch');
+
+    // 4. Create conflicting branch agb/remote-t-conflict
+    git('checkout', 'main');
+    git('checkout', '-b', 'agb/remote-t-conflict');
+    writeFileSync(join(repo, 'conflict.txt'), 'branch-side\n');
+    git('add', '.');
+    git('commit', '-m', 'conflict side');
+
+    git('checkout', 'main');
+    writeFileSync(join(repo, 'conflict.txt'), 'main-side\n');
+    git('add', '.');
+    git('commit', '-m', 'main side');
+
+    // Rail violation (glob prefix)
+    const railRes = await verifyAndMergeRemoteBranch({
+      repo,
+      branch: 'agb/remote-t-rail',
+      base: 'main',
+      rails: ['frozen/**'],
+    });
+    assert.equal(railRes.ok, false);
+    assert.equal(railRes.kind, 'rail_violation');
+    assert.match(railRes.error, /frozen\/\*\*/);
+
+    // Custom verifier rejection & exception
+    const rejected = await verifyAndMergeRemoteBranch({
+      repo,
+      branch: 'agb/remote-t-1',
+      base: 'main',
+      verifyBranch: async () => ({ ok: false, error: 'hollow-test failed' }),
+    });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.kind, 'verification_failed');
+    assert.match(rejected.error, /hollow-test failed/);
+
+    const threw = await verifyAndMergeRemoteBranch({
+      repo,
+      branch: 'agb/remote-t-1',
+      base: 'main',
+      verifyBranch: async () => { throw new Error('verifier crash'); },
+    });
+    assert.equal(threw.ok, false);
+    assert.equal(threw.kind, 'verification_failed');
+    assert.match(threw.error, /verifier crash/);
+
+    // Merge conflict aborts cleanly without leaving dirty state
+    const conflictRes = await verifyAndMergeRemoteBranch({
+      repo,
+      branch: 'agb/remote-t-conflict',
+      base: 'main',
+    });
+    assert.equal(conflictRes.ok, false);
+    assert.equal(conflictRes.kind, 'merge_conflict');
+    assert.equal(git('status', '--porcelain'), '');
+
+    // Clean runRemoteSdkPlan({ merge: true }): T-1 merges, T-RAIL fails rail guard and blocks T-2
+    const plan = {
+      repo,
+      base: 'main',
+      tickets: [
+        { id: 'T-1', title: 'Clean', body: 'ok', scope: ['feature-1.txt'], rails: ['', '  '], edges: [] },
+        { id: 'T-RAIL', title: 'Rail touch', body: 'bad', scope: ['frozen/rail.mjs'], rails: ['frozen/**'], edges: [{ to: 'T-2' }] },
+        { id: 'T-2', title: 'Dependent', body: 'blocked', scope: ['dep.txt'], edges: [] },
+      ],
+    };
+    const mergedPlan = await runRemoteSdkPlan(plan, {
+      sdkBin: FAKE_SDK,
+      merge: true,
+      verifyBranch: async ({ changedFiles }) => ({ ok: changedFiles.length > 0 }),
+    });
+    assert.equal(mergedPlan.ok, false);
+    assert.deepEqual(mergedPlan.merged, ['T-1']);
+    assert.ok(mergedPlan.sessions['T-1'].mergedSha);
+    assert.equal(existsSync(join(repo, 'feature-1.txt')), true);
+    assert.match(mergedPlan.failed['T-RAIL'], /frozen\/\*\*/);
+    assert.match(mergedPlan.failed['T-2'], /blocked by failed dependency: T-RAIL/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+

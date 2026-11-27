@@ -32771,6 +32771,107 @@ var TerminalHUD = class {
   }
 };
 
+// lib/interactive-escalation.mjs
+import { createInterface as createInterface2 } from "node:readline/promises";
+var ESCALATION_ACTIONS = Object.freeze(["retry", "skip", "abort"]);
+function stripControlChars(text) {
+  return String(text ?? "").replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim();
+}
+function formatEscalationAlert(ticketId, reason = "") {
+  const safeId = stripControlChars(ticketId) || "ticket";
+  const safeReason = stripControlChars(reason).slice(0, 140);
+  const title = `\u26A0 rescue ${safeId}`;
+  return {
+    bell: "\x07",
+    oscTitle: `\x1B]0;${title}\x07`,
+    summary: safeReason ? `${title}: ${safeReason}` : title
+  };
+}
+function buildGrillMeEscalationPrompt({ ticket, reason = "", signals = [], strike = 2 } = {}) {
+  const id = stripControlChars(ticket?.id) || "unknown";
+  const title = stripControlChars(ticket?.title);
+  const scope = Array.isArray(ticket?.scope) && ticket.scope.length > 0 ? ticket.scope.join(", ") : "(unscoped)";
+  const signalList = Array.isArray(signals) && signals.length > 0 ? signals.map((s) => typeof s === "string" ? s : s?.type || "signal").join(", ") : "none";
+  const lines = [
+    "",
+    `=== ADLC Strike-${strike} Interactive Escalation (/grill-me) ===`,
+    `Ticket : ${id}${title ? ` \u2014 ${title}` : ""}`,
+    `Scope  : ${scope}`,
+    `Signals: ${signalList}`,
+    `Reason : ${stripControlChars(reason) || "two strikes exhausted"}`,
+    "",
+    "Sibling wave tickets remain active. Choose how to handle this ticket:",
+    '  [r] retry  \u2014 grant one supervised rescue strike (optional: "retry: <guidance>")',
+    "  [s] skip   \u2014 park this ticket as failed/escalated and let sibling tickets continue",
+    "  [a] abort  \u2014 abort the remaining fleet run",
+    ""
+  ];
+  return lines.join("\n");
+}
+function parseEscalationAnswer(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return { action: "skip", guidance: "" };
+  const lower = text.toLowerCase();
+  if (lower === "a" || lower === "abort") {
+    return { action: "abort", guidance: "" };
+  }
+  if (lower === "s" || lower === "skip") {
+    return { action: "skip", guidance: "" };
+  }
+  if (lower === "r" || lower === "retry") {
+    return { action: "retry", guidance: "" };
+  }
+  const retryWithGuidance = text.match(/^(?:r|retry)\s*[:\-]\s*(.+)$/i);
+  if (retryWithGuidance) {
+    return { action: "retry", guidance: retryWithGuidance[1].trim() };
+  }
+  return { action: "skip", guidance: "" };
+}
+async function runInteractiveEscalation({
+  ticket,
+  reason = "",
+  signals = [],
+  strike = 2,
+  onEscalation = null,
+  input = process.stdin,
+  output = process.stdout,
+  isTTY = Boolean(output?.isTTY)
+} = {}) {
+  const alert = formatEscalationAlert(ticket?.id, reason);
+  const prompt = buildGrillMeEscalationPrompt({ ticket, reason, signals, strike });
+  if (isTTY && output && typeof output.write === "function") {
+    output.write(`${alert.bell}${alert.oscTitle}`);
+  }
+  if (typeof onEscalation === "function") {
+    try {
+      const rawDecision = await onEscalation({ ticket, reason, signals, strike, alert, prompt });
+      const action = ESCALATION_ACTIONS.includes(rawDecision?.action) ? rawDecision.action : "skip";
+      const guidance = typeof rawDecision?.guidance === "string" ? rawDecision.guidance.trim() : "";
+      return { action, guidance, alert, prompt };
+    } catch (err) {
+      return {
+        action: "skip",
+        guidance: "",
+        error: String(err?.message ?? err),
+        alert,
+        prompt
+      };
+    }
+  }
+  if (!isTTY || !input || !output) {
+    return { action: "skip", guidance: "", nonInteractive: true, alert, prompt };
+  }
+  const rl = createInterface2({ input, output });
+  try {
+    output.write(prompt);
+    const answer = await rl.question(`Action for ${ticket?.id ?? "ticket"} [r/s/a]: `);
+    const parsed = parseEscalationAnswer(answer);
+    return { ...parsed, alert, prompt };
+  } finally {
+    rl.close();
+  }
+}
+
 // lib/factory-ledger.mjs
 init_pools();
 import {
@@ -34247,7 +34348,16 @@ function verifyTicketLandedOnBase(repo, baseRef, ticketId, { mergeSha = null } =
   }
   return false;
 }
-async function runPlan(plan, { log: callerLog, project: project2, hud: customHud, concurrency, resume = false, resetRescue = false } = {}) {
+async function runPlan(plan, {
+  log: callerLog,
+  project: project2,
+  hud: customHud,
+  concurrency,
+  resume = false,
+  resetRescue = false,
+  interactive = false,
+  onEscalation = null
+} = {}) {
   const hud = customHud ?? new TerminalHUD();
   const log2 = callerLog ?? ((msg) => {
     if (hud.isTTY && !hud.stopped) {
@@ -35518,6 +35628,8 @@ Fix: ${agyCheck.fix}`);
         worktree = createWorktree(repo, t.id, base, { allowResetRescue: Boolean(resetRescue) });
         ticketWorktrees.set(t.id, worktree);
         let strikes = 0;
+        let interactiveRetries = 0;
+        let flailSignals = [];
         let attempts = 0;
         let prompt = builderPrompt(t);
         let lastFailure = "";
@@ -35528,6 +35640,39 @@ Fix: ${agyCheck.fix}`);
         let lastAutofixApplied = false;
         const safeId = t.id.replace(/[\/\\]/g, "_");
         const buildLogFile = join47(logDir, `${safeId}.jsonl`);
+        async function maybeEscalateInteractive(reason, signals = []) {
+          if (!interactive || interactiveRetries >= 1 || fleetAborted || abortedByUser.has(t.id)) {
+            return null;
+          }
+          if (/^(root integrity violation|run compromised):/.test(String(reason ?? ""))) {
+            return null;
+          }
+          status.ticket(t.id, { phase: "escalated", detail: "awaiting operator rescue decision" });
+          const decision = await runInteractiveEscalation({
+            ticket: t,
+            reason,
+            signals,
+            strike: 2,
+            onEscalation
+          });
+          if (decision.action === "retry") {
+            interactiveRetries += 1;
+            strikes = 1;
+            const guidanceNote = decision.guidance ? `
+
+Operator rescue guidance: ${decision.guidance}` : "";
+            prompt = regenPrompt(t, `${reason ?? "two strikes exhausted"}${guidanceNote}`, void 0, {
+              seed: runSeed,
+              autofixNote: lastAutofixApplied ? "Deterministic gate.autofix modified files prior to the failing gate; worktree was reset to base HEAD." : ""
+            });
+            return "retry";
+          }
+          if (decision.action === "abort") {
+            abortFleet(`operator aborted during interactive escalation of ${t.id}`);
+            return "abort";
+          }
+          return "skip";
+        }
         while (strikes < 2) {
           if (fleetAborted) {
             throw new Error(`fleet aborted: ${fleetAbortReason}`);
@@ -35630,10 +35775,13 @@ Fix: ${agyCheck.fix}`);
                 console.warn(`[agb] advisory audit gate flail-detector degraded for ${t.id}: ${flail.error}`);
               }
               if (flail.detected) {
+                flailSignals = flail.signals ?? [];
                 lastFailure = `flail detected (adlc flail-detector): ` + flail.signals.map((s) => s.type).join(", ") + ` \u2014 not attempting another strike`;
                 strikeError = lastFailure;
                 strikes = 2;
-                throw new Error(lastFailure);
+                const esc = await maybeEscalateInteractive(lastFailure, flailSignals);
+                if (esc === "retry") continue;
+                throw new Error(esc === "skip" ? `escalated (skipped by operator): ${lastFailure}` : lastFailure);
               }
             }
             const warmResume = strikes > 0 && lastConversationId && process.env.AGB_WARM_STRIKES !== "0" ? {
@@ -36274,6 +36422,14 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
           status.strike(t.id, { model, error: strikeError, strikes });
           safeResetToBase();
           recordStrikeSession();
+          if (strikes >= 2) {
+            const esc = await maybeEscalateInteractive(lastFailure, flailSignals);
+            if (esc === "retry") continue;
+            if (esc === "skip") {
+              throw new Error(`escalated (skipped by operator): ${lastFailure ?? "two strikes exhausted"}`);
+            }
+            break;
+          }
           prompt = regenPrompt(t, lastFailure, void 0, { seed: runSeed, autofixNote: lastAutofixApplied ? "Deterministic gate.autofix modified files prior to the failing gate; worktree was reset to base HEAD." : "" });
         }
         throw new Error(lastFailure ?? "two strikes exhausted");
@@ -37095,10 +37251,109 @@ async function runRemoteSdkTicket({
     }
   });
 }
+var SAFE_GIT_REF_RE = /^[A-Za-z0-9._\/-]+$/;
+function matchesRailPath(filePath, railPattern) {
+  const f = String(filePath ?? "").replace(/\\/g, "/");
+  const p = String(railPattern ?? "").replace(/\\/g, "/").trim();
+  if (!p) return false;
+  if (p.endsWith("/**")) {
+    const prefix = p.slice(0, -3);
+    return f === prefix || f.startsWith(`${prefix}/`);
+  }
+  return f === p;
+}
+async function verifyAndMergeRemoteBranch({
+  repo,
+  ticket,
+  branch,
+  base = "main",
+  rails = [],
+  verifyBranch = null,
+  env = process.env
+} = {}) {
+  if (!branch || typeof branch !== "string" || branch.startsWith("-") || !SAFE_GIT_REF_RE.test(branch)) {
+    return { ok: false, kind: "invalid_branch", error: `invalid remote branch name '${branch}'` };
+  }
+  const gitEnv = sanitizedGitEnv(env);
+  const git2 = (args) => execFileSync20("git", args, { cwd: repo, env: gitEnv, encoding: "utf8", stdio: "pipe" }).trim();
+  let hasLocal = false;
+  try {
+    git2(["rev-parse", "--verify", branch]);
+    hasLocal = true;
+  } catch {
+    try {
+      git2(["fetch", "origin", `${branch}:${branch}`]);
+      hasLocal = true;
+    } catch {
+    }
+  }
+  if (!hasLocal) {
+    return { ok: false, kind: "branch_not_found", error: `remote branch '${branch}' not found locally or on origin` };
+  }
+  let changedFiles2 = [];
+  try {
+    const diffOut = git2(["diff", "--name-only", `${base}...${branch}`]);
+    changedFiles2 = diffOut ? diffOut.split(/\r?\n/).filter(Boolean) : [];
+  } catch (err) {
+    return { ok: false, kind: "diff_failed", error: String(err?.message ?? err) };
+  }
+  for (const file of changedFiles2) {
+    for (const rail of rails) {
+      if (matchesRailPath(file, rail)) {
+        return {
+          ok: false,
+          kind: "rail_violation",
+          error: `remote branch '${branch}' modified frozen rail '${rail}' (${file})`,
+          changedFiles: changedFiles2
+        };
+      }
+    }
+  }
+  if (typeof verifyBranch === "function") {
+    try {
+      const verdict = await verifyBranch({ repo, ticket, branch, base, changedFiles: changedFiles2 });
+      if (!verdict?.ok) {
+        return {
+          ok: false,
+          kind: "verification_failed",
+          error: verdict?.error || "remote branch verification failed",
+          changedFiles: changedFiles2
+        };
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        kind: "verification_failed",
+        error: String(err?.message ?? err),
+        changedFiles: changedFiles2
+      };
+    }
+  }
+  try {
+    git2(["checkout", base]);
+    git2(["merge", "--no-ff", "--no-edit", branch]);
+    const commitSha = git2(["rev-parse", "HEAD"]);
+    return { ok: true, branch, commitSha, changedFiles: changedFiles2 };
+  } catch (err) {
+    try {
+      git2(["merge", "--abort"]);
+    } catch {
+    }
+    return {
+      ok: false,
+      kind: "merge_conflict",
+      error: `failed to merge '${branch}' into '${base}': ${String(err?.message ?? err).slice(0, 240)}`,
+      changedFiles: changedFiles2
+    };
+  }
+}
 async function runRemoteSdkPlan(plan, {
   concurrency = DEFAULT_CONCURRENCY,
   base = null,
   dryRun = false,
+  merge = false,
+  verifyBranch = null,
+  mergeBranch = null,
   timeoutMs = DEFAULT_TIMEOUT_MS2,
   log: log2 = () => {
   },
@@ -37129,6 +37384,7 @@ async function runRemoteSdkPlan(plan, {
       sessions: {}
     };
   }
+  const merged = [];
   const completed = [];
   const failed = {};
   const sessions = {};
@@ -37153,6 +37409,7 @@ async function runRemoteSdkPlan(plan, {
         runnable.push(t);
       }
     }
+    const waveSucceeded = [];
     let cursor = 0;
     const workers = Array.from({ length: Math.min(cap, runnable.length) }, async () => {
       while (cursor < runnable.length) {
@@ -37169,13 +37426,15 @@ async function runRemoteSdkPlan(plan, {
         });
         if (res.ok) {
           completed.push(ticket.id);
-          sessions[ticket.id] = {
+          const session = {
             sessionId: res.sessionId,
             branch: res.branch,
             commitSha: res.commitSha,
             model: res.model,
             ms: res.ms
           };
+          sessions[ticket.id] = session;
+          waveSucceeded.push({ ticket, session });
         } else {
           failed[ticket.id] = res.error || res.kind;
           failedSet.add(ticket.id);
@@ -37183,6 +37442,27 @@ async function runRemoteSdkPlan(plan, {
       }
     });
     await Promise.all(workers);
+    if (merge && waveSucceeded.length > 0) {
+      waveSucceeded.sort((a, b) => a.ticket.id.localeCompare(b.ticket.id));
+      for (const { ticket, session } of waveSucceeded) {
+        const mergeRes = typeof mergeBranch === "function" ? await mergeBranch({ repo, ticket, session, base: effectiveBase }) : await verifyAndMergeRemoteBranch({
+          repo,
+          ticket,
+          branch: session.branch,
+          base: effectiveBase,
+          rails: ticket.rails ?? [],
+          verifyBranch,
+          env
+        });
+        if (mergeRes?.ok) {
+          merged.push(ticket.id);
+          if (mergeRes.commitSha) sessions[ticket.id].mergedSha = mergeRes.commitSha;
+        } else {
+          failed[ticket.id] = mergeRes?.error || mergeRes?.kind || "merge failed";
+          failedSet.add(ticket.id);
+        }
+      }
+    }
   }
   return {
     ok: Object.keys(failed).length === 0,
@@ -37192,7 +37472,7 @@ async function runRemoteSdkPlan(plan, {
     base: effectiveBase,
     concurrency: cap,
     waves: waves.map((w, idx) => ({ wave: idx + 1, tickets: w.map((t) => t.id) })),
-    merged: [],
+    merged,
     completed,
     failed,
     sessions
@@ -41416,7 +41696,7 @@ var COMMANDS = {
   run: {
     args: "<plan.json>",
     desc: "execute a ticket DAG (build \u2192 gate \u2192 prosecute \u2192 merge)",
-    flags: "[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)] [--driver <local|remote-sdk> (execution driver)] [--dry-run (preview remote-sdk waves without spawning)]"
+    flags: "[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)] [--interactive (pause flailing Strike-2 ticket for /grill-me rescue without aborting siblings)] [--driver <local|remote-sdk> (execution driver)] [--dry-run (preview remote-sdk waves without spawning)] [--merge (verify and merge remote-sdk branches locally)]"
   },
   "gate-ticket": {
     args: "<ticket-id> [repo]",
@@ -41631,6 +41911,8 @@ try {
     let resetRescue = false;
     let driver = "local";
     let dryRun = false;
+    let interactive = false;
+    let merge = false;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === "-c") {
         if (i + 1 >= rest.length || rest[i + 1].startsWith("-")) {
@@ -41654,6 +41936,10 @@ try {
         }
       } else if (rest[i] === "--dry-run") {
         dryRun = true;
+      } else if (rest[i] === "--merge") {
+        merge = true;
+      } else if (rest[i] === "--interactive") {
+        interactive = true;
       } else if (rest[i] === "--resume") {
         resume = true;
       } else if (rest[i] === "--reset-rescue") {
@@ -41671,12 +41957,12 @@ try {
       process.exit(1);
     }
     if (driver === "remote-sdk") {
-      const report2 = await runRemoteSdkPlan(plan, { concurrency, dryRun, log: (m) => console.error(m) });
+      const report2 = await runRemoteSdkPlan(plan, { concurrency, dryRun, merge, log: (m) => console.error(m) });
       await new Promise((r) => process.stdout.write(`${JSON.stringify(report2, null, 2)}
 `, r));
       process.exit(report2.ok ? 0 : 2);
     }
-    const report = await runPlan(plan, { project, concurrency, resume, resetRescue });
+    const report = await runPlan(plan, { project, concurrency, resume, resetRescue, interactive });
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length > 0 || Boolean(report.compromised) ? 2 : 0);
   } else if (cmd === "gate-ticket") {
@@ -42679,8 +42965,8 @@ ${built.prompts.convert.prompt}`);
     } else if (rest.includes("--break-lock")) {
       const confirm = async (question) => {
         if (!process.stdin.isTTY) return false;
-        const { createInterface: createInterface2 } = await import("node:readline/promises");
-        const rl = createInterface2({ input: process.stdin, output: process.stderr });
+        const { createInterface: createInterface3 } = await import("node:readline/promises");
+        const rl = createInterface3({ input: process.stdin, output: process.stderr });
         try {
           return /^y(es)?$/i.test((await rl.question(question)).trim());
         } finally {
