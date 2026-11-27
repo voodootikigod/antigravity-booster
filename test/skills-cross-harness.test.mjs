@@ -43,12 +43,13 @@ function allSkillPaths(root = ROOT) {
 
 // ---------------------------------------------------------------- real repo
 
-test('root skills/ holds strictly the seventeen user-facing agb skills, while maintainer-skills/ holds the three internal repo skills', () => {
+test('root skills/ holds strictly the eighteen user-facing agb skills, while maintainer-skills/ holds the three internal repo skills', () => {
   assert.deepEqual(pluginSkills(ROOT), [
     'adversarial-review',
     'agb',
     'agb-bootstrap',
     'agb-doctor',
+    'agb-handoff',
     'agb-migrate',
     'agb-plan',
     'agb-preflight',

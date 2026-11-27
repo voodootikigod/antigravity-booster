@@ -8,7 +8,7 @@ description: End-to-end autonomous software development orchestrator and umbrell
 Executes the complete Agentic Development Lifecycle (ADLC) 5-phase Factory
 workflow end-to-end for a requested feature, refactor, or architectural concept,
 or routes any specific subcommand (`shape`, `plan`, `preflight`, `run`, `gate-ticket`,
-`rescue`, `accept`, `holdout`, `statusline`, `review`, `distill`, `status`, `watch`,
+`handoff`, `rescue`, `accept`, `holdout`, `statusline`, `review`, `distill`, `status`, `watch`,
 `sidecar`, `doctor`, `sync-models`, `init`, `bootstrap`, `migrate`, `pool`,
 `brains`, `sweep`).
 
@@ -71,6 +71,9 @@ DAG:
     the **Structured Spec Fast-Path** (0 Stage A LLM conversion calls) and
     proceeds directly to Stage B (`coldstart`, `parallax`, `premortem`,
     `model-router`, `merge-forecast`).
+-   When revising an existing spec with inline review comments (`<!-- comment: ... -->`),
+    pass `--delta plan.json` to preserve untouched tickets and cached `coldstartHashes`
+    verbatim while incrementally recompiling only modified or commented tickets.
 -   Pass `--emit-workflow <file.py>` (or `emitWorkflow` via `agb_plan` on `antigravity-booster_agb`)
     to additionally compile the validated ticket DAG into a native
     `run_workflow` Python script.
@@ -117,26 +120,28 @@ PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
 
 ```sh
 ~/.local/bin/agb shape <spec.md | id> [repo-path] [--analyze] [--strict] [--sync-brain] [--max-ticket-scope <n>] [--json]
-~/.local/bin/agb plan <id | spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
+~/.local/bin/agb plan <id | spec.md> [repo-path] [--delta <prev-plan.json>] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--prompt-only] [--json] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]
 ~/.local/bin/agb preflight [plan.json] [--no-coldstart] [--force-coldstart]
 ~/.local/bin/agb run <plan.json> [-c <n>] [--resume] [--reset-rescue]
+~/.local/bin/agb gate-ticket <ticket-id> [repo-path] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-manifest] [--json]
+~/.local/bin/agb handoff <ticket-id> [repo-path] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--html <file>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-prosecute] [--prompt-only] [--require-prosecutor] [--no-manifest] [--json]
 ~/.local/bin/agb rescue <ticket-id> [repo-path] [--continue] [--plan <plan.json>]
-~/.local/bin/agb accept [repo-path] [--base <ref>] [--json] [--markdown <file>]
+~/.local/bin/agb accept [repo-path] [--base <ref>] [--json] [--markdown <file>] [--html <file>]
 ~/.local/bin/agb holdout <list | run | clean> [repo-path] [--ticket <id>] [--run-id <id>] [--json]
 ~/.local/bin/agb statusline <render | title | install | uninstall> [--force]
-~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--loop] [--five-lens] [--no-arbiter] [--thorough] [--dry-rounds <n>] [--seams-only] [--plan-file <plan.json>] [--delta <base-ref>] [--prior-findings <path>] [--no-codegraph] [--no-decision-engine]
+~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--loop] [--five-lens] [--no-arbiter] [--prompt-only] [--thorough] [--dry-rounds <n>] [--seams-only] [--plan-file <plan.json>] [--delta <base-ref>] [--prior-findings <path>] [--no-codegraph] [--no-decision-engine]
 ~/.local/bin/agb distill [repo-path] [--apply] [--compile-checks] [--json]
 ~/.local/bin/agb status [repo-path] [--watch] [-w] [--interval <ms>] [--tui] [--follow] [--compact]
 ~/.local/bin/agb watch [repo-path] [--interval <ms>] [--follow] [--compact] [--mux] [--no-alerts]
-~/.local/bin/agb sidecar [repo-path] [--port <port>]
+~/.local/bin/agb sidecar [repo-path] [--port <port>] [--cloud]
 ~/.local/bin/agb doctor [repo-path] [--fix]
 ~/.local/bin/agb sync-models [--check] [--write] [--offline] [--json]
-~/.local/bin/agb init [repo-path] [--with-codegraph] [--decision-provider <jev|gemini-decisions|kev>]
+~/.local/bin/agb init [repo-path] [--cloud] [--automations] [--force] [--with-codegraph] [--decision-provider <jev|gemini-decisions|kev>]
 ~/.local/bin/agb bootstrap [--force] [--force-reinstall]
 ~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```
 
-If the `antigravity-booster_agb` MCP server is connected, you may instead invoke eager tools (`mcp_antigravity-booster_agb_status`, `mcp_antigravity-booster_agb_doctor`) or `call_mcp_tool(ServerName="antigravity-booster_agb", ToolName=...)` for `agb_shape`, `agb_plan`, `agb_preflight`, `agb_run`, `agb_review`, `agb_distill`, `agb_accept`, `agb_holdout`, `agb_flight_deck`, `agb_mission_control`, `agb_plan_viewer`, or `agb_init`.
+If the `antigravity-booster_agb` MCP server is connected, you may instead invoke eager tools (`mcp_antigravity-booster_agb_status`, `mcp_antigravity-booster_agb_doctor`) or `call_mcp_tool(ServerName="antigravity-booster_agb", ToolName=...)` for `agb_shape`, `agb_plan`, `agb_preflight`, `agb_run`, `agb_review`, `agb_distill`, `agb_accept`, `agb_holdout`, `agb_flight_deck`, `agb_mission_control`, `agb_plan_viewer`, `agb_ticket_viewer`, `agb_manifest_viewer`, or `agb_init`.
 
 ## If the shim is missing
 

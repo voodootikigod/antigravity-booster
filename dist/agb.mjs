@@ -6258,7 +6258,7 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
     verified.seal?.release();
     return Promise.reject(err);
   }
-  return new Promise((resolve40, reject) => {
+  return new Promise((resolve43, reject) => {
     execFile(cmd2.command, cmd2.args, { ...options, ...cmd2.options }, (error, stdout2, stderr) => {
       try {
         verified.seal?.verifyUnchanged();
@@ -6278,7 +6278,7 @@ function execFileAuthenticatedAdlc(binaryPath, args = [], options = {}, {
         error.stderr = stderr;
         reject(error);
       } else {
-        resolve40({ stdout: stdout2, stderr });
+        resolve43({ stdout: stdout2, stderr });
       }
     });
   });
@@ -9368,9 +9368,9 @@ async function verifyWindowsSandboxActive({ cwd = process.cwd(), env = process.e
     socket.destroy();
   });
   try {
-    await new Promise((resolve40, reject) => {
+    await new Promise((resolve43, reject) => {
       server.once("error", reject);
-      server.listen(0, "127.0.0.1", resolve40);
+      server.listen(0, "127.0.0.1", resolve43);
     });
     const port = server.address().port;
     const probeHelper = isTestExecution(env) && env.AGB_SANDBOX_PROBE_HELPER ? env.AGB_SANDBOX_PROBE_HELPER : join23(dirname15(fileURLToPath2(import.meta.url)), "..", "lib", "sandbox-probe-helper.mjs");
@@ -10039,6 +10039,7 @@ function writeContainedCloudFile(realRepo, dirSegments, filename, content, { for
 function runInit({
   repo = process.cwd(),
   cloud = false,
+  automations = false,
   force = false,
   withCodegraph = false,
   decisionProvider = null,
@@ -10140,6 +10141,16 @@ function runInit({
       else cloudFilesSkipped.push(res.path);
     }
   }
+  const automationFilesCreated = [];
+  const automationFilesSkipped = [];
+  if (automations) {
+    ensureContainedRepoDir(realRepo, ".agents");
+    for (const [file, body] of AUTOMATION_TEMPLATES) {
+      const res = writeContainedCloudFile(realRepo, [".agents", "automations"], file, body, { force });
+      if (res.created) automationFilesCreated.push(res.path);
+      else automationFilesSkipped.push(res.path);
+    }
+  }
   let updatedGitignore = false;
   if (existsSync21(join23(realRepo, ".git"))) {
     updatedGitignore = Boolean(ensureGitignore(realRepo));
@@ -10169,7 +10180,8 @@ function runInit({
     ...withCodegraph ? { withCodegraph: true, codegraphInitialized, ...codegraphWarning ? { codegraphWarning } : {} } : {},
     ...decisionProvider ? { decisionProvider } : {},
     cloud: Boolean(cloud),
-    ...cloud ? { cloudFilesCreated, cloudFilesSkipped } : {}
+    ...cloud ? { cloudFilesCreated, cloudFilesSkipped } : {},
+    ...automations ? { automations: true, automationFilesCreated, automationFilesSkipped } : {}
   };
 }
 async function applyDoctorFixes(opts = {}) {
@@ -10288,7 +10300,7 @@ async function runDoctor(opts = {}) {
   console.log("");
   return failed ? 1 : 0;
 }
-var execFileAsync2, MIN_NODE_VERSION, MIN_AGY_VERSION, PLUGIN_FIX, SELFTEST_RAIL, SELFTEST_REASON, MINIMAL_PATH, HOOK_TIMEOUT_MS, sha256File2, DECISION_KEY_ENV, CLOUD_ENVIRONMENT_JSON, CLOUD_ADLC_RULE_MD, CLOUD_SKILL_MD, CLOUD_PROSECUTOR_AGENT_MD, CLOUD_SPEC_LINTER_AGENT_MD;
+var execFileAsync2, MIN_NODE_VERSION, MIN_AGY_VERSION, PLUGIN_FIX, SELFTEST_RAIL, SELFTEST_REASON, MINIMAL_PATH, HOOK_TIMEOUT_MS, sha256File2, DECISION_KEY_ENV, CLOUD_ENVIRONMENT_JSON, CLOUD_ADLC_RULE_MD, CLOUD_SKILL_MD, CLOUD_PROSECUTOR_AGENT_MD, CLOUD_SPEC_LINTER_AGENT_MD, AUTOMATION_TEMPLATES;
 var init_doctor2 = __esm({
   "lib/doctor.mjs"() {
     init_adlc_bridge();
@@ -10380,6 +10392,59 @@ model: ${ROLE_MODELS.premortem}
 
 You are an ADLC specification auditor. Verify that every ticket declares disjoint scopes, explicit dependency edges, standing rails, and deterministic backticked verification commands.
 `;
+    AUTOMATION_TEMPLATES = Object.freeze([
+      [
+        "agb-quota-resume.json",
+        JSON.stringify(
+          {
+            version: 1,
+            id: "agb-quota-resume",
+            name: "AGB Quota Reset Fleet Resume",
+            description: "Checks 4-window pool quota status and resumes paused ADLC fleet runs when capacity replenishes.",
+            schedule: "*/30 * * * *",
+            timezone: "UTC",
+            commandExecutionPolicy: "sandbox",
+            prompt: "Run `~/.local/bin/agb status .` and inspect whether an interrupted ADLC run is waiting on quota replenishment. If pool capacity is available, resume cleanly with `~/.local/bin/agb run plan.json --resume` and summarize merged vs remaining tickets."
+          },
+          null,
+          2
+        ) + "\n"
+      ],
+      [
+        "agb-nightshift-distill.json",
+        JSON.stringify(
+          {
+            version: 1,
+            id: "agb-nightshift-distill",
+            name: "AGB Nightshift Defense Distillation & Stale-Rail Audit",
+            description: "Compiles recurring prosecution findings into .adlc/learned-checks.json and audits completed ticket rails.",
+            schedule: "0 2 * * 1-5",
+            timezone: "America/Los_Angeles",
+            commandExecutionPolicy: "sandbox",
+            prompt: "Run `~/.local/bin/agb distill . --compile-checks --json` and `npx adlc ticket doctor`. Report any newly staged ADLC defenses or completed tickets still holding active rails."
+          },
+          null,
+          2
+        ) + "\n"
+      ],
+      [
+        "agb-pr-prosecutor.json",
+        JSON.stringify(
+          {
+            version: 1,
+            id: "agb-pr-prosecutor",
+            name: "AGB Read-Only 5-Lens Branch Prosecutor",
+            description: "Runs read-only 5-lens adversarial code review against active feature branch diffs prior to P6 human review.",
+            schedule: "0 */4 * * 1-5",
+            timezone: "UTC",
+            commandExecutionPolicy: "sandbox",
+            prompt: "If the current branch is ahead of `origin/main`, run `~/.local/bin/agb review . origin/main...HEAD --five-lens` in read-only mode and post a concise P5 verdict summary."
+          },
+          null,
+          2
+        ) + "\n"
+      ]
+    ]);
   }
 });
 
@@ -12321,8 +12386,8 @@ var init_pools = __esm({
           }
         }
         try {
-          await new Promise((resolve40, reject) => {
-            this.waiters[pool].push({ resolve: resolve40, reject });
+          await new Promise((resolve43, reject) => {
+            this.waiters[pool].push({ resolve: resolve43, reject });
             this.#ensureRemotePoll();
           });
         } finally {
@@ -14540,7 +14605,7 @@ async function runAgy({
     readonlyCleanup = stagedRo.cleanup;
   }
   try {
-    return await new Promise((resolve40) => {
+    return await new Promise((resolve43) => {
       const t0 = Date.now();
       const spawnEnv = buildSpawnEnv({
         processEnv: process.env,
@@ -14953,7 +15018,7 @@ async function runAgy({
           }
           await appendFile(logFile, JSON.stringify(record) + "\n", { mode: 384 });
         }
-        resolve40(result);
+        resolve43(result);
       };
       if (syncSpawnErr) {
         void finish(null, null, syncSpawnErr);
@@ -17813,7 +17878,7 @@ function agySend({ apiKey, model, system, prompt }, env = process.env) {
 ---
 
 ${prompt}` : prompt;
-  return new Promise((resolve40, reject) => {
+  return new Promise((resolve43, reject) => {
     const p = spawn3(bin, args, { stdio: ["pipe", "pipe", "pipe"] });
     let out = "";
     let err = "";
@@ -17831,7 +17896,7 @@ ${prompt}` : prompt;
       if (isAgyTimeout2(out)) {
         return reject(new Error("agy: timed out waiting for response"));
       }
-      resolve40({ text: out.replace(/\s+$/, ""), usage: null });
+      resolve43({ text: out.replace(/\s+$/, ""), usage: null });
     });
   });
 }
@@ -21822,13 +21887,13 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
   let tmpDirToClean = null;
   let targetFile = logFile;
   if (logFile.endsWith(".jsonl")) {
-    const { readFileSync: readFileSync47, writeFileSync: writeFileSync34 } = await import("node:fs");
-    const { tmpdir: tmpdir18 } = await import("node:os");
-    const { join: join59 } = await import("node:path");
-    const { randomUUID: randomUUID20 } = await import("node:crypto");
+    const { readFileSync: readFileSync49, writeFileSync: writeFileSync35 } = await import("node:fs");
+    const { tmpdir: tmpdir19 } = await import("node:os");
+    const { join: join61 } = await import("node:path");
+    const { randomUUID: randomUUID21 } = await import("node:crypto");
     try {
-      const lines = readFileSync47(logFile, "utf8").trim().split("\n").filter(Boolean);
-      targetFile = join59(tmpdir18(), `flail-${randomUUID20()}.log`);
+      const lines = readFileSync49(logFile, "utf8").trim().split("\n").filter(Boolean);
+      targetFile = join61(tmpdir19(), `flail-${randomUUID21()}.log`);
       tmpDirToClean = targetFile;
       let legacyContent = "";
       for (const line of lines) {
@@ -21844,7 +21909,7 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
         } catch {
         }
       }
-      writeFileSync34(targetFile, legacyContent, { mode: 384 });
+      writeFileSync35(targetFile, legacyContent, { mode: 384 });
     } catch {
     }
   }
@@ -21867,9 +21932,9 @@ async function checkFlailDetector({ logFile, scope, adlcBin, cwd }) {
     return { detected: parsed.verdict === "flail", signals: parsed.signals ?? [] };
   } finally {
     if (tmpDirToClean) {
-      const { rmSync: rmSync26 } = await import("node:fs");
+      const { rmSync: rmSync28 } = await import("node:fs");
       try {
-        rmSync26(tmpDirToClean, { recursive: true, force: true });
+        rmSync28(tmpDirToClean, { recursive: true, force: true });
       } catch {
       }
     }
@@ -23074,7 +23139,7 @@ var init_prosecute = __esm({
 });
 
 // lib/terminal-osc.mjs
-import { isAbsolute as isAbsolute13, resolve as resolve24 } from "node:path";
+import { isAbsolute as isAbsolute13, resolve as resolve25 } from "node:path";
 import { pathToFileURL as pathToFileURL2 } from "node:url";
 function stripOscAndAnsi(input) {
   if (typeof input !== "string" || input.length === 0) return "";
@@ -23166,7 +23231,7 @@ function formatOsc8FileLink(absPath, label, { line = null, enabled = false } = {
   }
   let fileUri;
   try {
-    fileUri = pathToFileURL2(resolve24(cleanPath)).href;
+    fileUri = pathToFileURL2(resolve25(cleanPath)).href;
   } catch {
     return cleanLabel;
   }
@@ -23269,7 +23334,7 @@ var init_terminal_osc = __esm({
 });
 
 // lib/tui.mjs
-import { readFileSync as readFileSync31 } from "node:fs";
+import { readFileSync as readFileSync32 } from "node:fs";
 import { join as join40 } from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 function stripAnsi(str) {
@@ -23672,7 +23737,7 @@ var init_tui = __esm({
     init_terminal_osc();
     TUI_VERSION = "1.2.0";
     try {
-      const pkg = JSON.parse(readFileSync31(fileURLToPath4(new URL("../package.json", import.meta.url)), "utf8"));
+      const pkg = JSON.parse(readFileSync32(fileURLToPath4(new URL("../package.json", import.meta.url)), "utf8"));
       if (pkg?.version) TUI_VERSION = pkg.version;
     } catch {
     }
@@ -23739,13 +23804,13 @@ import { execFileSync as execFileSync17 } from "node:child_process";
 import net2 from "node:net";
 import crypto5 from "node:crypto";
 import { tmpdir as tmpdir12 } from "node:os";
-import { dirname as dirname22, isAbsolute as isAbsolute14, join as join41, relative as relative16, resolve as resolve25 } from "node:path";
+import { dirname as dirname22, isAbsolute as isAbsolute14, join as join41, relative as relative16, resolve as resolve26 } from "node:path";
 import {
   chmodSync as chmodSync8,
   existsSync as existsSync37,
-  lstatSync as lstatSync21,
+  lstatSync as lstatSync22,
   mkdirSync as mkdirSync20,
-  readFileSync as readFileSync32,
+  readFileSync as readFileSync33,
   realpathSync as realpathSync15,
   renameSync as renameSync11,
   rmSync as rmSync15,
@@ -23756,7 +23821,7 @@ function getProcessStartTime4(pid) {
   if (!pid || typeof pid !== "number") return null;
   try {
     if (process.platform === "linux") {
-      const content = readFileSync32(`/proc/${pid}/stat`, "utf8");
+      const content = readFileSync33(`/proc/${pid}/stat`, "utf8");
       const closeParen = content.lastIndexOf(")");
       if (closeParen !== -1) {
         const rest2 = content.slice(closeParen + 2).trim().split(/\s+/);
@@ -23801,7 +23866,7 @@ function isProcessAlive3(pid, expectedStartTime = null) {
   return true;
 }
 function resolveCanonicalRepo(repo) {
-  const resolved = resolve25(repo);
+  const resolved = resolve26(repo);
   try {
     return realpathSync15(resolved);
   } catch {
@@ -23810,7 +23875,7 @@ function resolveCanonicalRepo(repo) {
 }
 function assertNotSymlink2(targetPath) {
   try {
-    const st = lstatSync21(targetPath);
+    const st = lstatSync22(targetPath);
     if (st.isSymbolicLink()) {
       throw new Error(`Security violation: symbolic link not allowed: ${targetPath}`);
     }
@@ -23821,7 +23886,7 @@ function assertNotSymlink2(targetPath) {
   }
 }
 function ensureSafeBoosterDir(repo) {
-  const rawResolved = resolve25(repo);
+  const rawResolved = resolve26(repo);
   assertNotSymlink2(join41(rawResolved, ".booster"));
   const canonicalRepo = resolveCanonicalRepo(repo);
   const boosterDir = join41(canonicalRepo, ".booster");
@@ -23868,13 +23933,13 @@ function writeOwnerOnlyAtomic(filePath, content) {
   }
 }
 function readControlMetadata(repo) {
-  const rawResolved = resolve25(repo);
+  const rawResolved = resolve26(repo);
   const rawBooster = join41(rawResolved, ".booster");
   const rawControl = join41(rawBooster, "control.json");
   for (const p of [rawBooster, rawControl]) {
     let st;
     try {
-      st = lstatSync21(p);
+      st = lstatSync22(p);
     } catch (err) {
       if (err?.code === "ENOENT" || err?.code === "ENOTDIR") continue;
       return { ok: false, symlink: false, error: err.message };
@@ -23888,7 +23953,7 @@ function readControlMetadata(repo) {
   const controlFile = join41(boosterDir, "control.json");
   let boosterSt;
   try {
-    boosterSt = lstatSync21(boosterDir);
+    boosterSt = lstatSync22(boosterDir);
   } catch (err) {
     if (err?.code === "ENOENT") return { ok: false, missing: true };
     return { ok: false, error: err.message };
@@ -23898,7 +23963,7 @@ function readControlMetadata(repo) {
   }
   let ctrlSt;
   try {
-    ctrlSt = lstatSync21(controlFile);
+    ctrlSt = lstatSync22(controlFile);
   } catch (err) {
     if (err?.code === "ENOENT") return { ok: false, missing: true };
     return { ok: false, error: err.message };
@@ -23907,7 +23972,7 @@ function readControlMetadata(repo) {
     return { ok: false, symlink: true, error: `Security violation: invalid control.json file: ${controlFile}` };
   }
   try {
-    const parsed = JSON.parse(readFileSync32(controlFile, "utf8"));
+    const parsed = JSON.parse(readFileSync33(controlFile, "utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { ok: false, malformed: true };
     }
@@ -23953,7 +24018,7 @@ function resolveControlEndpoint(repo) {
 }
 async function startControlServer(repo, handlers = {}, { runId = null } = {}) {
   const { canonicalRepo, boosterDir } = ensureSafeBoosterDir(repo);
-  const rawControl = join41(resolve25(repo), ".booster", "control.json");
+  const rawControl = join41(resolve26(repo), ".booster", "control.json");
   assertNotSymlink2(rawControl);
   const controlFile = join41(boosterDir, "control.json");
   assertNotSymlink2(controlFile);
@@ -24097,7 +24162,7 @@ async function startControlServer(repo, handlers = {}, { runId = null } = {}) {
     }
     if (process.platform !== "win32") {
       try {
-        if (!lstatSync21(endpoint).isSymbolicLink()) unlinkSync7(endpoint);
+        if (!lstatSync22(endpoint).isSymbolicLink()) unlinkSync7(endpoint);
       } catch {
       }
     }
@@ -24123,13 +24188,13 @@ async function startControlServer(repo, handlers = {}, { runId = null } = {}) {
       });
       if (process.platform !== "win32") {
         try {
-          const st = lstatSync21(endpoint);
+          const st = lstatSync22(endpoint);
           if (!st.isSymbolicLink()) unlinkSync7(endpoint);
         } catch {
         }
       }
       try {
-        const st = lstatSync21(controlFile);
+        const st = lstatSync22(controlFile);
         if (!st.isSymbolicLink()) unlinkSync7(controlFile);
       } catch {
       }
@@ -24153,7 +24218,7 @@ async function sendControlCommand(repo, command, { timeoutMs = 3e3 } = {}) {
   }
   if (process.platform !== "win32") {
     try {
-      const sockSt = lstatSync21(ctrl.endpoint);
+      const sockSt = lstatSync22(ctrl.endpoint);
       if (sockSt.isSymbolicLink()) {
         return {
           ok: false,
@@ -24268,7 +24333,7 @@ var init_control_ipc = __esm({
 
 // lib/mux.mjs
 import { spawnSync as spawnSync6 } from "node:child_process";
-import { resolve as resolve26 } from "node:path";
+import { resolve as resolve27 } from "node:path";
 function normalizeMuxName(rawMux = "auto") {
   const s = String(rawMux ?? "auto").trim().toLowerCase();
   if (!s || s === "auto") return "auto";
@@ -24323,7 +24388,7 @@ function buildMuxSplitPlan({
     };
   }
   assertCleanSingleLine(cwd, "cwd");
-  const resolvedCwd = resolve26(cwd);
+  const resolvedCwd = resolve27(cwd);
   if (command !== null && command !== void 0) {
     assertSafeMuxCommand(command);
   }
@@ -24454,7 +24519,7 @@ function launchMuxSplit({
   if (!plan.ok) return plan;
   try {
     const res = spawnSyncFn(plan.splitCall.bin, plan.splitCall.args, {
-      cwd: resolve26(cwd),
+      cwd: resolve27(cwd),
       env,
       encoding: "utf8",
       shell: false
@@ -24482,7 +24547,7 @@ function launchMuxSplit({
         }
         const followUp = plan.buildFollowUpCall(paneId);
         const runRes = spawnSyncFn(followUp.bin, followUp.args, {
-          cwd: resolve26(cwd),
+          cwd: resolve27(cwd),
           env,
           encoding: "utf8",
           shell: false
@@ -24521,21 +24586,21 @@ __export(status_exports, {
   sanitizeRunId: () => sanitizeRunId,
   watchStatus: () => watchStatus
 });
-import { writeFileSync as writeFileSync22, renameSync as renameSync12, mkdirSync as mkdirSync21, readFileSync as readFileSync33, existsSync as existsSync38, chmodSync as chmodSync9, rmSync as rmSync16, readdirSync as readdirSync18, lstatSync as lstatSync22, realpathSync as realpathSync16, openSync as openSync10, readSync as readSync4, closeSync as closeSync10, fstatSync as fstatSync4 } from "node:fs";
+import { writeFileSync as writeFileSync22, renameSync as renameSync12, mkdirSync as mkdirSync21, readFileSync as readFileSync34, existsSync as existsSync38, chmodSync as chmodSync9, rmSync as rmSync16, readdirSync as readdirSync18, lstatSync as lstatSync23, realpathSync as realpathSync16, openSync as openSync10, readSync as readSync4, closeSync as closeSync10, fstatSync as fstatSync4 } from "node:fs";
 import { appendFile as appendFile2 } from "node:fs/promises";
 import { spawnSync as spawnSync7 } from "node:child_process";
-import { join as join42, dirname as dirname23, resolve as resolve27, relative as relative17, isAbsolute as isAbsolute15 } from "node:path";
+import { join as join42, dirname as dirname23, resolve as resolve28, relative as relative17, isAbsolute as isAbsolute15 } from "node:path";
 function sanitizeRunId(runId) {
   return String(runId ?? "").replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.\.+/g, "_");
 }
 function assertSafeBoosterSubdir(repo, segments) {
-  const realRepo = realpathSync16(resolve27(repo));
+  const realRepo = realpathSync16(resolve28(repo));
   let cur = realRepo;
   for (const seg of segments) {
     cur = join42(cur, seg);
     if (!existsSync38(cur)) {
       try {
-        if (lstatSync22(cur).isSymbolicLink()) {
+        if (lstatSync23(cur).isSymbolicLink()) {
           throw new Error(`Security violation: symbolic link in .booster path: ${cur}`);
         }
       } catch (err) {
@@ -24543,7 +24608,7 @@ function assertSafeBoosterSubdir(repo, segments) {
       }
       return null;
     }
-    const st = lstatSync22(cur);
+    const st = lstatSync23(cur);
     if (st.isSymbolicLink()) {
       throw new Error(`Security violation: symbolic link in .booster path: ${cur}`);
     }
@@ -24573,7 +24638,7 @@ function cleanOldLogs(repo, maxAgeMs = 14 * 24 * 60 * 60 * 1e3) {
     for (const entry of entries) {
       const fullPath = join42(logsDir, entry);
       try {
-        const stat = lstatSync22(fullPath);
+        const stat = lstatSync23(fullPath);
         if (stat.isSymbolicLink()) continue;
         if (now - stat.mtimeMs > maxAgeMs) {
           rmSync16(fullPath, { recursive: true, force: true });
@@ -24650,7 +24715,7 @@ function renderStatus(repo, options = {}) {
   assertNotSymlink3(boosterDir);
   assertNotSymlink3(path6);
   if (!existsSync38(path6)) return "no run found (.booster/run.json missing)";
-  const s = JSON.parse(readFileSync33(path6, "utf8"));
+  const s = JSON.parse(readFileSync34(path6, "utf8"));
   if (options.tui) {
     const ticketsMap = /* @__PURE__ */ new Map();
     for (const [id, t] of Object.entries(s.tickets ?? {})) {
@@ -24732,9 +24797,9 @@ function readOfflineRescueDiff(repo, ticketId) {
     const latestDir = assertSafeBoosterSubdir(repo, [".booster", "rescue-latest"]);
     if (!latestDir) return "";
     const filePath = join42(latestDir, `${ticketId.toLowerCase()}.json`);
-    const st = lstatSync22(filePath);
+    const st = lstatSync23(filePath);
     if (st.isSymbolicLink() || !st.isFile()) return "";
-    const parsed = JSON.parse(readFileSync33(filePath, "utf8"));
+    const parsed = JSON.parse(readFileSync34(filePath, "utf8"));
     return typeof parsed?.diff === "string" ? parsed.diff : "";
   } catch {
     return "";
@@ -24802,7 +24867,7 @@ async function watchStatus(repo, optionsOrInterval = 200) {
     assertNotSymlink3(path6);
     if (existsSync38(path6)) {
       try {
-        s = JSON.parse(readFileSync33(path6, "utf8"));
+        s = JSON.parse(readFileSync34(path6, "utf8"));
       } catch {
       }
     }
@@ -25313,7 +25378,7 @@ async function watchStatus(repo, optionsOrInterval = 200) {
       assertNotSymlink3(path6);
       if (existsSync38(path6)) {
         try {
-          const fresh = JSON.parse(readFileSync33(path6, "utf8"));
+          const fresh = JSON.parse(readFileSync34(path6, "utf8"));
           if (fresh && typeof fresh === "object") {
             syncTicketsObject(fresh.tickets);
             if (fresh.pools) state.pools = fresh.pools;
@@ -25336,7 +25401,7 @@ async function watchStatus(repo, optionsOrInterval = 200) {
       if (!state.done && existsSync38(reportFallbackPath)) {
         assertNotSymlink3(reportFallbackPath);
         try {
-          const rep = JSON.parse(readFileSync33(reportFallbackPath, "utf8"));
+          const rep = JSON.parse(readFileSync34(reportFallbackPath, "utf8"));
           if (rep && typeof rep === "object" && state.runId && rep.runId === state.runId) {
             state.done = true;
             state.report = rep;
@@ -25391,7 +25456,7 @@ var init_status = __esm({
     init_mux();
     writeOwnerOnly = (file, data) => {
       try {
-        if (lstatSync22(file).isSymbolicLink()) {
+        if (lstatSync23(file).isSymbolicLink()) {
           throw new Error(`Security violation: refusing to overwrite symbolic link: ${file}`);
         }
       } catch (err) {
@@ -25405,7 +25470,7 @@ var init_status = __esm({
     warned = /* @__PURE__ */ new Set();
     ownerOnlyDir = (dir) => {
       try {
-        if (lstatSync22(dir).isSymbolicLink()) {
+        if (lstatSync23(dir).isSymbolicLink()) {
           throw new Error(`Security violation: refusing to use symbolic link directory: ${dir}`);
         }
       } catch (err) {
@@ -25425,7 +25490,7 @@ var init_status = __esm({
     assertNotSymlink3 = (targetPath) => {
       let st;
       try {
-        st = lstatSync22(targetPath);
+        st = lstatSync23(targetPath);
       } catch (err) {
         if (err?.code === "ENOENT" || err?.code === "ENOTDIR") return;
         throw err;
@@ -27305,8 +27370,8 @@ var init_esm = __esm({
 });
 
 // lib/active-rails.mjs
-import { existsSync as existsSync39, lstatSync as lstatSync23, statSync as statSync9 } from "node:fs";
-import { dirname as dirname24, join as join43, resolve as resolve28 } from "node:path";
+import { existsSync as existsSync39, lstatSync as lstatSync24, statSync as statSync9 } from "node:fs";
+import { dirname as dirname24, join as join43, resolve as resolve29 } from "node:path";
 function isActiveTicket(ticket) {
   if (!ticket || typeof ticket !== "object") return true;
   if (ticket.completed === true) return false;
@@ -27315,7 +27380,7 @@ function isActiveTicket(ticket) {
 function hasSymlinkStorePath(repoRoot) {
   for (const rel of [".adlc", join43(".adlc", "tickets"), join43(".adlc", "tickets.json")]) {
     try {
-      const st = lstatSync23(join43(repoRoot, rel), { throwIfNoEntry: false });
+      const st = lstatSync24(join43(repoRoot, rel), { throwIfNoEntry: false });
       if (st?.isSymbolicLink()) return true;
     } catch {
       return true;
@@ -27337,7 +27402,7 @@ function loadSnapshot(repoRoot) {
 function unionActiveRails(repoRoot) {
   let adlcSt;
   try {
-    adlcSt = lstatSync23(join43(repoRoot, ".adlc"), { throwIfNoEntry: false });
+    adlcSt = lstatSync24(join43(repoRoot, ".adlc"), { throwIfNoEntry: false });
   } catch (err) {
     return {
       ok: false,
@@ -27362,7 +27427,7 @@ function unionActiveRails(repoRoot) {
 function resolveTicket(repoRoot, id) {
   let legacySt;
   try {
-    legacySt = lstatSync23(join43(repoRoot, ".adlc", "tickets.json"), { throwIfNoEntry: false });
+    legacySt = lstatSync24(join43(repoRoot, ".adlc", "tickets.json"), { throwIfNoEntry: false });
   } catch (err) {
     return {
       ok: false,
@@ -27388,7 +27453,7 @@ var init_active_rails = __esm({
 });
 
 // lib/lock.mjs
-import { mkdirSync as mkdirSync22, rmSync as rmSync17, writeFileSync as writeFileSync23, readFileSync as readFileSync34, existsSync as existsSync40 } from "node:fs";
+import { mkdirSync as mkdirSync22, rmSync as rmSync17, writeFileSync as writeFileSync23, readFileSync as readFileSync35, existsSync as existsSync40 } from "node:fs";
 import { join as join44 } from "node:path";
 function acquireRepoLock(repo, { runId, pid = process.pid } = {}) {
   const lockDir = join44(repo, ".booster", "run.lock.d");
@@ -27467,7 +27532,7 @@ function acquireRepoLock(repo, { runId, pid = process.pid } = {}) {
 function readMeta(metaPath) {
   try {
     if (!existsSync40(metaPath)) return null;
-    return JSON.parse(readFileSync34(metaPath, "utf8"));
+    return JSON.parse(readFileSync35(metaPath, "utf8"));
   } catch {
     return null;
   }
@@ -27506,12 +27571,12 @@ import {
   constants as constants5,
   existsSync as existsSync41,
   fsyncSync as fsyncSync6,
-  lstatSync as lstatSync24,
+  lstatSync as lstatSync25,
   mkdirSync as mkdirSync23,
   mkdtempSync as mkdtempSync10,
   openSync as openSync11,
   readdirSync as readdirSync19,
-  readFileSync as readFileSync35,
+  readFileSync as readFileSync36,
   realpathSync as realpathSync17,
   renameSync as renameSync13,
   rmSync as rmSync18,
@@ -27520,7 +27585,7 @@ import {
   writeSync as writeSync5
 } from "node:fs";
 import { tmpdir as tmpdir13 } from "node:os";
-import { dirname as dirname25, isAbsolute as isAbsolute16, join as join45, relative as relative18, resolve as resolve29, sep as sep10 } from "node:path";
+import { dirname as dirname25, isAbsolute as isAbsolute16, join as join45, relative as relative18, resolve as resolve30, sep as sep10 } from "node:path";
 import { pathToFileURL as pathToFileURL3 } from "node:url";
 function getMatcher(pattern, nocase) {
   const key2 = `${nocase ? "i" : "s"}:${pattern}`;
@@ -27579,13 +27644,13 @@ function isForbiddenRescuePath(relPath) {
 }
 function lstatOrNull5(p) {
   try {
-    return lstatSync24(p);
+    return lstatSync25(p);
   } catch {
     return null;
   }
 }
 function resolveCanonical(p) {
-  const resolved = resolve29(p);
+  const resolved = resolve30(p);
   try {
     return realpathSync17(resolved);
   } catch {
@@ -27593,7 +27658,7 @@ function resolveCanonical(p) {
   }
 }
 function ensureSafeBoosterSubdir(repo, subSegments) {
-  const rawRepo = resolve29(repo);
+  const rawRepo = resolve30(repo);
   const rawBooster = join45(rawRepo, ".booster");
   const rawSt = lstatOrNull5(rawBooster);
   if (rawSt?.isSymbolicLink()) {
@@ -27614,7 +27679,7 @@ function ensureSafeBoosterSubdir(repo, subSegments) {
     } else {
       mkdirSync23(cur, { recursive: true, mode: 448 });
     }
-    const postSt = lstatSync24(cur);
+    const postSt = lstatSync25(cur);
     if (postSt.isSymbolicLink() || !postSt.isDirectory()) {
       throw new Error(`Security violation: invalid directory in .booster path: ${cur}`);
     }
@@ -27794,8 +27859,8 @@ function saveRescueSnapshot(repo, ticketOrId, worktreePath, { runId = "manual", 
       let wtBuf = null;
       let baseBuf = null;
       if (baseExistsAsFile && baseSt.size === st.size && (baseSt.mode & 511) === mode) {
-        wtBuf = readFileSync35(fullPath);
-        baseBuf = readFileSync35(basePath);
+        wtBuf = readFileSync36(fullPath);
+        baseBuf = readFileSync36(basePath);
         if (wtBuf.equals(baseBuf)) {
           continue;
         }
@@ -27806,7 +27871,7 @@ function saveRescueSnapshot(repo, ticketOrId, worktreePath, { runId = "manual", 
         changedRecords.push({ path: rel, kind, mode, oldBuf: null, newBuf: null });
         continue;
       }
-      if (!wtBuf) wtBuf = readFileSync35(fullPath);
+      if (!wtBuf) wtBuf = readFileSync36(fullPath);
       if (totalBytes + wtBuf.length > MAX_RESCUE_TOTAL_BYTES) {
         truncated = true;
         changedRecords.push({ path: rel, kind, mode, oldBuf: null, newBuf: null });
@@ -27814,7 +27879,7 @@ function saveRescueSnapshot(repo, ticketOrId, worktreePath, { runId = "manual", 
       }
       if (baseExistsAsFile && !baseBuf && baseSt.size <= MAX_RESCUE_FILE_BYTES) {
         try {
-          baseBuf = readFileSync35(basePath);
+          baseBuf = readFileSync36(basePath);
         } catch {
           baseBuf = null;
         }
@@ -27972,7 +28037,7 @@ function gitSync(cwd, ...args) {
 }
 function resolveCommonGitDirReal(repo) {
   const out = gitSync(repo, "rev-parse", "--git-common-dir").trim();
-  return realpathSync17(resolve29(repo, out));
+  return realpathSync17(resolve30(repo, out));
 }
 function verifyRescueWorktreeGitPointer(repo, worktreePath, expectedGitDir = null) {
   const wtSt = lstatOrNull5(worktreePath);
@@ -27984,12 +28049,12 @@ function verifyRescueWorktreeGitPointer(repo, worktreePath, expectedGitDir = nul
   if (!gitSt || gitSt.isSymbolicLink() || !gitSt.isFile()) {
     throw new Error(`Security violation: rescue worktree .git pointer must be a regular file: ${dotGit}`);
   }
-  const content = readFileSync35(dotGit, "utf8").trim();
+  const content = readFileSync36(dotGit, "utf8").trim();
   const match2 = /^gitdir:\s*(.+)$/.exec(content);
   if (!match2) {
     throw new Error(`Security violation: invalid rescue worktree .git pointer format: ${dotGit}`);
   }
-  const targetDir = realpathSync17(resolve29(worktreePath, match2[1].trim()));
+  const targetDir = realpathSync17(resolve30(worktreePath, match2[1].trim()));
   const worktreesParent = join45(resolveCommonGitDirReal(repo), "worktrees");
   const relToParent = relative18(worktreesParent, targetDir);
   if (!relToParent || relToParent === "." || relToParent.startsWith("..") || isAbsolute16(relToParent)) {
@@ -28012,7 +28077,7 @@ function readJsonIfSafeFile(filePath) {
   const st = lstatOrNull5(filePath);
   if (!st || st.isSymbolicLink() || !st.isFile()) return null;
   try {
-    return JSON.parse(readFileSync35(filePath, "utf8"));
+    return JSON.parse(readFileSync36(filePath, "utf8"));
   } catch {
     return null;
   }
@@ -28020,7 +28085,7 @@ function readJsonIfSafeFile(filePath) {
 function resolveRescueTicketAndGate(repo, ticketId, options = {}) {
   let planObj = null;
   if (options.planPath) {
-    const absPlan = resolve29(repo, options.planPath);
+    const absPlan = resolve30(repo, options.planPath);
     planObj = readJsonIfSafeFile(absPlan);
   } else {
     const boosterSt = lstatOrNull5(join45(repo, ".booster"));
@@ -28132,7 +28197,7 @@ function restoreSavedSnapshotIntoWorktree(repo, worktreePath, ticket, { restored
       const existingSt = lstatOrNull5(targetPath);
       if (existingSt && !existingSt.isFile()) continue;
       if (!restoredAtSnapBase && entry.baseSha256 !== void 0) {
-        const currentSha = existingSt ? crypto6.createHash("sha256").update(readFileSync35(targetPath)).digest("hex") : null;
+        const currentSha = existingSt ? crypto6.createHash("sha256").update(readFileSync36(targetPath)).digest("hex") : null;
         if (currentSha !== entry.baseSha256) {
           throw new Error(
             `cannot safely restore snapshot for '${entry.path}': base branch diverged since snapshot was taken`
@@ -28233,7 +28298,7 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
       error: `invalid ticket id '${ticketId}'`
     };
   }
-  const resolvedRepo = resolve29(repo);
+  const resolvedRepo = resolve30(repo);
   const { resolvedTicket, resolvedGate, planBase, planObj } = resolveRescueTicketAndGate(
     resolvedRepo,
     ticketId,
@@ -28471,8 +28536,8 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
           if (!existsSync41(candPkgPath)) {
             throw new Error("candidate deleted package.json while baseline repository requires it");
           }
-          const basePkg = JSON.parse(readFileSync35(basePkgPath, "utf8"));
-          const candPkg = JSON.parse(readFileSync35(candPkgPath, "utf8"));
+          const basePkg = JSON.parse(readFileSync36(basePkgPath, "utf8"));
+          const candPkg = JSON.parse(readFileSync36(candPkgPath, "utf8"));
           for (const cmd2 of [resolvedGate?.autofix, resolvedGate?.build, resolvedGate?.test].filter(Boolean)) {
             verifyGateIntegrityFn(candPkg, basePkg, cmd2);
           }
@@ -28491,8 +28556,8 @@ async function runInteractiveRescue(repo, ticketId, options = {}) {
       if (!existsSync41(candPkgPath)) {
         throw new Error("candidate deleted package.json while baseline repository requires it");
       }
-      const basePkg = JSON.parse(readFileSync35(basePkgPath, "utf8"));
-      const candPkg = JSON.parse(readFileSync35(candPkgPath, "utf8"));
+      const basePkg = JSON.parse(readFileSync36(basePkgPath, "utf8"));
+      const candPkg = JSON.parse(readFileSync36(candPkgPath, "utf8"));
       for (const cmd2 of [resolvedGate?.autofix, resolvedGate?.build, resolvedGate?.test].filter(Boolean)) {
         verifyGateScriptIntegrity(candPkg, basePkg, cmd2);
       }
@@ -28590,7 +28655,7 @@ ${failedGate.output ?? ""}` : gateRes?.error || "gates failed"
             "Security violation: sealed holdout scenario was deleted or symlinked during interactive rescue"
           );
         }
-        const currentSha = crypto6.createHash("sha256").update(readFileSync35(hPath)).digest("hex");
+        const currentSha = crypto6.createHash("sha256").update(readFileSync36(hPath)).digest("hex");
         if (currentSha !== expectedSha) {
           throw new Error(
             "Security violation: sealed holdout scenario was modified during interactive rescue"
@@ -28918,20 +28983,20 @@ var init_rescue = __esm({
 
 // lib/cli-statusline.mjs
 import {
-  readFileSync as readFileSync39,
+  readFileSync as readFileSync42,
   readdirSync as readdirSync22,
-  lstatSync as lstatSync29,
-  mkdirSync as mkdirSync27,
+  lstatSync as lstatSync32,
+  mkdirSync as mkdirSync29,
   openSync as openSync13,
-  writeFileSync as writeFileSync28,
+  writeFileSync as writeFileSync30,
   closeSync as closeSync13,
-  renameSync as renameSync16,
+  renameSync as renameSync18,
   unlinkSync as unlinkSync10,
-  chmodSync as chmodSync13
+  chmodSync as chmodSync14
 } from "node:fs";
-import { join as join50, dirname as dirname29, resolve as resolve34, basename as basename13 } from "node:path";
-import { homedir as homedir14, tmpdir as tmpdir16 } from "node:os";
-import { randomUUID as randomUUID18 } from "node:crypto";
+import { join as join53, dirname as dirname30, resolve as resolve38, basename as basename14 } from "node:path";
+import { homedir as homedir14, tmpdir as tmpdir17 } from "node:os";
+import { randomUUID as randomUUID20 } from "node:crypto";
 function isBundledRuntime2() {
   return IS_BUNDLED_STATUSLINE || true;
 }
@@ -29108,24 +29173,24 @@ function resolveTargetDir(payload, cwd) {
 function findAdlcRoot(targetDir, resolvedHome) {
   let cur;
   try {
-    cur = resolve34(targetDir);
+    cur = resolve38(targetDir);
   } catch {
     return null;
   }
-  const stopHome = resolvedHome ? resolve34(resolvedHome) : null;
+  const stopHome = resolvedHome ? resolve38(resolvedHome) : null;
   let stopTmp = null;
   try {
-    stopTmp = resolve34(tmpdir16());
+    stopTmp = resolve38(tmpdir17());
   } catch {
   }
   while (true) {
-    const parent = dirname29(cur);
+    const parent = dirname30(cur);
     if (cur === parent) break;
     if (stopHome && cur === stopHome) break;
     if (stopTmp && cur === stopTmp) break;
-    const marker = join50(cur, ".adlc");
+    const marker = join53(cur, ".adlc");
     try {
-      const st = lstatSync29(marker);
+      const st = lstatSync32(marker);
       if (!st.isSymbolicLink() && st.isDirectory()) {
         return cur;
       }
@@ -29137,12 +29202,12 @@ function findAdlcRoot(targetDir, resolvedHome) {
 }
 function readActiveTicketsAndRails(adlcRoot) {
   if (!adlcRoot) return { activeIds: [], railCount: 0 };
-  const dotDir = join50(adlcRoot, ".adlc");
-  const ticketsDir = join50(dotDir, "tickets");
+  const dotDir = join53(adlcRoot, ".adlc");
+  const ticketsDir = join53(dotDir, "tickets");
   try {
-    const dotStat = lstatSync29(dotDir);
+    const dotStat = lstatSync32(dotDir);
     if (dotStat.isSymbolicLink() || !dotStat.isDirectory()) return { activeIds: [], railCount: 0 };
-    const ticketsStat = lstatSync29(ticketsDir);
+    const ticketsStat = lstatSync32(ticketsDir);
     if (ticketsStat.isSymbolicLink() || !ticketsStat.isDirectory()) return { activeIds: [], railCount: 0 };
   } catch {
     return { activeIds: [], railCount: 0 };
@@ -29158,11 +29223,11 @@ function readActiveTicketsAndRails(adlcRoot) {
   for (const entry of entries) {
     if (!entry.name.endsWith(".json") || entry.name === ".store.json") continue;
     if (entry.isSymbolicLink()) continue;
-    const shardPath = join50(ticketsDir, entry.name);
+    const shardPath = join53(ticketsDir, entry.name);
     try {
-      const st = lstatSync29(shardPath);
+      const st = lstatSync32(shardPath);
       if (st.isSymbolicLink() || !st.isFile()) continue;
-      const shard = JSON.parse(readFileSync39(shardPath, "utf8"));
+      const shard = JSON.parse(readFileSync42(shardPath, "utf8"));
       if (!shard || typeof shard !== "object" || Array.isArray(shard)) continue;
       if (shard.status === "completed" || shard.status === "archived") continue;
       const rawId = typeof shard.id === "string" && shard.id.trim() ? shard.id : entry.name.slice(0, -5);
@@ -29185,14 +29250,14 @@ function readActiveTicketsAndRails(adlcRoot) {
 }
 function readActiveBoosterRun(adlcRoot) {
   if (!adlcRoot) return null;
-  const boosterDir = join50(adlcRoot, ".booster");
-  const runPath = join50(boosterDir, "run.json");
+  const boosterDir = join53(adlcRoot, ".booster");
+  const runPath = join53(boosterDir, "run.json");
   try {
-    const dirStat = lstatSync29(boosterDir);
+    const dirStat = lstatSync32(boosterDir);
     if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) return null;
-    const fileStat = lstatSync29(runPath);
+    const fileStat = lstatSync32(runPath);
     if (fileStat.isSymbolicLink() || !fileStat.isFile()) return null;
-    const run = JSON.parse(readFileSync39(runPath, "utf8"));
+    const run = JSON.parse(readFileSync42(runPath, "utf8"));
     if (run && typeof run === "object" && !Array.isArray(run) && run.done === false && run.tickets && typeof run.tickets === "object" && !Array.isArray(run.tickets)) {
       const keys = Object.keys(run.tickets);
       const total = keys.length;
@@ -29254,7 +29319,7 @@ function renderCliWindowTitle(payload, { home, cwd } = {}) {
   const resolvedHome = resolveHomeDir(home);
   const targetDir = resolveTargetDir(validPayload, cwd);
   const adlcRoot = findAdlcRoot(targetDir, resolvedHome);
-  const repoBase = basename13(adlcRoot || resolve34(targetDir)) || "workspace";
+  const repoBase = basename14(adlcRoot || resolve38(targetDir)) || "workspace";
   const repoName = stripControlAndAnsi(repoBase).trim() || "workspace";
   const { activeIds } = readActiveTicketsAndRails(adlcRoot);
   const activeTicketOrIdle = stripControlAndAnsi(formatTicketSegment(activeIds)).trim() || "idle";
@@ -29265,7 +29330,7 @@ function renderCliWindowTitle(payload, { home, cwd } = {}) {
 function hasSymlinkInChain(paths2) {
   for (const p of paths2) {
     try {
-      if (lstatSync29(p).isSymbolicLink()) return true;
+      if (lstatSync32(p).isSymbolicLink()) return true;
     } catch (err) {
       if (err?.code !== "ENOENT") return true;
     }
@@ -29280,21 +29345,21 @@ function shallowObjectEqual(a, b) {
   return keysB.every((k) => a[k] === b[k]);
 }
 function writeSettingsAtomically(settingsPath, cliDir, checkChain, settingsObj) {
-  mkdirSync27(cliDir, { recursive: true, mode: 448 });
+  mkdirSync29(cliDir, { recursive: true, mode: 448 });
   if (hasSymlinkInChain(checkChain)) {
     return false;
   }
-  const tmpPath = `${settingsPath}.${process.pid}.${Date.now()}.${randomUUID18()}.tmp`;
+  const tmpPath = `${settingsPath}.${process.pid}.${Date.now()}.${randomUUID20()}.tmp`;
   const fd = openSync13(tmpPath, "wx", 384);
   try {
-    writeFileSync28(fd, `${JSON.stringify(settingsObj, null, 2)}
+    writeFileSync30(fd, `${JSON.stringify(settingsObj, null, 2)}
 `, "utf8");
   } finally {
     closeSync13(fd);
   }
   try {
-    chmodSync13(tmpPath, 384);
-    renameSync16(tmpPath, settingsPath);
+    chmodSync14(tmpPath, 384);
+    renameSync18(tmpPath, settingsPath);
     return true;
   } catch {
     try {
@@ -29309,10 +29374,10 @@ function installCliStatusLineSettings({
   agbCommand = "~/.local/bin/agb",
   force = false
 } = {}) {
-  const resolvedHome = resolve34(resolveHomeDir(home));
-  const geminiDir = join50(resolvedHome, ".gemini");
-  const cliDir = join50(geminiDir, "antigravity-cli");
-  const settingsPath = join50(cliDir, "settings.json");
+  const resolvedHome = resolve38(resolveHomeDir(home));
+  const geminiDir = join53(resolvedHome, ".gemini");
+  const cliDir = join53(geminiDir, "antigravity-cli");
+  const settingsPath = join53(cliDir, "settings.json");
   const checkChain = [resolvedHome, geminiDir, cliDir, settingsPath];
   if (hasSymlinkInChain(checkChain)) {
     return {
@@ -29326,7 +29391,7 @@ function installCliStatusLineSettings({
   let settings = {};
   let settingsExists = false;
   try {
-    const st = lstatSync29(settingsPath);
+    const st = lstatSync32(settingsPath);
     if (!st.isFile()) {
       return {
         ok: false,
@@ -29350,7 +29415,7 @@ function installCliStatusLineSettings({
   }
   if (settingsExists) {
     try {
-      const parsed = JSON.parse(readFileSync39(settingsPath, "utf8"));
+      const parsed = JSON.parse(readFileSync42(settingsPath, "utf8"));
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         return {
           ok: false,
@@ -29416,10 +29481,10 @@ function installCliStatusLineSettings({
   return { ok: true, changed, skipped, settingsPath };
 }
 function uninstallCliStatusLineSettings({ home } = {}) {
-  const resolvedHome = resolve34(resolveHomeDir(home));
-  const geminiDir = join50(resolvedHome, ".gemini");
-  const cliDir = join50(geminiDir, "antigravity-cli");
-  const settingsPath = join50(cliDir, "settings.json");
+  const resolvedHome = resolve38(resolveHomeDir(home));
+  const geminiDir = join53(resolvedHome, ".gemini");
+  const cliDir = join53(geminiDir, "antigravity-cli");
+  const settingsPath = join53(cliDir, "settings.json");
   const checkChain = [resolvedHome, geminiDir, cliDir, settingsPath];
   if (hasSymlinkInChain(checkChain)) {
     return {
@@ -29430,7 +29495,7 @@ function uninstallCliStatusLineSettings({ home } = {}) {
     };
   }
   try {
-    const st = lstatSync29(settingsPath);
+    const st = lstatSync32(settingsPath);
     if (!st.isFile()) {
       return { ok: false, changed: false, settingsPath };
     }
@@ -29442,7 +29507,7 @@ function uninstallCliStatusLineSettings({ home } = {}) {
   }
   let settings;
   try {
-    const parsed = JSON.parse(readFileSync39(settingsPath, "utf8"));
+    const parsed = JSON.parse(readFileSync42(settingsPath, "utf8"));
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { ok: false, changed: false, settingsPath };
     }
@@ -29499,8 +29564,8 @@ __export(sync_models_exports, {
   parseAgyModelsOutput: () => parseAgyModelsOutput,
   syncModels: () => syncModels
 });
-import { existsSync as existsSync48, mkdirSync as mkdirSync30, readFileSync as readFileSync42, realpathSync as realpathSync21, writeFileSync as writeFileSync30 } from "node:fs";
-import { basename as basename15, dirname as dirname32, join as join54 } from "node:path";
+import { existsSync as existsSync49, mkdirSync as mkdirSync31, readFileSync as readFileSync44, realpathSync as realpathSync23, writeFileSync as writeFileSync31 } from "node:fs";
+import { basename as basename16, dirname as dirname32, join as join56 } from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 function parseAgyModelsOutput(rawOutput) {
   return parseAgyModelRows(rawOutput);
@@ -29578,10 +29643,10 @@ function buildModelsReferencePayload(liveModels = parseAgyModelsOutput(CACHED_MO
 function isBoosterRepoCheckout(dir) {
   if (!dir) return false;
   try {
-    if (!existsSync48(join54(dir, "lib", "models.mjs"))) return false;
-    const pkgPath = join54(dir, "package.json");
-    if (!existsSync48(pkgPath)) return false;
-    const pkg = JSON.parse(readFileSync42(pkgPath, "utf8"));
+    if (!existsSync49(join56(dir, "lib", "models.mjs"))) return false;
+    const pkgPath = join56(dir, "package.json");
+    if (!existsSync49(pkgPath)) return false;
+    const pkg = JSON.parse(readFileSync44(pkgPath, "utf8"));
     return pkg?.name === "antigravity-booster";
   } catch {
     return false;
@@ -29625,7 +29690,7 @@ function syncModels({
   let degradedFallback = false;
   let fallbackError = null;
   if (inputPath) {
-    rawOutput = readFileSync42(inputPath, "utf8");
+    rawOutput = readFileSync44(inputPath, "utf8");
     source = "input";
   } else if (useOffline) {
     rawOutput = CACHED_MODELS_OUTPUT;
@@ -29663,10 +29728,10 @@ function syncModels({
   const writtenPaths = [];
   if (write) {
     const payload = buildModelsReferencePayload(liveModels);
-    const refDir = join54(effectiveRootDir, "skills", "adversarial-review", "references");
-    mkdirSync30(refDir, { recursive: true });
-    const refPath = join54(refDir, "models.json");
-    writeFileSync30(refPath, JSON.stringify(payload, null, 2) + "\n", "utf8");
+    const refDir = join56(effectiveRootDir, "skills", "adversarial-review", "references");
+    mkdirSync31(refDir, { recursive: true });
+    const refPath = join56(refDir, "models.json");
+    writeFileSync31(refPath, JSON.stringify(payload, null, 2) + "\n", "utf8");
     writtenPaths.push(refPath);
   }
   const ok2 = unmappedCount === 0;
@@ -29690,8 +29755,8 @@ function isStandaloneSyncModelsEntry() {
   if (IS_BUNDLED || !process.argv[1]) return false;
   try {
     const selfPath = fileURLToPath6(import.meta.url);
-    if (basename15(selfPath) !== "sync-models.mjs") return false;
-    return realpathSync21(process.argv[1]) === realpathSync21(selfPath);
+    if (basename16(selfPath) !== "sync-models.mjs") return false;
+    return realpathSync23(process.argv[1]) === realpathSync23(selfPath);
   } catch {
     return false;
   }
@@ -29752,25 +29817,25 @@ var init_sync_models = __esm({
 
 // lib/migration-lock.mjs
 import {
-  mkdirSync as mkdirSync31,
-  readFileSync as readFileSync43,
-  writeFileSync as writeFileSync31,
-  renameSync as renameSync18,
-  rmSync as rmSync24,
-  existsSync as existsSync49
+  mkdirSync as mkdirSync32,
+  readFileSync as readFileSync45,
+  writeFileSync as writeFileSync32,
+  renameSync as renameSync19,
+  rmSync as rmSync26,
+  existsSync as existsSync50
 } from "node:fs";
-import { join as join55, basename as basename16 } from "node:path";
+import { join as join57, basename as basename17 } from "node:path";
 import { homedir as homedir16 } from "node:os";
-import { execFileSync as execFileSync25 } from "node:child_process";
-import { randomBytes as randomBytes4 } from "node:crypto";
+import { execFileSync as execFileSync27 } from "node:child_process";
+import { randomBytes as randomBytes5 } from "node:crypto";
 function boosterDataDir2(home = homedir16()) {
-  return join55(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster");
+  return join57(home, ".gemini", "antigravity-cli", "plugin_data", "antigravity-booster");
 }
 function migrationLockDir(home = homedir16()) {
-  return join55(boosterDataDir2(home), MIGRATION_LOCK_DIRNAME);
+  return join57(boosterDataDir2(home), MIGRATION_LOCK_DIRNAME);
 }
 function migrationStatePath(home = homedir16()) {
-  return join55(boosterDataDir2(home), MIGRATION_STATE_FILENAME);
+  return join57(boosterDataDir2(home), MIGRATION_STATE_FILENAME);
 }
 function parseProcStatStartTime(content) {
   if (typeof content !== "string") return null;
@@ -29807,19 +29872,19 @@ function isAlive2(holder, deps = defaultDeps()) {
 }
 function readLockMeta(lockDir) {
   try {
-    const meta = JSON.parse(readFileSync43(join55(lockDir, "meta.json"), "utf8"));
+    const meta = JSON.parse(readFileSync45(join57(lockDir, "meta.json"), "utf8"));
     return meta && typeof meta === "object" ? meta : null;
   } catch {
     return null;
   }
 }
 function writeMetaAtomic(lockDir, meta) {
-  const tmp = join55(lockDir, `.meta.${process.pid}.${randomBytes4(4).toString("hex")}`);
-  writeFileSync31(tmp, JSON.stringify(meta), { mode: 384 });
-  renameSync18(tmp, join55(lockDir, "meta.json"));
+  const tmp = join57(lockDir, `.meta.${process.pid}.${randomBytes5(4).toString("hex")}`);
+  writeFileSync32(tmp, JSON.stringify(meta), { mode: 384 });
+  renameSync19(tmp, join57(lockDir, "meta.json"));
 }
 function newToken(pid) {
-  return `${pid}:${Date.now()}:${randomBytes4(8).toString("hex")}`;
+  return `${pid}:${Date.now()}:${randomBytes5(8).toString("hex")}`;
 }
 function holderMessage(holder) {
   return `another agb migration holds the lock (pid ${holder?.pid ?? "unknown"}, started ${holder?.startedAt ?? "unknown"}). Wait for it to finish, or run \`agb migrate --break-lock\` if it is wedged.`;
@@ -29827,28 +29892,28 @@ function holderMessage(holder) {
 function reclaimDeadLock(lockDir, holder, deps) {
   const moved = `${lockDir}.stale.${process.pid}.${process.hrtime.bigint()}`;
   try {
-    renameSync18(lockDir, moved);
+    renameSync19(lockDir, moved);
   } catch (err) {
     if (err.code === "ENOENT") return;
     throw err;
   }
   const grabbed = readLockMeta(moved);
   if (grabbed && holder && grabbed.token === holder.token && !isAlive2(grabbed, deps)) {
-    rmSync24(moved, { recursive: true, force: true });
+    rmSync26(moved, { recursive: true, force: true });
     return;
   }
   try {
-    renameSync18(moved, lockDir);
+    renameSync19(moved, lockDir);
   } catch {
   }
   throw new MigrationLockError(holderMessage(grabbed ?? holder), "LOCK_HELD");
 }
 function acquireMigrationLock({ home = homedir16(), deps = defaultDeps(), maxAttempts = 3 } = {}) {
   const lockDir = migrationLockDir(home);
-  mkdirSync31(boosterDataDir2(home), { recursive: true });
+  mkdirSync32(boosterDataDir2(home), { recursive: true });
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      mkdirSync31(lockDir);
+      mkdirSync32(lockDir);
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
       const holder = readLockMeta(lockDir);
@@ -29879,7 +29944,7 @@ function assertMigrationLockHeld(handle) {
 function releaseMigrationLock(handle) {
   const meta = handle?.lockDir ? readLockMeta(handle.lockDir) : null;
   if (meta && meta.token === handle.token) {
-    rmSync24(handle.lockDir, { recursive: true, force: true });
+    rmSync26(handle.lockDir, { recursive: true, force: true });
     return true;
   }
   return false;
@@ -29901,18 +29966,18 @@ function invalidateMigrationLockToken(handle) {
 }
 function breakMigrationLock({ home = homedir16(), confirmed = false, expectToken, deps = defaultDeps() } = {}) {
   const lockDir = migrationLockDir(home);
-  if (!existsSync49(lockDir)) return { present: false, removed: false, holder: null, alive: false };
+  if (!existsSync50(lockDir)) return { present: false, removed: false, holder: null, alive: false };
   const holder = readLockMeta(lockDir);
   const alive = holder ? isAlive2(holder, deps) : false;
   if (!confirmed) return { present: true, removed: false, holder, alive };
   if (expectToken !== void 0 && (holder?.token ?? null) !== expectToken) return { present: true, removed: false, holder, alive };
-  rmSync24(lockDir, { recursive: true, force: true });
+  rmSync26(lockDir, { recursive: true, force: true });
   return { present: true, removed: true, holder, alive };
 }
 function readMigrationState(home = homedir16()) {
   const p = migrationStatePath(home);
-  if (!existsSync49(p)) return null;
-  const parsed = JSON.parse(readFileSync43(p, "utf8"));
+  if (!existsSync50(p)) return null;
+  const parsed = JSON.parse(readFileSync45(p, "utf8"));
   if (!parsed || typeof parsed !== "object" || typeof parsed.state !== "string") {
     throw new MigrationLockError(`${p} is not a valid migration state file`, "STATE_CORRUPT");
   }
@@ -29920,30 +29985,30 @@ function readMigrationState(home = homedir16()) {
 }
 function writeMigrationState(home, state) {
   const p = migrationStatePath(home);
-  mkdirSync31(boosterDataDir2(home), { recursive: true });
-  const tmp = `${p}.${process.pid}.${randomBytes4(4).toString("hex")}.tmp`;
-  writeFileSync31(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 384 });
-  renameSync18(tmp, p);
+  mkdirSync32(boosterDataDir2(home), { recursive: true });
+  const tmp = `${p}.${process.pid}.${randomBytes5(4).toString("hex")}.tmp`;
+  writeFileSync32(tmp, JSON.stringify(state, null, 2) + "\n", { mode: 384 });
+  renameSync19(tmp, p);
   return state;
 }
 function clearMigrationState(home) {
-  rmSync24(migrationStatePath(home), { force: true });
+  rmSync26(migrationStatePath(home), { force: true });
 }
 function removeImportEntry(home, name) {
-  const p = join55(home, ".gemini", "config", "import_manifest.json");
-  if (!existsSync49(p)) return;
-  const m = JSON.parse(readFileSync43(p, "utf8"));
+  const p = join57(home, ".gemini", "config", "import_manifest.json");
+  if (!existsSync50(p)) return;
+  const m = JSON.parse(readFileSync45(p, "utf8"));
   if (!Array.isArray(m?.imports)) return;
   const kept = m.imports.filter((e) => e?.name !== name);
   if (kept.length === m.imports.length) return;
   const tmp = `${p}.${process.pid}.tmp`;
-  writeFileSync31(tmp, JSON.stringify({ ...m, imports: kept }, null, 2) + "\n");
-  renameSync18(tmp, p);
+  writeFileSync32(tmp, JSON.stringify({ ...m, imports: kept }, null, 2) + "\n");
+  renameSync19(tmp, p);
 }
 function removeUninstallerDir(dir) {
-  if (dir && basename16(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
+  if (dir && basename17(dir).startsWith(UNINSTALLER_DIR_PREFIX)) {
     try {
-      rmSync24(dir, { recursive: true, force: true });
+      rmSync26(dir, { recursive: true, force: true });
     } catch {
     }
   }
@@ -29955,16 +30020,16 @@ function finishUninstall({ home = homedir16(), token, uninstallerDir, agyBin, ba
     if (state?.state !== "ROLLED_BACK_PENDING_UNINSTALL") {
       return { ok: false, error: `refusing --finish-uninstall: state is ${state?.state ?? "INITIAL"}, not ROLLED_BACK_PENDING_UNINSTALL` };
     }
-    if (baseline !== void 0 && baseline !== join55(state.baselineSnapshotDir ?? "", "pre-migration.baseline.json")) {
+    if (baseline !== void 0 && baseline !== join57(state.baselineSnapshotDir ?? "", "pre-migration.baseline.json")) {
       return { ok: false, error: `refusing --finish-uninstall: --baseline ${baseline} is not this migration's baseline` };
     }
     handle = adoptMigrationLock({ home, token, deps });
-    if (uninstallerDir) writeFileSync31(join55(uninstallerDir, "handover.ack"), `${process.pid}
+    if (uninstallerDir) writeFileSync32(join57(uninstallerDir, "handover.ack"), `${process.pid}
 `);
-    const pluginDir = join55(home, ".gemini", "config", "plugins", "antigravity-booster");
-    if (existsSync49(pluginDir)) {
+    const pluginDir = join57(home, ".gemini", "config", "plugins", "antigravity-booster");
+    if (existsSync50(pluginDir)) {
       assertMigrationLockHeld(handle);
-      const run = uninstall ?? (() => execFileSync25(agyBin, ["plugin", "uninstall", "antigravity-booster"], {
+      const run = uninstall ?? (() => execFileSync27(agyBin, ["plugin", "uninstall", "antigravity-booster"], {
         stdio: ["ignore", "ignore", "pipe"],
         env: { ...process.env, HOME: home },
         timeout: 6e4
@@ -29974,7 +30039,7 @@ function finishUninstall({ home = homedir16(), token, uninstallerDir, agyBin, ba
       } catch (err) {
         return { ok: false, error: `agy plugin uninstall antigravity-booster failed: ${err.message}` };
       }
-      rmSync24(pluginDir, { recursive: true, force: true });
+      rmSync26(pluginDir, { recursive: true, force: true });
     }
     removeImportEntry(home, "antigravity-booster");
     assertMigrationLockHeld(handle);
@@ -30004,8 +30069,8 @@ var init_migration_lock = __esm({
     };
     defaultDeps = () => ({
       platform: process.platform,
-      readFile: (p) => readFileSync43(p, "utf8"),
-      exec: (cmd2, args) => execFileSync25(cmd2, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }),
+      readFile: (p) => readFileSync45(p, "utf8"),
+      exec: (cmd2, args) => execFileSync27(cmd2, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }),
       kill: (pid, sig) => process.kill(pid, sig)
     });
     UNINSTALLER_DIR_PREFIX = "agb-uninstall-";
@@ -30026,62 +30091,62 @@ __export(migrate_exports, {
   treeSize: () => treeSize
 });
 import {
-  existsSync as existsSync50,
-  readFileSync as readFileSync44,
-  writeFileSync as writeFileSync32,
-  mkdirSync as mkdirSync32,
-  rmSync as rmSync25,
+  existsSync as existsSync51,
+  readFileSync as readFileSync46,
+  writeFileSync as writeFileSync33,
+  mkdirSync as mkdirSync33,
+  rmSync as rmSync27,
   readdirSync as readdirSync24,
-  lstatSync as lstatSync32,
+  lstatSync as lstatSync34,
   readlinkSync as readlinkSync6,
   symlinkSync as symlinkSync6,
   unlinkSync as unlinkSync11,
-  renameSync as renameSync19,
+  renameSync as renameSync20,
   chmodSync as chmodSync15,
-  copyFileSync as copyFileSync7,
-  realpathSync as realpathSync22,
+  copyFileSync as copyFileSync8,
+  realpathSync as realpathSync24,
   statSync as statSync11,
-  mkdtempSync as mkdtempSync12
+  mkdtempSync as mkdtempSync13
 } from "node:fs";
-import { join as join56, dirname as dirname33, resolve as resolve37, sep as sep12, isAbsolute as isAbsolute19, delimiter as delimiter2 } from "node:path";
-import { homedir as homedir17, tmpdir as tmpdir17 } from "node:os";
-import { execFileSync as execFileSync26, spawn as spawn5 } from "node:child_process";
-import { randomBytes as randomBytes5 } from "node:crypto";
+import { join as join58, dirname as dirname33, resolve as resolve40, sep as sep12, isAbsolute as isAbsolute19, delimiter as delimiter2 } from "node:path";
+import { homedir as homedir17, tmpdir as tmpdir18 } from "node:os";
+import { execFileSync as execFileSync28, spawn as spawn5 } from "node:child_process";
+import { randomBytes as randomBytes6 } from "node:crypto";
 function paths(home) {
   const data = boosterDataDir2(home);
   return {
     data,
-    snapshots: join56(data, "snapshots"),
+    snapshots: join58(data, "snapshots"),
     plugins: pluginsDirFor(home),
-    importManifest: join56(home, ".gemini", "config", "import_manifest.json"),
-    skills: join56(home, ".gemini", "skills"),
-    shim: join56(home, ".local", "bin", "agb")
+    importManifest: join58(home, ".gemini", "config", "import_manifest.json"),
+    skills: join58(home, ".gemini", "skills"),
+    shim: join58(home, ".local", "bin", "agb")
   };
 }
 function newSnapshotDir(p) {
-  const stamp = `${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}-${randomBytes5(3).toString("hex")}`;
-  const dir = join56(p.snapshots, stamp);
-  mkdirSync32(dir, { recursive: true });
+  const stamp = `${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}-${randomBytes6(3).toString("hex")}`;
+  const dir = join58(p.snapshots, stamp);
+  mkdirSync33(dir, { recursive: true });
   return dir;
 }
 function readJson(file, fallback) {
   try {
-    return JSON.parse(readFileSync44(file, "utf8"));
+    return JSON.parse(readFileSync46(file, "utf8"));
   } catch {
     return fallback;
   }
 }
 function writeJsonAtomic(file, value, mode = 420) {
-  mkdirSync32(dirname33(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${randomBytes5(3).toString("hex")}.tmp`;
-  writeFileSync32(tmp, JSON.stringify(value, null, 2) + "\n", { mode });
-  renameSync19(tmp, file);
+  mkdirSync33(dirname33(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${randomBytes6(3).toString("hex")}.tmp`;
+  writeFileSync33(tmp, JSON.stringify(value, null, 2) + "\n", { mode });
+  renameSync20(tmp, file);
 }
 function treeSize(dir) {
   let total = 0;
   for (const e of readdirSync24(dir, { withFileTypes: true })) {
     if (STAGE_COPY_EXCLUSIONS.includes(e.name)) continue;
-    const full = join56(dir, e.name);
+    const full = join58(dir, e.name);
     if (e.isDirectory()) total += treeSize(full);
     else if (e.isFile()) total += statSync11(full).size;
   }
@@ -30089,7 +30154,7 @@ function treeSize(dir) {
 }
 function digestOrNull(dir) {
   try {
-    return existsSync50(dir) ? computeDirectoryDigest(dir) : null;
+    return existsSync51(dir) ? computeDirectoryDigest(dir) : null;
   } catch {
     return null;
   }
@@ -30110,7 +30175,7 @@ function parseValidateOutput(text) {
 }
 function agyValidate(agyBin, dir, home) {
   try {
-    const out = execFileSync26(agyBin, ["plugin", "validate", dir], {
+    const out = execFileSync28(agyBin, ["plugin", "validate", dir], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 6e4,
@@ -30129,10 +30194,10 @@ function validateBooster(agyBin, dir, home) {
   return missing.length ? { ok: false, error: `agy plugin validate ${dir} is missing component categories: ${missing.join(", ")}` } : v;
 }
 function readImports(p) {
-  if (!existsSync50(p.importManifest)) return null;
+  if (!existsSync51(p.importManifest)) return null;
   let m;
   try {
-    m = JSON.parse(readFileSync44(p.importManifest, "utf8"));
+    m = JSON.parse(readFileSync46(p.importManifest, "utf8"));
   } catch (e) {
     throw new MigrateError(`${p.importManifest} is not valid JSON (${e.message}); fix or restore it, then re-run`);
   }
@@ -30153,23 +30218,23 @@ function restoreImportEntries(p, entries, { keep = [] } = {}) {
   writeJsonAtomic(p.importManifest, { ...base, imports: [...others, ...restored] });
 }
 function scanSkillSymlinks(skillsDir) {
-  if (!existsSync50(skillsDir)) return [];
+  if (!existsSync51(skillsDir)) return [];
   const links = [];
   for (const e of readdirSync24(skillsDir, { withFileTypes: true })) {
-    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync6(join56(skillsDir, e.name)) });
+    if (e.isSymbolicLink()) links.push({ name: e.name, target: readlinkSync6(join58(skillsDir, e.name)) });
   }
   return links.sort((a, b) => a.name.localeCompare(b.name));
 }
 function npmGlobalRoot() {
   try {
-    return execFileSync26("npm", ["root", "-g"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 1e4 }).trim() || null;
+    return execFileSync28("npm", ["root", "-g"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 1e4 }).trim() || null;
   } catch {
     return null;
   }
 }
 function realOrResolved(p) {
   try {
-    return realpathSync22(p);
+    return realpathSync24(p);
   } catch {
     return p;
   }
@@ -30177,41 +30242,41 @@ function realOrResolved(p) {
 function boosterCheckoutFor(target) {
   let dir = dirname33(target);
   while (dir && dir !== dirname33(dir)) {
-    const pkg = join56(dir, "package.json");
-    if (existsSync50(pkg) && readJson(pkg, {})?.name === BOOSTER_PLUGIN_NAME) return dir;
+    const pkg = join58(dir, "package.json");
+    if (existsSync51(pkg) && readJson(pkg, {})?.name === BOOSTER_PLUGIN_NAME) return dir;
     dir = dirname33(dir);
   }
   return null;
 }
 function isOwnedSkillLink(link, { skillsDir, home, npmRoot }) {
-  const raw = isAbsolute19(link.target) ? link.target : resolve37(skillsDir, link.target);
+  const raw = isAbsolute19(link.target) ? link.target : resolve40(skillsDir, link.target);
   const target = realOrResolved(raw);
   const roots = [
-    join56(pluginsDirFor(home), BOOSTER_PLUGIN_NAME),
-    join56(pluginsDirFor(home), ADLC_ANTIGRAVITY_PLUGIN_NAME)
+    join58(pluginsDirFor(home), BOOSTER_PLUGIN_NAME),
+    join58(pluginsDirFor(home), ADLC_ANTIGRAVITY_PLUGIN_NAME)
   ];
-  if (npmRoot) roots.push(join56(npmRoot, BOOSTER_PLUGIN_NAME));
+  if (npmRoot) roots.push(join58(npmRoot, BOOSTER_PLUGIN_NAME));
   if ([raw, target].some((t) => roots.some((r) => isUnder(t, realOrResolved(r)) || isUnder(t, r)))) return true;
   if ([raw, target].some((t) => t.split(sep12).join("/").includes("/node_modules/@adlc/antigravity/") || t.split(sep12).join("/").endsWith("/node_modules/@adlc/antigravity"))) return true;
   for (const t of [raw, target]) {
     const checkout = boosterCheckoutFor(t);
-    if (checkout && isUnder(t, join56(checkout, "skills"))) return true;
+    if (checkout && isUnder(t, join58(checkout, "skills"))) return true;
   }
   return false;
 }
 function recreateSymlinks(p, links, log2) {
-  mkdirSync32(p.skills, { recursive: true });
+  mkdirSync33(p.skills, { recursive: true });
   for (const { name, target } of links) {
-    const at = join56(p.skills, name);
+    const at = join58(p.skills, name);
     let present = false;
     try {
-      lstatSync32(at);
+      lstatSync34(at);
       present = true;
     } catch {
     }
     if (present) continue;
-    const resolved = isAbsolute19(target) ? target : resolve37(p.skills, target);
-    if (!existsSync50(resolved)) {
+    const resolved = isAbsolute19(target) ? target : resolve40(p.skills, target);
+    if (!existsSync51(resolved)) {
       log2(`Notice: Symlink target ${target} missing; skipping dangling link`);
       continue;
     }
@@ -30219,15 +30284,15 @@ function recreateSymlinks(p, links, log2) {
   }
 }
 function restorePluginDir(p, name, fromDir) {
-  const dest = join56(p.plugins, name);
-  const tmp = join56(p.plugins, `.${name}.restore-${process.pid}-${randomBytes5(3).toString("hex")}`);
-  mkdirSync32(p.plugins, { recursive: true });
+  const dest = join58(p.plugins, name);
+  const tmp = join58(p.plugins, `.${name}.restore-${process.pid}-${randomBytes6(3).toString("hex")}`);
+  mkdirSync33(p.plugins, { recursive: true });
   copyPluginTree(fromDir, tmp);
-  rmSync25(dest, { recursive: true, force: true });
-  renameSync19(tmp, dest);
+  rmSync27(dest, { recursive: true, force: true });
+  renameSync20(tmp, dest);
 }
 function agyUninstall(agyBin, name, home) {
-  execFileSync26(agyBin, ["plugin", "uninstall", name], {
+  execFileSync28(agyBin, ["plugin", "uninstall", name], {
     stdio: ["ignore", "ignore", "pipe"],
     timeout: 6e4,
     env: { ...process.env, HOME: home }
@@ -30236,37 +30301,37 @@ function agyUninstall(agyBin, name, home) {
 function step3Snapshot(ctx, state) {
   const { p, home } = ctx;
   for (const name of PLUGIN_NAMES) {
-    const dir = join56(p.plugins, name);
-    if (existsSync50(dir) && treeSize(dir) > SNAPSHOT_SIZE_CAP_BYTES) {
+    const dir = join58(p.plugins, name);
+    if (existsSync51(dir) && treeSize(dir) > SNAPSHOT_SIZE_CAP_BYTES) {
       throw new MigrateError(`staged plugin ${dir} exceeds ${SNAPSHOT_SIZE_CAP_BYTES / 1024 / 1024} MB after excluding ${STAGE_COPY_EXCLUSIONS.join(", ")}; remove large files from it (or reinstall it cleanly) and re-run agb migrate`);
     }
   }
   for (const name of PLUGIN_NAMES) {
-    const present = STAGE_COPY_EXCLUSIONS.filter((x) => existsSync50(join56(p.plugins, name, x)));
+    const present = STAGE_COPY_EXCLUSIONS.filter((x) => existsSync51(join58(p.plugins, name, x)));
     if (present.length) {
-      ctx.warn(`warning: ${join56(p.plugins, name)} contains ${present.join(", ")}; these are not snapshotted (spec D13) and will not come back on rollback. Copy them elsewhere first if you need them.`);
+      ctx.warn(`warning: ${join58(p.plugins, name)} contains ${present.join(", ")}; these are not snapshotted (spec D13) and will not come back on rollback. Copy them elsewhere first if you need them.`);
     }
   }
   const snap = newSnapshotDir(p);
   const plugins = {};
   for (const name of PLUGIN_NAMES) {
-    const dir = join56(p.plugins, name);
-    plugins[name] = { previouslyAbsent: !existsSync50(dir) };
-    if (existsSync50(dir)) copyPluginTree(dir, join56(snap, "plugins", name));
+    const dir = join58(p.plugins, name);
+    plugins[name] = { previouslyAbsent: !existsSync51(dir) };
+    if (existsSync51(dir)) copyPluginTree(dir, join58(snap, "plugins", name));
   }
-  const shimPreviouslyAbsent = !existsSync50(p.shim);
+  const shimPreviouslyAbsent = !existsSync51(p.shim);
   if (!shimPreviouslyAbsent) {
-    mkdirSync32(join56(snap, "shim"), { recursive: true });
-    copyFileSync7(p.shim, join56(snap, "shim", "agb"));
+    mkdirSync33(join58(snap, "shim"), { recursive: true });
+    copyFileSync8(p.shim, join58(snap, "shim", "agb"));
   }
   const importEntries = ourEntries(p);
-  writeJsonAtomic(join56(snap, "import_manifest.json"), { imports: importEntries });
+  writeJsonAtomic(join58(snap, "import_manifest.json"), { imports: importEntries });
   const links = scanSkillSymlinks(p.skills);
   const next = { ...state ?? {}, snapshotDir: snap, startedAt: (/* @__PURE__ */ new Date()).toISOString() };
   if (!next.baselineSnapshotDir) {
     let settingsPreviouslyHadStatusLine = false;
     try {
-      const parsedSettings = JSON.parse(readFileSync44(join56(home, ".gemini", "antigravity-cli", "settings.json"), "utf8"));
+      const parsedSettings = JSON.parse(readFileSync46(join58(home, ".gemini", "antigravity-cli", "settings.json"), "utf8"));
       settingsPreviouslyHadStatusLine = Boolean(parsedSettings?.statusLine || parsedSettings?.title);
     } catch {
     }
@@ -30279,8 +30344,8 @@ function step3Snapshot(ctx, state) {
       originalSkillSymlinks: links,
       excludedPaths: [...INSTALL_COPY_EXCLUSIONS]
     };
-    const file = join56(snap, "pre-migration.baseline.json");
-    writeFileSync32(file, JSON.stringify(baseline, null, 2) + "\n", { mode: 292, flag: "wx" });
+    const file = join58(snap, "pre-migration.baseline.json");
+    writeFileSync33(file, JSON.stringify(baseline, null, 2) + "\n", { mode: 292, flag: "wx" });
     next.baselineSnapshotDir = snap;
     next.hasEverMigrated = false;
   }
@@ -30308,9 +30373,9 @@ function step5Stage(ctx, state) {
   if (!r1?.ok) throw new MigrateError(`installing antigravity-booster failed: ${r1?.error ?? "unknown error"}`);
   const r2 = ctx.installAdlc({ home, agyBin });
   if (!r2?.ok) throw new MigrateError(`installing adlc-antigravity failed: ${r2?.error ?? "unknown error"}`);
-  const vb = validateBooster(agyBin, join56(p.plugins, BOOSTER_PLUGIN_NAME), home);
+  const vb = validateBooster(agyBin, join58(p.plugins, BOOSTER_PLUGIN_NAME), home);
   if (!vb.ok) throw new MigrateError(vb.error);
-  const va = agyValidate(agyBin, join56(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME), home);
+  const va = agyValidate(agyBin, join58(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME), home);
   if (!va.ok) throw new MigrateError(va.error);
   const names = new Set(ourEntries(p).map((e) => e.name));
   const missing = PLUGIN_NAMES.filter((n) => !names.has(n));
@@ -30322,30 +30387,30 @@ function step6Finalize(ctx, state) {
   const { p, home, lock } = ctx;
   assertMigrationLockHeld(lock);
   for (const { name, target } of state.recordedSymlinks ?? []) {
-    const at = join56(p.skills, name);
+    const at = join58(p.skills, name);
     try {
-      if (lstatSync32(at).isSymbolicLink() && readlinkSync6(at) === target) unlinkSync11(at);
+      if (lstatSync34(at).isSymbolicLink() && readlinkSync6(at) === target) unlinkSync11(at);
     } catch {
     }
   }
   const shim = installTerminalShim({ home, force: true });
   if (!shim.ok) throw new MigrateError(shim.error);
-  const adlcManifest = readJson(join56(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME, "plugin.json"), {});
+  const adlcManifest = readJson(join58(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME, "plugin.json"), {});
   assertMigrationLockHeld(lock);
   return writeMigrationState(home, {
     ...state,
     state: "MIGRATED",
     hasEverMigrated: true,
     postMigrationSnapshots: {
-      boosterDigest: digestOrNull(join56(p.plugins, BOOSTER_PLUGIN_NAME)),
-      adlcAntigravityDigest: digestOrNull(join56(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME)),
+      boosterDigest: digestOrNull(join58(p.plugins, BOOSTER_PLUGIN_NAME)),
+      adlcAntigravityDigest: digestOrNull(join58(p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME)),
       adlcAntigravityVersion: adlcManifest?.version ?? BUNDLED_ADLC_ANTIGRAVITY_VERSION,
       migratedAt: (/* @__PURE__ */ new Date()).toISOString()
     }
   });
 }
 function readBaseline(state) {
-  const file = join56(state?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
+  const file = join58(state?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
   const b = readJson(file, null);
   if (!b || typeof b !== "object" || !b.plugins || !Array.isArray(b.originalSkillSymlinks)) {
     throw new MigrateError(`baseline snapshot ${file} is missing or unreadable; refusing to continue`);
@@ -30353,34 +30418,34 @@ function readBaseline(state) {
   return b;
 }
 function defaultUninstallerArgv(home) {
-  const staged = join56(pluginsDirFor(home), BOOSTER_PLUGIN_NAME);
+  const staged = join58(pluginsDirFor(home), BOOSTER_PLUGIN_NAME);
   if (process.platform === "win32") {
-    return { argv: [process.execPath, join56(staged, "dist", "agb.mjs")], cwd: home };
+    return { argv: [process.execPath, join58(staged, "dist", "agb.mjs")], cwd: home };
   }
-  return { argv: ["/bin/sh", join56(staged, "bin", "node-launcher.sh"), "dist/agb.mjs"], cwd: staged };
+  return { argv: ["/bin/sh", join58(staged, "bin", "node-launcher.sh"), "dist/agb.mjs"], cwd: staged };
 }
 async function handOverUninstall(ctx) {
   const { home, lock, agyBin, log: log2, err } = ctx;
-  const dir = mkdtempSync12(join56(ctx.tmpParent ?? tmpdir17(), UNINSTALLER_DIR_PREFIX));
+  const dir = mkdtempSync13(join58(ctx.tmpParent ?? tmpdir18(), UNINSTALLER_DIR_PREFIX));
   chmodSync15(dir, 448);
   const rawLauncher = ctx.uninstaller ?? defaultUninstallerArgv(home);
   const isWin = process.platform === "win32";
-  const staged = join56(pluginsDirFor(home), BOOSTER_PLUGIN_NAME);
+  const staged = join58(pluginsDirFor(home), BOOSTER_PLUGIN_NAME);
   let launcherArgv = [...rawLauncher.argv];
   let launcherCwd = rawLauncher.cwd ?? home;
   if (isWin && !ctx.uninstaller) {
-    const stagedBundle = join56(staged, "dist", "agb.mjs");
-    const tempBundle = join56(dir, "agb-uninstaller.mjs");
-    if (existsSync50(stagedBundle)) {
+    const stagedBundle = join58(staged, "dist", "agb.mjs");
+    const tempBundle = join58(dir, "agb-uninstaller.mjs");
+    if (existsSync51(stagedBundle)) {
       try {
-        copyFileSync7(stagedBundle, tempBundle);
+        copyFileSync8(stagedBundle, tempBundle);
         launcherArgv = [process.execPath, tempBundle];
       } catch {
       }
     }
     launcherCwd = home;
   }
-  const baselineFile = join56(readMigrationState(home)?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
+  const baselineFile = join58(readMigrationState(home)?.baselineSnapshotDir ?? "", "pre-migration.baseline.json");
   const args = [
     ...launcherArgv,
     "migrate",
@@ -30401,14 +30466,14 @@ async function handOverUninstall(ctx) {
   } else {
     const quoted = args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(" ");
     const scriptName = isWin ? "uninstall.cmd" : "uninstall.sh";
-    const script = join56(dir, scriptName);
+    const script = join58(dir, scriptName);
     if (isWin) {
-      writeFileSync32(script, `@echo off\r
+      writeFileSync33(script, `@echo off\r
 cd /d "${launcherCwd}" || exit /b 1\r
 ${args.map((a) => `"${String(a)}"`).join(" ")}\r
 `);
     } else {
-      writeFileSync32(script, `#!/bin/sh
+      writeFileSync33(script, `#!/bin/sh
 cd '${String(launcherCwd).replace(/'/g, `'\\''`)}' || exit 1
 exec ${quoted}
 `, { mode: 448 });
@@ -30424,7 +30489,7 @@ exec ${quoted}
   const deadline = Date.now() + (ctx.handoverTimeoutMs ?? HANDOVER_TIMEOUT_MS);
   let acked = false;
   while (Date.now() < deadline) {
-    if (!existsSync50(dir)) {
+    if (!existsSync51(dir)) {
       if (readMigrationState(home)?.state === "ROLLED_BACK") {
         log2("Rollback complete: antigravity-booster uninstalled.");
         return 0;
@@ -30432,7 +30497,7 @@ exec ${quoted}
       err("error: the detached uninstaller could not remove antigravity-booster; state is ROLLED_BACK_PENDING_UNINSTALL. Re-run `agb migrate --rollback` to retry.");
       return 1;
     }
-    if (existsSync50(join56(dir, "handover.ack")) && !acked) {
+    if (existsSync51(join58(dir, "handover.ack")) && !acked) {
       acked = true;
       log2("The detached uninstaller has taken over the lock and is removing antigravity-booster.");
     }
@@ -30450,11 +30515,11 @@ exec ${quoted}
   if (!exited) await Promise.race([exitedP, sleep3(5e3)]);
   invalidateMigrationLockToken(lock);
   try {
-    rmSync25(lock.lockDir, { recursive: true, force: true });
+    rmSync27(lock.lockDir, { recursive: true, force: true });
   } catch {
   }
   try {
-    rmSync25(dir, { recursive: true, force: true });
+    rmSync27(dir, { recursive: true, force: true });
   } catch {
   }
   err("error: the detached uninstaller did not acknowledge the lock handover within 2.0s; state is ROLLED_BACK_PENDING_UNINSTALL. Re-run `agb migrate --rollback` to retry.");
@@ -30466,8 +30531,8 @@ function agbElsewhereOnPath(p, env, platform4 = process.platform) {
   const binNames = platform4 === "win32" ? ["agb.cmd", "agb.ps1", "agb"] : ["agb"];
   for (const d of pathValue.split(pathSep).filter(Boolean)) {
     for (const binName of binNames) {
-      const c = join56(d, binName);
-      if (existsSync50(c) && realOrResolved(c) !== realOrResolved(p.shim)) return true;
+      const c = join58(d, binName);
+      if (existsSync51(c) && realOrResolved(c) !== realOrResolved(p.shim)) return true;
     }
   }
   return false;
@@ -30484,10 +30549,10 @@ async function restoreFromBaseline(ctx, state) {
   state = writeMigrationState(home, { ...state, state: "ROLLBACK_IN_PROGRESS", rollbackStartedAt: (/* @__PURE__ */ new Date()).toISOString() });
   recreateSymlinks(p, baseline.originalSkillSymlinks, log2);
   assertMigrationLockHeld(lock);
-  if (baseline.shimPreviouslyAbsent) rmSync25(p.shim, { force: true });
+  if (baseline.shimPreviouslyAbsent) rmSync27(p.shim, { force: true });
   else {
-    mkdirSync32(dirname33(p.shim), { recursive: true });
-    copyFileSync7(join56(base, "shim", "agb"), p.shim);
+    mkdirSync33(dirname33(p.shim), { recursive: true });
+    copyFileSync8(join58(base, "shim", "agb"), p.shim);
     chmodSync15(p.shim, 493);
   }
   if (baseline.shimPreviouslyAbsent || baseline.settingsPreviouslyHadStatusLine !== true) {
@@ -30496,21 +30561,21 @@ async function restoreFromBaseline(ctx, state) {
   assertMigrationLockHeld(lock);
   const adlc = ADLC_ANTIGRAVITY_PLUGIN_NAME;
   if (baseline.plugins[adlc]?.previouslyAbsent) {
-    if (existsSync50(join56(p.plugins, adlc))) {
+    if (existsSync51(join58(p.plugins, adlc))) {
       try {
         agyUninstall(agyBin, adlc, home);
       } catch (e) {
         warn(`warning: agy plugin uninstall ${adlc} failed (${e.message}); removing its directory`);
       }
-      rmSync25(join56(p.plugins, adlc), { recursive: true, force: true });
+      rmSync27(join58(p.plugins, adlc), { recursive: true, force: true });
     }
-  } else restorePluginDir(p, adlc, join56(base, "plugins", adlc));
-  if (!boosterWasAbsent) restorePluginDir(p, BOOSTER_PLUGIN_NAME, join56(base, "plugins", BOOSTER_PLUGIN_NAME));
+  } else restorePluginDir(p, adlc, join58(base, "plugins", adlc));
+  if (!boosterWasAbsent) restorePluginDir(p, BOOSTER_PLUGIN_NAME, join58(base, "plugins", BOOSTER_PLUGIN_NAME));
   assertMigrationLockHeld(lock);
   restoreImportEntries(p, baseline.importEntries ?? [], { keep: boosterWasAbsent ? [BOOSTER_PLUGIN_NAME] : [] });
   for (const name of PLUGIN_NAMES) {
-    const dir = join56(p.plugins, name);
-    if (existsSync50(dir) && !(name === BOOSTER_PLUGIN_NAME && boosterWasAbsent)) {
+    const dir = join58(p.plugins, name);
+    if (existsSync51(dir) && !(name === BOOSTER_PLUGIN_NAME && boosterWasAbsent)) {
       const v = agyValidate(agyBin, dir, home);
       if (!v.ok) warn(`warning: restored ${name} did not validate: ${v.error}`);
     }
@@ -30527,8 +30592,8 @@ async function restoreFromBaseline(ctx, state) {
 function modifiedSinceMigration(ctx, state) {
   const snap = state.postMigrationSnapshots ?? {};
   const changed = [];
-  if (digestOrNull(join56(ctx.p.plugins, BOOSTER_PLUGIN_NAME)) !== snap.boosterDigest) changed.push(BOOSTER_PLUGIN_NAME);
-  if (digestOrNull(join56(ctx.p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME)) !== snap.adlcAntigravityDigest) changed.push(ADLC_ANTIGRAVITY_PLUGIN_NAME);
+  if (digestOrNull(join58(ctx.p.plugins, BOOSTER_PLUGIN_NAME)) !== snap.boosterDigest) changed.push(BOOSTER_PLUGIN_NAME);
+  if (digestOrNull(join58(ctx.p.plugins, ADLC_ANTIGRAVITY_PLUGIN_NAME)) !== snap.adlcAntigravityDigest) changed.push(ADLC_ANTIGRAVITY_PLUGIN_NAME);
   return changed;
 }
 async function rollbackLocked(ctx) {
@@ -30556,7 +30621,7 @@ async function rollbackLocked(ctx) {
     default:
       if (VIRGIN_RESET_STATES.has(state.state) && !state.hasEverMigrated && !state.stagingStarted) {
         assertMigrationLockHeld(ctx.lock);
-        if (state.snapshotDir && isUnder(resolve37(state.snapshotDir), ctx.p.snapshots)) rmSync25(state.snapshotDir, { recursive: true, force: true });
+        if (state.snapshotDir && isUnder(resolve40(state.snapshotDir), ctx.p.snapshots)) rmSync27(state.snapshotDir, { recursive: true, force: true });
         clearMigrationState(home);
         log2("Rolled back an incomplete migration: nothing live had changed; snapshot and state cleared.");
         return 0;
@@ -30585,7 +30650,7 @@ async function migrateLocked(ctx) {
       err("Rollback was previously interrupted. Run 'agb migrate --rollback' to complete restoration before re-running migration.");
       return 1;
     case "ROLLED_BACK_PENDING_UNINSTALL":
-      if (existsSync50(join56(p.plugins, BOOSTER_PLUGIN_NAME))) {
+      if (existsSync51(join58(p.plugins, BOOSTER_PLUGIN_NAME))) {
         log2("Notice: a previous rollback did not finish uninstalling antigravity-booster; finishing it now. Re-run `agb migrate` afterwards.");
         ctx.keepLock = true;
         return handOverUninstall(ctx);
@@ -30593,7 +30658,7 @@ async function migrateLocked(ctx) {
       state = writeMigrationState(home, { ...state, state: "ROLLED_BACK" });
     // falls through: booster already gone, start clean
     case "ROLLED_BACK":
-      writeJsonAtomic(join56(p.snapshots, `archived-state-${Date.now()}.json`), state);
+      writeJsonAtomic(join58(p.snapshots, `archived-state-${Date.now()}.json`), state);
       clearMigrationState(home);
       state = null;
       break;
@@ -30732,23 +30797,23 @@ __export(server_exports, {
 });
 import { createServer } from "node:http";
 import {
-  readFileSync as readFileSync45,
-  existsSync as existsSync51,
+  readFileSync as readFileSync47,
+  existsSync as existsSync52,
   openSync as openSync14,
   readSync as readSync5,
   closeSync as closeSync14,
   createReadStream,
-  lstatSync as lstatSync33,
+  lstatSync as lstatSync35,
   fstatSync as fstatSync5,
-  realpathSync as realpathSync23,
+  realpathSync as realpathSync25,
   constants as constants7
 } from "node:fs";
-import { join as join57, dirname as dirname34, resolve as resolve38, relative as relative20, isAbsolute as isAbsolute20 } from "node:path";
+import { join as join59, dirname as dirname34, resolve as resolve41, relative as relative20, isAbsolute as isAbsolute20 } from "node:path";
 import { fileURLToPath as fileURLToPath7 } from "node:url";
 import { timingSafeEqual as timingSafeEqual2 } from "node:crypto";
 function lstatOrNull6(targetPath) {
   try {
-    return lstatSync33(targetPath);
+    return lstatSync35(targetPath);
   } catch (err) {
     if (err?.code === "ENOENT") return null;
     throw err;
@@ -30764,7 +30829,7 @@ function readRegularFileNoFollow(filePath) {
       err.code = "ENOTFILE";
       throw err;
     }
-    return readFileSync45(fd, "utf8");
+    return readFileSync47(fd, "utf8");
   } finally {
     closeSync14(fd);
   }
@@ -30772,14 +30837,14 @@ function readRegularFileNoFollow(filePath) {
 function resolveSafeEventsPath(repoPath) {
   let realRepo;
   try {
-    realRepo = realpathSync23(resolve38(repoPath));
+    realRepo = realpathSync25(resolve41(repoPath));
   } catch (err) {
     if (err?.code === "ENOENT") {
       return { ok: true, runId: null, eventsPath: null };
     }
     return { ok: false, code: "IO_ERROR", error: `Failed to resolve repository path: ${err.message}` };
   }
-  const boosterDir = join57(realRepo, ".booster");
+  const boosterDir = join59(realRepo, ".booster");
   const boosterStat = lstatOrNull6(boosterDir);
   if (!boosterStat) {
     return { ok: true, runId: null, eventsPath: null };
@@ -30787,7 +30852,7 @@ function resolveSafeEventsPath(repoPath) {
   if (boosterStat.isSymbolicLink() || !boosterStat.isDirectory()) {
     return { ok: false, code: "SYMLINK", error: "Refusing to read events from symlinked or non-directory .booster path" };
   }
-  const runJsonPath = join57(boosterDir, "run.json");
+  const runJsonPath = join59(boosterDir, "run.json");
   const runJsonStat = lstatOrNull6(runJsonPath);
   if (!runJsonStat) {
     return { ok: true, runId: null, eventsPath: null };
@@ -30816,7 +30881,7 @@ function resolveSafeEventsPath(repoPath) {
     return { ok: false, code: "INVALID_RUN_ID", error: "Rejected empty, whitespace, or invalid runId in .booster/run.json" };
   }
   const runId = trimmedRunId;
-  const logsDir = join57(boosterDir, "logs");
+  const logsDir = join59(boosterDir, "logs");
   const logsStat = lstatOrNull6(logsDir);
   if (!logsStat) {
     return { ok: true, runId, eventsPath: null };
@@ -30824,7 +30889,7 @@ function resolveSafeEventsPath(repoPath) {
   if (logsStat.isSymbolicLink() || !logsStat.isDirectory()) {
     return { ok: false, code: "SYMLINK", error: "Refusing to read events from symlinked or non-directory .booster/logs path" };
   }
-  const runLogDir = join57(logsDir, runId);
+  const runLogDir = join59(logsDir, runId);
   const runLogStat = lstatOrNull6(runLogDir);
   if (!runLogStat) {
     return { ok: true, runId, eventsPath: null };
@@ -30832,7 +30897,7 @@ function resolveSafeEventsPath(repoPath) {
   if (runLogStat.isSymbolicLink() || !runLogStat.isDirectory()) {
     return { ok: false, code: "SYMLINK", error: "Refusing to read events from symlinked or non-directory run log directory" };
   }
-  const eventsPath = join57(runLogDir, "events.jsonl");
+  const eventsPath = join59(runLogDir, "events.jsonl");
   const eventsStat = lstatOrNull6(eventsPath);
   if (!eventsStat) {
     return { ok: true, runId, eventsPath: null };
@@ -30842,7 +30907,7 @@ function resolveSafeEventsPath(repoPath) {
   }
   let realEvents;
   try {
-    realEvents = realpathSync23(eventsPath);
+    realEvents = realpathSync25(eventsPath);
   } catch (err) {
     if (err?.code === "ENOENT") {
       return { ok: true, runId, eventsPath: null };
@@ -31067,11 +31132,11 @@ function serveSidecar(repoPath, port = 3333, token = null, options = {}) {
       res.writeHead(403);
       return res.end("Forbidden");
     }
-    let filePath = join57(__dirname, safePath);
-    if (!existsSync51(filePath)) {
-      filePath = join57(__dirname, "..", "sidecars", safePath);
+    let filePath = join59(__dirname, safePath);
+    if (!existsSync52(filePath)) {
+      filePath = join59(__dirname, "..", "sidecars", safePath);
     }
-    if (!existsSync51(filePath)) {
+    if (!existsSync52(filePath)) {
       res.writeHead(404);
       return res.end("Not found");
     }
@@ -31082,7 +31147,7 @@ function serveSidecar(repoPath, port = 3333, token = null, options = {}) {
       const csp = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;";
       res.setHeader("Content-Security-Policy", csp);
       res.setHeader("Content-Type", contentType);
-      let html = readFileSync45(filePath, "utf8");
+      let html = readFileSync47(filePath, "utf8");
       return res.end(html);
     }
     res.setHeader("Content-Type", contentType);
@@ -31095,7 +31160,7 @@ function serveSidecar(repoPath, port = 3333, token = null, options = {}) {
     });
     s.pipe(res);
   };
-  return new Promise((resolve40, reject) => {
+  return new Promise((resolve43, reject) => {
     let isListening = false;
     const server = createServer(async (req, res) => {
       try {
@@ -31118,7 +31183,7 @@ function serveSidecar(repoPath, port = 3333, token = null, options = {}) {
     server.listen(port, bindHost, () => {
       isListening = true;
       console.log(`AGB Sidecar Server running at http://${bindHost}:${server.address().port}`);
-      resolve40(server);
+      resolve43(server);
     });
   });
 }
@@ -31130,10 +31195,10 @@ var init_server = __esm({
 });
 
 // bin/agb.mjs
-import { readFileSync as readFileSync46, writeFileSync as writeFileSync33, mkdirSync as mkdirSync33, appendFileSync as appendFileSync3, existsSync as existsSync52 } from "node:fs";
-import { resolve as resolve39, join as join58 } from "node:path";
+import { readFileSync as readFileSync48, writeFileSync as writeFileSync34, mkdirSync as mkdirSync34, appendFileSync as appendFileSync3, existsSync as existsSync53 } from "node:fs";
+import { resolve as resolve42, join as join60 } from "node:path";
 import { fileURLToPath as fileURLToPath8 } from "node:url";
-import { execFileSync as execFileSync27 } from "node:child_process";
+import { execFileSync as execFileSync29 } from "node:child_process";
 
 // lib/scheduler.mjs
 init_tickets2();
@@ -31147,10 +31212,10 @@ init_stream_watchdog();
 init_doctor2();
 init_gates();
 init_prosecute();
-import { writeFileSync as writeFileSync26, mkdtempSync as mkdtempSync11, rmSync as rmSync20, existsSync as existsSync43, readFileSync as readFileSync37, readdirSync as readdirSync20, realpathSync as realpathSync18, mkdirSync as mkdirSync25, lstatSync as lstatSync26, statSync as statSync10, openSync as openSync12, closeSync as closeSync12, writeSync as writeSync6, fsyncSync as fsyncSync7, unlinkSync as unlinkSync9, constants as constants6 } from "node:fs";
+import { writeFileSync as writeFileSync26, mkdtempSync as mkdtempSync11, rmSync as rmSync20, existsSync as existsSync43, readFileSync as readFileSync38, readdirSync as readdirSync20, realpathSync as realpathSync18, mkdirSync as mkdirSync25, lstatSync as lstatSync27, statSync as statSync10, openSync as openSync12, closeSync as closeSync12, writeSync as writeSync6, fsyncSync as fsyncSync7, unlinkSync as unlinkSync9, constants as constants6 } from "node:fs";
 import { execFileSync as execFileSync19 } from "node:child_process";
 import { tmpdir as tmpdir14 } from "node:os";
-import path4, { join as join47, resolve as resolve31, isAbsolute as isAbsolute17, dirname as dirname27, basename as basename12 } from "node:path";
+import path4, { join as join47, resolve as resolve32, isAbsolute as isAbsolute17, dirname as dirname27, basename as basename12 } from "node:path";
 import { pathToFileURL as pathToFileURL4 } from "node:url";
 import crypto7 from "node:crypto";
 
@@ -31170,7 +31235,9 @@ init_adlc_tool();
 init_worktrees();
 init_models();
 init_plan_integrity();
-import { randomUUID as randomUUID15 } from "node:crypto";
+import { createHash as createHash10, randomUUID as randomUUID15 } from "node:crypto";
+import { lstatSync as lstatSync21, readFileSync as readFileSync31 } from "node:fs";
+import { resolve as resolve24 } from "node:path";
 
 // lib/workflow-emit.mjs
 init_plan_integrity();
@@ -31840,27 +31907,49 @@ async function compilePlan(idOrPrefix, opts = {}) {
       structuralErrors = [`conversion error: ${err.message}`];
     }
   };
+  let deltaSummary = null;
   const sourcePlanMd = resolveSourcePlanMarkdown(brain);
   if (fastPath !== false && sourcePlanMd) {
-    const preAnalysis = preAnalyzeSpec(sourcePlanMd, { repo, gate, raw: true, maxTicketScope });
-    if (preAnalysis.ok && preAnalysis.plan) {
-      plan = preAnalysis.plan;
-      plan.repo = repo;
-      if (gate !== void 0) {
-        plan.gate = { ...gate };
+    if (opts.deltaFrom) {
+      const prevPlan = loadPreviousPlanInput(opts.deltaFrom, repo);
+      const deltaRes = compilePlanDelta(sourcePlanMd, prevPlan, { repo, gate, maxTicketScope });
+      if (deltaRes.ok && deltaRes.plan) {
+        plan = deltaRes.plan;
+        plan.source = { type: brain.sourceType, id: brain.id, title: brain.title };
+        couplingWarnings = deltaRes.couplingWarnings ?? [];
+        deltaSummary = deltaRes.delta;
+        structuralErrors = computeStructuralErrors(plan);
+        if (structuralErrors.length === 0) {
+          attempts = 1;
+          fastPathUsed = true;
+          log2(
+            `plan --delta: preserved=${deltaSummary.preservedTicketIds.length} changed=${deltaSummary.changedTicketIds.length} added=${deltaSummary.addedTicketIds.length} removed=${deltaSummary.removedTicketIds.length}`
+          );
+        } else {
+          plan = null;
+        }
       }
-      plan.source = { type: brain.sourceType, id: brain.id, title: brain.title };
-      couplingWarnings = preAnalysis.couplingWarnings ?? [];
-      if (decompose && Array.isArray(plan.tickets)) {
-        plan.tickets = decomposeTickets(plan.tickets, { maxScope: maxTicketScope, repo });
-      }
-      structuralErrors = computeStructuralErrors(plan);
-      if (structuralErrors.length === 0) {
-        attempts = 1;
-        fastPathUsed = true;
-        log2(`plan: structured spec fast-path succeeded for '${brain.title}' (${plan.tickets.length} tickets, 0 Stage A LLM calls)`);
-      } else {
-        plan = null;
+    } else {
+      const preAnalysis = preAnalyzeSpec(sourcePlanMd, { repo, gate, raw: true, maxTicketScope });
+      if (preAnalysis.ok && preAnalysis.plan) {
+        plan = preAnalysis.plan;
+        plan.repo = repo;
+        if (gate !== void 0) {
+          plan.gate = { ...gate };
+        }
+        plan.source = { type: brain.sourceType, id: brain.id, title: brain.title };
+        couplingWarnings = preAnalysis.couplingWarnings ?? [];
+        if (decompose && Array.isArray(plan.tickets)) {
+          plan.tickets = decomposeTickets(plan.tickets, { maxScope: maxTicketScope, repo });
+        }
+        structuralErrors = computeStructuralErrors(plan);
+        if (structuralErrors.length === 0) {
+          attempts = 1;
+          fastPathUsed = true;
+          log2(`plan: structured spec fast-path succeeded for '${brain.title}' (${plan.tickets.length} tickets, 0 Stage A LLM calls)`);
+        } else {
+          plan = null;
+        }
       }
     }
   }
@@ -31874,6 +31963,7 @@ async function compilePlan(idOrPrefix, opts = {}) {
       gatePasses,
       fastPath: fastPathUsed,
       couplingWarnings,
+      ...deltaSummary ? { delta: deltaSummary } : {},
       structuralErrors,
       gaps: [],
       parallax: [],
@@ -32016,6 +32106,7 @@ async function compilePlan(idOrPrefix, opts = {}) {
       gatePasses,
       fastPath: fastPathUsed,
       couplingWarnings,
+      ...deltaSummary ? { delta: deltaSummary } : {},
       quotaEstimate,
       structuralErrors: [],
       gaps: gates.gaps,
@@ -32025,26 +32116,223 @@ async function compilePlan(idOrPrefix, opts = {}) {
     }
   };
 }
+function matchSpecTicketHeadingId(line) {
+  const numbered = line.match(/^###\s+Ticket\s+(?:\d+\s*:\s*)?`?([A-Za-z0-9][A-Za-z0-9_.-]*)`?\s*(?:—|--|-|:)\s*(.+)$/i);
+  if (numbered) return numbered[1].trim();
+  const backticked = line.match(/^###\s+`([A-Za-z0-9][A-Za-z0-9_.-]*)`\s*(?:—|--|-|:)\s*(.+)$/);
+  if (backticked) return backticked[1].trim();
+  const bare = line.match(/^###\s+([A-Za-z0-9][A-Za-z0-9_.-]*)\s*(?:—|--|:)\s*(.+)$/);
+  if (bare && /[-0-9]/.test(bare[1])) return bare[1].trim();
+  return null;
+}
+function extractInlinePlanComments(markdown = "") {
+  const globalComments = [];
+  const byTicket = {};
+  if (typeof markdown !== "string" || !markdown.trim()) {
+    return { globalComments, byTicket };
+  }
+  const lines = markdown.split(/\r?\n/);
+  let inFence = false;
+  let fenceMarker = "";
+  let currentTicketId = null;
+  const pushComment = (rawText) => {
+    const text = String(rawText ?? "").trim();
+    if (!text) return;
+    if (currentTicketId) {
+      if (!byTicket[currentTicketId]) byTicket[currentTicketId] = [];
+      byTicket[currentTicketId].push(text);
+    } else {
+      globalComments.push(text);
+    }
+  };
+  for (const rawLine of lines) {
+    const trimmed2 = rawLine.trim();
+    const fenceOpen = trimmed2.match(/^(`{3,}|~{3,})/);
+    if (fenceOpen) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fenceOpen[1][0].repeat(fenceOpen[1].length);
+      } else if (trimmed2.startsWith(fenceMarker[0].repeat(fenceMarker.length))) {
+        inFence = false;
+        fenceMarker = "";
+      }
+      continue;
+    }
+    if (inFence) continue;
+    const hitId = matchSpecTicketHeadingId(trimmed2);
+    if (hitId) {
+      currentTicketId = hitId;
+      continue;
+    }
+    const htmlMatches = [...trimmed2.matchAll(/<!--\s*comment\s*:\s*([\s\S]*?)-->/gi)];
+    for (const m of htmlMatches) {
+      pushComment(m[1]);
+    }
+    const callout = trimmed2.match(/^>\s*\[!COMMENT\]\s*(.+)$/i) || trimmed2.match(/^>\s*\*\*Comment\*\*\s*:\s*(.+)$/i) || trimmed2.match(/^>\s*Review(?:\s+Comment)?\s*:\s*(.+)$/i);
+    if (callout) {
+      pushComment(callout[1]);
+    }
+  }
+  return { globalComments, byTicket };
+}
+function loadPreviousPlanInput(deltaFrom, repo) {
+  if (deltaFrom && typeof deltaFrom === "object" && !Array.isArray(deltaFrom)) {
+    return deltaFrom;
+  }
+  if (typeof deltaFrom !== "string" || !deltaFrom.trim()) {
+    throw new Error("Invalid --delta input: expected a path to an existing plan.json or a plan object");
+  }
+  const fullPath = resolve24(repo ?? process.cwd(), deltaFrom.trim());
+  const st = lstatSync21(fullPath, { throwIfNoEntry: false });
+  if (st && st.isSymbolicLink()) {
+    throw new Error(`Security violation: symbolic link not allowed on --delta plan file ${fullPath}`);
+  }
+  if (!st || !st.isFile()) {
+    throw new Error(`Previous plan file for --delta does not exist: ${fullPath}`);
+  }
+  const parsed = JSON.parse(readFileSync31(fullPath, "utf8"));
+  if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.tickets)) {
+    throw new Error(`Invalid previous plan JSON in ${fullPath}: missing tickets array`);
+  }
+  return parsed;
+}
+function ticketSemanticDigest(ticket) {
+  const edges = Array.isArray(ticket?.edges) ? ticket.edges.map((e) => typeof e === "string" ? e : `${e?.to ?? ""}:${e?.contract ?? ""}`).sort() : [];
+  const canonical2 = {
+    id: String(ticket?.id ?? ""),
+    title: String(ticket?.title ?? "").trim(),
+    body: String(ticket?.body ?? "").trim(),
+    scope: Array.isArray(ticket?.scope) ? [...ticket.scope].sort() : [],
+    rails: Array.isArray(ticket?.rails) ? [...ticket.rails].sort() : [],
+    edges
+  };
+  return createHash10("sha256").update(JSON.stringify(canonical2)).digest("hex");
+}
+function compilePlanDelta(specMarkdown, prevPlan, opts = {}) {
+  const { repo = process.cwd(), gate, maxTicketScope = 12 } = opts;
+  if (!prevPlan || typeof prevPlan !== "object" || !Array.isArray(prevPlan.tickets)) {
+    return { ok: false, plan: null, delta: null, errors: ["compilePlanDelta: prevPlan must contain a tickets array"] };
+  }
+  const preAnalysis = preAnalyzeSpec(specMarkdown, { repo, gate, raw: true, maxTicketScope });
+  if (!preAnalysis.ok || !preAnalysis.plan) {
+    return {
+      ok: false,
+      plan: null,
+      delta: null,
+      errors: preAnalysis.errors?.length ? preAnalysis.errors : ["compilePlanDelta: structured spec parse failed"]
+    };
+  }
+  const inlineComments = extractInlinePlanComments(specMarkdown);
+  const prevById = new Map(prevPlan.tickets.map((t) => [t.id, t]));
+  const nextIds = /* @__PURE__ */ new Set();
+  const preservedTicketIds = [];
+  const changedTicketIds = [];
+  const addedTicketIds = [];
+  const mergedTickets = [];
+  for (const nextTicket of preAnalysis.plan.tickets ?? []) {
+    nextIds.add(nextTicket.id);
+    const prev = prevById.get(nextTicket.id);
+    const ticketComments = [
+      ...inlineComments.globalComments,
+      ...inlineComments.byTicket[nextTicket.id] ?? []
+    ];
+    if (prev && ticketComments.length === 0 && ticketSemanticDigest(nextTicket) === ticketSemanticDigest(prev)) {
+      preservedTicketIds.push(nextTicket.id);
+      mergedTickets.push(structuredClone(prev));
+      continue;
+    }
+    const updated = structuredClone(nextTicket);
+    if (ticketComments.length > 0) {
+      const directiveBlock = `
+
+Inline Review Directives:
+${ticketComments.map((c) => `- ${c}`).join("\n")}`;
+      updated.body = `${String(updated.body ?? "").trimEnd()}${directiveBlock}`;
+    }
+    if (prev) {
+      changedTicketIds.push(nextTicket.id);
+    } else {
+      addedTicketIds.push(nextTicket.id);
+    }
+    mergedTickets.push(updated);
+  }
+  const removedTicketIds = prevPlan.tickets.map((t) => t.id).filter((id) => !nextIds.has(id));
+  const mergedPlan = {
+    ...preAnalysis.plan,
+    repo,
+    ...gate !== void 0 ? { gate: { ...gate } } : prevPlan.gate ? { gate: structuredClone(prevPlan.gate) } : {},
+    tickets: mergedTickets
+  };
+  const prevColdstart = prevPlan.gateProvenance?.coldstartHashes;
+  if (prevColdstart && typeof prevColdstart === "object") {
+    const keptHashes = {};
+    for (const id of preservedTicketIds) {
+      if (typeof prevColdstart[id] === "string") {
+        keptHashes[id] = prevColdstart[id];
+      }
+    }
+    if (Object.keys(keptHashes).length > 0) {
+      mergedPlan.gateProvenance = { coldstartHashes: keptHashes };
+    }
+  }
+  const errors = validatePlan(mergedPlan);
+  return {
+    ok: errors.length === 0,
+    plan: mergedPlan,
+    delta: {
+      preservedTicketIds,
+      changedTicketIds,
+      addedTicketIds,
+      removedTicketIds,
+      inlineComments
+    },
+    scopeWarnings: preAnalysis.scopeWarnings ?? [],
+    couplingWarnings: preAnalysis.couplingWarnings ?? [],
+    errors
+  };
+}
 function buildPlanPrompts(idOrPrefix, opts = {}) {
-  const { repo, gate, brainDir, maxTicketScope = 12 } = opts;
+  const { repo, gate, brainDir, maxTicketScope = 12, deltaFrom = null } = opts;
   if (!repo) throw new Error("buildPlanPrompts: repo is required");
   assertNoLegacyTicketStore(repo);
   const brain = readBrain(idOrPrefix, brainDir);
   const sourcePlanMd = resolveSourcePlanMarkdown(brain);
   if (sourcePlanMd) {
-    const preAnalysis = preAnalyzeSpec(sourcePlanMd, { repo, gate, raw: true, maxTicketScope });
-    if (preAnalysis.ok && preAnalysis.plan) {
-      const plan = preAnalysis.plan;
-      plan.repo = repo;
-      if (gate !== void 0) plan.gate = { ...gate };
-      plan.source = { type: brain.sourceType, id: brain.id, title: brain.title };
-      const edges = planEdges(plan.tickets ?? []);
+    let plan = null;
+    let scopeWarnings = [];
+    let couplingWarnings = [];
+    let delta = null;
+    if (deltaFrom) {
+      const prevPlan = loadPreviousPlanInput(deltaFrom, repo);
+      const deltaRes = compilePlanDelta(sourcePlanMd, prevPlan, { repo, gate, maxTicketScope });
+      if (deltaRes.ok && deltaRes.plan) {
+        plan = deltaRes.plan;
+        scopeWarnings = deltaRes.scopeWarnings;
+        couplingWarnings = deltaRes.couplingWarnings;
+        delta = deltaRes.delta;
+      }
+    } else {
+      const preAnalysis = preAnalyzeSpec(sourcePlanMd, { repo, gate, raw: true, maxTicketScope });
+      if (preAnalysis.ok && preAnalysis.plan) {
+        plan = preAnalysis.plan;
+        plan.repo = repo;
+        if (gate !== void 0) plan.gate = { ...gate };
+        scopeWarnings = preAnalysis.scopeWarnings ?? [];
+        couplingWarnings = preAnalysis.couplingWarnings ?? [];
+      }
+    }
+    if (plan) {
+      plan.source = { type: brain.id ? brain.sourceType : "spec", id: brain.id, title: brain.title };
+      const allEdges = planEdges(plan.tickets ?? []);
+      const dirtySet = delta ? /* @__PURE__ */ new Set([...delta.changedTicketIds, ...delta.addedTicketIds]) : null;
+      const activeEdges = dirtySet ? allEdges.filter(({ from, to }) => dirtySet.has(from.id) || dirtySet.has(to.id)) : allEdges;
       return {
         ok: true,
         fastPath: true,
         brain: { id: brain.id, title: brain.title, sourceType: brain.sourceType },
-        scopeWarnings: preAnalysis.scopeWarnings ?? [],
-        couplingWarnings: preAnalysis.couplingWarnings ?? [],
+        scopeWarnings,
+        couplingWarnings,
+        ...delta ? { delta } : {},
         plan,
         prompts: {
           premortem: {
@@ -32053,7 +32341,7 @@ function buildPlanPrompts(idOrPrefix, opts = {}) {
             schema: PREMORTEM_SCHEMA,
             prompt: premortemPrompt(plan, brain)
           },
-          parallax: edges.map(({ from, to }) => ({
+          parallax: activeEdges.map(({ from, to }) => ({
             edge: `${from.id} -> ${to.id}`,
             model: PARALLAX_READER_MODEL,
             schema: PARALLAX_READER_SCHEMA,
@@ -32197,15 +32485,15 @@ init_pools();
 import {
   chmodSync as chmodSync11,
   existsSync as existsSync42,
-  lstatSync as lstatSync25,
+  lstatSync as lstatSync26,
   mkdirSync as mkdirSync24,
-  readFileSync as readFileSync36,
+  readFileSync as readFileSync37,
   renameSync as renameSync14,
   rmSync as rmSync19,
   writeFileSync as writeFileSync25
 } from "node:fs";
 import { homedir as homedir13 } from "node:os";
-import { basename as basename11, dirname as dirname26, join as join46, resolve as resolve30 } from "node:path";
+import { basename as basename11, dirname as dirname26, join as join46, resolve as resolve31 } from "node:path";
 import { randomUUID as randomUUID16 } from "node:crypto";
 var MAX_FACTORY_LEDGER_ENTRIES = 1e3;
 var IS_BUNDLED5 = true;
@@ -32218,7 +32506,7 @@ function round1(v) {
 function assertNotSymlinkPath(targetPath) {
   let st;
   try {
-    st = lstatSync25(targetPath);
+    st = lstatSync26(targetPath);
   } catch (err) {
     if (err?.code === "ENOENT" || err?.code === "ENOTDIR") return;
     throw err;
@@ -32232,13 +32520,13 @@ function defaultFactoryLedgerPath({
   home = !IS_BUNDLED5 && process.env.AGB_HOME_DIR || homedir13()
 } = {}) {
   if (!IS_BUNDLED5 && process.env.AGB_FACTORY_LEDGER_FILE) {
-    return resolve30(process.env.AGB_FACTORY_LEDGER_FILE);
+    return resolve31(process.env.AGB_FACTORY_LEDGER_FILE);
   }
   if ((IS_BUNDLED5 || !process.env.AGB_HOME_DIR) && process.env.NODE_TEST_CONTEXT && repo) {
-    return join46(resolve30(repo), ".booster", "factory_ledger.jsonl");
+    return join46(resolve31(repo), ".booster", "factory_ledger.jsonl");
   }
   return join46(
-    resolve30(home),
+    resolve31(home),
     ".gemini",
     "antigravity-cli",
     "plugin_data",
@@ -32302,7 +32590,7 @@ function computeRunEconomics({
   const normHollowShortCircuits = toNonNegInt3(hollowShortCircuits);
   const cleanSkippedLenses = Array.isArray(skippedLenses) ? [...new Set(skippedLenses.filter((l) => typeof l === "string" && l.trim()).map((l) => l.trim()))] : [];
   const resolvedKind = isReviewOnly ? "review" : typeof kind === "string" && kind.trim() ? kind.trim() : "run";
-  const resolvedRepoName = typeof repoName === "string" && repoName.trim() ? repoName.trim() : typeof repo === "string" && repo.trim() ? basename11(resolve30(repo)) : "workspace";
+  const resolvedRepoName = typeof repoName === "string" && repoName.trim() ? repoName.trim() : typeof repo === "string" && repo.trim() ? basename11(resolve31(repo)) : "workspace";
   return {
     ts: typeof ts === "string" && ts ? ts : (/* @__PURE__ */ new Date()).toISOString(),
     runId: typeof runId === "string" && runId ? runId : "run-unknown",
@@ -32339,7 +32627,7 @@ var FactoryLedger = class {
     home,
     maxEntries = MAX_FACTORY_LEDGER_ENTRIES
   } = {}) {
-    this.ledgerFile = ledgerFile ? resolve30(ledgerFile) : defaultFactoryLedgerPath({ repo, ...home ? { home } : {} });
+    this.ledgerFile = ledgerFile ? resolve31(ledgerFile) : defaultFactoryLedgerPath({ repo, ...home ? { home } : {} });
     this.lockFile = `${this.ledgerFile}.lock`;
     this.maxEntries = Math.max(10, toNonNegInt3(maxEntries) || MAX_FACTORY_LEDGER_ENTRIES);
   }
@@ -32349,7 +32637,7 @@ var FactoryLedger = class {
     assertNotSymlinkPath(this.ledgerFile);
     if (!existsSync42(this.ledgerFile)) return [];
     try {
-      const raw = readFileSync36(this.ledgerFile, "utf8");
+      const raw = readFileSync37(this.ledgerFile, "utf8");
       const entries = [];
       for (const line of raw.split(/\r?\n/)) {
         const trimmed2 = line.trim();
@@ -32526,7 +32814,7 @@ function hashDir(dir, filterFn = () => true) {
           if (filterFn(entRel)) {
             count++;
             hash.update(entRel);
-            hash.update(readFileSync37(full));
+            hash.update(readFileSync38(full));
           }
         }
       }
@@ -32566,7 +32854,7 @@ function getGitCommonDir(repo) {
       maxBuffer: GIT_MAX_BUFFER2,
       env: sanitizedGitEnv()
     }).trim();
-    return resolve31(repo, raw);
+    return resolve32(repo, raw);
   } catch {
     return join47(repo, ".git");
   }
@@ -32579,7 +32867,7 @@ function getGitIndexPath(repo, fallbackGitDir) {
       maxBuffer: GIT_MAX_BUFFER2,
       env: sanitizedGitEnv()
     }).trim();
-    if (raw) return resolve31(repo, raw);
+    if (raw) return resolve32(repo, raw);
   } catch {
   }
   return join47(fallbackGitDir ?? getGitCommonDir(repo), "index");
@@ -32647,12 +32935,12 @@ function snapshotRootGit(repo) {
     if (err.code === "ENOBUFS") throw err;
   }
   const configPath = join47(gitDir, "config");
-  const configHash = existsSync43(configPath) ? crypto7.createHash("sha256").update(readFileSync37(configPath)).digest("hex") : null;
+  const configHash = existsSync43(configPath) ? crypto7.createHash("sha256").update(readFileSync38(configPath)).digest("hex") : null;
   const hooksHash = hashDir(join47(gitDir, "hooks"));
   const indexPath = getGitIndexPath(repo, gitDir);
-  const indexHash = existsSync43(indexPath) ? crypto7.createHash("sha256").update(readFileSync37(indexPath)).digest("hex") : null;
+  const indexHash = existsSync43(indexPath) ? crypto7.createHash("sha256").update(readFileSync38(indexPath)).digest("hex") : null;
   const packedRefsPath = join47(gitDir, "packed-refs");
-  const packedRefsHash = existsSync43(packedRefsPath) ? crypto7.createHash("sha256").update(readFileSync37(packedRefsPath)).digest("hex") : null;
+  const packedRefsHash = existsSync43(packedRefsPath) ? crypto7.createHash("sha256").update(readFileSync38(packedRefsPath)).digest("hex") : null;
   const infoHash = hashDir(join47(gitDir, "info"));
   const logsHash = hashDir(
     join47(gitDir, "logs"),
@@ -32796,7 +33084,7 @@ function verifyRootGitIntegrity(repo, pre, {
     return { ok: false, error: "Porcelain status altered in root repository" };
   }
   const configPath = join47(gitDir, "config");
-  const postConfigHash = existsSync43(configPath) ? crypto7.createHash("sha256").update(readFileSync37(configPath)).digest("hex") : null;
+  const postConfigHash = existsSync43(configPath) ? crypto7.createHash("sha256").update(readFileSync38(configPath)).digest("hex") : null;
   if (postConfigHash !== pre.configHash) {
     return { ok: false, error: "Root Git config altered" };
   }
@@ -32806,13 +33094,13 @@ function verifyRootGitIntegrity(repo, pre, {
   }
   if (!headMovedByMerge) {
     const indexPath = getGitIndexPath(repo, gitDir);
-    const postIndexHash = existsSync43(indexPath) ? crypto7.createHash("sha256").update(readFileSync37(indexPath)).digest("hex") : null;
+    const postIndexHash = existsSync43(indexPath) ? crypto7.createHash("sha256").update(readFileSync38(indexPath)).digest("hex") : null;
     if (postIndexHash !== pre.indexHash) {
       return { ok: false, error: "Root Git index altered" };
     }
   }
   const packedRefsPath = join47(gitDir, "packed-refs");
-  const postPackedRefsHash = existsSync43(packedRefsPath) ? crypto7.createHash("sha256").update(readFileSync37(packedRefsPath)).digest("hex") : null;
+  const postPackedRefsHash = existsSync43(packedRefsPath) ? crypto7.createHash("sha256").update(readFileSync38(packedRefsPath)).digest("hex") : null;
   if (postPackedRefsHash !== pre.packedRefsHash) {
     return { ok: false, error: "Root Git packed-refs altered" };
   }
@@ -33110,7 +33398,7 @@ function verifyRootGitIntegrity(repo, pre, {
 }
 function safeWriteWorktreeFile(filePath, content) {
   try {
-    const st = lstatSync26(filePath);
+    const st = lstatSync27(filePath);
     if (st.isSymbolicLink()) {
       unlinkSync9(filePath);
     } else if (!st.isFile()) {
@@ -33175,18 +33463,18 @@ function verifyWorktreeGitPointer(worktreePath, expectedGitDir) {
   if (!existsSync43(gitEntry)) {
     throw new Error(`Security violation: worktree .git pointer missing at ${gitEntry}`);
   }
-  const stat = lstatSync26(gitEntry);
+  const stat = lstatSync27(gitEntry);
   if (stat.isSymbolicLink() || !stat.isFile()) {
     throw new Error(`Security violation: worktree .git pointer at ${gitEntry} is not a regular file`);
   }
-  const content = readFileSync37(gitEntry, "utf8").trim();
+  const content = readFileSync38(gitEntry, "utf8").trim();
   const match2 = content.match(/^gitdir:\s*(.+)$/);
   if (!match2) {
     throw new Error(`Security violation: worktree .git pointer at ${gitEntry} has invalid format: ${content}`);
   }
   const target = match2[1].trim();
-  const resolvedTarget = resolve31(worktreePath, target);
-  const resolvedExpected = resolve31(expectedGitDir);
+  const resolvedTarget = resolve32(worktreePath, target);
+  const resolvedExpected = resolve32(expectedGitDir);
   if (resolvedTarget !== resolvedExpected) {
     throw new Error(`Security violation: worktree .git pointer at ${gitEntry} redirected to ${resolvedTarget}, expected ${resolvedExpected}`);
   }
@@ -33503,7 +33791,7 @@ function formatStepClock(ts) {
 function readLiveWorktreeDiff(worktreePath, baseRef, expectedGitDir) {
   if (!worktreePath || !expectedGitDir || !existsSync43(worktreePath)) return "";
   try {
-    if (lstatSync26(worktreePath).isSymbolicLink()) return "";
+    if (lstatSync27(worktreePath).isSymbolicLink()) return "";
     verifyWorktreeGitPointer(worktreePath, expectedGitDir);
   } catch {
     return "";
@@ -33558,9 +33846,9 @@ function readLiveWorktreeDiff(worktreePath, baseRef, expectedGitDir) {
       if (currentBytes >= MAX_IPC_DIFF_BYTES) break;
       const full = join47(worktreePath, rel);
       try {
-        const st = lstatSync26(full);
+        const st = lstatSync27(full);
         if (st.isSymbolicLink() || !st.isFile() || st.size > 512 * 1024) continue;
-        const content = readFileSync37(full);
+        const content = readFileSync38(full);
         if (content.subarray(0, Math.min(content.length, 2048)).includes(0)) {
           const binBlock = `diff --git a/${rel} b/${rel}
 new file
@@ -33588,13 +33876,13 @@ function readSavedRescueDiff(repo, ticketId) {
   if (!ticketId || typeof ticketId !== "string" || !TICKET_ID_RE.test(ticketId)) return "";
   try {
     const boosterDir = join47(repo, ".booster");
-    if (lstatSync26(boosterDir).isSymbolicLink()) return "";
+    if (lstatSync27(boosterDir).isSymbolicLink()) return "";
     const latestDir = join47(boosterDir, "rescue-latest");
-    if (lstatSync26(latestDir).isSymbolicLink()) return "";
+    if (lstatSync27(latestDir).isSymbolicLink()) return "";
     const snapFile = join47(latestDir, `${ticketId.toLowerCase()}.json`);
-    const st = lstatSync26(snapFile);
+    const st = lstatSync27(snapFile);
     if (st.isSymbolicLink() || !st.isFile()) return "";
-    const parsed = JSON.parse(readFileSync37(snapFile, "utf8"));
+    const parsed = JSON.parse(readFileSync38(snapFile, "utf8"));
     return typeof parsed?.diff === "string" ? truncateUtf8ToBytes(parsed.diff, MAX_IPC_DIFF_BYTES) : "";
   } catch {
     return "";
@@ -33752,21 +34040,21 @@ Fix: ${agyCheck.fix}`);
   let priorReportJson = null;
   const priorBoosterDir = join47(repo, ".booster");
   try {
-    const bSt = lstatSync26(priorBoosterDir);
+    const bSt = lstatSync27(priorBoosterDir);
     if (bSt.isDirectory() && !bSt.isSymbolicLink()) {
       const runJsonPath = join47(priorBoosterDir, "run.json");
       try {
-        const rjSt = lstatSync26(runJsonPath);
+        const rjSt = lstatSync27(runJsonPath);
         if (rjSt.isFile() && !rjSt.isSymbolicLink()) {
-          priorRunJson = JSON.parse(readFileSync37(runJsonPath, "utf8"));
+          priorRunJson = JSON.parse(readFileSync38(runJsonPath, "utf8"));
         }
       } catch {
       }
       const reportJsonPath = join47(priorBoosterDir, "report.json");
       try {
-        const repSt = lstatSync26(reportJsonPath);
+        const repSt = lstatSync27(reportJsonPath);
         if (repSt.isFile() && !repSt.isSymbolicLink()) {
-          priorReportJson = JSON.parse(readFileSync37(reportJsonPath, "utf8"));
+          priorReportJson = JSON.parse(readFileSync38(reportJsonPath, "utf8"));
         }
       } catch {
       }
@@ -33789,8 +34077,8 @@ Fix: ${agyCheck.fix}`);
   const runSeed = crypto7.randomBytes(24).toString("hex");
   const resolveScopedPlanStatsFile = () => {
     if (!plan.statsFile || IS_BUNDLED) return null;
-    const repoRoot = resolve31(repo);
-    const resolvedStats = resolve31(repoRoot, String(plan.statsFile));
+    const repoRoot = resolve32(repo);
+    const resolvedStats = resolve32(repoRoot, String(plan.statsFile));
     const rel = path4.relative(repoRoot, resolvedStats);
     if (rel.startsWith("..") || isAbsolute17(rel)) {
       throw new Error(`Refusing out-of-repo plan.statsFile: ${plan.statsFile}`);
@@ -33929,17 +34217,17 @@ Fix: ${agyCheck.fix}`);
       if (!Array.isArray(findingsList) || findingsList.length === 0) return;
       try {
         const bDir = join47(repo, ".booster");
-        if (lstatSync26(bDir).isSymbolicLink()) return;
+        if (lstatSync27(bDir).isSymbolicLink()) return;
         const runsDir = join47(bDir, "runs");
         mkdirSync25(runsDir, { recursive: true, mode: 448 });
-        if (lstatSync26(runsDir).isSymbolicLink()) return;
+        if (lstatSync27(runsDir).isSymbolicLink()) return;
         const safeTid = String(ticketId || "ticket").toLowerCase().replace(/[^a-z0-9_.-]/g, "_");
         const targetFile = join47(runsDir, `${safeRunId}-prosecution-${safeTid}.json`);
-        if (existsSync43(targetFile) && lstatSync26(targetFile).isSymbolicLink()) return;
+        if (existsSync43(targetFile) && lstatSync27(targetFile).isSymbolicLink()) return;
         let existing = [];
         if (existsSync43(targetFile)) {
           try {
-            const prev = JSON.parse(readFileSync37(targetFile, "utf8"));
+            const prev = JSON.parse(readFileSync38(targetFile, "utf8"));
             if (Array.isArray(prev?.findings)) existing = prev.findings;
           } catch {
           }
@@ -33991,7 +34279,7 @@ Fix: ${agyCheck.fix}`);
       }
       wakeDrainLoop();
     }, findNearestNodeModules = function(startDir) {
-      let dir = resolve31(startDir);
+      let dir = resolve32(startDir);
       let stopDir = dir;
       try {
         const commonGit = execFileSync19(
@@ -33999,7 +34287,7 @@ Fix: ${agyCheck.fix}`);
           ["-c", `core.hooksPath=${NULL_HOOKS_PATH5}`, "rev-parse", "--git-common-dir"],
           { cwd: dir, encoding: "utf8", env: sanitizedGitEnv(), stdio: ["ignore", "pipe", "ignore"] }
         ).trim();
-        if (commonGit) stopDir = dirname27(resolve31(dir, commonGit));
+        if (commonGit) stopDir = dirname27(resolve32(dir, commonGit));
       } catch {
       }
       while (true) {
@@ -34771,7 +35059,7 @@ Fix: ${agyCheck.fix}`);
       return lastVerdict;
     }
     async function executePostGuardAutofix(t, worktree, baseRefSha, currentChanged, unionedRails) {
-      if (!gate?.autofix || !worktree || resolve31(worktree) === resolve31(repo)) {
+      if (!gate?.autofix || !worktree || resolve32(worktree) === resolve32(repo)) {
         return { ok: true, applied: false, changedFiles: currentChanged };
       }
       const preAutofixSha = execFileSync19(
@@ -34780,7 +35068,7 @@ Fix: ${agyCheck.fix}`);
         { cwd: worktree, encoding: "utf8", env: sanitizedGitEnv() }
       ).trim();
       const basePkgPath2 = join47(repo, "package.json");
-      const baselinePkg = existsSync43(basePkgPath2) ? JSON.parse(readFileSync37(basePkgPath2, "utf8")) : null;
+      const baselinePkg = existsSync43(basePkgPath2) ? JSON.parse(readFileSync38(basePkgPath2, "utf8")) : null;
       const rawTimeout = Number(process.env.AGB_GATE_TIMEOUT_MS);
       const timeoutMs = Number.isFinite(rawTimeout) && rawTimeout > 0 ? rawTimeout : 18e5;
       const materialized = materializeWorktreeNodeModules(worktree, findNearestNodeModules(repo));
@@ -34843,7 +35131,7 @@ Fix: ${agyCheck.fix}`);
             if (!existsSync43(candPkgPath)) {
               throw new Error("autofix deleted package.json");
             }
-            const candPkg = JSON.parse(readFileSync37(candPkgPath, "utf8"));
+            const candPkg = JSON.parse(readFileSync38(candPkgPath, "utf8"));
             for (const cmd2 of [gate?.autofix, gate?.build, gate?.test].filter(Boolean)) {
               verifyGateScriptIntegrity(candPkg, baselinePkg, cmd2);
             }
@@ -35365,8 +35653,8 @@ Fix: ${agyCheck.fix}`);
                       if (!existsSync43(candPkgPath)) {
                         throw new Error("candidate deleted package.json while baseline repository requires it");
                       }
-                      const basePkg = JSON.parse(readFileSync37(basePkgPath2, "utf8"));
-                      const candPkg = JSON.parse(readFileSync37(candPkgPath, "utf8"));
+                      const basePkg = JSON.parse(readFileSync38(basePkgPath2, "utf8"));
+                      const candPkg = JSON.parse(readFileSync38(candPkgPath, "utf8"));
                       for (const cmd2 of [gate?.autofix, gate?.build, gate?.test].filter(Boolean)) {
                         verifyGateScriptIntegrity(candPkg, basePkg, cmd2);
                       }
@@ -35565,8 +35853,8 @@ ${JSON.stringify(blocking, null, 2)}`;
                                         if (!existsSync43(candPkgPath)) {
                                           throw new Error("candidate deleted package.json while baseline repository requires it");
                                         }
-                                        const basePkg = JSON.parse(readFileSync37(basePkgPath2, "utf8"));
-                                        const candPkg = JSON.parse(readFileSync37(candPkgPath, "utf8"));
+                                        const basePkg = JSON.parse(readFileSync38(basePkgPath2, "utf8"));
+                                        const candPkg = JSON.parse(readFileSync38(candPkgPath, "utf8"));
                                         for (const cmd2 of [gate?.autofix, gate?.build, gate?.test].filter(Boolean)) {
                                           verifyGateScriptIntegrity(candPkg, basePkg, cmd2);
                                         }
@@ -35867,8 +36155,8 @@ consensus-fix unavailable (${cf.error}) \u2014 falling back to single-attempt re
               err.kind = "post_merge_gate_failure";
               throw err;
             }
-            const basePkg = JSON.parse(readFileSync37(basePkgPath2, "utf8"));
-            const candPkg = JSON.parse(readFileSync37(candPkgPath, "utf8"));
+            const basePkg = JSON.parse(readFileSync38(basePkgPath2, "utf8"));
+            const candPkg = JSON.parse(readFileSync38(candPkgPath, "utf8"));
             for (const cmd2 of [gate?.autofix, gate?.build, gate?.test].filter(Boolean)) {
               verifyGateScriptIntegrity(candPkg, basePkg, cmd2);
             }
@@ -36326,15 +36614,15 @@ import { execFileSync as execFileSync21 } from "node:child_process";
 import {
   chmodSync as chmodSync12,
   existsSync as existsSync44,
-  lstatSync as lstatSync27,
+  lstatSync as lstatSync28,
   mkdirSync as mkdirSync26,
   readdirSync as readdirSync21,
-  readFileSync as readFileSync38,
+  readFileSync as readFileSync39,
   renameSync as renameSync15,
   rmSync as rmSync21,
   writeFileSync as writeFileSync27
 } from "node:fs";
-import { dirname as dirname28, join as join48, resolve as resolve32 } from "node:path";
+import { dirname as dirname28, join as join48, resolve as resolve33 } from "node:path";
 import { randomBytes as randomBytes3, randomUUID as randomUUID17 } from "node:crypto";
 init_run_integrity();
 var LENSES = {
@@ -36717,7 +37005,7 @@ function createMeteredDecisionEngine(engine, tel) {
 function recordReviewTelemetryToLedger({ repo, runId, telemetry, requestsByPool, durationMs, recordLedger }) {
   if (recordLedger === false || !repo || typeof repo !== "string" || !repo.trim()) return;
   try {
-    const resolvedRepo = resolve32(repo);
+    const resolvedRepo = resolve33(repo);
     if (!existsSync44(resolvedRepo)) return;
     const ledger = new FactoryLedger({ repo: resolvedRepo });
     ledger.appendRunSummary({
@@ -36736,18 +37024,18 @@ function resolvePriorFindingsPath(repo, statePath) {
   const hasStatePath = typeof statePath === "string" && statePath.trim().length > 0;
   const hasRepo = typeof repo === "string" && repo.trim().length > 0;
   if (!hasStatePath && !hasRepo) return null;
-  const baseRepo = hasRepo ? resolve32(repo) : process.cwd();
-  return hasStatePath ? resolve32(baseRepo, statePath.trim()) : join48(baseRepo, DEFAULT_PRIOR_FINDINGS_REL);
+  const baseRepo = hasRepo ? resolve33(repo) : process.cwd();
+  return hasStatePath ? resolve33(baseRepo, statePath.trim()) : join48(baseRepo, DEFAULT_PRIOR_FINDINGS_REL);
 }
 function hasSymlinkComponent(basePath, targetPath) {
   try {
     if (basePath) {
-      const st = lstatSync27(basePath, { throwIfNoEntry: false });
+      const st = lstatSync28(basePath, { throwIfNoEntry: false });
       if (st?.isSymbolicLink()) return true;
     }
-    const targetSt = lstatSync27(targetPath, { throwIfNoEntry: false });
+    const targetSt = lstatSync28(targetPath, { throwIfNoEntry: false });
     if (targetSt?.isSymbolicLink()) return true;
-    const parentSt = lstatSync27(dirname28(targetPath), { throwIfNoEntry: false });
+    const parentSt = lstatSync28(dirname28(targetPath), { throwIfNoEntry: false });
     if (parentSt?.isSymbolicLink()) return true;
   } catch {
     return true;
@@ -36757,11 +37045,11 @@ function hasSymlinkComponent(basePath, targetPath) {
 function loadPriorFindings(repo, statePath) {
   const targetPath = resolvePriorFindingsPath(repo, statePath);
   if (!targetPath) return [];
-  if (hasSymlinkComponent(repo ? resolve32(repo) : null, targetPath)) return [];
+  if (hasSymlinkComponent(repo ? resolve33(repo) : null, targetPath)) return [];
   try {
-    const st = lstatSync27(targetPath, { throwIfNoEntry: false });
+    const st = lstatSync28(targetPath, { throwIfNoEntry: false });
     if (!st || !st.isFile()) return [];
-    const parsed = JSON.parse(readFileSync38(targetPath, "utf8"));
+    const parsed = JSON.parse(readFileSync39(targetPath, "utf8"));
     const rawList = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" && Array.isArray(parsed.findings) ? parsed.findings : null;
     if (!rawList) return [];
     return rawList.filter((f) => f && typeof f === "object" && typeof f.claim === "string" && f.claim.trim().length > 0);
@@ -36775,14 +37063,14 @@ function savePriorFindings(repo, findings, statePath) {
     return { ok: false, path: null, count: 0, error: "repo or statePath is required" };
   }
   const normalized = Array.isArray(findings) ? findings.filter((f) => f && typeof f === "object" && typeof f.claim === "string") : [];
-  if (hasSymlinkComponent(repo ? resolve32(repo) : null, targetPath)) {
+  if (hasSymlinkComponent(repo ? resolve33(repo) : null, targetPath)) {
     return { ok: false, path: targetPath, count: 0, error: `symbolic link not allowed: ${targetPath}` };
   }
   const dir = dirname28(targetPath);
   const tmpPath = `${targetPath}.tmp-${process.pid}-${randomUUID17()}`;
   try {
     mkdirSync26(dir, { recursive: true, mode: 448 });
-    if (hasSymlinkComponent(repo ? resolve32(repo) : null, targetPath)) {
+    if (hasSymlinkComponent(repo ? resolve33(repo) : null, targetPath)) {
       return { ok: false, path: targetPath, count: 0, error: `symbolic link not allowed: ${targetPath}` };
     }
     writeFileSync27(tmpPath, JSON.stringify(normalized, null, 2) + "\n", { mode: 384, flag: "wx" });
@@ -36803,14 +37091,14 @@ function savePriorFindings(repo, findings, statePath) {
   }
 }
 function readJsonlFileSafe(filePath) {
-  const st = lstatSync27(filePath, { throwIfNoEntry: false });
+  const st = lstatSync28(filePath, { throwIfNoEntry: false });
   if (!st) return { ok: true, entries: [] };
   if (st.isSymbolicLink() || !st.isFile()) {
     return { ok: false, error: `unsafe manifest path (symlink or non-file): ${filePath}`, entries: [] };
   }
   try {
     const entries = [];
-    const lines = readFileSync38(filePath, "utf8").split(/\r?\n/);
+    const lines = readFileSync39(filePath, "utf8").split(/\r?\n/);
     for (const line of lines) {
       const trimmed2 = line.trim();
       if (!trimmed2) continue;
@@ -36829,7 +37117,7 @@ function readJsonlFileSafe(filePath) {
 }
 function readManifestEntries(repoRoot) {
   const adlcDir = join48(repoRoot, ".adlc");
-  const adlcSt = lstatSync27(adlcDir, { throwIfNoEntry: false });
+  const adlcSt = lstatSync28(adlcDir, { throwIfNoEntry: false });
   if (!adlcSt) return { ok: true, entries: [] };
   if (adlcSt.isSymbolicLink() || !adlcSt.isDirectory()) {
     return { ok: false, error: "unsafe .adlc directory (symlink or non-directory)", entries: [] };
@@ -36840,7 +37128,7 @@ function readManifestEntries(repoRoot) {
   if (!rootRes.ok) return rootRes;
   allEntries.push(...rootRes.entries);
   const segDir = join48(adlcDir, "manifest.d");
-  const segSt = lstatSync27(segDir, { throwIfNoEntry: false });
+  const segSt = lstatSync28(segDir, { throwIfNoEntry: false });
   if (segSt) {
     if (segSt.isSymbolicLink() || !segSt.isDirectory()) {
       return { ok: false, error: "unsafe .adlc/manifest.d directory (symlink or non-directory)", entries: [] };
@@ -36860,7 +37148,7 @@ function readManifestEntries(repoRoot) {
   return { ok: true, entries: allEntries };
 }
 function readShardScopesFromDir(dirPath, scopeMap) {
-  const st = lstatSync27(dirPath, { throwIfNoEntry: false });
+  const st = lstatSync28(dirPath, { throwIfNoEntry: false });
   if (!st || st.isSymbolicLink() || !st.isDirectory()) return;
   let entries = [];
   try {
@@ -36871,9 +37159,9 @@ function readShardScopesFromDir(dirPath, scopeMap) {
   for (const file of entries) {
     const full = join48(dirPath, file);
     try {
-      const fSt = lstatSync27(full, { throwIfNoEntry: false });
+      const fSt = lstatSync28(full, { throwIfNoEntry: false });
       if (!fSt || fSt.isSymbolicLink() || !fSt.isFile()) continue;
-      const parsed = JSON.parse(readFileSync38(full, "utf8"));
+      const parsed = JSON.parse(readFileSync39(full, "utf8"));
       const id = typeof parsed?.id === "string" ? parsed.id.trim() : "";
       const scope = Array.isArray(parsed?.scope) ? parsed.scope.filter((s) => typeof s === "string" && s.trim()) : [];
       if (id && scope.length > 0 && !scopeMap.has(id)) {
@@ -36886,10 +37174,10 @@ function readShardScopesFromDir(dirPath, scopeMap) {
 function loadTicketScopesFromRepo(repoRoot, manifestEntries = []) {
   const scopeMap = /* @__PURE__ */ new Map();
   const adlcDir = join48(repoRoot, ".adlc");
-  const adlcSt = lstatSync27(adlcDir, { throwIfNoEntry: false });
+  const adlcSt = lstatSync28(adlcDir, { throwIfNoEntry: false });
   if (adlcSt && !adlcSt.isSymbolicLink() && adlcSt.isDirectory()) {
     const ticketsDir = join48(adlcDir, "tickets");
-    const tSt = lstatSync27(ticketsDir, { throwIfNoEntry: false });
+    const tSt = lstatSync28(ticketsDir, { throwIfNoEntry: false });
     if (tSt && !tSt.isSymbolicLink() && tSt.isDirectory()) {
       let loadedViaSnapshot = false;
       if (existsSync44(join48(ticketsDir, ".store.json"))) {
@@ -36972,7 +37260,7 @@ function canUsePostRunSeams(repo, ref) {
   if (!repo || typeof repo !== "string" || !repo.trim()) {
     return { eligible: false, reason: "repo is required", ticketScopes: [] };
   }
-  const repoRoot = resolve32(repo);
+  const repoRoot = resolve33(repo);
   const refStr = typeof ref === "string" ? ref.trim() : "";
   if (!refStr) {
     return { eligible: false, reason: "git ref is required", ticketScopes: [] };
@@ -37539,9 +37827,9 @@ async function reviewFleet({
     }
   }
   const hasRepoContext = Boolean(repo || rootRepo || worktree);
-  const targetRepo = repo ? resolve32(repo) : rootRepo ? resolve32(rootRepo) : worktree ? resolve32(worktree) : null;
-  const graphRoot = rootRepo ? resolve32(rootRepo) : targetRepo;
-  const sourceRoot = worktree ? resolve32(worktree) : targetRepo;
+  const targetRepo = repo ? resolve33(repo) : rootRepo ? resolve33(rootRepo) : worktree ? resolve33(worktree) : null;
+  const graphRoot = rootRepo ? resolve33(rootRepo) : targetRepo;
+  const sourceRoot = worktree ? resolve33(worktree) : targetRepo;
   const codegraphEnabled = codegraph === false ? false : void 0;
   const finalProject = project2 ?? `agb-review-${Date.now()}`;
   const runSeed = randomBytes3(24).toString("hex");
@@ -37900,8 +38188,8 @@ async function reviewPlan({
 } = {}) {
   const startedAt = Date.now();
   const hasExplicitRepo = typeof repo === "string" && repo.trim().length > 0;
-  const targetRepo = resolve32(hasExplicitRepo ? repo : process.cwd());
-  const readCurrentSpec = () => typeof specContent === "string" ? specContent : specPath && existsSync44(specPath) ? readFileSync38(specPath, "utf8") : "";
+  const targetRepo = resolve33(hasExplicitRepo ? repo : process.cwd());
+  const readCurrentSpec = () => typeof specContent === "string" ? specContent : specPath && existsSync44(specPath) ? readFileSync39(specPath, "utf8") : "";
   let rawSpec = readCurrentSpec();
   if (!rawSpec.trim()) {
     throw new Error("reviewPlan: specPath or non-empty specContent is required");
@@ -38135,13 +38423,13 @@ function buildReviewPrompts({
   fiveLens = true,
   context = ""
 } = {}) {
-  const targetRepo = resolve32(repo);
+  const targetRepo = resolve33(repo);
   if (specPath) {
-    const resolvedSpec = resolve32(targetRepo, specPath);
+    const resolvedSpec = resolve33(targetRepo, specPath);
     if (!existsSync44(resolvedSpec)) {
       throw new Error(`Specification not found: ${resolvedSpec}`);
     }
-    const rawSpec = readFileSync38(resolvedSpec, "utf8");
+    const rawSpec = readFileSync39(resolvedSpec, "utf8");
     const shapeReport = preAnalyzeSpec(rawSpec, { repo: targetRepo, raw: true });
     const shapeSummaryJson = JSON.stringify(
       {
@@ -38213,13 +38501,346 @@ init_tickets2();
 init_active_rails();
 init_adlc_bridge();
 init_adlc_tool();
+import { execFileSync as execFileSync23 } from "node:child_process";
+import { existsSync as existsSync46, lstatSync as lstatSync30, readlinkSync as readlinkSync4, realpathSync as realpathSync20 } from "node:fs";
+import path5, { join as join50, resolve as resolve35 } from "node:path";
+
+// lib/browser-gate.mjs
+import { execFileSync as execFileSync22 } from "node:child_process";
+import {
+  copyFileSync as copyFileSync6,
+  existsSync as existsSync45,
+  lstatSync as lstatSync29,
+  mkdirSync as mkdirSync27,
+  readFileSync as readFileSync40,
+  realpathSync as realpathSync19,
+  renameSync as renameSync16,
+  rmSync as rmSync22,
+  writeFileSync as writeFileSync28
+} from "node:fs";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { randomUUID as randomUUID18 } from "node:crypto";
+import { basename as basename13, extname as extname4, join as join49, resolve as resolve34 } from "node:path";
+var FRONTEND_PATH_RE = /(?:^|\/)(?:website|public|pages|app|components)\/|\.(?:[jt]sx|vue|svelte|css|scss|html)$/i;
+var TEST_OR_SPEC_RE = /(?:^|\/)(?:tests?|specs?|__tests__)\/|\.(?:test|spec)\.[a-z]+$/i;
+var SAFE_RUN_ID_RE = /^[A-Za-z0-9._-]{1,80}$/;
+var ALLOWED_SCREENSHOT_EXTS = /* @__PURE__ */ new Set([".png", ".webp", ".jpg", ".jpeg"]);
+var MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024;
+var ROUTE_TIMEOUT_MS = 5e3;
+var CHECK_CMD_TIMEOUT_MS = 3e4;
+function assertNotSymlink4(targetPath) {
+  const st = lstatSync29(targetPath, { throwIfNoEntry: false });
+  if (st && st.isSymbolicLink()) {
+    throw new Error(`Security violation: symbolic link not allowed at ${targetPath}`);
+  }
+  return st;
+}
+function hasFrontendChanges(changedFiles2 = []) {
+  if (!Array.isArray(changedFiles2)) return false;
+  return changedFiles2.some(
+    (f) => typeof f === "string" && !TEST_OR_SPEC_RE.test(f) && FRONTEND_PATH_RE.test(f)
+  );
+}
+function isLoopbackBrowserUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) return false;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (parsed.username || parsed.password) return false;
+  const host = parsed.hostname.toLowerCase();
+  return host === "127.0.0.1" || host === "localhost" || host === "[::1]";
+}
+function normalizeRoutes(routes) {
+  if (!Array.isArray(routes) || routes.length === 0) return ["/"];
+  const cleaned = routes.filter((r) => typeof r === "string" && r.trim().length > 0).map((r) => r.trim().startsWith("/") ? r.trim() : `/${r.trim()}`);
+  return cleaned.length > 0 ? cleaned : ["/"];
+}
+function readRepoBrowserGateConfig(realRepo) {
+  const cfgPath = join49(realRepo, ".adlc", "config.json");
+  const st = assertNotSymlink4(cfgPath);
+  if (!st || !st.isFile()) return null;
+  try {
+    const parsed = JSON.parse(readFileSync40(cfgPath, "utf8"));
+    if (parsed?.browserGate && typeof parsed.browserGate === "object" && !Array.isArray(parsed.browserGate)) {
+      if (parsed.browserGate.enabled === false) return null;
+      return parsed.browserGate;
+    }
+  } catch {
+  }
+  return null;
+}
+function resolveBrowserGateConfig(repo, ticket = {}, opts = {}) {
+  const realRepo = realpathSync19(resolve34(repo ?? process.cwd()));
+  const ticketGate = ticket?.browserGate && typeof ticket.browserGate === "object" && !Array.isArray(ticket.browserGate) ? ticket.browserGate : null;
+  const repoGate = readRepoBrowserGateConfig(realRepo);
+  const explicit = Boolean(ticketGate && ticketGate.enabled !== false || repoGate);
+  const frontendTouched = hasFrontendChanges(opts.changedFiles ?? []);
+  if (!explicit && !frontendTouched && !opts.browserUrl) {
+    return { active: false, enforced: false, advisory: false };
+  }
+  const enforced = explicit;
+  const advisory = !explicit;
+  const env = opts.env ?? process.env;
+  const url = opts.browserUrl ?? ticketGate?.url ?? repoGate?.url ?? null;
+  const routes = normalizeRoutes(opts.routes ?? ticketGate?.routes ?? repoGate?.routes);
+  const checkCmd = opts.checkCmd ?? ticketGate?.checkCmd ?? repoGate?.checkCmd ?? env.AGB_BROWSER_CHECK_CMD ?? null;
+  const rawRunId = String(opts.runId ?? "gate-ticket");
+  const runId = SAFE_RUN_ID_RE.test(rawRunId) ? rawRunId : "gate-ticket";
+  return {
+    active: true,
+    enforced,
+    advisory,
+    url: typeof url === "string" && url.trim() ? url.trim() : null,
+    routes,
+    checkCmd: typeof checkCmd === "string" && checkCmd.trim() ? checkCmd.trim() : null,
+    runId
+  };
+}
+function probeSingleRoute(baseUrl, routePath) {
+  return new Promise((resolveProbe) => {
+    const target = new URL(routePath, baseUrl);
+    const reqFn = target.protocol === "https:" ? httpsRequest : httpRequest;
+    const req = reqFn(
+      target,
+      { method: "GET", agent: false, timeout: ROUTE_TIMEOUT_MS },
+      (res) => {
+        res.resume();
+        const statusCode = res.statusCode ?? 0;
+        const headerConsole = res.headers["x-agb-console-errors"];
+        const consoleList = [];
+        if (typeof headerConsole === "string" && headerConsole.trim()) {
+          const num2 = Number(headerConsole.trim());
+          if (Number.isFinite(num2) && num2 > 0) {
+            consoleList.push(`${routePath}: ${num2} console error(s) reported`);
+          } else if (Number.isNaN(num2)) {
+            consoleList.push(`${routePath}: ${headerConsole.trim()}`);
+          }
+        }
+        resolveProbe({
+          route: routePath,
+          statusCode,
+          ok: statusCode >= 200 && statusCode < 500 && consoleList.length === 0,
+          consoleErrors: consoleList,
+          serverError: statusCode >= 500 ? `${routePath} returned HTTP ${statusCode}` : null
+        });
+      }
+    );
+    req.on("timeout", () => {
+      req.destroy(new Error(`timeout after ${ROUTE_TIMEOUT_MS}ms`));
+    });
+    req.on("error", (err) => {
+      resolveProbe({
+        route: routePath,
+        statusCode: 0,
+        ok: false,
+        consoleErrors: [],
+        serverError: `${routePath} request failed: ${err.message}`
+      });
+    });
+    req.end();
+  });
+}
+function stageVerifiedScreenshots(realRepo, runId, candidatePaths = []) {
+  if (!Array.isArray(candidatePaths) || candidatePaths.length === 0) return [];
+  const boosterDir = join49(realRepo, ".booster");
+  mkdirSync27(boosterDir, { recursive: true, mode: 448 });
+  assertNotSymlink4(boosterDir);
+  const logsDir = join49(boosterDir, "logs");
+  mkdirSync27(logsDir, { recursive: true });
+  assertNotSymlink4(logsDir);
+  const runDir = join49(logsDir, runId);
+  mkdirSync27(runDir, { recursive: true });
+  assertNotSymlink4(runDir);
+  const shotsDir = join49(runDir, "screenshots");
+  mkdirSync27(shotsDir, { recursive: true });
+  assertNotSymlink4(shotsDir);
+  const saved = [];
+  for (let i = 0; i < candidatePaths.length; i++) {
+    const raw = candidatePaths[i];
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const srcPath = resolve34(realRepo, raw.trim());
+    const st = assertNotSymlink4(srcPath);
+    if (!st || !st.isFile() || st.size <= 0 || st.size > MAX_SCREENSHOT_BYTES) continue;
+    const ext2 = extname4(srcPath).toLowerCase();
+    if (!ALLOWED_SCREENSHOT_EXTS.has(ext2)) continue;
+    const safeBase = basename13(srcPath).replace(/[^A-Za-z0-9._-]/g, "_");
+    const destName = `${String(i + 1).padStart(2, "0")}-${safeBase}`;
+    const destPath = join49(shotsDir, destName);
+    assertNotSymlink4(destPath);
+    if (srcPath !== destPath) {
+      copyFileSync6(srcPath, destPath);
+    }
+    saved.push({
+      name: destName,
+      path: `.booster/logs/${runId}/screenshots/${destName}`,
+      bytes: st.size,
+      ext: ext2
+    });
+  }
+  return saved;
+}
+function writeBrowserEvidenceSummary(realRepo, summary) {
+  const boosterDir = join49(realRepo, ".booster");
+  mkdirSync27(boosterDir, { recursive: true, mode: 448 });
+  assertNotSymlink4(boosterDir);
+  const evidencePath = join49(boosterDir, "browser-evidence.json");
+  assertNotSymlink4(evidencePath);
+  const tmpPath = `${evidencePath}.tmp-${process.pid}-${randomUUID18()}`;
+  try {
+    writeFileSync28(tmpPath, JSON.stringify(summary, null, 2) + "\n", { mode: 384, flag: "wx" });
+    renameSync16(tmpPath, evidencePath);
+  } catch (err) {
+    try {
+      rmSync22(tmpPath, { force: true });
+    } catch {
+    }
+    throw err;
+  }
+  return evidencePath;
+}
+async function runBrowserGate(repo, ticket = {}, opts = {}) {
+  const realRepo = realpathSync19(resolve34(repo ?? process.cwd()));
+  const cfg = resolveBrowserGateConfig(realRepo, ticket, opts);
+  if (!cfg.active) {
+    return { ok: true, skipped: true, reason: "no_frontend_or_browser_gate" };
+  }
+  if (cfg.url !== null && !isLoopbackBrowserUrl(cfg.url)) {
+    return {
+      ok: false,
+      enforced: cfg.enforced,
+      advisory: cfg.advisory,
+      kind: "invalid_browser_url",
+      error: `Refusing non-loopback browserGate URL '${cfg.url}' (only localhost / 127.0.0.1 / [::1] allowed)`
+    };
+  }
+  if (!cfg.url && !cfg.checkCmd) {
+    if (cfg.enforced) {
+      return {
+        ok: false,
+        enforced: true,
+        advisory: false,
+        kind: "browser_gate_unconfigured",
+        error: "Explicit browserGate requires a loopback url or checkCmd / AGB_BROWSER_CHECK_CMD"
+      };
+    }
+    return {
+      ok: true,
+      skipped: true,
+      enforced: false,
+      advisory: true,
+      reason: "browser_driver_unconfigured"
+    };
+  }
+  const routeResults = [];
+  const consoleErrors = [];
+  const serverErrors = [];
+  const rawScreenshots = [];
+  if (cfg.url) {
+    for (const route of cfg.routes) {
+      const res = await probeSingleRoute(cfg.url, route);
+      routeResults.push({ route: res.route, statusCode: res.statusCode, ok: res.ok });
+      if (res.serverError) serverErrors.push(res.serverError);
+      if (res.consoleErrors.length > 0) consoleErrors.push(...res.consoleErrors);
+    }
+  }
+  let checkCmdOk = true;
+  if (cfg.checkCmd) {
+    const shellArgs = process.platform === "win32" ? ["cmd.exe", ["/d", "/s", "/c", cfg.checkCmd]] : ["/bin/sh", ["-c", cfg.checkCmd]];
+    try {
+      const stdout2 = execFileSync22(shellArgs[0], shellArgs[1], {
+        cwd: opts.worktree ? realpathSync19(resolve34(opts.worktree)) : realRepo,
+        encoding: "utf8",
+        timeout: CHECK_CMD_TIMEOUT_MS,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: {
+          ...opts.env ?? process.env,
+          AGB_BROWSER_URL: cfg.url ?? "",
+          AGB_BROWSER_ROUTES: JSON.stringify(cfg.routes),
+          AGB_TICKET_ID: String(ticket?.id ?? "")
+        }
+      }).trim();
+      if (stdout2.startsWith("{")) {
+        const parsed = JSON.parse(stdout2);
+        if (Array.isArray(parsed.consoleErrors)) {
+          consoleErrors.push(...parsed.consoleErrors.map(String));
+        }
+        if (Array.isArray(parsed.serverErrors)) {
+          serverErrors.push(...parsed.serverErrors.map(String));
+        }
+        if (Array.isArray(parsed.screenshots)) {
+          rawScreenshots.push(...parsed.screenshots);
+        }
+      }
+    } catch (err) {
+      checkCmdOk = false;
+      serverErrors.push(`checkCmd failed: ${(err.stderr || err.message || "non-zero exit").toString().trim().slice(0, 240)}`);
+    }
+  }
+  const savedScreenshots = stageVerifiedScreenshots(realRepo, cfg.runId, rawScreenshots);
+  const passed = serverErrors.length === 0 && consoleErrors.length === 0 && checkCmdOk;
+  const evidencePayload = {
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ticketId: ticket?.id ?? null,
+    enforced: cfg.enforced,
+    advisory: cfg.advisory,
+    ok: passed,
+    url: cfg.url,
+    routes: routeResults,
+    consoleErrors,
+    serverErrors,
+    screenshots: savedScreenshots
+  };
+  const evidencePath = writeBrowserEvidenceSummary(realRepo, evidencePayload);
+  if (!passed) {
+    const detail = [...serverErrors, ...consoleErrors].join("; ") || "Browser verification failed";
+    if (cfg.enforced) {
+      return {
+        ok: false,
+        enforced: true,
+        advisory: false,
+        kind: "browser_gate_failed",
+        error: `Browser prosecutor failed: ${detail}`,
+        routes: routeResults,
+        consoleErrors,
+        serverErrors,
+        screenshots: savedScreenshots,
+        evidencePath
+      };
+    }
+    return {
+      ok: true,
+      enforced: false,
+      advisory: true,
+      warning: `Advisory browser check reported issues: ${detail}`,
+      routes: routeResults,
+      consoleErrors,
+      serverErrors,
+      screenshots: savedScreenshots,
+      evidencePath
+    };
+  }
+  return {
+    ok: true,
+    enforced: cfg.enforced,
+    advisory: cfg.advisory,
+    routes: routeResults,
+    consoleErrors: [],
+    serverErrors: [],
+    screenshots: savedScreenshots,
+    evidencePath
+  };
+}
+
+// lib/gate-ticket.mjs
 init_distill();
 init_gates();
 init_plan_integrity();
 init_scheduler_verify();
-import { execFileSync as execFileSync22 } from "node:child_process";
-import { existsSync as existsSync45, lstatSync as lstatSync28, readlinkSync as readlinkSync4, realpathSync as realpathSync19 } from "node:fs";
-import path5, { join as join49, resolve as resolve33 } from "node:path";
 function resolveNullHooksPath(plat = process.platform) {
   return plat === "win32" ? "NUL" : "/dev/null";
 }
@@ -38228,7 +38849,7 @@ var SOURCE_CODE_EXT_RE = /\.(?:m|c)?[jt]sx?$/;
 var TEST_OR_SPEC_PATH_RE = /(?:^|\/)(?:tests?|specs?|__tests__)\/|\.(?:test|spec)\.(?:m|c)?[jt]sx?$/i;
 var IGNORED_META_PREFIXES = [".adlc/tickets/", ".booster/", ".agb_home/"];
 function gitExec(cwd, args) {
-  return execFileSync22("git", ["-c", `core.hooksPath=${resolveNullHooksPath()}`, ...args], {
+  return execFileSync23("git", ["-c", `core.hooksPath=${resolveNullHooksPath()}`, ...args], {
     cwd,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"]
@@ -38271,14 +38892,14 @@ function verifyWorkingTreeScope(realRepo, candidateDir, baseRefSha, ticket, acti
       }
       changedSet.add(p);
       if (p !== entry.deletedPath) {
-        const fullPath = join49(candidateDir, p);
-        if (existsSync45(fullPath) || lstatSync28(fullPath, { throwIfNoEntry: false })) {
-          const st = lstatSync28(fullPath);
+        const fullPath = join50(candidateDir, p);
+        if (existsSync46(fullPath) || lstatSync30(fullPath, { throwIfNoEntry: false })) {
+          const st = lstatSync30(fullPath);
           if (st.isSymbolicLink()) {
             const rawTarget = readlinkSync4(fullPath);
             let finalReal;
             try {
-              finalReal = realpathSync19(fullPath);
+              finalReal = realpathSync20(fullPath);
             } catch {
               return { ok: false, kind: "scope_violation", error: `Dangling symlink rejected: ${p} -> ${rawTarget}` };
             }
@@ -38286,7 +38907,7 @@ function verifyWorkingTreeScope(realRepo, candidateDir, baseRefSha, ticket, acti
               return { ok: false, kind: "scope_violation", error: `Physical containment escape (symlink target): ${p} -> ${rawTarget}` };
             }
           } else {
-            const real = realpathSync19(fullPath);
+            const real = realpathSync20(fullPath);
             if (!real.startsWith(candidateDir + path5.sep) && real !== candidateDir) {
               return { ok: false, kind: "scope_violation", error: `Physical containment escape: ${p}` };
             }
@@ -38316,6 +38937,8 @@ async function runGateTicket(repo, ticketId, opts = {}) {
     testCmd = "npm test",
     buildCmd = null,
     skipHollow = false,
+    skipBrowser = false,
+    browserUrl = null,
     autocommit = Boolean(worktree),
     sandbox,
     adlcBin,
@@ -38325,7 +38948,7 @@ async function runGateTicket(repo, ticketId, opts = {}) {
   if (!ticketId || !TICKET_ID_RE.test(String(ticketId))) {
     return { ok: false, kind: "invalid_ticket_id", error: `Invalid ticket ID: ${String(ticketId)}` };
   }
-  const realRepo = realpathSync19(resolve33(repo ?? process.cwd()));
+  const realRepo = realpathSync20(resolve35(repo ?? process.cwd()));
   try {
     assertNoLegacyTicketStore(realRepo);
   } catch (err) {
@@ -38340,7 +38963,7 @@ async function runGateTicket(repo, ticketId, opts = {}) {
     return { ok: false, kind: "ticket_not_found", error: found.error };
   }
   const ticket = found.ticket;
-  const candidateDir = worktree ? realpathSync19(resolve33(worktree)) : realRepo;
+  const candidateDir = worktree ? realpathSync20(resolve35(worktree)) : realRepo;
   let baseRefSha;
   try {
     baseRefSha = gitExec(candidateDir, ["rev-parse", "--verify", base]).trim();
@@ -38352,6 +38975,7 @@ async function runGateTicket(repo, ticketId, opts = {}) {
     railsGuard: null,
     gates: null,
     learnedChecks: null,
+    browserGate: null,
     hollowTest: null,
     manifest: []
   };
@@ -38410,6 +39034,28 @@ async function runGateTicket(repo, ticketId, opts = {}) {
       stages
     };
   }
+  if (!skipBrowser) {
+    const browserRes = await runBrowserGate(realRepo, ticket, {
+      worktree: candidateDir,
+      changedFiles: scopeRes.changedPaths,
+      browserUrl,
+      env
+    });
+    stages.browserGate = browserRes;
+    if (!browserRes.ok) {
+      return {
+        ok: false,
+        ticketId,
+        baseRefSha,
+        changedPaths: scopeRes.changedPaths,
+        kind: browserRes.kind || "browser_gate_failed",
+        error: browserRes.error || "Browser prosecutor failed",
+        stages
+      };
+    }
+  } else {
+    stages.browserGate = { ok: true, skipped: true, reason: "skipBrowser" };
+  }
   const headSha = gitExec(candidateDir, ["rev-parse", "HEAD"]).trim();
   const statusClean = gitExec(candidateDir, ["status", "--porcelain=v1"]).trim().length === 0;
   const hasMutableSourceChanges = scopeRes.changedPaths.some(
@@ -38443,6 +39089,17 @@ async function runGateTicket(repo, ticketId, opts = {}) {
   if (recordManifest) {
     stages.manifest.push(await recordGate({ repo: realRepo, gateName: "rails-guard", ticketId, data: { ok: true, base: baseRefSha }, adlcBin }));
     stages.manifest.push(await recordGate({ repo: realRepo, gateName: "tests", ticketId, data: { ok: true, changedFiles: scopeRes.changedPaths.length }, adlcBin }));
+    if (stages.browserGate && !stages.browserGate.skipped) {
+      stages.manifest.push(
+        await recordGate({
+          repo: realRepo,
+          gateName: "browser-gate",
+          ticketId,
+          data: { ok: true, enforced: Boolean(stages.browserGate.enforced), routes: (stages.browserGate.routes ?? []).length },
+          adlcBin
+        })
+      );
+    }
     if (stages.hollowTest && !stages.hollowTest.skipped) {
       stages.manifest.push(await recordGate({ repo: realRepo, gateName: "hollow-test", ticketId, data: { ok: true }, adlcBin }));
     }
@@ -38457,387 +39114,33 @@ async function runGateTicket(repo, ticketId, opts = {}) {
   };
 }
 
-// bin/agb.mjs
-init_distill();
-init_holdout();
-init_pools();
-
-// lib/bootstrap.mjs
-init_adlc_bridge();
-init_doctor2();
-init_cli_statusline();
-init_plugin_paths();
-import { existsSync as existsSync46, mkdirSync as mkdirSync28, readdirSync as readdirSync23, lstatSync as lstatSync30, readlinkSync as readlinkSync5, symlinkSync as symlinkSync5, copyFileSync as copyFileSync6, rmSync as rmSync22, readFileSync as readFileSync40, appendFileSync as appendFileSync2 } from "node:fs";
-import { join as join51, resolve as resolve35, dirname as dirname30, basename as basename14 } from "node:path";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
-import { homedir as homedir15 } from "node:os";
-import { execSync as execSync2, execFileSync as execFileSync23 } from "node:child_process";
-import { createRequire } from "node:module";
-var require2 = createRequire(import.meta.url);
-function isNpxTemp(filePath = fileURLToPath5(import.meta.url), env = process.env) {
-  const path6 = require2("node:path");
-  const os = require2("node:os");
-  const fs2 = require2("node:fs");
-  const segments = filePath.split(path6.sep);
-  const inNpxDir = segments.includes("_npx");
-  const inNpmCache = !!(env.npm_config_cache && filePath.startsWith(env.npm_config_cache));
-  const inMacOSTmp = filePath.startsWith("/var/folders/") || filePath.startsWith("/private/var/folders/");
-  let inOsTmp = false;
-  try {
-    const realTmp = fs2.realpathSync(os.tmpdir());
-    const realFile = fs2.realpathSync(filePath);
-    const rel = path6.relative(realTmp, realFile);
-    inOsTmp = rel && !rel.startsWith("..") && !path6.isAbsolute(rel);
-  } catch (e) {
-    inOsTmp = filePath.startsWith(os.tmpdir());
-  }
-  return inNpxDir || inNpmCache || inMacOSTmp || inOsTmp;
-}
-function copyDirSync(src, dest) {
-  mkdirSync28(dest, { recursive: true });
-  for (const entry of readdirSync23(src, { withFileTypes: true })) {
-    const srcPath = join51(src, entry.name);
-    const destPath = join51(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDirSync(srcPath, destPath);
-    } else {
-      copyFileSync6(srcPath, destPath);
-    }
-  }
-}
-function resolvePluginRunner(agyBin, agyCheckFailed) {
-  const isJetskiMode = process.env.AGB_PROVIDER === "jetski" || agyCheckFailed;
-  if (isJetskiMode) {
-    try {
-      execSync2("command -v jetski", { stdio: "ignore" });
-      return { runnerBin: "jetski", useJetski: true };
-    } catch {
-    }
-  }
-  if (agyCheckFailed) return null;
-  return { runnerBin: agyBin, useJetski: false };
-}
-function reportAdlcContract(pluginName, dir) {
-  const contract = readPluginContract({ dir });
-  const installedLine = `installed ${pluginName} plugin`;
-  switch (contract.status) {
-    case "compatible":
-      console.log(`${installedLine} \u2014 plugin contract ${contract.contract}`);
-      return true;
-    case "incompatible":
-      console.error(`error: installed ${pluginName} plugin declares adlcContract ${contract.contract}, but this antigravity-booster projects contract ${SUPPORTED_PLUGIN_CONTRACT}`);
-      return false;
-    case "tolerant":
-      console.warn(`warning: installed ${pluginName} plugin manifest declares no adlcContract field (older plugin) \u2014 cannot confirm it speaks booster contract ${SUPPORTED_PLUGIN_CONTRACT}; live rail enforcement will run in tolerant/degraded mode. Upgrade the plugin to enable the version handshake.`);
-      console.log(installedLine);
-      return true;
-    case "unreadable":
-    case "corrupt":
-    default:
-      console.warn(`warning: could not read the installed ${pluginName} plugin manifest (${contract.error}) \u2014 proceeding, but the contract handshake could not be verified`);
-      console.log(installedLine);
-      return true;
-  }
-}
-function installPlugin(pluginPath, agyBin, agyCheckFailed, pluginName = "adlc-antigravity") {
-  const runner = resolvePluginRunner(agyBin, agyCheckFailed);
-  if (!runner) {
-    console.error(`warning: skipping ${pluginName} install because neither agy nor jetski CLI is found`);
-    return false;
-  }
-  const { runnerBin, useJetski } = runner;
-  if (!existsSync46(pluginPath)) {
-    console.error(`error: ${pluginName} plugin not found at ${pluginPath}`);
-    if (pluginName === "adlc-antigravity") {
-      console.error("  (a) git clone git@github.com:voodootikigod/adlc.git somewhere and set ADLC_ANTIGRAVITY_PLUGIN_PATH");
-      console.error("  (b) run from a source checkout with the sibling present");
-      console.error("  (c) install @adlc/antigravity via npm");
-    }
-    return false;
-  }
-  console.log(`installing plugin ${pluginName} from ${pluginPath} using ${runnerBin}...`);
-  try {
-    if (useJetski) {
-      execFileSync23(runnerBin, ["plugin", "install", pluginPath], { stdio: "inherit" });
-    } else {
-      execFileSync23(runnerBin, ["plugin", "install", "."], { cwd: pluginPath, stdio: "inherit" });
-    }
-  } catch (err) {
-    console.error(`error: '${runnerBin} plugin install' failed: ${err.message}`);
-    return false;
-  }
-  if (pluginName === "adlc-antigravity") {
-    return reportAdlcContract(pluginName, pluginPath);
-  }
-  console.log(`installed ${pluginName} plugin`);
-  return true;
-}
-function installBoosterPlugin({ home, agyBin, agyCheckFailed }) {
-  const runner = resolvePluginRunner(agyBin, agyCheckFailed);
-  if (!runner) {
-    console.error("warning: skipping antigravity-booster install because neither agy nor jetski CLI is found");
-    return false;
-  }
-  const source = resolveBoosterPluginPath();
-  if (runner.useJetski) return installPlugin(source, agyBin, agyCheckFailed, "antigravity-booster");
-  console.log(`installing plugin antigravity-booster from ${source} using ${runner.runnerBin}...`);
-  const res = safePluginInstall(source, "antigravity-booster", { home, agyBin: runner.runnerBin });
-  if (!res.ok) {
-    console.error(`error: failed to install antigravity-booster: ${res.error}`);
-    return false;
-  }
-  return true;
-}
-function installReason(r, forceReinstall) {
-  if (forceReinstall) return `reinstalling ${basename14(r.dir)}: --force-reinstall`;
-  if (r.report === "not-installed") return `installing bundled adlc-antigravity ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
-  if (r.report === "outdated-plugin") return `upgrading adlc-antigravity ${r.version} -> ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
-  return `reinstalling adlc-antigravity: ${r.report}`;
-}
-function installVendoredAdlcAntigravity({ home, forceReinstall, agyBin, agyCheckFailed }) {
-  const pluginName = ADLC_ANTIGRAVITY_PLUGIN_NAME;
-  const before = evaluateStagedAdlcPlugin({ home });
-  const action = forceReinstall ? "reinstall" : before.bootstrapAction;
-  if (action === "fail") {
-    console.error(`error: staged ${pluginName} at ${before.dir} is ${before.report}${before.detail ? ` (${before.detail})` : ""} \u2014 leaving it untouched; run \`agb bootstrap --force-reinstall\` to replace it with the bundled ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`);
-    return false;
-  }
-  if (action === "preserve") {
-    if (before.report === "compatible") {
-      console.log(`ok      ${pluginName} ${before.version} verified (compatible)`);
-    } else if (before.report.startsWith("tolerant")) {
-      console.warn(`warning: keeping ${pluginName} ${before.version}: ${before.report} \u2014 it declares no adlcContract, so live rail enforcement runs in tolerant mode`);
-    } else {
-      console.log(`notice: keeping ${pluginName} ${before.version}: ${before.report} (newer than the bundled ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}; not digest-pinned)`);
-    }
-    return true;
-  }
-  const runner = resolvePluginRunner(agyBin, agyCheckFailed);
-  if (!runner) {
-    console.error(`warning: skipping ${pluginName} install because neither agy nor jetski CLI is found`);
-    return false;
-  }
-  console.log(`${installReason(before, forceReinstall)} from the vendored release tarball using ${runner.runnerBin}...`);
-  const res = installAdlcAntigravityFromVendor({ home, agyBin: runner.runnerBin });
-  if (!res.ok) {
-    console.error(`error: failed to install ${pluginName}: ${res.error}`);
-    return false;
-  }
-  const after = evaluateStagedAdlcPlugin({ home });
-  if (after.doctorExit !== 0) {
-    console.error(`error: ${pluginName} is ${after.report} after install \u2014 the staged plugin does not verify`);
-    return false;
-  }
-  console.log(`installed ${pluginName}: ${after.report}`);
-  return true;
-}
-function explicitAdlcPluginPath(pluginPath) {
-  if (pluginPath) return pluginPath;
-  if (!IS_BUNDLED && process.env.AGB_DEV_ALLOW_UNVERIFIED_PLUGIN === "1" && process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH) {
-    return resolve35(process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH);
-  }
-  return void 0;
-}
-function resolveBoosterPluginPath() {
-  try {
-    return resolvePluginRoot();
-  } catch {
-    return resolve35(fileURLToPath5(new URL("..", import.meta.url)));
-  }
-}
-function pruneBoosterSkillSymlinks(skillsDir, skillsSrc) {
-  const dirStat = lstatSync30(skillsDir, { throwIfNoEntry: false });
-  if (!dirStat || dirStat.isSymbolicLink() || !dirStat.isDirectory()) return 0;
-  let removed = 0;
-  for (const entry of readdirSync23(skillsDir, { withFileTypes: true })) {
-    const dst = join51(skillsDir, entry.name);
-    const st = lstatSync30(dst, { throwIfNoEntry: false });
-    if (!st || !st.isSymbolicLink()) continue;
-    try {
-      const target = resolve35(dirname30(dst), readlinkSync5(dst));
-      const normalizedTarget = target.replace(/\\/g, "/");
-      if (target === resolve35(join51(skillsSrc, entry.name)) || normalizedTarget.includes("/antigravity-booster/skills/")) {
-        rmSync22(dst, { recursive: true, force: true });
-        removed += 1;
-      }
-    } catch {
-    }
-  }
-  return removed;
-}
-function bootstrap(options = {}) {
-  const {
-    force = false,
-    forceReinstall = false,
-    home = homedir15(),
-    pluginPath,
-    agyBin,
-    env = process.env
-  } = options;
-  if (env.ANTIGRAVITY_RESOLVING_ENVIRONMENT === "1") {
-    return { skipped: true, reason: "ANTIGRAVITY_RESOLVING_ENVIRONMENT" };
-  }
-  const explicitDestination = options.destination !== void 0;
-  const destination = explicitDestination ? options.destination : join51(home, ".gemini", "skills");
-  const resolvedAgyBin = agyBin ?? env.AGB_AGY_BIN ?? resolveAgyBinary(home);
-  let hasErrors = false;
-  const tempRun = isNpxTemp();
-  let agyCheckFailed = false;
-  try {
-    execFileSync23(resolvedAgyBin, ["--version"], { stdio: "ignore" });
-  } catch (err) {
-    console.log(`info: agy CLI not found on PATH; bootstrap will attempt to fall back to jetski CLI`);
-    agyCheckFailed = true;
-  }
-  const explicitPath = explicitAdlcPluginPath(pluginPath);
-  const pluginInstallSuccess = explicitPath ? installPlugin(explicitPath, resolvedAgyBin, agyCheckFailed, "adlc-antigravity") : installVendoredAdlcAntigravity({ home, forceReinstall, agyBin: resolvedAgyBin, agyCheckFailed });
-  if (!pluginInstallSuccess) {
-    hasErrors = true;
-  }
-  const boosterInstallSuccess = installBoosterPlugin({ home, agyBin: resolvedAgyBin, agyCheckFailed });
-  if (!boosterInstallSuccess) {
-    hasErrors = true;
-  }
-  const skillsSrc = fileURLToPath5(new URL("../skills", import.meta.url));
-  let skillsFound = true;
-  if (!existsSync46(skillsSrc)) {
-    console.error(`error: internal skills directory not found at ${skillsSrc}`);
-    skillsFound = false;
-    hasErrors = true;
-  }
-  if (skillsFound && !explicitDestination && boosterInstallSuccess) {
-    const pruned = pruneBoosterSkillSymlinks(destination, skillsSrc);
-    if (pruned > 0) {
-      console.log(`agb bootstrap: pruned ${pruned} legacy ~/.gemini/skills symlink(s) (skills now served via antigravity-booster plugin)`);
-    }
-  } else if (skillsFound) {
-    mkdirSync28(destination, { recursive: true });
-    console.log(`agb bootstrap: installing skills into ${destination}...`);
-    if (tempRun) {
-      console.log("npx temp execution detected: copying files (symlinks would break on exit)");
-    } else {
-      console.log("installation directory is stable: using symlinks for auto-upgrades");
-    }
-    const skills = readdirSync23(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-    for (const retired of ["modernize", "release", "release-audit"]) {
-      const retiredDst = join51(destination, retired);
-      const retiredStat = lstatSync30(retiredDst, { throwIfNoEntry: false });
-      if (retiredStat && retiredStat.isSymbolicLink()) {
-        try {
-          const target = resolve35(dirname30(retiredDst), readlinkSync5(retiredDst));
-          const normalizedTarget = target.replace(/\\/g, "/");
-          if (target === resolve35(join51(skillsSrc, retired)) || !existsSync46(retiredDst) && normalizedTarget.endsWith(`/antigravity-booster/skills/${retired}`)) {
-            rmSync22(retiredDst, { recursive: true, force: true });
-            console.log(`removed stale internal skill symlink: ${retired}`);
-          }
-        } catch {
-        }
-      }
-    }
-    for (const name of skills) {
-      const src = join51(skillsSrc, name);
-      const dst = join51(destination, name);
-      const dstStat = lstatSync30(dst, { throwIfNoEntry: false });
-      if (dstStat) {
-        const isSymlink = dstStat.isSymbolicLink();
-        if (force) {
-          console.log(`overwriting existing skill: ${name}`);
-          rmSync22(dst, { recursive: true, force: true });
-        } else if (isSymlink) {
-          let targetMatches = false;
-          try {
-            targetMatches = resolve35(dirname30(dst), readlinkSync5(dst)) === resolve35(src) && existsSync46(dst);
-          } catch {
-            targetMatches = false;
-          }
-          if (targetMatches) {
-            console.log(`ok      ${name} (already linked)`);
-            continue;
-          }
-          console.log(`relinking stale skill symlink: ${name}`);
-          rmSync22(dst, { recursive: true, force: true });
-        } else {
-          console.warn(`skip    ${name} (exists and is not a symlink \u2014 use --force to overwrite)`);
-          continue;
-        }
-      }
-      if (tempRun) {
-        try {
-          copyDirSync(src, dst);
-          console.log(`copied  ${name} -> ${dst}`);
-        } catch (err) {
-          console.error(`error: failed to copy skill ${name}: ${err.message}`);
-          hasErrors = true;
-        }
-      } else {
-        try {
-          symlinkSync5(src, dst);
-          console.log(`linked  ${name} -> ${dst}`);
-        } catch (err) {
-          console.error(`error: failed to symlink skill ${name}: ${err.message}`);
-          hasErrors = true;
-        }
-      }
-    }
-  }
-  const shim = installTerminalShim({ home, force: forceReinstall });
-  if (!shim.ok) {
-    console.error(`error: ${shim.error}`);
-    hasErrors = true;
-  } else if (shim.action === "written") {
-    console.log(`installed terminal shim ${shim.path}`);
-  } else if (shim.action === "unchanged") {
-    console.log(`ok      terminal shim ${shim.path} (already current)`);
-  } else {
-    console.warn(`skip    terminal shim ${shim.path} (exists with other content \u2014 use --force-reinstall to overwrite)`);
-  }
-  const sl = installCliStatusLineSettings({ home, force: false });
-  if (!sl.ok && sl.warning) {
-    console.warn(`warning: ${sl.warning}`);
-  } else if (sl.changed) {
-    console.log(`configured agy CLI statusLine/title in ${sl.settingsPath}`);
-  } else if (sl.skipped) {
-    console.log(`skip    agy CLI statusLine/title in ${sl.settingsPath} (custom command preserved)`);
-  }
-  console.log("\nbootstrap complete!");
-  console.log("@adlc tools on Antigravity quota: export ADLC_PROVIDER=agy");
-  if (!tempRun) {
-    console.log("\nTo start the sidecar dashboard, run:");
-    console.log("  agb sidecar <repo-path>");
-  }
-  if (hasErrors) {
-    process.exitCode = 1;
-  }
-}
-
-// bin/agb.mjs
-init_doctor2();
-init_plugin_paths();
-init_models();
-init_shape();
-init_plan_integrity();
-init_cli_statusline();
+// lib/handoff.mjs
+import { execFileSync as execFileSync25 } from "node:child_process";
+import { randomBytes as randomBytes4 } from "node:crypto";
+import { mkdtempSync as mkdtempSync12, realpathSync as realpathSync22, rmSync as rmSync24 } from "node:fs";
+import { tmpdir as tmpdir16 } from "node:os";
+import { join as join52, resolve as resolve37 } from "node:path";
 
 // lib/accept.mjs
 init_context_slice();
 init_run_integrity();
 import { execFileSync as execFileSync24 } from "node:child_process";
-import { createHash as createHash10, randomUUID as randomUUID19 } from "node:crypto";
+import { createHash as createHash11, randomUUID as randomUUID19 } from "node:crypto";
 import {
-  chmodSync as chmodSync14,
+  chmodSync as chmodSync13,
   existsSync as existsSync47,
   lstatSync as lstatSync31,
-  mkdirSync as mkdirSync29,
+  mkdirSync as mkdirSync28,
   readFileSync as readFileSync41,
-  realpathSync as realpathSync20,
+  realpathSync as realpathSync21,
   renameSync as renameSync17,
   rmSync as rmSync23,
   writeFileSync as writeFileSync29
 } from "node:fs";
-import { dirname as dirname31, isAbsolute as isAbsolute18, join as join52, relative as relative19, resolve as resolve36, sep as sep11 } from "node:path";
+import { dirname as dirname29, isAbsolute as isAbsolute18, join as join51, relative as relative19, resolve as resolve36, sep as sep11 } from "node:path";
 var SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 var VALID_HUNK_VERDICTS = /* @__PURE__ */ new Set(["accepted", "flagged", "pending"]);
-function assertNotSymlink4(targetPath) {
+function assertNotSymlink5(targetPath) {
   let st;
   try {
     st = lstatSync31(targetPath);
@@ -38854,14 +39157,14 @@ function assertNotSymlink4(targetPath) {
 }
 function resolveSafeBoosterDir(repo) {
   const rawRepo = resolve36(repo);
-  assertNotSymlink4(join52(rawRepo, ".booster"));
+  assertNotSymlink5(join51(rawRepo, ".booster"));
   let canonRepo = rawRepo;
   try {
-    canonRepo = realpathSync20(rawRepo);
+    canonRepo = realpathSync21(rawRepo);
   } catch {
   }
-  const boosterDir = join52(canonRepo, ".booster");
-  const st = assertNotSymlink4(boosterDir);
+  const boosterDir = join51(canonRepo, ".booster");
+  const st = assertNotSymlink5(boosterDir);
   if (st && !st.isDirectory()) {
     throw new Error(`Security violation: .booster is not a directory: ${boosterDir}`);
   }
@@ -38871,7 +39174,7 @@ function computeHunkFingerprint(filePath, heading = "", lines = []) {
   const normFile = String(filePath ?? "").replace(/\\/g, "/").trim();
   const normHeading = String(heading ?? "").trim();
   const body = Array.isArray(lines) ? lines.join("\n") : String(lines ?? "");
-  return createHash10("sha256").update(`${normFile}
+  return createHash11("sha256").update(`${normFile}
 ${normHeading}
 ${body}`).digest("hex");
 }
@@ -38975,8 +39278,8 @@ function parseUnifiedDiffHunks(diffText = "") {
 function loadAcceptVerdicts(repo) {
   const { boosterDir, exists } = resolveSafeBoosterDir(repo);
   if (!exists) return {};
-  const statePath = join52(boosterDir, "accept-state.json");
-  const st = assertNotSymlink4(statePath);
+  const statePath = join51(boosterDir, "accept-state.json");
+  const st = assertNotSymlink5(statePath);
   if (!st || !st.isFile()) return {};
   try {
     const parsed = JSON.parse(readFileSync41(statePath, "utf8"));
@@ -38998,10 +39301,10 @@ function loadAcceptVerdicts(repo) {
 }
 function saveAcceptVerdicts(repo, verdictsMap = {}, { merge = false } = {}) {
   const { boosterDir } = resolveSafeBoosterDir(repo);
-  mkdirSync29(boosterDir, { recursive: true, mode: 448 });
-  assertNotSymlink4(boosterDir);
-  const statePath = join52(boosterDir, "accept-state.json");
-  assertNotSymlink4(statePath);
+  mkdirSync28(boosterDir, { recursive: true, mode: 448 });
+  assertNotSymlink5(boosterDir);
+  const statePath = join51(boosterDir, "accept-state.json");
+  assertNotSymlink5(statePath);
   const clean = merge ? { ...loadAcceptVerdicts(repo) } : {};
   if (verdictsMap && typeof verdictsMap === "object" && !Array.isArray(verdictsMap)) {
     for (const [fp, v] of Object.entries(verdictsMap)) {
@@ -39029,7 +39332,7 @@ function saveAcceptVerdicts(repo, verdictsMap = {}, { merge = false } = {}) {
     });
     if (process.platform !== "win32") {
       try {
-        chmodSync14(tmpPath, 384);
+        chmodSync13(tmpPath, 384);
       } catch {
       }
     }
@@ -39049,10 +39352,10 @@ function assertNoSymlinkAncestors(rootAnchor, targetPath) {
   const rel = relative19(absRoot, absTarget);
   if (!rel.startsWith("..") && !isAbsolute18(rel)) {
     let cur2 = absRoot;
-    assertNotSymlink4(cur2);
+    assertNotSymlink5(cur2);
     for (const seg of rel.split(sep11).filter(Boolean)) {
-      cur2 = join52(cur2, seg);
-      assertNotSymlink4(cur2);
+      cur2 = join51(cur2, seg);
+      assertNotSymlink5(cur2);
     }
     return;
   }
@@ -39060,8 +39363,8 @@ function assertNoSymlinkAncestors(rootAnchor, targetPath) {
   let cur = absTarget.startsWith(sep11) ? sep11 : parts[0];
   for (let i = absTarget.startsWith(sep11) ? 1 : 1; i < parts.length; i += 1) {
     if (!parts[i]) continue;
-    cur = join52(cur, parts[i]);
-    assertNotSymlink4(cur);
+    cur = join51(cur, parts[i]);
+    assertNotSymlink5(cur);
   }
 }
 function writeAcceptDossierFile(repo, markdownText, customOutPath = null) {
@@ -39070,21 +39373,21 @@ function writeAcceptDossierFile(repo, markdownText, customOutPath = null) {
   if (customOutPath) {
     targetPath = resolve36(canonRepo, customOutPath);
     assertNoSymlinkAncestors(canonRepo, targetPath);
-    const parentDir = dirname31(targetPath);
-    mkdirSync29(parentDir, { recursive: true });
+    const parentDir = dirname29(targetPath);
+    mkdirSync28(parentDir, { recursive: true });
     assertNoSymlinkAncestors(canonRepo, targetPath);
   } else {
-    mkdirSync29(boosterDir, { recursive: true, mode: 448 });
-    assertNotSymlink4(boosterDir);
-    targetPath = join52(boosterDir, "accept-dossier.md");
-    assertNotSymlink4(targetPath);
+    mkdirSync28(boosterDir, { recursive: true, mode: 448 });
+    assertNotSymlink5(boosterDir);
+    targetPath = join51(boosterDir, "accept-dossier.md");
+    assertNotSymlink5(targetPath);
   }
   const tmpPath = `${targetPath}.tmp-${process.pid}-${randomUUID19()}`;
   try {
     writeFileSync29(tmpPath, String(markdownText ?? ""), { mode: 384, flag: "wx" });
     if (process.platform !== "win32") {
       try {
-        chmodSync14(tmpPath, 384);
+        chmodSync13(tmpPath, 384);
       } catch {
       }
     }
@@ -39099,12 +39402,12 @@ function writeAcceptDossierFile(repo, markdownText, customOutPath = null) {
   return targetPath;
 }
 function readGateManifestSummary(canonRepo) {
-  const adlcDir = join52(canonRepo, ".adlc");
-  const manifestPath = join52(adlcDir, "manifest.jsonl");
+  const adlcDir = join51(canonRepo, ".adlc");
+  const manifestPath = join51(adlcDir, "manifest.jsonl");
   try {
-    const dirSt = assertNotSymlink4(adlcDir);
+    const dirSt = assertNotSymlink5(adlcDir);
     if (!dirSt || !dirSt.isDirectory()) return { totalEntries: 0, gatesByType: {}, recent: [] };
-    const fSt = assertNotSymlink4(manifestPath);
+    const fSt = assertNotSymlink5(manifestPath);
     if (!fSt || !fSt.isFile()) return { totalEntries: 0, gatesByType: {}, recent: [] };
     const lines = readFileSync41(manifestPath, "utf8").split(/\r?\n/).filter(Boolean);
     const gatesByType = {};
@@ -39147,11 +39450,11 @@ function resolveContainedRepoFile(canonRepo, relFile) {
   }
   let cur = canonRepo;
   for (const seg of lexRel.split(sep11).filter(Boolean)) {
-    cur = join52(cur, seg);
-    const st = assertNotSymlink4(cur);
+    cur = join51(cur, seg);
+    const st = assertNotSymlink5(cur);
     if (!st) return null;
   }
-  const realFull = realpathSync20(fullCandidate);
+  const realFull = realpathSync21(fullCandidate);
   const realRel = relative19(canonRepo, realFull);
   if (!realRel || realRel.startsWith("..") || isAbsolute18(realRel)) {
     return null;
@@ -39160,12 +39463,64 @@ function resolveContainedRepoFile(canonRepo, relFile) {
 }
 function readReportSummary(boosterDir, exists) {
   if (!exists) return null;
-  const reportPath = join52(boosterDir, "report.json");
-  const st = assertNotSymlink4(reportPath);
+  const reportPath = join51(boosterDir, "report.json");
+  const st = assertNotSymlink5(reportPath);
   if (!st || !st.isFile()) return null;
   try {
     const parsed = JSON.parse(readFileSync41(reportPath, "utf8"));
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+var SCREENSHOT_MIMES = {
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg"
+};
+var MAX_INLINE_PREVIEW_BYTES = 256 * 1024;
+function readBrowserEvidenceSummary(canonRepo, boosterDir, exists) {
+  if (!exists) return null;
+  const evPath = join51(boosterDir, "browser-evidence.json");
+  const st = assertNotSymlink5(evPath);
+  if (!st || !st.isFile()) return null;
+  try {
+    const parsed = JSON.parse(readFileSync41(evPath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const rawShots = Array.isArray(parsed.screenshots) ? parsed.screenshots : [];
+    const screenshots = rawShots.slice(0, 8).map((shot) => {
+      const relPath = typeof shot?.path === "string" ? shot.path : "";
+      let dataUri = null;
+      if (relPath && !isAbsolute18(relPath) && !relPath.includes("..")) {
+        try {
+          const fullShot = resolve36(canonRepo, relPath);
+          const shotSt = assertNotSymlink5(fullShot);
+          const mime = SCREENSHOT_MIMES[String(shot?.ext || "").toLowerCase()];
+          if (shotSt && shotSt.isFile() && shotSt.size > 0 && shotSt.size <= MAX_INLINE_PREVIEW_BYTES && mime) {
+            dataUri = `data:${mime};base64,${readFileSync41(fullShot).toString("base64")}`;
+          }
+        } catch {
+        }
+      }
+      return {
+        name: String(shot?.name || ""),
+        path: relPath,
+        bytes: Number(shot?.bytes) || 0,
+        ...dataUri ? { dataUri } : {}
+      };
+    });
+    return {
+      ok: Boolean(parsed.ok),
+      enforced: Boolean(parsed.enforced),
+      advisory: Boolean(parsed.advisory),
+      ticketId: parsed.ticketId ?? null,
+      url: parsed.url ?? null,
+      routes: Array.isArray(parsed.routes) ? parsed.routes : [],
+      consoleErrors: Array.isArray(parsed.consoleErrors) ? parsed.consoleErrors : [],
+      serverErrors: Array.isArray(parsed.serverErrors) ? parsed.serverErrors : [],
+      screenshots
+    };
   } catch {
     return null;
   }
@@ -39221,7 +39576,7 @@ function buildAcceptanceDossier({
     try {
       const fullFile = resolveContainedRepoFile(canonRepo, relFile);
       if (!fullFile) continue;
-      const fSt = assertNotSymlink4(fullFile);
+      const fSt = assertNotSymlink5(fullFile);
       if (!fSt || !fSt.isFile()) continue;
       const src = readFileSync41(fullFile, "utf8");
       const spans = extractFileSymbolSpans(src).filter((s) => s.exported);
@@ -39250,6 +39605,7 @@ ${touchedExportHints.join("\n")}
   });
   const gateManifest = readGateManifestSummary(canonRepo);
   const lastReport = readReportSummary(boosterDir, exists);
+  const browserEvidence = readBrowserEvidenceSummary(canonRepo, boosterDir, exists);
   const counts = {
     filesChanged: filesSet.size,
     totalHunks: hunks.length,
@@ -39272,6 +39628,7 @@ ${touchedExportHints.join("\n")}
       callers: externalCallers.callers.slice(0, 40)
     },
     gateManifest,
+    browserEvidence,
     report: lastReport ? {
       runId: lastReport.runId ?? null,
       merged: Array.isArray(lastReport.merged) ? lastReport.merged : [],
@@ -39305,6 +39662,13 @@ function formatAcceptanceDossierMarkdown(dossier = {}) {
   if (dossier.gateManifest?.totalEntries > 0) {
     const gatePairs = Object.entries(dossier.gateManifest.gatesByType || {}).map(([g, n]) => `${g}:${n}`).join(", ");
     lines.push(`- **Gate Manifest Entries:** ${dossier.gateManifest.totalEntries} (${gatePairs})`);
+  }
+  if (dossier.browserEvidence) {
+    const bev = dossier.browserEvidence;
+    const modeStr = bev.enforced ? "enforced" : "advisory";
+    lines.push(
+      `- **Browser Prosecutor (${modeStr}):** ${bev.ok ? "PASS" : "FAIL"} (${(bev.routes ?? []).length} route(s), ${(bev.consoleErrors ?? []).length} console error(s), ${(bev.serverErrors ?? []).length} 5xx/server error(s), ${(bev.screenshots ?? []).length} screenshot(s))`
+    );
   }
   const callers = dossier.externalCallers?.callers ?? [];
   lines.push("", "## External Caller Blast Radius", "");
@@ -39347,7 +39711,16 @@ function formatAcceptanceDossierHtml(dossier = {}) {
   const callers = Array.isArray(dossier.externalCallers?.callers) ? dossier.externalCallers.callers : [];
   const hunks = Array.isArray(dossier.hunks) ? dossier.hunks : [];
   const gateEntries = Object.entries(dossier.gateManifest?.gatesByType || {});
+  const bev = dossier.browserEvidence ?? null;
   const callerRows = callers.length === 0 ? '<p class="muted">No external caller sites outside modified exports detected.</p>' : `<ul class="caller-list">${callers.slice(0, 20).map((c) => `<li><code>${escapeHtml(c.file)}:${escapeHtml(c.line)}</code> (<code>${escapeHtml(c.symbol)}</code>): <code>${escapeHtml(c.snippet)}</code></li>`).join("")}</ul>`;
+  const browserSection = bev ? `<h2>Browser Prosecutor (${bev.enforced ? "Enforced" : "Advisory"})</h2>
+  <div class="stats" style="margin-bottom:8px;">
+    <span class="pill ${bev.ok ? "pill-accepted" : "pill-flagged"}">${bev.ok ? "PASS" : "FAIL"}</span>
+    <span>Routes: <strong>${(bev.routes ?? []).length}</strong></span>
+    <span>Console Errors: <strong>${(bev.consoleErrors ?? []).length}</strong></span>
+    <span>5xx/Server Errors: <strong>${(bev.serverErrors ?? []).length}</strong></span>
+  </div>
+  ${(bev.screenshots ?? []).length > 0 ? `<div class="shots">${bev.screenshots.map((s) => `<figure class="shot-card">${s.dataUri && /^data:image\/(?:png|webp|jpeg);base64,[A-Za-z0-9+/=]+$/.test(s.dataUri) ? `<img src="${s.dataUri}" alt="${escapeHtml(s.name)}" />` : ""}<figcaption><code>${escapeHtml(s.path || s.name)}</code> (${Number(s.bytes) || 0}B)</figcaption></figure>`).join("")}</div>` : ""}` : "";
   const hunkCards = hunks.length === 0 ? '<p class="muted">Empty diff \u2014 zero hunks against base.</p>' : hunks.map((h) => {
     const verdict = VALID_HUNK_VERDICTS.has(h.verdict) ? h.verdict : "pending";
     const diffBody = (Array.isArray(h.lines) ? h.lines : []).map((line) => {
@@ -39367,7 +39740,7 @@ function formatAcceptanceDossierHtml(dossier = {}) {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>ADLC P6 Sign-Off Cockpit \u2014 ${escapeHtml(dossier.base || "HEAD")}</title>
 <style>
@@ -39395,6 +39768,10 @@ function formatAcceptanceDossierHtml(dossier = {}) {
   .pill-pending { background: rgba(210,153,34,0.15); color: var(--amber); }
   .muted { color: var(--muted); }
   .caller-list { margin: 0; padding-left: 18px; line-height: 1.6; }
+  .shots { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .shot-card { margin: 0; padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; max-width: 260px; }
+  .shot-card img { max-width: 100%; border-radius: 4px; display: block; margin-bottom: 6px; }
+  .shot-card figcaption { font-size: 11px; color: var(--muted); word-break: break-all; }
 </style>
 </head>
 <body>
@@ -39410,6 +39787,7 @@ function formatAcceptanceDossierHtml(dossier = {}) {
     <span class="${badgeClass}">${statusLabel}</span>
   </div>
   <div><strong>Gate Manifest:</strong> ${gateBadges}</div>
+  ${browserSection}
   <h2>External Caller Blast Radius</h2>
   ${callerRows}
   <h2>Hunk Sign-Off Checklist</h2>
@@ -39444,38 +39822,38 @@ function writeAcceptHtmlFile(repo, htmlText, customOutPath = null) {
     const rel = relative19(canonRepo, targetPath);
     if (!rel.startsWith("..") && !isAbsolute18(rel)) {
       assertNoSymlinkAncestors(canonRepo, targetPath);
-      mkdirSync29(dirname31(targetPath), { recursive: true });
+      mkdirSync28(dirname29(targetPath), { recursive: true });
       assertNoSymlinkAncestors(canonRepo, targetPath);
     } else {
-      let probe = dirname31(targetPath);
+      let probe = dirname29(targetPath);
       const pendingSegs = [];
-      while (!existsSync47(probe) && dirname31(probe) !== probe) {
-        pendingSegs.unshift(probe.slice(dirname31(probe).length + 1));
-        probe = dirname31(probe);
+      while (!existsSync47(probe) && dirname29(probe) !== probe) {
+        pendingSegs.unshift(probe.slice(dirname29(probe).length + 1));
+        probe = dirname29(probe);
       }
-      assertNotSymlink4(probe);
-      const realExisting = realpathSync20(probe);
+      assertNotSymlink5(probe);
+      const realExisting = realpathSync21(probe);
       let cur = realExisting;
       for (const seg of pendingSegs) {
-        cur = join52(cur, seg);
-        mkdirSync29(cur, { recursive: true });
-        assertNotSymlink4(cur);
+        cur = join51(cur, seg);
+        mkdirSync28(cur, { recursive: true });
+        assertNotSymlink5(cur);
       }
-      targetPath = join52(cur, targetPath.slice(dirname31(targetPath).length + 1));
-      assertNotSymlink4(targetPath);
+      targetPath = join51(cur, targetPath.slice(dirname29(targetPath).length + 1));
+      assertNotSymlink5(targetPath);
     }
   } else {
-    mkdirSync29(boosterDir, { recursive: true, mode: 448 });
-    assertNotSymlink4(boosterDir);
-    targetPath = join52(boosterDir, "accept-dossier.html");
-    assertNotSymlink4(targetPath);
+    mkdirSync28(boosterDir, { recursive: true, mode: 448 });
+    assertNotSymlink5(boosterDir);
+    targetPath = join51(boosterDir, "accept-dossier.html");
+    assertNotSymlink5(targetPath);
   }
   const tmpPath = `${targetPath}.tmp-${process.pid}-${randomUUID19()}`;
   try {
     writeFileSync29(tmpPath, String(htmlText ?? ""), { mode: 384, flag: "wx" });
     if (process.platform !== "win32") {
       try {
-        chmodSync14(tmpPath, 384);
+        chmodSync13(tmpPath, 384);
       } catch {
       }
     }
@@ -39490,10 +39868,617 @@ function writeAcceptHtmlFile(repo, htmlText, customOutPath = null) {
   return targetPath;
 }
 
+// lib/handoff.mjs
+init_active_rails();
+init_agy();
+init_charters();
+init_models();
+init_plugin_paths();
+init_pools();
+init_prosecute();
+init_run_integrity();
+init_scheduler_verify();
+function readCandidateDiff(candidateDir, baseRefSha) {
+  return execFileSync25(
+    "git",
+    [
+      "--no-pager",
+      "diff",
+      "--no-ext-diff",
+      "--no-color",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      "--end-of-options",
+      baseRefSha
+    ],
+    {
+      cwd: candidateDir,
+      encoding: "utf8",
+      env: sanitizedGitEnv(),
+      maxBuffer: 32 * 1024 * 1024
+    }
+  );
+}
+function formatHandoffMarkdown(handoff = {}) {
+  const status = handoff.ok ? "READY FOR P6 HANDOFF" : `BLOCKED (${handoff.stage || "failed"})`;
+  const lines = [
+    `# ADLC Ticket Handoff \u2014 \`${handoff.ticketId || "unknown"}\``,
+    "",
+    `- **Status:** ${status}`
+  ];
+  if (handoff.ticketTitle) {
+    lines.push(`- **Title:** ${handoff.ticketTitle}`);
+  }
+  if (handoff.baseRefSha) {
+    lines.push(`- **Base SHA:** \`${String(handoff.baseRefSha).slice(0, 12)}\``);
+  }
+  if (Array.isArray(handoff.changedPaths)) {
+    lines.push(`- **Changed Files (${handoff.changedPaths.length}):** ${handoff.changedPaths.map((p) => `\`${p}\``).join(", ") || "_none_"}`);
+  }
+  if (handoff.prosecution) {
+    const p = handoff.prosecution;
+    lines.push(
+      `- **Prosecution:** \`${p.mode || "skipped"}\` \u2014 verdict=\`${p.verdict || "n/a"}\`${p.model ? ` (model: \`${p.model}\`)` : ""}`
+    );
+  }
+  if (handoff.error) {
+    lines.push(`- **Error:** ${handoff.error}`);
+  }
+  if (handoff.htmlPath) {
+    lines.push(`- **HTML Cockpit:** \`${handoff.htmlPath}\``);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+async function runTicketHandoff(repo, ticketId, opts = {}) {
+  const {
+    base = "HEAD",
+    worktree = null,
+    testCmd = "npm test",
+    buildCmd = null,
+    skipHollow = false,
+    skipBrowser = false,
+    browserUrl = null,
+    autocommit = Boolean(worktree),
+    prosecute: enableProsecute = true,
+    promptOnly = false,
+    requireProsecutor = false,
+    builderModel = PROSECUTORS.claude,
+    htmlOut = null,
+    sandbox,
+    adlcBin,
+    recordManifest = true,
+    agyBin,
+    env = process.env
+  } = opts;
+  const gateResult = await runGateTicket(repo, ticketId, {
+    base,
+    worktree,
+    testCmd,
+    buildCmd,
+    skipHollow,
+    skipBrowser,
+    browserUrl,
+    autocommit,
+    sandbox,
+    adlcBin,
+    recordManifest,
+    env
+  });
+  if (!gateResult.ok) {
+    return {
+      ok: false,
+      stage: "gate-ticket",
+      ticketId,
+      baseRefSha: gateResult.baseRefSha ?? null,
+      changedPaths: gateResult.changedPaths ?? [],
+      error: gateResult.error,
+      gateResult,
+      prosecution: null,
+      dossier: null
+    };
+  }
+  const realRepo = realpathSync22(resolve37(repo ?? process.cwd()));
+  const candidateDir = worktree ? realpathSync22(resolve37(worktree)) : realRepo;
+  const found = resolveTicket(realRepo, ticketId);
+  const ticket = found.ok ? found.ticket : { id: ticketId, title: ticketId, scope: gateResult.changedPaths };
+  const diffText = readCandidateDiff(candidateDir, gateResult.baseRefSha);
+  const seed = randomBytes4(16).toString("hex");
+  let prosecution = { ok: true, mode: "skipped", verdict: "skipped", model: null };
+  if (enableProsecute) {
+    const hollowForPrompt = gateResult.stages.hollowTest?.skipped ? null : gateResult.stages.hollowTest;
+    const promptText = prosecutionPrompt(ticket, diffText, void 0, hollowForPrompt, { seed });
+    if (promptOnly) {
+      prosecution = {
+        ok: true,
+        mode: "prompt-only",
+        verdict: "pending_in_harness",
+        model: PROSECUTORS.gemini,
+        schema: PROSECUTION_VERDICT_SCHEMA,
+        prompt: promptText
+      };
+    } else {
+      const effectiveAgyBin = agyBin || env.AGB_AGY_BIN || resolveAgyBinary({ env }) || "agy";
+      const pools = new PoolSet(void 0, { repo: realRepo });
+      const quotaRes = await pools.refreshQuota(effectiveAgyBin, {
+        allowStatusCache: !agyBin && !env.AGB_AGY_BIN
+      });
+      if (!quotaRes.ok) {
+        if (requireProsecutor) {
+          return {
+            ok: false,
+            stage: "prosecute_unavailable",
+            ticketId,
+            ticketTitle: ticket.title ?? null,
+            baseRefSha: gateResult.baseRefSha,
+            changedPaths: gateResult.changedPaths,
+            error: `Prosecutor unavailable (${quotaRes.error}) and --require-prosecutor was specified`,
+            gateResult,
+            prosecution: null,
+            dossier: null
+          };
+        }
+        prosecution = {
+          ok: true,
+          mode: "prompt-only-fallback",
+          verdict: "pending_in_harness",
+          reason: quotaRes.error,
+          model: PROSECUTORS.gemini,
+          schema: PROSECUTION_VERDICT_SCHEMA,
+          prompt: promptText
+        };
+      } else {
+        const prosModel = pools.prosecutorFor(builderModel) ?? PROSECUTORS.gemini;
+        const prosecuteScratch = mkdtempSync12(join52(tmpdir16(), "agb-handoff-prosecute-"));
+        const prevAgyBin = process.env.AGB_AGY_BIN;
+        if (agyBin) process.env.AGB_AGY_BIN = agyBin;
+        let prosRes;
+        try {
+          prosRes = await prosecute({
+            ticket,
+            diff: diffText,
+            model: prosModel,
+            builderModel,
+            cwd: prosecuteScratch,
+            worktree: null,
+            rootRepo: realRepo,
+            testCmd,
+            base: gateResult.baseRefSha,
+            adlcBin,
+            changedFiles: gateResult.changedPaths,
+            hollowTest: { ok: true, total: 0, killed: 0, survived: 0, mutants: [] },
+            shortCircuitHollowTest: false
+          });
+        } finally {
+          if (agyBin) {
+            if (prevAgyBin === void 0) delete process.env.AGB_AGY_BIN;
+            else process.env.AGB_AGY_BIN = prevAgyBin;
+          }
+          try {
+            rmSync24(prosecuteScratch, { recursive: true, force: true });
+          } catch {
+          }
+        }
+        const passedPros = prosRes.verdict === "ship";
+        prosecution = {
+          ok: passedPros,
+          mode: prosRes.prosecutionMode || "cross-family",
+          verdict: prosRes.verdict,
+          model: prosRes.model ?? prosModel,
+          findings: prosRes.findings ?? []
+        };
+        if (passedPros && recordManifest) {
+          await recordGate({
+            repo: realRepo,
+            gateName: "prosecute",
+            ticketId,
+            data: { verdict: "ship", model: prosecution.model, mode: prosecution.mode },
+            adlcBin
+          });
+        }
+        if (!passedPros) {
+          const dossier2 = buildAcceptanceDossier({ repo: candidateDir, base: gateResult.baseRefSha });
+          return {
+            ok: false,
+            stage: "prosecute",
+            ticketId,
+            ticketTitle: ticket.title ?? null,
+            baseRefSha: gateResult.baseRefSha,
+            changedPaths: gateResult.changedPaths,
+            error: `Prosecutor returned verdict '${prosRes.verdict}' (${(prosRes.findings ?? []).length} finding(s))`,
+            gateResult,
+            prosecution,
+            dossier: dossier2
+          };
+        }
+      }
+    }
+  }
+  const dossier = buildAcceptanceDossier({ repo: candidateDir, base: gateResult.baseRefSha });
+  let htmlPath = null;
+  if (htmlOut) {
+    const html = formatAcceptanceDossierHtml(dossier);
+    htmlPath = writeAcceptHtmlFile(realRepo, html, htmlOut);
+  }
+  return {
+    ok: true,
+    stage: "complete",
+    ticketId,
+    ticketTitle: ticket.title ?? null,
+    baseRefSha: gateResult.baseRefSha,
+    changedPaths: gateResult.changedPaths,
+    gateResult,
+    prosecution,
+    dossier,
+    ...htmlPath ? { htmlPath } : {}
+  };
+}
+
+// bin/agb.mjs
+init_distill();
+init_holdout();
+init_pools();
+
+// lib/bootstrap.mjs
+init_adlc_bridge();
+init_doctor2();
+init_cli_statusline();
+init_plugin_paths();
+import { existsSync as existsSync48, mkdirSync as mkdirSync30, readdirSync as readdirSync23, lstatSync as lstatSync33, readlinkSync as readlinkSync5, symlinkSync as symlinkSync5, copyFileSync as copyFileSync7, rmSync as rmSync25, readFileSync as readFileSync43, appendFileSync as appendFileSync2 } from "node:fs";
+import { join as join54, resolve as resolve39, dirname as dirname31, basename as basename15 } from "node:path";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
+import { homedir as homedir15 } from "node:os";
+import { execSync as execSync2, execFileSync as execFileSync26 } from "node:child_process";
+import { createRequire } from "node:module";
+var require2 = createRequire(import.meta.url);
+function isNpxTemp(filePath = fileURLToPath5(import.meta.url), env = process.env) {
+  const path6 = require2("node:path");
+  const os = require2("node:os");
+  const fs2 = require2("node:fs");
+  const segments = filePath.split(path6.sep);
+  const inNpxDir = segments.includes("_npx");
+  const inNpmCache = !!(env.npm_config_cache && filePath.startsWith(env.npm_config_cache));
+  const inMacOSTmp = filePath.startsWith("/var/folders/") || filePath.startsWith("/private/var/folders/");
+  let inOsTmp = false;
+  try {
+    const realTmp = fs2.realpathSync(os.tmpdir());
+    const realFile = fs2.realpathSync(filePath);
+    const rel = path6.relative(realTmp, realFile);
+    inOsTmp = rel && !rel.startsWith("..") && !path6.isAbsolute(rel);
+  } catch (e) {
+    inOsTmp = filePath.startsWith(os.tmpdir());
+  }
+  return inNpxDir || inNpmCache || inMacOSTmp || inOsTmp;
+}
+function copyDirSync(src, dest) {
+  mkdirSync30(dest, { recursive: true });
+  for (const entry of readdirSync23(src, { withFileTypes: true })) {
+    const srcPath = join54(src, entry.name);
+    const destPath = join54(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      copyFileSync7(srcPath, destPath);
+    }
+  }
+}
+function resolvePluginRunner(agyBin, agyCheckFailed) {
+  const isJetskiMode = process.env.AGB_PROVIDER === "jetski" || agyCheckFailed;
+  if (isJetskiMode) {
+    try {
+      execSync2("command -v jetski", { stdio: "ignore" });
+      return { runnerBin: "jetski", useJetski: true };
+    } catch {
+    }
+  }
+  if (agyCheckFailed) return null;
+  return { runnerBin: agyBin, useJetski: false };
+}
+function reportAdlcContract(pluginName, dir) {
+  const contract = readPluginContract({ dir });
+  const installedLine = `installed ${pluginName} plugin`;
+  switch (contract.status) {
+    case "compatible":
+      console.log(`${installedLine} \u2014 plugin contract ${contract.contract}`);
+      return true;
+    case "incompatible":
+      console.error(`error: installed ${pluginName} plugin declares adlcContract ${contract.contract}, but this antigravity-booster projects contract ${SUPPORTED_PLUGIN_CONTRACT}`);
+      return false;
+    case "tolerant":
+      console.warn(`warning: installed ${pluginName} plugin manifest declares no adlcContract field (older plugin) \u2014 cannot confirm it speaks booster contract ${SUPPORTED_PLUGIN_CONTRACT}; live rail enforcement will run in tolerant/degraded mode. Upgrade the plugin to enable the version handshake.`);
+      console.log(installedLine);
+      return true;
+    case "unreadable":
+    case "corrupt":
+    default:
+      console.warn(`warning: could not read the installed ${pluginName} plugin manifest (${contract.error}) \u2014 proceeding, but the contract handshake could not be verified`);
+      console.log(installedLine);
+      return true;
+  }
+}
+function installPlugin(pluginPath, agyBin, agyCheckFailed, pluginName = "adlc-antigravity") {
+  const runner = resolvePluginRunner(agyBin, agyCheckFailed);
+  if (!runner) {
+    console.error(`warning: skipping ${pluginName} install because neither agy nor jetski CLI is found`);
+    return false;
+  }
+  const { runnerBin, useJetski } = runner;
+  if (!existsSync48(pluginPath)) {
+    console.error(`error: ${pluginName} plugin not found at ${pluginPath}`);
+    if (pluginName === "adlc-antigravity") {
+      console.error("  (a) git clone git@github.com:voodootikigod/adlc.git somewhere and set ADLC_ANTIGRAVITY_PLUGIN_PATH");
+      console.error("  (b) run from a source checkout with the sibling present");
+      console.error("  (c) install @adlc/antigravity via npm");
+    }
+    return false;
+  }
+  console.log(`installing plugin ${pluginName} from ${pluginPath} using ${runnerBin}...`);
+  try {
+    if (useJetski) {
+      execFileSync26(runnerBin, ["plugin", "install", pluginPath], { stdio: "inherit" });
+    } else {
+      execFileSync26(runnerBin, ["plugin", "install", "."], { cwd: pluginPath, stdio: "inherit" });
+    }
+  } catch (err) {
+    console.error(`error: '${runnerBin} plugin install' failed: ${err.message}`);
+    return false;
+  }
+  if (pluginName === "adlc-antigravity") {
+    return reportAdlcContract(pluginName, pluginPath);
+  }
+  console.log(`installed ${pluginName} plugin`);
+  return true;
+}
+function installBoosterPlugin({ home, agyBin, agyCheckFailed }) {
+  const runner = resolvePluginRunner(agyBin, agyCheckFailed);
+  if (!runner) {
+    console.error("warning: skipping antigravity-booster install because neither agy nor jetski CLI is found");
+    return false;
+  }
+  const source = resolveBoosterPluginPath();
+  if (runner.useJetski) return installPlugin(source, agyBin, agyCheckFailed, "antigravity-booster");
+  console.log(`installing plugin antigravity-booster from ${source} using ${runner.runnerBin}...`);
+  const res = safePluginInstall(source, "antigravity-booster", { home, agyBin: runner.runnerBin });
+  if (!res.ok) {
+    console.error(`error: failed to install antigravity-booster: ${res.error}`);
+    return false;
+  }
+  return true;
+}
+function installReason(r, forceReinstall) {
+  if (forceReinstall) return `reinstalling ${basename15(r.dir)}: --force-reinstall`;
+  if (r.report === "not-installed") return `installing bundled adlc-antigravity ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
+  if (r.report === "outdated-plugin") return `upgrading adlc-antigravity ${r.version} -> ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`;
+  return `reinstalling adlc-antigravity: ${r.report}`;
+}
+function installVendoredAdlcAntigravity({ home, forceReinstall, agyBin, agyCheckFailed }) {
+  const pluginName = ADLC_ANTIGRAVITY_PLUGIN_NAME;
+  const before = evaluateStagedAdlcPlugin({ home });
+  const action = forceReinstall ? "reinstall" : before.bootstrapAction;
+  if (action === "fail") {
+    console.error(`error: staged ${pluginName} at ${before.dir} is ${before.report}${before.detail ? ` (${before.detail})` : ""} \u2014 leaving it untouched; run \`agb bootstrap --force-reinstall\` to replace it with the bundled ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}`);
+    return false;
+  }
+  if (action === "preserve") {
+    if (before.report === "compatible") {
+      console.log(`ok      ${pluginName} ${before.version} verified (compatible)`);
+    } else if (before.report.startsWith("tolerant")) {
+      console.warn(`warning: keeping ${pluginName} ${before.version}: ${before.report} \u2014 it declares no adlcContract, so live rail enforcement runs in tolerant mode`);
+    } else {
+      console.log(`notice: keeping ${pluginName} ${before.version}: ${before.report} (newer than the bundled ${BUNDLED_ADLC_ANTIGRAVITY_VERSION}; not digest-pinned)`);
+    }
+    return true;
+  }
+  const runner = resolvePluginRunner(agyBin, agyCheckFailed);
+  if (!runner) {
+    console.error(`warning: skipping ${pluginName} install because neither agy nor jetski CLI is found`);
+    return false;
+  }
+  console.log(`${installReason(before, forceReinstall)} from the vendored release tarball using ${runner.runnerBin}...`);
+  const res = installAdlcAntigravityFromVendor({ home, agyBin: runner.runnerBin });
+  if (!res.ok) {
+    console.error(`error: failed to install ${pluginName}: ${res.error}`);
+    return false;
+  }
+  const after = evaluateStagedAdlcPlugin({ home });
+  if (after.doctorExit !== 0) {
+    console.error(`error: ${pluginName} is ${after.report} after install \u2014 the staged plugin does not verify`);
+    return false;
+  }
+  console.log(`installed ${pluginName}: ${after.report}`);
+  return true;
+}
+function explicitAdlcPluginPath(pluginPath) {
+  if (pluginPath) return pluginPath;
+  if (!IS_BUNDLED && process.env.AGB_DEV_ALLOW_UNVERIFIED_PLUGIN === "1" && process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH) {
+    return resolve39(process.env.ADLC_ANTIGRAVITY_PLUGIN_PATH);
+  }
+  return void 0;
+}
+function resolveBoosterPluginPath() {
+  try {
+    return resolvePluginRoot();
+  } catch {
+    return resolve39(fileURLToPath5(new URL("..", import.meta.url)));
+  }
+}
+function pruneBoosterSkillSymlinks(skillsDir, skillsSrc) {
+  const dirStat = lstatSync33(skillsDir, { throwIfNoEntry: false });
+  if (!dirStat || dirStat.isSymbolicLink() || !dirStat.isDirectory()) return 0;
+  let removed = 0;
+  for (const entry of readdirSync23(skillsDir, { withFileTypes: true })) {
+    const dst = join54(skillsDir, entry.name);
+    const st = lstatSync33(dst, { throwIfNoEntry: false });
+    if (!st || !st.isSymbolicLink()) continue;
+    try {
+      const target = resolve39(dirname31(dst), readlinkSync5(dst));
+      const normalizedTarget = target.replace(/\\/g, "/");
+      if (target === resolve39(join54(skillsSrc, entry.name)) || normalizedTarget.includes("/antigravity-booster/skills/")) {
+        rmSync25(dst, { recursive: true, force: true });
+        removed += 1;
+      }
+    } catch {
+    }
+  }
+  return removed;
+}
+function bootstrap(options = {}) {
+  const {
+    force = false,
+    forceReinstall = false,
+    home = homedir15(),
+    pluginPath,
+    agyBin,
+    env = process.env
+  } = options;
+  if (env.ANTIGRAVITY_RESOLVING_ENVIRONMENT === "1") {
+    return { skipped: true, reason: "ANTIGRAVITY_RESOLVING_ENVIRONMENT" };
+  }
+  const explicitDestination = options.destination !== void 0;
+  const destination = explicitDestination ? options.destination : join54(home, ".gemini", "skills");
+  const resolvedAgyBin = agyBin ?? env.AGB_AGY_BIN ?? resolveAgyBinary(home);
+  let hasErrors = false;
+  const tempRun = isNpxTemp();
+  let agyCheckFailed = false;
+  try {
+    execFileSync26(resolvedAgyBin, ["--version"], { stdio: "ignore" });
+  } catch (err) {
+    console.log(`info: agy CLI not found on PATH; bootstrap will attempt to fall back to jetski CLI`);
+    agyCheckFailed = true;
+  }
+  const explicitPath = explicitAdlcPluginPath(pluginPath);
+  const pluginInstallSuccess = explicitPath ? installPlugin(explicitPath, resolvedAgyBin, agyCheckFailed, "adlc-antigravity") : installVendoredAdlcAntigravity({ home, forceReinstall, agyBin: resolvedAgyBin, agyCheckFailed });
+  if (!pluginInstallSuccess) {
+    hasErrors = true;
+  }
+  const boosterInstallSuccess = installBoosterPlugin({ home, agyBin: resolvedAgyBin, agyCheckFailed });
+  if (!boosterInstallSuccess) {
+    hasErrors = true;
+  }
+  const skillsSrc = fileURLToPath5(new URL("../skills", import.meta.url));
+  let skillsFound = true;
+  if (!existsSync48(skillsSrc)) {
+    console.error(`error: internal skills directory not found at ${skillsSrc}`);
+    skillsFound = false;
+    hasErrors = true;
+  }
+  if (skillsFound && !explicitDestination && boosterInstallSuccess) {
+    const pruned = pruneBoosterSkillSymlinks(destination, skillsSrc);
+    if (pruned > 0) {
+      console.log(`agb bootstrap: pruned ${pruned} legacy ~/.gemini/skills symlink(s) (skills now served via antigravity-booster plugin)`);
+    }
+  } else if (skillsFound) {
+    mkdirSync30(destination, { recursive: true });
+    console.log(`agb bootstrap: installing skills into ${destination}...`);
+    if (tempRun) {
+      console.log("npx temp execution detected: copying files (symlinks would break on exit)");
+    } else {
+      console.log("installation directory is stable: using symlinks for auto-upgrades");
+    }
+    const skills = readdirSync23(skillsSrc, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    for (const retired of ["modernize", "release", "release-audit"]) {
+      const retiredDst = join54(destination, retired);
+      const retiredStat = lstatSync33(retiredDst, { throwIfNoEntry: false });
+      if (retiredStat && retiredStat.isSymbolicLink()) {
+        try {
+          const target = resolve39(dirname31(retiredDst), readlinkSync5(retiredDst));
+          const normalizedTarget = target.replace(/\\/g, "/");
+          if (target === resolve39(join54(skillsSrc, retired)) || !existsSync48(retiredDst) && normalizedTarget.endsWith(`/antigravity-booster/skills/${retired}`)) {
+            rmSync25(retiredDst, { recursive: true, force: true });
+            console.log(`removed stale internal skill symlink: ${retired}`);
+          }
+        } catch {
+        }
+      }
+    }
+    for (const name of skills) {
+      const src = join54(skillsSrc, name);
+      const dst = join54(destination, name);
+      const dstStat = lstatSync33(dst, { throwIfNoEntry: false });
+      if (dstStat) {
+        const isSymlink = dstStat.isSymbolicLink();
+        if (force) {
+          console.log(`overwriting existing skill: ${name}`);
+          rmSync25(dst, { recursive: true, force: true });
+        } else if (isSymlink) {
+          let targetMatches = false;
+          try {
+            targetMatches = resolve39(dirname31(dst), readlinkSync5(dst)) === resolve39(src) && existsSync48(dst);
+          } catch {
+            targetMatches = false;
+          }
+          if (targetMatches) {
+            console.log(`ok      ${name} (already linked)`);
+            continue;
+          }
+          console.log(`relinking stale skill symlink: ${name}`);
+          rmSync25(dst, { recursive: true, force: true });
+        } else {
+          console.warn(`skip    ${name} (exists and is not a symlink \u2014 use --force to overwrite)`);
+          continue;
+        }
+      }
+      if (tempRun) {
+        try {
+          copyDirSync(src, dst);
+          console.log(`copied  ${name} -> ${dst}`);
+        } catch (err) {
+          console.error(`error: failed to copy skill ${name}: ${err.message}`);
+          hasErrors = true;
+        }
+      } else {
+        try {
+          symlinkSync5(src, dst);
+          console.log(`linked  ${name} -> ${dst}`);
+        } catch (err) {
+          console.error(`error: failed to symlink skill ${name}: ${err.message}`);
+          hasErrors = true;
+        }
+      }
+    }
+  }
+  const shim = installTerminalShim({ home, force: forceReinstall });
+  if (!shim.ok) {
+    console.error(`error: ${shim.error}`);
+    hasErrors = true;
+  } else if (shim.action === "written") {
+    console.log(`installed terminal shim ${shim.path}`);
+  } else if (shim.action === "unchanged") {
+    console.log(`ok      terminal shim ${shim.path} (already current)`);
+  } else {
+    console.warn(`skip    terminal shim ${shim.path} (exists with other content \u2014 use --force-reinstall to overwrite)`);
+  }
+  const sl = installCliStatusLineSettings({ home, force: false });
+  if (!sl.ok && sl.warning) {
+    console.warn(`warning: ${sl.warning}`);
+  } else if (sl.changed) {
+    console.log(`configured agy CLI statusLine/title in ${sl.settingsPath}`);
+  } else if (sl.skipped) {
+    console.log(`skip    agy CLI statusLine/title in ${sl.settingsPath} (custom command preserved)`);
+  }
+  console.log("\nbootstrap complete!");
+  console.log("@adlc tools on Antigravity quota: export ADLC_PROVIDER=agy");
+  if (!tempRun) {
+    console.log("\nTo start the sidecar dashboard, run:");
+    console.log("  agb sidecar <repo-path>");
+  }
+  if (hasErrors) {
+    process.exitCode = 1;
+  }
+}
+
+// bin/agb.mjs
+init_doctor2();
+init_plugin_paths();
+init_models();
+init_shape();
+init_plan_integrity();
+init_cli_statusline();
+
 // lib/accept-tui.mjs
 init_tui();
 init_terminal_osc();
-import { join as join53 } from "node:path";
+import { join as join55 } from "node:path";
 function recomputeCounts(dossier) {
   const hunks = Array.isArray(dossier.hunks) ? dossier.hunks : [];
   let acceptedHunks = 0;
@@ -39598,7 +40583,7 @@ function renderAcceptTuiFrame(dossier, { selectedIndex = 0, repo = null, osc8 = 
     const safeFile = sanitizeOscField(String(sel.file ?? ""));
     const safeId = sanitizeOscField(String(sel.id ?? "H"));
     const locLabel = `${safeFile}:${sel.newStart}`;
-    const linkedLoc = osc8 && repo && safeFile ? formatOsc8FileLink(join53(repo, safeFile), locLabel, { line: sel.newStart, enabled: true }) : locLabel;
+    const linkedLoc = osc8 && repo && safeFile ? formatOsc8FileLink(join55(repo, safeFile), locLabel, { line: sel.newStart, enabled: true }) : locLabel;
     const verdictBadge = sel.verdict === "accepted" ? `${ANSI.brightGreen}[ACCEPTED]${ANSI.reset}` : sel.verdict === "flagged" ? `${ANSI.brightRed}[FLAGGED FOR RESCUE]${ANSI.reset}` : `${ANSI.yellow}[PENDING]${ANSI.reset}`;
     lines.push("");
     lines.push(
@@ -39789,8 +40774,13 @@ var COMMANDS = {
   },
   "gate-ticket": {
     args: "<ticket-id> [repo]",
-    desc: "execute deterministic zero-agy ADLC P5 verification (scope, rails-guard, sandboxed tests, learned checks, hollow-test, gate-manifest)",
-    flags: "[--base <ref> (git base ref)] [--worktree <dir> (candidate worktree)] [--test-cmd <cmd> (test command)] [--build-cmd <cmd> (build command)] [--skip-hollow (skip hollow-test)] [--autocommit (stage and commit dirty worktree)] [--no-manifest (skip gate-manifest recording)] [--json (emit JSON)]"
+    desc: "execute deterministic zero-agy ADLC P5 verification (scope, rails-guard, sandboxed tests, learned checks, browserGate, hollow-test, gate-manifest)",
+    flags: "[--base <ref> (git base ref)] [--worktree <dir> (candidate worktree)] [--test-cmd <cmd> (test command)] [--build-cmd <cmd> (build command)] [--skip-hollow (skip hollow-test)] [--autocommit (stage and commit dirty worktree)] [--no-manifest (skip gate-manifest recording)] [--json (emit JSON)] [--browser-url <url> (loopback preview URL)] [--skip-browser (skip browser prosecutor)]"
+  },
+  handoff: {
+    args: "<ticket-id> [repo]",
+    desc: "run interactive single-ticket ADLC P5+P6 verification, cross-model prosecution, and handoff dossier",
+    flags: "[--base <ref> (git base ref)] [--worktree <dir> (candidate worktree)] [--test-cmd <cmd> (test command)] [--build-cmd <cmd> (build command)] [--browser-url <url> (loopback preview URL)] [--html <file> (write HTML P6 cockpit)] [--skip-hollow (skip hollow-test)] [--skip-browser (skip browser prosecutor)] [--autocommit (stage and commit dirty worktree)] [--no-prosecute (skip cross-model prosecutor)] [--prompt-only (emit prosecutor prompt without agy)] [--require-prosecutor (fail closed if agy unavailable)] [--no-manifest (skip gate-manifest recording)] [--json (emit JSON)]"
   },
   rescue: {
     args: "<ticket-id> [repo]",
@@ -39822,7 +40812,7 @@ var COMMANDS = {
     args: "<id | spec.md> [repo]",
     desc: "compile an Antigravity brain plan or spec file into plan.json",
     extended: "convert \u2192 validate \u2192 overlap/coldstart/parallax gates with feedback loop \u2192 advisory premortem",
-    flags: "[--estimate (forecast quota burn without writing files)] [--prompt-only (emit conversion/premortem/parallax prompts without agy)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]"
+    flags: "[--delta <prev-plan.json> (incrementally recompile modified/commented tickets)] [--estimate (forecast quota burn without writing files)] [--prompt-only (emit conversion/premortem/parallax prompts without agy)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]"
   },
   distill: {
     args: "[repo]",
@@ -39855,7 +40845,7 @@ var COMMANDS = {
   init: {
     args: "[repo]",
     desc: "initialize a target repository for ADLC and agb (.adlc/config.json, specs/feature-template.md, .gitignore)",
-    flags: "[--cloud (scaffold .agents/ zero-install cloud repo pack)] [--force (overwrite existing template/cloud files)] [--with-codegraph (add .codegraph/ to .gitignore, run codegraph init, enable in config)] [--decision-provider <jev|gemini-decisions|kev> (configure System-1 decision engine provider)]"
+    flags: "[--cloud (scaffold .agents/ zero-install cloud repo pack)] [--automations (scaffold Antigravity 2.0 declarative automations)] [--force (overwrite existing template/cloud files)] [--with-codegraph (add .codegraph/ to .gitignore, run codegraph init, enable in config)] [--decision-provider <jev|gemini-decisions|kev> (configure System-1 decision engine provider)]"
   },
   "sync-models": {
     args: "",
@@ -39893,16 +40883,16 @@ function printCmdUsage(name) {
 }
 if (cmd === "--version" || cmd === "-v" || cmd === "version") {
   const repoCwd = fileURLToPath8(new URL("..", import.meta.url));
-  const pkg = JSON.parse(readFileSync46(join58(repoCwd, "package.json"), "utf8"));
+  const pkg = JSON.parse(readFileSync48(join60(repoCwd, "package.json"), "utf8"));
   if (rest.includes("--verbose") || rest.includes("-v") || rest.includes("--provenance")) {
     let commit = null;
     let date = null;
     let remote = null;
     try {
-      commit = execFileSync27("git", ["rev-parse", "--short", "HEAD"], { cwd: repoCwd, stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
-      date = execFileSync27("git", ["log", "-1", "--format=%cd", "--date=short"], { cwd: repoCwd, stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
+      commit = execFileSync29("git", ["rev-parse", "--short", "HEAD"], { cwd: repoCwd, stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
+      date = execFileSync29("git", ["log", "-1", "--format=%cd", "--date=short"], { cwd: repoCwd, stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim();
       remote = sanitizeRemoteUrl(
-        execFileSync27("git", ["remote", "get-url", "origin"], { cwd: repoCwd, stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim()
+        execFileSync29("git", ["remote", "get-url", "origin"], { cwd: repoCwd, stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }).trim()
       );
     } catch {
     }
@@ -39940,9 +40930,9 @@ if (!COMMANDS[cmd] && cmd !== "setup" && cmd !== "install" && cmd !== "skills") 
   process.exit(1);
 }
 function loadPlan(path6) {
-  const plan = JSON.parse(readFileSync46(path6, "utf8"));
+  const plan = JSON.parse(readFileSync48(path6, "utf8"));
   const errors = validatePlan(plan);
-  if (plan.repo) plan.repo = resolve39(plan.repo);
+  if (plan.repo) plan.repo = resolve42(plan.repo);
   return { plan, errors };
 }
 function rejectUnknownFlags(cmdName, tokens, allowedBoolFlags, allowedValueFlags = /* @__PURE__ */ new Set()) {
@@ -40019,40 +41009,45 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit(Object.keys(report.failed).length > 0 || Boolean(report.compromised) ? 2 : 0);
   } else if (cmd === "gate-ticket") {
-    const valueFlags = /* @__PURE__ */ new Set(["--base", "--worktree", "--test-cmd", "--build-cmd"]);
+    const valueFlags = /* @__PURE__ */ new Set(["--base", "--worktree", "--test-cmd", "--build-cmd", "--browser-url"]);
     rejectUnknownFlags(
       "gate-ticket",
       rest,
-      /* @__PURE__ */ new Set(["--skip-hollow", "--autocommit", "--no-manifest", "--json"]),
+      /* @__PURE__ */ new Set(["--skip-hollow", "--skip-browser", "--autocommit", "--no-manifest", "--json"]),
       valueFlags
     );
     let base = "HEAD~1";
     let worktree = null;
     let testCmd = "npm test";
     let buildCmd = null;
+    let browserUrl = null;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === "--base") base = rest[++i];
       else if (rest[i] === "--worktree") worktree = rest[++i];
       else if (rest[i] === "--test-cmd") testCmd = rest[++i];
       else if (rest[i] === "--build-cmd") buildCmd = rest[++i];
+      else if (rest[i] === "--browser-url") browserUrl = rest[++i];
     }
     const skipHollow = rest.includes("--skip-hollow");
+    const skipBrowser = rest.includes("--skip-browser");
     const autocommit = rest.includes("--autocommit") || Boolean(worktree);
     const noManifest = rest.includes("--no-manifest");
     const jsonOut = rest.includes("--json");
     const positional = extractPositionalArgs(rest, valueFlags);
     const ticketId = positional[0];
-    const targetRepo = resolve39(positional[1] ?? ".");
+    const targetRepo = resolve42(positional[1] ?? ".");
     if (!ticketId) {
-      console.error("usage: agb gate-ticket <ticket-id> [repo] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--skip-hollow] [--autocommit] [--no-manifest] [--json]");
+      console.error("usage: agb gate-ticket <ticket-id> [repo] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-manifest] [--json]");
       process.exit(1);
     }
     const res = await runGateTicket(targetRepo, ticketId, {
       base,
-      worktree: worktree ? resolve39(targetRepo, worktree) : null,
+      worktree: worktree ? resolve42(targetRepo, worktree) : null,
       testCmd,
       buildCmd,
+      browserUrl,
       skipHollow,
+      skipBrowser,
       autocommit,
       recordManifest: !noManifest
     });
@@ -40064,6 +41059,84 @@ try {
       console.log(`gate-ticket ${ticketId}: PASS (${res.changedPaths.length} file(s) verified against ${res.baseRefSha.slice(0, 8)})`);
     } else {
       console.error(`gate-ticket ${ticketId}: FAIL [${res.kind}] \u2014 ${res.error}`);
+    }
+    process.exit(res.ok ? 0 : 2);
+  } else if (cmd === "handoff") {
+    const valueFlags = /* @__PURE__ */ new Set(["--base", "--worktree", "--test-cmd", "--build-cmd", "--browser-url", "--html"]);
+    rejectUnknownFlags(
+      "handoff",
+      rest,
+      /* @__PURE__ */ new Set([
+        "--skip-hollow",
+        "--skip-browser",
+        "--autocommit",
+        "--no-prosecute",
+        "--prompt-only",
+        "--require-prosecutor",
+        "--no-manifest",
+        "--json"
+      ]),
+      valueFlags
+    );
+    let base = "HEAD";
+    let worktree = null;
+    let testCmd = "npm test";
+    let buildCmd = null;
+    let browserUrl = null;
+    let htmlOut = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === "--base") base = rest[++i];
+      else if (rest[i] === "--worktree") worktree = rest[++i];
+      else if (rest[i] === "--test-cmd") testCmd = rest[++i];
+      else if (rest[i] === "--build-cmd") buildCmd = rest[++i];
+      else if (rest[i] === "--browser-url") browserUrl = rest[++i];
+      else if (rest[i] === "--html") htmlOut = rest[++i];
+    }
+    const skipHollow = rest.includes("--skip-hollow");
+    const skipBrowser = rest.includes("--skip-browser");
+    const autocommit = rest.includes("--autocommit") || Boolean(worktree);
+    const noProsecute = rest.includes("--no-prosecute");
+    const promptOnly = rest.includes("--prompt-only");
+    const requireProsecutor = rest.includes("--require-prosecutor");
+    const noManifest = rest.includes("--no-manifest");
+    const jsonOut = rest.includes("--json");
+    const positional = extractPositionalArgs(rest, valueFlags);
+    const ticketId = positional[0];
+    const targetRepo = resolve42(positional[1] ?? ".");
+    if (!ticketId) {
+      console.error("usage: agb handoff <ticket-id> [repo] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--html <file>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-prosecute] [--prompt-only] [--require-prosecutor] [--no-manifest] [--json]");
+      process.exit(1);
+    }
+    const res = await runTicketHandoff(targetRepo, ticketId, {
+      base,
+      worktree: worktree ? resolve42(targetRepo, worktree) : null,
+      testCmd,
+      buildCmd,
+      browserUrl,
+      htmlOut,
+      skipHollow,
+      skipBrowser,
+      autocommit,
+      prosecute: !noProsecute,
+      promptOnly,
+      requireProsecutor,
+      recordManifest: !noManifest
+    });
+    if (jsonOut) {
+      await new Promise((r) => process.stdout.write(`${JSON.stringify(res, null, 2)}
+`, r));
+      process.exit(res.ok ? 0 : 2);
+    }
+    let outText = formatHandoffMarkdown(res);
+    if ((res.prosecution?.mode === "prompt-only" || res.prosecution?.mode === "prompt-only-fallback") && res.prosecution?.prompt) {
+      outText += `
+=== PROSECUTOR PROMPT (${res.prosecution.model}) ===
+${res.prosecution.prompt}
+`;
+    }
+    await new Promise((r) => process.stdout.write(outText, r));
+    if (!res.ok) {
+      console.error(`handoff ${ticketId}: FAIL [${res.stage}] \u2014 ${res.error}`);
     }
     process.exit(res.ok ? 0 : 2);
   } else if (cmd === "rescue") {
@@ -40085,7 +41158,7 @@ try {
       process.exit(1);
     }
     const { runInteractiveRescue: runInteractiveRescue2 } = await Promise.resolve().then(() => (init_rescue(), rescue_exports));
-    const res = await runInteractiveRescue2(resolve39(repoArg), ticketId, {
+    const res = await runInteractiveRescue2(resolve42(repoArg), ticketId, {
       continueExisting: rest.includes("--continue"),
       ...planPath ? { planPath } : {}
     });
@@ -40107,7 +41180,7 @@ try {
       let raw = "";
       if (!process.stdin.isTTY) {
         try {
-          raw = readFileSync46(0, "utf8");
+          raw = readFileSync48(0, "utf8");
         } catch {
         }
       }
@@ -40135,8 +41208,8 @@ try {
     process.exit(0);
   } else if (cmd === "sweep") {
     rejectUnknownFlags("sweep", rest, /* @__PURE__ */ new Set());
-    const spec = JSON.parse(readFileSync46(rest[0] ?? "sweep.json", "utf8"));
-    if (spec.repo) spec.repo = resolve39(spec.repo);
+    const spec = JSON.parse(readFileSync48(rest[0] ?? "sweep.json", "utf8"));
+    if (spec.repo) spec.repo = resolve42(spec.repo);
     const plan = sweepToPlan(spec, { project });
     const errors = validatePlan(plan);
     if (errors.length) {
@@ -40222,7 +41295,7 @@ try {
     const noCodegraph = rest.includes("--no-codegraph");
     const noDecisionEngine = rest.includes("--no-decision-engine");
     const positional = extractPositionalArgs(rest, REVIEW_VALUE_FLAGS);
-    const repo = resolve39(positional[0] ?? ".");
+    const repo = resolve42(positional[0] ?? ".");
     if (promptOnly) {
       const built = buildReviewPrompts({
         repo,
@@ -40248,10 +41321,10 @@ ${l.prompt}
     }
     let ticketScopes = null;
     if (planFileArg) {
-      const resolvedPlanFile = existsSync52(resolve39(planFileArg)) ? resolve39(planFileArg) : resolve39(repo, planFileArg);
+      const resolvedPlanFile = existsSync53(resolve42(planFileArg)) ? resolve42(planFileArg) : resolve42(repo, planFileArg);
       let parsedPlan;
       try {
-        parsedPlan = JSON.parse(readFileSync46(resolvedPlanFile, "utf8"));
+        parsedPlan = JSON.parse(readFileSync48(resolvedPlanFile, "utf8"));
       } catch (err) {
         console.error(`agb: failed to read --plan-file '${planFileArg}': ${err.message}`);
         process.exit(1);
@@ -40272,7 +41345,7 @@ ${l.prompt}
     }
     if (planSpec) {
       const result2 = await reviewPlan({
-        specPath: resolve39(repo, planSpec),
+        specPath: resolve42(repo, planSpec),
         repo,
         pools,
         loop: isLoop,
@@ -40354,7 +41427,7 @@ ${l.prompt}
       console.error("plan invalid:\n  " + errors.join("\n  "));
       process.exit(1);
     }
-    const targetRepo = resolve39(plan.repo ?? ".");
+    const targetRepo = resolve42(plan.repo ?? ".");
     const skipColdstart = rest.includes("--no-coldstart");
     const forceColdstart = rest.includes("--force-coldstart");
     const pools = new PoolSet(void 0, { repo: targetRepo });
@@ -40371,14 +41444,16 @@ ${l.prompt}
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === "plan") {
+    const planValueFlags = /* @__PURE__ */ new Set(["--out", "--max-ticket-scope", "--emit-workflow", "--delta"]);
     rejectUnknownFlags(
       "plan",
       rest,
       /* @__PURE__ */ new Set(["--estimate", "--prompt-only", "--json", "--force", "--decompose", "--no-fast-path", "--no-coldstart", "--no-parallax", "--no-premortem"]),
-      /* @__PURE__ */ new Set(["--out", "--max-ticket-scope", "--emit-workflow"])
+      planValueFlags
     );
     let out = "plan.json";
     let emitWorkflow = null;
+    let deltaPath = null;
     let maxTicketScope;
     const estimate = rest.includes("--estimate");
     const promptOnly = rest.includes("--prompt-only");
@@ -40398,6 +41473,12 @@ ${l.prompt}
           process.exit(1);
         }
         emitWorkflow = rest[++i];
+      } else if (rest[i] === "--delta") {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith("-")) {
+          console.error("agb: missing value for --delta");
+          process.exit(1);
+        }
+        deltaPath = rest[++i];
       } else if (rest[i] === "--max-ticket-scope") {
         if (i + 1 >= rest.length || rest[i + 1].startsWith("-")) {
           console.error("agb: missing value for --max-ticket-scope");
@@ -40411,18 +41492,23 @@ ${l.prompt}
         maxTicketScope = parsedScope;
       }
     }
-    const positional = extractPositionalArgs(rest, /* @__PURE__ */ new Set(["--out", "--max-ticket-scope", "--emit-workflow"]));
+    const positional = extractPositionalArgs(rest, planValueFlags);
     const id = positional[0];
     const repo = positional[1] ?? ".";
     if (!id || !out) {
-      console.error("usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--estimate] [--prompt-only] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]");
+      console.error("usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--delta <prev-plan.json>] [--estimate] [--prompt-only] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]");
       process.exit(1);
     }
     const force = rest.includes("--force");
-    const targetRepo = resolve39(repo);
-    const resolvedWorkflowPath = emitWorkflow ? resolve39(targetRepo, emitWorkflow) : null;
+    const targetRepo = resolve42(repo);
+    const resolvedWorkflowPath = emitWorkflow ? resolve42(targetRepo, emitWorkflow) : null;
+    const resolvedDeltaFrom = deltaPath ? existsSync53(resolve42(deltaPath)) ? resolve42(deltaPath) : resolve42(targetRepo, deltaPath) : null;
     if (promptOnly) {
-      const built = buildPlanPrompts(id, { repo: targetRepo, maxTicketScope });
+      const built = buildPlanPrompts(id, {
+        repo: targetRepo,
+        maxTicketScope,
+        ...resolvedDeltaFrom ? { deltaFrom: resolvedDeltaFrom } : {}
+      });
       if (jsonOut) {
         await new Promise((r) => process.stdout.write(`${JSON.stringify(built, null, 2)}
 `, r));
@@ -40455,6 +41541,7 @@ ${built.prompts.convert.prompt}`);
         fastPath: !noFastPath,
         decompose,
         maxTicketScope,
+        ...resolvedDeltaFrom ? { deltaFrom: resolvedDeltaFrom } : {},
         coldstart: false,
         parallax: false,
         premortem: false,
@@ -40485,11 +41572,11 @@ ${built.prompts.convert.prompt}`);
       }
       process.exit(result2.ok ? 0 : 2);
     }
-    if (existsSync52(out) && !force) {
+    if (existsSync53(out) && !force) {
       console.error(`plan: ${out} already exists \u2014 pass --force to overwrite (compiled plans are disposable, hand-written ones may not be)`);
       process.exit(1);
     }
-    if (resolvedWorkflowPath && existsSync52(resolvedWorkflowPath) && !force) {
+    if (resolvedWorkflowPath && existsSync53(resolvedWorkflowPath) && !force) {
       console.error(`plan: workflow ${resolvedWorkflowPath} already exists \u2014 pass --force to overwrite`);
       process.exit(1);
     }
@@ -40508,6 +41595,7 @@ ${built.prompts.convert.prompt}`);
       fastPath: !noFastPath,
       decompose,
       maxTicketScope,
+      ...resolvedDeltaFrom ? { deltaFrom: resolvedDeltaFrom } : {},
       coldstart: !rest.includes("--no-coldstart"),
       parallax: !rest.includes("--no-parallax"),
       premortem: !rest.includes("--no-premortem"),
@@ -40524,7 +41612,7 @@ ${built.prompts.convert.prompt}`);
       }
       process.exit(2);
     }
-    writeFileSync33(out, JSON.stringify(result.plan, null, 2) + "\n");
+    writeFileSync34(out, JSON.stringify(result.plan, null, 2) + "\n");
     if (resolvedWorkflowPath) {
       const wfRes = compilePlanToWorkflow(result.plan, { outPath: resolvedWorkflowPath });
       console.error(`plan: emitted workflow (${wfRes.waves.length} wave(s)) \u2192 ${wfRes.outPath}`);
@@ -40546,7 +41634,7 @@ ${built.prompts.convert.prompt}`);
     const compileChecks = rest.includes("--compile-checks");
     const json = rest.includes("--json");
     const positional = extractPositionalArgs(rest);
-    const repo = resolve39(positional[0] ?? ".");
+    const repo = resolve42(positional[0] ?? ".");
     const res = distillRunDefenses({ repo, apply, compileChecks });
     if (json) {
       console.log(JSON.stringify(res, null, 2));
@@ -40575,7 +41663,7 @@ ${built.prompts.convert.prompt}`);
     const jsonOut = rest.includes("--json");
     const positional = extractPositionalArgs(rest, /* @__PURE__ */ new Set(["--ticket", "--run-id"]));
     const sub = positional[0];
-    const targetRepo = resolve39(positional[1] ?? ".");
+    const targetRepo = resolve42(positional[1] ?? ".");
     if (sub !== "list" && sub !== "run" && sub !== "clean") {
       console.error("usage: agb holdout <list|run|clean> [repo] [--ticket <id>] [--run-id <id>] [--json]");
       process.exit(1);
@@ -40606,7 +41694,7 @@ ${built.prompts.convert.prompt}`);
       const allFiles = [];
       for (const suite of listed.suites) {
         const sDir = resolveHoldoutDir({ repo: targetRepo, runId: suite.runId, ticketId: suite.ticketId });
-        for (const f of suite.files) allFiles.push(join58(sDir, f.filename));
+        for (const f of suite.files) allFiles.push(join60(sDir, f.filename));
       }
       const execRes = await runHoldoutScenarios(allFiles, {
         candidateWorktree: targetRepo,
@@ -40643,7 +41731,7 @@ ${built.prompts.convert.prompt}`);
       process.exit(1);
     }
     console.error("import-brain is deprecated \u2014 use `agb plan <id> <repo>` (adds plan gates, feedback loop, and provenance)");
-    const targetRepo = resolve39(repo);
+    const targetRepo = resolve42(repo);
     const pools = new PoolSet(void 0, { repo: targetRepo });
     const quotaRes = await pools.refreshQuota(process.env.AGB_AGY_BIN || resolveAgyBinary() || "agy", {
       allowStatusCache: !process.env.AGB_AGY_BIN
@@ -40672,7 +41760,7 @@ ${built.prompts.convert.prompt}`);
     const compact = rest.includes("--compact");
     const intervalMs = parseIntervalFlag(rest, isWatch ? 200 : 1e3);
     const positional = extractPositionalArgs(rest, /* @__PURE__ */ new Set(["--interval"]));
-    const targetRepo = resolve39(positional[0] ?? ".");
+    const targetRepo = resolve42(positional[0] ?? ".");
     if (isWatch) {
       const { watchStatus: watchStatus2 } = await Promise.resolve().then(() => (init_status(), status_exports));
       const { runInteractiveRescue: runInteractiveRescue2 } = await Promise.resolve().then(() => (init_rescue(), rescue_exports));
@@ -40716,7 +41804,7 @@ ${built.prompts.convert.prompt}`);
     const noAlerts = watchRest.includes("--no-alerts");
     const intervalMs = parseIntervalFlag(watchRest, 200);
     const positional = extractPositionalArgs(watchRest, /* @__PURE__ */ new Set(["--interval"]));
-    const targetRepo = resolve39(positional[0] ?? ".");
+    const targetRepo = resolve42(positional[0] ?? ".");
     const { watchStatus: watchStatus2 } = await Promise.resolve().then(() => (init_status(), status_exports));
     const { runInteractiveRescue: runInteractiveRescue2 } = await Promise.resolve().then(() => (init_rescue(), rescue_exports));
     const code = await watchStatus2(targetRepo, {
@@ -40762,7 +41850,7 @@ ${built.prompts.convert.prompt}`);
     }
     const jsonOut = rest.includes("--json");
     const positional = extractPositionalArgs(rest, /* @__PURE__ */ new Set(["--base", "--markdown", "--html"]));
-    const targetRepo = resolve39(positional[0] ?? ".");
+    const targetRepo = resolve42(positional[0] ?? ".");
     const dossier = buildAcceptanceDossier({ repo: targetRepo, base });
     if (markdownOut) {
       const mdText = formatAcceptanceDossierMarkdown(dossier);
@@ -40791,10 +41879,11 @@ ${built.prompts.convert.prompt}`);
     const tuiRes = await runInteractiveAcceptTui(dossier, { repo: targetRepo });
     process.exit(tuiRes.ok ? 0 : 1);
   } else if (cmd === "init") {
-    const INIT_BOOL_FLAGS = /* @__PURE__ */ new Set(["--cloud", "--force", "--with-codegraph"]);
+    const INIT_BOOL_FLAGS = /* @__PURE__ */ new Set(["--cloud", "--automations", "--force", "--with-codegraph"]);
     const INIT_VALUE_FLAGS = /* @__PURE__ */ new Set(["--decision-provider"]);
     rejectUnknownFlags("init", rest, INIT_BOOL_FLAGS, INIT_VALUE_FLAGS);
     const cloud = rest.includes("--cloud");
+    const automations = rest.includes("--automations");
     const force = rest.includes("--force");
     const withCodegraph = rest.includes("--with-codegraph");
     let decisionProvider = null;
@@ -40814,10 +41903,11 @@ ${built.prompts.convert.prompt}`);
       }
     }
     const positional = extractPositionalArgs(rest, INIT_VALUE_FLAGS);
-    const targetRepo = resolve39(positional[0] ?? ".");
+    const targetRepo = resolve42(positional[0] ?? ".");
     const res = runInit({
       repo: targetRepo,
       cloud,
+      automations,
       force,
       withCodegraph,
       decisionProvider
@@ -40862,7 +41952,7 @@ ${built.prompts.convert.prompt}`);
     const repoArg = extractPositionalArgs(rest)[0];
     const fix = rest.includes("--fix");
     process.exitCode = await runDoctor({
-      ...repoArg ? { cwd: resolve39(repoArg) } : {},
+      ...repoArg ? { cwd: resolve42(repoArg) } : {},
       fix
     });
   } else if (cmd === "validate") {
@@ -40965,8 +42055,8 @@ ${built.prompts.convert.prompt}`);
     if (rows.some((r) => r.ok > 0)) {
       try {
         const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-        const calDir = process.env.AGB_CALIBRATION_DIR || join58(process.cwd(), "docs", "calibration");
-        const calFile = join58(calDir, `probes-${day}.md`);
+        const calDir = process.env.AGB_CALIBRATION_DIR || join60(process.cwd(), "docs", "calibration");
+        const calFile = join60(calDir, `probes-${day}.md`);
         const table = [
           `## ${model} \u2014 probed ${(/* @__PURE__ */ new Date()).toISOString()}`,
           "",
@@ -40975,8 +42065,8 @@ ${built.prompts.convert.prompt}`);
           ...rows.map((r) => `| ${r.width} | ${r.ok}/${r.width} | ${r.wall_ms} | ${r.median_ms} | ${r.max_ms} |`),
           ""
         ].join("\n");
-        mkdirSync33(calDir, { recursive: true });
-        appendFileSync3(calFile, (existsSync52(calFile) ? "\n" : `# Pool probe \u2014 ${day}
+        mkdirSync34(calDir, { recursive: true });
+        appendFileSync3(calFile, (existsSync53(calFile) ? "\n" : `# Pool probe \u2014 ${day}
 
 `) + table);
         console.error(`probe: appended ${rows.length} row(s) to ${calFile}`);
@@ -40996,14 +42086,14 @@ ${built.prompts.convert.prompt}`);
     const cloud = rest.includes("--cloud");
     const positional = extractPositionalArgs(rest, /* @__PURE__ */ new Set(["--port"]));
     const { serveSidecar: serveSidecar2 } = await Promise.resolve().then(() => (init_server(), server_exports));
-    const { randomBytes: randomBytes6 } = await import("node:crypto");
+    const { randomBytes: randomBytes7 } = await import("node:crypto");
     const port = portStr ? Number(portStr) : 3333;
     if (!Number.isInteger(port) || port < 0 || port > 65535) {
       console.error(`agb: invalid port '${portStr}'`);
       process.exit(1);
     }
-    const token = randomBytes6(16).toString("hex");
-    const server = await serveSidecar2(resolve39(positional[0] ?? "."), port, token, { allowProxyHost: cloud });
+    const token = randomBytes7(16).toString("hex");
+    const server = await serveSidecar2(resolve42(positional[0] ?? "."), port, token, { allowProxyHost: cloud });
     const actualPort = server.address().port;
     console.log(`AGB Sidecar Dashboard URL: http://127.0.0.1:${actualPort}/?token=${token}`);
     let cleaned = false;
@@ -41019,7 +42109,7 @@ ${built.prompts.convert.prompt}`);
     rejectUnknownFlags("pool", rest, /* @__PURE__ */ new Set());
     const sub = rest[0];
     if (sub === "drain") {
-      const repo = resolve39(rest[1] ?? ".");
+      const repo = resolve42(rest[1] ?? ".");
       const res = await drainPools(repo);
       console.log(JSON.stringify(res, null, 2));
       process.exit(0);

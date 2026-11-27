@@ -1,0 +1,23 @@
+{
+  "body": "Create lib/handoff.mjs exporting runTicketHandoff and formatHandoffMarkdown to execute runGateTicket, run single-diff cross-model prosecute() when agy + quota are available (or emit prosecutorPrompt in prompt-only/zero-agy fallback mode unless requireProsecutor: true), and render a P5/P6 Markdown + optional --html handoff dossier. Export extractInlinePlanComments and compilePlanDelta in lib/plan.mjs and wire deltaFrom into compilePlan and buildPlanPrompts so untouched tickets in a prior plan.json are preserved verbatim while modified, commented, or newly added tickets are incrementally recompiled. Add test/handoff-and-plan-delta.test.mjs. Verify: node --test test/handoff-and-plan-delta.test.mjs test/plan.test.mjs",
+  "category": "feature",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-W2-4"
+    }
+  ],
+  "id": "T-W2-2",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/handoff.mjs",
+    "lib/plan.mjs",
+    "test/handoff-and-plan-delta.test.mjs"
+  ],
+  "title": "Interactive /agb-handoff Single-Ticket Gate & Incremental agb plan --delta Compiler"
+}

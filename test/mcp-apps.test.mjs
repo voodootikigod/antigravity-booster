@@ -18,6 +18,8 @@ import {
   buildMissionControlHtml,
   buildPlanViewerHtml,
   buildAcceptWorkbenchHtml,
+  buildTicketViewerHtml,
+  buildManifestViewerHtml,
 } from '../mcp/ui-views.mjs';
 import { findLiteralStart, parseLiteral } from '../website/scripts/lib/jslit.mjs';
 import { scanEnvTokens } from '../website/scripts/gen-reference.mjs';
@@ -101,7 +103,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
   assert.ok(start !== -1, 'const TOOLS literal must exist in mcp/server.mjs');
   const { value: tools } = parseLiteral(src, start);
   assert.equal(Array.isArray(tools), true);
-  assert.equal(tools.length, 15);
+  assert.equal(tools.length, 17);
 
   const expectedNames = [
     'agb_shape',
@@ -116,6 +118,8 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
     'agb_flight_deck',
     'agb_mission_control',
     'agb_plan_viewer',
+    'agb_ticket_viewer',
+    'agb_manifest_viewer',
     'agb_control',
     'agb_accept',
     'agb_holdout',
@@ -129,7 +133,7 @@ test('static invariants: TOOLS literal parses cleanly via jslit.mjs and mcp/ int
   }
 });
 
-test('initialize & tools/list: advertises resources + conditional io.modelcontextprotocol/ui extension and all 13 tools across source and dist bundles', async () => {
+test('initialize & tools/list: advertises resources + conditional io.modelcontextprotocol/ui extension and all 17 tools across source and dist bundles', async () => {
   for (const entry of [MCP_SRC, MCP_DIST]) {
     const srv = mcpSession(entry);
     try {
@@ -149,7 +153,7 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
 
       const listRes = await srv.send({ id: 3, method: 'tools/list', params: {} });
       const byName = new Map(listRes.result.tools.map((t) => [t.name, t]));
-      assert.equal(byName.size, 15);
+      assert.equal(byName.size, 17);
 
       assert.equal(byName.get('agb_shape')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
       assert.equal(byName.get('agb_plan')._meta.ui.resourceUri, 'ui://agb/plan-card.html');
@@ -184,6 +188,26 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
           extensions: ['.agbplan'],
         },
       });
+      assert.deepEqual(byName.get('agb_ticket_viewer')._meta, {
+        ui: {
+          resourceUri: 'ui://agb/ticket-viewer.html',
+          visibility: ['model', 'app'],
+        },
+        'com.google.antigravity/ui': {
+          surface: 'file',
+          extensions: ['.agbticket'],
+        },
+      });
+      assert.deepEqual(byName.get('agb_manifest_viewer')._meta, {
+        ui: {
+          resourceUri: 'ui://agb/manifest-viewer.html',
+          visibility: ['model', 'app'],
+        },
+        'com.google.antigravity/ui': {
+          surface: 'file',
+          extensions: ['.agbmanifest'],
+        },
+      });
       assert.deepEqual(byName.get('agb_control')._meta.ui, {
         visibility: ['app'],
       });
@@ -203,14 +227,16 @@ test('initialize & tools/list: advertises resources + conditional io.modelcontex
   }
 });
 
-test('resources/list & resources/read: serves all 6 deterministic ui:// MCP App views with default-deny CSP, zero external URLs, valid inline JS, and -32602 on unknown URI', async () => {
-  assert.equal(UI_RESOURCES.length, 6);
+test('resources/list & resources/read: serves all 8 deterministic ui:// MCP App views with default-deny CSP, zero external URLs, valid inline JS, and -32602 on unknown URI', async () => {
+  assert.equal(UI_RESOURCES.length, 8);
   assert.equal(buildPlanCardHtml(), buildPlanCardHtml());
   assert.equal(buildReviewCardHtml(), buildReviewCardHtml());
   assert.equal(buildFlightDeckHtml(), buildFlightDeckHtml());
   assert.equal(buildMissionControlHtml(), buildMissionControlHtml());
   assert.equal(buildPlanViewerHtml(), buildPlanViewerHtml());
   assert.equal(buildAcceptWorkbenchHtml(), buildAcceptWorkbenchHtml());
+  assert.equal(buildTicketViewerHtml(), buildTicketViewerHtml());
+  assert.equal(buildManifestViewerHtml(), buildManifestViewerHtml());
   assert.equal(renderUiResource('ui://agb/nonexistent.html'), null);
 
   const srv = mcpSession(MCP_DIST);
@@ -224,23 +250,40 @@ test('resources/list & resources/read: serves all 6 deterministic ui:// MCP App 
       'ui://agb/mission-control.html',
       'ui://agb/plan-viewer.html',
       'ui://agb/accept-workbench.html',
+      'ui://agb/ticket-viewer.html',
+      'ui://agb/manifest-viewer.html',
     ]);
 
     for (let i = 0; i < uris.length; i++) {
       const uri = uris[i];
+      const direct = renderUiResource(uri);
+      assert.ok(direct && typeof direct.text === 'string', `${uri} must render from mcp/ui-views.mjs`);
       const readRes = await srv.send({ id: 20 + i, method: 'resources/read', params: { uri } });
       assert.equal(readRes.result.contents.length, 1);
       const item = readRes.result.contents[0];
       assert.equal(item.uri, uri);
       assert.equal(item.mimeType, 'text/html;profile=mcp-app');
+      assert.equal(direct.text, item.text, `${uri} in dist/mcp-server.mjs must match mcp/ui-views.mjs`);
       assert.deepEqual(item._meta, {
         ui: { csp: { resourceDomains: [], connectDomains: [] } },
       });
-      assert.match(item.text, /function escapeHtml\(/);
+      assert.match(direct.text, /function escapeHtml\(/);
       assert.match(item.text, /var\(--agy-bg/);
       assert.match(item.text, /prefers-color-scheme:\s*light/);
       assert.match(item.text, /ui\/initialize/);
       assert.match(item.text, /ui\/notifications\/size-changed/);
+      assert.match(item.text, /<div class="shell">/);
+      assert.match(item.text, /<div class="card">/);
+      assert.doesNotMatch(
+        item.text,
+        />=\/?(?:!DOCTYPE|html|head|meta|title|style|body|div|span|button|pre|table|thead|tbody|tr|th|td|h[1-6]|input|select|option|label|script)\b/i,
+        `${uri} must not contain mutated HTML opening/closing tags`
+      );
+      assert.doesNotMatch(
+        item.text,
+        /<=\/?(?:html|head|style|body|div|span|button|pre|table|thead|tbody|tr|th|td|h[1-6]|input|select|option|label|script)\b/i,
+        `${uri} must not contain mutated HTML tags`
+      );
       assert.doesNotMatch(item.text, /https?:\/\//i, `${uri} must not reference external URLs`);
       assert.doesNotMatch(item.text, /<(?:script|link|img|iframe)\b[^>]*\b(?:src|href)\s*=/i, `${uri} must not load external assets`);
 
@@ -1304,6 +1347,107 @@ test('agb_plan_viewer antigravity-file:// URI & non-UI sidecarHint fallback over
       });
       assert.equal(mcUi.result.structuredContent.sidecarHint, undefined);
       assert.doesNotMatch(mcUi.result.content[0].text, /agb sidecar /);
+    } finally {
+      await srv.close();
+    }
+  }
+});
+
+test('agb_ticket_viewer & agb_manifest_viewer: inspect .adlc shards/manifest, verify chain integrity, support antigravity-file://, and reject symlinks/escapes', async () => {
+  const repo = mkdtempSync(join(TMP, 'repo-ticket-manifest-'));
+  mkdirSync(join(repo, '.adlc', 'tickets'), { recursive: true });
+  const shardPath = join(repo, '.adlc', 'tickets', 't-demo.json');
+  writeFileSync(
+    shardPath,
+    JSON.stringify({
+      id: 'T-DEMO',
+      title: 'Demo ticket shard',
+      body: 'Verify custom file viewer',
+      scope: ['lib/demo.mjs'],
+      rails: ['lib/lock.mjs'],
+      edges: [{ to: 'T-NEXT' }],
+      completed: true,
+    }) + '\n'
+  );
+  const manifestPath = join(repo, '.adlc', 'manifest.jsonl');
+  writeFileSync(
+    manifestPath,
+    [
+      JSON.stringify({ seq: 1, gate: 'tests', ticket: 'T-DEMO', hash: 'h1', timestamp: '2026-11-27T00:00:00Z' }),
+      JSON.stringify({ seq: 2, gate: 'hollow-test', ticket: 'T-DEMO', prevHash: 'h1', hash: 'h2', timestamp: '2026-11-27T00:01:00Z' }),
+    ].join('\n') + '\n'
+  );
+  const brokenManifestPath = join(repo, '.adlc', 'broken.jsonl');
+  writeFileSync(
+    brokenManifestPath,
+    [
+      JSON.stringify({ seq: 1, gate: 'tests', hash: 'h1' }),
+      JSON.stringify({ seq: 2, gate: 'tests', prevHash: 'tampered', hash: 'h2' }),
+    ].join('\n') + '\n'
+  );
+  const symTicket = join(repo, '.adlc', 'tickets', 'sym.json');
+  symlinkSync(shardPath, symTicket);
+
+  for (const entry of [MCP_SRC, MCP_DIST]) {
+    const srv = mcpSession(entry);
+    try {
+      await srv.send({ id: 1, method: 'initialize', params: { capabilities: {} } });
+
+      // 1. Ticket viewer valid shard + antigravity-file:// + escape + symlink rejection
+      const tvOk = await srv.send({
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'agb_ticket_viewer', arguments: { path: '.adlc/tickets/t-demo.json', repo } },
+      });
+      assert.equal(tvOk.result.isError, undefined);
+      assert.equal(tvOk.result.structuredContent.ok, true);
+      assert.equal(tvOk.result.structuredContent.ticket.id, 'T-DEMO');
+      assert.match(tvOk.result.structuredContent.ticketHash, /^[0-9a-f]{64}$/);
+
+      const tvDeferred = await srv.send({
+        id: 3,
+        method: 'tools/call',
+        params: { name: 'agb_ticket_viewer', arguments: { path: 'antigravity-file://ws/t-demo.agbticket', repo } },
+      });
+      assert.equal(tvDeferred.result.structuredContent.deferredRead, true);
+
+      const tvEscape = await srv.send({
+        id: 4,
+        method: 'tools/call',
+        params: { name: 'agb_ticket_viewer', arguments: { path: '../outside.json', repo } },
+      });
+      assert.equal(tvEscape.result.isError, true);
+
+      const tvSym = await srv.send({
+        id: 5,
+        method: 'tools/call',
+        params: { name: 'agb_ticket_viewer', arguments: { path: '.adlc/tickets/sym.json', repo } },
+      });
+      assert.equal(tvSym.result.isError, true);
+
+      // 2. Manifest viewer default .adlc/manifest.jsonl (intact chain), broken chain, and antigravity-file://
+      const mvOk = await srv.send({
+        id: 6,
+        method: 'tools/call',
+        params: { name: 'agb_manifest_viewer', arguments: { repo } },
+      });
+      assert.equal(mvOk.result.isError, undefined);
+      assert.equal(mvOk.result.structuredContent.totalEntries, 2);
+      assert.equal(mvOk.result.structuredContent.chainValid, true);
+
+      const mvBroken = await srv.send({
+        id: 7,
+        method: 'tools/call',
+        params: { name: 'agb_manifest_viewer', arguments: { path: '.adlc/broken.jsonl', repo } },
+      });
+      assert.equal(mvBroken.result.structuredContent.chainValid, false);
+
+      const mvDeferred = await srv.send({
+        id: 8,
+        method: 'tools/call',
+        params: { name: 'agb_manifest_viewer', arguments: { path: 'antigravity-file://ws/manifest.agbmanifest', repo } },
+      });
+      assert.equal(mvDeferred.result.structuredContent.deferredRead, true);
     } finally {
       await srv.close();
     }

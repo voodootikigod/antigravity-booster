@@ -15,6 +15,7 @@ import { preflight } from '../lib/preflight.mjs';
 import { listBrains, brainToPlan } from '../lib/brain.mjs';
 import { validatePlan, compilePlan, compilePlanToWorkflow, buildPlanPrompts } from '../lib/plan.mjs';
 import { runGateTicket } from '../lib/gate-ticket.mjs';
+import { runTicketHandoff, formatHandoffMarkdown } from '../lib/handoff.mjs';
 import { distillRunDefenses } from '../lib/distill.mjs';
 import {
   resolveHoldoutDir,
@@ -77,8 +78,13 @@ const COMMANDS = {
   },
   'gate-ticket': {
     args: '<ticket-id> [repo]',
-    desc: 'execute deterministic zero-agy ADLC P5 verification (scope, rails-guard, sandboxed tests, learned checks, hollow-test, gate-manifest)',
-    flags: '[--base <ref> (git base ref)] [--worktree <dir> (candidate worktree)] [--test-cmd <cmd> (test command)] [--build-cmd <cmd> (build command)] [--skip-hollow (skip hollow-test)] [--autocommit (stage and commit dirty worktree)] [--no-manifest (skip gate-manifest recording)] [--json (emit JSON)]'
+    desc: 'execute deterministic zero-agy ADLC P5 verification (scope, rails-guard, sandboxed tests, learned checks, browserGate, hollow-test, gate-manifest)',
+    flags: '[--base <ref> (git base ref)] [--worktree <dir> (candidate worktree)] [--test-cmd <cmd> (test command)] [--build-cmd <cmd> (build command)] [--skip-hollow (skip hollow-test)] [--autocommit (stage and commit dirty worktree)] [--no-manifest (skip gate-manifest recording)] [--json (emit JSON)] [--browser-url <url> (loopback preview URL)] [--skip-browser (skip browser prosecutor)]'
+  },
+  handoff: {
+    args: '<ticket-id> [repo]',
+    desc: 'run interactive single-ticket ADLC P5+P6 verification, cross-model prosecution, and handoff dossier',
+    flags: '[--base <ref> (git base ref)] [--worktree <dir> (candidate worktree)] [--test-cmd <cmd> (test command)] [--build-cmd <cmd> (build command)] [--browser-url <url> (loopback preview URL)] [--html <file> (write HTML P6 cockpit)] [--skip-hollow (skip hollow-test)] [--skip-browser (skip browser prosecutor)] [--autocommit (stage and commit dirty worktree)] [--no-prosecute (skip cross-model prosecutor)] [--prompt-only (emit prosecutor prompt without agy)] [--require-prosecutor (fail closed if agy unavailable)] [--no-manifest (skip gate-manifest recording)] [--json (emit JSON)]'
   },
   rescue: {
     args: '<ticket-id> [repo]',
@@ -110,7 +116,7 @@ const COMMANDS = {
     args: '<id | spec.md> [repo]',
     desc: 'compile an Antigravity brain plan or spec file into plan.json',
     extended: 'convert → validate → overlap/coldstart/parallax gates with feedback loop → advisory premortem',
-    flags: '[--estimate (forecast quota burn without writing files)] [--prompt-only (emit conversion/premortem/parallax prompts without agy)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
+    flags: '[--delta <prev-plan.json> (incrementally recompile modified/commented tickets)] [--estimate (forecast quota burn without writing files)] [--prompt-only (emit conversion/premortem/parallax prompts without agy)] [--json (emit JSON)] [--out <file> (output plan path)] [--emit-workflow <file.py> (emit native run_workflow script)] [--force (overwrite existing)] [--decompose (split wide tickets)] [--max-ticket-scope <n> (max files per ticket)] [--no-fast-path (force LLM conversion)] [--no-coldstart (skip coldstart)] [--no-parallax (skip parallax)] [--no-premortem (skip premortem)]'
   },
   distill: {
     args: '[repo]',
@@ -143,7 +149,7 @@ const COMMANDS = {
   init: {
     args: '[repo]',
     desc: 'initialize a target repository for ADLC and agb (.adlc/config.json, specs/feature-template.md, .gitignore)',
-    flags: '[--cloud (scaffold .agents/ zero-install cloud repo pack)] [--force (overwrite existing template/cloud files)] [--with-codegraph (add .codegraph/ to .gitignore, run codegraph init, enable in config)] [--decision-provider <jev|gemini-decisions|kev> (configure System-1 decision engine provider)]'
+    flags: '[--cloud (scaffold .agents/ zero-install cloud repo pack)] [--automations (scaffold Antigravity 2.0 declarative automations)] [--force (overwrite existing template/cloud files)] [--with-codegraph (add .codegraph/ to .gitignore, run codegraph init, enable in config)] [--decision-provider <jev|gemini-decisions|kev> (configure System-1 decision engine provider)]'
   },
   'sync-models': {
     args: '',
@@ -320,24 +326,27 @@ try {
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'gate-ticket') {
-    const valueFlags = new Set(['--base', '--worktree', '--test-cmd', '--build-cmd']);
+    const valueFlags = new Set(['--base', '--worktree', '--test-cmd', '--build-cmd', '--browser-url']);
     rejectUnknownFlags(
       'gate-ticket',
       rest,
-      new Set(['--skip-hollow', '--autocommit', '--no-manifest', '--json']),
+      new Set(['--skip-hollow', '--skip-browser', '--autocommit', '--no-manifest', '--json']),
       valueFlags
     );
     let base = 'HEAD~1';
     let worktree = null;
     let testCmd = 'npm test';
     let buildCmd = null;
+    let browserUrl = null;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '--base') base = rest[++i];
       else if (rest[i] === '--worktree') worktree = rest[++i];
       else if (rest[i] === '--test-cmd') testCmd = rest[++i];
       else if (rest[i] === '--build-cmd') buildCmd = rest[++i];
+      else if (rest[i] === '--browser-url') browserUrl = rest[++i];
     }
     const skipHollow = rest.includes('--skip-hollow');
+    const skipBrowser = rest.includes('--skip-browser');
     const autocommit = rest.includes('--autocommit') || Boolean(worktree);
     const noManifest = rest.includes('--no-manifest');
     const jsonOut = rest.includes('--json');
@@ -345,7 +354,7 @@ try {
     const ticketId = positional[0];
     const targetRepo = resolve(positional[1] ?? '.');
     if (!ticketId) {
-      console.error('usage: agb gate-ticket <ticket-id> [repo] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--skip-hollow] [--autocommit] [--no-manifest] [--json]');
+      console.error('usage: agb gate-ticket <ticket-id> [repo] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-manifest] [--json]');
       process.exit(1);
     }
     const res = await runGateTicket(targetRepo, ticketId, {
@@ -353,7 +362,9 @@ try {
       worktree: worktree ? resolve(targetRepo, worktree) : null,
       testCmd,
       buildCmd,
+      browserUrl,
       skipHollow,
+      skipBrowser,
       autocommit,
       recordManifest: !noManifest,
     });
@@ -364,6 +375,83 @@ try {
       console.log(`gate-ticket ${ticketId}: PASS (${res.changedPaths.length} file(s) verified against ${res.baseRefSha.slice(0, 8)})`);
     } else {
       console.error(`gate-ticket ${ticketId}: FAIL [${res.kind}] — ${res.error}`);
+    }
+    process.exit(res.ok ? 0 : 2);
+  } else if (cmd === 'handoff') {
+    const valueFlags = new Set(['--base', '--worktree', '--test-cmd', '--build-cmd', '--browser-url', '--html']);
+    rejectUnknownFlags(
+      'handoff',
+      rest,
+      new Set([
+        '--skip-hollow',
+        '--skip-browser',
+        '--autocommit',
+        '--no-prosecute',
+        '--prompt-only',
+        '--require-prosecutor',
+        '--no-manifest',
+        '--json',
+      ]),
+      valueFlags
+    );
+    let base = 'HEAD';
+    let worktree = null;
+    let testCmd = 'npm test';
+    let buildCmd = null;
+    let browserUrl = null;
+    let htmlOut = null;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === '--base') base = rest[++i];
+      else if (rest[i] === '--worktree') worktree = rest[++i];
+      else if (rest[i] === '--test-cmd') testCmd = rest[++i];
+      else if (rest[i] === '--build-cmd') buildCmd = rest[++i];
+      else if (rest[i] === '--browser-url') browserUrl = rest[++i];
+      else if (rest[i] === '--html') htmlOut = rest[++i];
+    }
+    const skipHollow = rest.includes('--skip-hollow');
+    const skipBrowser = rest.includes('--skip-browser');
+    const autocommit = rest.includes('--autocommit') || Boolean(worktree);
+    const noProsecute = rest.includes('--no-prosecute');
+    const promptOnly = rest.includes('--prompt-only');
+    const requireProsecutor = rest.includes('--require-prosecutor');
+    const noManifest = rest.includes('--no-manifest');
+    const jsonOut = rest.includes('--json');
+    const positional = extractPositionalArgs(rest, valueFlags);
+    const ticketId = positional[0];
+    const targetRepo = resolve(positional[1] ?? '.');
+    if (!ticketId) {
+      console.error('usage: agb handoff <ticket-id> [repo] [--base <ref>] [--worktree <dir>] [--test-cmd <cmd>] [--build-cmd <cmd>] [--browser-url <url>] [--html <file>] [--skip-hollow] [--skip-browser] [--autocommit] [--no-prosecute] [--prompt-only] [--require-prosecutor] [--no-manifest] [--json]');
+      process.exit(1);
+    }
+    const res = await runTicketHandoff(targetRepo, ticketId, {
+      base,
+      worktree: worktree ? resolve(targetRepo, worktree) : null,
+      testCmd,
+      buildCmd,
+      browserUrl,
+      htmlOut,
+      skipHollow,
+      skipBrowser,
+      autocommit,
+      prosecute: !noProsecute,
+      promptOnly,
+      requireProsecutor,
+      recordManifest: !noManifest,
+    });
+    if (jsonOut) {
+      await new Promise((r) => process.stdout.write(`${JSON.stringify(res, null, 2)}\n`, r));
+      process.exit(res.ok ? 0 : 2);
+    }
+    let outText = formatHandoffMarkdown(res);
+    if (
+      (res.prosecution?.mode === 'prompt-only' || res.prosecution?.mode === 'prompt-only-fallback') &&
+      res.prosecution?.prompt
+    ) {
+      outText += `\n=== PROSECUTOR PROMPT (${res.prosecution.model}) ===\n${res.prosecution.prompt}\n`;
+    }
+    await new Promise((r) => process.stdout.write(outText, r));
+    if (!res.ok) {
+      console.error(`handoff ${ticketId}: FAIL [${res.stage}] — ${res.error}`);
     }
     process.exit(res.ok ? 0 : 2);
   } else if (cmd === 'rescue') {
@@ -674,16 +762,18 @@ try {
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.ok ? 0 : 2);
   } else if (cmd === 'plan') {
+    const planValueFlags = new Set(['--out', '--max-ticket-scope', '--emit-workflow', '--delta']);
     rejectUnknownFlags(
       'plan',
       rest,
       new Set(['--estimate', '--prompt-only', '--json', '--force', '--decompose', '--no-fast-path', '--no-coldstart', '--no-parallax', '--no-premortem']),
-      new Set(['--out', '--max-ticket-scope', '--emit-workflow'])
+      planValueFlags
     );
     // The plan itself is authored in Antigravity (GUI plan mode or an agy
     // planning session) — this command only compiles that artifact.
     let out = 'plan.json';
     let emitWorkflow = null;
+    let deltaPath = null;
     let maxTicketScope;
     const estimate = rest.includes('--estimate');
     const promptOnly = rest.includes('--prompt-only');
@@ -703,6 +793,12 @@ try {
           process.exit(1);
         }
         emitWorkflow = rest[++i];
+      } else if (rest[i] === '--delta') {
+        if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
+          console.error('agb: missing value for --delta');
+          process.exit(1);
+        }
+        deltaPath = rest[++i];
       } else if (rest[i] === '--max-ticket-scope') {
         if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
           console.error('agb: missing value for --max-ticket-scope');
@@ -716,18 +812,25 @@ try {
         maxTicketScope = parsedScope;
       }
     }
-    const positional = extractPositionalArgs(rest, new Set(['--out', '--max-ticket-scope', '--emit-workflow']));
+    const positional = extractPositionalArgs(rest, planValueFlags);
     const id = positional[0];
     const repo = positional[1] ?? '.';
     if (!id || !out) {
-      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--estimate] [--prompt-only] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
+      console.error('usage: agb plan <brain-id-or-prefix | spec.md> [repo-path] [--delta <prev-plan.json>] [--estimate] [--prompt-only] [--json] [--out plan.json] [--emit-workflow <file.py>] [--force] [--decompose] [--max-ticket-scope <n>] [--no-fast-path] [--no-coldstart] [--no-parallax] [--no-premortem]');
       process.exit(1);
     }
     const force = rest.includes('--force');
     const targetRepo = resolve(repo);
     const resolvedWorkflowPath = emitWorkflow ? resolve(targetRepo, emitWorkflow) : null;
+    const resolvedDeltaFrom = deltaPath
+      ? (existsSync(resolve(deltaPath)) ? resolve(deltaPath) : resolve(targetRepo, deltaPath))
+      : null;
     if (promptOnly) {
-      const built = buildPlanPrompts(id, { repo: targetRepo, maxTicketScope });
+      const built = buildPlanPrompts(id, {
+        repo: targetRepo,
+        maxTicketScope,
+        ...(resolvedDeltaFrom ? { deltaFrom: resolvedDeltaFrom } : {}),
+      });
       if (jsonOut) {
         await new Promise((r) => process.stdout.write(`${JSON.stringify(built, null, 2)}\n`, r));
         process.exit(0);
@@ -753,6 +856,7 @@ try {
         fastPath: !noFastPath,
         decompose,
         maxTicketScope,
+        ...(resolvedDeltaFrom ? { deltaFrom: resolvedDeltaFrom } : {}),
         coldstart: false,
         parallax: false,
         premortem: false,
@@ -807,6 +911,7 @@ try {
       fastPath: !noFastPath,
       decompose,
       maxTicketScope,
+      ...(resolvedDeltaFrom ? { deltaFrom: resolvedDeltaFrom } : {}),
       coldstart: !rest.includes('--no-coldstart'),
       parallax: !rest.includes('--no-parallax'),
       premortem: !rest.includes('--no-premortem'),
@@ -1092,10 +1197,11 @@ try {
     const tuiRes = await runInteractiveAcceptTui(dossier, { repo: targetRepo });
     process.exit(tuiRes.ok ? 0 : 1);
   } else if (cmd === 'init') {
-    const INIT_BOOL_FLAGS = new Set(['--cloud', '--force', '--with-codegraph']);
+    const INIT_BOOL_FLAGS = new Set(['--cloud', '--automations', '--force', '--with-codegraph']);
     const INIT_VALUE_FLAGS = new Set(['--decision-provider']);
     rejectUnknownFlags('init', rest, INIT_BOOL_FLAGS, INIT_VALUE_FLAGS);
     const cloud = rest.includes('--cloud');
+    const automations = rest.includes('--automations');
     const force = rest.includes('--force');
     const withCodegraph = rest.includes('--with-codegraph');
     let decisionProvider = null;
@@ -1119,6 +1225,7 @@ try {
     const res = runInit({
       repo: targetRepo,
       cloud,
+      automations,
       force,
       withCodegraph,
       decisionProvider,

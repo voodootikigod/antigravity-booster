@@ -1,0 +1,25 @@
+{
+  "body": "Add ui://agb/ticket-viewer.html (buildTicketViewerHtml) and ui://agb/manifest-viewer.html (buildManifestViewerHtml) in mcp/ui-views.mjs, and register agb_ticket_viewer (surface: file, extensions: [.agbticket]) and agb_manifest_viewer (surface: file, extensions: [.agbmanifest]) in mcp/server.mjs supporting symlink-verified .adlc/tickets/*.json / .adlc/manifest.jsonl reads and antigravity-file:// deferred reads. Extend runInit in lib/doctor.mjs with automations = false (agb init --automations [--force]) to scaffold symlink-verified .agents/automations/{agb-quota-resume,agb-nightshift-distill,agb-pr-prosecutor}.json declarative Antigravity 2.0 automation definitions without overwriting user edits unless force: true. Expand test/mcp-apps.test.mjs and add test/automations-init.test.mjs. Verify: node --test test/mcp-apps.test.mjs test/automations-init.test.mjs",
+  "category": "feature",
+  "completed": true,
+  "edges": [
+    {
+      "to": "T-W2-4"
+    }
+  ],
+  "id": "T-W2-3",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "mcp/ui-views.mjs",
+    "mcp/server.mjs",
+    "lib/doctor.mjs",
+    "test/mcp-apps.test.mjs",
+    "test/automations-init.test.mjs"
+  ],
+  "title": "MCP App File Viewers (ticket-viewer, manifest-viewer) & agb init --automations"
+}

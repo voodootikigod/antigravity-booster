@@ -91,8 +91,8 @@ export const UNITS = Object.freeze([
   {
     id: 'surface:adlc-gates',
     kind: 'core',
-    label: 'ADLC integrations: adlc bridge, rails, plan, shape, review, preflight, prosecute, gate-ticket',
-    paths: ['lib/adlc-bridge.mjs', 'lib/adlc-tool.mjs', 'lib/active-rails.mjs', 'lib/gate-ticket.mjs', 'lib/prosecute.mjs', 'lib/review.mjs',
+    label: 'ADLC integrations: adlc bridge, rails, plan, shape, review, preflight, prosecute, gate-ticket, handoff, browser-gate',
+    paths: ['lib/adlc-bridge.mjs', 'lib/adlc-tool.mjs', 'lib/active-rails.mjs', 'lib/browser-gate.mjs', 'lib/gate-ticket.mjs', 'lib/handoff.mjs', 'lib/prosecute.mjs', 'lib/review.mjs',
       'lib/plan.mjs', 'lib/plan-integrity.mjs', 'lib/preflight.mjs', 'lib/digest.mjs', 'lib/schemas.mjs',
       'lib/shape.mjs', 'lib/tdd-split.mjs', 'lib/workflow-emit.mjs', 'lib/decision-engine.mjs'],
     rails: [],
@@ -151,6 +151,7 @@ export const UNITS = Object.freeze([
 export const COMMAND_UNITS = Object.freeze({
   run: 'surface:scheduler',
   'gate-ticket': 'surface:adlc-gates',
+  handoff: 'surface:adlc-gates',
   plan: 'surface:adlc-gates',
   review: 'surface:adlc-gates',
   prosecute: 'surface:adlc-gates',

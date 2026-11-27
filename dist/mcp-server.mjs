@@ -894,7 +894,7 @@ var init_decision_engine = __esm({
 // lib/doctor.mjs
 import { execFile as execFile2, execFileSync as execFileSync2, execSync, spawnSync } from "child_process";
 import { promisify as promisify2 } from "util";
-var execFileAsync2, SELFTEST_RAIL, SELFTEST_REASON, CLOUD_ENVIRONMENT_JSON, CLOUD_PROSECUTOR_AGENT_MD, CLOUD_SPEC_LINTER_AGENT_MD;
+var execFileAsync2, SELFTEST_RAIL, SELFTEST_REASON, CLOUD_ENVIRONMENT_JSON, CLOUD_PROSECUTOR_AGENT_MD, CLOUD_SPEC_LINTER_AGENT_MD, AUTOMATION_TEMPLATES;
 var init_doctor2 = __esm({
   "lib/doctor.mjs"() {
     init_adlc_bridge();
@@ -941,6 +941,59 @@ model: ${ROLE_MODELS.premortem}
 
 You are an ADLC specification auditor. Verify that every ticket declares disjoint scopes, explicit dependency edges, standing rails, and deterministic backticked verification commands.
 `;
+    AUTOMATION_TEMPLATES = Object.freeze([
+      [
+        "agb-quota-resume.json",
+        JSON.stringify(
+          {
+            version: 1,
+            id: "agb-quota-resume",
+            name: "AGB Quota Reset Fleet Resume",
+            description: "Checks 4-window pool quota status and resumes paused ADLC fleet runs when capacity replenishes.",
+            schedule: "*/30 * * * *",
+            timezone: "UTC",
+            commandExecutionPolicy: "sandbox",
+            prompt: "Run `~/.local/bin/agb status .` and inspect whether an interrupted ADLC run is waiting on quota replenishment. If pool capacity is available, resume cleanly with `~/.local/bin/agb run plan.json --resume` and summarize merged vs remaining tickets."
+          },
+          null,
+          2
+        ) + "\n"
+      ],
+      [
+        "agb-nightshift-distill.json",
+        JSON.stringify(
+          {
+            version: 1,
+            id: "agb-nightshift-distill",
+            name: "AGB Nightshift Defense Distillation & Stale-Rail Audit",
+            description: "Compiles recurring prosecution findings into .adlc/learned-checks.json and audits completed ticket rails.",
+            schedule: "0 2 * * 1-5",
+            timezone: "America/Los_Angeles",
+            commandExecutionPolicy: "sandbox",
+            prompt: "Run `~/.local/bin/agb distill . --compile-checks --json` and `npx adlc ticket doctor`. Report any newly staged ADLC defenses or completed tickets still holding active rails."
+          },
+          null,
+          2
+        ) + "\n"
+      ],
+      [
+        "agb-pr-prosecutor.json",
+        JSON.stringify(
+          {
+            version: 1,
+            id: "agb-pr-prosecutor",
+            name: "AGB Read-Only 5-Lens Branch Prosecutor",
+            description: "Runs read-only 5-lens adversarial code review against active feature branch diffs prior to P6 human review.",
+            schedule: "0 */4 * * 1-5",
+            timezone: "UTC",
+            commandExecutionPolicy: "sandbox",
+            prompt: "If the current branch is ahead of `origin/main`, run `~/.local/bin/agb review . origin/main...HEAD --five-lens` in read-only mode and post a concise P5 verdict summary."
+          },
+          null,
+          2
+        ) + "\n"
+      ]
+    ]);
   }
 });
 
@@ -1470,6 +1523,7 @@ var init_pools = __esm({
 // mcp/server.mjs
 init_pools();
 import readline from "node:readline";
+import { createHash as createHash2 } from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { basename as basename3, dirname as dirname6, join as join7, parse as parse2, relative as relative5, resolve as resolve7, isAbsolute as isAbsolute5, sep as sep3 } from "node:path";
@@ -3013,6 +3067,58 @@ function readReportSummary(boosterDir, exists) {
     return null;
   }
 }
+var SCREENSHOT_MIMES = {
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg"
+};
+var MAX_INLINE_PREVIEW_BYTES = 256 * 1024;
+function readBrowserEvidenceSummary(canonRepo, boosterDir, exists) {
+  if (!exists) return null;
+  const evPath = join5(boosterDir, "browser-evidence.json");
+  const st = assertNotSymlink(evPath);
+  if (!st || !st.isFile()) return null;
+  try {
+    const parsed = JSON.parse(readFileSync4(evPath, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const rawShots = Array.isArray(parsed.screenshots) ? parsed.screenshots : [];
+    const screenshots = rawShots.slice(0, 8).map((shot) => {
+      const relPath = typeof shot?.path === "string" ? shot.path : "";
+      let dataUri = null;
+      if (relPath && !isAbsolute3(relPath) && !relPath.includes("..")) {
+        try {
+          const fullShot = resolve5(canonRepo, relPath);
+          const shotSt = assertNotSymlink(fullShot);
+          const mime = SCREENSHOT_MIMES[String(shot?.ext || "").toLowerCase()];
+          if (shotSt && shotSt.isFile() && shotSt.size > 0 && shotSt.size <= MAX_INLINE_PREVIEW_BYTES && mime) {
+            dataUri = `data:${mime};base64,${readFileSync4(fullShot).toString("base64")}`;
+          }
+        } catch {
+        }
+      }
+      return {
+        name: String(shot?.name || ""),
+        path: relPath,
+        bytes: Number(shot?.bytes) || 0,
+        ...dataUri ? { dataUri } : {}
+      };
+    });
+    return {
+      ok: Boolean(parsed.ok),
+      enforced: Boolean(parsed.enforced),
+      advisory: Boolean(parsed.advisory),
+      ticketId: parsed.ticketId ?? null,
+      url: parsed.url ?? null,
+      routes: Array.isArray(parsed.routes) ? parsed.routes : [],
+      consoleErrors: Array.isArray(parsed.consoleErrors) ? parsed.consoleErrors : [],
+      serverErrors: Array.isArray(parsed.serverErrors) ? parsed.serverErrors : [],
+      screenshots
+    };
+  } catch {
+    return null;
+  }
+}
 function buildAcceptanceDossier({
   repo = process.cwd(),
   base = "HEAD",
@@ -3093,6 +3199,7 @@ ${touchedExportHints.join("\n")}
   });
   const gateManifest = readGateManifestSummary(canonRepo);
   const lastReport = readReportSummary(boosterDir, exists);
+  const browserEvidence = readBrowserEvidenceSummary(canonRepo, boosterDir, exists);
   const counts = {
     filesChanged: filesSet.size,
     totalHunks: hunks.length,
@@ -3115,6 +3222,7 @@ ${touchedExportHints.join("\n")}
       callers: externalCallers.callers.slice(0, 40)
     },
     gateManifest,
+    browserEvidence,
     report: lastReport ? {
       runId: lastReport.runId ?? null,
       merged: Array.isArray(lastReport.merged) ? lastReport.merged : [],
@@ -3148,6 +3256,13 @@ function formatAcceptanceDossierMarkdown(dossier = {}) {
   if (dossier.gateManifest?.totalEntries > 0) {
     const gatePairs = Object.entries(dossier.gateManifest.gatesByType || {}).map(([g, n]) => `${g}:${n}`).join(", ");
     lines.push(`- **Gate Manifest Entries:** ${dossier.gateManifest.totalEntries} (${gatePairs})`);
+  }
+  if (dossier.browserEvidence) {
+    const bev = dossier.browserEvidence;
+    const modeStr = bev.enforced ? "enforced" : "advisory";
+    lines.push(
+      `- **Browser Prosecutor (${modeStr}):** ${bev.ok ? "PASS" : "FAIL"} (${(bev.routes ?? []).length} route(s), ${(bev.consoleErrors ?? []).length} console error(s), ${(bev.serverErrors ?? []).length} 5xx/server error(s), ${(bev.screenshots ?? []).length} screenshot(s))`
+    );
   }
   const callers = dossier.externalCallers?.callers ?? [];
   lines.push("", "## External Caller Blast Radius", "");
@@ -5164,6 +5279,204 @@ function buildAcceptWorkbenchHtml() {
     viewJs
   });
 }
+function buildTicketViewerHtml() {
+  const bodyHtml = [
+    '  <div class="shell">',
+    '    <div class="card">',
+    '      <div class="space-between">',
+    '        <div class="row">',
+    '          <span class="title" id="tvId">ADLC Ticket Viewer</span>',
+    '          <span class="badge" id="tvStatus">PENDING</span>',
+    "        </div>",
+    '        <button type="button" id="btnHandoffTicket">Run /agb-handoff</button>',
+    "      </div>",
+    '      <div class="muted" id="tvPath" style="margin-top:6px">Waiting for ticket shard\u2026</div>',
+    "    </div>",
+    '    <div class="card">',
+    '      <div class="title" id="tvTitle" style="margin-bottom:8px"></div>',
+    '      <div class="row" id="tvMeta" style="margin-bottom:8px"></div>',
+    '      <div class="label">Allowed Scope Globs</div>',
+    '      <div class="row" id="tvScope" style="margin:6px 0 12px 0"></div>',
+    '      <div class="label">Frozen Standing Rails</div>',
+    '      <div class="row" id="tvRails" style="margin:6px 0 12px 0"></div>',
+    '      <div class="label">Outbound DAG Edges</div>',
+    '      <div class="row" id="tvEdges" style="margin:6px 0 12px 0"></div>',
+    '      <div class="label">Ticket Specification Body</div>',
+    '      <pre id="tvBody" style="margin-top:6px;white-space:pre-wrap"></pre>',
+    "    </div>",
+    "  </div>"
+  ].join("\n");
+  const viewJs = [
+    'let currentTicketId = "";',
+    'const tvId = document.getElementById("tvId");',
+    'const tvStatus = document.getElementById("tvStatus");',
+    'const tvPath = document.getElementById("tvPath");',
+    'const tvTitle = document.getElementById("tvTitle");',
+    'const tvMeta = document.getElementById("tvMeta");',
+    'const tvScope = document.getElementById("tvScope");',
+    'const tvRails = document.getElementById("tvRails");',
+    'const tvEdges = document.getElementById("tvEdges");',
+    'const tvBody = document.getElementById("tvBody");',
+    "",
+    "function renderPills(items, cls, emptyText) {",
+    '  if (!Array.isArray(items) || !items.length) return "<span class=\\"muted\\">" + escapeHtml(emptyText) + "</span>";',
+    '  return items.map((x) => "<span class=\\"badge " + cls + "\\">" + escapeHtml(x) + "</span>").join(" ");',
+    "}",
+    "",
+    "function renderTicketPayload(data) {",
+    "  const d = data || {};",
+    '  const t = d.ticket && typeof d.ticket === "object" ? d.ticket : {};',
+    '  currentTicketId = String(t.id || "");',
+    '  tvId.textContent = currentTicketId ? ("Ticket " + currentTicketId) : "ADLC Ticket Viewer";',
+    "  const done = Boolean(t.completed);",
+    '  tvStatus.className = "badge " + (done ? "ok" : "warn");',
+    '  tvStatus.textContent = done ? "COMPLETED" : "ACTIVE";',
+    '  tvPath.textContent = d.path ? String(d.path) : "";',
+    '  tvTitle.textContent = String(t.title || "(untitled ticket)");',
+    "  const metaBadges = [];",
+    '  if (t.category) metaBadges.push("<span class=\\"badge\\">category: " + escapeHtml(t.category) + "</span>");',
+    '  if (d.ticketHash) metaBadges.push("<span class=\\"badge\\">sha256: " + escapeHtml(String(d.ticketHash).slice(0, 12)) + "</span>");',
+    '  tvMeta.innerHTML = metaBadges.join(" ");',
+    '  tvScope.innerHTML = renderPills(t.scope, "ok", "No scope globs declared");',
+    '  tvRails.innerHTML = renderPills(t.rails, "err", "No rails declared");',
+    '  const edgeLabels = Array.isArray(t.edges) ? t.edges.map((e) => typeof e === "string" ? e : String((e && e.to) || "")).filter(Boolean) : [];',
+    '  tvEdges.innerHTML = renderPills(edgeLabels, "", "No outbound edges");',
+    '  tvBody.textContent = String(t.body || "");',
+    "  __bridge.scheduleSizeReport();",
+    "}",
+    "",
+    "async function handleTicketResult(data) {",
+    '  if (data && data.deferredRead && typeof data.fileUri === "string") {',
+    '    tvPath.textContent = "Loading " + data.fileUri + "\u2026";',
+    "    try {",
+    "      const res = await __bridge.readResource(data.fileUri);",
+    '      const text = res && Array.isArray(res.contents) && res.contents[0] && typeof res.contents[0].text === "string" ? res.contents[0].text : "{}";',
+    "      const parsed = JSON.parse(text);",
+    '      const ticketObj = parsed && parsed.ticket && typeof parsed.ticket === "object" ? parsed.ticket : parsed;',
+    "      renderTicketPayload({ ok: true, path: data.fileUri, ticket: ticketObj });",
+    "    } catch (err) {",
+    '      tvPath.textContent = "Failed to read ticket resource: " + err.message;',
+    "    }",
+    "    return;",
+    "  }",
+    "  renderTicketPayload(data);",
+    "}",
+    "",
+    'document.getElementById("btnHandoffTicket").addEventListener("click", async () => {',
+    "  if (!currentTicketId) return;",
+    "  try {",
+    '    await __bridge.sendUiMessage("/agb-handoff " + currentTicketId);',
+    "  } catch (err) {",
+    '    tvPath.textContent = "Handoff trigger failed: " + err.message;',
+    "  }",
+    "});",
+    "",
+    "__bridge.onResult(handleTicketResult);"
+  ].join("\n");
+  return buildHtmlDocument({
+    title: "AGB ADLC Ticket Shard Viewer",
+    appName: "agb-ticket-viewer",
+    bodyHtml,
+    viewJs
+  });
+}
+function buildManifestViewerHtml() {
+  const bodyHtml = [
+    '  <div class="shell">',
+    '    <div class="card">',
+    '      <div class="space-between">',
+    '        <div class="row">',
+    '          <span class="title">ADLC Gate-Manifest Audit Timeline</span>',
+    '          <span class="badge" id="mvChainBadge">CHAIN</span>',
+    "        </div>",
+    '        <span class="muted" id="mvTotal">0 entries</span>',
+    "      </div>",
+    '      <div class="muted" id="mvPath" style="margin-top:6px">Waiting for manifest.jsonl\u2026</div>',
+    '      <div class="row" style="margin-top:10px">',
+    '        <input type="text" id="mvFilter" placeholder="Filter by ticket ID or gate name\u2026" style="flex:1" />',
+    "      </div>",
+    "    </div>",
+    '    <div id="mvEntries"></div>',
+    "  </div>"
+  ].join("\n");
+  const viewJs = [
+    "let manifestEntries = [];",
+    'const mvChainBadge = document.getElementById("mvChainBadge");',
+    'const mvTotal = document.getElementById("mvTotal");',
+    'const mvPath = document.getElementById("mvPath");',
+    'const mvFilter = document.getElementById("mvFilter");',
+    'const mvEntries = document.getElementById("mvEntries");',
+    "",
+    "function redrawManifestList() {",
+    '  const q = String(mvFilter.value || "").trim().toLowerCase();',
+    "  const filtered = manifestEntries.filter((e) => {",
+    "    if (!q) return true;",
+    '    const gate = String(e.gate || e.type || "").toLowerCase();',
+    '    const ticket = String(e.ticket || e.ticketId || "").toLowerCase();',
+    "    return gate.includes(q) || ticket.includes(q);",
+    "  });",
+    "  if (!filtered.length) {",
+    '    mvEntries.innerHTML = "<div class=\\"card muted\\">No matching gate-manifest entries.</div>";',
+    "    __bridge.scheduleSizeReport();",
+    "    return;",
+    "  }",
+    "  mvEntries.innerHTML = filtered.slice().reverse().slice(0, 100).map((e) => {",
+    '    const gate = String(e.gate || e.type || "event");',
+    '    const ticket = String(e.ticket || e.ticketId || "");',
+    '    const seq = e.seq !== undefined ? ("#" + String(e.seq)) : "";',
+    '    const ts = String(e.timestamp || e.ts || "");',
+    '    const sigCls = e.signature ? "ok" : "warn";',
+    '    const sigLbl = e.signature ? "SIGNED" : "UNSIGNED";',
+    '    return "<div class=\\"card\\">" +',
+    '      "<div class=\\"space-between\\">" +',
+    '        "<div class=\\"row\\"><strong>" + escapeHtml(seq) + " " + escapeHtml(gate) + "</strong>" +',
+    '          (ticket ? (" <span class=\\"badge\\">" + escapeHtml(ticket) + "</span>") : "") +',
+    '        "</div>" +',
+    '        "<span class=\\"badge " + sigCls + "\\">" + sigLbl + "</span>" +',
+    '      "</div>" +',
+    '      "<div class=\\"muted\\" style=\\"margin-top:4px\\">" + escapeHtml(ts) + (e.hash ? (" \xB7 hash " + escapeHtml(String(e.hash).slice(0, 12))) : "") + "</div>" +',
+    '    "</div>";',
+    '  }).join("");',
+    "  __bridge.scheduleSizeReport();",
+    "}",
+    "",
+    "function renderManifestPayload(data) {",
+    "  const d = data || {};",
+    "  manifestEntries = Array.isArray(d.entries) ? d.entries : [];",
+    "  const valid = d.chainValid !== false;",
+    '  mvChainBadge.className = "badge " + (valid ? "ok" : "err");',
+    '  mvChainBadge.textContent = valid ? "CHAIN INTACT" : "CHAIN BROKEN";',
+    '  mvTotal.textContent = String(d.totalEntries ?? manifestEntries.length) + " entries";',
+    '  mvPath.textContent = d.path ? String(d.path) : "";',
+    "  redrawManifestList();",
+    "}",
+    "",
+    "async function handleManifestResult(data) {",
+    '  if (data && data.deferredRead && typeof data.fileUri === "string") {',
+    '    mvPath.textContent = "Loading " + data.fileUri + "\u2026";',
+    "    try {",
+    "      const res = await __bridge.readResource(data.fileUri);",
+    '      const text = res && Array.isArray(res.contents) && res.contents[0] && typeof res.contents[0].text === "string" ? res.contents[0].text : "";',
+    "      const parsed = text.split(/\\r?\\n/).filter(Boolean).map((line) => { try { return JSON.parse(line); } catch { return null; } }).filter(Boolean);",
+    "      renderManifestPayload({ ok: true, path: data.fileUri, totalEntries: parsed.length, chainValid: true, entries: parsed });",
+    "    } catch (err) {",
+    '      mvPath.textContent = "Failed to read manifest resource: " + err.message;',
+    "    }",
+    "    return;",
+    "  }",
+    "  renderManifestPayload(data);",
+    "}",
+    "",
+    'mvFilter.addEventListener("input", redrawManifestList);',
+    "__bridge.onResult(handleManifestResult);"
+  ].join("\n");
+  return buildHtmlDocument({
+    title: "AGB ADLC Gate-Manifest Viewer",
+    appName: "agb-manifest-viewer",
+    bodyHtml,
+    viewJs
+  });
+}
 var RESOURCE_BUILDERS = /* @__PURE__ */ new Map([
   [
     "ui://agb/plan-card.html",
@@ -5217,6 +5530,24 @@ var RESOURCE_BUILDERS = /* @__PURE__ */ new Map([
       name: "AGB ADLC P6 Sign-Off Workbench",
       description: "Interactive hunk-level P6 sign-off workbench with external-caller blast radius, gate manifest evidence, and PR dossier export.",
       build: buildAcceptWorkbenchHtml
+    }
+  ],
+  [
+    "ui://agb/ticket-viewer.html",
+    {
+      uri: "ui://agb/ticket-viewer.html",
+      name: "AGB ADLC Ticket Shard Viewer",
+      description: "Custom .agbticket / .adlc/tickets/*.json shard viewer showing ticket status, scope globs, frozen rails, and DAG edges.",
+      build: buildTicketViewerHtml
+    }
+  ],
+  [
+    "ui://agb/manifest-viewer.html",
+    {
+      uri: "ui://agb/manifest-viewer.html",
+      name: "AGB ADLC Gate-Manifest Viewer",
+      description: "Custom .agbmanifest / .adlc/manifest.jsonl cryptographic audit timeline and chain integrity viewer.",
+      build: buildManifestViewerHtml
     }
   ]
 ]);
@@ -5505,6 +5836,49 @@ var TOOLS = [
       "com.google.antigravity/ui": {
         surface: "file",
         extensions: [".agbplan"]
+      }
+    }
+  },
+  {
+    name: "agb_ticket_viewer",
+    description: "Inspect an ADLC ticket shard (.agbticket or .adlc/tickets/*.json) with scope, rails, and DAG edges",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Path to .agbticket or .adlc/tickets/*.json shard file" },
+        repo: { type: "string", description: "Optional repository path" }
+      },
+      required: ["path"]
+    },
+    _meta: {
+      ui: {
+        resourceUri: "ui://agb/ticket-viewer.html",
+        visibility: ["model", "app"]
+      },
+      "com.google.antigravity/ui": {
+        surface: "file",
+        extensions: [".agbticket"]
+      }
+    }
+  },
+  {
+    name: "agb_manifest_viewer",
+    description: "Inspect an ADLC gate-manifest JSONL audit trail (.agbmanifest or .adlc/manifest.jsonl) and verify chain integrity",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Optional path to .agbmanifest or .adlc/manifest.jsonl (defaults to .adlc/manifest.jsonl)" },
+        repo: { type: "string", description: "Optional repository path" }
+      }
+    },
+    _meta: {
+      ui: {
+        resourceUri: "ui://agb/manifest-viewer.html",
+        visibility: ["model", "app"]
+      },
+      "com.google.antigravity/ui": {
+        surface: "file",
+        extensions: [".agbmanifest"]
       }
     }
   },
@@ -6097,6 +6471,189 @@ async function handleInProcessUiTool(id, name, args) {
     });
     return;
   }
+  if (name === "agb_ticket_viewer") {
+    const pathCheck = requireNonFlagString(args, "path");
+    if (!pathCheck.ok) {
+      sendToolError(id, pathCheck.error);
+      return;
+    }
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    const rawPathVal = pathCheck.value.trim();
+    if (/^antigravity-file:/i.test(rawPathVal)) {
+      if (!/^antigravity-file:\/\/[^\s\0-\x1F]+$/i.test(rawPathVal)) {
+        sendToolError(id, `Invalid antigravity-file URI: ${rawPathVal}`);
+        return;
+      }
+      const structuredContent2 = {
+        ok: true,
+        deferredRead: true,
+        fileUri: rawPathVal,
+        path: rawPathVal,
+        repo: repoRes.repo,
+        ticket: null,
+        ticketHash: null
+      };
+      sendResult(id, {
+        content: [{ type: "text", text: `Deferred file-surface ticket load: ${rawPathVal}` }],
+        structuredContent: structuredContent2
+      });
+      return;
+    }
+    const ticketFile = resolve7(repoRes.repo, rawPathVal);
+    if (args?.repo !== void 0) {
+      const rel = relative5(repoRes.repo, ticketFile);
+      if (rel.startsWith("..") || isAbsolute5(rel)) {
+        sendToolError(id, `Ticket path escapes repository root: ${pathCheck.value}`);
+        return;
+      }
+    }
+    let fileData;
+    try {
+      assertNoSymlinkSegments(repoRes.repo, ticketFile);
+      fileData = readRegularFileBounded(ticketFile, MAX_STRUCTURED_BYTES);
+    } catch (err) {
+      sendToolError(id, err.message);
+      return;
+    }
+    if (fileData.missing) {
+      sendToolError(id, `Ticket file does not exist: ${ticketFile}`);
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(fileData.text);
+    } catch (err) {
+      sendToolError(id, `Invalid JSON in ticket file ${ticketFile}: ${err.message}`);
+      return;
+    }
+    const ticketObj = parsed && typeof parsed === "object" && !Array.isArray(parsed) && parsed.ticket && typeof parsed.ticket === "object" ? parsed.ticket : parsed;
+    if (!ticketObj || typeof ticketObj !== "object" || Array.isArray(ticketObj) || typeof ticketObj.id !== "string") {
+      sendToolError(id, `Invalid ADLC ticket shard in ${ticketFile}: missing string id`);
+      return;
+    }
+    const ticketHash2 = createHash2("sha256").update(fileData.text, "utf8").digest("hex");
+    const structuredContent = {
+      ok: true,
+      path: ticketFile,
+      repo: repoRes.repo,
+      ticket: ticketObj,
+      ticketHash: ticketHash2
+    };
+    sendResult(id, {
+      content: [
+        {
+          type: "text",
+          text: `Ticket ${ticketObj.id}: ${ticketObj.title || "(untitled)"} (${ticketObj.completed ? "completed" : "active"})`
+        }
+      ],
+      structuredContent
+    });
+    return;
+  }
+  if (name === "agb_manifest_viewer") {
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    let rawPathVal = ".adlc/manifest.jsonl";
+    if (args?.path !== void 0) {
+      const pathCheck = requireNonFlagString(args, "path");
+      if (!pathCheck.ok) {
+        sendToolError(id, pathCheck.error);
+        return;
+      }
+      rawPathVal = pathCheck.value.trim();
+    }
+    if (/^antigravity-file:/i.test(rawPathVal)) {
+      if (!/^antigravity-file:\/\/[^\s\0-\x1F]+$/i.test(rawPathVal)) {
+        sendToolError(id, `Invalid antigravity-file URI: ${rawPathVal}`);
+        return;
+      }
+      const structuredContent2 = {
+        ok: true,
+        deferredRead: true,
+        fileUri: rawPathVal,
+        path: rawPathVal,
+        repo: repoRes.repo,
+        totalEntries: 0,
+        chainValid: true,
+        entries: []
+      };
+      sendResult(id, {
+        content: [{ type: "text", text: `Deferred file-surface manifest load: ${rawPathVal}` }],
+        structuredContent: structuredContent2
+      });
+      return;
+    }
+    const manifestFile = resolve7(repoRes.repo, rawPathVal);
+    if (args?.repo !== void 0) {
+      const rel = relative5(repoRes.repo, manifestFile);
+      if (rel.startsWith("..") || isAbsolute5(rel)) {
+        sendToolError(id, `Manifest path escapes repository root: ${rawPathVal}`);
+        return;
+      }
+    }
+    let fileData;
+    try {
+      assertNoSymlinkSegments(repoRes.repo, manifestFile);
+      fileData = readRegularFileBounded(manifestFile, MAX_STRUCTURED_BYTES);
+    } catch (err) {
+      sendToolError(id, err.message);
+      return;
+    }
+    if (fileData.missing) {
+      sendToolError(id, `Manifest file does not exist: ${manifestFile}`);
+      return;
+    }
+    const entries = [];
+    let chainValid = true;
+    let prevHash = null;
+    const rawLines = fileData.text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    for (let i = 0; i < rawLines.length; i++) {
+      let row;
+      try {
+        row = JSON.parse(rawLines[i]);
+      } catch (err) {
+        sendToolError(id, `Invalid JSONL line ${i + 1} in ${manifestFile}: ${err.message}`);
+        return;
+      }
+      if (!row || typeof row !== "object" || Array.isArray(row)) {
+        sendToolError(id, `Invalid manifest entry object at line ${i + 1} in ${manifestFile}`);
+        return;
+      }
+      if (prevHash !== null && typeof row.prevHash === "string" && row.prevHash !== prevHash) {
+        chainValid = false;
+      }
+      if (typeof row.hash === "string") {
+        prevHash = row.hash;
+      }
+      entries.push(row);
+    }
+    const cappedEntries = entries.slice(-200);
+    const structuredContent = {
+      ok: true,
+      path: manifestFile,
+      repo: repoRes.repo,
+      totalEntries: entries.length,
+      chainValid,
+      entries: cappedEntries
+    };
+    sendResult(id, {
+      content: [
+        {
+          type: "text",
+          text: `Manifest ${basename3(manifestFile)}: ${entries.length} entry(s) (chain ${chainValid ? "intact" : "broken"})`
+        }
+      ],
+      structuredContent
+    });
+    return;
+  }
   if (name === "agb_accept") {
     const repoRes = resolveOptionalRepoArg(args);
     if (!repoRes.ok) {
@@ -6386,7 +6943,7 @@ function buildCliStructuredContent(name, stdout, stderr, exitCode, planOutPath =
   };
 }
 async function handleToolCall(id, name, args) {
-  if (name === "agb_flight_deck" || name === "agb_mission_control" || name === "agb_plan_viewer" || name === "agb_control" || name === "agb_accept") {
+  if (name === "agb_flight_deck" || name === "agb_mission_control" || name === "agb_plan_viewer" || name === "agb_ticket_viewer" || name === "agb_manifest_viewer" || name === "agb_control" || name === "agb_accept") {
     await handleInProcessUiTool(id, name, args);
     return;
   }

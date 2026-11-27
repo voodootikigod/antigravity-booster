@@ -15,6 +15,7 @@ const readJson = (rel) => JSON.parse(readFileSync(join(ROOT, rel), 'utf8'));
 const EXPECTED_COMMANDS = [
   'agb-bootstrap.md',
   'agb-doctor.md',
+  'agb-handoff.md',
   'agb-migrate.md',
   'agb-plan.md',
   'agb-preflight.md',
@@ -230,6 +231,7 @@ test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, r
     'agb',
     'agb-bootstrap',
     'agb-doctor',
+    'agb-handoff',
     'agb-migrate',
     'agb-plan',
     'agb-preflight',
@@ -247,7 +249,7 @@ test('layout: plugin.json has Marketplace discovery metadata, assets/logo.svg, r
   assert.deepEqual(
     readdirSync(join(ROOT, 'skills')).sort(),
     expectedPluginSkills,
-    'root skills/ must hold strictly the 17 user-facing plugin skills (no internal maintainer skills)',
+    'root skills/ must hold strictly the 18 user-facing plugin skills (no internal maintainer skills)',
   );
   for (const skill of expectedPluginSkills) {
     const skillPath = join(ROOT, 'skills', skill, 'SKILL.md');

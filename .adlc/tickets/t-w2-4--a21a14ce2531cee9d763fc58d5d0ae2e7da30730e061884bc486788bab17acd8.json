@@ -1,0 +1,28 @@
+{
+  "body": "Wire agb handoff, agb gate-ticket --skip-browser --browser-url, agb plan --delta, and agb init --automations in bin/agb.mjs, and register lib/browser-gate.mjs, lib/handoff.mjs, and handoff in scripts/release-audit-collect.mjs. Author commands/agb-handoff.md and skills/agb-handoff/SKILL.md, update commands/agb.md and skills/agb/SKILL.md, and update skill/command inventories in test/commands.test.mjs, test/plugin-layout.test.mjs, and test/skills-cross-harness.test.mjs. Add AGB_BROWSER_CHECK_CMD to website/env-docs.json, create website/content/docs/reference/cli/handoff.mdx, register handoff in website/content/docs/reference/cli/meta.json and website/scripts/ia.json, regenerate website/generated/*, verify node website/scripts/check-all.mjs, and rebuild dist/**. Verify: npm run build && node website/scripts/gen-reference.mjs --check && node website/scripts/check-all.mjs && npm run skills:check && node --test test/commands.test.mjs test/plugin-layout.test.mjs test/skills-cross-harness.test.mjs",
+  "category": "feature",
+  "completed": true,
+  "edges": [],
+  "id": "T-W2-4",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "bin/agb.mjs",
+    "scripts/release-audit-collect.mjs",
+    "commands/agb.md",
+    "commands/agb-handoff.md",
+    "skills/agb/SKILL.md",
+    "skills/agb-handoff/SKILL.md",
+    "test/commands.test.mjs",
+    "test/plugin-layout.test.mjs",
+    "test/skills-cross-harness.test.mjs",
+    "website/**",
+    "dist/**",
+    "specs/wave2-ide-parity-visual-prosecution-and-automations-spec.md"
+  ],
+  "title": "CLI Wiring, /agb-handoff Skill & Command, Website Docs & Bundles"
+}
