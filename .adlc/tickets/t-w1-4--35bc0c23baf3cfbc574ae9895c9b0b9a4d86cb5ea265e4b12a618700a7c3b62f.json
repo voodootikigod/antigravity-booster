@@ -1,0 +1,26 @@
+{
+  "body": "Add allowProxyHost support to serveSidecar (sidecars/server.mjs) and sidecars/jetski-launcher.mjs permitting non-loopback Host headers only when authenticated via constant-time timingSafeEqual CSPRNG ?token=, Bearer, or HttpOnly; SameSite=Lax session cookie across all routes. Add formatAcceptanceDossierHtml and writeAcceptHtmlFile in lib/accept.mjs for self-contained interactive P6 HTML cockpit artifacts (agb accept --html <file.html>). Wire agb gate-ticket, agb plan --prompt-only, agb review --prompt-only, agb init --cloud [--force], agb sidecar --cloud, and agb accept --html in bin/agb.mjs, update commands/agb.md, skills/agb/SKILL.md (+ skills mirrors), and website/content/docs/, regenerate website/generated/, rebuild dist/**, and expand test/sidecar.test.mjs and test/accept.test.mjs.",
+  "edges": [],
+  "id": "T-W1-4",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "bin/agb.mjs",
+    "lib/accept.mjs",
+    "sidecars/server.mjs",
+    "sidecars/jetski-launcher.mjs",
+    "scripts/release-audit-collect.mjs",
+    "commands/agb.md",
+    "skills/agb/SKILL.md",
+    "test/accept.test.mjs",
+    "test/sidecar.test.mjs",
+    "website/**",
+    "dist/**",
+    "specs/wave1-remote-agents-and-cloud-mode-spec.md"
+  ],
+  "title": "CLI Wiring, Proxy-Safe sidecar --cloud, Brain HTML Dossier, Docs & Bundles"
+}

@@ -480,7 +480,7 @@ test('jetski-launcher: non-port ANTIGRAVITY_SIDECAR_WEB_PORT values do not disab
       const tokenPath = join(repo, '.booster', 'token');
       assert.equal(existsSync(tokenPath), true, `token file must be created for invalid port ${rawPort}`);
       const token = readFileSync(tokenPath, 'utf8').trim();
-      assert.ok(token.length >= 16, 'generated token must be non-empty');
+      assert.match(token, /^[0-9a-f]{32}$/, 'generated 16-byte CSPRNG token must be 32 hex chars');
 
       assert.equal((await fetchP(`http://127.0.0.1:${port}/`)).statusCode, 403);
       assert.equal((await fetchP(`http://127.0.0.1:${port}/events`)).statusCode, 403);
@@ -689,3 +689,82 @@ test('jetski-launcher: readJetskiEvents reads valid events and advances offset',
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('sidecar --cloud (allowProxyHost): enforces mandatory CSPRNG token and constant-time query/Bearer/cookie auth on proxy Host headers', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'agb-sidecar-cloud-'));
+  try {
+    mkdirSync(join(repo, '.booster', 'logs', 'r-cloud'), { recursive: true });
+    writeFileSync(join(repo, '.booster', 'run.json'), JSON.stringify({ runId: 'r-cloud' }));
+    writeFileSync(join(repo, '.booster', 'logs', 'r-cloud', 'events.jsonl'), '{"cloud":true}\n');
+
+    // 1. allowProxyHost without a non-empty token is rejected immediately
+    await assert.rejects(
+      serveSidecar(repo, 0, null, { allowProxyHost: true }),
+      /non-empty token is required/
+    );
+
+    const secret = 'deadbeefcafebabe0123456789abcdef';
+    const srv = await serveSidecar(repo, 0, secret, { allowProxyHost: true });
+    try {
+      const port = srv.address().port;
+      const proxyHost = '3333-devbox-proxy.example.com';
+
+      // 2. Non-loopback Host WITHOUT valid token is rejected (403) on ALL routes, including /style.css
+      const noTokRoot = await fetchP(`http://127.0.0.1:${port}/`, { Host: proxyHost });
+      assert.equal(noTokRoot.statusCode, 403);
+      const noTokCss = await fetchP(`http://127.0.0.1:${port}/style.css`, { Host: proxyHost });
+      assert.equal(noTokCss.statusCode, 403);
+      const badTokEvents = await fetchP(`http://127.0.0.1:${port}/events?token=wrong`, { Host: proxyHost });
+      assert.equal(badTokEvents.statusCode, 403);
+
+      // 3. Visiting /?token=<secret> over proxy Host succeeds (200) and sets HttpOnly SameSite=Lax cookie
+      const okRoot = await fetchP(`http://127.0.0.1:${port}/?token=${secret}`, { Host: proxyHost });
+      assert.equal(okRoot.statusCode, 200);
+      const setCookie = String(okRoot.headers['set-cookie'] ?? '');
+      assert.match(setCookie, /agb_sidecar_token=/);
+      assert.match(setCookie, /HttpOnly/i);
+      assert.match(setCookie, /SameSite=Lax/i);
+
+      // 4. Subsequent subresource & /events requests over proxy Host succeed using Cookie or Bearer token
+      const cookieHeader = `agb_sidecar_token=${secret}`;
+      const okCss = await fetchP(`http://127.0.0.1:${port}/style.css`, { Host: proxyHost, Cookie: cookieHeader });
+      assert.equal(okCss.statusCode, 200);
+
+      const okEventsCookie = await fetchP(`http://127.0.0.1:${port}/events`, { Host: proxyHost, Cookie: cookieHeader });
+      assert.equal(okEventsCookie.statusCode, 200);
+      assert.deepEqual(JSON.parse(okEventsCookie.data).lines, ['{"cloud":true}']);
+
+      const okEventsBearer = await fetchP(`http://127.0.0.1:${port}/events`, {
+        Host: proxyHost,
+        Authorization: `Bearer ${secret}`,
+      });
+      assert.equal(okEventsBearer.statusCode, 200);
+    } finally {
+      srv.close();
+    }
+
+    // 5. startJetskiLauncher with allowProxyHost: true generates CSPRNG token and accepts authenticated proxy Host
+    const launcherRepo = mkdtempSync(join(tmpdir(), 'agb-jetski-proxy-'));
+    let launcherSrv;
+    try {
+      launcherSrv = await startJetskiLauncher({
+        repoPath: launcherRepo,
+        env: {},
+        defaultPort: 0,
+        allowProxyHost: true,
+      });
+      const lPort = launcherSrv.address().port;
+      const lToken = readFileSync(join(launcherRepo, '.booster', 'token'), 'utf8').trim();
+      const pHost = 'devbox-proxy.antigravity.google:8080';
+      assert.match(lToken, /^[0-9a-f]{32}$/);
+      assert.equal((await fetchP(`http://127.0.0.1:${lPort}/`, { Host: pHost })).statusCode, 403);
+      assert.equal((await fetchP(`http://127.0.0.1:${lPort}/?token=${lToken}`, { Host: pHost })).statusCode, 200);
+    } finally {
+      launcherSrv?.close();
+      rmSync(launcherRepo, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+

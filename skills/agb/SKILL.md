@@ -7,8 +7,8 @@ description: End-to-end autonomous software development orchestrator and umbrell
 
 Executes the complete Agentic Development Lifecycle (ADLC) 5-phase Factory
 workflow end-to-end for a requested feature, refactor, or architectural concept,
-or routes any specific subcommand (`shape`, `plan`, `preflight`, `run`, `rescue`,
-`accept`, `holdout`, `statusline`, `review`, `distill`, `status`, `watch`,
+or routes any specific subcommand (`shape`, `plan`, `preflight`, `run`, `gate-ticket`,
+`rescue`, `accept`, `holdout`, `statusline`, `review`, `distill`, `status`, `watch`,
 `sidecar`, `doctor`, `sync-models`, `init`, `bootstrap`, `migrate`, `pool`,
 `brains`, `sweep`).
 

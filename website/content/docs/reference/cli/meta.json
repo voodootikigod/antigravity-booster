@@ -4,6 +4,7 @@
     "index",
     "shape",
     "run",
+    "gate-ticket",
     "rescue",
     "accept",
     "holdout",
