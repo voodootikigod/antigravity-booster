@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T17:58:49.175Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "84056a27f659515eb26e8822252a58677b27ac618777a1ad18bce16ef2d5e6e1",
+    "ticketHash": "d22558f6dd8910cda5e5e878d6feda6a3edc62b39593fe7a45ed65cd59ad05dc",
+    "version": 1
+  },
   "body": "Create lib/acp-pool.mjs exporting isAcpPoolEnabled, AcpReviewPool, and createAcpReviewPool implementing a bounded persistent stdio JSON-RPC 2.0 worker pool over agy acp (initialize, session/new, session/set_config_option, session/prompt, session/cancel) with timeout/crash respawn, clean shutdown(), and graceful { ok: false, fallback: true } degradation when AGB_ACP_POOL=0 or unavailable. Add offline fixture test/fixtures/fake-agy-acp and test/acp-pool.test.mjs. Verify: node --test test/acp-pool.test.mjs",
   "category": "feature",
   "completed": true,

@@ -20,6 +20,7 @@
 | AGB_KILL_GRACE_MS | 15000 | Milliseconds to wait between SIGTERM and SIGKILL when stopping an agy process tree. | honoured |
 | AGB_MODEL_STATS_FILE | &lt;plugin_data&gt;/model_stats.jsonl | Unbundled override path for the BanditModelRouter empirical model outcome ledger recorded by agb run and read by agb plan; ignored in bundled plugin builds. | ignored |
 | AGB_PROVIDER | unset | Only the value jetski is meaningful: bootstrap then installs plugins through the jetski runner. | honoured |
+| AGB_REMOTE_SDK_BIN | unset | Optional executable wrapper for agb run --driver remote-sdk overriding the default python3 google-antigravity SDK bridge in lib/remote-sdk-worker.mjs. | honoured |
 | AGB_RESCUE_TICKET | set by agb rescue | Set by agb rescue on interactive agy -i sessions to protect .booster IPC tokens and rescue locks via PreToolUse while preserving interactive operator prompts. | honoured |
 | AGB_ROUTER_STATIC | unset | Set to 1 to bypass empirical BanditModelRouter candidate re-ranking and preserve static TIER_CANDIDATES order. | honoured |
 | AGB_SESSION_ID | unset | Fallback session id used to locate the active brain when ANTIGRAVITY_CONVERSATION_ID is unset; forwarded to builder agy processes. | honoured |
@@ -60,6 +61,7 @@
 | AGB_CANDIDATE_ROOT | set by agb on holdout runners | Exported by lib/holdout.mjs to the isolated candidate worktree path during P5 holdout verification so out-of-tree holdout scenarios can dynamically import candidate modules. | honoured |
 | AGB_HOOK_DISABLE | unset | Any non-empty value bypasses the PreToolUse rails guard. Each bypass is logged to hooks.log and agb doctor warns about it. | honoured |
 | AGB_LIFECYCLE_HOOKS | 1 | Set to 0 to bypass the advisory in-session lifecycle hooks (PostToolUse, PreInvocation, PostInvocation, Stop) in hooks/lifecycle.mjs. | honoured |
+| AGB_LINUX_CONTAINER_ATTESTATION | unset | Set to 1 on restricted Docker/Kubernetes Linux CI runners without unprivileged userns to permit an ADLC_ADMIN_KEY-signed Linux container sandboxBypassAttestation in prepareBuilderContainment. | honoured |
 | AGB_REQUIRE_DRIVER_SIGNATURE | unset | Set to 1 to make the Windows doctor sandbox check require a signed driver attestation in the probe output. | honoured |
 | AGB_SANDBOX_GATES | on | Set to 0 to run gate commands without the OS sandbox (an explicit acknowledgement of host risk). | honoured |
 | AGB_SANDBOX_PROBE_CMD | unset | Doctor sandbox-probe command override. Restricted to test execution; otherwise the check fails. | honoured |

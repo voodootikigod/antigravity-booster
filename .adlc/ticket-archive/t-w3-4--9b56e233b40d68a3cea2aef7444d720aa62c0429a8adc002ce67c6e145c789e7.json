@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T17:58:52.181Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "2c396f0046a40fe59d8594343694ab39c7f2cd13f8770e44590f68a6d5082a8d",
+    "ticketHash": "5174d15c9bed2e6ce7331c8ec8653a2f0ca4bf3c6656c18b8052f0ee51f78532",
+    "version": 1
+  },
   "body": "Wire agb remote-control [repo] [--dry-run] [--json], agb status --mobile, and agb accept --mobile in bin/agb.mjs, fix resolveAgyBinary() call in lib/handoff.mjs, and update commands/agb.md and skills/agb/SKILL.md. Register lib/acp-pool.mjs, lib/remote-control.mjs, and remote-control in scripts/release-audit-collect.mjs. Document AGB_ACP_POOL and ANTIGRAVITY_REMOTE_CONTROL in website/env-docs.json, create website/content/docs/reference/cli/remote-control.mdx, register remote-control in website/content/docs/reference/cli/meta.json and website/scripts/ia.json, regenerate website/generated/*, and rebuild dist/**. Verify: npm run build && node website/scripts/gen-reference.mjs --check && node website/scripts/check-all.mjs && npm run skills:check",
   "category": "feature",
   "completed": true,

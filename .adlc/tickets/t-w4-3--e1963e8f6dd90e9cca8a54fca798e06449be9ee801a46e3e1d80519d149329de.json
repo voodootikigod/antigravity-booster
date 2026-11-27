@@ -1,0 +1,23 @@
+{
+  "body": "Wire --driver <local|remote-sdk> and --dry-run into agb run in bin/agb.mjs, and update commands/agb.md and skills/agb/SKILL.md. Register lib/remote-sdk-worker.mjs in scripts/release-audit-collect.mjs. Document AGB_REMOTE_SDK_BIN and AGB_LINUX_CONTAINER_ATTESTATION in website/env-docs.json, regenerate website/generated/*, verify node website/scripts/check-all.mjs, and rebuild dist/**. Verify: npm run build && node website/scripts/gen-reference.mjs --check && node website/scripts/check-all.mjs && npm run skills:check",
+  "category": "feature",
+  "completed": true,
+  "edges": [],
+  "id": "T-W4-3",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "bin/agb.mjs",
+    "scripts/release-audit-collect.mjs",
+    "commands/agb.md",
+    "skills/agb/SKILL.md",
+    "website/**",
+    "dist/**",
+    "specs/wave4-remote-sdk-and-linux-container-fallback-spec.md"
+  ],
+  "title": "CLI Wiring (agb run --driver), Audit Registry, Website Docs & Bundles"
+}
