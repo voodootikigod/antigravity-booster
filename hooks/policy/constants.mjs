@@ -2,6 +2,20 @@
 // guard (spec .adlc/specs/native-plugin-installation.md §4.5.1, Appendix A).
 // Tool names are agy 1.2.16 CORTEX_STEP_TYPE_* names, lowercased.
 
+export const PATHLESS_HARNESS_READ_TOOLS = new Set([
+  'google_search', 'browse', 'google:browse', 'list_skills', 'lookup_skill', 'lookup_skills',
+]);
+
+export const SKILL_RESOURCE_READ_TOOLS = new Set(['get_skill_resources']);
+
+export const EXTERNAL_REPO_MUTATING_TOOLS = new Set([
+  'create_github_repository', 'fork_github_repository', 'detach_github_repository',
+]);
+
+export const SKILL_MUTATING_TOOLS = new Set([
+  'save_skill', 'update_skill', 'delete_skill',
+]);
+
 export const READ_ONLY_TOOLS = new Set([
   'view_file', 'read_file', 'grep_search', 'code_search', 'file_search', 'list_directory',
   'read_url_content', 'read_browser_page', 'search_web',
@@ -9,6 +23,8 @@ export const READ_ONLY_TOOLS = new Set([
   'view_file_outline', 'read_terminal', 'read_notebook', 'command_status',
   'find_by_name',
   'list_dir', 'list_permissions', 'search_in_file', 'wait', 'wait_5_seconds',
+  ...PATHLESS_HARNESS_READ_TOOLS,
+  ...SKILL_RESOURCE_READ_TOOLS,
 ]);
 
 // CodeGraph MCP exploration tools: permitted interactively for in-workspace paths

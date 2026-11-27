@@ -248,7 +248,8 @@ test('user-facing skills & personas align with live CLI/MCP surface and readonly
   assert.ok(agbSkill.includes('~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop'), 'skills/agb/SKILL.md must review against <pre-run-base-sha>');
   assert.ok(!agbSkill.includes('agb review . main'), 'skills/agb/SKILL.md must not instruct empty-diff review against main after merge');
   assert.ok(agbSkill.includes('~/.local/bin/agb distill'), 'skills/agb/SKILL.md must document agb distill');
-  assert.ok(agbSkill.includes('mcp__agb__agb_distill'), 'skills/agb/SKILL.md must document mcp__agb__agb_distill');
+  assert.ok(agbSkill.includes('agb_distill') && agbSkill.includes('antigravity-booster_agb'), 'skills/agb/SKILL.md must document agb_distill on antigravity-booster_agb');
+  assert.ok(agbSkill.includes('.agents/rules/adlc-learned.md'), 'skills/agb/SKILL.md must document .agents/rules/adlc-learned.md');
   assert.ok(agbSkill.includes('--emit-workflow'), 'skills/agb/SKILL.md must document --emit-workflow');
   assert.ok(agbSkill.includes('emitWorkflow'), 'skills/agb/SKILL.md must document emitWorkflow');
 

@@ -1,8 +1,20 @@
 {
   "mcpServers": {
     "agb": {
-      "command": "/bin/sh",
-      "args": ["${PLUGIN_ROOT}/bin/node-launcher.sh", "${PLUGIN_ROOT}/dist/mcp-server.mjs"]
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/dist/mcp-server.mjs"],
+      "timeoutSeconds": -1,
+      "tools": {
+        "agb_run": {
+          "background": "always"
+        },
+        "agb_status": {
+          "eager": true
+        },
+        "agb_doctor": {
+          "eager": true
+        }
+      }
     }
   }
 }

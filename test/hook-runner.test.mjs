@@ -552,6 +552,15 @@ test('runner source is POSIX sh: no bashisms, command -v not which, no test -O o
   }
   assert.ok(!/^LAUNCHER_DIR=/m.test(src), 'hook-runner.sh: unused LAUNCHER_DIR (SC2034)');
   assert.ok(src.includes('AGB_WORKER_MODE'), 'tests AGB_WORKER_MODE');
+  assert.ok(
+    !src.includes('trap - EXIT HUP INT TERM'),
+    'hook-runner.sh must never reset HUP/INT/TERM to SIG_DFL when disarming EXIT (watchdog SIGTERM race)'
+  );
+  assert.equal(
+    (src.match(/trap '' HUP INT TERM/g) ?? []).length,
+    3,
+    'all 3 exit disarm paths in hook-runner.sh must ignore HUP/INT/TERM'
+  );
 });
 
 // P5 prosecution H5: a crashed child plus a second toolCall/name injected into

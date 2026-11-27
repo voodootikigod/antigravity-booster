@@ -183,7 +183,9 @@ test('v1.4 integration: CLI `agb distill --json` and `compilePlanToWorkflow` exe
     assert.equal(parsed.ok, true);
     assert.equal(parsed.recurringCount, 1);
     assert.equal(parsed.applied, true);
-    assert.ok(existsSync(join(dir, '.gemini', 'rules', 'adlc-learned.md')));
+    const learnedPath = join(dir, '.agents', 'rules', 'adlc-learned.md');
+    assert.ok(existsSync(learnedPath));
+    assert.match(readFileSync(learnedPath, 'utf8'), /^---\ntrigger: always_on\n/);
 
     const wfPath = join(dir, 'wf.py');
     const wf = compilePlanToWorkflow(

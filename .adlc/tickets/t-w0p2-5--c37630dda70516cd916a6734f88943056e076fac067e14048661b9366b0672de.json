@@ -1,0 +1,26 @@
+{
+  "body": "Export isChildUnreaped(child) from lib/agy.mjs, guard killProcessTree in lib/agy.mjs, terminateProcessTree in lib/scheduler.mjs, killDaemonProcessTree and quiesceChildren in lib/ndjson-worker.mjs, and finally cleanup in test/pools.test.mjs on exitCode === null && signalCode === null, and remove the post-close originalPid SIGKILL sweep in finish() so already-reaped child PIDs never send SIGKILL (-pid or pgrep -P pid) to innocent concurrent test processes on macOS where ps -o lstart= has 1-second resolution. Replace trap - EXIT HUP INT TERM with trap - EXIT; trap '' HUP INT TERM in bin/hook-runner.sh so a racing kill -TERM \"$MAIN_PID\" from the watchdog cannot terminate hook-runner.sh via SIG_DFL after disarming EXIT. Rebuild dist/agb.mjs and website/generated/modules.mdx, and add regression tests in test/scheduler.test.mjs, test/ndjson-worker.test.mjs, and test/hook-runner.test.mjs.",
+  "completed": true,
+  "edges": [],
+  "id": "T-W0P2-5",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "bin/hook-runner.sh",
+    "lib/agy.mjs",
+    "lib/scheduler.mjs",
+    "lib/ndjson-worker.mjs",
+    "test/hook-runner.test.mjs",
+    "test/scheduler.test.mjs",
+    "test/ndjson-worker.test.mjs",
+    "test/pools.test.mjs",
+    "dist/agb.mjs",
+    "website/generated/modules.mdx",
+    "specs/wave0-pr2-mcp-apps-hooks-and-jetski-spec.md"
+  ],
+  "title": "macOS CI Post-Reap PID-Recycling SIGKILL Guard & hook-runner.sh Trap Race Fix"
+}

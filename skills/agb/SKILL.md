@@ -31,7 +31,7 @@ phases sequentially:
         (`Scope`, `Rails`, `Edges`, `Tier`, `Pool Hint`, `Objectives`,
         `Acceptance Criteria`) and a Mermaid `graph TD` block.
     -   Run `~/.local/bin/agb shape specs/<feature-slug>-spec.md --analyze --json`
-        (or `mcp__agb__agb_shape`) to verify `ok: true` (`0` structural errors,
+        (or `call_mcp_tool` on `antigravity-booster_agb` with `ToolName="agb_shape"`) to verify `ok: true` (`0` structural errors,
         `0` concurrent scope overlaps, valid rails, and clean static import
         coupling).
 3.  **5-Lens Plan Adversarial Review Loop (`/plan-review --loop`)**:
@@ -71,7 +71,7 @@ DAG:
     the **Structured Spec Fast-Path** (0 Stage A LLM conversion calls) and
     proceeds directly to Stage B (`coldstart`, `parallax`, `premortem`,
     `model-router`, `merge-forecast`).
--   Pass `--emit-workflow <file.py>` (or `emitWorkflow` via `mcp__agb__agb_plan`)
+-   Pass `--emit-workflow <file.py>` (or `emitWorkflow` via `agb_plan` on `antigravity-booster_agb`)
     to additionally compile the validated ticket DAG into a native
     `run_workflow` Python script.
 -   Confirm `plan.json` is generated and tickets are projected into `.adlc/tickets/`.
@@ -110,7 +110,7 @@ PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
         (automatically fails closed / refuses `--seams-only` if any commit was unprosecuted or System-1 fast-shipped).
     -   Otherwise (or for a full 5-lens audit), run single-pass 5-lens review against `<pre-run-base-sha>` — not `main`, because after merging onto `main`, diffing against `main` produces an empty diff and false-greens:
         `~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop` (single-pass per static diff by default; for fix rounds after edits, re-verify only the delta and prior findings via `--delta <fix-base-ref> --prior-findings .review/last-findings.json`, or pass `--thorough` / `--dry-rounds <n>` when stochastic multi-dry convergence is explicitly desired).
-3.  **Distill Learned Defenses (Optional)**: Run `~/.local/bin/agb distill . [--apply]` (or `mcp__agb__agb_distill`) to scan run/review findings for recurring patterns and stage or apply learned ADLC rules to `.gemini/rules/adlc-learned.md`.
+3.  **Distill Learned Defenses (Optional)**: Run `~/.local/bin/agb distill . [--apply]` (or `agb_distill` on `antigravity-booster_agb`) to scan run/review findings for recurring patterns and stage or apply learned ADLC rules to `.agents/rules/adlc-learned.md`.
 4.  **Report to User**: Present a concise summary of the implemented components, test results, merged tickets, split token telemetry (`Build / Prosecute / Review / System-1`), and gate evidence.
 
 ## Subcommand Routing Reference
@@ -136,7 +136,7 @@ PRE_RUN_BASE_SHA=$(git rev-parse HEAD)
 ~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```
 
-If the `agb` MCP server is connected, you may instead prefer `mcp__agb__agb_shape`, `mcp__agb__agb_plan`, `mcp__agb__agb_preflight`, `mcp__agb__agb_run`, `mcp__agb__agb_review`, `mcp__agb__agb_distill`, `mcp__agb__agb_status`, `mcp__agb__agb_doctor`, or `mcp__agb__agb_init`.
+If the `antigravity-booster_agb` MCP server is connected, you may instead invoke eager tools (`mcp_antigravity-booster_agb_status`, `mcp_antigravity-booster_agb_doctor`) or `call_mcp_tool(ServerName="antigravity-booster_agb", ToolName=...)` for `agb_shape`, `agb_plan`, `agb_preflight`, `agb_run`, `agb_review`, `agb_distill`, `agb_accept`, `agb_holdout`, `agb_flight_deck`, `agb_mission_control`, `agb_plan_viewer`, or `agb_init`.
 
 ## If the shim is missing
 

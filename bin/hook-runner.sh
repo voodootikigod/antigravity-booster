@@ -324,8 +324,9 @@ cleanup_tmp() {
 }
 
 emit_fallback() {
-  # Disarm all traps immediately to prevent duplicate execution upon exit 0
-  trap - EXIT HUP INT TERM
+  # Disarm EXIT trap and ignore HUP/INT/TERM so a racing watchdog SIGTERM cannot kill MAIN_PID via SIG_DFL
+  trap - EXIT
+  trap '' HUP INT TERM
   exec 3<&- 2>/dev/null || true
   if [ "$EMITTED" -eq 1 ]; then
     cleanup_tmp
@@ -615,7 +616,8 @@ fi
 
 # Neutral pass-through handling: if child emitted empty stdout, pass through immediately
 if [ -z "$OUTPUT" ]; then
-  trap - EXIT HUP INT TERM
+  trap - EXIT
+  trap '' HUP INT TERM
   EMITTED=1
   cleanup_tmp
   exit 0
@@ -636,7 +638,8 @@ if [ "$LINE_COUNT" -eq 1 ]; then
       fi
       case "$OUTPUT" in
         *\}*)
-          trap - EXIT HUP INT TERM
+          trap - EXIT
+          trap '' HUP INT TERM
           EMITTED=1
           cleanup_tmp
           printf '%s\n' "$OUTPUT"

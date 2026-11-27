@@ -3,7 +3,7 @@ title: "agb distill"
 description: "Scan repository review and prosecution logs for recurring finding patterns and stage or apply learned ADLC defenses."
 ---
 
-`agb distill` scans `<repo>/.adlc/manifest.jsonl` and `<repo>/.booster/` review/prosecution artifacts for recurring finding fingerprints ($\ge 2$ occurrences across tickets or rounds), stages human-reviewable defenses at `<repo>/.booster/distilled-defenses.md`, and optionally compacts them into `<repo>/.gemini/rules/adlc-learned.md`.
+`agb distill` scans `<repo>/.adlc/manifest.jsonl` and `<repo>/.booster/` review/prosecution artifacts for recurring finding fingerprints ($\ge 2$ occurrences across tickets or rounds), stages human-reviewable defenses at `<repo>/.booster/distilled-defenses.md`, and optionally compacts them into `<repo>/.agents/rules/adlc-learned.md`.
 
 ## Synopsis
 
@@ -11,6 +11,6 @@ description: "Scan repository review and prosecution logs for recurring finding 
 
 ## Flags
 
-- `--apply` writes compacted guidance to `<repo>/.gemini/rules/adlc-learned.md`, bounded strictly under `12,000` bytes (`agy 1.5.10` rule-size budget). Without `--apply`, proposals are only staged in `.booster/distilled-defenses.md`.
+- `--apply` writes compacted guidance with `trigger: always_on` YAML frontmatter to `<repo>/.agents/rules/adlc-learned.md`, bounded strictly under `12,000` bytes (`agy 1.5.10` rule-size budget). Without `--apply`, proposals are only staged in `.booster/distilled-defenses.md`.
 - `--compile-checks` synthesizes ReDoS-safe, declarative `.adlc/learned-checks.json` invariants (`forbidLiteral`, `requireLiteral`, `forbidRegex`) evaluated deterministically during P5 gates.
 - `--json` emits the distillation report as JSON (`scannedCount`, `recurringCount`, `recurring`, `stagedPath`, `applied`, `appliedPath`, `ruleBytes`, `compiledChecks`).

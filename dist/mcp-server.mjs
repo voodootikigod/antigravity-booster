@@ -4829,6 +4829,15 @@ function buildPlanViewerHtml() {
     "",
     'document.getElementById("btnSavePlan").addEventListener("click", async () => {',
     "  syncGateSettings();",
+    "  if (/^antigravity-file:\\/\\//i.test(viewerState.fileUri)) {",
+    "    try {",
+    '      await __bridge.writeResource(viewerState.fileUri, JSON.stringify(viewerState.plan || {}, null, 2) + "\\n");',
+    '      pathEl.textContent = "Saved " + viewerState.fileUri;',
+    "    } catch (err) {",
+    '      pathEl.textContent = "Save failed: " + err.message;',
+    "    }",
+    "    return;",
+    "  }",
     "  const inp = __bridge.getToolInput() || {};",
     '  const repoDir = viewerState.repo || inp.repo || "";',
     '  const rawPath = viewerState.path || inp.path || "plan.agbplan";',
@@ -4876,7 +4885,39 @@ function buildPlanViewerHtml() {
     "  }",
     "});",
     "",
-    "__bridge.onResult(renderViewer);"
+    "async function handleViewerPayload(data) {",
+    '  if (data && data.deferredRead && typeof data.fileUri === "string") {',
+    '    pathEl.textContent = "Loading " + data.fileUri + "\u2026";',
+    "    try {",
+    "      const res = await __bridge.readResource(data.fileUri);",
+    '      const text = res && Array.isArray(res.contents) && res.contents[0] && typeof res.contents[0].text === "string" ? res.contents[0].text : "";',
+    "      const parsed = JSON.parse(text);",
+    "      renderViewer({",
+    "        ok: true,",
+    "        path: data.fileUri,",
+    "        fileUri: data.fileUri,",
+    '        repo: data.repo || "",',
+    '        plan: parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : { tickets: [] },',
+    "        validationErrors: [],",
+    "        quotaCache: data.quotaCache || null,",
+    "        runwayEstimate: null,",
+    "      });",
+    "    } catch (err) {",
+    "      renderViewer({",
+    "        ok: false,",
+    "        path: data.fileUri,",
+    "        fileUri: data.fileUri,",
+    '        repo: data.repo || "",',
+    "        plan: { tickets: [] },",
+    '        validationErrors: ["Failed to read antigravity-file resource: " + err.message],',
+    "      });",
+    "    }",
+    "    return;",
+    "  }",
+    "  renderViewer(data);",
+    "}",
+    "",
+    "__bridge.onResult(handleViewerPayload);"
   ].join("\n");
   return buildHtmlDocument({
     title: "AGB Interactive Plan Viewer",
@@ -5243,7 +5284,7 @@ var TOOLS = [
       type: "object",
       properties: {
         repo: { type: "string", description: "Path to target repository" },
-        apply: { type: "boolean", description: "Write compacted defenses to .gemini/rules/adlc-learned.md" },
+        apply: { type: "boolean", description: "Write compacted defenses to .agents/rules/adlc-learned.md" },
         compileChecks: { type: "boolean", description: "Compile recurring findings into declarative .adlc/learned-checks.json invariants" }
       },
       required: ["repo"]
@@ -5371,8 +5412,10 @@ var TOOLS = [
     _meta: {
       ui: {
         resourceUri: "ui://agb/flight-deck.html",
-        surface: "aux_pane",
         visibility: ["model", "app"]
+      },
+      "com.google.antigravity/ui": {
+        surface: "aux_pane"
       }
     }
   },
@@ -5388,8 +5431,10 @@ var TOOLS = [
     _meta: {
       ui: {
         resourceUri: "ui://agb/mission-control.html",
-        surface: "global",
         visibility: ["model", "app"]
+      },
+      "com.google.antigravity/ui": {
+        surface: "global"
       }
     }
   },
@@ -5407,9 +5452,11 @@ var TOOLS = [
     _meta: {
       ui: {
         resourceUri: "ui://agb/plan-viewer.html",
-        surface: "file",
-        extensions: [".agbplan"],
         visibility: ["model", "app"]
+      },
+      "com.google.antigravity/ui": {
+        surface: "file",
+        extensions: [".agbplan"]
       }
     }
   },
@@ -5518,10 +5565,18 @@ if (IS_MAIN) {
     process.exit(0);
   });
 }
+var clientSupportsUiExtension = false;
+function formatSidecarHint(repoPath) {
+  const safe = /\s/.test(repoPath) ? JSON.stringify(repoPath) : repoPath;
+  return `agb sidecar ${safe}`;
+}
 async function handleRequest(req) {
   const { method, params, id } = req;
   if (method === "initialize") {
-    const hasUiExtension = Boolean(params?.capabilities?.extensions?.["io.modelcontextprotocol/ui"]);
+    const hasUiExtension = Boolean(
+      params?.capabilities?.extensions?.["io.modelcontextprotocol/ui"] || params?.capabilities?.experimental?.["io.modelcontextprotocol/ui"]
+    );
+    clientSupportsUiExtension = hasUiExtension;
     sendResult(id, {
       protocolVersion: "2024-11-05",
       capabilities: {
@@ -5865,9 +5920,10 @@ async function handleInProcessUiTool(id, name, args) {
     try {
       const snap = await buildSnapshotPayload(repoRes.repo);
       const surface = name === "agb_flight_deck" ? "aux_pane" : "global";
+      const sidecarHint = clientSupportsUiExtension ? void 0 : formatSidecarHint(repoRes.repo);
       const structuredContent = boundStructuredObject(
-        { ...snap, surface },
-        () => ({ ...snap, modelStats: [], surface, truncated: true })
+        { ...snap, surface, ...sidecarHint ? { sidecarHint } : {} },
+        () => ({ ...snap, modelStats: [], surface, ...sidecarHint ? { sidecarHint } : {}, truncated: true })
       );
       sendResult(id, {
         content: [
@@ -5877,7 +5933,8 @@ async function handleInProcessUiTool(id, name, args) {
               ok: true,
               runId: snap.run?.runId ?? null,
               done: snap.run?.done ?? null,
-              offline: Boolean(snap.control?.offline)
+              offline: Boolean(snap.control?.offline),
+              ...sidecarHint ? { sidecarHint } : {}
             })
           }
         ],
@@ -5899,7 +5956,36 @@ async function handleInProcessUiTool(id, name, args) {
       sendToolError(id, repoRes.error);
       return;
     }
-    const planFile = resolve7(repoRes.repo, pathCheck.value);
+    const rawPathVal = pathCheck.value.trim();
+    if (/^antigravity-file:/i.test(rawPathVal)) {
+      if (!/^antigravity-file:\/\/[^\s\0-\x1F]+$/i.test(rawPathVal)) {
+        sendToolError(id, `Invalid antigravity-file URI: ${rawPathVal}`);
+        return;
+      }
+      const quotaCache2 = readFreshStatusLineQuotaCache();
+      const structuredContent2 = {
+        ok: true,
+        deferredRead: true,
+        fileUri: rawPathVal,
+        path: rawPathVal,
+        repo: repoRes.repo,
+        plan: null,
+        validationErrors: [],
+        quotaCache: quotaCache2,
+        runwayEstimate: null
+      };
+      sendResult(id, {
+        content: [
+          {
+            type: "text",
+            text: `Deferred file-surface plan load: ${rawPathVal}`
+          }
+        ],
+        structuredContent: structuredContent2
+      });
+      return;
+    }
+    const planFile = resolve7(repoRes.repo, rawPathVal);
     if (args?.repo !== void 0) {
       const rel = relative5(repoRes.repo, planFile);
       if (rel.startsWith("..") || isAbsolute5(rel)) {
@@ -6633,17 +6719,25 @@ async function handleToolCall(id, name, args) {
         return;
       }
       const output = stdout.trim() + (stderr ? "\nStderr:\n" + stderr.trim() : "");
+      const sidecarSuffix = name === "agb_run" && !clientSupportsUiExtension && code === 0 && targetCwd ? `
+Live dashboard (non-UI client): ${formatSidecarHint(targetCwd)}` : "";
+      const baseText = output || (code === 0 ? "Executed successfully" : `Command failed with exit code ${code}`);
       const resultPayload = {
         content: [
           {
             type: "text",
-            text: output || (code === 0 ? "Executed successfully" : `Command failed with exit code ${code}`)
+            text: baseText + sidecarSuffix
           }
         ],
         isError: code !== 0
       };
       if (CLI_UI_TOOLS.has(name)) {
         resultPayload.structuredContent = buildCliStructuredContent(name, stdout, stderr, code, planOutPath);
+      } else if (name === "agb_run" && !clientSupportsUiExtension && targetCwd) {
+        resultPayload.structuredContent = {
+          ok: code === 0,
+          sidecarHint: formatSidecarHint(targetCwd)
+        };
       }
       sendResult(id, resultPayload);
     });

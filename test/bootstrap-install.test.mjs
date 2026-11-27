@@ -246,3 +246,68 @@ test('resolvePluginPath throws cleanly when bundled=true to prevent ambient plug
   }
 });
 
+test('default bootstrap (no explicit destination) skips ~/.gemini/skills duplication, prunes stale booster symlinks, and preserves foreign skills', async () => {
+  const { symlinkSync, lstatSync } = await import('node:fs');
+  const ctx = setup();
+  try {
+    const childEnv = { ...process.env, HOME: ctx.home, FAKE_STATE_DIR: ctx.state, TMPDIR: ctx.tmp };
+    delete childEnv.ADLC_ANTIGRAVITY_PLUGIN_PATH;
+    delete childEnv.AGB_DEV_ALLOW_UNVERIFIED_PLUGIN;
+    delete childEnv.AGB_PROVIDER;
+
+    const runDefault = (extraEnv = {}) =>
+      spawnSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `import('${BOOTSTRAP_URL}').then(({ bootstrap }) => bootstrap(${JSON.stringify({ home: ctx.home, agyBin: FAKE_AGY })}))`,
+        ],
+        { encoding: 'utf8', env: { ...childEnv, ...extraEnv } }
+      );
+
+    // 1. Fresh home without ~/.gemini/skills: succeeds without creating duplicate ~/.gemini/skills symlinks
+    const fresh = runDefault();
+    assert.equal(fresh.status, 0, fresh.stderr);
+    const defaultSkillsDir = join(ctx.home, '.gemini', 'skills');
+    assert.equal(existsSync(defaultSkillsDir), false);
+    assert.doesNotMatch(fresh.stdout, /pruned \d+ legacy/);
+
+    // 2. Populated ~/.gemini/skills with stale booster symlinks + foreign skill symlink + foreign real skill dir
+    mkdirSync(defaultSkillsDir, { recursive: true });
+    symlinkSync(join(ROOT, 'skills', 'agb'), join(defaultSkillsDir, 'agb'));
+    symlinkSync('/opt/legacy/antigravity-booster/skills/agb-run', join(defaultSkillsDir, 'agb-run'));
+    const foreignTarget = join(ctx.root, 'foreign-skill-target');
+    mkdirSync(foreignTarget, { recursive: true });
+    symlinkSync(foreignTarget, join(defaultSkillsDir, 'my-linked-skill'));
+    mkdirSync(join(defaultSkillsDir, 'my-real-skill'), { recursive: true });
+
+    const prunedRun = runDefault();
+    assert.equal(prunedRun.status, 0, prunedRun.stderr);
+    assert.match(prunedRun.stdout, /pruned 2 legacy ~\/\.gemini\/skills symlink\(s\)/);
+    assert.equal(lstatSync(join(defaultSkillsDir, 'agb'), { throwIfNoEntry: false }), undefined);
+    assert.equal(lstatSync(join(defaultSkillsDir, 'agb-run'), { throwIfNoEntry: false }), undefined);
+    assert.ok(lstatSync(join(defaultSkillsDir, 'my-linked-skill')).isSymbolicLink());
+    assert.ok(lstatSync(join(defaultSkillsDir, 'my-real-skill')).isDirectory());
+
+    // 3. Symlinked ~/.gemini/skills directory is never traversed or mutated
+    rmSync(defaultSkillsDir, { recursive: true, force: true });
+    const outsideSkills = join(ctx.root, 'outside-skills');
+    mkdirSync(outsideSkills, { recursive: true });
+    symlinkSync(join(ROOT, 'skills', 'agb'), join(outsideSkills, 'agb'));
+    symlinkSync(outsideSkills, defaultSkillsDir, 'dir');
+    const symDirRun = runDefault();
+    assert.equal(symDirRun.status, 0, symDirRun.stderr);
+    assert.ok(lstatSync(join(outsideSkills, 'agb')).isSymbolicLink(), 'symlinked skillsDir must not be traversed');
+    rmSync(defaultSkillsDir, { force: true });
+
+    // 4. Fallback when plugin install fails: populates ~/.gemini/skills so CLI still has skills
+    const failedPluginRun = runDefault({ FAKE_AGY_PLUGIN_MODE: 'fail' });
+    assert.equal(failedPluginRun.status, 1);
+    assert.ok(lstatSync(join(defaultSkillsDir, 'agb')).isSymbolicLink(), 'fallback links skills when plugin install fails');
+  } finally {
+    ctx.cleanup();
+  }
+});
+
+

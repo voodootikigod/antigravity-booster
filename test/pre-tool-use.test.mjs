@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { initializeDirectoryStore, ticketFilename } from '@adlc/tickets';
 import { evaluatePayload, extractProbedPaths, isBoosterMcpTool } from '../hooks/policy/evaluate.mjs';
+import { isValidConversationId } from '../hooks/policy/paths.mjs';
 import { lexCommandLine } from '../hooks/policy/shell-lexer.mjs';
 
 const ENTRY = new URL('../hooks/pre-tool-use.mjs', import.meta.url).pathname;
@@ -1435,3 +1436,107 @@ test('T-NG-1: BOOSTER_MCP_TOOLS enforces agb_flight_deck, agb_mission_control, a
   assert.equal(shell('agb holdout list .', fx.inactive, RESCUE_ENV).decision, 'pass');
   assert.equal(shell('cat .booster/logs/run-1/T1.jsonl', fx.inactive, RESCUE_ENV).decision, 'deny');
 });
+
+test('jetski slash-delimited conversationId brain writes & App/Web/Remote built-in tool taxonomy', () => {
+  const jetskiConvId = 'v1/default/jetski_remote_agents_3p_devbox/3efa243c-fde2-40a7-9592-14d70dc382f3';
+  const jetskiArtDir = join(fx.home, '.gemini', 'jetski', 'brain', ...jetskiConvId.split('/'));
+  mkdirSync(jetskiArtDir, { recursive: true });
+
+  // 1. Valid multi-segment jetski conversationId allows writing artifacts & .url.json inside own brain dir
+  assert.equal(
+    evaluatePayload(
+      {
+        conversationId: jetskiConvId,
+        artifactDirectoryPath: jetskiArtDir,
+        workspacePaths: [fx.active],
+        toolCall: { name: 'write_to_file', args: { TargetFile: join(jetskiArtDir, 'PR 208.url.json'), CodeContent: '{}' } },
+      },
+      { env: INTERACTIVE, home: fx.home, platform: 'linux' },
+    ).decision,
+    'pass',
+  );
+
+  // Denies writing into .system_generated inside own jetski brain dir
+  assert.equal(
+    evaluatePayload(
+      {
+        conversationId: jetskiConvId,
+        artifactDirectoryPath: jetskiArtDir,
+        workspacePaths: [fx.active],
+        toolCall: { name: 'write_to_file', args: { TargetFile: join(jetskiArtDir, '.system_generated', 'fake.log'), CodeContent: 'x' } },
+      },
+      { env: INTERACTIVE, home: fx.home, platform: 'linux' },
+    ).decision,
+    'deny',
+  );
+
+  // Denies if an intermediate segment of conversationId is a symlink!
+  const realSegTarget = join(fx.base, 'outside-seg');
+  mkdirSync(join(realSegTarget, 'jetski_box', 'abcdef12-3456-7890'), { recursive: true });
+  mkdirSync(join(fx.home, '.gemini', 'jetski', 'brain', 'v2'), { recursive: true });
+  symlinkSync(realSegTarget, join(fx.home, '.gemini', 'jetski', 'brain', 'v2', 'symseg'));
+  const symConvId = 'v2/symseg/jetski_box/abcdef12-3456-7890';
+  const symArtDir = join(fx.home, '.gemini', 'jetski', 'brain', 'v2', 'symseg', 'jetski_box', 'abcdef12-3456-7890');
+  assert.equal(
+    evaluatePayload(
+      {
+        conversationId: symConvId,
+        artifactDirectoryPath: symArtDir,
+        workspacePaths: [fx.active],
+        toolCall: { name: 'write_to_file', args: { TargetFile: join(symArtDir, 'evil.md'), CodeContent: 'x' } },
+      },
+      { env: INTERACTIVE, home: fx.home, platform: 'linux' },
+    ).decision,
+    'deny',
+    'symlinked intermediate conversationId segment must be rejected',
+  );
+
+  // 2. Built-in read-only App/Web/Remote tools pass in active-rail ADLC repos (even when queries mention protected paths)
+  assert.equal(isValidConversationId('1/a/b/12345678'), true);
+  assert.equal(isValidConversationId('12345678'), true);
+  assert.equal(isValidConversationId('1234567'), false);
+  assert.equal(isValidConversationId('a'.repeat(128)), true);
+  assert.equal(isValidConversationId('a'.repeat(129)), false);
+  assert.equal(isValidConversationId(`${'a'.repeat(127)}/${'b'.repeat(128)}`), true);
+  assert.equal(isValidConversationId(`${'a'.repeat(128)}/${'b'.repeat(128)}`), false);
+  assert.equal(isValidConversationId('a/b/c/d/12345678'), false);
+  assert.equal(isValidConversationId('v1\\12345678'), false);
+  assert.equal(isValidConversationId(null), false);
+
+  const boosterDataFile = join(fx.home, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster', 'state.json');
+  assert.equal(run('google_search', { queries: ['https://antigravity.google/docs/overview', boosterDataFile] }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('browse', { urls: ['https://antigravity.google/docs/models'] }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('google:browse', { urls: ['https://antigravity.google/docs/mcp'] }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('list_skills', {}, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('lookup_skill', { skill_name: 'github' }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('lookup_skills', { skill_names: ['github', 'codegraph'] }, fx.active, INTERACTIVE).decision, 'pass');
+  assert.equal(run('get_skill_resources', { name: 'github', filenames: ['scripts/gh'] }, fx.active, INTERACTIVE).decision, 'pass');
+
+  // get_skill_resources rejects empty, absolute, ~, or .. filenames
+  assert.equal(run('get_skill_resources', { name: 'github', filenames: [] }, fx.active, INTERACTIVE).decision, 'deny');
+  assert.equal(run('get_skill_resources', { name: 'github', filenames: ['../secret.txt'] }, fx.active, INTERACTIVE).decision, 'deny');
+  assert.equal(run('get_skill_resources', { name: 'github', filenames: ['/etc/passwd'] }, fx.active, INTERACTIVE).decision, 'deny');
+  assert.equal(run('get_skill_resources', { name: 'github', filenames: ['~/secret'] }, fx.active, INTERACTIVE).decision, 'deny');
+
+  // 3. External repo & skill customization tools force_ask interactively (without false-positive path scanning on text fields) and deny in workers/readonly
+  for (const [tool, args] of [
+    ['create_github_repository', { name: 'my-repo', description: boosterDataFile }],
+    ['fork_github_repository', { repository: 'octocat/Spoon-Knife' }],
+    ['detach_github_repository', { repository: 'octocat/Spoon-Knife' }],
+    ['save_skill', { content: '---\nname: s\ndescription: d\n---\n' }],
+    ['update_skill', { name: 's', description: 'd' }],
+    ['delete_skill', { name: 's' }],
+  ]) {
+    const inter = run(tool, args, fx.active, INTERACTIVE);
+    assert.equal(inter.decision, 'force_ask', `${tool} interactive should force_ask`);
+    assert.equal(run(tool, args, fx.active, WORKER).decision, 'deny', `${tool} worker should deny`);
+    assert.equal(run(tool, args, fx.active, READONLY).decision, 'deny', `${tool} readonly should deny`);
+  }
+
+  // save_skill with skill_dir pointing into protected boosterDataRoots is denied immediately
+  assert.equal(
+    run('save_skill', { skill_dir: join(fx.home, '.gemini', 'antigravity-cli', 'plugin_data', 'antigravity-booster') }, fx.active, INTERACTIVE).decision,
+    'deny',
+  );
+});
+

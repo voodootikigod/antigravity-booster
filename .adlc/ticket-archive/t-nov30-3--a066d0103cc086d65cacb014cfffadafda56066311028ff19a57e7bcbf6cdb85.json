@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T22:06:07.512Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "c008f211aeb691c18bda4935809589893ccb9ba476f39a2566fd5770cc9a872f",
+    "ticketHash": "ff10f015bc180176706a6c3cfc6ffc2a57e75c1dcbdf89f0427ce6c6e8e50e55",
+    "version": 1
+  },
   "body": "Update offline fake-agy fixtures, unit/integration test expectations, and eval benchmarks for the post-November-30-2026 19-slug model catalog.\n\nObjectives:\n1. Update test/fixtures/fake-agy models output for offline testing.\n2. Update model slug and sub-pool assertions in test/orchestrator-routing.test.mjs, test/review-arl.test.mjs, test/review.test.mjs, test/unit.test.mjs, test/scheduler.test.mjs, test/sync-models.test.mjs, test/agy-1-5-9-print.test.mjs, test/agy.test.mjs, test/modernize-skill.test.mjs, evals/scenarios.mjs, evals/subsystem-bench.mjs, and evals/v13-enhancements-bench.mjs.\n\nAcceptance criteria:\n1. Orchestrator, review ARL, unit, scheduler, agy, modernize, evals, and sync-models tests pass offline. Verify: node --test test/orchestrator-routing.test.mjs test/review-arl.test.mjs test/review.test.mjs test/unit.test.mjs test/sync-models.test.mjs test/evals.test.mjs test/agy-1-5-9-print.test.mjs test/agy.test.mjs test/modernize-skill.test.mjs test/scheduler.test.mjs",
   "category": "test",
   "completed": true,

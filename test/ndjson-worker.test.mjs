@@ -456,7 +456,7 @@ test('NdjsonWorkerDaemon falls back to singleShotFallback when persistentWorkers
   assert.equal(resEof.output, 'recovered:Recover me');
 });
 
-test('NdjsonWorkerDaemon.quiesceChildren and killDaemonProcessTree reap background child processes', async () => {
+test('NdjsonWorkerDaemon.quiesceChildren and killDaemonProcessTree reap background child processes without signaling reaped PIDs', async () => {
   const parent = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000);'], {
     stdio: 'ignore',
     detached: process.platform !== 'win32',
@@ -468,6 +468,84 @@ test('NdjsonWorkerDaemon.quiesceChildren and killDaemonProcessTree reap backgrou
     assert.notEqual(parent.exitCode !== null || parent.signalCode !== null, false);
   } finally {
     killDaemonProcessTree(parent, 'SIGKILL');
+  }
+
+  if (process.platform !== 'win32') {
+    // Live daemon.child with a live background subprocess: quiesceChildren must reap the subprocess.
+    const liveHolder = spawn(
+      process.execPath,
+      [
+        '-e',
+        'const { spawn } = require("node:child_process"); const sub = spawn(process.execPath, ["-e", "setInterval(() => {}, 10000)"], { stdio: "ignore" }); console.log(sub.pid); setInterval(() => {}, 10000);',
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
+    );
+    try {
+      const subPidLine = await new Promise((resolveLine) => {
+        let buf = '';
+        liveHolder.stdout.on('data', (d) => {
+          buf += d.toString('utf8');
+          if (buf.includes('\n')) resolveLine(buf.trim().split('\n')[0]);
+        });
+      });
+      const liveSubPid = Number(subPidLine);
+      assert.ok(liveSubPid > 0);
+      const daemon = new NdjsonWorkerDaemon({ model: 'gemini-4-argon-high', ...PURE });
+      daemon.child = liveHolder;
+      const quiesced = daemon.quiesceChildren();
+      assert.ok(quiesced.reaped.includes(liveSubPid), `expected ${liveSubPid} in ${JSON.stringify(quiesced.reaped)}`);
+    } finally {
+      killDaemonProcessTree(liveHolder, 'SIGKILL');
+    }
+
+    // Recycled-PID regression: once child has exited or been signaled, neither
+    // killDaemonProcessTree nor quiesceChildren may signal that PID or its children.
+    const victim = spawn(
+      process.execPath,
+      [
+        '-e',
+        'const { spawn } = require("node:child_process"); const sub = spawn(process.execPath, ["-e", "setInterval(() => {}, 10000)"], { stdio: "ignore" }); console.log(sub.pid); setInterval(() => {}, 10000);',
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'], detached: true }
+    );
+    let victimSubPid = 0;
+    try {
+      const subLine = await new Promise((resolveLine) => {
+        let buf = '';
+        victim.stdout.on('data', (d) => {
+          buf += d.toString('utf8');
+          if (buf.includes('\n')) resolveLine(buf.trim().split('\n')[0]);
+        });
+      });
+      victimSubPid = Number(subLine);
+      assert.ok(victim.pid > 0 && victimSubPid > 0);
+
+      let killCalled = 0;
+      killDaemonProcessTree(
+        { pid: victim.pid, exitCode: 0, signalCode: null, kill() { killCalled += 1; } },
+        'SIGKILL'
+      );
+      killDaemonProcessTree(
+        { pid: victim.pid, exitCode: null, signalCode: 'SIGTERM', kill() { killCalled += 1; } },
+        'SIGKILL'
+      );
+      assert.equal(killCalled, 0, 'killDaemonProcessTree must not invoke child.kill on a reaped handle');
+
+      const daemon = new NdjsonWorkerDaemon({ model: 'gemini-4-argon-high', ...PURE });
+      daemon.child = { pid: victim.pid, exitCode: 0, signalCode: null };
+      assert.deepEqual(daemon.quiesceChildren(), { reaped: [] });
+      daemon.child = { pid: victim.pid, exitCode: null, signalCode: 'SIGKILL' };
+      assert.deepEqual(daemon.quiesceChildren(), { reaped: [] });
+
+      // Both victim and its child must still be alive!
+      process.kill(victim.pid, 0);
+      process.kill(victimSubPid, 0);
+    } finally {
+      if (victimSubPid > 0) {
+        try { process.kill(victimSubPid, 'SIGKILL'); } catch {}
+      }
+      killDaemonProcessTree(victim, 'SIGKILL');
+    }
   }
 });
 

@@ -13,7 +13,7 @@ The plugin ships 16 slash commands: `/agb` (the natural-language umbrella router
 graph LR
   User["/agb-run plan.json"] --> Agent[agy agent]
   Agent -->|run_command| Shim["~/.local/bin/agb run plan.json"]
-  Agent -.->|or, if connected| MCP["mcp__agb__agb_run"]
+  Agent -.->|or, if connected| MCP["antigravity-booster_agb (agb_run)"]
   Shim --> CLI[agb CLI]
   MCP --> CLI
 ```
@@ -40,7 +40,7 @@ The plugin's PreToolUse policy guard (`hooks.json`) only ever answers `deny`, `a
 
 ## The MCP server
 
-The plugin registers an MCP server named `agb`, launched through `bin/node-launcher.sh` with the bundled `dist/mcp-server.mjs` (`mcp_config.json`). It speaks JSON-RPC over stdio (`resources`, `tools`, `ui` MCP App capabilities) and exposes **15 tools** plus **6 `ui://` MCP App interactive HTML views** (`plan-card`, `review-card`, `flight-deck`, `mission-control`, `plan-viewer`, `accept-workbench`):
+The plugin registers an MCP server named `agb`, launched directly via `node` with the bundled `dist/mcp-server.mjs` (`mcp_config.json`, `timeoutSeconds: -1`). It speaks JSON-RPC over stdio (`resources`, `tools`, `ui` MCP App capabilities and `_meta["com.google.antigravity/ui"]` host surfaces) and exposes **15 tools** plus **6 `ui://` MCP App interactive HTML views** (`plan-card`, `review-card`, `flight-deck`, `mission-control`, `plan-viewer`, `accept-workbench`):
 
 - **CLI-spawning workflow tools (10)** (`agb_shape`, `agb_plan`, `agb_distill`, `agb_run`, `agb_preflight`, `agb_status`, `agb_doctor`, `agb_init`, `agb_review`, `agb_holdout`): spawn the matching `agb` CLI subcommand and return structured JSON/UI payloads.
 - **In-process UI / control / sign-off tools (5)** (`agb_flight_deck`, `agb_mission_control`, `agb_plan_viewer`, `agb_control`, `agb_accept`): read live telemetry snapshots (`control.sock`, `FactoryLedger`, `plan.json`, diff hunks) directly in-process and pair with interactive `ui://` cards or IPC controls.
