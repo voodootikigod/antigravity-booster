@@ -1,10 +1,10 @@
 ---
 title: "agb review"
-description: "Run a read-only lens fleet over a diff until no new findings appear."
+description: "Run a read-only single-pass, delta, or seam-only lens fleet over a diff or plan specification."
 claims: [C11]
 ---
 
-`agb review` prosecutes a diff or a plan specification with a read-only fleet of model "lenses" and loops until the review converges.
+`agb review` prosecutes a diff or a plan specification with a read-only fleet of model "lenses" using single-pass review by default (`--thorough` or `--dry-rounds <n>` for multi-dry convergence).
 
 ## Synopsis
 
@@ -17,6 +17,11 @@ claims: [C11]
 - `--plan <spec.md>` runs the 5-lens Plan Adversarial Review Loop (ARL) against a Markdown specification instead of a git diff.
 - `--loop` runs iterative ARL up to 3 rounds.
 - `--five-lens` (alias `--5-lens`) uses the 5-lens Code ARL (Correctness/Red-Team, Simplicity, Security, Evidence Runner, Anti-Slop) instead of the default 4-lens fleet.
+- `--thorough` enables multi-dry stochastic convergence (`dryRounds=2`, `maxRounds=3`); `--dry-rounds <n>` sets consecutive dry rounds required.
+- `--delta <base-ref>` and `--prior-findings <path>` review only the fix-round delta while embedding prior open findings (default `.review/last-findings.json`).
+- `--seams-only` and `--plan-file <plan.json>` audit only cross-ticket integration seams when every merged commit passed per-ticket System-2 prosecution.
+- `--no-codegraph` disables CodeGraph (`.codegraph/`) context slicing and blast-radius scoring.
+- `--no-decision-engine` disables System-1 Decision Engine lens gating and typed Arbiter triage.
 - `--no-arbiter` skips neutral arbiter triage.
 
 An empty diff exits 0 with nothing to review. Quota telemetry must be available.

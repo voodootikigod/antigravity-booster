@@ -1208,7 +1208,7 @@ function finish(prompt) {
     try {
       const parsed = JSON.parse(settingsRaw);
       const deny = parsed?.permissions?.deny;
-      if (Array.isArray(deny) && deny.includes('read_file')) readLocked = true;
+      if (Array.isArray(deny) && (deny.includes('read_file(*)') || deny.includes('read_file'))) readLocked = true;
     } catch {}
   }
   const legacyMultiTurn = Boolean(modeCfg.legacyMultiTurn);

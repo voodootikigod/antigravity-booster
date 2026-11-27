@@ -313,3 +313,26 @@ In addition to the *N* = 100 Monte Carlo distributions and the 5-pillar live sub
 | **`B4` — `agy 1.4.x` Validator Summary Parsing** | `parseValidateOutput` (`lib/migrate.mjs`) | Parses `skills 7 · agents 3 · rules 1 · hooks 1 · mcpServers 1` | `{"skills":7,"agents":3,"rules":1,"hooks":1,"mcpServers":1}` (`PASS`) |
 | **`B5` — Strict Marketplace Bundle Validation** | `validateStagedPluginStrict` (`scripts/stage-marketplace-plugin.mjs`) | Passes `agy plugin validate --strict --json` with 0 findings | `errors: 0, warnings: 0, notes: 0` (`PASS`) |
 | **`B6` — `node-launcher.sh` PATH Fast-Path** | `bin/node-launcher.sh` | Resolves ambient `PATH` Node `>= 22.19.0` without filesystem scan | `status: 0` (`PASS`) |
+
+---
+
+## v2.0 Token-Efficiency A/B Benchmark
+
+Reproducible offline via `node --test test/token-efficiency-v2.test.mjs` (`runTokenEfficiencyBenchmark()` in [`evals/subsystem-bench.mjs`](https://github.com/voodootikigod/antigravity-booster/blob/main/evals/subsystem-bench.mjs)). Runs a paired 3-ticket workload (`T-HOLLOW` with a surviving mutant, `T-LEAF` clean low-blast-radius change, and `T-DEFECT` with a planted auth bypass) through preflight coldstart, prosecution, and multi-lens code review across all four configurations:
+
+| Configuration | Review Reqs | System-2 Reqs | Billable Tokens | Token Reduction vs. Pre-Optimization | Defect & Mutation Recall |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Pre-optimization `agb` (tiers disabled)** (multi-dry review, open read tools, no short-circuit) | `29` | `35` | `134,322` | — | `100%` |
+| **Tier 0 — Zero-Dependency Core** (default ON) | `10` (`-65.5%`) | `12` | `16,171` | **`-88.0%`** | `100%` |
+| **Tier 1 — + CodeGraph Index** (`.codegraph/` auto-detected) | `10` (`-65.5%`) | `12` | `14,177` | **`-89.4%`** | `100%` |
+| **Tier 2 — + System-1 Decision Engine** (`GEMINI_API_KEY` / Gemini Decisions API) | `6` (`-79.3%`) | `7` | `9,677` | **`-92.8%`** | `100%` |
+
+<Mermaid
+  chart={`xychart-beta
+    title "v2.0 Token-Efficiency A/B Benchmark: Billable Tokens (Thousands, Lower Is Better)"
+    x-axis ["Pre-opt agb", "Tier 0 Core", "Tier 1 + CodeGraph", "Tier 2 + Decisions API"]
+    y-axis "Billable Tokens (k)" 0 --> 145
+    bar [134.3, 16.2, 14.2, 9.7]`}
+/>
+
+See [Token efficiency](/docs/concepts/token-efficiency) for the full three-tier design, fail-closed guarantees, and opt-in/out controls.

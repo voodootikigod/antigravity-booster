@@ -12,6 +12,7 @@ Antigravity gives you a generous model quota (not an infinite one) split across 
 - **Code handles control flow, models handle judgment.** A Node scheduler dispatches `agy` workers, and no model ever decides the order work runs in.
 - **Quota pools multiply concurrency.** The Gemini Flash, Gemini Pro and Claude pools throttle and meter independently. The scheduler holds a semaphore per pool and routes tiers across them. See [Pools and tiers](/docs/concepts/pools-and-tiers).
 - **Cross-model prosecution.** A model from a different family than the builder prosecutes each diff under a refute charter with a JSON verdict contract, and `adlc hollow-test` mutation evidence backs it up. Critical and high findings block the merge. See [Prosecution](/docs/concepts/prosecution).
+- **Three-tier token efficiency.** Zero-dependency core optimizations (single-pass/delta review, 1-turn readonly lockdown, `hollow-test` short-circuit, blast-radius routing, deterministic Arbiter fast-path) cut billable prosecution and review tokens by **-88.0%** out of the box, and up to **-92.8%** at `100%` recall when paired with [CodeGraph](https://github.com/colbymchenry/codegraph) and Google's **Gemini Decisions API** (`GEMINI_API_KEY`). See [Token efficiency](/docs/concepts/token-efficiency).
 - **Deterministic gates.** Build and test commands gate every ticket in its own worktree, then again after the merge on the base branch. A failed post-merge gate reverts the merge. See [Gates and sandboxing](/docs/concepts/gates-and-sandboxing).
 - **Two-strike regeneration, gated by `adlc flail-detector`.** A failed first strike is regenerated from scratch with the failure diagnostic; if `adlc flail-detector` detects a repeated failure pattern, the second strike is halted before burning pool quota.
 - **Frozen rails.** Paths a ticket declares as `rails` cannot be edited while it is in flight. This is enforced in-session by the policy guard and at merge by `adlc rails-guard`. See [Rail enforcement](/docs/concepts/rail-enforcement).
@@ -37,6 +38,17 @@ Across 100 paired runs per workload (`npm run eval`, calibrated against [live CL
 | **8-agent parallel burst** | `68.5s` (`25.8%` timeouts) | `57.2s` (`4.2%` timeouts) | **`30.8s` (`0%` timeouts)** | **`1.85x` faster, `0%` drops** |
 | **Pre-merge bug detection** | `28.4%` caught (`71.6%` escape) | `74.6%` caught (`25.4%` escape) | **`94.6%` caught (`5.4%` escape)** | **`4.7x` fewer escaped bugs** |
 | **Protected-file & scope safety** | `31.0%` blocked (`207` breaches) | `74.0%` blocked (`78` breaches) | **`100%` blocked (`0` breaches)** | **Zero rail breaches** |
+
+### v2.0 token efficiency (`agb` tiers vs. pre-optimization `agb`)
+
+Reproducible offline via `node --test test/token-efficiency-v2.test.mjs` (`100%` defect and mutation-test recall across all four tiers):
+
+| Configuration | Review Reqs | System-2 Reqs | Billable Tokens | Reduction vs. Pre-Optimization |
+| :--- | :---: | :---: | :---: | :---: |
+| Pre-optimization `agb` (tiers disabled) | `29` | `35` | `134,322` | — |
+| **Tier 0 — Zero-Dep Core** (default ON) | `10` (`-65.5%`) | `12` | `16,171` | **`-88.0%`** |
+| **Tier 1 — + CodeGraph** (`.codegraph/`) | `10` (`-65.5%`) | `12` | `14,177` | **`-89.4%`** |
+| **Tier 2 — + Gemini Decisions API** (`GEMINI_API_KEY`) | `6` (`-79.3%`) | `7` | `9,677` | **`-92.8%`** |
 
 See [Benchmarks & Statistical Evals](/docs/reference/benchmarks) for the full methodology, hypothesis tests, Pareto frontier charts, and 80/20 root-cause breakdowns.
 

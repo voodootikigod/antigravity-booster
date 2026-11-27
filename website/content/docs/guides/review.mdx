@@ -1,10 +1,10 @@
 ---
 title: "Review"
-description: "Run agb review: a read-only lens fleet over a diff that loops until dry, with ref forms and exit semantics."
+description: "Run agb review: a read-only single-pass, delta, or seam-only lens fleet over a diff, with ref forms and exit semantics."
 claims: [C11]
 ---
 
-`agb review` prosecutes an existing diff without building or merging anything. It is the review-fleet workload: point it at a repo and a ref, and a set of lens prompts reviews the diff in parallel, round after round, until no new findings appear.
+`agb review` prosecutes an existing diff without building or merging anything. Point it at a repo and a ref, and a set of read-only specialist lenses reviews the diff in parallel with blast-radius risk-tiered model routing and a 3-tier hybrid Arbiter.
 
 ## Run it
 
@@ -12,6 +12,9 @@ claims: [C11]
 agb review                       # current directory, uncommitted changes vs HEAD
 agb review /path/to/repo         # another repo
 agb review . main...HEAD         # everything on this branch since it left main
+agb review . main...HEAD --five-lens
+agb review . HEAD~1 --delta HEAD~1 --prior-findings .review/last-findings.json
+agb review . <pre-run-sha> --seams-only --plan-file plan.json
 ```
 
 Both arguments are optional: the repo defaults to `.` and is resolved to an absolute path (repo default: [C11](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L146-L148)). The flags are listed in the [review CLI reference](/docs/reference/cli/review). Inside Antigravity the same command is available as `/agb-review` and the `agb_review` MCP tool (see [Headless and MCP](/docs/guides/headless-and-mcp)).
@@ -32,18 +35,22 @@ If the diff is empty, `agb review` prints `review: empty diff — nothing to pro
 ## What the fleet does
 
 1. **Quota first.** Quota telemetry is refreshed from `agy`. If it is unavailable, the command exits `1` before any review runs ([quota check](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/bin/agb.mjs#L154-L159)).
-2. **Lenses.** Each round runs four lenses in parallel: `correctness`, `security`, `tests` and `contracts` ([lenses](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L17-L22)). From the CLI, lenses alternate between `gemini-4-hydrogen-high` and `gemini-4-neon-high`, and every lens runs as a read-only worker with a JSON findings schema ([lens dispatch](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L110-L131)).
-3. **Dedupe.** Findings are keyed by file plus the start of the claim; only new findings count.
-4. **Loop until dry.** The fleet stops after **2** consecutive rounds with no new findings, or after **5** rounds ([defaults](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L86-L91)). A round where any lens errored is not a dry round, so a rate-limited model cannot fake convergence ([error rounds](https://github.com/voodootikigod/antigravity-booster/blob/v1.0.0/lib/review.mjs#L152-L163)).
+2. **Context pack & blast-radius routing.** `agb` strips lockfile/snapshot noise before the `180,000`-char truncation check, computes a blast-radius tier (`low` / `medium` / `high` via CodeGraph when `.codegraph/` exists, or static-AST fallback), and locks static-diff lenses to 1 turn (`read_file(*)` denied unless `contextPack.truncatedContext === true`). See [Token efficiency](/docs/concepts/token-efficiency).
+3. **Optional System-1 lens gating.** When a System-1 Decision Engine is active (auto-detected via `GEMINI_API_KEY` for Google's Gemini Decisions API), `gateReviewLenses()` skips lenses only when defect probability `< 0.15` and confidence `>= 0.85`.
+4. **Lenses.** Runs either 4 lenses (`correctness`, `security`, `tests`, `contracts`) or 5 ARL lenses (`--five-lens`: `correctness_redteam`, `security`, `simplicity`, `evidence_runner`, `anti_slop`) in parallel as read-only workers with a strict JSON findings schema.
+5. **Single-pass default & 3-tier hybrid Arbiter.** Static diffs run **1 pass** (`dryRounds=1`, `maxRounds=1`) by default so identical diffs are never re-billed unnecessarily. Findings are triaged via the 3-tier Arbiter cascade: System-1 typed triage (when active) → deterministic fast-path (`<= 4` disjoint, non-`blast_radius` findings) → System-2 LLM Arbiter. Open findings are persisted to `.review/last-findings.json` for `--delta` fix rounds.
 
-The result is printed as JSON on stdout: `findings` (each with `lens`, `model` and `family` added), `rounds`, `requests` and `converged`. Progress lines go to stderr.
+The result is printed as JSON on stdout: `findings` (each with `lens`, `model` and `family` added), `rounds`, `requests`, `converged`, `gateVerdict`, `blastRadius`, and `telemetry` (split uncached/cached/output/billable tokens, `system1Calls`, `skippedLenses`, and `arbiterMode`). Progress lines go to stderr.
 
 ## Flags and ARL modes
 
 - `--plan <spec.md>` runs the 5-lens Plan Adversarial Review Loop (ARL) over a Markdown specification instead of a git diff (`devils_advocate`, `requirements_fidelity`, `simplicity`, `evidence_strategy`, `dag_topology`).
 - `--five-lens` (or `--5-lens`) enables the 5-lens Code ARL (`correctness_redteam`, `security`, `simplicity`, `evidence_runner`, `anti_slop`).
-- `--loop` runs iterative convergence across up to `3` rounds (`reviewPlan`) or `3` max rounds (`reviewFleet`).
-- `--no-arbiter` skips neutral arbiter triage.
+- `--delta <ref>` and `--prior-findings <path>` review only the fix-round delta while embedding prior open findings for verification (preserving unresolved prior blockers if the delta is empty).
+- `--seams-only --plan-file <path>` audits only cross-ticket integration seams after a fleet run (fails closed if any merged commit was unprosecuted or System-1 fast-shipped).
+- `--thorough` opts into multi-dry stochastic convergence over a static diff (`dryRounds=2`, `maxRounds=3`); `--dry-rounds <n>` overrides the required consecutive dry rounds (`maxRounds = Math.max(1, dryRounds)`). In default single-pass mode (`maxRounds === 1`), a clean pass converges immediately.
+- `--loop` runs iterative convergence across up to `3` rounds (`reviewPlan` / `reviewFleet`).
+- `--no-codegraph`, `--no-decision-engine`, and `--no-arbiter` disable CodeGraph context slicing, System-1 Decision Engine gating/triage, and neutral arbiter triage respectively.
 
 ## Exit semantics
 
