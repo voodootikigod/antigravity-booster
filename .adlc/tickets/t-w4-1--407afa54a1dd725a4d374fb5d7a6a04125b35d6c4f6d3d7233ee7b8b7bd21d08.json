@@ -1,6 +1,7 @@
 {
   "body": "Create lib/remote-sdk-worker.mjs exporting isRemoteSdkAvailable, buildRemoteSdkBridgeScript, runRemoteSdkTicket, and runRemoteSdkPlan for wave-ordered cloud-VM ticket execution with bounded concurrency, timeout teardown, dry-run planning, and graceful { ok: false, kind, error } degradation. Add offline fixture test/fixtures/fake-remote-sdk and test/remote-sdk-worker.test.mjs. Verify: node --test test/remote-sdk-worker.test.mjs",
   "category": "feature",
+  "completed": true,
   "edges": [
     {
       "to": "T-W4-3"

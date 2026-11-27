@@ -1,6 +1,7 @@
 {
   "body": "Export isLinuxContainerEnvironment and verifyLinuxContainerAttestation in lib/agy.mjs and wire AGB_LINUX_CONTAINER_ATTESTATION=1 into prepareBuilderContainment on Linux only when kernel bwrap is unavailable, a container runtime is detected, and a valid HMAC-SHA256 ADLC_ADMIN_KEY-signed attestation (platform: linux) is verified. Preserve 100% of existing fail-closed behavior when AGB_LINUX_CONTAINER_ATTESTATION is unset. Add test/linux-container-containment.test.mjs. Verify: node --test test/linux-container-containment.test.mjs test/v14-integration.test.mjs test/builder-stream-json.test.mjs",
   "category": "feature",
+  "completed": true,
   "edges": [
     {
       "to": "T-W4-3"
