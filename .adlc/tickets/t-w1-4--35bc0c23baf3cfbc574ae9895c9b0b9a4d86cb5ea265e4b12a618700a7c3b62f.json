@@ -1,5 +1,6 @@
 {
   "body": "Add allowProxyHost support to serveSidecar (sidecars/server.mjs) and sidecars/jetski-launcher.mjs permitting non-loopback Host headers only when authenticated via constant-time timingSafeEqual CSPRNG ?token=, Bearer, or HttpOnly; SameSite=Lax session cookie across all routes. Add formatAcceptanceDossierHtml and writeAcceptHtmlFile in lib/accept.mjs for self-contained interactive P6 HTML cockpit artifacts (agb accept --html <file.html>). Wire agb gate-ticket, agb plan --prompt-only, agb review --prompt-only, agb init --cloud [--force], agb sidecar --cloud, and agb accept --html in bin/agb.mjs, update commands/agb.md, skills/agb/SKILL.md (+ skills mirrors), and website/content/docs/, regenerate website/generated/, rebuild dist/**, and expand test/sidecar.test.mjs and test/accept.test.mjs.",
+  "completed": true,
   "edges": [],
   "id": "T-W1-4",
   "rails": [

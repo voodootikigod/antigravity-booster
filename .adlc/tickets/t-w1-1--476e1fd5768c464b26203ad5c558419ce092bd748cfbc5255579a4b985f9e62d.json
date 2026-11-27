@@ -1,5 +1,6 @@
 {
   "body": "Create lib/gate-ticket.mjs exporting runGateTicket(repo, ticketId, opts) to execute deterministic P5 verification (resolveTicket, checkRailsGuard, verifyScopeAndAntiNoOp, runGates, executeLearnedChecks, adlc hollow-test, and recordGate) with zero agy binary dependency. Export buildPlanPrompts(id, opts) in lib/plan.mjs and buildReviewPrompts(opts) in lib/review.mjs to emit structured conversion/premortem/parallax and 5-lens Plan/Code ARL prompts + schemas with zero agy binary or quota probe required. Add test/gate-ticket-and-prompt-only.test.mjs.",
+  "completed": true,
   "edges": [
     {
       "reason": "bin/agb.mjs wires runGateTicket, buildPlanPrompts, and buildReviewPrompts",

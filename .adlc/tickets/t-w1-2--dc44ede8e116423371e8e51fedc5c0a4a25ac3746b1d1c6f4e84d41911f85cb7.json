@@ -1,5 +1,6 @@
 {
   "body": "Extend runInit({ repo, cloud = false, force = false }) in lib/doctor.mjs so cloud: true scaffolds symlink-verified .agents/environment.json, .agents/rules/adlc.md (trigger: always_on), .agents/skills/agb-cloud/SKILL.md, and .agents/agents/{prosecutor,spec-linter}.md without overwriting existing files unless force: true. Upgrade agents/prosecutor.md, agents/spec-linter.md, and agents/fleet-scheduler.md with Antigravity subagent YAML frontmatter (subagent: true, mainAgent: false, commandExecutionPolicy: sandbox, Nov 30 model defaults). Short-circuit bootstrap() in lib/bootstrap.mjs when ANTIGRAVITY_RESOLVING_ENVIRONMENT === '1'. Add test/cloud-init.test.mjs.",
+  "completed": true,
   "edges": [
     {
       "reason": "bin/agb.mjs wires agb init --cloud [--force] and dist/agb.mjs bundles doctor.mjs and bootstrap.mjs",
