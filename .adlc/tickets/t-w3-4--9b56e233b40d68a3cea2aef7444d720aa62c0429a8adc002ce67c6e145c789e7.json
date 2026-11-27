@@ -1,6 +1,7 @@
 {
   "body": "Wire agb remote-control [repo] [--dry-run] [--json], agb status --mobile, and agb accept --mobile in bin/agb.mjs, fix resolveAgyBinary() call in lib/handoff.mjs, and update commands/agb.md and skills/agb/SKILL.md. Register lib/acp-pool.mjs, lib/remote-control.mjs, and remote-control in scripts/release-audit-collect.mjs. Document AGB_ACP_POOL and ANTIGRAVITY_REMOTE_CONTROL in website/env-docs.json, create website/content/docs/reference/cli/remote-control.mdx, register remote-control in website/content/docs/reference/cli/meta.json and website/scripts/ia.json, regenerate website/generated/*, and rebuild dist/**. Verify: npm run build && node website/scripts/gen-reference.mjs --check && node website/scripts/check-all.mjs && npm run skills:check",
   "category": "feature",
+  "completed": true,
   "edges": [],
   "id": "T-W3-4",
   "rails": [

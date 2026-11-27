@@ -1,6 +1,7 @@
 {
   "body": "Extend hooks/lifecycle.mjs (strictly Node built-ins only) to track consecutive identical tool/command failures in PostToolUse (resetting on success), arm flailAlertPending in PostInvocation when consecutiveFailures >= 2, and emit a zero-token user_markdown ADLC P4 Flail-Breaker hint in PreInvocation. Export shouldProjectCodegraphMcp(repo, env) in lib/agy.mjs to auto-enable read-only CodeGraph MCP projection whenever <repo>/.codegraph is a non-symlink directory (unless AGB_CODEGRAPH=0 or AGB_ALLOW_CODEGRAPH_MCP=0) and wire it into lib/agy.mjs. Add test/lifecycle-flail-and-codegraph.test.mjs. Verify: node --test test/lifecycle-flail-and-codegraph.test.mjs test/plugin-layout.test.mjs",
   "category": "feature",
+  "completed": true,
   "edges": [
     {
       "to": "T-W3-4"
