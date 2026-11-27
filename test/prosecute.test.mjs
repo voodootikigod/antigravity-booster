@@ -587,18 +587,22 @@ test('prosecute forwards optional cryptographic seed for deterministic diff fenc
       const v1 = await prosecute({
         ticket: { id: 'T-SEED', body: 'spec body', scope: ['lib/a.mjs'] },
         diff: 'diff --git a/lib/a.mjs b/lib/a.mjs\n+export const s = 1;\n',
-        model: 'gpt-oss-120b-medium',
+        model: 'claude-sonnet-5-5-medium',
+        builderModel: 'gemini-4-neon-high',
         seed,
       });
       assert.equal(v1.verdict, 'ship');
+      assert.equal(v1.prosecutionMode, 'cross-family');
       const p1 = readFileSync(promptOut, 'utf8');
 
-      await prosecute({
+      const v2 = await prosecute({
         ticket: { id: 'T-SEED', body: 'spec body', scope: ['lib/a.mjs'] },
         diff: 'diff --git a/lib/a.mjs b/lib/a.mjs\n+export const s = 1;\n',
-        model: 'gpt-oss-120b-medium',
+        model: 'gemini-4-carbon-high',
+        builderModel: 'gemini-4-neon-high',
         seed,
       });
+      assert.equal(v2.prosecutionMode, 'same-family-fallback');
       const p2 = readFileSync(promptOut, 'utf8');
       assert.equal(p1, p2, 'same seed + diff must produce identical prosecution prompt');
     });
@@ -1121,5 +1125,58 @@ test('prosecute: clean run forwards observed token telemetry, aggregates System-
   }
 });
 
+test('resolveProsecutionMode: classifies cross-family, same-family-fallback, missing args, and unknown model strings', async () => {
+  const { resolveProsecutionMode } = await import('../lib/prosecute.mjs');
+  assert.equal(resolveProsecutionMode(null, 'gemini-4-neon-high'), 'cross-family');
+  assert.equal(resolveProsecutionMode('claude-sonnet-5-5-high', null), 'cross-family');
+  assert.equal(resolveProsecutionMode('', ''), 'cross-family');
+  assert.equal(resolveProsecutionMode('claude-sonnet-5-5-high', 'gemini-4-neon-high'), 'cross-family');
+  assert.equal(resolveProsecutionMode('gemini-4-carbon-high', 'gemini-4-neon-high'), 'same-family-fallback');
+  assert.equal(resolveProsecutionMode('claude-opus-5-5-high', 'claude-sonnet-5-5-medium'), 'same-family-fallback');
+  assert.equal(resolveProsecutionMode('unknown-noncatalog-model', 'gemini-4-neon-high'), 'cross-family');
+  assert.equal(resolveProsecutionMode('gemini-4-neon-high', 'unknown-noncatalog-model'), 'cross-family');
+});
 
+test('prosecute: blocks empty and oversized diffs and propagates prosecutionMode on agy errors', async () => {
+  const emptyRes = await prosecute({
+    ticket: { id: 'T-EMPTY', body: 'spec', scope: ['lib/a.mjs'] },
+    diff: '   \n\t  ',
+    model: 'gemini-4-carbon-high',
+    builderModel: 'gemini-4-neon-high',
+  });
+  assert.equal(emptyRes.verdict, 'block');
+  assert.equal(emptyRes.model, 'gemini-4-carbon-high');
+  assert.equal(emptyRes.prosecutionMode, 'same-family-fallback');
+  assert.equal(emptyRes.findings.length, 1);
+  assert.match(emptyRes.findings[0].claim, /empty diff/);
 
+  const hugeRes = await prosecute({
+    ticket: { id: 'T-HUGE', body: 'spec', scope: ['lib/a.mjs'] },
+    diff: `diff --git a/lib/a.mjs b/lib/a.mjs\n+${'x'.repeat(120_050)}\n`,
+    model: 'claude-sonnet-5-5-high',
+    builderModel: 'gemini-4-neon-high',
+  });
+  assert.equal(hugeRes.verdict, 'block');
+  assert.equal(hugeRes.prosecutionMode, 'cross-family');
+  assert.match(hugeRes.findings[0].claim, /diff too large/);
+
+  const dir = mkdtempSync(join(tmpdir(), 'agb-pros-badjson-'));
+  const badAgy = join(dir, 'agy');
+  writeFileSync(badAgy, '#!/usr/bin/env bash\necho "not valid json"\nexit 0\n', { mode: 0o755 });
+  try {
+    await withFakes({ AGB_AGY_BIN: badAgy }, async () => {
+      const errRes = await prosecute({
+        ticket: { id: 'T-BAD', body: 'spec', scope: ['lib/a.mjs'] },
+        diff: 'diff --git a/lib/a.mjs b/lib/a.mjs\n+export const z = 1;\n',
+        model: 'gemini-4-carbon-high',
+        builderModel: 'gemini-4-neon-high',
+      });
+      assert.equal(errRes.verdict, 'error');
+      assert.equal(errRes.model, 'gemini-4-carbon-high');
+      assert.equal(errRes.prosecutionMode, 'same-family-fallback');
+      assert.deepEqual(errRes.findings, []);
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

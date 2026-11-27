@@ -59,7 +59,7 @@ test('reviewFleet: captures quota admission errors per lens without crashing or 
     quota: { raw: {}, models: {} },
     refreshQuota: async () => ({ ok: true }),
     acquire: async (model, opts) => {
-      if (model.includes('argon')) {
+      if (model.includes('neon')) {
         throw new Error('pro quota exhausted');
       }
       return () => {};
@@ -142,7 +142,7 @@ test('reviewFleet: fails over across PROSECUTOR_CANDIDATES on quota_depleted unl
       pools: depletedGeminiPools,
     });
     assert.equal(failoverRes.converged, true);
-    assert.deepEqual(seenModels, ['gpt-oss-120b-medium']);
+    assert.deepEqual(seenModels, ['claude-sonnet-5-5-medium']);
 
     // Passing models: [] also uses default alternates and triggers quota_depleted fallback
     seenModels.length = 0;
@@ -155,15 +155,15 @@ test('reviewFleet: fails over across PROSECUTOR_CANDIDATES on quota_depleted unl
       pools: depletedGeminiPools,
     });
     assert.equal(emptyModelsRes.converged, true);
-    assert.deepEqual(seenModels, ['gpt-oss-120b-medium']);
+    assert.deepEqual(seenModels, ['claude-sonnet-5-5-medium']);
 
-    // When first fallback (gpt-oss) is ALSO depleted, advances to second fallback (claude)
+    // When first fallback (claude-sonnet-5-5-medium) is ALSO depleted, advances to second fallback (claude-sonnet-5-5-high)
     const secondFallbackModels = [];
     const secondFallbackPools = {
       quota: { raw: {}, models: {} },
       refreshQuota: async () => ({ ok: true }),
       acquire: async (m) => {
-        if (m.startsWith('gemini-') || m.startsWith('gpt-oss-')) {
+        if (m.startsWith('gemini-') || m === 'claude-sonnet-5-5-medium') {
           const err = new Error(`${m} pool depleted`);
           err.kind = 'quota_depleted';
           throw err;
@@ -180,12 +180,12 @@ test('reviewFleet: fails over across PROSECUTOR_CANDIDATES on quota_depleted unl
       pools: secondFallbackPools,
     });
     assert.equal(secondRes.converged, true);
-    assert.deepEqual(secondFallbackModels, ['claude-sonnet-5-5-medium']);
+    assert.deepEqual(secondFallbackModels, ['claude-sonnet-5-5-high']);
 
     // Explicit caller `models` must NOT silently swap to another model on quota_depleted
     const pinnedRes = await reviewFleet({
       diff: 'diff --git a/x.mjs b/x.mjs\n+1',
-      models: ['gemini-4-argon-high'],
+      models: ['gemini-4-neon-high'],
       lenses: ['correctness'],
       dryRounds: 1,
       maxRounds: 1,

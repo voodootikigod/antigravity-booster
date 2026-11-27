@@ -798,7 +798,7 @@ export function runPerfOrchestratorFrontierScenario({ trials = 100, seed = 20261
     bestPractices159Sec.push(runBp);
 
     // Arm 3: agb v1.2 Baseline (Cross-family 4-pool DAG with FRONTIER_NO_ORCHESTRATOR)
-    // Splits 2 Gemini (`gemini-4-argon-high`) + 2 Claude (`claude-sonnet-5-5-high`) per wave.
+    // Splits 2 Gemini (`gemini-4-neon-high`) + 2 Claude (`claude-sonnet-5-5-high`) per wave.
     // Immune to Orchestrator harness faults, but lacks internal Orchestrator sub-decomposition on complex
     // multi-file tickets (1.00x base build time + 15% strike-1 gate/prosecutor fixup rate).
     let runV12 = 0;

@@ -15,12 +15,12 @@ Run the 5-lens Cross-Model Adversarial Review Loop on your working tree or branc
 
 High-risk diffs route to full frontier models below; lower blast-radius diffs automatically scale down via `selectRiskTieredLensModel()` while preserving cross-family isolation:
 
-1.  **`correctness_redteam`**: `claude-opus-5-5-high` (`claude`) -> fallback `gemini-4-argon-high` (`gemini`)
-2.  **`security`**: `gemini-4-argon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`)
-3.  **`simplicity`**: `claude-sonnet-5-5-medium` (`claude`) -> fallback `gemini-3.8-flash-medium` (`gemini`)
-4.  **`evidence_runner`**: `gemini-3.8-flash-medium` (`gemini`) -> fallback `claude-sonnet-5-5-medium` (`claude`)
-5.  **`anti_slop`**: `claude-sonnet-5-5-high` (`claude`) -> fallback `gemini-3.8-flash-high` (`gemini`)
-6.  **`arbiter`**: `gemini-4-argon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`) (hybrid cascade: System-1 -> deterministic fast-path -> System-2)
+1.  **`correctness_redteam`**: `claude-opus-5-5-high` (`claude`) -> fallback `gemini-4-neon-high` (`gemini`)
+2.  **`security`**: `gemini-4-neon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`)
+3.  **`simplicity`**: `claude-sonnet-5-5-medium` (`claude`) -> fallback `gemini-4-hydrogen-medium` (`gemini`)
+4.  **`evidence_runner`**: `gemini-4-hydrogen-medium` (`gemini`) -> fallback `claude-sonnet-5-5-medium` (`claude`)
+5.  **`anti_slop`**: `claude-sonnet-5-5-high` (`claude`) -> fallback `gemini-4-hydrogen-high` (`gemini`)
+6.  **`arbiter`**: `gemini-4-neon-high` (`gemini`) -> fallback `claude-opus-5-5-high` (`claude`) (hybrid cascade: System-1 -> deterministic fast-path -> System-2)
 
 ## How to run it
 

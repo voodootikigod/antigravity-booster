@@ -137,7 +137,7 @@ test('Modernize Skill: audit.mjs executes full 5-stage pipeline', () => {
   assert.match(out, /Codeweight audit: lib\/ total \d+ lines \([\d.]+ KB\)\. Found 0 pruning candidate\(s\)\./);
   assert.match(out, /Stage 3 \(Subsystem Delta Matrix\):\s*\[PASS\]/);
   assert.match(out, /Pillar 6: Deprecation & Codeweight Pruning: Codebase clean of deprecated models and dead shims/);
-  assert.match(out, /Pillar 1: Model Catalog & Dual-Pool Quota Routing: Verified 27 models aligned with live runtime/, 'the registry in lib/models.mjs matches the live catalog, so nothing is reported as new');
+  assert.match(out, /Pillar 1: Model Catalog & Dual-Pool Quota Routing: Verified 19 models aligned with live runtime/, 'the registry in lib/models.mjs matches the live catalog, so nothing is reported as new');
   assert.match(out, /Stage 4 \(Roadmap DAG Validation\):\s*\[PASS\]/);
   assert.match(out, /Stage 5 \(Provenance & Release Ledger\):\s*\[PASS\]/);
   assert.match(out, /All checks PASSED/);

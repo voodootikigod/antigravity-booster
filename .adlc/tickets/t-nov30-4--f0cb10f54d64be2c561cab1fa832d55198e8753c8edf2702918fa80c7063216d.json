@@ -1,0 +1,27 @@
+{
+  "body": "Synchronize offline model reference artifacts, skill lens tables, website documentation, and esbuild bundles with the post-November-30-2026 Antigravity model catalog.\n\nObjectives:\n1. Run AGB_SYNC_MODELS_OFFLINE=1 npm run sync:models to regenerate skills/adversarial-review/references/models.json.\n2. Update ARL lens tables in skills/code-review/SKILL.md and skills/plan-review/SKILL.md to reference gemini-4-neon-* and gemini-4-hydrogen-* instead of retiring gemini-4-argon-* and gemini-3.8-flash-*.\n3. Update website/content/docs/{concepts/pools-and-tiers,concepts/prosecution,guides/review,reference/agy-integration}.mdx and website/generated/modules.mdx for Hydrogen fast sub-pool, Neon default, post-GPT quota groups, and same-family-fallback prosecution.\n4. Rebuild dist/agb.mjs and dist/mcp-server.mjs with npm run build.\n\nAcceptance criteria:\n1. skills/adversarial-review/references/models.json and skill docs match lib/models.mjs. Verify: AGB_SYNC_MODELS_OFFLINE=1 node scripts/sync-models.mjs --check\n2. Website reference generator passes with zero drift. Verify: node website/scripts/gen-reference.mjs --check\n3. Bundles match fresh build and full test suite passes. Verify: npm run build && npm test",
+  "category": "docs",
+  "completed": true,
+  "duration": 1,
+  "edges": [],
+  "id": "T-NOV30-4",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "skills/adversarial-review/references/models.json",
+    "skills/code-review/SKILL.md",
+    "skills/plan-review/SKILL.md",
+    "website/content/docs/concepts/pools-and-tiers.mdx",
+    "website/content/docs/concepts/prosecution.mdx",
+    "website/content/docs/guides/review.mdx",
+    "website/content/docs/reference/agy-integration.mdx",
+    "website/generated/modules.mdx",
+    "dist/**",
+    "specs/v2-1-multi-surface-and-nov30-spec.md"
+  ],
+  "title": "Sync skills, website reference docs, and dist bundles for post-Nov-30 catalog"
+}

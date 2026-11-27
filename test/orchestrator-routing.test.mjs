@@ -99,16 +99,16 @@ function builderModelsSeen(stateDir) {
 }
 
 test('PoolSet.route("frontier", "auto") spreads 4+4 at 4/4 capacity and 2+4 at 2/4 capacity; respects disable flags and Set/Array disabledModels', () => {
-  assert.equal(tierCandidates('frontier', 'auto')[0], 'gemini-pro-orchestrator');
+  assert.equal(tierCandidates('frontier', 'auto')[0], 'gemini-pro-orchestrator-neon');
   resetOrchestratorRoutingState();
-  assert.equal(poolOf('hydrogen-custom'), 'gemini-pro');
+  assert.equal(poolOf('hydrogen-custom'), 'gemini-flash');
 
   // 4+4 at 4/4 capacity
   const pools44 = new PoolSet({ 'gemini-pro': 4, claude: 4 });
   const routed44 = Array.from({ length: 8 }, () => pools44.route('frontier', 'auto'));
   assert.equal(routed44.filter((m) => familyOf(m) === 'gemini').length, 4);
   assert.equal(routed44.filter((m) => familyOf(m) === 'claude').length, 4);
-  assert.equal(routed44[0], 'gemini-pro-orchestrator');
+  assert.equal(routed44[0], 'gemini-pro-orchestrator-neon');
   assert.equal(routed44[1], 'claude-sonnet-5-5-high');
   for (const m of routed44) pools44.unroute(m);
 
@@ -137,14 +137,12 @@ test('PoolSet.route("frontier", "auto") spreads 4+4 at 4/4 capacity and 2+4 at 2
   }
 
   // Set, Array, and null disabledModels
-  setOrchestratorRoutingState({ disabledModels: new Set(['gemini-pro-orchestrator']) });
-  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator-argon');
-  setOrchestratorRoutingState({ disabledModels: ['gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon'] });
-  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator-neon');
-  setOrchestratorRoutingState({ disabledModels: ['gemini-pro-orchestrator', 'gemini-pro-orchestrator-argon', 'gemini-pro-orchestrator-neon'] });
-  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-4-argon-high');
-  assert.equal(tierCandidates('frontier', 'gemini', { disabledModels: null })[0], 'gemini-pro-orchestrator');
-  assert.equal(tierCandidates('frontier', 'gemini', { disabledModels: ['gemini-pro-orchestrator'] })[0], 'gemini-pro-orchestrator-argon');
+  setOrchestratorRoutingState({ disabledModels: new Set(['gemini-pro-orchestrator-neon']) });
+  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator');
+  setOrchestratorRoutingState({ disabledModels: ['gemini-pro-orchestrator-neon', 'gemini-pro-orchestrator'] });
+  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-4-neon-high');
+  assert.equal(tierCandidates('frontier', 'gemini', { disabledModels: null })[0], 'gemini-pro-orchestrator-neon');
+  assert.equal(tierCandidates('frontier', 'gemini', { disabledModels: ['gemini-pro-orchestrator-neon'] })[0], 'gemini-pro-orchestrator');
   resetOrchestratorRoutingState();
   assert.deepEqual(tierCandidates(), TIER_CANDIDATES.mid);
 });
@@ -155,17 +153,17 @@ test('runWithOrchestratorRoutingState isolates concurrent async contexts via Asy
       await new Promise((r) => setTimeout(r, 15));
       return tierCandidates('frontier', 'gemini');
     }),
-    runWithOrchestratorRoutingState({ disableOrchestrator: false, disabledModels: ['gemini-pro-orchestrator'] }, async () => {
+    runWithOrchestratorRoutingState({ disableOrchestrator: false, disabledModels: ['gemini-pro-orchestrator-neon'] }, async () => {
       await new Promise((r) => setTimeout(r, 5));
       return tierCandidates('frontier', 'gemini');
     }),
     runWithOrchestratorRoutingState({}, async () => tierCandidates('frontier', 'gemini')),
   ]);
-  assert.deepEqual(resA, ['gemini-4-argon-high', 'gemini-4-carbon-high', 'gemini-4-neon-high']);
-  assert.equal(resB[0], 'gemini-pro-orchestrator-argon');
-  assert.equal(resDefault[0], 'gemini-pro-orchestrator');
+  assert.deepEqual(resA, ['gemini-4-neon-high', 'gemini-4-carbon-high']);
+  assert.equal(resB[0], 'gemini-pro-orchestrator');
+  assert.equal(resDefault[0], 'gemini-pro-orchestrator-neon');
   // Outside both async contexts, default state remains untouched
-  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator');
+  assert.equal(tierCandidates('frontier', 'gemini')[0], 'gemini-pro-orchestrator-neon');
 });
 
 test('RunStatus: initModelStats & updateModelStats scope persistence to (planHash, agyVersion) and sanitize entries', () => {
@@ -242,7 +240,7 @@ test('RunStatus: initModelStats & updateModelStats scope persistence to (planHas
   }
 });
 
-test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTickets); 2/4 builder faults demote ONLY gemini-pro-orchestrator while keeping gemini-pro-orchestrator-argon active; version/plan changes reset', LINUX_ONLY, async () => {
+test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTickets); 2/4 builder faults demote ONLY gemini-pro-orchestrator-neon while keeping gemini-pro-orchestrator active; version/plan changes reset', LINUX_ONLY, async () => {
   // 1. 4 gate failures (!gates.ok) -> builderFaultTickets === 0, no demotion!
   const repoGateFail = makeRepo();
   const stateGateFail = mkdtempSync(join(tmpdir(), 'agb-orch-gf-'));
@@ -257,17 +255,16 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
       }, { log: () => {} }),
     );
     const rj = JSON.parse(readFileSync(join(repoGateFail, '.booster', 'run.json'), 'utf8'));
-    assert.equal(rj.modelStats['gemini-pro-orchestrator'].resolvedTickets, 4);
-    assert.equal(rj.modelStats['gemini-pro-orchestrator'].builderFaultTickets, 0);
+    assert.equal(rj.modelStats['gemini-pro-orchestrator-neon'].resolvedTickets, 4);
+    assert.equal(rj.modelStats['gemini-pro-orchestrator-neon'].builderFaultTickets, 0);
     assert.deepEqual(rj.disabledModels, []);
   } finally {
     rmSync(repoGateFail, { recursive: true, force: true });
     rmSync(stateGateFail, { recursive: true, force: true });
   }
 
-  // 2. 2 merges + 2 builder faults (noop -> empty_diff) on same plan -> 2/4 >= 0.5 demotes ONLY gemini-pro-orchestrator,
-  //    then a 3rd run on the SAME (planHash, agyVersion) routes to gemini-pro-orchestrator-argon,
-  //    and changing agyVersion to 1.5.8 auto-disables Orchestrator slugs with notice!
+  // 2. 2 merges + 2 builder faults (noop -> empty_diff) on same plan -> 2/4 >= 0.5 demotes ONLY gemini-pro-orchestrator-neon,
+  //    then a 3rd run on the SAME (planHash, agyVersion) routes to gemini-pro-orchestrator!
   const repoBreaker = makeRepo();
   const stateBreaker = mkdtempSync(join(tmpdir(), 'agb-orch-br-'));
   const logs = [];
@@ -280,32 +277,32 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
       runPlan({ repo: repoBreaker, gate: { test: 'true' }, tickets: planTickets }, { log: (m) => logs.push(m) }),
     );
     let rj = JSON.parse(readFileSync(join(repoBreaker, '.booster', 'run.json'), 'utf8'));
-    assert.equal(rj.modelStats['gemini-pro-orchestrator'].resolvedTickets, 2);
-    assert.equal(rj.modelStats['gemini-pro-orchestrator'].builderFaultTickets, 2);
+    assert.equal(rj.modelStats['gemini-pro-orchestrator-neon'].resolvedTickets, 2);
+    assert.equal(rj.modelStats['gemini-pro-orchestrator-neon'].builderFaultTickets, 2);
     assert.deepEqual(rj.disabledModels, []);
 
-    // Run B (same planHash & agyVersion 1.5.9): 2 merges -> resolvedTickets = 4, builderFaultTickets = 2 (50%!) -> demotes gemini-pro-orchestrator!
+    // Run B (same planHash & agyVersion): 2 merges -> resolvedTickets = 4, builderFaultTickets = 2 (50%!) -> demotes gemini-pro-orchestrator-neon!
     await withEnv({ FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateBreaker }, () =>
       runPlan({ repo: repoBreaker, gate: { test: 'true' }, tickets: planTickets }, { log: (m) => logs.push(m) }),
     );
     rj = JSON.parse(readFileSync(join(repoBreaker, '.booster', 'run.json'), 'utf8'));
-    assert.equal(rj.modelStats['gemini-pro-orchestrator'].resolvedTickets, 4);
-    assert.equal(rj.modelStats['gemini-pro-orchestrator'].builderFaultTickets, 2);
-    assert.equal(rj.modelStats['gemini-pro-orchestrator'].mergedTickets, 2);
-    assert.deepEqual(rj.disabledModels, ['gemini-pro-orchestrator']);
-    assert.ok(logs.some((l) => l.includes('demoting gemini-pro-orchestrator after 2/4 builder-fault tickets (>= 50%)')));
+    assert.equal(rj.modelStats['gemini-pro-orchestrator-neon'].resolvedTickets, 4);
+    assert.equal(rj.modelStats['gemini-pro-orchestrator-neon'].builderFaultTickets, 2);
+    assert.equal(rj.modelStats['gemini-pro-orchestrator-neon'].mergedTickets, 2);
+    assert.deepEqual(rj.disabledModels, ['gemini-pro-orchestrator-neon']);
+    assert.ok(logs.some((l) => l.includes('demoting gemini-pro-orchestrator-neon after 2/4 builder-fault tickets (>= 50%)')));
 
-    // Reset repo branches/files back to init commit so we can run the exact same planHash a 3rd time and observe gemini-pro-orchestrator-argon!
-    const stateArgon = mkdtempSync(join(tmpdir(), 'agb-orch-argon-'));
+    // Reset repo branches/files back to init commit so we can run the exact same planHash a 3rd time and observe gemini-pro-orchestrator!
+    const stateCarbon = mkdtempSync(join(tmpdir(), 'agb-orch-carbon-'));
     try {
       execFileSync('git', ['reset', '--hard', 'HEAD~2'], { cwd: repoBreaker });
-      await withEnv({ FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateArgon }, () =>
+      await withEnv({ FAKE_BUILDER_MODE: 'good', FAKE_STATE_DIR: stateCarbon }, () =>
         runPlan({ repo: repoBreaker, gate: { test: 'true' }, tickets: planTickets }, { log: () => {} }),
       );
-      const seenArgon = builderModelsSeen(stateArgon);
-      assert.deepEqual(seenArgon, ['gemini-pro-orchestrator-argon', 'gemini-pro-orchestrator-argon']);
+      const seenCarbon = builderModelsSeen(stateCarbon);
+      assert.deepEqual(seenCarbon, ['gemini-pro-orchestrator', 'gemini-pro-orchestrator']);
     } finally {
-      rmSync(stateArgon, { recursive: true, force: true });
+      rmSync(stateCarbon, { recursive: true, force: true });
     }
 
     // agy below the 1.5.17 floor is rejected at startup.
@@ -337,7 +334,7 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
       const rjAdv = JSON.parse(readFileSync(join(repoBreaker, '.booster', 'run.json'), 'utf8'));
       assert.equal(rjAdv.statsContext.agyVersion, '1.5.18');
       assert.deepEqual(rjAdv.disabledModels, []);
-      assert.equal(rjAdv.modelStats['gemini-pro-orchestrator'].resolvedTickets, 2);
+      assert.equal(rjAdv.modelStats['gemini-pro-orchestrator-neon'].resolvedTickets, 2);
     } finally {
       rmSync(stateAdv, { recursive: true, force: true });
     }
@@ -355,14 +352,14 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
         }, { log: () => {} }),
       );
       const rjRl = JSON.parse(readFileSync(join(repoPlanOptOut, '.booster', 'run.json'), 'utf8'));
-      assert.equal(rjRl.modelStats['gemini-4-argon-high'].rateLimits, 1);
+      assert.equal(rjRl.modelStats['gemini-4-neon-high'].rateLimits, 1);
       assert.equal(rjRl.modelStats['claude-sonnet-5-5-high'].mergedTickets, 1);
     } finally {
       rmSync(repoPlanOptOut, { recursive: true, force: true });
       rmSync(statePlanOptOut, { recursive: true, force: true });
     }
 
-    // model_unavailable disables the model for later tickets in the SAME run (T2 skips gemini-pro-orchestrator)
+    // model_unavailable disables the model for later tickets in the SAME run (T2 skips gemini-pro-orchestrator-neon)
     // while remaining strictly run-scoped (never persisted into run.json disabledModels)
     const repoUnavail = makeRepo();
     const stateUnavail = mkdtempSync(join(tmpdir(), 'agb-orch-unavail-'));
@@ -380,9 +377,9 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
       const rjUnavail = JSON.parse(readFileSync(join(repoUnavail, '.booster', 'run.json'), 'utf8'));
       assert.deepEqual(rjUnavail.disabledModels, []);
       assert.deepEqual(builderModelsSeen(stateUnavail), [
+        'gemini-pro-orchestrator-neon',
         'gemini-pro-orchestrator',
-        'gemini-pro-orchestrator-argon',
-        'gemini-pro-orchestrator-argon',
+        'gemini-pro-orchestrator',
       ]);
     } finally {
       rmSync(repoUnavail, { recursive: true, force: true });
@@ -394,7 +391,7 @@ test('scheduler: !gates.ok 4x increments resolvedTickets ONLY (0 builderFaultTic
   }
 });
 
-test('4-Claude Promise-barrier + gpt-oss-120b-medium prosecutor FIFO wakes cleanly without deadlock', async () => {
+test('4-Claude Promise-barrier + sibling claude_gpt sub-pool waiter wakes cleanly without deadlock', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agb-fifo-4c-'));
   await withEnv({}, async () => {
     const pools = new PoolSet({ claude: 4, 'gpt-oss': 2, 'gemini-pro': 4, 'gemini-flash': 4 }, { repo: dir });
@@ -411,9 +408,9 @@ test('4-Claude Promise-barrier + gpt-oss-120b-medium prosecutor FIFO wakes clean
     }
     assert.equal(pools.familyInFlight('claude_gpt'), 4);
 
-    // Queue gpt-oss-120b-medium prosecutor behind the 4 Claude builders using a deterministic Promise barrier
+    // Queue custom sibling gpt-oss waiter behind the 4 Claude builders using a deterministic Promise barrier
     let gptAcquired = false;
-    const gptPromise = pools.acquire('gpt-oss-120b-medium', { repo: dir, ticketId: 'PROSECUTE-1' }).then((rel) => {
+    const gptPromise = pools.acquire('gpt-future-oss', { repo: dir, ticketId: 'PROSECUTE-1' }).then((rel) => {
       gptAcquired = true;
       return rel;
     });
@@ -453,5 +450,6 @@ test('60-tool completeness canary against test/fixtures/agy-1.5.9-init-tools.jso
 test('live agy version floor benchmarks pass (1.5.17 floor, version gate)', LINUX_ONLY, async () => {
   const { runLiveAgy159PrintAndSandboxBenchmark, runLiveOrchestratorSchedulerBenchmark } = await import('../evals/v13-enhancements-bench.mjs');
   assert.equal((await runLiveAgy159PrintAndSandboxBenchmark()).checks.planSchemaAndVersionConstantsOk, true);
-  assert.equal((await runLiveOrchestratorSchedulerBenchmark()).checks.belowFloorRejectedOk, true);
+  const orchBench = await runLiveOrchestratorSchedulerBenchmark();
+  assert.equal(orchBench.ok, true, JSON.stringify(orchBench.checks));
 });

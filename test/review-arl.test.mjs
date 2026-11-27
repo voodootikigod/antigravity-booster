@@ -914,7 +914,7 @@ process.stdin.on('end', () => {
     assert.deepEqual(gatedRes.telemetry.skippedLenses, ['correctness_redteam']);
     assert.equal(gatedRes.telemetry.system1Calls, 1);
     assert.equal(gatedRes.telemetry.uncachedInputTokens, 150);
-    assert.equal(readFileSync(seenFile, 'utf8').trim(), 'gemini-3.8-flash-medium');
+    assert.equal(readFileSync(seenFile, 'utf8').trim(), 'gemini-4-hydrogen-medium');
 
     // decisionEngine: false disables System-1 gating
     writeFileSync(seenFile, '');
