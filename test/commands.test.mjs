@@ -20,7 +20,7 @@ function fencedBlocks(text) {
 
 test('commands: every root command instructs running ~/.local/bin/agb <its subcommand>', () => {
   const files = commandFiles();
-  assert.equal(files.length, 16);
+  assert.equal(files.length, 17);
   const specialSubcommand = {
     'plan-review.md': 'review',
     'code-review.md': 'review',
@@ -29,7 +29,7 @@ test('commands: every root command instructs running ~/.local/bin/agb <its subco
   for (const file of files) {
     if (file === 'agb.md') {
       const text = read(file);
-      for (const sub of ['shape', 'plan', 'run', 'review', 'distill', 'doctor', 'bootstrap', 'migrate', 'sidecar', 'status', 'watch', 'preflight', 'sync-models', 'init']) {
+      for (const sub of ['shape', 'plan', 'run', 'handoff', 'review', 'distill', 'doctor', 'bootstrap', 'migrate', 'sidecar', 'status', 'watch', 'preflight', 'sync-models', 'init']) {
         assert.ok(text.includes(`~/.local/bin/agb ${sub}`), `agb.md must route to ~/.local/bin/agb ${sub}`);
       }
       continue;

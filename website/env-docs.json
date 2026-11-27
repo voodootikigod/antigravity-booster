@@ -632,6 +632,34 @@
       "description": "Absolute worktree directory path enforced by PreToolUse (hooks/policy/evaluate.mjs) for Workspace='inherit' cloud/Remote Agent builders; denies file mutations, redirects, destructive shell commands, and run_command Cwd outside the assigned worktree."
     },
     {
+      "name": "AGB_BROWSER_CHECK_CMD",
+      "group": "sandbox-and-gates",
+      "default": "unset",
+      "bundledIgnored": false,
+      "description": "Optional shell command executed by lib/browser-gate.mjs during P5 verification to inspect rendered routes, capture console/server errors, and emit JSON screenshot telemetry."
+    },
+    {
+      "name": "AGB_BROWSER_URL",
+      "group": "sandbox-and-gates",
+      "default": "set by agb on browserGate checkCmd",
+      "bundledIgnored": false,
+      "description": "Exported by lib/browser-gate.mjs to the loopback preview URL when running a browserGate checkCmd."
+    },
+    {
+      "name": "AGB_BROWSER_ROUTES",
+      "group": "sandbox-and-gates",
+      "default": "set by agb on browserGate checkCmd",
+      "bundledIgnored": false,
+      "description": "Exported by lib/browser-gate.mjs as a JSON array of normalized route paths when running a browserGate checkCmd."
+    },
+    {
+      "name": "AGB_TICKET_ID",
+      "group": "sandbox-and-gates",
+      "default": "set by agb on browserGate checkCmd",
+      "bundledIgnored": false,
+      "description": "Exported by lib/browser-gate.mjs to the candidate ticket ID when running a browserGate checkCmd."
+    },
+    {
       "name": "ANTIGRAVITY_RESOLVING_ENVIRONMENT",
       "group": "core",
       "default": "set by Antigravity SSH",

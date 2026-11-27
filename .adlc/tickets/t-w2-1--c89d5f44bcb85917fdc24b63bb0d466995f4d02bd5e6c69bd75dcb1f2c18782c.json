@@ -1,0 +1,30 @@
+{
+  "body": "Create lib/browser-gate.mjs exporting hasFrontendChanges, isLoopbackBrowserUrl, resolveBrowserGateConfig, and runBrowserGate: enforce loopback-only target URLs (preventing SSRF), probe configured routes for < 500 HTTP status, parse optional AGB_BROWSER_CHECK_CMD / checkCmd JSON telemetry (consoleErrors, serverErrors, screenshots), copy verified non-symlink screenshots into .booster/logs/<runId>/screenshots/, fail closed when browserGate is explicitly declared (enforced: true), and degrade advisories cleanly on headless/SSH hosts (advisory: true). Integrate runBrowserGate into runGateTicket (lib/gate-ticket.mjs) and surface browserEvidence in buildAcceptanceDossier, formatAcceptanceDossierMarkdown, and formatAcceptanceDossierHtml (lib/accept.mjs). Add test/browser-gate.test.mjs and expand test/accept.test.mjs. Verify: node --test test/browser-gate.test.mjs test/accept.test.mjs test/gate-ticket-and-prompt-only.test.mjs",
+  "category": "feature",
+  "edges": [
+    {
+      "to": "T-W2-2"
+    },
+    {
+      "to": "T-W2-3"
+    },
+    {
+      "to": "T-W2-4"
+    }
+  ],
+  "id": "T-W2-1",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "lib/browser-gate.mjs",
+    "lib/gate-ticket.mjs",
+    "lib/accept.mjs",
+    "test/browser-gate.test.mjs",
+    "test/accept.test.mjs"
+  ],
+  "title": "Browser Prosecutor (browserGate, A9) & Visual Evidence in gate-ticket / accept"
+}

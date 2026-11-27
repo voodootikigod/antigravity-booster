@@ -17,7 +17,9 @@ description: "Execute deterministic zero-agy ADLC P5 ticket verification for Web
 - `--worktree <dir>` evaluates candidate changes inside an isolated `.worktrees/agb-<id>` checkout.
 - `--test-cmd <cmd>` overrides the test command (defaults to `npm test`).
 - `--build-cmd <cmd>` runs an optional build gate command before the test command.
+- `--browser-url <url>` supplies a loopback preview URL (`http://127.0.0.1:<port>`) for `browserGate` route checks.
 - `--skip-hollow` skips `adlc hollow-test` mutation testing.
+- `--skip-browser` skips the `browserGate` visual/HTTP check.
 - `--autocommit` stages and commits dirty candidate changes in the target worktree before diffing.
 - `--no-manifest` skips recording advisory audit entries in `.adlc/manifest.jsonl`.
 - `--json` emits the structured verification report to stdout.

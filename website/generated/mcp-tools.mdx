@@ -54,6 +54,13 @@
 | repo | string | yes | Path to target repository |
 | withCodegraph | boolean | no | Add .codegraph/ to .gitignore, run codegraph init if available, and enable accelerators.codegraph in .adlc/config.json |
 
+**`agb_manifest_viewer`**: Inspect an ADLC gate-manifest JSONL audit trail (.agbmanifest or .adlc/manifest.jsonl) and verify chain integrity
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| path | string | no | Optional path to .agbmanifest or .adlc/manifest.jsonl (defaults to .adlc/manifest.jsonl) |
+| repo | string | no | Optional repository path |
+
 **`agb_mission_control`**: Open the global AGB Mission Control dashboard for 4-window quota gauges and model telemetry
 
 | Parameter | Type | Required | Description |
@@ -135,3 +142,10 @@
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | repo | string | yes | Path to target repository |
+
+**`agb_ticket_viewer`**: Inspect an ADLC ticket shard (.agbticket or .adlc/tickets/*.json) with scope, rails, and DAG edges
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| path | string | yes | Path to .agbticket or .adlc/tickets/*.json shard file |
+| repo | string | no | Optional repository path |

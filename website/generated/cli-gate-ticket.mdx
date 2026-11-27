@@ -2,15 +2,17 @@
 agb gate-ticket <ticket-id> [repo]
 ```
 
-Execute deterministic zero-agy ADLC P5 verification (scope, rails-guard, sandboxed tests, learned checks, hollow-test, gate-manifest).
+Execute deterministic zero-agy ADLC P5 verification (scope, rails-guard, sandboxed tests, learned checks, browserGate, hollow-test, gate-manifest).
 
 | Flag | Argument | Description |
 | --- | --- | --- |
 | --autocommit | — | stage and commit dirty worktree |
 | --base | &lt;ref&gt; | git base ref |
+| --browser-url | &lt;url&gt; | loopback preview URL |
 | --build-cmd | &lt;cmd&gt; | build command |
 | --json | — | emit JSON |
 | --no-manifest | — | skip gate-manifest recording |
+| --skip-browser | — | skip browser prosecutor |
 | --skip-hollow | — | skip hollow-test |
 | --test-cmd | &lt;cmd&gt; | test command |
 | --worktree | &lt;dir&gt; | candidate worktree |

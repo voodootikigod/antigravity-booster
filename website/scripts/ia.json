@@ -41,6 +41,7 @@
             "shape",
             "run",
             "gate-ticket",
+            "handoff",
             "rescue",
             "accept",
             "holdout",

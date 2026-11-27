@@ -1,4 +1,5 @@
 import readline from 'node:readline';
+import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, parse, relative, resolve, isAbsolute, sep } from 'node:path';
@@ -305,6 +306,49 @@ const TOOLS = [
       'com.google.antigravity/ui': {
         surface: 'file',
         extensions: ['.agbplan']
+      }
+    }
+  },
+  {
+    name: 'agb_ticket_viewer',
+    description: 'Inspect an ADLC ticket shard (.agbticket or .adlc/tickets/*.json) with scope, rails, and DAG edges',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Path to .agbticket or .adlc/tickets/*.json shard file' },
+        repo: { type: 'string', description: 'Optional repository path' }
+      },
+      required: ['path']
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/ticket-viewer.html',
+        visibility: ['model', 'app']
+      },
+      'com.google.antigravity/ui': {
+        surface: 'file',
+        extensions: ['.agbticket']
+      }
+    }
+  },
+  {
+    name: 'agb_manifest_viewer',
+    description: 'Inspect an ADLC gate-manifest JSONL audit trail (.agbmanifest or .adlc/manifest.jsonl) and verify chain integrity',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'Optional path to .agbmanifest or .adlc/manifest.jsonl (defaults to .adlc/manifest.jsonl)' },
+        repo: { type: 'string', description: 'Optional repository path' }
+      }
+    },
+    _meta: {
+      ui: {
+        resourceUri: 'ui://agb/manifest-viewer.html',
+        visibility: ['model', 'app']
+      },
+      'com.google.antigravity/ui': {
+        surface: 'file',
+        extensions: ['.agbmanifest']
       }
     }
   },
@@ -936,6 +980,194 @@ async function handleInProcessUiTool(id, name, args) {
     return;
   }
 
+  if (name === 'agb_ticket_viewer') {
+    const pathCheck = requireNonFlagString(args, 'path');
+    if (!pathCheck.ok) {
+      sendToolError(id, pathCheck.error);
+      return;
+    }
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    const rawPathVal = pathCheck.value.trim();
+    if (/^antigravity-file:/i.test(rawPathVal)) {
+      if (!/^antigravity-file:\/\/[^\s\0-\x1F]+$/i.test(rawPathVal)) {
+        sendToolError(id, `Invalid antigravity-file URI: ${rawPathVal}`);
+        return;
+      }
+      const structuredContent = {
+        ok: true,
+        deferredRead: true,
+        fileUri: rawPathVal,
+        path: rawPathVal,
+        repo: repoRes.repo,
+        ticket: null,
+        ticketHash: null,
+      };
+      sendResult(id, {
+        content: [{ type: 'text', text: `Deferred file-surface ticket load: ${rawPathVal}` }],
+        structuredContent,
+      });
+      return;
+    }
+    const ticketFile = resolve(repoRes.repo, rawPathVal);
+    if (args?.repo !== undefined) {
+      const rel = relative(repoRes.repo, ticketFile);
+      if (rel.startsWith('..') || isAbsolute(rel)) {
+        sendToolError(id, `Ticket path escapes repository root: ${pathCheck.value}`);
+        return;
+      }
+    }
+    let fileData;
+    try {
+      assertNoSymlinkSegments(repoRes.repo, ticketFile);
+      fileData = readRegularFileBounded(ticketFile, MAX_STRUCTURED_BYTES);
+    } catch (err) {
+      sendToolError(id, err.message);
+      return;
+    }
+    if (fileData.missing) {
+      sendToolError(id, `Ticket file does not exist: ${ticketFile}`);
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(fileData.text);
+    } catch (err) {
+      sendToolError(id, `Invalid JSON in ticket file ${ticketFile}: ${err.message}`);
+      return;
+    }
+    const ticketObj =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.ticket && typeof parsed.ticket === 'object'
+        ? parsed.ticket
+        : parsed;
+    if (!ticketObj || typeof ticketObj !== 'object' || Array.isArray(ticketObj) || typeof ticketObj.id !== 'string') {
+      sendToolError(id, `Invalid ADLC ticket shard in ${ticketFile}: missing string id`);
+      return;
+    }
+    const ticketHash = createHash('sha256').update(fileData.text, 'utf8').digest('hex');
+    const structuredContent = {
+      ok: true,
+      path: ticketFile,
+      repo: repoRes.repo,
+      ticket: ticketObj,
+      ticketHash,
+    };
+    sendResult(id, {
+      content: [
+        {
+          type: 'text',
+          text: `Ticket ${ticketObj.id}: ${ticketObj.title || '(untitled)'} (${ticketObj.completed ? 'completed' : 'active'})`,
+        },
+      ],
+      structuredContent,
+    });
+    return;
+  }
+
+  if (name === 'agb_manifest_viewer') {
+    const repoRes = resolveOptionalRepoArg(args);
+    if (!repoRes.ok) {
+      sendToolError(id, repoRes.error);
+      return;
+    }
+    let rawPathVal = '.adlc/manifest.jsonl';
+    if (args?.path !== undefined) {
+      const pathCheck = requireNonFlagString(args, 'path');
+      if (!pathCheck.ok) {
+        sendToolError(id, pathCheck.error);
+        return;
+      }
+      rawPathVal = pathCheck.value.trim();
+    }
+    if (/^antigravity-file:/i.test(rawPathVal)) {
+      if (!/^antigravity-file:\/\/[^\s\0-\x1F]+$/i.test(rawPathVal)) {
+        sendToolError(id, `Invalid antigravity-file URI: ${rawPathVal}`);
+        return;
+      }
+      const structuredContent = {
+        ok: true,
+        deferredRead: true,
+        fileUri: rawPathVal,
+        path: rawPathVal,
+        repo: repoRes.repo,
+        totalEntries: 0,
+        chainValid: true,
+        entries: [],
+      };
+      sendResult(id, {
+        content: [{ type: 'text', text: `Deferred file-surface manifest load: ${rawPathVal}` }],
+        structuredContent,
+      });
+      return;
+    }
+    const manifestFile = resolve(repoRes.repo, rawPathVal);
+    if (args?.repo !== undefined) {
+      const rel = relative(repoRes.repo, manifestFile);
+      if (rel.startsWith('..') || isAbsolute(rel)) {
+        sendToolError(id, `Manifest path escapes repository root: ${rawPathVal}`);
+        return;
+      }
+    }
+    let fileData;
+    try {
+      assertNoSymlinkSegments(repoRes.repo, manifestFile);
+      fileData = readRegularFileBounded(manifestFile, MAX_STRUCTURED_BYTES);
+    } catch (err) {
+      sendToolError(id, err.message);
+      return;
+    }
+    if (fileData.missing) {
+      sendToolError(id, `Manifest file does not exist: ${manifestFile}`);
+      return;
+    }
+    const entries = [];
+    let chainValid = true;
+    let prevHash = null;
+    const rawLines = fileData.text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+    for (let i = 0; i < rawLines.length; i++) {
+      let row;
+      try {
+        row = JSON.parse(rawLines[i]);
+      } catch (err) {
+        sendToolError(id, `Invalid JSONL line ${i + 1} in ${manifestFile}: ${err.message}`);
+        return;
+      }
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        sendToolError(id, `Invalid manifest entry object at line ${i + 1} in ${manifestFile}`);
+        return;
+      }
+      if (prevHash !== null && typeof row.prevHash === 'string' && row.prevHash !== prevHash) {
+        chainValid = false;
+      }
+      if (typeof row.hash === 'string') {
+        prevHash = row.hash;
+      }
+      entries.push(row);
+    }
+    const cappedEntries = entries.slice(-200);
+    const structuredContent = {
+      ok: true,
+      path: manifestFile,
+      repo: repoRes.repo,
+      totalEntries: entries.length,
+      chainValid,
+      entries: cappedEntries,
+    };
+    sendResult(id, {
+      content: [
+        {
+          type: 'text',
+          text: `Manifest ${basename(manifestFile)}: ${entries.length} entry(s) (chain ${chainValid ? 'intact' : 'broken'})`,
+        },
+      ],
+      structuredContent,
+    });
+    return;
+  }
+
   if (name === 'agb_accept') {
     const repoRes = resolveOptionalRepoArg(args);
     if (!repoRes.ok) {
@@ -1241,6 +1473,8 @@ async function handleToolCall(id, name, args) {
     name === 'agb_flight_deck' ||
     name === 'agb_mission_control' ||
     name === 'agb_plan_viewer' ||
+    name === 'agb_ticket_viewer' ||
+    name === 'agb_manifest_viewer' ||
     name === 'agb_control' ||
     name === 'agb_accept'
   ) {

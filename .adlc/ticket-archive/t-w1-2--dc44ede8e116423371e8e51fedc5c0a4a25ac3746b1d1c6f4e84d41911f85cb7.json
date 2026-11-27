@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-27T11:59:44.542Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "68a6ecebb21dd5ea4badf2fe85601277c7ee9417ca77af5ba86347527653ca07",
+    "ticketHash": "cc35cb39eae1662202e3dfee4b8971e662e5a8b2b06367a3bc0f386f3a63651b",
+    "version": 1
+  },
   "body": "Extend runInit({ repo, cloud = false, force = false }) in lib/doctor.mjs so cloud: true scaffolds symlink-verified .agents/environment.json, .agents/rules/adlc.md (trigger: always_on), .agents/skills/agb-cloud/SKILL.md, and .agents/agents/{prosecutor,spec-linter}.md without overwriting existing files unless force: true. Upgrade agents/prosecutor.md, agents/spec-linter.md, and agents/fleet-scheduler.md with Antigravity subagent YAML frontmatter (subagent: true, mainAgent: false, commandExecutionPolicy: sandbox, Nov 30 model defaults). Short-circuit bootstrap() in lib/bootstrap.mjs when ANTIGRAVITY_RESOLVING_ENVIRONMENT === '1'. Add test/cloud-init.test.mjs.",
   "completed": true,
   "edges": [

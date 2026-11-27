@@ -52,6 +52,9 @@
 | Name | Default | Description | Bundled |
 | --- | --- | --- | --- |
 | AGB_ALLOW_CODEGRAPH_MCP | unset | Set to 1 to allow CodeGraph MCP queries (codegraph_explore) in headless or read-only agb worker sessions (still restricted to paths inside the declared workspace and outside boosterDataRoots). | honoured |
+| AGB_BROWSER_CHECK_CMD | unset | Optional shell command executed by lib/browser-gate.mjs during P5 verification to inspect rendered routes, capture console/server errors, and emit JSON screenshot telemetry. | honoured |
+| AGB_BROWSER_ROUTES | set by agb on browserGate checkCmd | Exported by lib/browser-gate.mjs as a JSON array of normalized route paths when running a browserGate checkCmd. | honoured |
+| AGB_BROWSER_URL | set by agb on browserGate checkCmd | Exported by lib/browser-gate.mjs to the loopback preview URL when running a browserGate checkCmd. | honoured |
 | AGB_CANDIDATE_ROOT | set by agb on holdout runners | Exported by lib/holdout.mjs to the isolated candidate worktree path during P5 holdout verification so out-of-tree holdout scenarios can dynamically import candidate modules. | honoured |
 | AGB_HOOK_DISABLE | unset | Any non-empty value bypasses the PreToolUse rails guard. Each bypass is logged to hooks.log and agb doctor warns about it. | honoured |
 | AGB_LIFECYCLE_HOOKS | 1 | Set to 0 to bypass the advisory in-session lifecycle hooks (PostToolUse, PreInvocation, PostInvocation, Stop) in hooks/lifecycle.mjs. | honoured |
@@ -60,6 +63,7 @@
 | AGB_SANDBOX_PROBE_CMD | unset | Doctor sandbox-probe command override. Restricted to test execution; otherwise the check fails. | honoured |
 | AGB_SANDBOX_PROBE_HELPER | unset | Helper script passed to the doctor sandbox probe. Honoured only during test execution. | honoured |
 | AGB_STRICT_GATES | on in plan; off in run unless the repo has package.json | Plan compilation uses strict gates unless set to 0. At run time, 1 forces gate commands to match the npm pattern even without a package.json. | honoured |
+| AGB_TICKET_ID | set by agb on browserGate checkCmd | Exported by lib/browser-gate.mjs to the candidate ticket ID when running a browserGate checkCmd. | honoured |
 | AGB_WORKTREE_ROOT | unset | Absolute worktree directory path enforced by PreToolUse (hooks/policy/evaluate.mjs) for Workspace='inherit' cloud/Remote Agent builders; denies file mutations, redirects, destructive shell commands, and run_command Cwd outside the assigned worktree. | honoured |
 
 **Pools and quota**

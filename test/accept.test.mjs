@@ -244,6 +244,38 @@ test('formatAcceptanceDossierHtml and writeAcceptHtmlFile escape untrusted XSS/O
     const symHtmlTarget = join(brainOut, 'sym.html');
     symlinkSync(secretTarget, symHtmlTarget);
     assert.throws(() => writeAcceptHtmlFile(fx.dir, html, symHtmlTarget), /symbolic link not allowed/i);
+
+    // 7. Browser Prosecutor evidence + inline PNG data-URI preview in buildAcceptanceDossier, Markdown, and HTML
+    const { buildAcceptanceDossier, formatAcceptanceDossierMarkdown } = await import('../lib/accept.mjs');
+    const onePxPng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64'
+    );
+    const shotRel = '.booster/logs/gate-ticket/screenshots/01-home.png';
+    mkdirSync(join(fx.dir, '.booster', 'logs', 'gate-ticket', 'screenshots'), { recursive: true });
+    writeFileSync(join(fx.dir, shotRel), onePxPng);
+    writeFileSync(
+      join(fx.dir, '.booster', 'browser-evidence.json'),
+      JSON.stringify({
+        ok: true,
+        enforced: true,
+        advisory: false,
+        ticketId: 'T-W2-1',
+        url: 'http://127.0.0.1:3000',
+        routes: [{ route: '/', statusCode: 200, ok: true }],
+        consoleErrors: [],
+        serverErrors: [],
+        screenshots: [{ name: '01-home.png', path: shotRel, bytes: onePxPng.length, ext: '.png' }],
+      }) + '\n'
+    );
+    const dWithBrowser = buildAcceptanceDossier({ repo: fx.dir, base: fx.baseSha });
+    assert.equal(dWithBrowser.browserEvidence.ok, true);
+    assert.equal(dWithBrowser.browserEvidence.enforced, true);
+    assert.match(dWithBrowser.browserEvidence.screenshots[0].dataUri, /^data:image\/png;base64,/);
+    assert.match(formatAcceptanceDossierMarkdown(dWithBrowser), /Browser Prosecutor \(enforced\):.*PASS/);
+    const htmlWithShot = formatAcceptanceDossierHtml(dWithBrowser);
+    assert.match(htmlWithShot, /Browser Prosecutor \(Enforced\)/);
+    assert.match(htmlWithShot, /<img src="data:image\/png;base64,/);
   } finally {
     rmSync(brainOut, { recursive: true, force: true });
     rmSync(fx.dir, { recursive: true, force: true });
