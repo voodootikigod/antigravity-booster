@@ -292,7 +292,17 @@ export function headlessProtectedMatcher(tmpRoots) {
   return (absPath, platform) => isHeadlessIpcOrRescuePath(absPath, tmpRoots, platform);
 }
 
-const VALID_CONVERSATION_ID = /^[A-Za-z0-9_-]{8,128}$/;
+const CONVERSATION_SEGMENT_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function isValidConversationId(convId) {
+  if (typeof convId !== 'string' || convId.length > 256 || convId.includes('\\')) {
+    return false;
+  }
+  const segments = convId.split('/');
+  if (segments.length > 4) return false;
+  if (!segments.every((seg) => CONVERSATION_SEGMENT_RE.test(seg))) return false;
+  return segments[segments.length - 1].length >= 8;
+}
 
 function hasDotDotSegment(rawPath) {
   return String(rawPath).split(/[\\/]/).includes('..');
@@ -305,16 +315,17 @@ function hasDotOrDotDotSegment(rawPath) {
 /**
  * Verify active interactive Brain Artifact directory (`payload.conversationId` +
  * `payload.artifactDirectoryPath`) with zero symlink components from `<home>`
- * down through `<conversationId>`.
+ * down through every segment of `<conversationId>`.
  */
 export function verifyBrainArtifactDirectory(payload, { home, realHome, headless, platform = process.platform }) {
   if (headless) return null;
   const convId = payload?.conversationId;
   const rawDir = payload?.artifactDirectoryPath;
-  if (typeof convId !== 'string' || !VALID_CONVERSATION_ID.test(convId)) return null;
+  if (!isValidConversationId(convId)) return null;
   if (typeof rawDir !== 'string' || rawDir.trim().length === 0 || !isAbsolute(rawDir)) return null;
   if (PROC_ROOT_PREFIX.test(rawDir) || hasDotOrDotDotSegment(rawDir)) return null;
 
+  const convSegments = convId.split('/');
   const lexDir = resolve(rawDir);
   const candidateHomes = home === realHome ? [home] : [home, realHome];
 
@@ -331,12 +342,12 @@ export function verifyBrainArtifactDirectory(payload, { home, realHome, headless
     }
 
     for (const app of BRAIN_APPS) {
-      const expectedLex = join(candidateHome, '.gemini', app, 'brain', convId);
+      const expectedLex = join(candidateHome, '.gemini', app, 'brain', ...convSegments);
       if (fold(lexDir, platform) !== fold(expectedLex, platform)) continue;
 
       let cur = candidateHome;
       let cleanChain = true;
-      for (const seg of ['.gemini', app, 'brain', convId]) {
+      for (const seg of ['.gemini', app, 'brain', ...convSegments]) {
         cur = join(cur, seg);
         const st = lstatOrNull(cur);
         if (st?.isSymbolicLink() || (st && !st.isDirectory())) {
@@ -346,7 +357,7 @@ export function verifyBrainArtifactDirectory(payload, { home, realHome, headless
       }
       if (!cleanChain) return null;
 
-      const expectedPhys = join(physHome, '.gemini', app, 'brain', convId);
+      const expectedPhys = join(physHome, '.gemini', app, 'brain', ...convSegments);
       const resolvedPhys = physicalResolve(rawDir, '/', platform);
       if (!resolvedPhys || fold(resolvedPhys, platform) !== fold(expectedPhys, platform)) {
         return null;

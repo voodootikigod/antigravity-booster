@@ -106,7 +106,7 @@ const COMMANDS = {
   distill: {
     args: '[repo]',
     desc: 'scan run/review findings for recurring patterns and stage or apply learned ADLC defenses',
-    flags: '[--apply (write compacted rules to .gemini/rules/adlc-learned.md)] [--compile-checks (emit .adlc/learned-checks.json invariants)] [--json (emit JSON)]'
+    flags: '[--apply (write compacted rules to .agents/rules/adlc-learned.md)] [--compile-checks (emit .adlc/learned-checks.json invariants)] [--json (emit JSON)]'
   },
   holdout: {
     args: '<list|run|clean> [repo]',

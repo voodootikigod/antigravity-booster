@@ -14,8 +14,8 @@ import { ticketFilename, validateTicket } from '@adlc/tickets';
 import { findAdlcRoot, resolveTicket, unionActiveRails } from '../../lib/active-rails.mjs';
 import {
   AGY_CONTROL_TOOLS, ASK_PERMISSION_ACTIONS, ASK_PERMISSION_PROSE_KEYS, GENERATE_IMAGE_PROSE_KEYS, BOOSTER_MCP_SERVER, BOOSTER_MCP_SERVERS, BOOSTER_MCP_TOOLS, CODEGRAPH_READ_TOOLS,
-  EXCLUDED_CONTENT_KEYS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS, PATH_MUTATING_TOOLS, PURE_READERS, READONLY_BOOSTER_CONTROL_ACTIONS,
-  READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, STDIN_TOOLS,
+  EXCLUDED_CONTENT_KEYS, EXTERNAL_REPO_MUTATING_TOOLS, NOTEBOOK_EXEC_TOOLS, ORCHESTRATION_TOOLS, PATHLESS_HARNESS_READ_TOOLS, PATH_MUTATING_TOOLS, PURE_READERS, READONLY_BOOSTER_CONTROL_ACTIONS,
+  READ_ONLY_TOOLS, READ_TOOL_PATH_SCHEMAS, REQUIRED_READ_PATH_KEYS, SED_ALLOWED_KEYS, SKILL_MUTATING_TOOLS, SKILL_RESOURCE_READ_TOOLS, STDIN_TOOLS,
   SUBAGENT_PROSE_KEYS, SUBAGENT_TOOLS, SWARM_META_KEYS, SWARM_PROSE_KEYS, SWARM_WORKSPACE_MODES,
   TICKET_STORE_DIR, TOOL_PATH_SCHEMAS, WORKFLOW_PROSE_KEYS, WORKFLOW_TOOLS,
 } from './constants.mjs';
@@ -451,6 +451,22 @@ function stepOne(name, args, ctx) {
     if (typeof norm.folded.target === 'string' && (act === 'read_file' || act === 'write_file')) {
       candidates.push(toPath(norm.folded.target));
     }
+  } else if (PATHLESS_HARNESS_READ_TOOLS.has(name) || EXTERNAL_REPO_MUTATING_TOOLS.has(name)) {
+    candidates = [];
+  } else if (SKILL_RESOURCE_READ_TOOLS.has(name)) {
+    const fns = norm.folded.filenames;
+    if (!Array.isArray(fns) || fns.length === 0 || !fns.every(isNonEmptyString)) {
+      return deny('get_skill_resources requires a non-empty filenames string array');
+    }
+    for (const f of fns) {
+      if (isAbsolute(f) || hasHomePrefix(f) || f.startsWith('\\') || f.split(/[\\/]/).includes('..')) {
+        return deny('Invalid or path-traversing filename in get_skill_resources');
+      }
+    }
+    candidates = [];
+  } else if (SKILL_MUTATING_TOOLS.has(name)) {
+    const sd = norm.folded.skill_dir ?? norm.folded.skilldir;
+    candidates = typeof sd === 'string' && sd.trim().length > 0 ? [toPath(sd.trim())] : [];
   } else if (isRead) {
     let extra = [];
     if (Object.hasOwn(REQUIRED_READ_PATH_KEYS, name) || name === 'list_permissions') {
@@ -1459,12 +1475,33 @@ export function evaluatePayload(payload, options = {}) {
   return verdict;
 }
 
+function evaluateExternalOrSkillMutatingTool(name, args, ctx) {
+  if (ctx.headless) {
+    return deny(`Tool ${name} cannot be used in headless or read-only agb worker sessions`);
+  }
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  if (SKILL_MUTATING_TOOLS.has(name)) {
+    const rawSkillDir = norm.folded.skill_dir ?? norm.folded.skilldir;
+    if (rawSkillDir !== undefined && rawSkillDir !== null) {
+      if (!isNonEmptyString(rawSkillDir)) return deny(`Invalid skill_dir parameter in ${name}`);
+      const resolved = resolveAll(toPath(rawSkillDir.trim()), ctx);
+      if (resolved.length === 0) return deny(`Relative skill_dir in ${name} has no workspace to anchor it`);
+    }
+    return forceAsk(`Skill customization tool ${name} modifies user skills; operator confirmation required`);
+  }
+  return forceAsk(`GitHub repository management tool ${name} modifies remote/project resources; operator confirmation required`);
+}
+
 function evaluatePayloadWithContext(name, args, ctx) {
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === 'deny') return step1;
 
   if (name === 'ask_permission') return evaluateAskPermission(args, ctx);
   if (name === 'generate_image') return evaluateGenerateImage(args, ctx);
+  if (EXTERNAL_REPO_MUTATING_TOOLS.has(name) || SKILL_MUTATING_TOOLS.has(name)) {
+    return evaluateExternalOrSkillMutatingTool(name, args, ctx);
+  }
   if (READ_ONLY_TOOLS.has(name)) return PASS;
   if (CODEGRAPH_READ_TOOLS.has(name)) return evaluateCodegraphTool(name, args, ctx);
   if (name === 'sed_file') return evaluateSedFile(args, ctx);

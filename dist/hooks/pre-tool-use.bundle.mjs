@@ -2100,6 +2100,25 @@ function resolveTicket(repoRoot, id) {
 }
 
 // hooks/policy/constants.mjs
+var PATHLESS_HARNESS_READ_TOOLS = /* @__PURE__ */ new Set([
+  "google_search",
+  "browse",
+  "google:browse",
+  "list_skills",
+  "lookup_skill",
+  "lookup_skills"
+]);
+var SKILL_RESOURCE_READ_TOOLS = /* @__PURE__ */ new Set(["get_skill_resources"]);
+var EXTERNAL_REPO_MUTATING_TOOLS = /* @__PURE__ */ new Set([
+  "create_github_repository",
+  "fork_github_repository",
+  "detach_github_repository"
+]);
+var SKILL_MUTATING_TOOLS = /* @__PURE__ */ new Set([
+  "save_skill",
+  "update_skill",
+  "delete_skill"
+]);
 var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "view_file",
   "read_file",
@@ -2122,7 +2141,9 @@ var READ_ONLY_TOOLS = /* @__PURE__ */ new Set([
   "list_permissions",
   "search_in_file",
   "wait",
-  "wait_5_seconds"
+  "wait_5_seconds",
+  ...PATHLESS_HARNESS_READ_TOOLS,
+  ...SKILL_RESOURCE_READ_TOOLS
 ]);
 var CODEGRAPH_READ_TOOLS = /* @__PURE__ */ new Set([
   "codegraph_explore",
@@ -3844,7 +3865,16 @@ function isHeadlessIpcOrRescuePath(absPath, tmpRoots = [], platform = process.pl
 function headlessProtectedMatcher(tmpRoots) {
   return (absPath, platform) => isHeadlessIpcOrRescuePath(absPath, tmpRoots, platform);
 }
-var VALID_CONVERSATION_ID = /^[A-Za-z0-9_-]{8,128}$/;
+var CONVERSATION_SEGMENT_RE = /^[A-Za-z0-9_-]{1,128}$/;
+function isValidConversationId(convId) {
+  if (typeof convId !== "string" || convId.length > 256 || convId.includes("\\")) {
+    return false;
+  }
+  const segments = convId.split("/");
+  if (segments.length > 4) return false;
+  if (!segments.every((seg) => CONVERSATION_SEGMENT_RE.test(seg))) return false;
+  return segments[segments.length - 1].length >= 8;
+}
 function hasDotDotSegment(rawPath) {
   return String(rawPath).split(/[\\/]/).includes("..");
 }
@@ -3855,9 +3885,10 @@ function verifyBrainArtifactDirectory(payload, { home, realHome, headless, platf
   if (headless) return null;
   const convId = payload?.conversationId;
   const rawDir = payload?.artifactDirectoryPath;
-  if (typeof convId !== "string" || !VALID_CONVERSATION_ID.test(convId)) return null;
+  if (!isValidConversationId(convId)) return null;
   if (typeof rawDir !== "string" || rawDir.trim().length === 0 || !isAbsolute3(rawDir)) return null;
   if (PROC_ROOT_PREFIX.test(rawDir) || hasDotOrDotDotSegment(rawDir)) return null;
+  const convSegments = convId.split("/");
   const lexDir = resolve6(rawDir);
   const candidateHomes = home === realHome ? [home] : [home, realHome];
   for (const candidateHome of candidateHomes) {
@@ -3871,11 +3902,11 @@ function verifyBrainArtifactDirectory(payload, { home, realHome, headless, platf
       physHome = physicalResolve(candidateHome, "/", platform) ?? candidateHome;
     }
     for (const app of BRAIN_APPS) {
-      const expectedLex = join10(candidateHome, ".gemini", app, "brain", convId);
+      const expectedLex = join10(candidateHome, ".gemini", app, "brain", ...convSegments);
       if (fold(lexDir, platform) !== fold(expectedLex, platform)) continue;
       let cur = candidateHome;
       let cleanChain = true;
-      for (const seg of [".gemini", app, "brain", convId]) {
+      for (const seg of [".gemini", app, "brain", ...convSegments]) {
         cur = join10(cur, seg);
         const st = lstatOrNull(cur);
         if (st?.isSymbolicLink() || st && !st.isDirectory()) {
@@ -3884,7 +3915,7 @@ function verifyBrainArtifactDirectory(payload, { home, realHome, headless, platf
         }
       }
       if (!cleanChain) return null;
-      const expectedPhys = join10(physHome, ".gemini", app, "brain", convId);
+      const expectedPhys = join10(physHome, ".gemini", app, "brain", ...convSegments);
       const resolvedPhys = physicalResolve(rawDir, "/", platform);
       if (!resolvedPhys || fold(resolvedPhys, platform) !== fold(expectedPhys, platform)) {
         return null;
@@ -5113,6 +5144,22 @@ function stepOne(name, args, ctx) {
     if (typeof norm.folded.target === "string" && (act === "read_file" || act === "write_file")) {
       candidates.push(toPath(norm.folded.target));
     }
+  } else if (PATHLESS_HARNESS_READ_TOOLS.has(name) || EXTERNAL_REPO_MUTATING_TOOLS.has(name)) {
+    candidates = [];
+  } else if (SKILL_RESOURCE_READ_TOOLS.has(name)) {
+    const fns = norm.folded.filenames;
+    if (!Array.isArray(fns) || fns.length === 0 || !fns.every(isNonEmptyString)) {
+      return deny("get_skill_resources requires a non-empty filenames string array");
+    }
+    for (const f of fns) {
+      if (isAbsolute5(f) || hasHomePrefix(f) || f.startsWith("\\") || f.split(/[\\/]/).includes("..")) {
+        return deny("Invalid or path-traversing filename in get_skill_resources");
+      }
+    }
+    candidates = [];
+  } else if (SKILL_MUTATING_TOOLS.has(name)) {
+    const sd = norm.folded.skill_dir ?? norm.folded.skilldir;
+    candidates = typeof sd === "string" && sd.trim().length > 0 ? [toPath(sd.trim())] : [];
   } else if (isRead) {
     let extra = [];
     if (Object.hasOwn(REQUIRED_READ_PATH_KEYS, name) || name === "list_permissions") {
@@ -6045,11 +6092,31 @@ function evaluatePayload(payload, options = {}) {
   if (isInteractivePrompt(verdict) && ctx.headless) return deny(verdict.reason);
   return verdict;
 }
+function evaluateExternalOrSkillMutatingTool(name, args, ctx) {
+  if (ctx.headless) {
+    return deny(`Tool ${name} cannot be used in headless or read-only agb worker sessions`);
+  }
+  const norm = normalizeArgsCaseInsensitive(args);
+  if (!norm.ok) return deny(norm.reason);
+  if (SKILL_MUTATING_TOOLS.has(name)) {
+    const rawSkillDir = norm.folded.skill_dir ?? norm.folded.skilldir;
+    if (rawSkillDir !== void 0 && rawSkillDir !== null) {
+      if (!isNonEmptyString(rawSkillDir)) return deny(`Invalid skill_dir parameter in ${name}`);
+      const resolved = resolveAll(toPath(rawSkillDir.trim()), ctx);
+      if (resolved.length === 0) return deny(`Relative skill_dir in ${name} has no workspace to anchor it`);
+    }
+    return forceAsk(`Skill customization tool ${name} modifies user skills; operator confirmation required`);
+  }
+  return forceAsk(`GitHub repository management tool ${name} modifies remote/project resources; operator confirmation required`);
+}
 function evaluatePayloadWithContext(name, args, ctx) {
   const step1 = stepOne(name, args, ctx);
   if (step1.decision === "deny") return step1;
   if (name === "ask_permission") return evaluateAskPermission(args, ctx);
   if (name === "generate_image") return evaluateGenerateImage(args, ctx);
+  if (EXTERNAL_REPO_MUTATING_TOOLS.has(name) || SKILL_MUTATING_TOOLS.has(name)) {
+    return evaluateExternalOrSkillMutatingTool(name, args, ctx);
+  }
   if (READ_ONLY_TOOLS.has(name)) return PASS;
   if (CODEGRAPH_READ_TOOLS.has(name)) return evaluateCodegraphTool(name, args, ctx);
   if (name === "sed_file") return evaluateSedFile(args, ctx);

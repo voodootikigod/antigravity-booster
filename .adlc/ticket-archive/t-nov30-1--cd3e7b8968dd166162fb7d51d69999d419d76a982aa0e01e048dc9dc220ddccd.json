@@ -1,4 +1,12 @@
 {
+  "_adlcArchive": {
+    "archivedAt": "2026-11-26T22:06:05.579Z",
+    "reason": "completed",
+    "sourceRevision": null,
+    "sourceStoreHash": "1bb1909437a5cc09c50306167a498dca72694f63eafbc8f9d949989c06f7f309",
+    "ticketHash": "2af37c029eec4148866fb76c83baa23f685c4fae24e16023ff35657d5411466c",
+    "version": 1
+  },
   "body": "Migrate lib/models.mjs off models retiring November 30, 2026 (gemini-3.8-flash-*, gemini-4-argon-*, gemini-pro-orchestrator-argon, gpt-oss-120b-medium, claude-4-6), move gemini-4-hydrogen-* to the gemini-flash fast sub-pool, promote Neon defaults, preserve Enterprise 3.7/3.6/3.1 pass-through, and fix selectCliEffortFlag for Orchestrator.\n\nObjectives:\n1. Update MODELS, MODEL_ALIASES, ORCHESTRATOR_MODELS, FRONTIER_NO_ORCHESTRATOR, TIER_CANDIDATES, PROSECUTORS, PROSECUTOR_CANDIDATES, ARL_LENS_MODELS, ROLE_MODELS, and RETIRED_MODEL_MAP in lib/models.mjs.\n2. Export sameFamilyProsecutorsFor(builderModel) for distinct fresh-context Gemini fallback when Claude quota is unavailable.\n3. Fix selectCliEffortFlag in lib/models.mjs to return null for ORCHESTRATOR_MODELS and support unsuffixed dynamic-effort base slugs (gemini-4-neon, gemini-4-hydrogen).\n4. Update lib/doctor-models.mjs comments and test/models-live-catalog.test.mjs, test/models-registry.test.mjs, test/agy-json-schema.test.mjs.\n\nAcceptance criteria:\n1. All catalog, alias, retirement, Enterprise pass-through, and selectCliEffortFlag tests pass. Verify: node --test test/models-live-catalog.test.mjs test/models-registry.test.mjs test/agy-json-schema.test.mjs",
   "category": "feature",
   "completed": true,

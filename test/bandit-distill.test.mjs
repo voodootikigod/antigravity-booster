@@ -106,9 +106,9 @@ test('distillRunDefenses clusters recurring findings, stages proposal, and compa
     assert.equal(staged.applied, false);
     assert.ok(staged.stagedPath && existsSync(staged.stagedPath));
     assert.match(readFileSync(staged.stagedPath, 'utf8'), /Unquoted path argument/);
-    assert.equal(existsSync(join(dir, '.gemini', 'rules', 'adlc-learned.md')), false);
+    assert.equal(existsSync(join(dir, '.agents', 'rules', 'adlc-learned.md')), false);
 
-    // 2. Apply mode with strict byte budget compaction
+    // 2. Apply mode with strict byte budget compaction + YAML frontmatter
     const applied = distillRunDefenses({
       repo: dir,
       apply: true,
@@ -117,9 +117,44 @@ test('distillRunDefenses clusters recurring findings, stages proposal, and compa
     });
     assert.equal(applied.ok, true);
     assert.equal(applied.applied, true);
-    assert.ok(applied.appliedPath && existsSync(applied.appliedPath));
+    assert.equal(applied.appliedPath, join(dir, '.agents', 'rules', 'adlc-learned.md'));
+    assert.ok(existsSync(applied.appliedPath));
     assert.ok(applied.ruleBytes <= 500);
-    assert.match(readFileSync(applied.appliedPath, 'utf8'), /Learned ADLC Repository Defenses/);
+    const ruleText = readFileSync(applied.appliedPath, 'utf8');
+    assert.match(ruleText, /^---\ntrigger: always_on\ndescription: Learned ADLC repository defenses/);
+    assert.match(ruleText, /Learned ADLC Repository Defenses/);
+
+    // 3. Zero-symlink enforcement on .agents, .agents/rules, and adlc-learned.md
+    const outside = mkdtempSync(join(tmpdir(), 'agb-distill-sym-'));
+    try {
+      const symRuleTarget = join(outside, 'victim.md');
+      writeFileSync(symRuleTarget, 'do not touch');
+      rmSync(applied.appliedPath, { force: true });
+      symlinkSync(symRuleTarget, applied.appliedPath);
+      assert.throws(
+        () => distillRunDefenses({ repo: dir, apply: true, extraFindings: findings }),
+        /Refusing to write symlinked rule file/
+      );
+
+      rmSync(join(dir, '.agents', 'rules'), { recursive: true, force: true });
+      mkdirSync(join(outside, 'rules-dir'), { recursive: true });
+      symlinkSync(join(outside, 'rules-dir'), join(dir, '.agents', 'rules'), 'dir');
+      assert.throws(
+        () => distillRunDefenses({ repo: dir, apply: true, extraFindings: findings }),
+        /Refusing to write inside symlinked rules directory/
+      );
+
+      rmSync(join(dir, '.agents'), { recursive: true, force: true });
+      mkdirSync(join(outside, 'agents-dir'), { recursive: true });
+      symlinkSync(join(outside, 'agents-dir'), join(dir, '.agents'), 'dir');
+      assert.throws(
+        () => distillRunDefenses({ repo: dir, apply: true, extraFindings: findings }),
+        /Refusing to write inside symlinked \.agents directory/
+      );
+      assert.equal(readFileSync(symRuleTarget, 'utf8'), 'do not touch');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

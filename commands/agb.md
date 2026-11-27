@@ -12,18 +12,18 @@ Executes the 5-phase Factory pipeline (`/agb-shape` -> `agb plan` -> `agb prefli
 | User Intent in `<description>` | Target Workflow | Command / MCP Tool to Execute |
 | :--- | :--- | :--- |
 | **Build or implement a feature / concept end-to-end** (e.g. *"build the webhook retry queue in parallel"*, *"/agb --yolo add rate limiting"*) | **5-Phase Factory** (`/agb-shape` -> `plan` -> `preflight` -> `run` -> `/code-review`) | 1. Shape & harden `specs/<slug>-spec.md` with `/agb-shape` (`~/.local/bin/agb shape` + 5-lens Plan ARL + Sign-Off Gate unless `--yolo`).<br>2. Compile via `~/.local/bin/agb plan specs/<slug>-spec.md . --out plan.json --force`.<br>3. Validate via `~/.local/bin/agb preflight plan.json`.<br>4. Capture `<pre-run-base-sha>` (`git rev-parse HEAD`), then execute via `~/.local/bin/agb run plan.json`.<br>5. Verify with `npm test` and `~/.local/bin/agb review . <pre-run-base-sha> --five-lens --loop` (not `main`, which diffs nothing after merging onto `main`). |
-| **Shape a feature idea or analyze a spec DAG** (e.g. *"shape specs/auth-spec.md"*) | **Shape** (`/agb-shape`) | `~/.local/bin/agb shape <spec.md \| id> [repo-path] [--analyze] [--strict] [--sync-brain] [--max-ticket-scope <n>] [--json]` or `mcp__agb__agb_shape` |
-| **Compile an existing spec file or Antigravity brain artifact into `plan.json` (or a `run_workflow` script)** | **Plan** (`/agb-plan`) | `~/.local/bin/agb plan <id \| spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--json]` or `mcp__agb__agb_plan` (with `emitWorkflow`) |
-| **Execute an existing `plan.json` ticket DAG** | **Run** (`/agb-run`) | `~/.local/bin/agb run <plan.json> [-c <n>] [--resume] [--reset-rescue]` or `mcp__agb__agb_run` |
-| **Pre-flight or validate a `plan.json` without running builders** | **Preflight / Validate** | `~/.local/bin/agb preflight <plan.json>` (`mcp__agb__agb_preflight`) or `~/.local/bin/agb validate <plan.json>` |
-| **Review, prosecute, or audit a branch / diff or spec** | **Review** (`/agb-review`, `/plan-review`, `/code-review`) | `~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--five-lens] [--loop]` or `mcp__agb__agb_review` |
-| **Distill recurring review/prosecution findings into learned ADLC defenses** | **Distill** | `~/.local/bin/agb distill [repo-path] [--apply] [--compile-checks] [--json]` or `mcp__agb__agb_distill` |
-| **Rescue a failed ticket interactively or inspect P6 hunk acceptance** | **Rescue / Accept** | `~/.local/bin/agb rescue <ticket-id> [repo-path] [--continue] [--plan <plan.json>]` or `~/.local/bin/agb accept [repo-path] [--base <ref>] [--markdown <file>] [--json]` (`mcp__agb__agb_accept`) |
-| **Manage sealed black-box holdouts or CLI statusLine HUD** | **Holdout / Statusline** | `~/.local/bin/agb holdout <list\|run\|clean> [repo-path]` (`mcp__agb__agb_holdout`) or `~/.local/bin/agb statusline <render\|title\|install\|uninstall>` |
-| **Check environment health or self-heal recoverable state** | **Doctor** (`/agb-doctor`) | `~/.local/bin/agb doctor [repo-path] [--fix]` or `mcp__agb__agb_doctor` |
-| **Check live fleet run status or launch interactive TUI** | **Status / Watch** (`/agb-status`, `/agb-watch`) | `~/.local/bin/agb status [repo-path]` (`mcp__agb__agb_status`) or `~/.local/bin/agb watch [repo-path] [--mux] [--no-alerts]` |
+| **Shape a feature idea or analyze a spec DAG** (e.g. *"shape specs/auth-spec.md"*) | **Shape** (`/agb-shape`) | `~/.local/bin/agb shape <spec.md \| id> [repo-path] [--analyze] [--strict] [--sync-brain] [--max-ticket-scope <n>] [--json]` or `agb_shape` on `antigravity-booster_agb` |
+| **Compile an existing spec file or Antigravity brain artifact into `plan.json` (or a `run_workflow` script)** | **Plan** (`/agb-plan`) | `~/.local/bin/agb plan <id \| spec.md> [repo-path] [--out <file>] [--emit-workflow <file.py>] [--estimate] [--json]` or `agb_plan` on `antigravity-booster_agb` (with `emitWorkflow`) |
+| **Execute an existing `plan.json` ticket DAG** | **Run** (`/agb-run`) | `~/.local/bin/agb run <plan.json> [-c <n>] [--resume] [--reset-rescue]` or `agb_run` on `antigravity-booster_agb` |
+| **Pre-flight or validate a `plan.json` without running builders** | **Preflight / Validate** | `~/.local/bin/agb preflight <plan.json>` (`agb_preflight` on `antigravity-booster_agb`) or `~/.local/bin/agb validate <plan.json>` |
+| **Review, prosecute, or audit a branch / diff or spec** | **Review** (`/agb-review`, `/plan-review`, `/code-review`) | `~/.local/bin/agb review [repo-path] [ref] [--plan <spec.md>] [--five-lens] [--loop]` or `agb_review` on `antigravity-booster_agb` |
+| **Distill recurring review/prosecution findings into learned ADLC defenses** | **Distill** | `~/.local/bin/agb distill [repo-path] [--apply] [--compile-checks] [--json]` or `agb_distill` on `antigravity-booster_agb` |
+| **Rescue a failed ticket interactively or inspect P6 hunk acceptance** | **Rescue / Accept** | `~/.local/bin/agb rescue <ticket-id> [repo-path] [--continue] [--plan <plan.json>]` or `~/.local/bin/agb accept [repo-path] [--base <ref>] [--markdown <file>] [--json]` (`agb_accept` on `antigravity-booster_agb`) |
+| **Manage sealed black-box holdouts or CLI statusLine HUD** | **Holdout / Statusline** | `~/.local/bin/agb holdout <list\|run\|clean> [repo-path]` (`agb_holdout` on `antigravity-booster_agb`) or `~/.local/bin/agb statusline <render\|title\|install\|uninstall>` |
+| **Check environment health or self-heal recoverable state** | **Doctor** (`/agb-doctor`) | `~/.local/bin/agb doctor [repo-path] [--fix]` or `mcp_antigravity-booster_agb_doctor` |
+| **Check live fleet run status or launch interactive TUI** | **Status / Watch** (`/agb-status`, `/agb-watch`) | `~/.local/bin/agb status [repo-path]` (`mcp_antigravity-booster_agb_status`) or `~/.local/bin/agb watch [repo-path] [--mux] [--no-alerts]` |
 | **Audit or sync live Antigravity model catalog** | **Sync Models** (`/agb-sync-models`) | `~/.local/bin/agb sync-models [--check] [--write]` |
-| **Initialize a target repository for ADLC and agb** | **Init** | `~/.local/bin/agb init [repo-path]` or `mcp__agb__agb_init` |
+| **Initialize a target repository for ADLC and agb** | **Init** | `~/.local/bin/agb init [repo-path]` or `agb_init` on `antigravity-booster_agb` |
 
 ## How to run it
 
@@ -52,7 +52,7 @@ Use your shell tool (`run_command`) to run the antigravity-booster terminal shim
 ~/.local/bin/agb migrate [--rollback] [--force-rollback] [--force] [--break-lock]
 ```
 
-If the `agb` MCP server is connected, you may instead prefer `mcp__agb__agb_shape`, `mcp__agb__agb_plan`, `mcp__agb__agb_run`, `mcp__agb__agb_review`, `mcp__agb__agb_distill`, `mcp__agb__agb_doctor`, `mcp__agb__agb_status`, `mcp__agb__agb_preflight`, or `mcp__agb__agb_init` for the corresponding workflow.
+If the `antigravity-booster_agb` MCP server is connected, you may instead invoke eager tools (`mcp_antigravity-booster_agb_status`, `mcp_antigravity-booster_agb_doctor`) or `call_mcp_tool(ServerName="antigravity-booster_agb", ToolName=...)` for `agb_shape`, `agb_plan`, `agb_preflight`, `agb_run`, `agb_review`, `agb_distill`, `agb_accept`, `agb_holdout`, `agb_flight_deck`, `agb_mission_control`, `agb_plan_viewer`, or `agb_init`.
 
 ## If the shim is missing
 
