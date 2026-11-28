@@ -1,0 +1,21 @@
+{
+  "body": "Add --interactive and --merge flags to COMMANDS.run and cmd === run in bin/agb.mjs, register lib/interactive-escalation.mjs in scripts/release-audit-collect.mjs, document flags in commands/agb.md and skills/agb/SKILL.md, regenerate website/generated/*, and rebuild dist/agb.mjs.",
+  "completed": true,
+  "edges": [],
+  "id": "T-W5-3",
+  "rails": [
+    "lib/lock.mjs",
+    "lib/gates.mjs",
+    "vendor/cache/**",
+    "scripts/rails-guard-ci.mjs"
+  ],
+  "scope": [
+    "bin/agb.mjs",
+    "scripts/release-audit-collect.mjs",
+    "commands/agb.md",
+    "skills/agb/SKILL.md",
+    "website/generated/**",
+    "dist/agb.mjs"
+  ],
+  "title": "Wire --interactive and --merge in bin/agb.mjs, release audit, docs, and bundles"
+}

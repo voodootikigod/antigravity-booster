@@ -77,7 +77,7 @@ const COMMANDS = {
   run: {
     args: '<plan.json>',
     desc: 'execute a ticket DAG (build → gate → prosecute → merge)',
-    flags: '[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)] [--driver <local|remote-sdk> (execution driver)] [--dry-run (preview remote-sdk waves without spawning)]'
+    flags: '[-c <n> (cap concurrent workers)] [--resume (skip already-merged tickets)] [--reset-rescue (clear rescue locks)] [--interactive (pause flailing Strike-2 ticket for /grill-me rescue without aborting siblings)] [--driver <local|remote-sdk> (execution driver)] [--dry-run (preview remote-sdk waves without spawning)] [--merge (verify and merge remote-sdk branches locally)]'
   },
   'gate-ticket': {
     args: '<ticket-id> [repo]',
@@ -305,6 +305,8 @@ try {
     let resetRescue = false;
     let driver = 'local';
     let dryRun = false;
+    let interactive = false;
+    let merge = false;
     for (let i = 0; i < rest.length; i++) {
       if (rest[i] === '-c') {
         if (i + 1 >= rest.length || rest[i + 1].startsWith('-')) {
@@ -328,6 +330,10 @@ try {
         }
       } else if (rest[i] === '--dry-run') {
         dryRun = true;
+      } else if (rest[i] === '--merge') {
+        merge = true;
+      } else if (rest[i] === '--interactive') {
+        interactive = true;
       } else if (rest[i] === '--resume') {
         resume = true;
       } else if (rest[i] === '--reset-rescue') {
@@ -345,11 +351,11 @@ try {
       process.exit(1);
     }
     if (driver === 'remote-sdk') {
-      const report = await runRemoteSdkPlan(plan, { concurrency, dryRun, log: (m) => console.error(m) });
+      const report = await runRemoteSdkPlan(plan, { concurrency, dryRun, merge, log: (m) => console.error(m) });
       await new Promise((r) => process.stdout.write(`${JSON.stringify(report, null, 2)}\n`, r));
       process.exit(report.ok ? 0 : 2);
     }
-    const report = await runPlan(plan, { project, concurrency, resume, resetRescue });
+    const report = await runPlan(plan, { project, concurrency, resume, resetRescue, interactive });
     console.log(JSON.stringify(report, null, 2));
     process.exit((Object.keys(report.failed).length > 0 || Boolean(report.compromised)) ? 2 : 0);
   } else if (cmd === 'gate-ticket') {
